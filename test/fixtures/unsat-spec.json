@@ -1,0 +1,25 @@
+{
+  "programName": "impossible_converter",
+  "axioms": [
+    {
+      "id": "AX1",
+      "kind": "pre",
+      "statement": "The USD amount must be non-negative."
+    },
+    {
+      "id": "AX-BAD",
+      "kind": "post",
+      "statement": "The result is strictly greater than the input amount."
+    }
+  ],
+  "units": [
+    {
+      "name": "usdToEur",
+      "layer": 1,
+      "purpose": "Deliberately unprovable: claims the output always exceeds the input at rate 0.91.",
+      "params": [{ "name": "amount", "type": "Real" }],
+      "returnType": "Real",
+      "relevantAxiomIds": ["AX1", "AX-BAD"]
+    }
+  ]
+}

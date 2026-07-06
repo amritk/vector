@@ -12,6 +12,7 @@ import {
 } from "./report/dashboard.ts";
 import { verifyProgramViaSolver } from "./solve/runner.ts";
 import type { VerificationReport } from "./solve/types.ts";
+import { checkAxiomTraceability, formatReportFeedback } from "./verify.ts";
 
 // The EWD-1 state machine: SPEC → GENERATE → VALIDATE → VERIFY → (retry) → REPORT.
 // The spec plan is extracted once and never regenerated — Dijkstra's fixed
@@ -163,65 +164,7 @@ export async function runPipeline(
   };
 }
 
-// The Generator writes both body and contract, so it could game the contract
-// by dropping axioms. Deterministic check: every spec-plan axiom must be
-// enforced by at least one clause, and no clause may cite a phantom axiom.
-export function checkAxiomTraceability(
-  specPlan: SpecPlan,
-  program: Program,
-): string[] {
-  const errors: string[] = [];
-  const specIds = new Set(specPlan.axioms.map((a) => a.id));
-  const usedIds = new Set<string>();
-  for (const fn of program.functions) {
-    for (const clause of [...fn.requires, ...fn.ensures]) {
-      usedIds.add(clause.axiomId);
-      if (!specIds.has(clause.axiomId)) {
-        errors.push(
-          `${fn.name}: clause cites unknown axiom "${clause.axiomId}"`,
-        );
-      }
-    }
-  }
-  for (const axiom of specPlan.axioms) {
-    if (!usedIds.has(axiom.id)) {
-      errors.push(
-        `axiom ${axiom.id} ("${axiom.statement}") is not enforced by any clause`,
-      );
-    }
-  }
-  return errors;
-}
-
-function formatReportFeedback(report: VerificationReport): string {
-  const lines: string[] = [];
-  for (const fn of report.functions) {
-    for (const verdict of fn.ensures) {
-      if (verdict.status === "proven") continue;
-      if (verdict.status === "counterexample" && verdict.counterexample) {
-        const inputs = Object.entries(verdict.counterexample.inputs)
-          .map(([k, v]) => `${k} = ${v}`)
-          .join(", ");
-        lines.push(
-          `Function ${fn.name}, ensures ${verdict.axiomId} (${verdict.pretty}): REFUTED — ` +
-            `counterexample ${inputs} gives result = ${verdict.counterexample.result}.`,
-        );
-      } else {
-        lines.push(
-          `Function ${fn.name}, ensures ${verdict.axiomId} (${verdict.pretty}): the solver returned UNKNOWN — restate the property and body using linear arithmetic (variables multiplied only by literal constants).`,
-        );
-      }
-    }
-    for (const hazard of fn.divHazards) {
-      const inputs = hazard.counterexample
-        ? Object.entries(hazard.counterexample.inputs)
-            .map(([k, v]) => `${k} = ${v}`)
-            .join(", ")
-        : "some input";
-      lines.push(
-        `Function ${fn.name}: possible division by zero in ${hazard.pretty} (e.g. ${inputs}) — add a requires clause or an ite guard.`,
-      );
-    }
-  }
-  return lines.join("\n");
-}
+// checkAxiomTraceability and formatReportFeedback now live in verify.ts, shared
+// with the standalone `--verify` entry point (Claude Code as Architect +
+// Generator). They are re-exported here so existing importers keep working.
+export { checkAxiomTraceability } from "./verify.ts";

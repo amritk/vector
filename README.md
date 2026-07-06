@@ -41,8 +41,27 @@ Solver-only, no API key — verify a hand-written EWD-lang program:
 bun run ewd -- --fixture test/fixtures/currency.json
 ```
 
-Flags: `--max-retries N` (default 3), `--json` (dump spec/program/report),
-`--emit <file>` (write the proven TypeScript).
+Verify a **spec-plan + program** pair produced by *some other* agent (this is
+the mode the Claude Code skill drives — see below); no API key, pure Z3:
+
+```bash
+bun run ewd --verify test/fixtures/currency-spec.json test/fixtures/currency.json --json
+```
+
+Flags: `--max-retries N` (default 3), `--json` (dump spec/program/report, or the
+structured verify feedback), `--emit <file>` (write the proven TypeScript).
+
+## As a Claude Code skill
+
+`.claude/skills/vector/` packages vector so it works **starting from the initial
+prompt** inside Claude Code — no `ANTHROPIC_API_KEY`, no nested LLM call. Claude
+Code itself plays the Architect and Generator (guided by the schemas and
+`reference/ewd-lang.md`), emits the two JSON artifacts, and calls
+`ewd --verify … --json`; the engine is reduced to its deterministic core. Z3
+still holds the veto — on a counterexample the structured `feedback`/`items`
+drive an in-context repair loop, and code is presented only when `status` is
+`PROVEN`. The nested-API full pipeline (`ewd "<prompt>"`) stays available for
+standalone/CI use where a key *is* present.
 
 Example dashboard:
 
@@ -88,8 +107,10 @@ feeds the generator's repair loop.
 ```
 schemas/            JSON Schemas — source of truth for types + LLM output
 src/
-  cli.ts            entrypoint (the `ewd` bin)
+  cli.ts            entrypoint (the `ewd` bin) — prompt / fixture / verify modes
   pipeline.ts       SPEC → GENERATE → VALIDATE → VERIFY → (retry) → REPORT
+  verify.ts         deterministic (SpecPlan, Program) → proof veto + structured
+                    feedback; the engine core the Claude Code skill calls
   lang/             AST types (generated), shape validator, typechecker
   agents/           Architect + Generator LLM phases
   solve/            EWD-lang → Z3 terms, verification, Node worker + runner
@@ -97,6 +118,7 @@ src/
   report/           pretty-printer + Dijkstra Dashboard
   generated/        mjst output (checked in)
 test/               bun test suites + fixtures
+.claude/skills/vector/   Claude Code skill (SKILL.md + EWD-lang manual)
 ```
 
 ## Architecture note — why a Node subprocess
