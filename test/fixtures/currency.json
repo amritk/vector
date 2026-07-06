@@ -1,0 +1,99 @@
+{
+  "programName": "usd_to_eur_converter",
+  "functions": [
+    {
+      "name": "applyRate",
+      "layer": 1,
+      "purpose": "Multiply an amount by a positive exchange rate.",
+      "params": [
+        { "name": "amount", "type": "Real" },
+        { "name": "rate", "type": "Real" }
+      ],
+      "returnType": "Real",
+      "requires": [
+        {
+          "axiomId": "AX-RATE",
+          "expr": {
+            "kind": "binop",
+            "op": ">",
+            "left": { "kind": "var", "name": "rate" },
+            "right": { "kind": "num", "value": "0" }
+          }
+        }
+      ],
+      "ensures": [
+        {
+          "axiomId": "AX2a",
+          "expr": {
+            "kind": "binop",
+            "op": "==",
+            "left": { "kind": "var", "name": "result" },
+            "right": {
+              "kind": "binop",
+              "op": "*",
+              "left": { "kind": "var", "name": "amount" },
+              "right": { "kind": "var", "name": "rate" }
+            }
+          }
+        }
+      ],
+      "body": {
+        "kind": "binop",
+        "op": "*",
+        "left": { "kind": "var", "name": "amount" },
+        "right": { "kind": "var", "name": "rate" }
+      }
+    },
+    {
+      "name": "usdToEur",
+      "layer": 2,
+      "purpose": "Convert a non-negative USD amount to EUR at rate 0.91.",
+      "params": [{ "name": "amount", "type": "Real" }],
+      "returnType": "Real",
+      "requires": [
+        {
+          "axiomId": "AX1",
+          "expr": {
+            "kind": "binop",
+            "op": ">=",
+            "left": { "kind": "var", "name": "amount" },
+            "right": { "kind": "num", "value": "0" }
+          }
+        }
+      ],
+      "ensures": [
+        {
+          "axiomId": "AX2",
+          "expr": {
+            "kind": "binop",
+            "op": "==",
+            "left": { "kind": "var", "name": "result" },
+            "right": {
+              "kind": "binop",
+              "op": "*",
+              "left": { "kind": "var", "name": "amount" },
+              "right": { "kind": "num", "value": "0.91" }
+            }
+          }
+        },
+        {
+          "axiomId": "AX3",
+          "expr": {
+            "kind": "binop",
+            "op": ">=",
+            "left": { "kind": "var", "name": "result" },
+            "right": { "kind": "num", "value": "0" }
+          }
+        }
+      ],
+      "body": {
+        "kind": "call",
+        "fn": "applyRate",
+        "args": [
+          { "kind": "var", "name": "amount" },
+          { "kind": "num", "value": "0.91" }
+        ]
+      }
+    }
+  ]
+}

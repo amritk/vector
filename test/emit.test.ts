@@ -1,0 +1,93 @@
+import { describe, expect, test } from "bun:test";
+import { emitTypeScript } from "../src/emit/typescript.ts";
+import { parseProgram } from "../src/generated/program/index.ts";
+import currencyFixture from "./fixtures/currency.json";
+
+describe("emitTypeScript", () => {
+  const program = parseProgram(currencyFixture);
+  const source = emitTypeScript(program);
+
+  test("emits both layers with guards and Hoare-triple docs", () => {
+    expect(source).toContain(
+      "export function applyRate(amount: number, rate: number): number",
+    );
+    expect(source).toContain(
+      "export function usdToEur(amount: number): number",
+    );
+    expect(source).toContain("requires AX1: amount >= 0");
+    expect(source).toContain("ensures  AX2: result == amount * 0.91");
+    expect(source).toContain(
+      'throw new RangeError("requires violated [AX1]: amount >= 0")',
+    );
+    expect(source).toContain("return applyRate(amount, 0.91);");
+  });
+
+  test("emitted code executes: guard throws, math is right", () => {
+    // Strip module/doc syntax so the source runs under new Function().
+    const runnable = source
+      .replace(/\/\*\*[\s\S]*?\*\//g, "")
+      .replace(/^\/\/.*$/gm, "")
+      .replace(/export function/g, "function")
+      .replace(/: number/g, "")
+      .replace(/: boolean/g, "");
+    const factory = new Function(
+      `${runnable}; return { applyRate, usdToEur };`,
+    );
+    const { usdToEur } = factory() as { usdToEur: (amount: number) => number };
+
+    expect(usdToEur(100)).toBeCloseTo(91, 10);
+    expect(usdToEur(0)).toBe(0);
+    expect(() => usdToEur(-1)).toThrow(RangeError);
+  });
+
+  test("renders ite as a ternary and implies as !a || b in TS style", () => {
+    const withIte = parseProgram({
+      programName: "clamp_low",
+      functions: [
+        {
+          name: "clampLow",
+          layer: 1,
+          purpose: "Clamp negatives to zero.",
+          params: [{ name: "x", type: "Real" }],
+          returnType: "Real",
+          requires: [],
+          ensures: [
+            {
+              axiomId: "AX1",
+              expr: {
+                kind: "binop",
+                op: "implies",
+                left: {
+                  kind: "binop",
+                  op: "<",
+                  left: { kind: "var", name: "x" },
+                  right: { kind: "num", value: "0" },
+                },
+                right: {
+                  kind: "binop",
+                  op: "==",
+                  left: { kind: "var", name: "result" },
+                  right: { kind: "num", value: "0" },
+                },
+              },
+            },
+          ],
+          body: {
+            kind: "ite",
+            cond: {
+              kind: "binop",
+              op: "<",
+              left: { kind: "var", name: "x" },
+              right: { kind: "num", value: "0" },
+            },
+            then: { kind: "num", value: "0" },
+            else: { kind: "var", name: "x" },
+          },
+        },
+      ],
+    });
+    const emitted = emitTypeScript(withIte);
+    expect(emitted).toContain("return (x < 0 ? 0 : x);");
+    expect(emitted).toContain("ensures  AX1: x < 0 ⇒ result == 0");
+  });
+});

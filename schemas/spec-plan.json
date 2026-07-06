@@ -1,0 +1,97 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "programName": {
+      "type": "string",
+      "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+    },
+    "axioms": {
+      "type": "array",
+      "minItems": 1,
+      "description": "The formal contract extracted from the casual prompt.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Short stable id, e.g. \"AX1\"."
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["pre", "post"],
+            "description": "pre = a constraint on inputs (including \"throws if X\" → precondition NOT X); post = a guarantee about the result."
+          },
+          "statement": {
+            "type": "string",
+            "description": "Precise mathematical English, e.g. \"for all amount >= 0, result equals amount times 0.91\"."
+          }
+        },
+        "required": ["id", "kind", "statement"]
+      }
+    },
+    "units": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "description": "Dijkstra-style layered decomposition, lowest layer first. Keep it small: 1-4 pure functions, each layer only calls strictly lower layers.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+          },
+          "layer": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "params": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": ["Real", "Int", "Bool"]
+                }
+              },
+              "required": ["name", "type"]
+            }
+          },
+          "returnType": {
+            "type": "string",
+            "enum": ["Real", "Int", "Bool"]
+          },
+          "relevantAxiomIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Which axioms this unit is responsible for enforcing."
+          }
+        },
+        "required": [
+          "name",
+          "layer",
+          "purpose",
+          "params",
+          "returnType",
+          "relevantAxiomIds"
+        ]
+      }
+    }
+  },
+  "required": ["programName", "axioms", "units"]
+}

@@ -1,0 +1,40 @@
+{
+  "programName": "impossible_converter",
+  "functions": [
+    {
+      "name": "usdToEur",
+      "layer": 1,
+      "purpose": "Deliberately unprovable: claims the output always exceeds the input at rate 0.91.",
+      "params": [{ "name": "amount", "type": "Real" }],
+      "returnType": "Real",
+      "requires": [
+        {
+          "axiomId": "AX1",
+          "expr": {
+            "kind": "binop",
+            "op": ">=",
+            "left": { "kind": "var", "name": "amount" },
+            "right": { "kind": "num", "value": "0" }
+          }
+        }
+      ],
+      "ensures": [
+        {
+          "axiomId": "AX-BAD",
+          "expr": {
+            "kind": "binop",
+            "op": ">",
+            "left": { "kind": "var", "name": "result" },
+            "right": { "kind": "var", "name": "amount" }
+          }
+        }
+      ],
+      "body": {
+        "kind": "binop",
+        "op": "*",
+        "left": { "kind": "var", "name": "amount" },
+        "right": { "kind": "num", "value": "0.91" }
+      }
+    }
+  ]
+}

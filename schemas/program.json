@@ -1,0 +1,248 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "programName": {
+      "type": "string",
+      "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+    },
+    "functions": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Ordered lowest layer first. Each function is one small Dijkstra layer: it may only call functions in strictly lower layers.",
+      "items": {
+        "$ref": "#/$defs/functionUnit"
+      }
+    }
+  },
+  "required": ["programName", "functions"],
+  "$defs": {
+    "expr": {
+      "description": "An EWD-lang expression node. Pure, total (except division), no loops, no recursion.",
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "num"
+            },
+            "value": {
+              "type": "string",
+              "pattern": "^-?\\d+(\\.\\d+)?$",
+              "description": "Numeric literal as a plain decimal string, e.g. \"0.91\" or \"-3\". Never scientific notation, never a JSON number — the string reaches the solver as an exact rational."
+            }
+          },
+          "required": ["kind", "value"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "bool"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": ["kind", "value"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "var"
+            },
+            "name": {
+              "type": "string",
+              "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+              "description": "A parameter name, or \"result\" (the return value — allowed ONLY inside ensures clauses)."
+            }
+          },
+          "required": ["kind", "name"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "unop"
+            },
+            "op": {
+              "type": "string",
+              "enum": ["not", "neg"]
+            },
+            "arg": {
+              "$ref": "#/$defs/expr"
+            }
+          },
+          "required": ["kind", "op", "arg"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "binop"
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "+",
+                "-",
+                "*",
+                "/",
+                "<",
+                "<=",
+                ">",
+                ">=",
+                "==",
+                "!=",
+                "and",
+                "or",
+                "implies"
+              ],
+              "description": "Prefer linear arithmetic: multiply variables by literal constants, not by other variables — nonlinear terms can make the solver return unknown."
+            },
+            "left": {
+              "$ref": "#/$defs/expr"
+            },
+            "right": {
+              "$ref": "#/$defs/expr"
+            }
+          },
+          "required": ["kind", "op", "left", "right"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "ite"
+            },
+            "cond": {
+              "$ref": "#/$defs/expr"
+            },
+            "then": {
+              "$ref": "#/$defs/expr"
+            },
+            "else": {
+              "$ref": "#/$defs/expr"
+            }
+          },
+          "required": ["kind", "cond", "then", "else"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "call"
+            },
+            "fn": {
+              "type": "string",
+              "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+              "description": "Name of a function in a STRICTLY LOWER layer of this same program."
+            },
+            "args": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/expr"
+              }
+            }
+          },
+          "required": ["kind", "fn", "args"]
+        }
+      ]
+    },
+    "ty": {
+      "type": "string",
+      "enum": ["Real", "Int", "Bool"]
+    },
+    "clause": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "axiomId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The id of the spec-plan axiom this clause formalizes. Every axiom in the spec plan must be enforced by at least one clause."
+        },
+        "expr": {
+          "$ref": "#/$defs/expr",
+          "description": "A Bool-typed expression over the parameters (and `result` in ensures)."
+        }
+      },
+      "required": ["axiomId", "expr"]
+    },
+    "functionUnit": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+        },
+        "layer": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "purpose": {
+          "type": "string",
+          "description": "One plain-language sentence."
+        },
+        "params": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+              },
+              "type": {
+                "$ref": "#/$defs/ty"
+              }
+            },
+            "required": ["name", "type"]
+          }
+        },
+        "returnType": {
+          "$ref": "#/$defs/ty"
+        },
+        "requires": {
+          "type": "array",
+          "description": "Preconditions. \"Throws/errors if X\" in the spec means a precondition of NOT X — the emitted code enforces it with a runtime throw.",
+          "items": {
+            "$ref": "#/$defs/clause"
+          }
+        },
+        "ensures": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Postconditions over the parameters and `result`. Proven by the solver for ALL inputs satisfying the preconditions.",
+          "items": {
+            "$ref": "#/$defs/clause"
+          }
+        },
+        "body": {
+          "$ref": "#/$defs/expr",
+          "description": "A single pure expression matching returnType. No `result` here."
+        }
+      },
+      "required": [
+        "name",
+        "layer",
+        "purpose",
+        "params",
+        "returnType",
+        "requires",
+        "ensures",
+        "body"
+      ]
+    }
+  }
+}
