@@ -32,7 +32,7 @@ the **numeric core**, offer that core, and don't force the rest through.
 
 ## Read first
 
-1. `.claude/skills/vector/reference/ewd-lang.md` — the Architect + Generator
+1. `.claude/skills/vector/reference/vector-lang.md` — the Architect + Generator
    manual (axioms, layering, the expression language, repair protocol).
 2. `schemas/spec-plan.json` and `schemas/program.json` — the **authoritative**
    shapes your two JSON artifacts must satisfy. These are the source of truth;
@@ -53,7 +53,7 @@ the **numeric core**, offer that core, and don't force the rest through.
 3. **Verify (the veto).** Run:
 
    ```bash
-   bun run ewd --verify /tmp/vector-spec.json /tmp/vector-program.json --json
+   bun run vector --verify /tmp/vector-spec.json /tmp/vector-program.json --json
    ```
 
    No API key is needed — this stage is pure Z3 + validators. Parse the JSON
@@ -92,7 +92,7 @@ the **numeric core**, offer that core, and don't force the rest through.
 For a rendered dashboard + emitted file instead of machine JSON:
 
 ```bash
-bun run ewd --verify /tmp/vector-spec.json /tmp/vector-program.json --emit converter.ts
+bun run vector --verify /tmp/vector-spec.json /tmp/vector-program.json --emit converter.ts
 ```
 
 ## Reference example

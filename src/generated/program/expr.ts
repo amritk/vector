@@ -3,7 +3,7 @@ import { isObject } from '@amritk/helpers/is-object';
 /**
 * Expr
 *
-* An EWD-lang expression node. Pure, total (except division), no loops, no recursion.
+* An vector-lang expression node. Pure, total (except division), no loops, no recursion.
 */
 export type Expr = {
   kind: "num";

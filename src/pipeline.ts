@@ -14,7 +14,7 @@ import { verifyProgramViaSolver } from "./solve/runner.ts";
 import type { VerificationReport } from "./solve/types.ts";
 import { checkAxiomTraceability, formatReportFeedback } from "./verify.ts";
 
-// The EWD-1 state machine: SPEC → GENERATE → VALIDATE → VERIFY → (retry) → REPORT.
+// The vector state machine: SPEC → GENERATE → VALIDATE → VERIFY → (retry) → REPORT.
 // The spec plan is extracted once and never regenerated — Dijkstra's fixed
 // point. Only the construction (the Generator's program) retries, driven by
 // deterministic feedback: validator errors or the solver's counterexamples.
@@ -145,7 +145,7 @@ export async function runPipeline(
   const dashboardText = lastReport
     ? renderDashboard({ prompt, attempt, maxRetries, report: lastReport })
     : [
-        "EWD-1 could not produce a verifiable program.",
+        "vector could not produce a verifiable program.",
         ...failureReasons.map((r) => `  ✘ ${r}`),
       ].join("\n");
 

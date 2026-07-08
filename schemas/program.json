@@ -18,7 +18,7 @@
   "required": ["programName", "functions"],
   "$defs": {
     "expr": {
-      "description": "An EWD-lang expression node. Pure, total (except division), no loops, no recursion.",
+      "description": "An vector-lang expression node. Pure, total (except division), no loops, no recursion.",
       "anyOf": [
         {
           "type": "object",

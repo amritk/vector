@@ -1,6 +1,6 @@
 import type { BinOp, Expr } from "../lang/ast.ts";
 
-// Renders EWD-lang expressions for humans: "math" style for the dashboard and
+// Renders vector-lang expressions for humans: "math" style for the dashboard and
 // counterexample feedback, "ts" style for emitted TypeScript source.
 
 export type PrettyStyle = "math" | "ts";

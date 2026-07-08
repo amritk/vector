@@ -9,7 +9,7 @@ import {
 } from "../lang/ast.ts";
 import { prettyExpr } from "../report/pretty.ts";
 
-// Compiles a typechecked EWD-lang function into Z3 terms. Pure translation —
+// Compiles a typechecked vector-lang function into Z3 terms. Pure translation —
 // no solving happens here. Callee bodies are inlined (the strictly-lower-layer
 // rule makes that terminate), and every division records a side condition so
 // the verifier can prove the denominator is nonzero on that exact path.

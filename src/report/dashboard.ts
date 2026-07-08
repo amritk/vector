@@ -32,7 +32,7 @@ export function renderDashboard(input: DashboardInput): string {
   const lines: string[] = [];
 
   lines.push(top());
-  lines.push(center("EWD-1 DIJKSTRA ENGINE — PROOF REPORT"));
+  lines.push(center("VECTOR — PROOF REPORT"));
   lines.push(divider());
   for (const line of wrapText(`Prompt:  "${input.prompt}"`, WIDTH - 2)) {
     lines.push(row(line));

@@ -1,15 +1,16 @@
 {
   "name": "vector",
   "version": "0.1.0",
-  "description": "EWD-1 Dijkstra Engine — turn a casual prompt into a formally verified TypeScript program via LLM spec extraction, code+contract generation, and deterministic Z3 proof.",
+  "description": "vector — turn a casual prompt into a formally verified TypeScript program via LLM spec extraction, code+contract generation, and deterministic Z3 proof.",
   "type": "module",
   "main": "src/pipeline.ts",
   "bin": {
-    "ewd": "./src/cli.ts"
+    "vector": "./src/cli.ts"
   },
   "scripts": {
-    "ewd": "bun src/cli.ts",
+    "vector": "bun src/cli.ts",
     "dev": "bun src/cli.ts",
+    "build": "bun scripts/build-binary.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "generate:schemas": "mjst --schema-dir schemas --out-dir src/generated --strict",
