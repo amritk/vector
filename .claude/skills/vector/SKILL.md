@@ -80,6 +80,35 @@ the **numeric core**, offer that core, and don't force the rest through.
    answering `UNKNOWN`, the property is likely nonlinear — restate the body and
    clauses in linear arithmetic (variables × literal constants only).
 
+## Regenerating an existing proven program
+
+When the user asks you to regenerate, refactor, or evolve a program that
+already has a proven `program.json`, don't make them re-review — prove the
+regeneration behavior-preserving:
+
+```bash
+bun run vector --diff <old-program.json> <new-program.json> --json
+```
+
+- **`EQUIVALENT`** → report that behavior is provably unchanged for all
+  inputs; nothing to review.
+- **`DIFFERENT`** → relay each witness verbatim (input → old vs new result;
+  domain narrowed/widened; removed functions; signature changes) and confirm
+  the deltas match what the user intended. The witnesses are the entire
+  behavioral change — never summarize them away.
+- **`UNDECIDED`** → equivalence wasn't proven (usually nonlinear arithmetic);
+  restate the bodies linearly and re-run. Do not report it as equivalent.
+
+## Contract style (advisory)
+
+`--verify` may return `styleWarnings` for **definitional** ensures —
+`result == <formula>`, the algorithm restated as spec. Prefer property-shaped
+axioms the user could have written in a ticket (bounds, monotonicity,
+conservation, error behavior) and let `--diff` carry behavior between
+regenerations; keep a definitional clause only when the formula itself is the
+requirement (a regulated fee, a fixed published rate). Warnings never block a
+proof — surface them to the user instead of silently rewriting the spec.
+
 ## Invariants — do not break these
 
 - **Never present code whose verification status was not `PROVEN`.** That is the

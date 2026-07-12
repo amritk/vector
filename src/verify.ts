@@ -1,6 +1,7 @@
 import { emitTypeScript } from "./emit/typescript.ts";
 import type { Program, SpecPlan } from "./lang/ast.ts";
 import { validateProgramShape, validateSpecPlanShape } from "./lang/shape.ts";
+import { type StyleWarning, collectStyleWarnings } from "./lang/style.ts";
 import { typecheckProgram } from "./lang/validate.ts";
 import { renderDashboard, verdictStatus } from "./report/dashboard.ts";
 import { verifyProgramViaSolver } from "./solve/runner.ts";
@@ -40,6 +41,8 @@ export type VerifyOutcome =
       report: VerificationReport;
       dashboard: string;
       emittedCode: string;
+      /** Advisory only — never blocks a proof. */
+      styleWarnings: StyleWarning[];
     }
   | {
       status: "REFUTED" | "UNKNOWN";
@@ -49,6 +52,8 @@ export type VerifyOutcome =
       feedback: string;
       /** The same content, structured per unproven clause. */
       items: VerifyFeedbackItem[];
+      /** Advisory only — never blocks a proof. */
+      styleWarnings: StyleWarning[];
     }
   | { status: "INVALID"; errors: string[]; feedback: string }
   | { status: "ERROR"; message: string };
@@ -352,6 +357,8 @@ export async function verifySpecAndProgram(
     };
   }
 
+  const styleWarnings = collectStyleWarnings(program);
+
   const result = await verifyProgramViaSolver(program);
   if (result.kind === "invalid") {
     return {
@@ -378,6 +385,7 @@ export async function verifySpecAndProgram(
       report,
       dashboard,
       emittedCode: emitTypeScript(program),
+      styleWarnings,
     };
   }
 
@@ -387,5 +395,6 @@ export async function verifySpecAndProgram(
     dashboard,
     feedback: formatReportFeedback(report),
     items: collectFeedbackItems(report),
+    styleWarnings,
   };
 }
