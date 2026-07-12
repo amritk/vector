@@ -1,8 +1,8 @@
-# EWD-lang manual — Architect & Generator
+# vector-lang manual — Architect & Generator
 
 This is the knowledge vector's two LLM roles used to carry before they became
 *you*. When the skill runs, you play both roles; the deterministic engine
-(`ewd --verify`) plays the theorem prover. Read this once, then emit the two JSON
+(`vector --verify`) plays the theorem prover. Read this once, then emit the two JSON
 artifacts. The authoritative shapes are `schemas/spec-plan.json` and
 `schemas/program.json` — this manual is the intent behind them.
 
@@ -32,7 +32,7 @@ boolean logic, if-then-else. Prefer `Real` for money and measurements. Prefer
 fundamentally outside this fragment (needs strings, IO, loops), still produce
 the closest faithful numeric core of it and say so to the user.
 
-## Role 2 — Generator: SpecPlan → Program (EWD-lang)
+## Role 2 — Generator: SpecPlan → Program (vector-lang)
 
 Write the implementation **and** its contract together. Every `ensures` clause
 you write will be PROVEN to hold for ALL inputs satisfying the `requires`
@@ -66,7 +66,7 @@ clauses, or refuted with a concrete counterexample.
 
 ## Repairing on feedback
 
-`ewd --verify … --json` returns `status` plus, when not PROVEN, a `feedback`
+`vector --verify … --json` returns `status` plus, when not PROVEN, a `feedback`
 string and a structured `items[]` array. Each item names the `function`, the
 `axiomId`, the `property`, the `issue`
 (`counterexample` | `unknown` | `division-hazard`), a concrete `counterexample`,

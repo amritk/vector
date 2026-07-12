@@ -1,4 +1,4 @@
-# vector — EWD-1 Dijkstra Engine
+# vector — formally verified functions from a prompt
 
 Turn a casual natural-language request into a **formally verified** TypeScript
 program. Inspired by Dijkstra's EWD249 — *"testing can show the presence of
@@ -9,7 +9,7 @@ is withheld.
 
 ```
 prompt ─▶ Architect ─▶ formal axioms + a layered decomposition   (the SpecPlan)
-       ─▶ Generator ─▶ program + contracts in "EWD-lang"          (the Program)
+       ─▶ Generator ─▶ program + contracts in "vector-lang"          (the Program)
        ─▶ Z3        ─▶ proves / refutes each contract for all inputs
        ─▶ emit      ─▶ runnable TypeScript + a "Dijkstra Dashboard"
 ```
@@ -30,8 +30,9 @@ the program is repaired, up to a retry bound. **Unproven code is never emitted.*
   - [Verify mode (deterministic, no API key)](#verify-mode-deterministic-no-api-key)
   - [Fixture mode](#fixture-mode)
   - [Flags](#flags)
+- [Standalone binary](#standalone-binary)
 - [The Claude Code skill](#the-claude-code-skill)
-- [EWD-lang reference](#ewd-lang-reference)
+- [vector-lang reference](#vector-lang-reference)
 - [The two artifacts](#the-two-artifacts)
 - [Verify output (the JSON contract)](#verify-output-the-json-contract)
 - [The Dijkstra Dashboard](#the-dijkstra-dashboard)
@@ -73,9 +74,9 @@ differ only in **who plays the two LLM roles**.
 |---|---|---|
 | Architect + Generator | vector's own Anthropic API calls | **Claude Code itself**, in-context |
 | API key | `ANTHROPIC_API_KEY` required | none — no nested LLM call |
-| Entry point | `ewd "<prompt>"` | you just ask, in natural language |
+| Entry point | `vector "<prompt>"` | you just ask, in natural language |
 | Retry loop | inside `pipeline.ts` | Claude repairs in-context, re-verifying |
-| Engine's job | the whole pipeline | the deterministic **veto** only (`ewd --verify`) |
+| Engine's job | the whole pipeline | the deterministic **veto** only (`vector --verify`) |
 | Best for | standalone / CI with a key | working inside Claude Code |
 
 Both guarantee the same invariant: **code is presented only when Z3 has proven
@@ -87,12 +88,15 @@ every postcondition.**
 
 ```bash
 bun install
+bun run fetch-z3    # puts a native z3 into .z3/ (see below)
 ```
 
-- [**Bun**](https://bun.sh) — runs the `ewd` CLI and the test suite.
-- **Node ≥ 22.18** on `PATH` — runs the solver subprocess (see
-  [Architecture notes](#architecture-notes)). Node runs the TypeScript worker
-  natively via type stripping.
+- [**Bun**](https://bun.sh) — runs the `vector` CLI and the test suite.
+- **A native `z3`** — the solver. `bun run fetch-z3` fetches a version-matched
+  one into `.z3/` (via pip; needs Python). Alternatively set `$VECTOR_Z3` to a
+  `z3` binary or put one on `PATH`. The compiled binary bundles its own, so it
+  needs none of this (see [Architecture notes](#architecture-notes)). No Node
+  required anywhere.
 - **`ANTHROPIC_API_KEY`** — only for *prompt mode*. Put it in `.env` (see
   `.env.example`) or the environment. The verify/fixture paths and the Claude
   Code skill need **no** key.
@@ -101,7 +105,7 @@ bun install
 
 ## CLI usage
 
-The `ewd` bin has three modes.
+The `vector` bin has three modes.
 
 ### Prompt mode (full pipeline)
 
@@ -109,7 +113,7 @@ Needs `ANTHROPIC_API_KEY`. vector calls the model as Architect then Generator,
 verifies, and retries on counterexamples.
 
 ```bash
-bun run ewd "Build a USD to EUR converter that throws an error if the amount is negative"
+bun run vector "Build a USD to EUR converter that throws an error if the amount is negative"
 ```
 
 Phases printed as it runs:
@@ -118,7 +122,7 @@ Phases printed as it runs:
 [1/5] Spec extraction ...... 5 axiom(s): AX1 (pre), AX2 (post), ...
 [2/5] Decomposition ........ 2 layer(s): applyRate → usdToEur
 [3/5] Generative logic ..... attempt 1/3
-[4/5] Deterministic solver . Z3 4.16.0 (wasm) · 3 VCs · 3 unsat · 0 sat · 0 unknown · 170 ms
+[4/5] Deterministic solver . Z3 4.16.0 (native) · 3 VCs · 3 unsat · 0 sat · 0 unknown · 170 ms
 [5/5] Report ............... PROVEN
 ```
 
@@ -130,10 +134,10 @@ only: shape → typecheck → axiom traceability → Z3. No credentials.
 
 ```bash
 # structured JSON (what the skill consumes)
-bun run ewd --verify test/fixtures/currency-spec.json test/fixtures/currency.json --json
+bun run vector --verify test/fixtures/currency-spec.json test/fixtures/currency.json --json
 
 # human dashboard + write the proven TypeScript out
-bun run ewd --verify test/fixtures/currency-spec.json test/fixtures/currency.json --emit converter.ts
+bun run vector --verify test/fixtures/currency-spec.json test/fixtures/currency.json --emit converter.ts
 ```
 
 `--verify` takes two positional paths — the spec plan first, the program second.
@@ -145,10 +149,10 @@ gate.
 ### Fixture mode
 
 Verify a hand-written Program alone (no spec plan, so no traceability check).
-Handy for iterating on EWD-lang by hand.
+Handy for iterating on vector-lang by hand.
 
 ```bash
-bun run ewd -- --fixture test/fixtures/currency.json
+bun run vector -- --fixture test/fixtures/currency.json
 ```
 
 ### Flags
@@ -162,9 +166,39 @@ bun run ewd -- --fixture test/fixtures/currency.json
 | `--json` | all | Emit machine-readable JSON instead of the dashboard. |
 | `--emit <file>` | all | Write the proven TypeScript to a file (only when PROVEN). |
 
-> Note: because `ewd` is an npm script, `bun run ewd --flag` passes `--flag`
-> straight through. The `--` in `bun run ewd -- --fixture …` is optional but
+> Note: because `vector` is an npm script, `bun run vector --flag` passes `--flag`
+> straight through. The `--` in `bun run vector -- --fixture …` is optional but
 > harmless.
+
+---
+
+## Standalone binary
+
+To use vector **outside this repo** — on your `PATH`, in CI, or in another
+project — compile it to a single executable:
+
+```bash
+bun run build      # → dist/vector
+```
+
+`dist/vector` bundles the CLI, the engine, and a native `z3` solver into one
+file. It needs **nothing on `PATH`** — no Node, no separate z3 install, no `bun
+install`, no repo checkout, no `ANTHROPIC_API_KEY` for the verify/fixture paths.
+Drop it anywhere and run it:
+
+```bash
+./dist/vector --verify spec.json program.json --json
+./dist/vector --fixture program.json
+./dist/vector "Build a USD to EUR converter that throws if the amount is negative"
+```
+
+The build needs a native z3 in `.z3/` first (`bun run fetch-z3`).
+
+How it's built (`scripts/build-binary.ts`): because `bun build --compile`
+already emits a platform-specific executable, we embed a matching native z3 (the
+`z3` binary + its shared library) as a tarball. On first solve the binary
+extracts it once to a content-addressed cache under the system temp dir (reused
+on subsequent runs) and runs z3 from there.
 
 ---
 
@@ -180,13 +214,13 @@ intents like "prove", "formally verify", "provably correct", "no
 counterexamples", and on shapes like converters, rate/threshold/pricing math,
 clamping, rounding, and bounds checks.
 
-**What happens under the hood** (`SKILL.md` + `reference/ewd-lang.md`):
+**What happens under the hood** (`SKILL.md` + `reference/vector-lang.md`):
 
 1. Claude Code, as **Architect**, writes a `SpecPlan` JSON conforming to
    `schemas/spec-plan.json`.
 2. Claude Code, as **Generator**, writes a `Program` JSON conforming to
    `schemas/program.json`.
-3. It runs `ewd --verify spec.json program.json --json` — the deterministic
+3. It runs `vector --verify spec.json program.json --json` — the deterministic
    veto.
 4. On `REFUTED` / `UNKNOWN` / `INVALID` it reads the structured `feedback` /
    `items`, repairs the **program** minimally (keeping every clause that already
@@ -196,11 +230,11 @@ clamping, rounding, and bounds checks.
 
 The schemas remain the single source of truth — the skill points Claude at
 `schemas/*.json` directly rather than keeping copies that could drift. The
-nested-API pipeline (`ewd "<prompt>"`) stays available for standalone/CI use.
+nested-API pipeline (`vector "<prompt>"`) stays available for standalone/CI use.
 
 ---
 
-## EWD-lang reference
+## vector-lang reference
 
 Programs are a small, restricted JSON AST — pure, total (except division), no
 loops, recursion, strings, arrays, or state. This is deliberate: it's exactly
@@ -276,7 +310,7 @@ run — the Generator retries against it, never the reverse.
 
 ### Program (`schemas/program.json`)
 
-The implementation *and* its contract, in EWD-lang. (Abbreviated — see
+The implementation *and* its contract, in vector-lang. (Abbreviated — see
 `test/fixtures/currency.json` for the full AST.)
 
 ```jsonc
@@ -296,20 +330,20 @@ The implementation *and* its contract, in EWD-lang. (Abbreviated — see
 }
 ```
 
-Run these two together through `ewd --verify` to see the whole thing prove.
+Run these two together through `vector --verify` to see the whole thing prove.
 
 ---
 
 ## Verify output (the JSON contract)
 
-`ewd --verify … --json` prints a discriminated `VerifyOutcome` (defined in
+`vector --verify … --json` prints a discriminated `VerifyOutcome` (defined in
 `src/verify.ts`). The `status` field selects the shape:
 
 **`PROVEN`** — carries the rendered `dashboard` and the `emittedCode`:
 
 ```jsonc
 { "status": "PROVEN", "report": { /* full VerificationReport */ },
-  "dashboard": "╔════…", "emittedCode": "// Generated by EWD-1 …" }
+  "dashboard": "╔════…", "emittedCode": "// Generated by vector …" }
 ```
 
 **`REFUTED` / `UNKNOWN`** — carries a prose `feedback` block **and** structured
@@ -361,10 +395,10 @@ what's *proven* vs. *enforced at runtime*.
 
 ```
 ╔════════════════════════════════════════════════════════════════════╗
-║                 EWD-1 DIJKSTRA ENGINE — PROOF REPORT               ║
+║                 VECTOR — PROOF REPORT               ║
 ╠════════════════════════════════════════════════════════════════════╣
 ║ Prompt:  "verify: test/fixtures/currency.json"                    ║
-║ Attempt: 1/1      Solver: Z3 4.16.0 (wasm)      Status: PROVEN     ║
+║ Attempt: 1/1      Solver: Z3 4.16.0 (native)      Status: PROVEN     ║
 ╠════════════════════════════════════════════════════════════════════╣
 ║ LAYER 1 · applyRate(amount: Real, rate: Real): Real                ║
 ║   { rate > 0 }  amount * rate                                      ║
@@ -429,14 +463,18 @@ first), and is what feeds both the pipeline's and the skill's repair loops.
 
 ```
 schemas/            JSON Schemas — source of truth for types + LLM output
+scripts/
+  build-binary.ts   compiles the standalone `dist/vector` executable
+  fetch-z3.ts       fetches a native z3 into .z3/ (source + build both use it)
 src/
-  cli.ts            entrypoint (the `ewd` bin) — prompt / verify / fixture modes
+  cli.ts            entrypoint (the `vector` bin) — prompt / verify / fixture modes
+  bin.ts            compile-only entry: embeds the native z3, then runs cli.ts
   pipeline.ts       prompt mode: SPEC → GENERATE → VALIDATE → VERIFY → (retry) → REPORT
   verify.ts         deterministic (SpecPlan, Program) → proof veto + structured
                     feedback; the engine core the Claude Code skill calls
   lang/             AST types (generated), shape validator, typechecker
   agents/           Architect + Generator LLM phases (prompt mode)
-  solve/            EWD-lang → Z3 terms, verification, Node worker + runner
+  solve/            vector-lang → SMT-LIB2 (smt.ts) → native z3 → report (runner.ts)
   emit/             AST → runnable TypeScript
   report/           pretty-printer + Dijkstra Dashboard
   generated/        mjst output (checked in)
@@ -444,19 +482,22 @@ test/               bun test suites + fixtures
 .claude/skills/vector/
   SKILL.md          the skill: the Architect→Generator→verify→repair loop
   reference/
-    ewd-lang.md     the EWD-lang manual Claude reads before emitting artifacts
+    vector-lang.md     the vector-lang manual Claude reads before emitting artifacts
 ```
 
 ---
 
 ## Architecture notes
 
-**Why a Node subprocess.** `z3-solver` is Z3 compiled to WASM with Emscripten
-pthreads; its worker pool aborts under Bun. So the solver stage runs in a Node
-subprocess (`src/solve/node-worker.ts`) that talks JSON over stdio, and
-`src/solve/runner.ts` is the *only* file that knows this. Swapping in a different
-verifier backend (a Dafny/Verus CLI, or in-process Z3 once Bun supports it)
-would touch only `runner.ts`.
+**Why the native z3 CLI.** The solver stage emits an SMT-LIB2 script
+(`src/solve/smt.ts`) and drives the native `z3` executable over stdin
+(`src/solve/runner.ts`), parsing its textual verdicts back into a
+`VerificationReport`. Those two files are the *only* ones coupled to the solver;
+swapping in a different backend (a Dafny/Verus CLI) touches nothing else. z3 is
+located in order: an embedded copy extracted from the compiled binary,
+`$VECTOR_Z3`, the repo-local `.z3/`, or `z3` on `PATH`. (An earlier design ran
+the `z3-solver` wasm build in a Node subprocess to dodge a Bun pthread abort;
+the native CLI removes both the wasm and the Node dependency.)
 
 **Where the veto lives.** `src/verify.ts` is the deterministic core shared by
 both entry points: shape → typecheck → `checkAxiomTraceability` → Z3, returning
@@ -474,11 +515,14 @@ bun run typecheck        # tsc --noEmit
 bun run lint             # biome
 bun run format           # biome --write
 bun run generate:schemas # regenerate parsers after editing schemas/
+bun run fetch-z3         # fetch a native z3 into .z3/ (needed by the solver)
+bun run build            # compile the standalone dist/vector binary
 ```
 
-The test suites cover the shape validator, typechecker, emitter, the solver, the
+The solver-backed suites need a native z3 (`bun run fetch-z3`, or `$VECTOR_Z3` /
+`PATH`). They cover the shape validator, typechecker, emitter, the solver, the
 `verify.ts` gate (PROVEN / REFUTED / INVALID paths), and the full prompt-mode
-retry loop with the LLM agents mocked and the real solver subprocess.
+retry loop with the LLM agents mocked and the real z3 subprocess.
 
 ---
 

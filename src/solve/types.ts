@@ -1,5 +1,5 @@
-// Result shapes produced by the deterministic solver stage. These cross the
-// Bun→Node subprocess boundary as JSON, so everything here must be plain data.
+// Result shapes produced by the deterministic solver stage — plain data built
+// from the native z3 CLI's textual answers.
 
 export interface Counterexample {
   inputs: Record<string, string>;
@@ -45,7 +45,7 @@ export interface VerificationReport {
   ok: boolean;
 }
 
-export type WorkerResult =
+export type SolveResult =
   | { kind: "report"; report: VerificationReport }
   | { kind: "invalid"; errors: string[] }
   | { kind: "error"; message: string };

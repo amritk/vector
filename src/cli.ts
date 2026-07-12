@@ -8,10 +8,10 @@ import { renderDashboard, verdictStatus } from "./report/dashboard.ts";
 import { verifyProgramViaSolver } from "./solve/runner.ts";
 import { verifySpecAndProgram } from "./verify.ts";
 
-// EWD-1 CLI. Three modes:
-//   ewd "Build a USD to EUR converter..."            (full LLM pipeline)
-//   ewd --fixture test/fixtures/currency.json        (solver-only, no API key)
-//   ewd --verify spec.json program.json --json       (verify LLM-emitted JSON;
+// vector CLI. Three modes:
+//   vector "Build a USD to EUR converter..."            (full LLM pipeline)
+//   vector --fixture test/fixtures/currency.json        (solver-only, no API key)
+//   vector --verify spec.json program.json --json       (verify LLM-emitted JSON;
 //                                                      the Claude Code skill path)
 
 interface CliArgs {
@@ -71,7 +71,7 @@ function phase(label: string, message: string): void {
 
 async function runFixture(args: CliArgs): Promise<number> {
   if (!args.fixture) throw new Error("runFixture requires --fixture");
-  console.log("EWD-1 DIJKSTRA ENGINE (fixture mode — no LLM)");
+  console.log("VECTOR (fixture mode — no LLM)");
   const program = parseProgram(JSON.parse(readFileSync(args.fixture, "utf8")));
   phase(
     "[1/3] Load program",
@@ -190,7 +190,7 @@ async function runVerify(args: CliArgs): Promise<number> {
 async function runPrompt(args: CliArgs): Promise<number> {
   if (!args.prompt) throw new Error("runPrompt requires a prompt");
   const { runPipeline } = await import("./pipeline.ts");
-  console.log("EWD-1 DIJKSTRA ENGINE");
+  console.log("VECTOR");
   const outcome = await runPipeline(args.prompt, {
     maxRetries: args.maxRetries,
     onPhase: phase,
@@ -230,9 +230,9 @@ const args = parseArgs(process.argv.slice(2));
 const verifyMode = Boolean(args.spec || args.program);
 if (!args.fixture && !args.prompt && !verifyMode) {
   console.error(
-    'Usage: ewd "<prompt>" [--max-retries N] [--json] [--emit <file>]\n' +
-      "       ewd --fixture <program.json> [--json] [--emit <file>]\n" +
-      "       ewd --verify <spec.json> <program.json> [--json] [--emit <file>]",
+    'Usage: vector "<prompt>" [--max-retries N] [--json] [--emit <file>]\n' +
+      "       vector --fixture <program.json> [--json] [--emit <file>]\n" +
+      "       vector --verify <spec.json> <program.json> [--json] [--emit <file>]",
   );
   process.exit(2);
 }

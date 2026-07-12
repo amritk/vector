@@ -1,7 +1,6 @@
-import type { Context, Model } from "z3-solver";
-import type { Expr, FunctionUnit, NumericTy, Program } from "../lang/ast.ts";
+import type { Program } from "../lang/ast.ts";
 import { prettyExpr } from "../report/pretty.ts";
-import { type CompiledFunction, compileFunction } from "./compile.ts";
+import { type QueryAnswer, type SmtQuery, signatureOf } from "./smt.ts";
 import type {
   ClauseVerdict,
   Counterexample,
@@ -10,95 +9,89 @@ import type {
   VerificationReport,
 } from "./types.ts";
 
-// The mathematical gatekeeper. For each function we assume its preconditions
-// and `result == body`, then try to REFUTE each postcondition by asserting its
-// negation: unsat means the clause holds for ALL inputs satisfying the
-// preconditions; sat yields a concrete counterexample; unknown is reported
-// honestly. Zero LLM involvement by construction.
+// Turns z3's per-query answers into a VerificationReport — the shape every
+// consumer above the solver already speaks. For each postcondition, unsat means
+// the clause holds for ALL inputs satisfying the preconditions; sat yields a
+// concrete counterexample; unknown is reported honestly. A division query is a
+// hazard unless its "denominator == 0 on this path" check came back unsat.
+// Zero LLM involvement by construction.
 
-type Ctx = Context<"main">;
-
-export async function verifyProgram(
-  ctx: Ctx,
+export function assembleReport(
   program: Program,
-  numTypes: WeakMap<Expr, NumericTy>,
+  queries: SmtQuery[],
+  answers: QueryAnswer[],
   solverLabel: string,
-): Promise<VerificationReport> {
-  const byName = new Map(program.functions.map((f) => [f.name, f]));
-  const started = Date.now();
-  const functions: FunctionReport[] = [];
+  totalMillis: number,
+): VerificationReport {
   let unsatCount = 0;
   let satCount = 0;
   let unknownCount = 0;
   let divHazardCount = 0;
   let totalVcs = 0;
 
+  // Per-clause timing isn't recoverable from a single batch invocation, so the
+  // wall-clock total is attributed evenly; report.millis carries the real total.
+  const checks = queries.length || 1;
+  const perCheck = Math.round(totalMillis / checks);
+
+  const byFn = new Map<
+    string,
+    { ensures: ClauseVerdict[]; divHazards: DivHazard[] }
+  >();
   for (const fn of program.functions) {
-    const compiled = compileFunction(ctx, fn, byName, numTypes);
-    const solver = new ctx.Solver();
-    solver.add(...compiled.requires);
-    solver.add(compiled.bodyDef);
+    byFn.set(fn.name, { ensures: [], divHazards: [] });
+  }
 
-    const ensures: ClauseVerdict[] = [];
-    for (const { clause, term } of compiled.ensures) {
+  queries.forEach((q, i) => {
+    const answer = answers[i];
+    const bucket = byFn.get(q.fn);
+    if (!bucket) return;
+
+    if (q.kind === "ensures") {
       totalVcs += 1;
-      const clauseStarted = Date.now();
-      solver.push();
-      solver.add(ctx.Not(term));
-      const checked = await solver.check();
+      const status =
+        answer.result === "unsat"
+          ? "proven"
+          : answer.result === "sat"
+            ? "counterexample"
+            : "unknown";
       const verdict: ClauseVerdict = {
-        axiomId: clause.axiomId,
-        pretty: prettyExpr(clause.expr, "math"),
-        status:
-          checked === "unsat"
-            ? "proven"
-            : checked === "sat"
-              ? "counterexample"
-              : "unknown",
-        millis: Date.now() - clauseStarted,
+        axiomId: q.axiomId,
+        pretty: q.pretty,
+        status,
+        millis: perCheck,
       };
-      if (checked === "unsat") unsatCount += 1;
-      else if (checked === "sat") {
+      if (status === "proven") unsatCount += 1;
+      else if (status === "counterexample") {
         satCount += 1;
-        verdict.counterexample = extractCounterexample(
-          solver.model(),
-          compiled,
-        );
+        verdict.counterexample = readCounterexample(q, answer);
       } else unknownCount += 1;
-      ensures.push(verdict);
-      solver.pop();
+      bucket.ensures.push(verdict);
+    } else {
+      // Division hazard: anything but a proven-nonzero denominator is unsafe.
+      if (answer.result === "unsat") return;
+      divHazardCount += 1;
+      bucket.divHazards.push({
+        pretty: q.pretty,
+        counterexample:
+          answer.result === "sat" ? readCounterexample(q, answer) : undefined,
+      });
     }
+  });
 
-    const divHazards: DivHazard[] = [];
-    for (const cond of compiled.divConds) {
-      solver.push();
-      solver.add(cond.path);
-      solver.add(cond.denom.eq(0));
-      const checked = await solver.check();
-      if (checked !== "unsat") {
-        divHazardCount += 1;
-        divHazards.push({
-          pretty: cond.pretty,
-          counterexample:
-            checked === "sat"
-              ? extractCounterexample(solver.model(), compiled)
-              : undefined,
-        });
-      }
-      solver.pop();
-    }
-
-    functions.push({
+  const functions: FunctionReport[] = program.functions.map((fn) => {
+    const bucket = byFn.get(fn.name) ?? { ensures: [], divHazards: [] };
+    return {
       name: fn.name,
       layer: fn.layer,
       purpose: fn.purpose,
       signature: signatureOf(fn),
       requiresPretty: fn.requires.map((c) => prettyExpr(c.expr, "math")),
       bodyPretty: prettyExpr(fn.body, "math"),
-      ensures,
-      divHazards,
-    });
-  }
+      ensures: bucket.ensures,
+      divHazards: bucket.divHazards,
+    };
+  });
 
   return {
     solver: solverLabel,
@@ -108,34 +101,15 @@ export async function verifyProgram(
     satCount,
     unknownCount,
     divHazardCount,
-    millis: Date.now() - started,
+    millis: totalMillis,
     ok: satCount === 0 && unknownCount === 0 && divHazardCount === 0,
   };
 }
 
-function signatureOf(fn: FunctionUnit): string {
-  const params = fn.params.map((p) => `${p.name}: ${p.type}`).join(", ");
-  return `${fn.name}(${params}): ${fn.returnType}`;
-}
-
-function extractCounterexample(
-  model: Model<"main">,
-  compiled: CompiledFunction,
-): Counterexample {
+function readCounterexample(q: SmtQuery, answer: QueryAnswer): Counterexample {
   const inputs: Record<string, string> = {};
-  for (const [name, term] of compiled.paramConsts) {
-    inputs[name] = normalizeModelValue(model.eval(term, true).toString());
+  for (const p of q.params) {
+    if (answer.model[p.smt] !== undefined) inputs[p.orig] = answer.model[p.smt];
   }
-  return {
-    inputs,
-    result: normalizeModelValue(
-      model.eval(compiled.resultConst, true).toString(),
-    ),
-  };
-}
-
-// Z3 prints negatives as s-expressions, e.g. "(- 1)" or "(- 1/2)".
-function normalizeModelValue(value: string): string {
-  const match = value.match(/^\(- (.+)\)$/);
-  return match?.[1] !== undefined ? `-${match[1]}` : value;
+  return { inputs, result: answer.model[q.resultSmt] ?? "?" };
 }

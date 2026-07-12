@@ -1,4 +1,4 @@
-// EWD-lang: the restricted expression language the Generator emits programs in.
+// vector-lang: the restricted expression language the Generator emits programs in.
 // Small enough that every construct maps 1:1 onto both a Z3 term and a
 // TypeScript expression — Dijkstra's "usefully structured" constraint made literal.
 //

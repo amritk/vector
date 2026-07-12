@@ -6,7 +6,7 @@ import type { SpecPlan } from "../lang/ast.ts";
 import { validateSpecPlanShape } from "../lang/shape.ts";
 import { MalformedOutputError, structuredCall } from "./client.ts";
 
-// Phase 1+2 of EWD-1: translate a casual prompt into formal axioms and a
+// Phase 1+2 of vector: translate a casual prompt into formal axioms and a
 // layered decomposition. Merged into one call so the spec and the
 // decomposition cannot drift apart. The resulting SpecPlan is the fixed point
 // of the whole run — the Generator retries against it, never the other way.
@@ -16,7 +16,7 @@ import { MalformedOutputError, structuredCall } from "./client.ts";
 export type { SpecPlan } from "../lang/ast.ts";
 
 // Frozen instructions — cached; the volatile user prompt goes in the user turn.
-const ARCHITECT_SYSTEM_PROMPT = `You are the EWD-1 Architect, the spec-extraction phase of a \
+const ARCHITECT_SYSTEM_PROMPT = `You are the vector Architect, the spec-extraction phase of a \
 formally verified code-generation pipeline in the tradition of Dijkstra's "Notes on Structured \
 Programming": the program will be PROVEN correct by an SMT solver, not tested.
 

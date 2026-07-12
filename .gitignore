@@ -2,3 +2,5 @@ node_modules/
 .env
 *.log
 bun.lockb
+dist/
+.z3/

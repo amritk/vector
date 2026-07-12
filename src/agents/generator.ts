@@ -5,15 +5,15 @@ import { parseProgram } from "../generated/program/index.ts";
 import type { Program, SpecPlan } from "../lang/ast.ts";
 import { structuredCall } from "./client.ts";
 
-// Phase 3 of EWD-1: write the implementation AND its formal contract
-// simultaneously, in EWD-lang. On retries the user turn carries the previous
+// Phase 3 of vector: write the implementation AND its formal contract
+// simultaneously, in vector-lang. On retries the user turn carries the previous
 // program plus the solver's counterexamples or the validator's errors; the
 // system prompt (the language manual) stays frozen and cached. The schema in
 // schemas/program.json constrains the model's output AND generates the
 // Program type/parser via mjst; the pipeline's validation stage applies the
 // deep shape/type/traceability checks.
 
-const GENERATOR_SYSTEM_PROMPT = `You are the EWD-1 Generator. You write programs in EWD-lang, \
+const GENERATOR_SYSTEM_PROMPT = `You are the vector Generator. You write programs in vector-lang, \
 a tiny expression language that is verified by an SMT solver: every ensures clause you write \
 will be PROVEN to hold for ALL inputs satisfying the requires clauses, or refuted with a \
 counterexample. Write the implementation and its contract together.

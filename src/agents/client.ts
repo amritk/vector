@@ -7,7 +7,7 @@ import Anthropic from "@anthropic-ai/sdk";
 // mjst-generated parsers plus the engine's own shape validators — the JSON
 // Schema in schemas/ is the single source of truth for both.
 
-export const EWD_MODEL = "claude-opus-4-7";
+export const VECTOR_MODEL = "claude-opus-4-7";
 
 /**
  * The model produced output that failed parsing or shape validation.
@@ -20,7 +20,7 @@ let client: Anthropic | null = null;
 function getClient(): Anthropic {
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error(
-      "ANTHROPIC_API_KEY is not set — cannot run the EWD-1 generative phases.",
+      "ANTHROPIC_API_KEY is not set — cannot run the vector generative phases.",
     );
   }
   client ??= new Anthropic();
@@ -38,7 +38,7 @@ export async function structuredCall<T>(
   options: StructuredCallOptions<T>,
 ): Promise<T> {
   const response = await getClient().messages.create({
-    model: EWD_MODEL,
+    model: VECTOR_MODEL,
     max_tokens: 8192,
     thinking: { type: "adaptive" },
     system: [
@@ -56,7 +56,7 @@ export async function structuredCall<T>(
   });
 
   if (response.stop_reason === "refusal") {
-    throw new Error("Model refused the EWD-1 request.");
+    throw new Error("Model refused the vector request.");
   }
   const jsonText = response.content.find(
     (block) => block.type === "text",

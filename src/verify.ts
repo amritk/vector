@@ -7,7 +7,7 @@ import { verifyProgramViaSolver } from "./solve/runner.ts";
 import type { VerificationReport } from "./solve/types.ts";
 
 // The deterministic verifier, exposed as a one-shot over a (SpecPlan, Program)
-// pair. This is the veto half of EWD-1 with the two LLM phases removed: when
+// pair. This is the veto half of vector with the two LLM phases removed: when
 // Claude Code itself plays Architect + Generator, it emits the two JSON
 // artifacts and calls this to have Z3 (plus the shape/type/traceability gates)
 // prove or refute them. The structured `feedback` it returns is what drives the
@@ -18,7 +18,7 @@ import type { VerificationReport } from "./solve/types.ts";
 export interface VerifyFeedbackItem {
   function: string;
   axiomId: string;
-  /** The property as pretty-printed EWD-lang. */
+  /** The property as pretty-printed vector-lang. */
   property: string;
   issue: "counterexample" | "unknown" | "division-hazard";
   /** Present for counterexample / division-hazard issues. */

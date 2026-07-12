@@ -21,5 +21,7 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["bun-types"]
   },
-  "include": ["src/**/*", "test/**/*"]
+  "include": ["src/**/*", "test/**/*"],
+  "comment": "src/bin.ts is compile-only: it imports the build-time dist/*.tar asset, which does not exist during typecheck.",
+  "exclude": ["src/bin.ts"]
 }
