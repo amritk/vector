@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import type { Program } from "../lang/ast.ts";
 import { validateProgramShape } from "../lang/shape.ts";
 import { typecheckProgram } from "../lang/validate.ts";
+import { checkConformance } from "./conformance.ts";
 import { emitVerificationScript, parseZ3Output } from "./smt.ts";
 import type { SolveResult } from "./types.ts";
 import { assembleReport } from "./verify.ts";
@@ -25,7 +26,19 @@ import { assembleReport } from "./verify.ts";
 // the compiled binary; $VECTOR_Z3; a repo-local .z3/ (see `bun run fetch-z3`);
 // or `z3` on PATH.
 
-const SOLVER_TIMEOUT_MS = 60_000;
+// The whole batch runs in one z3 process, so its wall-clock budget must grow
+// with the number of checks — a base plus a per-query allowance, capped so a
+// pathological program still can't hang CI.
+const SOLVER_BASE_TIMEOUT_MS = 60_000;
+const SOLVER_PER_QUERY_MS = 3_000;
+const SOLVER_TIMEOUT_CAP_MS = 300_000;
+
+function solverTimeout(queryCount: number): number {
+  return Math.min(
+    SOLVER_TIMEOUT_CAP_MS,
+    SOLVER_BASE_TIMEOUT_MS + queryCount * SOLVER_PER_QUERY_MS,
+  );
+}
 
 // Set by bin.ts in the compiled binary: the in-executable path of the embedded
 // z3 tarball (the `z3` executable + its shared library), which we extract once.
@@ -144,6 +157,7 @@ export async function verifyProgramViaSolver(
 
   const label = solverLabel(loc);
   const { script, queries } = emitVerificationScript(program, numTypes);
+  const timeoutMs = solverTimeout(queries.length);
 
   return new Promise<SolveResult>((resolve) => {
     const started = Date.now();
@@ -166,9 +180,9 @@ export async function verifyProgramViaSolver(
       child.kill("SIGKILL");
       finish({
         kind: "error",
-        message: `z3 timed out after ${SOLVER_TIMEOUT_MS} ms`,
+        message: `z3 timed out after ${timeoutMs} ms`,
       });
-    }, SOLVER_TIMEOUT_MS);
+    }, timeoutMs);
 
     child.stdout.on("data", (chunk) => {
       stdout += chunk;
@@ -193,16 +207,24 @@ export async function verifyProgramViaSolver(
         return;
       }
       const answers = parseZ3Output(stdout, queries.length);
-      finish({
-        kind: "report",
-        report: assembleReport(
-          program,
-          queries,
-          answers,
-          label,
-          Date.now() - started,
-        ),
-      });
+      const report = assembleReport(
+        program,
+        queries,
+        answers,
+        label,
+        Date.now() - started,
+      );
+      // The float64 conformance gate only runs once the proof is otherwise
+      // clean — it validates the proof→runtime bridge, not the proof, and would
+      // just be noise on an already-refuted report.
+      if (report.ok) {
+        const conformanceIssues = checkConformance(program, report);
+        if (conformanceIssues.length > 0) {
+          report.conformanceIssues = conformanceIssues;
+          report.ok = false;
+        }
+      }
+      finish({ kind: "report", report });
     });
 
     child.stdin.write(script);

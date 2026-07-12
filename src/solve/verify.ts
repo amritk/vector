@@ -6,6 +6,7 @@ import type {
   Counterexample,
   DivHazard,
   FunctionReport,
+  PreHazard,
   VerificationReport,
 } from "./types.ts";
 
@@ -27,21 +28,48 @@ export function assembleReport(
   let satCount = 0;
   let unknownCount = 0;
   let divHazardCount = 0;
+  let preHazardCount = 0;
+  let trivialCount = 0;
+  let vacuousCount = 0;
   let totalVcs = 0;
-
-  // Per-clause timing isn't recoverable from a single batch invocation, so the
-  // wall-clock total is attributed evenly; report.millis carries the real total.
-  const checks = queries.length || 1;
-  const perCheck = Math.round(totalMillis / checks);
 
   const byFn = new Map<
     string,
-    { ensures: ClauseVerdict[]; divHazards: DivHazard[] }
+    {
+      ensures: ClauseVerdict[];
+      divHazards: DivHazard[];
+      preHazards: PreHazard[];
+      vacuous: boolean;
+      // trivial verdicts arrive in a separate query; matched to ensures by index.
+      trivialByPretty: Map<string, boolean>;
+    }
   >();
   for (const fn of program.functions) {
-    byFn.set(fn.name, { ensures: [], divHazards: [] });
+    byFn.set(fn.name, {
+      ensures: [],
+      divHazards: [],
+      preHazards: [],
+      vacuous: false,
+      trivialByPretty: new Map(),
+    });
   }
 
+  // First pass: record triviality and reachability so the ensures pass can read
+  // them. (Queries are emitted reachable → [ensures, trivial]* → div → pre.)
+  queries.forEach((q, i) => {
+    const bucket = byFn.get(q.fn);
+    if (!bucket) return;
+    const answer = answers[i];
+    if (q.kind === "reachable") {
+      // unsat ⇒ no input satisfies the preconditions ⇒ vacuous proofs.
+      if (answer.result === "unsat") bucket.vacuous = true;
+    } else if (q.kind === "trivial") {
+      // unsat ⇒ the clause holds regardless of the body ⇒ it proves nothing.
+      if (answer.result === "unsat") bucket.trivialByPretty.set(q.pretty, true);
+    }
+  });
+
+  // Second pass: the substantive verdicts.
   queries.forEach((q, i) => {
     const answer = answers[i];
     const bucket = byFn.get(q.fn);
@@ -59,15 +87,20 @@ export function assembleReport(
         axiomId: q.axiomId,
         pretty: q.pretty,
         status,
-        millis: perCheck,
+        millis: 0,
       };
-      if (status === "proven") unsatCount += 1;
-      else if (status === "counterexample") {
+      if (status === "proven") {
+        unsatCount += 1;
+        if (bucket.trivialByPretty.get(q.pretty)) {
+          verdict.trivial = true;
+          trivialCount += 1;
+        }
+      } else if (status === "counterexample") {
         satCount += 1;
         verdict.counterexample = readCounterexample(q, answer);
       } else unknownCount += 1;
       bucket.ensures.push(verdict);
-    } else {
+    } else if (q.kind === "div") {
       // Division hazard: anything but a proven-nonzero denominator is unsafe.
       if (answer.result === "unsat") return;
       divHazardCount += 1;
@@ -76,11 +109,25 @@ export function assembleReport(
         counterexample:
           answer.result === "sat" ? readCounterexample(q, answer) : undefined,
       });
+    } else if (q.kind === "precondition") {
+      // Safe iff the callee's requires can NOT be violated on this path (unsat).
+      if (answer.result === "unsat") return;
+      preHazardCount += 1;
+      bucket.preHazards.push({
+        callee: q.axiomId.replace(/^\(calls /, "").replace(/\)$/, ""),
+        pretty: q.pretty,
+        counterexample:
+          answer.result === "sat" ? readCounterexample(q, answer) : undefined,
+      });
     }
   });
 
+  for (const bucket of byFn.values()) {
+    if (bucket.vacuous) vacuousCount += 1;
+  }
+
   const functions: FunctionReport[] = program.functions.map((fn) => {
-    const bucket = byFn.get(fn.name) ?? { ensures: [], divHazards: [] };
+    const bucket = byFn.get(fn.name);
     return {
       name: fn.name,
       layer: fn.layer,
@@ -88,8 +135,10 @@ export function assembleReport(
       signature: signatureOf(fn),
       requiresPretty: fn.requires.map((c) => prettyExpr(c.expr, "math")),
       bodyPretty: prettyExpr(fn.body, "math"),
-      ensures: bucket.ensures,
-      divHazards: bucket.divHazards,
+      ensures: bucket?.ensures ?? [],
+      divHazards: bucket?.divHazards ?? [],
+      preHazards: bucket?.preHazards ?? [],
+      vacuous: bucket?.vacuous ?? false,
     };
   });
 
@@ -101,8 +150,18 @@ export function assembleReport(
     satCount,
     unknownCount,
     divHazardCount,
+    preHazardCount,
+    trivialCount,
+    vacuousCount,
+    conformanceIssues: [],
     millis: totalMillis,
-    ok: satCount === 0 && unknownCount === 0 && divHazardCount === 0,
+    ok:
+      satCount === 0 &&
+      unknownCount === 0 &&
+      divHazardCount === 0 &&
+      preHazardCount === 0 &&
+      trivialCount === 0 &&
+      vacuousCount === 0,
   };
 }
 

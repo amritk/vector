@@ -157,4 +157,61 @@ describe("typecheckProgram", () => {
       "is not an integer",
     );
   });
+
+  test("rejects Int-typed division (`/` must yield Real)", () => {
+    const program = minimalProgram({
+      params: [{ name: "n", type: "Int" }],
+      returnType: "Int",
+      ensures: [
+        {
+          axiomId: "AX1",
+          expr: binop("==", variable("result"), variable("result")),
+        },
+      ],
+      body: {
+        kind: "binop",
+        op: "/",
+        left: variable("n"),
+        right: num("2"),
+      } as Expr,
+    });
+    // n is Int, but `/` forces its operands to Real → a type error.
+    expect(typecheckProgram(program).errors.join("\n")).toContain("Real");
+  });
+
+  test("types floor/ceil as Real→Real and min/max/abs as numeric", () => {
+    const floorProg = minimalProgram({
+      ensures: [
+        {
+          axiomId: "AX1",
+          expr: binop("==", variable("result"), variable("result")),
+        },
+      ],
+      body: {
+        kind: "binop",
+        op: "min",
+        left: {
+          kind: "unop",
+          op: "floor",
+          arg: { kind: "unop", op: "abs", arg: variable("x") },
+        },
+        right: { kind: "num", value: "100" },
+      } as Expr,
+    });
+    expect(typecheckProgram(floorProg).errors).toEqual([]);
+  });
+
+  test("rejects an ensures clause that never mentions result", () => {
+    const program = minimalProgram({
+      ensures: [
+        {
+          axiomId: "AX1",
+          expr: binop(">=", variable("x"), num("0")),
+        },
+      ],
+    });
+    expect(typecheckProgram(program).errors.join("\n")).toContain(
+      'must reference "result"',
+    );
+  });
 });

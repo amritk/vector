@@ -188,6 +188,7 @@ export function validateSpecPlanShape(input: unknown): string[] {
   if (!Array.isArray(input.axioms) || input.axioms.length < 1) {
     errors.push("axioms must be a non-empty array");
   } else {
+    const seenIds = new Set<string>();
     input.axioms.forEach((axiom, i) => {
       if (!isDict(axiom)) {
         errors.push(`axioms[${i}]: must be an object`);
@@ -195,6 +196,10 @@ export function validateSpecPlanShape(input: unknown): string[] {
       }
       if (typeof axiom.id !== "string" || axiom.id.length === 0) {
         errors.push(`axioms[${i}]: id must be a non-empty string`);
+      } else if (seenIds.has(axiom.id)) {
+        errors.push(`axioms[${i}]: duplicate axiom id "${axiom.id}"`);
+      } else {
+        seenIds.add(axiom.id);
       }
       if (!isIn(["pre", "post"], axiom.kind)) {
         errors.push(

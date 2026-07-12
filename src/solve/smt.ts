@@ -36,12 +36,22 @@ const SORT: Record<Ty, string> = { Real: "Real", Int: "Int", Bool: "Bool" };
 
 // A single verification condition emitted into the script, tagged so the parser
 // can attribute z3's answer (and any model) back to the right clause.
+//
+//  - ensures:      prove a postcondition (unsat of its negation ⇒ holds ∀).
+//  - div:          a division is safe iff "denominator = 0 on this path" is unsat.
+//  - reachable:    the precondition region is inhabited (sat) — guards against a
+//                  vacuous proof from contradictory `requires`.
+//  - trivial:      the postcondition negation is unsat WITHOUT assuming the body
+//                  (sat ⇒ the clause genuinely constrains `result`; unsat ⇒ it is
+//                  a tautology that proves nothing about the implementation).
+//  - precondition: a callee's `requires` can be violated for the actual
+//                  arguments on this path (sat ⇒ a real call-site hazard).
 export interface SmtQuery {
-  kind: "ensures" | "div";
+  kind: "ensures" | "div" | "reachable" | "trivial" | "precondition";
   fn: string;
-  /** Spec axiom for ensures queries; "(division)" for division hazards. */
+  /** Spec axiom for ensures/trivial; "(division)"/"(reachable)"/"(calls X)" otherwise. */
   axiomId: string;
-  /** Math-pretty of the clause (ensures) or the division expression (div). */
+  /** Math-pretty of the clause (ensures) or the offending expression. */
   pretty: string;
   /** SMT const name ↔ original param name, for reading counterexample inputs. */
   params: { smt: string; orig: string }[];
@@ -76,6 +86,14 @@ export function emitVerificationScript(
 
   program.functions.forEach((fn, idx) => {
     const divConds: { path: string[]; denom: string; expr: Expr }[] = [];
+    // Each call site records the callee's `requires`, with the callee params
+    // substituted by the actual argument terms, plus the path it sits on.
+    const preConds: {
+      path: string[];
+      callee: string;
+      smt: string;
+      pretty: string;
+    }[] = [];
 
     const emit = (
       expr: Expr,
@@ -104,7 +122,21 @@ export function emitVerificationScript(
         }
         case "unop": {
           const a = emit(expr.arg, scope, path);
-          return expr.op === "not" ? `(not ${a})` : `(- ${a})`;
+          switch (expr.op) {
+            case "not":
+              return `(not ${a})`;
+            case "neg":
+              return `(- ${a})`;
+            // |a| — the sort-neutral zero (- a a) keeps this valid for Int and Real.
+            case "abs":
+              return `(ite (>= ${a} (- ${a} ${a})) ${a} (- ${a}))`;
+            // floor: to_int is SMT-LIB floor; back to Real so it composes.
+            case "floor":
+              return `(to_real (to_int ${a}))`;
+            // ceil(a) = -floor(-a).
+            default:
+              return `(to_real (- (to_int (- ${a}))))`;
+          }
         }
         case "binop": {
           const l = emit(expr.left, scope, path);
@@ -112,6 +144,8 @@ export function emitVerificationScript(
           if (expr.op === "/") {
             divConds.push({ path: [...path], denom: r, expr });
           }
+          if (expr.op === "min") return `(ite (<= ${l} ${r}) ${l} ${r})`;
+          if (expr.op === "max") return `(ite (>= ${l} ${r}) ${l} ${r})`;
           return `(${BINOP_SMT[expr.op]} ${l} ${r})`;
         }
         case "ite": {
@@ -129,6 +163,16 @@ export function emitVerificationScript(
             if (!arg) throw new Error(`emit: missing argument for "${p.name}"`);
             calleeScope.set(p.name, emit(arg, scope, path));
           });
+          // The callee's preconditions must hold for these actual arguments on
+          // this reachable path — inlining alone would silently discharge them.
+          for (const rc of callee.requires) {
+            preConds.push({
+              path: [...path],
+              callee: callee.name,
+              smt: emit(rc.expr, calleeScope, path),
+              pretty: prettyExpr(rc.expr, "math"),
+            });
+          }
           return emit(callee.body, calleeScope, path);
         }
       }
@@ -150,56 +194,113 @@ export function emitVerificationScript(
       lines.push(`(declare-const ${smtName(p.name)} ${SORT[p.type]})`);
     }
     lines.push(`(declare-const ${resultSmt} ${SORT[fn.returnType]})`);
-    for (const c of fn.requires) {
-      lines.push(`(assert ${emit(c.expr, scope, [])})`);
-    }
-    lines.push(`(assert (= ${resultSmt} ${emit(fn.body, scope, [])}))`);
 
     const ensuresScope = new Map([...scope, [RESULT_NAME, resultSmt]]);
     const getVars = [...paramMap.map((p) => p.smt), resultSmt].join(" ");
 
-    // Prove each postcondition by refuting its negation: unsat ⇒ holds ∀ inputs.
-    for (const clause of fn.ensures) {
+    // Emit body and requires ONCE (populating divConds and preConds), then reuse
+    // the terms. `requires` are asserted at function scope (they hold for every
+    // check below); `result = body` is asserted per-push so the triviality check
+    // can omit it.
+    const bodyTerm = emit(fn.body, scope, []);
+    const bindResult = `(assert (= ${resultSmt} ${bodyTerm}))`;
+    const requireTerms = fn.requires.map((c) => emit(c.expr, scope, []));
+    for (const term of requireTerms) lines.push(`(assert ${term})`);
+
+    // Only the body and requires are actually EVALUATED at runtime (requires
+    // become guards, the body is the return). Ensures clauses are proof-only, so
+    // a division / callee-call inside one is not a runtime hazard — freeze the
+    // hazard sets here and discard anything the ensures emits below add.
+    const realDivCount = divConds.length;
+    const realPreCount = preConds.length;
+
+    const query = (
+      q: Omit<SmtQuery, "params" | "resultSmt">,
+      asserts: string[],
+      withModel: boolean,
+    ) => {
       const qid = queries.length;
       lines.push(
         "(push 1)",
-        `(assert (not ${emit(clause.expr, ensuresScope, [])}))`,
+        ...asserts,
         `(echo "@@Q${qid}")`,
         "(check-sat)",
-        `(get-value (${getVars}))`,
+        ...(withModel ? [`(get-value (${getVars}))`] : []),
         "(pop 1)",
       );
-      queries.push({
-        kind: "ensures",
+      queries.push({ ...q, params: paramMap, resultSmt });
+    };
+
+    // Reachability: the precondition region must be inhabited, else every
+    // postcondition holds vacuously and the "proof" is worthless.
+    query(
+      {
+        kind: "reachable",
         fn: fn.name,
-        axiomId: clause.axiomId,
-        pretty: prettyExpr(clause.expr, "math"),
-        params: paramMap,
-        resultSmt,
-      });
+        axiomId: "(reachable)",
+        pretty: "requires are satisfiable",
+      },
+      [bindResult],
+      false,
+    );
+
+    for (const clause of fn.ensures) {
+      const clauseTerm = emit(clause.expr, ensuresScope, []);
+      // Drop any div/call hazards this proof-only clause emitted (see above).
+      divConds.length = realDivCount;
+      preConds.length = realPreCount;
+      const pretty = prettyExpr(clause.expr, "math");
+      // Prove the postcondition: refute its negation under the body. unsat ⇒ ∀.
+      query(
+        { kind: "ensures", fn: fn.name, axiomId: clause.axiomId, pretty },
+        [bindResult, `(assert (not ${clauseTerm}))`],
+        true,
+      );
+      // Triviality: refute the same negation WITHOUT the body. sat ⇒ the clause
+      // truly depends on the implementation; unsat ⇒ it is a tautology.
+      query(
+        { kind: "trivial", fn: fn.name, axiomId: clause.axiomId, pretty },
+        [`(assert (not ${clauseTerm}))`],
+        false,
+      );
     }
 
     // A division is safe iff its denominator can't be zero on its own path:
     // assert the path and denom == 0; anything but unsat is a hazard.
     for (const dc of divConds) {
-      const qid = queries.length;
-      lines.push(
-        "(push 1)",
-        ...dc.path.map((p) => `(assert ${p})`),
-        `(assert (= ${dc.denom} 0))`,
-        `(echo "@@Q${qid}")`,
-        "(check-sat)",
-        `(get-value (${getVars}))`,
-        "(pop 1)",
+      query(
+        {
+          kind: "div",
+          fn: fn.name,
+          axiomId: "(division)",
+          pretty: prettyExpr(dc.expr, "math"),
+        },
+        [
+          bindResult,
+          ...dc.path.map((p) => `(assert ${p})`),
+          `(assert (= ${dc.denom} 0))`,
+        ],
+        true,
       );
-      queries.push({
-        kind: "div",
-        fn: fn.name,
-        axiomId: "(division)",
-        pretty: prettyExpr(dc.expr, "math"),
-        params: paramMap,
-        resultSmt,
-      });
+    }
+
+    // Call-site preconditions: the callee's requires must hold for the actual
+    // args on this path. sat of its negation ⇒ a reachable violation.
+    for (const pc of preConds) {
+      query(
+        {
+          kind: "precondition",
+          fn: fn.name,
+          axiomId: `(calls ${pc.callee})`,
+          pretty: pc.pretty,
+        },
+        [
+          bindResult,
+          ...pc.path.map((p) => `(assert ${p})`),
+          `(assert (not ${pc.smt}))`,
+        ],
+        true,
+      );
     }
   });
 

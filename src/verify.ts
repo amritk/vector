@@ -20,8 +20,15 @@ export interface VerifyFeedbackItem {
   axiomId: string;
   /** The property as pretty-printed vector-lang. */
   property: string;
-  issue: "counterexample" | "unknown" | "division-hazard";
-  /** Present for counterexample / division-hazard issues. */
+  issue:
+    | "counterexample"
+    | "unknown"
+    | "division-hazard"
+    | "precondition-hazard"
+    | "vacuous"
+    | "trivial"
+    | "conformance";
+  /** Present for counterexample / hazard / conformance issues. */
   counterexample?: { inputs: Record<string, string>; result?: string };
   /** Human/LLM-readable repair hint. */
   hint: string;
@@ -52,30 +59,111 @@ export interface VerifyOptions {
 }
 
 // The Generator writes both body and contract, so it could game the contract by
-// dropping axioms. Deterministic check: every spec-plan axiom must be enforced
-// by at least one clause, and no clause may cite a phantom axiom.
+// dropping axioms or formalizing them on the wrong side. Deterministic checks:
+// no clause may cite a phantom axiom; every axiom must be enforced by a clause;
+// and the enforcement must match the axiom's POLARITY — a `pre` axiom belongs in
+// a `requires`, a `post` axiom in an `ensures`. (Enforcing a `post` guarantee as
+// a mere runtime `requires` would silently drop the proof obligation.)
 export function checkAxiomTraceability(
   specPlan: SpecPlan,
   program: Program,
 ): string[] {
   const errors: string[] = [];
-  const specIds = new Set(specPlan.axioms.map((a) => a.id));
-  const usedIds = new Set<string>();
+  const axiomKind = new Map(specPlan.axioms.map((a) => [a.id, a.kind]));
+  const citedByRequires = new Set<string>();
+  const citedByEnsures = new Set<string>();
+
   for (const fn of program.functions) {
-    for (const clause of [...fn.requires, ...fn.ensures]) {
-      usedIds.add(clause.axiomId);
-      if (!specIds.has(clause.axiomId)) {
+    for (const clause of fn.requires) {
+      citedByRequires.add(clause.axiomId);
+      if (!axiomKind.has(clause.axiomId)) {
         errors.push(
-          `${fn.name}: clause cites unknown axiom "${clause.axiomId}"`,
+          `${fn.name}: requires clause cites unknown axiom "${clause.axiomId}"`,
+        );
+      }
+    }
+    for (const clause of fn.ensures) {
+      citedByEnsures.add(clause.axiomId);
+      if (!axiomKind.has(clause.axiomId)) {
+        errors.push(
+          `${fn.name}: ensures clause cites unknown axiom "${clause.axiomId}"`,
         );
       }
     }
   }
+
   for (const axiom of specPlan.axioms) {
-    if (!usedIds.has(axiom.id)) {
+    const inReq = citedByRequires.has(axiom.id);
+    const inEns = citedByEnsures.has(axiom.id);
+    if (!inReq && !inEns) {
       errors.push(
         `axiom ${axiom.id} ("${axiom.statement}") is not enforced by any clause`,
       );
+      continue;
+    }
+    if (axiom.kind === "pre" && !inReq) {
+      errors.push(
+        `axiom ${axiom.id} is "pre" but is only formalized as an ensures clause; a precondition must be enforced by a requires clause`,
+      );
+    }
+    if (axiom.kind === "post" && !inEns) {
+      errors.push(
+        `axiom ${axiom.id} is "post" but is only formalized as a requires clause; a postcondition must be proven by an ensures clause`,
+      );
+    }
+  }
+  return errors;
+}
+
+// The SpecPlan's layered decomposition is the fixed point of a run. The Program
+// must implement exactly that decomposition — same units, layers, and
+// signatures — so the Generator can't quietly restructure around a hard proof.
+export function checkSpecProgramConsistency(
+  specPlan: SpecPlan,
+  program: Program,
+): string[] {
+  const errors: string[] = [];
+  const units = new Map(specPlan.units.map((u) => [u.name, u]));
+  const fns = new Map(program.functions.map((f) => [f.name, f]));
+
+  for (const u of specPlan.units) {
+    if (!fns.has(u.name)) {
+      errors.push(
+        `spec unit "${u.name}" has no matching function in the program`,
+      );
+    }
+  }
+  for (const fn of program.functions) {
+    const u = units.get(fn.name);
+    if (!u) {
+      errors.push(
+        `function "${fn.name}" is not declared as a unit in the spec plan`,
+      );
+      continue;
+    }
+    if (fn.layer !== u.layer) {
+      errors.push(
+        `function "${fn.name}": layer ${fn.layer} disagrees with spec unit layer ${u.layer}`,
+      );
+    }
+    if (fn.returnType !== u.returnType) {
+      errors.push(
+        `function "${fn.name}": returnType ${fn.returnType} disagrees with spec unit returnType ${u.returnType}`,
+      );
+    }
+    if (fn.params.length !== u.params.length) {
+      errors.push(
+        `function "${fn.name}": has ${fn.params.length} param(s) but spec unit declares ${u.params.length}`,
+      );
+    } else {
+      fn.params.forEach((p, i) => {
+        const up = u.params[i];
+        if (up && (p.name !== up.name || p.type !== up.type)) {
+          errors.push(
+            `function "${fn.name}": param ${i + 1} is ${p.name}:${p.type} but spec unit declares ${up.name}:${up.type}`,
+          );
+        }
+      });
     }
   }
   return errors;
@@ -87,7 +175,26 @@ export function collectFeedbackItems(
 ): VerifyFeedbackItem[] {
   const items: VerifyFeedbackItem[] = [];
   for (const fn of report.functions) {
+    if (fn.vacuous) {
+      items.push({
+        function: fn.name,
+        axiomId: "(reachable)",
+        property: "requires are satisfiable",
+        issue: "vacuous",
+        hint: "No input satisfies this function's requires clauses, so every postcondition holds vacuously and proves nothing. Remove the contradictory precondition(s); do NOT tighten requires to force a proof through.",
+      });
+    }
     for (const verdict of fn.ensures) {
+      if (verdict.trivial) {
+        items.push({
+          function: fn.name,
+          axiomId: verdict.axiomId,
+          property: verdict.pretty,
+          issue: "trivial",
+          hint: "This ensures clause is a tautology — it holds regardless of the body, so it does not actually formalize the axiom. Restate it as a real constraint on `result` that depends on the implementation.",
+        });
+        continue;
+      }
       if (verdict.status === "proven") continue;
       if (verdict.status === "counterexample" && verdict.counterexample) {
         items.push({
@@ -118,6 +225,26 @@ export function collectFeedbackItems(
         hint: "The denominator may be zero on some reachable path. Add a requires clause (denominator != 0) or guard the division with an ite.",
       });
     }
+    for (const hazard of fn.preHazards) {
+      items.push({
+        function: fn.name,
+        axiomId: `(calls ${hazard.callee})`,
+        property: hazard.pretty,
+        issue: "precondition-hazard",
+        counterexample: hazard.counterexample,
+        hint: `The call to ${hazard.callee} can violate its precondition (${hazard.pretty}) for the arguments shown. Strengthen this function's requires, or guard the call with an ite, so the callee is only reached where its precondition holds.`,
+      });
+    }
+  }
+  for (const issue of report.conformanceIssues) {
+    items.push({
+      function: issue.function,
+      axiomId: issue.axiomId,
+      property: issue.pretty,
+      issue: "conformance",
+      counterexample: { inputs: issue.inputs, result: issue.result },
+      hint: "Proven over exact reals but FALSE when the emitted float64 code runs on the input shown. Avoid exact `==`/`!=` over Real results (float rounding); use an inequality/tolerance, or move to Int where the value is genuinely discrete.",
+    });
   }
   return items;
 }
@@ -125,7 +252,18 @@ export function collectFeedbackItems(
 export function formatReportFeedback(report: VerificationReport): string {
   const lines: string[] = [];
   for (const fn of report.functions) {
+    if (fn.vacuous) {
+      lines.push(
+        `Function ${fn.name}: VACUOUS — no input satisfies its requires clauses, so the postconditions are proven only vacuously. Remove the contradictory precondition(s).`,
+      );
+    }
     for (const verdict of fn.ensures) {
+      if (verdict.trivial) {
+        lines.push(
+          `Function ${fn.name}, ensures ${verdict.axiomId} (${verdict.pretty}): TRIVIAL — the clause holds regardless of the body, so it formalizes nothing. Restate it as a real constraint on result.`,
+        );
+        continue;
+      }
       if (verdict.status === "proven") continue;
       if (verdict.status === "counterexample" && verdict.counterexample) {
         const inputs = Object.entries(verdict.counterexample.inputs)
@@ -151,6 +289,24 @@ export function formatReportFeedback(report: VerificationReport): string {
         `Function ${fn.name}: possible division by zero in ${hazard.pretty} (e.g. ${inputs}) — add a requires clause or an ite guard.`,
       );
     }
+    for (const hazard of fn.preHazards) {
+      const inputs = hazard.counterexample
+        ? Object.entries(hazard.counterexample.inputs)
+            .map(([k, v]) => `${k} = ${v}`)
+            .join(", ")
+        : "some input";
+      lines.push(
+        `Function ${fn.name}: the call to ${hazard.callee} can violate its precondition ${hazard.pretty} (e.g. ${inputs}) — strengthen this function's requires or guard the call with an ite.`,
+      );
+    }
+  }
+  for (const issue of report.conformanceIssues) {
+    const inputs = Object.entries(issue.inputs)
+      .map(([k, v]) => `${k} = ${v}`)
+      .join(", ");
+    lines.push(
+      `Function ${issue.function}, ensures ${issue.axiomId} (${issue.pretty}): proven over reals but FALSE in float64 at ${inputs} → result = ${issue.result}. Avoid exact == over Real; use an inequality/tolerance.`,
+    );
   }
   return lines.join("\n");
 }
@@ -185,6 +341,7 @@ export async function verifySpecAndProgram(
 
   const semanticErrors = [
     ...typecheckProgram(program).errors,
+    ...checkSpecProgramConsistency(specPlan, program),
     ...checkAxiomTraceability(specPlan, program),
   ];
   if (semanticErrors.length > 0) {

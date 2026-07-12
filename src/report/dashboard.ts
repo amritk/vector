@@ -22,7 +22,17 @@ const WIDTH = 68; // inner content width
 
 export function verdictStatus(report: VerificationReport): VerdictStatus {
   if (report.ok) return "PROVEN";
-  if (report.satCount > 0 || report.divHazardCount > 0) return "REFUTED";
+  // Every failure mode except a bare solver UNKNOWN is a concrete defect.
+  if (
+    report.satCount > 0 ||
+    report.divHazardCount > 0 ||
+    report.preHazardCount > 0 ||
+    report.trivialCount > 0 ||
+    report.vacuousCount > 0 ||
+    report.conformanceIssues.length > 0
+  ) {
+    return "REFUTED";
+  }
   return "UNKNOWN";
 }
 
@@ -49,10 +59,26 @@ export function renderDashboard(input: DashboardInput): string {
     for (const line of functionRows(fn)) lines.push(line);
   });
 
+  if (report.conformanceIssues.length > 0) {
+    lines.push(lightDivider());
+    lines.push(row("FLOAT64 CONFORMANCE"));
+    for (const issue of report.conformanceIssues) {
+      const inputs = Object.entries(issue.inputs)
+        .map(([k, v]) => `${k} = ${v}`)
+        .join(", ");
+      for (const line of wrapText(
+        `✘ ${issue.function} ${issue.axiomId} (${issue.pretty}) proven over reals but FALSE at ${inputs} → result = ${issue.result}`,
+        WIDTH - 4,
+      )) {
+        lines.push(row(`  ${line}`));
+      }
+    }
+  }
+
   lines.push(divider());
   lines.push(row(`VERDICT: ${verdictLine(status, report)}`));
   lines.push(row('"Testing shows the presence of bugs, never their absence."'));
-  lines.push(row(" — proven over exact reals; JS execution uses float64."));
+  lines.push(row(" — proven over exact reals; float64 conformance-checked."));
   lines.push(bottom());
   return lines.join("\n");
 }
@@ -68,6 +94,14 @@ function functionRows(fn: FunctionReport): string[] {
   const post = fn.ensures.map((e) => e.pretty).join("  ∧  ");
   for (const line of wrapText(`{ ${post} }`, WIDTH - 4)) {
     rows.push(row(`  ${line}`));
+  }
+  if (fn.vacuous) {
+    for (const line of wrapText(
+      "✘ VACUOUS: no input satisfies the requires — postconditions hold only vacuously",
+      WIDTH - 4,
+    )) {
+      rows.push(row(`  ${line}`));
+    }
   }
   for (const verdict of fn.ensures) {
     rows.push(row(`  ${clauseRow(verdict)}`));
@@ -96,9 +130,22 @@ function functionRows(fn: FunctionReport): string[] {
       rows.push(row(`  ${line}`));
     }
   }
+  for (const hazard of fn.preHazards) {
+    const inputs = hazard.counterexample
+      ? Object.entries(hazard.counterexample.inputs)
+          .map(([k, v]) => `${k} = ${v}`)
+          .join(", ")
+      : "";
+    for (const line of wrapText(
+      `✘ call to ${hazard.callee} may violate its precondition ${hazard.pretty}${inputs ? ` (e.g. ${inputs})` : ""}`,
+      WIDTH - 4,
+    )) {
+      rows.push(row(`  ${line}`));
+    }
+  }
   if (fn.requiresPretty.length > 0) {
     for (const line of wrapText(
-      `⚠ guard ${fn.requiresPretty.join(" ∧ ")} enforced by runtime throw (not proven at call sites)`,
+      `⚠ guard ${fn.requiresPretty.join(" ∧ ")} enforced at runtime; proven to hold at every internal call site`,
       WIDTH - 4,
     )) {
       rows.push(row(`  ${line}`));
@@ -108,13 +155,16 @@ function functionRows(fn: FunctionReport): string[] {
 }
 
 function clauseRow(verdict: ClauseVerdict): string {
+  if (verdict.trivial) {
+    return `✘ ensures ${verdict.axiomId}  TRIVIAL (holds independent of the body)`;
+  }
   switch (verdict.status) {
     case "proven":
-      return `✔ ensures ${verdict.axiomId}  proven (unsat · ${verdict.millis} ms)`;
+      return `✔ ensures ${verdict.axiomId}  proven (unsat, ∀ inputs)`;
     case "counterexample":
-      return `✘ ensures ${verdict.axiomId}  REFUTED (sat · ${verdict.millis} ms)`;
+      return `✘ ensures ${verdict.axiomId}  REFUTED (sat)`;
     case "unknown":
-      return `? ensures ${verdict.axiomId}  undecided (unknown · ${verdict.millis} ms)`;
+      return `? ensures ${verdict.axiomId}  undecided (unknown)`;
   }
 }
 
@@ -125,8 +175,16 @@ function verdictLine(
   switch (status) {
     case "PROVEN":
       return "ALL POSTCONDITIONS PROVEN FOR ALL INPUTS";
-    case "REFUTED":
-      return `${report.satCount + report.divHazardCount} CONTRACT VIOLATION(S) FOUND — SEE COUNTEREXAMPLES`;
+    case "REFUTED": {
+      const violations =
+        report.satCount +
+        report.divHazardCount +
+        report.preHazardCount +
+        report.trivialCount +
+        report.vacuousCount +
+        report.conformanceIssues.length;
+      return `${violations} CONTRACT VIOLATION(S) FOUND — SEE ABOVE`;
+    }
     case "UNKNOWN":
       return `${report.unknownCount} CLAUSE(S) UNDECIDED BY THE SOLVER`;
   }

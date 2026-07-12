@@ -19,6 +19,9 @@ const PREC: Record<BinOp, number> = {
   "-": 6,
   "*": 7,
   "/": 7,
+  // min/max render as function calls (atoms), never infix; these are unused.
+  min: 10,
+  max: 10,
 };
 const PREC_NOT = 4;
 const PREC_NEG = 8;
@@ -38,6 +41,8 @@ const MATH_OPS: Record<BinOp, string> = {
   "-": "-",
   "*": "*",
   "/": "/",
+  min: "min",
+  max: "max",
 };
 
 const TS_OPS: Record<Exclude<BinOp, "implies">, string> = {
@@ -53,6 +58,15 @@ const TS_OPS: Record<Exclude<BinOp, "implies">, string> = {
   "-": "-",
   "*": "*",
   "/": "/",
+  min: "min",
+  max: "max",
+};
+
+// Function-style operators (rendered `f(a, b)` / `Math.f(a, b)`, not infix).
+const CALL_UNOPS: Record<"abs" | "floor" | "ceil", string> = {
+  abs: "abs",
+  floor: "floor",
+  ceil: "ceil",
 };
 
 export function prettyExpr(expr: Expr, style: PrettyStyle = "math"): string {
@@ -70,15 +84,24 @@ function render(expr: Expr, parentPrec: number, style: PrettyStyle): string {
     case "var":
       return expr.name;
     case "unop": {
+      if (expr.op === "abs" || expr.op === "floor" || expr.op === "ceil") {
+        const name = CALL_UNOPS[expr.op];
+        const fn = style === "ts" ? `Math.${name}` : name;
+        return `${fn}(${render(expr.arg, 0, style)})`;
+      }
       const token = expr.op === "not" ? (style === "ts" ? "!" : "¬") : "-";
       const prec = expr.op === "not" ? PREC_NOT : PREC_NEG;
-      return wrap(
-        `${token}${render(expr.arg, prec + 1, style)}`,
-        prec,
-        parentPrec,
-      );
+      const child = render(expr.arg, prec + 1, style);
+      // Separate a leading "-" so `neg(-3)` is `- -3` (valid), not `--3`
+      // (parsed as pre-decrement — invalid TS and misleading math).
+      const sep = child.startsWith("-") ? " " : "";
+      return wrap(`${token}${sep}${child}`, prec, parentPrec);
     }
     case "binop": {
+      if (expr.op === "min" || expr.op === "max") {
+        const fn = style === "ts" ? `Math.${expr.op}` : expr.op;
+        return `${fn}(${render(expr.left, 0, style)}, ${render(expr.right, 0, style)})`;
+      }
       if (style === "ts" && expr.op === "implies") {
         // TS has no implication operator; desugar to !a || b.
         const desugared: Expr = {
