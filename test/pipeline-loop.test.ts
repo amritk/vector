@@ -23,7 +23,27 @@ const specPlan: SpecPlan = {
     { id: "AX3", kind: "post", statement: "result is non-negative" },
     { id: "AX-RATE", kind: "pre", statement: "rate is positive" },
   ],
-  units: [],
+  units: [
+    {
+      name: "applyRate",
+      layer: 1,
+      purpose: "Multiply an amount by a positive exchange rate.",
+      params: [
+        { name: "amount", type: "Real" },
+        { name: "rate", type: "Real" },
+      ],
+      returnType: "Real",
+      relevantAxiomIds: ["AX-RATE", "AX2a"],
+    },
+    {
+      name: "usdToEur",
+      layer: 2,
+      purpose: "Convert a non-negative USD amount to EUR at rate 0.91.",
+      params: [{ name: "amount", type: "Real" }],
+      returnType: "Real",
+      relevantAxiomIds: ["AX1", "AX2", "AX3"],
+    },
+  ],
 };
 
 const goodProgram = parseProgram(currencyFixture);

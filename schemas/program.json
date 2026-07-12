@@ -72,7 +72,8 @@
             },
             "op": {
               "type": "string",
-              "enum": ["not", "neg"]
+              "enum": ["not", "neg", "abs", "floor", "ceil"],
+              "description": "not: Bool→Bool. neg/abs: numeric→same type. floor/ceil: Real→Real (round toward -inf / +inf; the result is integer-valued but stays Real)."
             },
             "arg": {
               "$ref": "#/$defs/expr"
@@ -94,6 +95,8 @@
                 "-",
                 "*",
                 "/",
+                "min",
+                "max",
                 "<",
                 "<=",
                 ">",
@@ -104,7 +107,7 @@
                 "or",
                 "implies"
               ],
-              "description": "Prefer linear arithmetic: multiply variables by literal constants, not by other variables — nonlinear terms can make the solver return unknown."
+              "description": "Arithmetic (+ - * /), min/max (both operands numeric, same type), comparisons, and boolean logic. `/` requires Real operands and yields Real (use Real, not Int, for division). Prefer linear arithmetic: multiply variables by literal constants, not by other variables — nonlinear terms can make the solver return unknown."
             },
             "left": {
               "$ref": "#/$defs/expr"

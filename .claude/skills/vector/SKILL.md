@@ -23,8 +23,10 @@ artifacts and the repairs.
 ## When this fits — and when it doesn't
 
 Fits: a function (or 1–4 layered functions) over **Real / Int / Bool** —
-arithmetic, comparisons, boolean logic, if-then-else. Money, rates, thresholds,
-clamping, bounds checks.
+arithmetic, comparisons, boolean logic, if-then-else, and
+`abs`/`min`/`max`/`floor`/`ceil`. Money, rates, thresholds, clamping
+(`min(max(x, lo), hi)`), rounding to cents (`floor(x*100 + 0.5) / 100`), bounds
+checks.
 
 Does **not** fit: strings, arrays, IO, loops, recursion, state, data
 structures. If the request needs those, tell the user vector can only verify
@@ -84,8 +86,15 @@ the **numeric core**, offer that core, and don't force the rest through.
   entire point of vector.
 - **Never edit the engine to make a proof pass.** If something can't be proven,
   the spec or the program is wrong, not the solver.
+- **Never force a proof through by tightening `requires`.** Contradictory
+  preconditions are caught as *vacuous*; a `PROVEN` over an empty input region
+  proves nothing.
+- Every `ensures` must genuinely constrain `result` (no tautologies) and hold in
+  float64, not just over the reals (the `conformance` gate). Prefer inequalities
+  to exact `==` on `Real`.
 - The SpecPlan is the fixed point: prefer repairing the **program** against a
-  stable spec. Only revise the spec if it misread the user's intent.
+  stable spec, and keep the program's units matching the spec's decomposition.
+  Only revise the spec if it misread the user's intent.
 
 ## Human (non-JSON) output
 

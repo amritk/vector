@@ -13,12 +13,31 @@ export interface ClauseVerdict {
   pretty: string;
   status: ClauseStatus;
   counterexample?: Counterexample;
+  /** Proven but tautological: holds independent of the body, so it tests nothing. */
+  trivial?: boolean;
   millis: number;
 }
 
 export interface DivHazard {
   pretty: string;
   counterexample?: Counterexample;
+}
+
+/** A callee precondition that can fail for the actual arguments on some path. */
+export interface PreHazard {
+  callee: string;
+  pretty: string;
+  counterexample?: Counterexample;
+}
+
+/** A proven clause that nonetheless fails when the emitted code runs in float64. */
+export interface ConformanceIssue {
+  function: string;
+  axiomId: string;
+  pretty: string;
+  inputs: Record<string, string>;
+  result: string;
+  note: string;
 }
 
 export interface FunctionReport {
@@ -30,6 +49,9 @@ export interface FunctionReport {
   bodyPretty: string;
   ensures: ClauseVerdict[];
   divHazards: DivHazard[];
+  preHazards: PreHazard[];
+  /** True when the preconditions are contradictory (proofs would be vacuous). */
+  vacuous: boolean;
 }
 
 export interface VerificationReport {
@@ -40,8 +62,17 @@ export interface VerificationReport {
   satCount: number;
   unknownCount: number;
   divHazardCount: number;
+  preHazardCount: number;
+  trivialCount: number;
+  vacuousCount: number;
+  /** Proven-over-reals clauses that fail in float64 execution (empirical). */
+  conformanceIssues: ConformanceIssue[];
   millis: number;
-  /** True iff every postcondition is proven and no division hazard exists. */
+  /**
+   * True iff every postcondition is genuinely proven for an inhabited
+   * precondition region, no division or call-site precondition hazard exists,
+   * no clause is a tautology, and the emitted float64 code conforms.
+   */
   ok: boolean;
 }
 

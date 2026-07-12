@@ -27,13 +27,15 @@ export type NumericTy = "Real" | "Int";
 
 export const TYS = ["Real", "Int", "Bool"] as const;
 
-export const UNOPS = ["not", "neg"] as const;
+export const UNOPS = ["not", "neg", "abs", "floor", "ceil"] as const;
 
 export const BINOPS = [
   "+",
   "-",
   "*",
   "/",
+  "min",
+  "max",
   "<",
   "<=",
   ">",

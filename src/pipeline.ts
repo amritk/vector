@@ -12,7 +12,11 @@ import {
 } from "./report/dashboard.ts";
 import { verifyProgramViaSolver } from "./solve/runner.ts";
 import type { VerificationReport } from "./solve/types.ts";
-import { checkAxiomTraceability, formatReportFeedback } from "./verify.ts";
+import {
+  checkAxiomTraceability,
+  checkSpecProgramConsistency,
+  formatReportFeedback,
+} from "./verify.ts";
 
 // The vector state machine: SPEC → GENERATE → VALIDATE → VERIFY → (retry) → REPORT.
 // The spec plan is extracted once and never regenerated — Dijkstra's fixed
@@ -92,6 +96,7 @@ export async function runPipeline(
         ? shapeErrors
         : [
             ...typecheckProgram(program).errors,
+            ...checkSpecProgramConsistency(specPlan, program),
             ...checkAxiomTraceability(specPlan, program),
           ];
     if (validationErrors.length > 0) {

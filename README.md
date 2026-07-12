@@ -249,8 +249,8 @@ the fragment Z3 can decide.
 | `num` | `value` | Decimal **string**, e.g. `"0.91"`, `"-3"`. Never scientific notation, never a JSON number — the string reaches Z3 as an exact rational. |
 | `bool` | `value` | `true` / `false`. |
 | `var` | `name` | A parameter, or `result` (allowed **only** in `ensures`). |
-| `unop` | `op`, `arg` | `not`, `neg`. |
-| `binop` | `op`, `left`, `right` | `+ - * / < <= > >= == != and or implies`. |
+| `unop` | `op`, `arg` | `not` (Bool→Bool), `neg`/`abs` (numeric→same), `floor`/`ceil` (Real→Real, integer-valued but stays Real). |
+| `binop` | `op`, `left`, `right` | `+ - * /`, `min`/`max`, `< <= > >= == != and or implies`. `min`/`max` render as `Math.min`/`Math.max`. |
 | `ite` | `cond`, `then`, `else` | If-then-else **expression** (not a statement). |
 | `call` | `fn`, `args` | Calls a function in a **strictly lower layer** of the same program. |
 
@@ -266,9 +266,32 @@ the fragment Z3 can decide.
 layer first; a function may only `call` functions in strictly lower layers. Each
 `body` is a single pure expression whose type equals `returnType`.
 
-**Division:** Z3 proves the denominator is nonzero on every reachable path.
-Guard every `/` with a `requires` (`denominator != 0`) or an `ite`; an
-unguarded division that could be zero is reported as a *division hazard*.
+**Division:** `/` requires **`Real`** operands and yields `Real` — JS `/` is
+float64 division (`3/2 === 1.5`), so an `Int`-typed quotient would be unsound.
+For discrete rounding use `floor`/`ceil` instead. Z3 proves the denominator is
+nonzero on every reachable path; guard every `/` with a `requires`
+(`denominator != 0`) or an `ite`; an unguarded division that could be zero is
+reported as a *division hazard*.
+
+**What "PROVEN" now guarantees.** Beyond proving each postcondition, the gate
+enforces that the proof is *meaningful* and *survives execution*:
+
+- **Non-vacuity.** The precondition region must be inhabited (Z3 checks
+  `requires` are satisfiable). Contradictory `requires` — which would make every
+  postcondition hold vacuously — are rejected.
+- **Non-triviality.** Every `ensures` must reference `result` and must actually
+  depend on the body (Z3 checks the clause is *not* a tautology of the
+  preconditions). `result == result` or a restated precondition is rejected.
+- **Call-site preconditions.** A callee's `requires` is proven to hold for the
+  actual arguments on every reachable path — not just inlined away.
+- **Float64 conformance.** After the proof, the emitted code is interpreted in
+  float64 over boundary + random inputs; a postcondition that is true over exact
+  reals but false in float64 (e.g. `(x+0.1)+0.2 == x+0.3` at `x = 0`) is
+  reported and the code is withheld. Prefer inequalities/tolerances over exact
+  `==` on `Real` results.
+- **Domain guards.** The emitted function rejects `NaN`/`Infinity` (`Real`
+  params) and non-integer values (`Int` params) at runtime, so the runtime
+  domain matches the finite/integer domain the proof quantified over.
 
 **Solver-friendliness:** prefer **linear** arithmetic — multiply variables by
 literal constants, not by other variables. Nonlinear terms can make Z3 answer
@@ -361,6 +384,8 @@ Run these two together through `vector --verify` to see the whole thing prove.
       "axiomId": "AX-BAD",
       "property": "result > amount",
       "issue": "counterexample",              // | "unknown" | "division-hazard"
+                                              // | "precondition-hazard" | "vacuous"
+                                              // | "trivial" | "conformance"
       "counterexample": { "inputs": { "amount": "0.0" }, "result": "0.0" },
       "hint": "The postcondition is false for the input shown. Fix the body or tighten a requires clause …"
     }
@@ -531,13 +556,23 @@ retry loop with the LLM agents mocked and the real z3 subprocess.
 vector verifies exactly the fragment Z3 can decide, and no more:
 
 - **In scope:** `Real` / `Int` / `Bool`, arithmetic, comparisons, boolean logic,
-  if-then-else, and layered calls. Money, rates, thresholds, clamping, rounding,
-  bounds checks.
+  `if-then-else`, `abs`/`min`/`max`/`floor`/`ceil`, and layered calls. Money,
+  rates, thresholds, clamping, rounding (via `floor`), bounds checks.
 - **Out of scope:** strings, arrays, IO, loops, recursion, state, data
   structures. If a request needs those, vector can still formalize and prove its
   **numeric core** — but the rest isn't verified and shouldn't be forced through.
 - **Nonlinearity:** multiplying two variables can make Z3 answer `unknown`
   (undecided, not proven). Restate in linear arithmetic where possible.
+- **Integer division:** `/` yields `Real` by design (JS `/` is float64
+  division). For integer/discrete results use `floor`/`ceil`. A dedicated
+  Euclidean `div`/`mod` is future work.
 - **Reals vs. float64:** proofs are over exact rationals; emitted JS runs
-  `float64`, so extreme magnitudes may round.
+  `float64`. vector no longer *assumes* this is harmless — a post-proof
+  **conformance** stage fuzzes the emitted code in float64 and withholds it if a
+  proven postcondition fails there. Exact `==`/`!=` over `Real` results is the
+  usual culprit; prefer inequalities or an explicit tolerance.
+- **Trust boundary:** Z3 proves *code ⊨ contract*. It cannot prove *contract ⊨
+  your intent* — the displayed Hoare triples are what you should read and sign
+  off on. vector makes that contract small and auditable; it does not read your
+  mind.
 ```

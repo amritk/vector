@@ -21,6 +21,31 @@ export interface TypecheckResult {
   numTypes: WeakMap<Expr, NumericTy>;
 }
 
+/** True iff `result` appears anywhere in the expression tree. */
+export function mentionsResult(expr: Expr): boolean {
+  switch (expr.kind) {
+    case "var":
+      return expr.name === RESULT_NAME;
+    case "num":
+    case "bool":
+      return false;
+    case "unop":
+      return mentionsResult(expr.arg);
+    case "binop":
+      return mentionsResult(expr.left) || mentionsResult(expr.right);
+    case "ite":
+      return (
+        mentionsResult(expr.cond) ||
+        mentionsResult(expr.then) ||
+        mentionsResult(expr.else)
+      );
+    case "call":
+      return expr.args.some(mentionsResult);
+    default:
+      return false;
+  }
+}
+
 interface Scope {
   vars: Map<string, Ty>;
   allowResult: boolean;
@@ -97,6 +122,13 @@ export function typecheckProgram(program: Program): TypecheckResult {
             infer(expr.arg, scope, "Bool", part);
             return check("Bool");
           }
+          if (expr.op === "floor" || expr.op === "ceil") {
+            // Real → Real: rounds to an integer value but stays in Real so it
+            // composes with Real arithmetic without any Int/Real coercion.
+            infer(expr.arg, scope, "Real", part);
+            return check("Real");
+          }
+          // neg, abs: numeric → same numeric type.
           const ty = inferNumericPair(
             expr.arg,
             undefined,
@@ -108,10 +140,20 @@ export function typecheckProgram(program: Program): TypecheckResult {
         }
         case "binop": {
           switch (expr.op) {
+            case "/": {
+              // Division requires Real operands and yields Real. JS `/` is
+              // float64 division (3/2 === 1.5), so an Int-typed quotient would
+              // be unsound — the proof over exact rationals would not match the
+              // emitted code. Force Real; steer integer work to explicit ops.
+              infer(expr.left, scope, "Real", part);
+              infer(expr.right, scope, "Real", part);
+              return check("Real");
+            }
             case "+":
             case "-":
             case "*":
-            case "/": {
+            case "min":
+            case "max": {
               const ty = inferNumericPair(
                 expr.left,
                 expr.right,
@@ -223,12 +265,25 @@ export function typecheckProgram(program: Program): TypecheckResult {
       allowResult: true,
     };
 
-    fn.requires.forEach((c, i) =>
-      infer(c.expr, paramScope, "Bool", `requires[${i}]`),
-    );
-    fn.ensures.forEach((c, i) =>
-      infer(c.expr, ensuresScope, "Bool", `ensures[${i}]`),
-    );
+    fn.requires.forEach((c, i) => {
+      infer(c.expr, paramScope, "Bool", `requires[${i}]`);
+      if (mentionsResult(c.expr)) {
+        errors.push(
+          `${where(`requires[${i}]`)}: a requires clause may not reference "${RESULT_NAME}"`,
+        );
+      }
+    });
+    fn.ensures.forEach((c, i) => {
+      infer(c.expr, ensuresScope, "Bool", `ensures[${i}]`);
+      // A postcondition that never mentions `result` says nothing about the
+      // output — it is a tautology or a restated precondition, exactly the
+      // gaming vector traceability is meant to forbid. Reject it up front.
+      if (!mentionsResult(c.expr)) {
+        errors.push(
+          `${where(`ensures[${i}]`)}: an ensures clause (axiom ${c.axiomId}) must reference "${RESULT_NAME}"; a postcondition that ignores the return value proves nothing about the implementation`,
+        );
+      }
+    });
     infer(fn.body, paramScope, fn.returnType, "body");
   }
 

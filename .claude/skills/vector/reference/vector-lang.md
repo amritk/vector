@@ -41,23 +41,39 @@ clauses, or refuted with a concrete counterexample.
 **The language (JSON AST):**
 - Types: `Real` (exact rationals), `Int`, `Bool`. Nothing else.
 - Expr nodes: `num` (decimal **string** like `"0.91"` — never scientific
-  notation, never a JSON number), `bool`, `var`, `unop` (`not`/`neg`),
-  `binop` (`+ - * / < <= > >= == != and or implies`), `ite`, `call`.
+  notation, never a JSON number), `bool`, `var`, `unop`
+  (`not`/`neg`/`abs`/`floor`/`ceil`), `binop`
+  (`+ - * /`, `min`, `max`, `< <= > >= == != and or implies`), `ite`, `call`.
+  - `abs`/`neg` preserve the numeric type; `floor`/`ceil` take a `Real` and
+    return a `Real` (integer-valued). Round to cents with
+    `floor(x*100 + 0.5) / 100`. Clamp with `min(max(x, lo), hi)`.
 - A function `body` is ONE pure expression whose type equals `returnType`.
   `result` may appear ONLY in `ensures` clauses, where it denotes the return.
 - **Layering:** functions are ordered lowest layer first and may only `call`
-  functions in strictly lower layers of the same program.
-- **Division:** the verifier proves the denominator is nonzero on every
-  reachable path. Guard every `/` with a `requires` (denominator `!= 0`) or an
-  `ite`.
+  functions in strictly lower layers of the same program. A callee's `requires`
+  is **proven** to hold for your actual arguments — don't call into a lower
+  layer outside its precondition.
+- **Division:** `/` needs **`Real`** operands and yields `Real` (JS `/` is
+  float64 division, so `Int/Int` is rejected — use `floor`/`ceil` for discrete
+  results). The verifier proves the denominator is nonzero on every reachable
+  path; guard every `/` with a `requires` (denominator `!= 0`) or an `ite`.
 
 **The contract:**
 - `requires` = preconditions. A spec axiom "throws if X" becomes `requires NOT X`.
+  `requires` may NOT mention `result`.
 - `ensures` = postconditions over params and `result`, proven by the solver.
-- Every clause carries the `axiomId` of the spec-plan axiom it formalizes, and
-  **every axiom in the spec plan must be enforced by at least one clause** — the
-  engine's traceability gate rejects the program otherwise. Do not add clauses
-  for axioms that don't exist; do not weaken an axiom's meaning.
+  Every `ensures` **must reference `result`** and must actually constrain it —
+  a tautology like `result == result` or a restated precondition is rejected as
+  *trivial*. Prefer inequalities/tolerances over exact `==` on a `Real` result
+  (float64 rounding makes exact real-number equalities fail the conformance
+  check — e.g. `result == x + 0.3` for `(x+0.1)+0.2`).
+- Every clause carries the `axiomId` of the spec-plan axiom it formalizes,
+  matching its **polarity**: a `pre` axiom → a `requires` clause, a `post`
+  axiom → an `ensures` clause. **Every axiom must be enforced**, and the program
+  must implement **exactly** the spec's units (same names, layers, signatures).
+- Preconditions must be **satisfiable** — contradictory `requires` make the
+  proof vacuous and are rejected. Never tighten `requires` just to force a proof
+  through.
 
 **Solver-friendliness:**
 - Prefer linear arithmetic. Nonlinear terms (variable × variable) can make the
@@ -68,11 +84,25 @@ clauses, or refuted with a concrete counterexample.
 
 `vector --verify … --json` returns `status` plus, when not PROVEN, a `feedback`
 string and a structured `items[]` array. Each item names the `function`, the
-`axiomId`, the `property`, the `issue`
-(`counterexample` | `unknown` | `division-hazard`), a concrete `counterexample`,
-and a `hint`. Repair the program **minimally** — keep every clause that already
-proved, change only what the feedback refutes — then re-verify. Never present
-code from any run whose status was not `PROVEN`.
+`axiomId`, the `property`, the `issue`, an optional `counterexample`, and a
+`hint`. The `issue` is one of:
+
+- `counterexample` — the postcondition is false for the input shown; fix the
+  body or tighten a `requires`.
+- `unknown` — solver undecided; restate in linear arithmetic.
+- `division-hazard` — denominator may be zero; add a `requires` or `ite` guard.
+- `precondition-hazard` — a call violates the callee's `requires` for the args
+  shown; strengthen this function's `requires` or guard the call with an `ite`.
+- `vacuous` — the `requires` are contradictory; **remove** the bad precondition,
+  do NOT add more.
+- `trivial` — the `ensures` holds regardless of the body; restate it as a real
+  constraint on `result`.
+- `conformance` — proven over reals but false in float64 at the input shown;
+  avoid exact `==` on `Real`, use an inequality/tolerance.
+
+Repair the program **minimally** — keep every clause that already proved, change
+only what the feedback refutes — then re-verify. Never present code from any run
+whose status was not `PROVEN`.
 
 ## Worked example
 
