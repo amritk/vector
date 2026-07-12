@@ -90,4 +90,50 @@ describe("emitTypeScript", () => {
     expect(emitted).toContain("return (x < 0 ? 0 : x);");
     expect(emitted).toContain("ensures  AX1: x < 0 ⇒ result == 0");
   });
+
+  test("negation of a negative literal renders as `- -3`, never `--3`", () => {
+    const negProg = parseProgram({
+      programName: "neg_lit",
+      functions: [
+        {
+          name: "negLit",
+          layer: 1,
+          purpose: "Return three via double negation.",
+          params: [{ name: "x", type: "Real" }],
+          returnType: "Real",
+          requires: [],
+          ensures: [
+            {
+              axiomId: "AX1",
+              expr: {
+                kind: "binop",
+                op: "==",
+                left: { kind: "var", name: "result" },
+                right: { kind: "num", value: "3" },
+              },
+            },
+          ],
+          body: { kind: "unop", op: "neg", arg: { kind: "num", value: "-3" } },
+        },
+      ],
+    });
+    const emitted = emitTypeScript(negProg);
+    expect(emitted).toContain("return - -3;");
+    expect(emitted).not.toContain("--3");
+    // And it actually runs to the proven value.
+    const runnable = emitted
+      .replace(/\/\*\*[\s\S]*?\*\//g, "")
+      .replace(/^\/\/.*$/gm, "")
+      .replace(/export function/g, "function")
+      .replace(/: number/g, "");
+    const negLit = new Function(`${runnable}; return negLit;`)() as (
+      x: number,
+    ) => number;
+    expect(negLit(0)).toBe(3);
+  });
+
+  test("emits domain guards for finite/integer parameters", () => {
+    expect(source).toContain("Number.isFinite(amount)");
+    expect(source).toContain("domain violated");
+  });
 });

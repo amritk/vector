@@ -346,6 +346,50 @@ describe("soundness gate — proven means proven", () => {
     }
   });
 
+  test(
+    "blocks a postcondition that overflows to Infinity in float64",
+    async () => {
+      // x + x - x - x == 0 over the reals, but at x = 1e308 the intermediate
+      // x + x overflows to Infinity, so the emitted code returns Infinity != 0.
+      const spec: SpecPlan = {
+        programName: "zero",
+        axioms: [{ id: "AX", kind: "post", statement: "result is 0" }],
+        units: [
+          {
+            name: "zero",
+            layer: 1,
+            purpose: "always zero",
+            params: [{ name: "x", type: "Real" }],
+            returnType: "Real",
+            relevantAxiomIds: ["AX"],
+          },
+        ],
+      };
+      const body = bin("-", bin("-", bin("+", v("x"), v("x")), v("x")), v("x"));
+      const prog: Program = {
+        programName: "zero",
+        functions: [
+          {
+            name: "zero",
+            layer: 1,
+            purpose: "always zero",
+            params: [{ name: "x", type: "Real" }],
+            returnType: "Real",
+            requires: [],
+            ensures: [{ axiomId: "AX", expr: eq(v("result"), num("0")) }],
+            body,
+          },
+        ],
+      };
+      const outcome = await verifySpecAndProgram(spec, prog);
+      expect(outcome.status).toBe("REFUTED");
+      if (outcome.status === "REFUTED") {
+        expect(outcome.items.some((i) => i.issue === "conformance")).toBe(true);
+      }
+    },
+    SOLVER_TIMEOUT,
+  );
+
   test("rejects a program that does not match the spec decomposition", async () => {
     const spec: SpecPlan = {
       programName: "mismatch",

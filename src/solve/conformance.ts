@@ -112,12 +112,31 @@ function rng(seed: number): () => number {
   };
 }
 
+// Boundary values must span the whole float64 dynamic range, not just small
+// magnitudes — a proof over the (unbounded) reals can be broken by float64
+// OVERFLOW (x near 1e308 where x+x = Infinity) and by precision loss above
+// 2^53, both of which live far outside a ±1000 window. The extremes here are
+// chosen so that e.g. `x + x` overflows and `x + 1 == x` holds.
 const REAL_POOL = [
   0, 1, -1, 2, -2, 0.5, -0.5, 0.1, 0.2, 0.3, 0.7, 3, -3, 10, -10, 100, -100,
-  0.25, 1.5, 0.01,
+  0.25, 1.5, 0.01, 1e6, -1e6, 1e15, 9007199254740992, -9007199254740992, 1e300,
+  -1e300, 1e308, -1e308, 5e-324, 1e-300, 1.7976931348623157e308,
 ];
-const INT_POOL = [0, 1, -1, 2, -2, 3, -3, 5, -5, 7, 10, -10, 100, 42];
+const INT_POOL = [
+  0, 1, -1, 2, -2, 3, -3, 5, -5, 7, 10, -10, 100, 42, 9007199254740992,
+  -9007199254740992, 1e15,
+];
 const MAX_SAMPLES = 2000;
+
+// A magnitude spanning ~10^-320 … 10^308 with a random sign — draws the
+// exponent uniformly so every order of magnitude (incl. the overflow edge) is
+// reachable, unlike a linear draw that concentrates near zero.
+function randomMagnitude(rand: () => number): number {
+  const exp = Math.round((rand() * 2 - 1) * 320);
+  const mantissa = 1 + rand() * 9;
+  const sign = rand() < 0.5 ? -1 : 1;
+  return sign * mantissa * 10 ** exp;
+}
 
 function sampleValues(
   fn: FunctionUnit,
@@ -152,13 +171,13 @@ function sampleValues(
     }
   }
 
-  // A handful of purely random reals to escape the fixed pool.
-  for (let i = 0; i < 200; i++) {
+  // Random draws across the full float64 magnitude range to escape the pool.
+  for (let i = 0; i < 400; i++) {
     const env = new Map<string, Value>();
     for (const p of fn.params) {
       if (p.type === "Bool") env.set(p.name, rand() < 0.5);
       else {
-        const v = (rand() - 0.5) * 2000;
+        const v = randomMagnitude(rand);
         env.set(p.name, p.type === "Int" ? Math.round(v) : v);
       }
     }

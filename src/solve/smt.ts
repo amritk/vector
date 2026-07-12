@@ -207,6 +207,13 @@ export function emitVerificationScript(
     const requireTerms = fn.requires.map((c) => emit(c.expr, scope, []));
     for (const term of requireTerms) lines.push(`(assert ${term})`);
 
+    // Only the body and requires are actually EVALUATED at runtime (requires
+    // become guards, the body is the return). Ensures clauses are proof-only, so
+    // a division / callee-call inside one is not a runtime hazard — freeze the
+    // hazard sets here and discard anything the ensures emits below add.
+    const realDivCount = divConds.length;
+    const realPreCount = preConds.length;
+
     const query = (
       q: Omit<SmtQuery, "params" | "resultSmt">,
       asserts: string[],
@@ -239,6 +246,9 @@ export function emitVerificationScript(
 
     for (const clause of fn.ensures) {
       const clauseTerm = emit(clause.expr, ensuresScope, []);
+      // Drop any div/call hazards this proof-only clause emitted (see above).
+      divConds.length = realDivCount;
+      preConds.length = realPreCount;
       const pretty = prettyExpr(clause.expr, "math");
       // Prove the postcondition: refute its negation under the body. unsat ⇒ ∀.
       query(

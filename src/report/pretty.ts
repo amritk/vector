@@ -91,11 +91,11 @@ function render(expr: Expr, parentPrec: number, style: PrettyStyle): string {
       }
       const token = expr.op === "not" ? (style === "ts" ? "!" : "¬") : "-";
       const prec = expr.op === "not" ? PREC_NOT : PREC_NEG;
-      return wrap(
-        `${token}${render(expr.arg, prec + 1, style)}`,
-        prec,
-        parentPrec,
-      );
+      const child = render(expr.arg, prec + 1, style);
+      // Separate a leading "-" so `neg(-3)` is `- -3` (valid), not `--3`
+      // (parsed as pre-decrement — invalid TS and misleading math).
+      const sep = child.startsWith("-") ? " " : "";
+      return wrap(`${token}${sep}${child}`, prec, parentPrec);
     }
     case "binop": {
       if (expr.op === "min" || expr.op === "max") {
