@@ -88,12 +88,15 @@ every postcondition.**
 
 ```bash
 bun install
+bun run fetch-z3    # puts a native z3 into .z3/ (see below)
 ```
 
 - [**Bun**](https://bun.sh) — runs the `vector` CLI and the test suite.
-- **Node ≥ 22.18** on `PATH` — runs the solver subprocess (see
-  [Architecture notes](#architecture-notes)). Node runs the TypeScript worker
-  natively via type stripping.
+- **A native `z3`** — the solver. `bun run fetch-z3` fetches a version-matched
+  one into `.z3/` (via pip; needs Python). Alternatively set `$VECTOR_Z3` to a
+  `z3` binary or put one on `PATH`. The compiled binary bundles its own, so it
+  needs none of this (see [Architecture notes](#architecture-notes)). No Node
+  required anywhere.
 - **`ANTHROPIC_API_KEY`** — only for *prompt mode*. Put it in `.env` (see
   `.env.example`) or the environment. The verify/fixture paths and the Claude
   Code skill need **no** key.
@@ -119,7 +122,7 @@ Phases printed as it runs:
 [1/5] Spec extraction ...... 5 axiom(s): AX1 (pre), AX2 (post), ...
 [2/5] Decomposition ........ 2 layer(s): applyRate → usdToEur
 [3/5] Generative logic ..... attempt 1/3
-[4/5] Deterministic solver . Z3 4.16.0 (wasm) · 3 VCs · 3 unsat · 0 sat · 0 unknown · 170 ms
+[4/5] Deterministic solver . Z3 4.16.0 (native) · 3 VCs · 3 unsat · 0 sat · 0 unknown · 170 ms
 [5/5] Report ............... PROVEN
 ```
 
@@ -178,8 +181,10 @@ project — compile it to a single executable:
 bun run build      # → dist/vector
 ```
 
-`dist/vector` bundles the CLI, the engine, and the whole Z3 solver runtime
-(z3-solver + its 33 MB wasm) into one file. Drop it anywhere and run it:
+`dist/vector` bundles the CLI, the engine, and a native `z3` solver into one
+file. It needs **nothing on `PATH`** — no Node, no separate z3 install, no `bun
+install`, no repo checkout, no `ANTHROPIC_API_KEY` for the verify/fixture paths.
+Drop it anywhere and run it:
 
 ```bash
 ./dist/vector --verify spec.json program.json --json
@@ -187,19 +192,13 @@ bun run build      # → dist/vector
 ./dist/vector "Build a USD to EUR converter that throws if the amount is negative"
 ```
 
-**One runtime requirement: `node` on `PATH`.** The solver runs in a Node
-subprocess because z3-solver's pthread wasm build aborts under Bun (see
-[Architecture notes](#architecture-notes)); the binary can't change that, so it
-carries the Node solver runtime *inside* itself and, on first solve, extracts it
-once to a content-addressed cache under the system temp dir (reused on
-subsequent runs). No `bun install`, no repo checkout, no `ANTHROPIC_API_KEY`
-needed for the verify/fixture paths.
+The build needs a native z3 in `.z3/` first (`bun run fetch-z3`).
 
-How it's built (`scripts/build-binary.ts`): the solver worker is bundled for
-Node with z3-solver kept external, z3-solver's dependency closure is copied
-next to it, that tree is tarred, and `bun build --compile` embeds the tarball.
-Keeping z3-solver unbundled lets its Emscripten glue resolve its wasm by
-`__dirname` wherever the tree is extracted.
+How it's built (`scripts/build-binary.ts`): because `bun build --compile`
+already emits a platform-specific executable, we embed a matching native z3 (the
+`z3` binary + its shared library) as a tarball. On first solve the binary
+extracts it once to a content-addressed cache under the system temp dir (reused
+on subsequent runs) and runs z3 from there.
 
 ---
 
@@ -399,7 +398,7 @@ what's *proven* vs. *enforced at runtime*.
 ║                 VECTOR — PROOF REPORT               ║
 ╠════════════════════════════════════════════════════════════════════╣
 ║ Prompt:  "verify: test/fixtures/currency.json"                    ║
-║ Attempt: 1/1      Solver: Z3 4.16.0 (wasm)      Status: PROVEN     ║
+║ Attempt: 1/1      Solver: Z3 4.16.0 (native)      Status: PROVEN     ║
 ╠════════════════════════════════════════════════════════════════════╣
 ║ LAYER 1 · applyRate(amount: Real, rate: Real): Real                ║
 ║   { rate > 0 }  amount * rate                                      ║
@@ -466,15 +465,16 @@ first), and is what feeds both the pipeline's and the skill's repair loops.
 schemas/            JSON Schemas — source of truth for types + LLM output
 scripts/
   build-binary.ts   compiles the standalone `dist/vector` executable
+  fetch-z3.ts       fetches a native z3 into .z3/ (source + build both use it)
 src/
   cli.ts            entrypoint (the `vector` bin) — prompt / verify / fixture modes
-  bin.ts            compile-only entry: embeds the solver runtime, then runs cli.ts
+  bin.ts            compile-only entry: embeds the native z3, then runs cli.ts
   pipeline.ts       prompt mode: SPEC → GENERATE → VALIDATE → VERIFY → (retry) → REPORT
   verify.ts         deterministic (SpecPlan, Program) → proof veto + structured
                     feedback; the engine core the Claude Code skill calls
   lang/             AST types (generated), shape validator, typechecker
   agents/           Architect + Generator LLM phases (prompt mode)
-  solve/            vector-lang → Z3 terms, verification, Node worker + runner
+  solve/            vector-lang → SMT-LIB2 (smt.ts) → native z3 → report (runner.ts)
   emit/             AST → runnable TypeScript
   report/           pretty-printer + Dijkstra Dashboard
   generated/        mjst output (checked in)
@@ -489,12 +489,15 @@ test/               bun test suites + fixtures
 
 ## Architecture notes
 
-**Why a Node subprocess.** `z3-solver` is Z3 compiled to WASM with Emscripten
-pthreads; its worker pool aborts under Bun. So the solver stage runs in a Node
-subprocess (`src/solve/node-worker.ts`) that talks JSON over stdio, and
-`src/solve/runner.ts` is the *only* file that knows this. Swapping in a different
-verifier backend (a Dafny/Verus CLI, or in-process Z3 once Bun supports it)
-would touch only `runner.ts`.
+**Why the native z3 CLI.** The solver stage emits an SMT-LIB2 script
+(`src/solve/smt.ts`) and drives the native `z3` executable over stdin
+(`src/solve/runner.ts`), parsing its textual verdicts back into a
+`VerificationReport`. Those two files are the *only* ones coupled to the solver;
+swapping in a different backend (a Dafny/Verus CLI) touches nothing else. z3 is
+located in order: an embedded copy extracted from the compiled binary,
+`$VECTOR_Z3`, the repo-local `.z3/`, or `z3` on `PATH`. (An earlier design ran
+the `z3-solver` wasm build in a Node subprocess to dodge a Bun pthread abort;
+the native CLI removes both the wasm and the Node dependency.)
 
 **Where the veto lives.** `src/verify.ts` is the deterministic core shared by
 both entry points: shape → typecheck → `checkAxiomTraceability` → Z3, returning
@@ -512,12 +515,14 @@ bun run typecheck        # tsc --noEmit
 bun run lint             # biome
 bun run format           # biome --write
 bun run generate:schemas # regenerate parsers after editing schemas/
+bun run fetch-z3         # fetch a native z3 into .z3/ (needed by the solver)
 bun run build            # compile the standalone dist/vector binary
 ```
 
-The test suites cover the shape validator, typechecker, emitter, the solver, the
+The solver-backed suites need a native z3 (`bun run fetch-z3`, or `$VECTOR_Z3` /
+`PATH`). They cover the shape validator, typechecker, emitter, the solver, the
 `verify.ts` gate (PROVEN / REFUTED / INVALID paths), and the full prompt-mode
-retry loop with the LLM agents mocked and the real solver subprocess.
+retry loop with the LLM agents mocked and the real z3 subprocess.
 
 ---
 

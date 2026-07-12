@@ -11,6 +11,7 @@
     "vector": "bun src/cli.ts",
     "dev": "bun src/cli.ts",
     "build": "bun scripts/build-binary.ts",
+    "fetch-z3": "bun scripts/fetch-z3.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "generate:schemas": "mjst --schema-dir schemas --out-dir src/generated --strict",
@@ -19,8 +20,7 @@
   },
   "dependencies": {
     "@amritk/helpers": "^0.12.0",
-    "@anthropic-ai/sdk": "^0.98.0",
-    "z3-solver": "4.16.0"
+    "@anthropic-ai/sdk": "^0.98.0"
   },
   "devDependencies": {
     "@amritk/mjst": "^0.9.0",
