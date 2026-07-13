@@ -1,24 +1,31 @@
 #!/usr/bin/env bun
 import { readFileSync } from "node:fs";
+import { diffPrograms } from "./diff.ts";
 import { emitTypeScript } from "./emit/typescript.ts";
 import { parseProgram } from "./generated/program/index.ts";
 import { validateProgramShape } from "./lang/shape.ts";
+import type { StyleWarning } from "./lang/style.ts";
 import { typecheckProgram } from "./lang/validate.ts";
 import { renderDashboard, verdictStatus } from "./report/dashboard.ts";
 import { verifyProgramViaSolver } from "./solve/runner.ts";
 import { verifySpecAndProgram } from "./verify.ts";
 
-// vector CLI. Three modes:
+// vector CLI. Four modes:
 //   vector "Build a USD to EUR converter..."            (full LLM pipeline)
 //   vector --fixture test/fixtures/currency.json        (solver-only, no API key)
 //   vector --verify spec.json program.json --json       (verify LLM-emitted JSON;
 //                                                      the Claude Code skill path)
+//   vector --diff old-program.json new-program.json     (prove a regeneration
+//                                                      behavior-preserving, or
+//                                                      show the concrete deltas)
 
 interface CliArgs {
   prompt?: string;
   fixture?: string;
   spec?: string;
   program?: string;
+  diffOld?: string;
+  diffNew?: string;
   maxRetries: number;
   json: boolean;
   emit?: string;
@@ -36,6 +43,11 @@ function parseArgs(argv: string[]): CliArgs {
         // Two positional paths follow: the spec plan and the program.
         args.spec = argv[++i];
         args.program = argv[++i];
+        break;
+      case "--diff":
+        // Two positional paths follow: the old and the new program.
+        args.diffOld = argv[++i];
+        args.diffNew = argv[++i];
         break;
       case "--spec":
         args.spec = argv[++i];
@@ -155,6 +167,7 @@ async function runVerify(args: CliArgs): Promise<number> {
   switch (outcome.status) {
     case "PROVEN": {
       console.log(outcome.dashboard);
+      printStyleWarnings(outcome.styleWarnings);
       console.log(
         "\n── EMITTED TYPESCRIPT ─────────────────────────────────────────────\n",
       );
@@ -169,6 +182,7 @@ async function runVerify(args: CliArgs): Promise<number> {
     case "REFUTED":
     case "UNKNOWN": {
       console.log(outcome.dashboard);
+      printStyleWarnings(outcome.styleWarnings);
       console.log(
         "\n── FEEDBACK (repair and re-verify) ────────────────────\n",
       );
@@ -184,6 +198,50 @@ async function runVerify(args: CliArgs): Promise<number> {
       console.error(`Solver error: ${outcome.message}`);
       return 1;
     }
+  }
+}
+
+function printStyleWarnings(warnings: StyleWarning[]): void {
+  if (warnings.length === 0) return;
+  console.log(
+    "\n── STYLE (advisory — does not affect the proof) ───────────────────\n",
+  );
+  for (const w of warnings) {
+    console.log(`  ⚠ ${w.function} ${w.axiomId}: ${w.property}`);
+    console.log(`    ${w.hint}\n`);
+  }
+}
+
+// Prove a regenerated program behavior-preserving against the previous
+// generation, or print the concrete input/output deltas where it differs.
+// Exit codes: 0 = EQUIVALENT, 1 = DIFFERENT or UNDECIDED, 2 = invalid/error.
+async function runDiff(args: CliArgs): Promise<number> {
+  if (!args.diffOld || !args.diffNew) {
+    throw new Error("runDiff requires an old and a new program path");
+  }
+  const rawOld = JSON.parse(readFileSync(args.diffOld, "utf8"));
+  const rawNew = JSON.parse(readFileSync(args.diffNew, "utf8"));
+  const outcome = await diffPrograms(rawOld, rawNew);
+
+  if (args.json) {
+    console.log(JSON.stringify(outcome, null, 2));
+  } else if (outcome.status === "INVALID") {
+    console.error("Validation failed:");
+    for (const err of outcome.errors) console.error(`  ✘ ${err}`);
+  } else if (outcome.status === "ERROR") {
+    console.error(`Solver error: ${outcome.message}`);
+  } else {
+    console.log(outcome.summary);
+  }
+
+  switch (outcome.status) {
+    case "EQUIVALENT":
+      return 0;
+    case "DIFFERENT":
+    case "UNDECIDED":
+      return 1;
+    default:
+      return 2;
   }
 }
 
@@ -228,17 +286,21 @@ async function runPrompt(args: CliArgs): Promise<number> {
 
 const args = parseArgs(process.argv.slice(2));
 const verifyMode = Boolean(args.spec || args.program);
-if (!args.fixture && !args.prompt && !verifyMode) {
+const diffMode = Boolean(args.diffOld || args.diffNew);
+if (!args.fixture && !args.prompt && !verifyMode && !diffMode) {
   console.error(
     'Usage: vector "<prompt>" [--max-retries N] [--json] [--emit <file>]\n' +
       "       vector --fixture <program.json> [--json] [--emit <file>]\n" +
-      "       vector --verify <spec.json> <program.json> [--json] [--emit <file>]",
+      "       vector --verify <spec.json> <program.json> [--json] [--emit <file>]\n" +
+      "       vector --diff <old-program.json> <new-program.json> [--json]",
   );
   process.exit(2);
 }
 
 let exitCode: number;
-if (verifyMode) {
+if (diffMode) {
+  exitCode = await runDiff(args);
+} else if (verifyMode) {
   exitCode = await runVerify(args);
 } else if (args.fixture) {
   exitCode = await runFixture(args);

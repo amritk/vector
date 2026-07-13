@@ -15,7 +15,11 @@ import type { Program } from "../lang/ast.ts";
 import { validateProgramShape } from "../lang/shape.ts";
 import { typecheckProgram } from "../lang/validate.ts";
 import { checkConformance } from "./conformance.ts";
-import { emitVerificationScript, parseZ3Output } from "./smt.ts";
+import {
+  type QueryAnswer,
+  emitVerificationScript,
+  parseZ3Output,
+} from "./smt.ts";
 import type { SolveResult } from "./types.ts";
 import { assembleReport } from "./verify.ts";
 
@@ -135,16 +139,19 @@ function solverLabel(loc: Z3Location): string {
   return cachedLabel;
 }
 
-export async function verifyProgramViaSolver(
-  program: Program,
-): Promise<SolveResult> {
-  // Same defensive gate the former Node worker ran, so a malformed program is
-  // reported as invalid rather than crashing the solver.
-  const shapeErrors = validateProgramShape(program);
-  if (shapeErrors.length > 0) return { kind: "invalid", errors: shapeErrors };
-  const { errors, numTypes } = typecheckProgram(program);
-  if (errors.length > 0) return { kind: "invalid", errors };
+export type Z3RunResult =
+  | { kind: "answers"; answers: QueryAnswer[]; label: string; millis: number }
+  | { kind: "error"; message: string };
 
+/**
+ * Run one SMT-LIB2 script (with `@@Q<i>` echo markers, one per query) through
+ * z3 and return the per-query answers. This is the whole z3 subprocess story —
+ * the verifier and the equivalence differ both feed it their scripts.
+ */
+export async function runZ3Script(
+  script: string,
+  queryCount: number,
+): Promise<Z3RunResult> {
   let loc: Z3Location;
   try {
     loc = await resolveZ3();
@@ -156,10 +163,9 @@ export async function verifyProgramViaSolver(
   }
 
   const label = solverLabel(loc);
-  const { script, queries } = emitVerificationScript(program, numTypes);
-  const timeoutMs = solverTimeout(queries.length);
+  const timeoutMs = solverTimeout(queryCount);
 
-  return new Promise<SolveResult>((resolve) => {
+  return new Promise<Z3RunResult>((resolve) => {
     const started = Date.now();
     const child = spawn(loc.bin, ["-in"], {
       stdio: ["pipe", "pipe", "pipe"],
@@ -169,7 +175,7 @@ export async function verifyProgramViaSolver(
     let stderr = "";
     let settled = false;
 
-    const finish = (result: SolveResult) => {
+    const finish = (result: Z3RunResult) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -199,35 +205,56 @@ export async function verifyProgramViaSolver(
     child.on("close", () => {
       // z3 exits 0 even on per-command errors, so trust the markers: no markers
       // at all means it never ran our checks (bad binary, load failure, …).
-      if (queries.length > 0 && !stdout.includes("@@Q")) {
+      if (queryCount > 0 && !stdout.includes("@@Q")) {
         finish({
           kind: "error",
           message: `z3 produced no verdicts${stderr ? `: ${stderr.slice(0, 500)}` : ""}`,
         });
         return;
       }
-      const answers = parseZ3Output(stdout, queries.length);
-      const report = assembleReport(
-        program,
-        queries,
-        answers,
+      finish({
+        kind: "answers",
+        answers: parseZ3Output(stdout, queryCount),
         label,
-        Date.now() - started,
-      );
-      // The float64 conformance gate only runs once the proof is otherwise
-      // clean — it validates the proof→runtime bridge, not the proof, and would
-      // just be noise on an already-refuted report.
-      if (report.ok) {
-        const conformanceIssues = checkConformance(program, report);
-        if (conformanceIssues.length > 0) {
-          report.conformanceIssues = conformanceIssues;
-          report.ok = false;
-        }
-      }
-      finish({ kind: "report", report });
+        millis: Date.now() - started,
+      });
     });
 
     child.stdin.write(script);
     child.stdin.end();
   });
+}
+
+export async function verifyProgramViaSolver(
+  program: Program,
+): Promise<SolveResult> {
+  // Same defensive gate the former Node worker ran, so a malformed program is
+  // reported as invalid rather than crashing the solver.
+  const shapeErrors = validateProgramShape(program);
+  if (shapeErrors.length > 0) return { kind: "invalid", errors: shapeErrors };
+  const { errors, numTypes } = typecheckProgram(program);
+  if (errors.length > 0) return { kind: "invalid", errors };
+
+  const { script, queries } = emitVerificationScript(program, numTypes);
+  const run = await runZ3Script(script, queries.length);
+  if (run.kind === "error") return { kind: "error", message: run.message };
+
+  const report = assembleReport(
+    program,
+    queries,
+    run.answers,
+    run.label,
+    run.millis,
+  );
+  // The float64 conformance gate only runs once the proof is otherwise
+  // clean — it validates the proof→runtime bridge, not the proof, and would
+  // just be noise on an already-refuted report.
+  if (report.ok) {
+    const conformanceIssues = checkConformance(program, report);
+    if (conformanceIssues.length > 0) {
+      report.conformanceIssues = conformanceIssues;
+      report.ok = false;
+    }
+  }
+  return { kind: "report", report };
 }

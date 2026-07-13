@@ -72,16 +72,130 @@ export interface QueryAnswer {
 /** How long (ms) z3 may spend on any single check before returning `unknown`. */
 const PER_CHECK_TIMEOUT_MS = 55_000;
 
+/** Options shared by every vector-emitted SMT script. */
+export const SMT_PREAMBLE = [
+  "(set-option :produce-models true)",
+  `(set-option :timeout ${PER_CHECK_TIMEOUT_MS})`,
+  "(set-logic ALL)",
+];
+
+export interface TermEmitterHooks {
+  /** A runtime `/` was emitted: its denominator term and the guarding path. */
+  onDivision?: (info: { path: string[]; denom: string; expr: Expr }) => void;
+  /**
+   * A call site was emitted: one entry per callee `requires` clause, with the
+   * callee's params substituted by the actual argument terms.
+   */
+  onCalleeRequires?: (info: {
+    path: string[];
+    callee: string;
+    smt: string;
+    pretty: string;
+  }) => void;
+}
+
+export type TermEmitter = (
+  expr: Expr,
+  scope: Map<string, string>,
+  path: string[],
+) => string;
+
+// The single AST → SMT term translation, shared by the verifier and the
+// equivalence differ so the two can never disagree on semantics. Calls are
+// inlined (layering guarantees termination); hooks let the verifier collect
+// division and call-site-precondition hazards without the differ paying for it.
+export function createTermEmitter(
+  byName: Map<string, FunctionUnit>,
+  numTypes: WeakMap<Expr, NumericTy>,
+  hooks: TermEmitterHooks = {},
+): TermEmitter {
+  const emit: TermEmitter = (expr, scope, path) => {
+    switch (expr.kind) {
+      case "num": {
+        const neg = expr.value.startsWith("-");
+        const abs = neg ? expr.value.slice(1) : expr.value;
+        // Keep Real literals in the Real sort even when integer-valued.
+        const lit =
+          numTypes.get(expr) === "Int"
+            ? abs
+            : abs.includes(".")
+              ? abs
+              : `${abs}.0`;
+        return neg ? `(- ${lit})` : lit;
+      }
+      case "bool":
+        return expr.value ? "true" : "false";
+      case "var": {
+        const s = scope.get(expr.name);
+        if (!s) throw new Error(`emit: unbound variable "${expr.name}"`);
+        return s;
+      }
+      case "unop": {
+        const a = emit(expr.arg, scope, path);
+        switch (expr.op) {
+          case "not":
+            return `(not ${a})`;
+          case "neg":
+            return `(- ${a})`;
+          // |a| — the sort-neutral zero (- a a) keeps this valid for Int and Real.
+          case "abs":
+            return `(ite (>= ${a} (- ${a} ${a})) ${a} (- ${a}))`;
+          // floor: to_int is SMT-LIB floor; back to Real so it composes.
+          case "floor":
+            return `(to_real (to_int ${a}))`;
+          // ceil(a) = -floor(-a).
+          default:
+            return `(to_real (- (to_int (- ${a}))))`;
+        }
+      }
+      case "binop": {
+        const l = emit(expr.left, scope, path);
+        const r = emit(expr.right, scope, path);
+        if (expr.op === "/") {
+          hooks.onDivision?.({ path: [...path], denom: r, expr });
+        }
+        if (expr.op === "min") return `(ite (<= ${l} ${r}) ${l} ${r})`;
+        if (expr.op === "max") return `(ite (>= ${l} ${r}) ${l} ${r})`;
+        return `(${BINOP_SMT[expr.op]} ${l} ${r})`;
+      }
+      case "ite": {
+        const c = emit(expr.cond, scope, path);
+        const t = emit(expr.then, scope, [...path, c]);
+        const e = emit(expr.else, scope, [...path, `(not ${c})`]);
+        return `(ite ${c} ${t} ${e})`;
+      }
+      case "call": {
+        const callee = byName.get(expr.fn);
+        if (!callee) throw new Error(`emit: unknown function "${expr.fn}"`);
+        const calleeScope = new Map<string, string>();
+        callee.params.forEach((p, i) => {
+          const arg = expr.args[i];
+          if (!arg) throw new Error(`emit: missing argument for "${p.name}"`);
+          calleeScope.set(p.name, emit(arg, scope, path));
+        });
+        // The callee's preconditions must hold for these actual arguments on
+        // this reachable path — inlining alone would silently discharge them.
+        for (const rc of callee.requires) {
+          hooks.onCalleeRequires?.({
+            path: [...path],
+            callee: callee.name,
+            smt: emit(rc.expr, calleeScope, path),
+            pretty: prettyExpr(rc.expr, "math"),
+          });
+        }
+        return emit(callee.body, calleeScope, path);
+      }
+    }
+  };
+  return emit;
+}
+
 export function emitVerificationScript(
   program: Program,
   numTypes: WeakMap<Expr, NumericTy>,
 ): SmtScript {
   const byName = new Map(program.functions.map((f) => [f.name, f]));
-  const lines: string[] = [
-    "(set-option :produce-models true)",
-    `(set-option :timeout ${PER_CHECK_TIMEOUT_MS})`,
-    "(set-logic ALL)",
-  ];
+  const lines: string[] = [...SMT_PREAMBLE];
   const queries: SmtQuery[] = [];
 
   program.functions.forEach((fn, idx) => {
@@ -95,88 +209,10 @@ export function emitVerificationScript(
       pretty: string;
     }[] = [];
 
-    const emit = (
-      expr: Expr,
-      scope: Map<string, string>,
-      path: string[],
-    ): string => {
-      switch (expr.kind) {
-        case "num": {
-          const neg = expr.value.startsWith("-");
-          const abs = neg ? expr.value.slice(1) : expr.value;
-          // Keep Real literals in the Real sort even when integer-valued.
-          const lit =
-            numTypes.get(expr) === "Int"
-              ? abs
-              : abs.includes(".")
-                ? abs
-                : `${abs}.0`;
-          return neg ? `(- ${lit})` : lit;
-        }
-        case "bool":
-          return expr.value ? "true" : "false";
-        case "var": {
-          const s = scope.get(expr.name);
-          if (!s) throw new Error(`emit: unbound variable "${expr.name}"`);
-          return s;
-        }
-        case "unop": {
-          const a = emit(expr.arg, scope, path);
-          switch (expr.op) {
-            case "not":
-              return `(not ${a})`;
-            case "neg":
-              return `(- ${a})`;
-            // |a| — the sort-neutral zero (- a a) keeps this valid for Int and Real.
-            case "abs":
-              return `(ite (>= ${a} (- ${a} ${a})) ${a} (- ${a}))`;
-            // floor: to_int is SMT-LIB floor; back to Real so it composes.
-            case "floor":
-              return `(to_real (to_int ${a}))`;
-            // ceil(a) = -floor(-a).
-            default:
-              return `(to_real (- (to_int (- ${a}))))`;
-          }
-        }
-        case "binop": {
-          const l = emit(expr.left, scope, path);
-          const r = emit(expr.right, scope, path);
-          if (expr.op === "/") {
-            divConds.push({ path: [...path], denom: r, expr });
-          }
-          if (expr.op === "min") return `(ite (<= ${l} ${r}) ${l} ${r})`;
-          if (expr.op === "max") return `(ite (>= ${l} ${r}) ${l} ${r})`;
-          return `(${BINOP_SMT[expr.op]} ${l} ${r})`;
-        }
-        case "ite": {
-          const c = emit(expr.cond, scope, path);
-          const t = emit(expr.then, scope, [...path, c]);
-          const e = emit(expr.else, scope, [...path, `(not ${c})`]);
-          return `(ite ${c} ${t} ${e})`;
-        }
-        case "call": {
-          const callee = byName.get(expr.fn);
-          if (!callee) throw new Error(`emit: unknown function "${expr.fn}"`);
-          const calleeScope = new Map<string, string>();
-          callee.params.forEach((p, i) => {
-            const arg = expr.args[i];
-            if (!arg) throw new Error(`emit: missing argument for "${p.name}"`);
-            calleeScope.set(p.name, emit(arg, scope, path));
-          });
-          // The callee's preconditions must hold for these actual arguments on
-          // this reachable path — inlining alone would silently discharge them.
-          for (const rc of callee.requires) {
-            preConds.push({
-              path: [...path],
-              callee: callee.name,
-              smt: emit(rc.expr, calleeScope, path),
-              pretty: prettyExpr(rc.expr, "math"),
-            });
-          }
-          return emit(callee.body, calleeScope, path);
-        }
-      }
-    };
+    const emit = createTermEmitter(byName, numTypes, {
+      onDivision: (d) => divConds.push(d),
+      onCalleeRequires: (p) => preConds.push(p),
+    });
 
     // Distinct declared names per function so one flat script has no clashes;
     // counterexamples map these back to the original param names.

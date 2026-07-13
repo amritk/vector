@@ -29,12 +29,14 @@ the program is repaired, up to a retry bound. **Unproven code is never emitted.*
   - [Prompt mode (full pipeline)](#prompt-mode-full-pipeline)
   - [Verify mode (deterministic, no API key)](#verify-mode-deterministic-no-api-key)
   - [Fixture mode](#fixture-mode)
+  - [Diff mode (the regeneration gate)](#diff-mode-the-regeneration-gate)
   - [Flags](#flags)
 - [Standalone binary](#standalone-binary)
 - [The Claude Code skill](#the-claude-code-skill)
 - [vector-lang reference](#vector-lang-reference)
 - [The two artifacts](#the-two-artifacts)
 - [Verify output (the JSON contract)](#verify-output-the-json-contract)
+- [Contract-driven development (code as build artifact)](#contract-driven-development-code-as-build-artifact)
 - [The Dijkstra Dashboard](#the-dijkstra-dashboard)
 - [Schema-driven types](#schema-driven-types)
 - [Project layout](#project-layout)
@@ -105,7 +107,7 @@ bun run fetch-z3    # puts a native z3 into .z3/ (see below)
 
 ## CLI usage
 
-The `vector` bin has three modes.
+The `vector` bin has four modes.
 
 ### Prompt mode (full pipeline)
 
@@ -155,16 +157,56 @@ Handy for iterating on vector-lang by hand.
 bun run vector -- --fixture test/fixtures/currency.json
 ```
 
+### Diff mode (the regeneration gate)
+
+Prove that a **new generation** of a program preserves the old generation's
+observable behavior — or get the concrete input/output deltas where it
+doesn't. See [Contract-driven development](#contract-driven-development-code-as-build-artifact)
+for why this exists.
+
+```bash
+bun run vector --diff old-program.json new-program.json
+```
+
+```
+── VECTOR DIFF ─────────────────────────────────────────
+ old: usd_to_eur_converter   new: usd_to_eur_converter
+ Status: DIFFERENT
+
+ ✓ applyRate(amount: Real, rate: Real): Real — EQUIVALENT for all inputs
+ ✘ usdToEur(amount: Real): Real — BEHAVIOR DIFFERS
+     value:  at amount = 100 → old = 91, new = 92
+```
+
+Functions are matched by name; a pair is comparable when its positional param
+types and return type agree (param renames are noted, not flagged). Per pair,
+Z3 decides three questions, each **for all inputs**:
+
+- **value** — on the shared valid domain, can the two bodies ever disagree?
+- **domain narrowed** — is any input the old version accepted now rejected?
+- **domain widened** — is any input the old version rejected now accepted?
+
+`ensures` clauses are proof-only, so rewording a contract never registers as a
+behavioral difference (it is still listed textually for review). A **removed**
+function or a **changed signature** counts as a difference; an **added**
+function is informational.
+
+Status → exit code: `EQUIVALENT` → `0`, `DIFFERENT` / `UNDECIDED` → `1`,
+invalid input or solver failure → `2`. Both sides are assumed to individually
+pass `--verify` first (gate on that in CI); `--diff` re-runs only shape and
+type checks.
+
 ### Flags
 
 | Flag | Modes | Meaning |
 |---|---|---|
 | `--verify <spec> <program>` | verify | Verify a spec-plan + program pair. |
 | `--spec <file>` / `--program <file>` | verify | Explicit form of the two `--verify` paths. |
+| `--diff <old> <new>` | diff | Prove a regeneration behavior-preserving, or show the deltas. |
 | `--fixture <file>` | fixture | Verify a lone Program JSON. |
 | `--max-retries N` | prompt | Generator repair attempts (default `3`). |
 | `--json` | all | Emit machine-readable JSON instead of the dashboard. |
-| `--emit <file>` | all | Write the proven TypeScript to a file (only when PROVEN). |
+| `--emit <file>` | prompt/verify/fixture | Write the proven TypeScript to a file (only when PROVEN). |
 
 > Note: because `vector` is an npm script, `bun run vector --flag` passes `--flag`
 > straight through. The `--` in `bun run vector -- --fixture …` is optional but
@@ -412,6 +454,71 @@ don't loop on it.
 
 ---
 
+## Contract-driven development (code as build artifact)
+
+vector supports a workflow where the **SpecPlan is the source of truth and the
+generated code is ephemeral** — regenerated at will, never hand-reviewed. The
+principle: *humans review intent, machines review everything else.* Z3 proves
+*code ⊨ contract*; the one thing left for a human is *contract ⊨ intent*, so
+the review surface for a change is the SpecPlan diff plus the behavioral
+deltas below — never the code.
+
+Two pieces make this safe:
+
+### 1. Property-shaped axioms (keep the contract from becoming code)
+
+An axiom is legitimate if it could appear in the ticket that requested the
+feature or in a compliance doc: bounds (`result >= 0`), monotonicity, tier
+behavior, conservation ("the split parts sum to the whole"), error behavior
+("throws if negative"). An `ensures result == <formula>` clause is the
+algorithm restated as spec — reviewing it is reviewing code by another name.
+
+The verifier flags these as **advisory style warnings** (`styleWarnings` in
+the `--verify` JSON; a `STYLE` block after the CLI dashboard). They never
+block a proof: sometimes the formula *is* the requirement (a regulated fee, a
+published rate). But the default posture is: keep contracts partial and
+property-shaped, and let the diff gate carry the rest.
+
+### 2. The regeneration gate (let machines carry behavioral stability)
+
+Property-shaped contracts are deliberately partial, so two generations can
+both prove yet differ on inputs the contract doesn't pin down. Rather than
+fattening the contract, [`vector --diff`](#diff-mode-the-regeneration-gate)
+has Z3 decide whether the old and new generations can be told apart at all:
+
+- **EQUIVALENT** — provably identical behavior for all inputs. Zero review.
+  This is the common case for pure regenerations (model upgrades, refactors).
+- **DIFFERENT** — a concrete witness per delta: *"at `amount = 100`, old
+  returned `91`, new returns `92`"*. A human reviews that one behavioral fact
+  against the intended change — a ten-second decision, not a code review.
+
+### The workflow
+
+1. **SpecPlans live in git** and are reviewed like code — but at ticket
+   granularity, since axioms are property-shaped. Generated `.ts` is a build
+   artifact (commit it like a lockfile; nobody reads it).
+2. **A feature is a SpecPlan diff.** Add axioms/units, regenerate, and let the
+   traceability gate prove every axiom is enforced.
+3. **CI gates every change twice:**
+
+   ```bash
+   vector --verify spec.json program.json --json   # exit 0 ⇔ PROVEN
+   vector --diff prev-program.json program.json    # exit 0 ⇔ EQUIVALENT
+   ```
+
+   A `--diff` exit of `1` isn't a failure — it means the PR must explicitly
+   acknowledge the listed deltas (they should match the ticket).
+4. **Review surface per PR:** the SpecPlan diff + acknowledged behavior
+   deltas. That's all.
+
+What this does *not* cover: the glue code around the verified kernel (IO,
+routing, persistence) is ordinary code under ordinary review, and the
+call-site boundary — passing cents where the contract means dollars — is
+guarded only by naming and types. Push every decision that *can* be a pure
+numeric function into the kernel, and keep the glue thin.
+
+---
+
 ## The Dijkstra Dashboard
 
 The human-readable proof report: per-layer Hoare triples, one checkmark per
@@ -492,14 +599,17 @@ scripts/
   build-binary.ts   compiles the standalone `dist/vector` executable
   fetch-z3.ts       fetches a native z3 into .z3/ (source + build both use it)
 src/
-  cli.ts            entrypoint (the `vector` bin) — prompt / verify / fixture modes
+  cli.ts            entrypoint (the `vector` bin) — prompt / verify / fixture / diff modes
   bin.ts            compile-only entry: embeds the native z3, then runs cli.ts
   pipeline.ts       prompt mode: SPEC → GENERATE → VALIDATE → VERIFY → (retry) → REPORT
   verify.ts         deterministic (SpecPlan, Program) → proof veto + structured
                     feedback; the engine core the Claude Code skill calls
-  lang/             AST types (generated), shape validator, typechecker
+  diff.ts           the regeneration gate: old vs new program → EQUIVALENT or
+                    concrete behavioral deltas
+  lang/             AST types (generated), shape validator, typechecker, style lint
   agents/           Architect + Generator LLM phases (prompt mode)
-  solve/            vector-lang → SMT-LIB2 (smt.ts) → native z3 → report (runner.ts)
+  solve/            vector-lang → SMT-LIB2 (smt.ts) → native z3 → report (runner.ts);
+                    equivalence checking (equiv.ts)
   emit/             AST → runnable TypeScript
   report/           pretty-printer + Dijkstra Dashboard
   generated/        mjst output (checked in)
