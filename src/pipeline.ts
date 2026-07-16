@@ -75,14 +75,17 @@ export async function runPipeline(
       program = await generateProgram(specPlan, feedback);
     } catch (err) {
       if (err instanceof MalformedOutputError) {
-        // Malformed AST: cheap retry, no solver time burned.
+        // Malformed AST: cheap retry, no solver time burned. Always relay the
+        // parse errors — even on the first attempt, when there is no previous
+        // program to include, the generator must know what to avoid.
         failureReasons = [
           `generator produced a malformed program: ${err.message}`,
         ];
         onPhase("[3/5] Generative logic", "malformed program — retrying");
-        feedback = lastProgram
-          ? { previousProgram: lastProgram, message: failureReasons.join("\n") }
-          : undefined;
+        feedback = {
+          previousProgram: lastProgram,
+          message: failureReasons.join("\n"),
+        };
         continue;
       }
       throw err;

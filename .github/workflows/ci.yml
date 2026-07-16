@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Fetch native z3
+        run: bun run fetch-z3
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Test
+        run: bun test
+
+      - name: Generated code is in sync with schemas
+        run: |
+          bun run generate:schemas
+          git diff --exit-code src/generated/
+
+      - name: Compiled binary builds and verifies
+        run: |
+          bun run build
+          ./dist/vector --verify test/fixtures/currency-spec.json test/fixtures/currency.json --json > /dev/null

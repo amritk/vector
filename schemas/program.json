@@ -170,8 +170,8 @@
       "properties": {
         "axiomId": {
           "type": "string",
-          "minLength": 1,
-          "description": "The id of the spec-plan axiom this clause formalizes. Every axiom in the spec plan must be enforced by at least one clause."
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]*$",
+          "description": "The id of the spec-plan axiom this clause formalizes, e.g. \"AX1\" or \"AX-RATE\" (letters, digits, _ and - only — the id is embedded in emitted source). Every axiom in the spec plan must be enforced by at least one clause."
         },
         "expr": {
           "$ref": "#/$defs/expr",

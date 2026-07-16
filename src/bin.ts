@@ -12,4 +12,5 @@ import z3TarPath from "../dist/vector-z3.tar" with { type: "file" };
 
 (globalThis as Record<string, unknown>).__VECTOR_Z3_TAR__ = z3TarPath;
 
-await import("./cli.ts");
+const { main } = await import("./cli.ts");
+process.exit(await main(process.argv.slice(2)));

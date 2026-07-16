@@ -5,8 +5,8 @@ import { verifyProgramViaSolver } from "../src/solve/runner.ts";
 import currencyFixture from "./fixtures/currency.json";
 import unsatFixture from "./fixtures/unsat.json";
 
-// These tests exercise the real Z3 pipeline end-to-end through the Node
-// subprocess boundary — each case pays a ~1s WASM init, so keep them few
+// These tests exercise the real Z3 pipeline end-to-end through the native
+// z3 subprocess boundary — each case pays a solver spawn, so keep them few
 // and meaningful.
 
 const SOLVER_TIMEOUT = 30_000;

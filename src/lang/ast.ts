@@ -53,5 +53,10 @@ export type BinOp = (typeof BINOPS)[number];
 export const NUM_LITERAL_RE = /^-?\d+(\.\d+)?$/;
 export const IDENT_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
+// Axiom ids ("AX1", "AX-RATE") are embedded verbatim in emitted TypeScript
+// (doc comments and throw messages), so they must stay injection-safe.
+// Mirrors the `pattern` in schemas/*.json.
+export const AXIOM_ID_RE = /^[A-Za-z][A-Za-z0-9_-]*$/;
+
 // The name postconditions use to refer to a function's return value.
 export const RESULT_NAME = "result";

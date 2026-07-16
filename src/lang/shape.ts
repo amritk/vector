@@ -1,4 +1,5 @@
 import {
+  AXIOM_ID_RE,
   BINOPS,
   IDENT_RE,
   NUM_LITERAL_RE,
@@ -117,8 +118,13 @@ function checkClauses(
       errors.push(`${where}[${i}]: clause must be an object`);
       return;
     }
-    if (typeof clause.axiomId !== "string" || clause.axiomId.length === 0) {
-      errors.push(`${where}[${i}]: axiomId must be a non-empty string`);
+    if (
+      typeof clause.axiomId !== "string" ||
+      !AXIOM_ID_RE.test(clause.axiomId)
+    ) {
+      errors.push(
+        `${where}[${i}]: axiomId must match ${AXIOM_ID_RE} (it is embedded in emitted source), got ${JSON.stringify(clause.axiomId)}`,
+      );
     }
     checkExpr(clause.expr, `${where}[${i}].expr`, errors);
   });
@@ -194,8 +200,10 @@ export function validateSpecPlanShape(input: unknown): string[] {
         errors.push(`axioms[${i}]: must be an object`);
         return;
       }
-      if (typeof axiom.id !== "string" || axiom.id.length === 0) {
-        errors.push(`axioms[${i}]: id must be a non-empty string`);
+      if (typeof axiom.id !== "string" || !AXIOM_ID_RE.test(axiom.id)) {
+        errors.push(
+          `axioms[${i}]: id must match ${AXIOM_ID_RE} (ids are embedded in emitted source), got ${JSON.stringify(axiom.id)}`,
+        );
       } else if (seenIds.has(axiom.id)) {
         errors.push(`axioms[${i}]: duplicate axiom id "${axiom.id}"`);
       } else {

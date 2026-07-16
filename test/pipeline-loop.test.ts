@@ -92,7 +92,7 @@ describe("runPipeline retry loop", () => {
     expect(generatorCalls[0]).toBeUndefined();
     expect(generatorCalls[1]?.message).toContain("REFUTED");
     expect(generatorCalls[1]?.message).toContain("counterexample");
-    expect(generatorCalls[1]?.previousProgram.programName).toBe(
+    expect(generatorCalls[1]?.previousProgram?.programName).toBe(
       "usd_to_eur_converter",
     );
     expect(outcome.emittedCode).toContain("export function usdToEur");

@@ -136,4 +136,40 @@ describe("emitTypeScript", () => {
     expect(source).toContain("Number.isFinite(amount)");
     expect(source).toContain("domain violated");
   });
+
+  test("a purpose containing */ cannot terminate the doc comment", () => {
+    const evil = parseProgram({
+      programName: "inj",
+      functions: [
+        {
+          name: "f",
+          layer: 1,
+          purpose: "ends the comment */ const pwned = 1; /*",
+          params: [{ name: "x", type: "Real" }],
+          returnType: "Real",
+          requires: [],
+          ensures: [
+            {
+              axiomId: "AX1",
+              expr: {
+                kind: "binop",
+                op: "==",
+                left: { kind: "var", name: "result" },
+                right: { kind: "var", name: "x" },
+              },
+            },
+          ],
+          body: { kind: "var", name: "x" },
+        },
+      ],
+    });
+    const emitted = emitTypeScript(evil);
+    // The raw terminator must not survive inside the JSDoc body.
+    expect(emitted).toContain("*\\/");
+    // The whole emitted module still parses as TypeScript, and the payload
+    // stays inside the comment — nothing of it reaches the compiled output.
+    const transpiler = new Bun.Transpiler({ loader: "ts" });
+    expect(() => transpiler.transformSync(emitted)).not.toThrow();
+    expect(transpiler.transformSync(emitted)).not.toContain("pwned");
+  });
 });
