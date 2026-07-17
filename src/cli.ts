@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { diffPrograms } from "./diff.ts";
 import { emitTypeScript } from "./emit/typescript.ts";
-import { parseProgram } from "./generated/program/index.ts";
+import type { Program } from "./lang/ast.ts";
 import { validateProgramShape } from "./lang/shape.ts";
 import type { StyleWarning } from "./lang/style.ts";
 import { typecheckProgram } from "./lang/validate.ts";
@@ -31,7 +31,17 @@ interface CliArgs {
   emit?: string;
 }
 
-function parseArgs(argv: string[]): CliArgs {
+/** Invalid usage or unreadable input — reported cleanly, never a stack trace. */
+export class CliError extends Error {
+  constructor(
+    message: string,
+    readonly exitCode: number,
+  ) {
+    super(message);
+  }
+}
+
+export function parseArgs(argv: string[]): CliArgs {
   const args: CliArgs = { maxRetries: 3, json: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -55,9 +65,18 @@ function parseArgs(argv: string[]): CliArgs {
       case "--program":
         args.program = argv[++i];
         break;
-      case "--max-retries":
-        args.maxRetries = Number(argv[++i]) || 3;
+      case "--max-retries": {
+        const raw = argv[++i];
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n < 1) {
+          throw new CliError(
+            `--max-retries expects an integer >= 1, got ${JSON.stringify(raw)}`,
+            2,
+          );
+        }
+        args.maxRetries = n;
         break;
+      }
       case "--json":
         args.json = true;
         break;
@@ -66,13 +85,33 @@ function parseArgs(argv: string[]): CliArgs {
         break;
       default:
         if (arg?.startsWith("--")) {
-          console.error(`Unknown flag: ${arg}`);
-          process.exit(2);
+          throw new CliError(`Unknown flag: ${arg}`, 2);
         }
         args.prompt = args.prompt ? `${args.prompt} ${arg}` : arg;
     }
   }
   return args;
+}
+
+/** Read + parse a JSON input file, failing with a clean one-line message. */
+function readJsonFile(path: string, what: string): unknown {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch (err) {
+    throw new CliError(
+      `cannot read ${what} ${JSON.stringify(path)}: ${err instanceof Error ? err.message : String(err)}`,
+      2,
+    );
+  }
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    throw new CliError(
+      `${what} ${JSON.stringify(path)} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+      2,
+    );
+  }
 }
 
 function phase(label: string, message: string): void {
@@ -84,13 +123,12 @@ function phase(label: string, message: string): void {
 async function runFixture(args: CliArgs): Promise<number> {
   if (!args.fixture) throw new Error("runFixture requires --fixture");
   console.log("VECTOR (fixture mode — no LLM)");
-  const program = parseProgram(JSON.parse(readFileSync(args.fixture, "utf8")));
-  phase(
-    "[1/3] Load program",
-    `"${program.programName}" (${program.functions.length} layer(s))`,
-  );
-
-  const shapeErrors = validateProgramShape(program);
+  // Shape-validate the raw JSON first: unlike the generated parser (which
+  // throws on the first problem), this reports the FULL list — the same
+  // multi-error contract every other entry point honors.
+  const raw = readJsonFile(args.fixture, "program");
+  const shapeErrors = validateProgramShape(raw);
+  const program = raw as Program;
   const errors =
     shapeErrors.length > 0 ? shapeErrors : typecheckProgram(program).errors;
   if (errors.length > 0) {
@@ -98,6 +136,10 @@ async function runFixture(args: CliArgs): Promise<number> {
     for (const err of errors) console.error(`  ✘ ${err}`);
     return 1;
   }
+  phase(
+    "[1/3] Load program",
+    `"${program.programName}" (${program.functions.length} function(s))`,
+  );
 
   const result = await verifyProgramViaSolver(program);
   if (result.kind !== "report") {
@@ -153,8 +195,8 @@ async function runVerify(args: CliArgs): Promise<number> {
   if (!args.spec || !args.program) {
     throw new Error("runVerify requires a spec plan and a program path");
   }
-  const rawSpec = JSON.parse(readFileSync(args.spec, "utf8"));
-  const rawProgram = JSON.parse(readFileSync(args.program, "utf8"));
+  const rawSpec = readJsonFile(args.spec, "spec plan");
+  const rawProgram = readJsonFile(args.program, "program");
   const outcome = await verifySpecAndProgram(rawSpec, rawProgram, {
     label: `verify: ${args.program}`,
   });
@@ -219,8 +261,8 @@ async function runDiff(args: CliArgs): Promise<number> {
   if (!args.diffOld || !args.diffNew) {
     throw new Error("runDiff requires an old and a new program path");
   }
-  const rawOld = JSON.parse(readFileSync(args.diffOld, "utf8"));
-  const rawNew = JSON.parse(readFileSync(args.diffNew, "utf8"));
+  const rawOld = readJsonFile(args.diffOld, "old program");
+  const rawNew = readJsonFile(args.diffNew, "new program");
   const outcome = await diffPrograms(rawOld, rawNew);
 
   if (args.json) {
@@ -284,27 +326,37 @@ async function runPrompt(args: CliArgs): Promise<number> {
   return outcome.status === "PROVEN" ? 0 : 1;
 }
 
-const args = parseArgs(process.argv.slice(2));
-const verifyMode = Boolean(args.spec || args.program);
-const diffMode = Boolean(args.diffOld || args.diffNew);
-if (!args.fixture && !args.prompt && !verifyMode && !diffMode) {
-  console.error(
-    'Usage: vector "<prompt>" [--max-retries N] [--json] [--emit <file>]\n' +
-      "       vector --fixture <program.json> [--json] [--emit <file>]\n" +
-      "       vector --verify <spec.json> <program.json> [--json] [--emit <file>]\n" +
-      "       vector --diff <old-program.json> <new-program.json> [--json]",
-  );
-  process.exit(2);
+export async function main(argv: string[]): Promise<number> {
+  try {
+    const args = parseArgs(argv);
+    const verifyMode = Boolean(args.spec || args.program);
+    const diffMode = Boolean(args.diffOld || args.diffNew);
+    if (!args.fixture && !args.prompt && !verifyMode && !diffMode) {
+      console.error(
+        'Usage: vector "<prompt>" [--max-retries N] [--json] [--emit <file>]\n' +
+          "       vector --fixture <program.json> [--json] [--emit <file>]\n" +
+          "       vector --verify <spec.json> <program.json> [--json] [--emit <file>]\n" +
+          "       vector --diff <old-program.json> <new-program.json> [--json]",
+      );
+      return 2;
+    }
+    if (diffMode) return await runDiff(args);
+    if (verifyMode) return await runVerify(args);
+    if (args.fixture) return await runFixture(args);
+    return await runPrompt(args);
+  } catch (err) {
+    if (err instanceof CliError) {
+      console.error(`error: ${err.message}`);
+      return err.exitCode;
+    }
+    // API/infrastructure failures surface as one clean line, not a stack.
+    console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+    return 1;
+  }
 }
 
-let exitCode: number;
-if (diffMode) {
-  exitCode = await runDiff(args);
-} else if (verifyMode) {
-  exitCode = await runVerify(args);
-} else if (args.fixture) {
-  exitCode = await runFixture(args);
-} else {
-  exitCode = await runPrompt(args);
+// bin.ts (the compiled binary) imports `main` and calls it itself, so gate the
+// source-run entry on being the actual entrypoint.
+if (import.meta.main) {
+  process.exit(await main(process.argv.slice(2)));
 }
-process.exit(exitCode);

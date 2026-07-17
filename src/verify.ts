@@ -186,7 +186,7 @@ export function collectFeedbackItems(
         axiomId: "(reachable)",
         property: "requires are satisfiable",
         issue: "vacuous",
-        hint: "No input satisfies this function's requires clauses, so every postcondition holds vacuously and proves nothing. Remove the contradictory precondition(s); do NOT tighten requires to force a proof through.",
+        hint: "No input provably satisfies this function's requires clauses (they are contradictory, or too nonlinear for the solver to decide), so every postcondition would hold vacuously and prove nothing. Remove or simplify the precondition(s); do NOT tighten requires to force a proof through.",
       });
     }
     for (const verdict of fn.ensures) {
@@ -196,7 +196,7 @@ export function collectFeedbackItems(
           axiomId: verdict.axiomId,
           property: verdict.pretty,
           issue: "trivial",
-          hint: "This ensures clause is a tautology — it holds regardless of the body, so it does not actually formalize the axiom. Restate it as a real constraint on `result` that depends on the implementation.",
+          hint: "This ensures clause could not be shown to depend on the implementation — it is a tautology (holds regardless of the body), or too nonlinear for the solver to decide. Restate it as a real constraint on `result` that the body determines.",
         });
         continue;
       }
@@ -248,7 +248,10 @@ export function collectFeedbackItems(
       property: issue.pretty,
       issue: "conformance",
       counterexample: { inputs: issue.inputs, result: issue.result },
-      hint: "Proven over exact reals but FALSE when the emitted float64 code runs on the input shown. Avoid exact `==`/`!=` over Real results (float rounding); use an inequality/tolerance, or move to Int where the value is genuinely discrete.",
+      hint:
+        issue.kind === "callee-guard"
+          ? "The callee's precondition holds at this call site over exact reals, but float64 rounding of the computed argument violates its guard — the emitted code throws on an input this function's contract accepts. Guard the call with an ite, or strengthen this function's requires with a float-safe margin."
+          : "Proven over exact reals but FALSE when the emitted float64 code runs on the input shown. Avoid exact `==`/`!=` over Real results (float rounding); use an inequality/tolerance, or move to Int where the value is genuinely discrete.",
     });
   }
   return items;
@@ -259,13 +262,13 @@ export function formatReportFeedback(report: VerificationReport): string {
   for (const fn of report.functions) {
     if (fn.vacuous) {
       lines.push(
-        `Function ${fn.name}: VACUOUS — no input satisfies its requires clauses, so the postconditions are proven only vacuously. Remove the contradictory precondition(s).`,
+        `Function ${fn.name}: VACUOUS — no input provably satisfies its requires clauses (contradictory, or undecidable for the solver), so the postconditions are proven only vacuously. Remove or simplify the precondition(s).`,
       );
     }
     for (const verdict of fn.ensures) {
       if (verdict.trivial) {
         lines.push(
-          `Function ${fn.name}, ensures ${verdict.axiomId} (${verdict.pretty}): TRIVIAL — the clause holds regardless of the body, so it formalizes nothing. Restate it as a real constraint on result.`,
+          `Function ${fn.name}, ensures ${verdict.axiomId} (${verdict.pretty}): TRIVIAL — the clause was not shown to depend on the body (a tautology, or undecidable), so it formalizes nothing. Restate it as a real constraint on result.`,
         );
         continue;
       }
@@ -310,7 +313,9 @@ export function formatReportFeedback(report: VerificationReport): string {
       .map(([k, v]) => `${k} = ${v}`)
       .join(", ");
     lines.push(
-      `Function ${issue.function}, ensures ${issue.axiomId} (${issue.pretty}): proven over reals but FALSE in float64 at ${inputs} → result = ${issue.result}. Avoid exact == over Real; use an inequality/tolerance.`,
+      issue.kind === "callee-guard"
+        ? `Function ${issue.function}: the call into ${issue.axiomId.replace(/^\(calls /, "").replace(/\)$/, "")} throws in float64 at ${inputs} — its guard ${issue.pretty} was proven over reals but is violated by the rounded argument. Guard the call with an ite or add a float-safe margin to the requires.`
+        : `Function ${issue.function}, ensures ${issue.axiomId} (${issue.pretty}): proven over reals but FALSE in float64 at ${inputs} → result = ${issue.result}. Avoid exact == over Real; use an inequality/tolerance.`,
     );
   }
   return lines.join("\n");

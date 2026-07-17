@@ -30,9 +30,16 @@ export interface PreHazard {
   counterexample?: Counterexample;
 }
 
-/** A proven clause that nonetheless fails when the emitted code runs in float64. */
+/** A proven guarantee that nonetheless fails when the emitted code runs in float64. */
 export interface ConformanceIssue {
   function: string;
+  /**
+   * postcondition — a proven ensures clause evaluates false in float64.
+   * callee-guard — a callee's requires, proven to hold at this call site over
+   * exact reals, is violated by the float64-computed arguments, so the emitted
+   * code throws on an input this function's own contract accepts.
+   */
+  kind: "postcondition" | "callee-guard";
   axiomId: string;
   pretty: string;
   inputs: Record<string, string>;

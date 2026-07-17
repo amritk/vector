@@ -2,6 +2,7 @@
   "name": "vector",
   "version": "0.1.0",
   "description": "vector — turn a casual prompt into a formally verified TypeScript program via LLM spec extraction, code+contract generation, and deterministic Z3 proof.",
+  "license": "MIT",
   "type": "module",
   "main": "src/pipeline.ts",
   "bin": {

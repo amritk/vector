@@ -16,8 +16,8 @@
         "properties": {
           "id": {
             "type": "string",
-            "minLength": 1,
-            "description": "Short stable id, e.g. \"AX1\"."
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]*$",
+            "description": "Short stable id, e.g. \"AX1\" or \"AX-RATE\" (letters, digits, _ and - only — ids are embedded in emitted source)."
           },
           "kind": {
             "type": "string",

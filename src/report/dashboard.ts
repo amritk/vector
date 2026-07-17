@@ -97,7 +97,7 @@ function functionRows(fn: FunctionReport): string[] {
   }
   if (fn.vacuous) {
     for (const line of wrapText(
-      "✘ VACUOUS: no input satisfies the requires — postconditions hold only vacuously",
+      "✘ VACUOUS: no input provably satisfies the requires — postconditions hold only vacuously",
       WIDTH - 4,
     )) {
       rows.push(row(`  ${line}`));

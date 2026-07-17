@@ -7,7 +7,10 @@ import Anthropic from "@anthropic-ai/sdk";
 // mjst-generated parsers plus the engine's own shape validators — the JSON
 // Schema in schemas/ is the single source of truth for both.
 
-export const VECTOR_MODEL = "claude-opus-4-7";
+/** Overridable per-run: `VECTOR_MODEL=<model-id> vector "<prompt>"`. */
+export const VECTOR_MODEL = process.env.VECTOR_MODEL ?? "claude-opus-4-7";
+
+const MAX_OUTPUT_TOKENS = 8192;
 
 /**
  * The model produced output that failed parsing or shape validation.
@@ -23,7 +26,10 @@ function getClient(): Anthropic {
       "ANTHROPIC_API_KEY is not set — cannot run the vector generative phases.",
     );
   }
-  client ??= new Anthropic();
+  // The SDK already retries transient failures (429/5xx/connection) with
+  // backoff; give it a little more headroom than the default 2 attempts since
+  // a whole pipeline run dies with the call.
+  client ??= new Anthropic({ maxRetries: 4 });
   return client;
 }
 
@@ -39,7 +45,7 @@ export async function structuredCall<T>(
 ): Promise<T> {
   const response = await getClient().messages.create({
     model: VECTOR_MODEL,
-    max_tokens: 8192,
+    max_tokens: MAX_OUTPUT_TOKENS,
     thinking: { type: "adaptive" },
     system: [
       {
@@ -57,6 +63,13 @@ export async function structuredCall<T>(
 
   if (response.stop_reason === "refusal") {
     throw new Error("Model refused the vector request.");
+  }
+  if (response.stop_reason === "max_tokens") {
+    // Truncated JSON is not the model's mistake to repair — feeding it back as
+    // MalformedOutputError would burn generator retries on an infra limit.
+    throw new Error(
+      `Model output was truncated at ${MAX_OUTPUT_TOKENS} tokens — the artifact does not fit. Simplify the request or raise the token budget.`,
+    );
   }
   const jsonText = response.content.find(
     (block) => block.type === "text",

@@ -320,17 +320,22 @@ enforces that the proof is *meaningful* and *survives execution*:
 
 - **Non-vacuity.** The precondition region must be inhabited (Z3 checks
   `requires` are satisfiable). Contradictory `requires` — which would make every
-  postcondition hold vacuously — are rejected.
+  postcondition hold vacuously — are rejected. This gate fails closed: a Z3
+  `unknown` counts as *not established*, never as a pass.
 - **Non-triviality.** Every `ensures` must reference `result` and must actually
   depend on the body (Z3 checks the clause is *not* a tautology of the
   preconditions). `result == result` or a restated precondition is rejected.
+  Fails closed on `unknown`, like non-vacuity.
 - **Call-site preconditions.** A callee's `requires` is proven to hold for the
   actual arguments on every reachable path — not just inlined away.
 - **Float64 conformance.** After the proof, the emitted code is interpreted in
-  float64 over boundary + random inputs; a postcondition that is true over exact
-  reals but false in float64 (e.g. `(x+0.1)+0.2 == x+0.3` at `x = 0`) is
-  reported and the code is withheld. Prefer inequalities/tolerances over exact
-  `==` on `Real` results.
+  float64 over sampled boundary + random inputs (a sampling check, not a
+  proof); a postcondition that is true over exact reals but false in float64
+  (e.g. `(x+0.1)+0.2 == x+0.3` at `x = 0`) is reported and the code is
+  withheld. The same stage simulates every callee's runtime guard, so a
+  call-site precondition that float64 rounding pushes out of bounds (a proven
+  `g(x*0.1)` throwing at `x = 5e-324`) also fails the gate. Prefer
+  inequalities/tolerances over exact `==` on `Real` results.
 - **Domain guards.** The emitted function rejects `NaN`/`Infinity` (`Real`
   params) and non-integer values (`Int` params) at runtime, so the runtime
   domain matches the finite/integer domain the proof quantified over.
@@ -536,8 +541,8 @@ what's *proven* vs. *enforced at runtime*.
 ║   { rate > 0 }  amount * rate                                      ║
 ║   { result == amount * rate }                                      ║
 ║   ✔ ensures AX2a  proven (unsat · 159 ms)                         ║
-║   ⚠ guard rate > 0 enforced by runtime throw (not proven at call   ║
-║   sites)                                                           ║
+║   ⚠ guard rate > 0 enforced at runtime; proven to hold at every    ║
+║   internal call site                                               ║
 ╟────────────────────────────────────────────────────────────────────╢
 ║ LAYER 2 · usdToEur(amount: Real): Real                             ║
 ║   { amount >= 0 }  applyRate(amount, 0.91)                         ║
@@ -679,8 +684,11 @@ vector verifies exactly the fragment Z3 can decide, and no more:
 - **Reals vs. float64:** proofs are over exact rationals; emitted JS runs
   `float64`. vector no longer *assumes* this is harmless — a post-proof
   **conformance** stage fuzzes the emitted code in float64 and withholds it if a
-  proven postcondition fails there. Exact `==`/`!=` over `Real` results is the
-  usual culprit; prefer inequalities or an explicit tolerance.
+  proven postcondition fails there or a callee's runtime guard fires on a
+  contract-valid input. Exact `==`/`!=` over `Real` results is the usual
+  culprit; prefer inequalities or an explicit tolerance. Fuzzing samples the
+  input space — it catches the systematic rounding failures, but it is not a
+  proof over float64.
 - **Trust boundary:** Z3 proves *code ⊨ contract*. It cannot prove *contract ⊨
   your intent* — the displayed Hoare triples are what you should read and sign
   off on. vector makes that contract small and auditable; it does not read your

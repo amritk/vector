@@ -390,6 +390,198 @@ describe("soundness gate — proven means proven", () => {
     SOLVER_TIMEOUT,
   );
 
+  test(
+    "blocks a callee guard that throws in float64 at a real-proven call site",
+    async () => {
+      // g requires y > 0; f (requires x > 0) calls g(x * 0.1). Over the reals
+      // x > 0 ⇒ x·0.1 > 0, so the call-site precondition proves — but at
+      // x = 5e-324 (the smallest subnormal) x·0.1 underflows to 0 in float64,
+      // so the emitted g throws on an input f's own contract accepts.
+      const spec: SpecPlan = {
+        programName: "underflow",
+        axioms: [
+          { id: "GP", kind: "pre", statement: "g requires y > 0" },
+          { id: "GR", kind: "post", statement: "g returns y" },
+          { id: "FP", kind: "pre", statement: "f requires x > 0" },
+          { id: "FR", kind: "post", statement: "f result >= 0" },
+        ],
+        units: [
+          {
+            name: "g",
+            layer: 1,
+            purpose: "id on positives",
+            params: [{ name: "y", type: "Real" }],
+            returnType: "Real",
+            relevantAxiomIds: ["GP", "GR"],
+          },
+          {
+            name: "f",
+            layer: 2,
+            purpose: "scale down",
+            params: [{ name: "x", type: "Real" }],
+            returnType: "Real",
+            relevantAxiomIds: ["FP", "FR"],
+          },
+        ],
+      };
+      const prog: Program = {
+        programName: "underflow",
+        functions: [
+          {
+            name: "g",
+            layer: 1,
+            purpose: "id on positives",
+            params: [{ name: "y", type: "Real" }],
+            returnType: "Real",
+            requires: [{ axiomId: "GP", expr: gt(v("y"), num("0")) }],
+            ensures: [{ axiomId: "GR", expr: eq(v("result"), v("y")) }],
+            body: v("y"),
+          },
+          {
+            name: "f",
+            layer: 2,
+            purpose: "scale down",
+            params: [{ name: "x", type: "Real" }],
+            returnType: "Real",
+            requires: [{ axiomId: "FP", expr: gt(v("x"), num("0")) }],
+            ensures: [{ axiomId: "FR", expr: ge(v("result"), num("0")) }],
+            body: call("g", [bin("*", v("x"), num("0.1"))]),
+          },
+        ],
+      };
+      const outcome = await verifySpecAndProgram(spec, prog);
+      expect(outcome.status).toBe("REFUTED");
+      if (outcome.status === "REFUTED") {
+        const guardItem = outcome.items.find(
+          (i) => i.issue === "conformance" && i.axiomId === "(calls g)",
+        );
+        expect(guardItem).toBeDefined();
+        expect(guardItem?.function).toBe("f");
+      }
+    },
+    SOLVER_TIMEOUT,
+  );
+
+  test(
+    "a vacuous function must not poison its siblings' verdicts",
+    async () => {
+      // `a` has contradictory requires; `b` is independently WRONG (body 2,
+      // ensures result == 1). If per-function assertions leaked across the
+      // script, b would come back "proven (vacuous/trivial)" instead of
+      // refuted with a counterexample — misdirecting the whole repair loop.
+      const spec: SpecPlan = {
+        programName: "poison",
+        axioms: [
+          { id: "P", kind: "pre", statement: "impossible" },
+          { id: "QA", kind: "post", statement: "a returns x" },
+          { id: "QB", kind: "post", statement: "b returns 1" },
+        ],
+        units: [
+          {
+            name: "a",
+            layer: 1,
+            purpose: "vacuous",
+            params: [{ name: "x", type: "Real" }],
+            returnType: "Real",
+            relevantAxiomIds: ["P", "QA"],
+          },
+          {
+            name: "b",
+            layer: 2,
+            purpose: "wrong",
+            params: [{ name: "y", type: "Real" }],
+            returnType: "Real",
+            relevantAxiomIds: ["QB"],
+          },
+        ],
+      };
+      const prog: Program = {
+        programName: "poison",
+        functions: [
+          {
+            name: "a",
+            layer: 1,
+            purpose: "vacuous",
+            params: [{ name: "x", type: "Real" }],
+            returnType: "Real",
+            requires: [
+              {
+                axiomId: "P",
+                expr: bin(
+                  "and",
+                  gt(v("x"), num("0")),
+                  bin("<", v("x"), num("0")),
+                ),
+              },
+            ],
+            ensures: [{ axiomId: "QA", expr: eq(v("result"), v("x")) }],
+            body: v("x"),
+          },
+          {
+            name: "b",
+            layer: 2,
+            purpose: "wrong",
+            params: [{ name: "y", type: "Real" }],
+            returnType: "Real",
+            requires: [],
+            ensures: [{ axiomId: "QB", expr: eq(v("result"), num("1")) }],
+            body: num("2"),
+          },
+        ],
+      };
+      const outcome = await verifySpecAndProgram(spec, prog);
+      expect(outcome.status).toBe("REFUTED");
+      if (outcome.status === "REFUTED") {
+        const b = outcome.report.functions.find((f) => f.name === "b");
+        expect(b?.vacuous).toBe(false);
+        expect(b?.ensures[0]?.status).toBe("counterexample");
+        expect(b?.ensures[0]?.trivial).toBeUndefined();
+      }
+    },
+    SOLVER_TIMEOUT,
+  );
+
+  test("rejects an axiomId that could inject into the emitted source", async () => {
+    const evilId = 'AX"); } // pwned';
+    const spec: SpecPlan = {
+      programName: "inj",
+      axioms: [
+        { id: evilId, kind: "pre", statement: "weird id" },
+        { id: "AX2", kind: "post", statement: "result == x" },
+      ],
+      units: [
+        {
+          name: "f",
+          layer: 1,
+          purpose: "id",
+          params: [{ name: "x", type: "Real" }],
+          returnType: "Real",
+          relevantAxiomIds: [evilId, "AX2"],
+        },
+      ],
+    };
+    const prog: Program = {
+      programName: "inj",
+      functions: [
+        {
+          name: "f",
+          layer: 1,
+          purpose: "id",
+          params: [{ name: "x", type: "Real" }],
+          returnType: "Real",
+          requires: [{ axiomId: evilId, expr: ge(v("x"), num("0")) }],
+          ensures: [{ axiomId: "AX2", expr: eq(v("result"), v("x")) }],
+          body: v("x"),
+        },
+      ],
+    };
+    const outcome = await verifySpecAndProgram(spec, prog);
+    expect(outcome.status).toBe("INVALID");
+    if (outcome.status === "INVALID") {
+      expect(outcome.errors.join("\n")).toContain("axiomId");
+    }
+  });
+
   test("rejects a program that does not match the spec decomposition", async () => {
     const spec: SpecPlan = {
       programName: "mismatch",

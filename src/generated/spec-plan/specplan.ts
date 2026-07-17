@@ -5,7 +5,7 @@ export type SpecPlan = {
   programName: string;
   /** The formal contract extracted from the casual prompt. */
   axioms: ({
-  /** Short stable id, e.g. "AX1". */
+  /** Short stable id, e.g. "AX1" or "AX-RATE" (letters, digits, _ and - only — ids are embedded in emitted source). */
   id: string;
   /** pre = a constraint on inputs (including "throws if X" → precondition NOT X); post = a guarantee about the result. */
   kind: "pre" | "post";
@@ -36,7 +36,7 @@ type SpecPlan_AxiomsItem = NonNullable<SpecPlan["axioms"]>[number];
 
 const validateSpecPlan_AxiomsItemShape = (input: unknown): boolean => {
   if (!isObject(input)) return false;
-  return typeof input.id === "string" && input.id.length >= 1
+  return typeof input.id === "string" && /^[A-Za-z][A-Za-z0-9_-]*$/.test(input.id)
     && (input.kind === "pre" || input.kind === "post")
     && typeof input.statement === "string"
     && Object.getPrototypeOf(input) === Object.prototype && Object.keys(input).length === 3;
@@ -52,10 +52,10 @@ const parseSpecPlan_AxiomsItem = (input: unknown): SpecPlan_AxiomsItem => {
   const _id = input.id;
   const _kind = input.kind;
   const _statement = input.statement;
-  if (typeof _id === "string" && _id.length >= 1 && (_kind === "pre" || _kind === "post") && typeof _statement === "string" && Object.getPrototypeOf(input) === Object.prototype && Object.keys(input).length === 3) return input as SpecPlan_AxiomsItem;
+  if (typeof _id === "string" && /^[A-Za-z][A-Za-z0-9_-]*$/.test(_id) && (_kind === "pre" || _kind === "post") && typeof _statement === "string" && Object.getPrototypeOf(input) === Object.prototype && Object.keys(input).length === 3) return input as SpecPlan_AxiomsItem;
   if (!("id" in input)) throw new Error("[SpecPlan_AxiomsItem] missing required property 'id'");
   if (typeof input.id !== "string") throw new Error("[SpecPlan_AxiomsItem] field 'id' expected string, got " + (typeof input.id));
-  if (typeof input.id === "string" && input.id.length < 1) throw new Error("[SpecPlan_AxiomsItem] field 'id' must have at least 1 characters");
+  if (typeof input.id === "string" && !/^[A-Za-z][A-Za-z0-9_-]*$/.test(input.id)) throw new Error("[SpecPlan_AxiomsItem] field 'id' must match pattern ^[A-Za-z][A-Za-z0-9_-]*$");
   if (!("kind" in input)) throw new Error("[SpecPlan_AxiomsItem] missing required property 'kind'");
   if (!(["pre","post"] as readonly unknown[]).includes(input.kind)) throw new Error("[SpecPlan_AxiomsItem] field 'kind' must be one of: \"pre\", \"post\"");
   if (!("statement" in input)) throw new Error("[SpecPlan_AxiomsItem] missing required property 'statement'");

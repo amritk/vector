@@ -40,8 +40,9 @@ export function assembleReport(
       divHazards: DivHazard[];
       preHazards: PreHazard[];
       vacuous: boolean;
-      // trivial verdicts arrive in a separate query; matched to ensures by index.
-      trivialByPretty: Map<string, boolean>;
+      // trivial verdicts arrive in a separate query; paired to their ensures
+      // clause by the clause's index in fn.ensures (exact, unlike rendered text).
+      trivialByClauseIndex: Map<number, boolean>;
     }
   >();
   for (const fn of program.functions) {
@@ -50,22 +51,27 @@ export function assembleReport(
       divHazards: [],
       preHazards: [],
       vacuous: false,
-      trivialByPretty: new Map(),
+      trivialByClauseIndex: new Map(),
     });
   }
 
   // First pass: record triviality and reachability so the ensures pass can read
   // them. (Queries are emitted reachable → [ensures, trivial]* → div → pre.)
+  // Both are meaningfulness gates, so they FAIL CLOSED: only a `sat` answer
+  // establishes that the precondition region is inhabited / that the clause
+  // depends on the body. An `unknown` (timeout, nonlinear) must not silently
+  // count as established — that would let a vacuous or tautological "proof"
+  // through whenever the solver merely gave up.
   queries.forEach((q, i) => {
     const bucket = byFn.get(q.fn);
     if (!bucket) return;
     const answer = answers[i];
     if (q.kind === "reachable") {
-      // unsat ⇒ no input satisfies the preconditions ⇒ vacuous proofs.
-      if (answer.result === "unsat") bucket.vacuous = true;
-    } else if (q.kind === "trivial") {
-      // unsat ⇒ the clause holds regardless of the body ⇒ it proves nothing.
-      if (answer.result === "unsat") bucket.trivialByPretty.set(q.pretty, true);
+      if (answer.result !== "sat") bucket.vacuous = true;
+    } else if (q.kind === "trivial" && q.clauseIndex !== undefined) {
+      if (answer.result !== "sat") {
+        bucket.trivialByClauseIndex.set(q.clauseIndex, true);
+      }
     }
   });
 
@@ -91,7 +97,10 @@ export function assembleReport(
       };
       if (status === "proven") {
         unsatCount += 1;
-        if (bucket.trivialByPretty.get(q.pretty)) {
+        if (
+          q.clauseIndex !== undefined &&
+          bucket.trivialByClauseIndex.get(q.clauseIndex)
+        ) {
           verdict.trivial = true;
           trivialCount += 1;
         }

@@ -37,13 +37,28 @@ const staging = join(dotZ3, ".pip-tmp");
 console.log(`• installing z3-solver==${Z3_VERSION} via pip`);
 rmSync(staging, { recursive: true, force: true });
 mkdirSync(staging, { recursive: true });
-run("pip3", [
-  "install",
-  "--quiet",
-  "--target",
-  staging,
-  `z3-solver==${Z3_VERSION}`,
-]);
+// pip flakes on fresh containers / cold proxies; retry with a short backoff
+// before giving up — this is the first command every new checkout runs.
+const PIP_ATTEMPTS = 3;
+for (let attempt = 1; ; attempt++) {
+  try {
+    run("pip3", [
+      "install",
+      "--quiet",
+      "--target",
+      staging,
+      `z3-solver==${Z3_VERSION}`,
+    ]);
+    break;
+  } catch (err) {
+    if (attempt >= PIP_ATTEMPTS) throw err;
+    const delayMs = 2000 * attempt;
+    console.log(
+      `  pip attempt ${attempt}/${PIP_ATTEMPTS} failed — retrying in ${delayMs / 1000}s`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+}
 
 const [bin] = findFiles(staging, (n) => n === "z3");
 const libs = findFiles(

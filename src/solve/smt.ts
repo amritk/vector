@@ -51,6 +51,12 @@ export interface SmtQuery {
   fn: string;
   /** Spec axiom for ensures/trivial; "(division)"/"(reachable)"/"(calls X)" otherwise. */
   axiomId: string;
+  /**
+   * For ensures/trivial: the index of the clause in the function's `ensures`
+   * array, so the two verdicts pair up exactly (never by rendered text, which
+   * can collide across clauses).
+   */
+  clauseIndex?: number;
   /** Math-pretty of the clause (ensures) or the offending expression. */
   pretty: string;
   /** SMT const name ↔ original param name, for reading counterexample inputs. */
@@ -226,6 +232,11 @@ export function emitVerificationScript(
       orig: p.name,
     }));
 
+    // One frame per function: its declarations and `requires` asserts must not
+    // leak into the next function's checks — a contradictory `requires` here
+    // would otherwise make the whole remaining script inconsistent and flip
+    // every later verdict to unsat ("proven").
+    lines.push("(push 1)");
     for (const p of fn.params) {
       lines.push(`(declare-const ${smtName(p.name)} ${SORT[p.type]})`);
     }
@@ -280,7 +291,7 @@ export function emitVerificationScript(
       false,
     );
 
-    for (const clause of fn.ensures) {
+    fn.ensures.forEach((clause, clauseIndex) => {
       const clauseTerm = emit(clause.expr, ensuresScope, []);
       // Drop any div/call hazards this proof-only clause emitted (see above).
       divConds.length = realDivCount;
@@ -288,18 +299,30 @@ export function emitVerificationScript(
       const pretty = prettyExpr(clause.expr, "math");
       // Prove the postcondition: refute its negation under the body. unsat ⇒ ∀.
       query(
-        { kind: "ensures", fn: fn.name, axiomId: clause.axiomId, pretty },
+        {
+          kind: "ensures",
+          fn: fn.name,
+          axiomId: clause.axiomId,
+          clauseIndex,
+          pretty,
+        },
         [bindResult, `(assert (not ${clauseTerm}))`],
         true,
       );
       // Triviality: refute the same negation WITHOUT the body. sat ⇒ the clause
       // truly depends on the implementation; unsat ⇒ it is a tautology.
       query(
-        { kind: "trivial", fn: fn.name, axiomId: clause.axiomId, pretty },
+        {
+          kind: "trivial",
+          fn: fn.name,
+          axiomId: clause.axiomId,
+          clauseIndex,
+          pretty,
+        },
         [`(assert (not ${clauseTerm}))`],
         false,
       );
-    }
+    });
 
     // A division is safe iff its denominator can't be zero on its own path:
     // assert the path and denom == 0; anything but unsat is a hazard.
@@ -338,6 +361,8 @@ export function emitVerificationScript(
         true,
       );
     }
+
+    lines.push("(pop 1)");
   });
 
   return { script: lines.join("\n"), queries };
@@ -372,26 +397,73 @@ export function parseZ3Output(
   return answers;
 }
 
-// z3 get-value output: `((f0_x 0.0) (f0_result (/ 1 2)))`, possibly across lines.
+// A parsed s-expression: an atom or a list. Only what get-value output needs.
+type Sexp = string | Sexp[];
+
+// Tokenize + parse the first complete s-expression in `text`. Returns null on
+// malformed input (truncated output, z3 `(error …)` noise before the model).
+function parseSexp(text: string): Sexp | null {
+  const tokens = text.match(/[()]|[^\s()]+/g);
+  if (!tokens) return null;
+  let pos = 0;
+  const parse = (): Sexp | null => {
+    const tok = tokens[pos++];
+    if (tok === undefined || tok === ")") return null;
+    if (tok !== "(") return tok;
+    const list: Sexp[] = [];
+    while (pos < tokens.length && tokens[pos] !== ")") {
+      const child = parse();
+      if (child === null) return null;
+      list.push(child);
+    }
+    if (tokens[pos] !== ")") return null; // unbalanced
+    pos++;
+    return list;
+  };
+  return parse();
+}
+
+// z3 get-value output: `((f0_x 0.0) (f0_result (/ 1 2)))`, possibly across
+// lines, with arbitrarily nested values (`(- (/ 1 2))`, `(/ (- 1) 2)`, or a
+// `(root-obj …)` algebraic). Parsed structurally, never by regex, so a value
+// we can't canonicalize still comes through as readable text instead of
+// silently dropping the counterexample.
 function parseModel(text: string): Record<string, string> {
   const out: Record<string, string> = {};
-  const re =
-    /\(([A-Za-z_][A-Za-z0-9_]*)\s+(\(-\s*\(\/[^)]*\)\s*\)|\(-\s+[^)]*\)|\(\/\s+[^)]*\)|[^\s()]+)\)/g;
-  let m: RegExpExecArray | null;
-  // biome-ignore lint/suspicious/noAssignInExpressions: canonical regex-exec loop
-  while ((m = re.exec(text)) !== null) out[m[1]] = normalizeValue(m[2]);
+  const sexp = parseSexp(text);
+  if (!Array.isArray(sexp)) return out;
+  for (const pair of sexp) {
+    if (
+      Array.isArray(pair) &&
+      pair.length === 2 &&
+      typeof pair[0] === "string" &&
+      /^[A-Za-z_][A-Za-z0-9_]*$/.test(pair[0])
+    ) {
+      out[pair[0]] = normalizeSexp(pair[1] as Sexp);
+    }
+  }
   return out;
 }
 
-// Canonicalize z3's s-expression numerals: "(- x)" → "-x", "(/ a b)" → "a/b",
-// and integer-valued reals ("3.0") → "3", matching how the wasm model printed.
+// Canonicalize z3's s-expression numerals: (- x) → -x, (/ a b) → a/b, and
+// integer-valued reals ("3.0") → "3" — matching how models have always been
+// shown. Anything else (e.g. root-obj algebraics) renders as plain text.
+function normalizeSexp(v: Sexp): string {
+  if (typeof v === "string") return normalizeValue(v);
+  if (v.length === 2 && v[0] === "-") return `-${normalizeSexp(v[1] as Sexp)}`;
+  if (v.length === 3 && v[0] === "/") {
+    return `${normalizeSexp(v[1] as Sexp)}/${normalizeSexp(v[2] as Sexp)}`;
+  }
+  const rendered: string = v
+    .map((c) => (typeof c === "string" ? normalizeValue(c) : normalizeSexp(c)))
+    .join(" ");
+  return `(${rendered})`;
+}
+
+/** Canonicalize an atomic numeral: "3.0" → "3"; anything else is unchanged. */
 export function normalizeValue(v: string): string {
   const value = v.trim();
-  let m = value.match(/^\(-\s*(.+)\)$/);
-  if (m) return `-${normalizeValue(m[1])}`;
-  m = value.match(/^\(\/\s+(\S+)\s+(\S+)\)$/);
-  if (m) return `${normalizeValue(m[1])}/${normalizeValue(m[2])}`;
-  m = value.match(/^(\d+)\.0+$/);
+  const m = value.match(/^(-?\d+)\.0+$/);
   if (m) return m[1];
   return value;
 }

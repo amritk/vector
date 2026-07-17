@@ -47,7 +47,8 @@ When you receive FEEDBACK about a previous attempt, repair the program minimally
 everything that was already proven and fix only what the feedback refutes.`;
 
 export interface GeneratorFeedback {
-  previousProgram: Program;
+  /** Absent when the previous attempt produced nothing usable (malformed output). */
+  previousProgram?: Program;
   message: string;
 }
 
@@ -56,7 +57,11 @@ export async function generateProgram(
   feedback?: GeneratorFeedback,
 ): Promise<Program> {
   const feedbackBlock = feedback
-    ? `\n\nFEEDBACK on your previous attempt — repair it minimally:\n${feedback.message}\n\nPrevious program:\n${JSON.stringify(feedback.previousProgram)}`
+    ? `\n\nFEEDBACK on your previous attempt — repair it minimally:\n${feedback.message}${
+        feedback.previousProgram
+          ? `\n\nPrevious program:\n${JSON.stringify(feedback.previousProgram)}`
+          : ""
+      }`
     : "";
   return structuredCall({
     systemPrompt: GENERATOR_SYSTEM_PROMPT,

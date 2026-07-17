@@ -15,6 +15,22 @@ type Value = number | boolean;
 
 class DomainError extends Error {}
 
+/**
+ * A callee's runtime guard fired during float64 evaluation. The emitted code
+ * evaluates every function's `requires` and throws on violation, so when
+ * float64 rounding pushes a call-site argument outside the callee's (real-
+ * proven) precondition, the emitted program throws — that is a conformance
+ * failure of the caller, not a skippable evaluation error.
+ */
+class GuardViolation extends Error {
+  constructor(
+    readonly callee: string,
+    readonly guardPretty: string,
+  ) {
+    super(`guard violated: ${callee} requires ${guardPretty}`);
+  }
+}
+
 /** Evaluate a vector-lang expression the way the emitted JS would. */
 function evalExpr(
   expr: Expr,
@@ -47,6 +63,24 @@ function evalExpr(
       }
     }
     case "binop": {
+      // Boolean connectives are lazy, exactly like the emitted && / || / !a||b:
+      // a callee guard (throw) in the right operand must not fire on paths the
+      // emitted code short-circuits past.
+      if (expr.op === "and") {
+        return evalExpr(expr.left, env, byName) === true
+          ? evalExpr(expr.right, env, byName)
+          : false;
+      }
+      if (expr.op === "or") {
+        return evalExpr(expr.left, env, byName) === true
+          ? true
+          : evalExpr(expr.right, env, byName);
+      }
+      if (expr.op === "implies") {
+        return evalExpr(expr.left, env, byName) !== true
+          ? true
+          : evalExpr(expr.right, env, byName);
+      }
       const l = evalExpr(expr.left, env, byName);
       const r = evalExpr(expr.right, env, byName);
       switch (expr.op) {
@@ -72,14 +106,8 @@ function evalExpr(
           return (l as number) >= (r as number);
         case "==":
           return l === r;
-        case "!=":
+        default: // !=
           return l !== r;
-        case "and":
-          return (l as boolean) && (r as boolean);
-        case "or":
-          return (l as boolean) || (r as boolean);
-        default: // implies
-          return !(l as boolean) || (r as boolean);
       }
     }
     case "ite":
@@ -94,9 +122,37 @@ function evalExpr(
         const arg = expr.args[i];
         if (arg) inner.set(p.name, evalExpr(arg, env, byName));
       });
+      // The emitted callee evaluates its own requires and throws — simulate
+      // that, or a float64-triggered throw on a contract-valid caller input
+      // would be invisible to this gate.
+      for (const rc of callee.requires) {
+        if (evalExpr(rc.expr, inner, byName) !== true) {
+          throw new GuardViolation(callee.name, prettyExpr(rc.expr, "math"));
+        }
+      }
       return evalExpr(callee.body, inner, byName);
     }
   }
+}
+
+/** True when any expression in the list transitively contains a `call`. */
+function containsCall(exprs: Expr[]): boolean {
+  return exprs.some((expr) => {
+    switch (expr.kind) {
+      case "num":
+      case "bool":
+      case "var":
+        return false;
+      case "unop":
+        return containsCall([expr.arg]);
+      case "binop":
+        return containsCall([expr.left, expr.right]);
+      case "ite":
+        return containsCall([expr.cond, expr.then, expr.else]);
+      case "call":
+        return true;
+    }
+  });
 }
 
 // A tiny deterministic PRNG (mulberry32) so the fuzz set is reproducible across
@@ -187,9 +243,11 @@ function sampleValues(
 }
 
 /**
- * Fuzz every *proven* clause of every function against float64 execution.
- * Returns the clauses that fail to conform. Only meaningful to call on a report
- * that already proved clean over the reals.
+ * Fuzz every *proven* guarantee of every function against float64 execution:
+ * each proven ensures clause must still evaluate true, and the body must run
+ * to completion — a callee guard tripped by float64 rounding is a throw the
+ * proof said could not happen. Returns the violations found. Only meaningful
+ * to call on a report that already proved clean over the reals.
  */
 export function checkConformance(
   program: Program,
@@ -209,19 +267,55 @@ export function checkConformance(
         .map((e) => e.axiomId),
     );
     const clauses = fn.ensures.filter((c) => provenAxioms.has(c.axiomId));
-    if (clauses.length === 0) continue;
+    // A body with calls can still throw via a callee's guard even when there
+    // is nothing left to check about the postconditions.
+    const bodyHasCalls = containsCall([fn.body]);
+    if (clauses.length === 0 && !bodyHasCalls) continue;
+    // One witness per callee guard is enough.
+    const seenGuards = new Set<string>();
 
     for (const env of sampleValues(fn, rand)) {
+      const witnessInputs = (): Record<string, string> => {
+        const inputs: Record<string, string> = {};
+        for (const p of fn.params) inputs[p.name] = String(env.get(p.name));
+        return inputs;
+      };
+
       let requiresHold: boolean;
-      let result: Value;
       try {
         requiresHold = fn.requires.every(
           (c) => evalExpr(c.expr, env, byName) === true,
         );
-        if (!requiresHold) continue;
-        result = evalExpr(fn.body, env, byName);
       } catch {
-        continue; // domain/eval error on this sample — skip it
+        // Guard/domain error while deciding validity: the emitted code rejects
+        // this input either way, so it is outside the contract we must honor.
+        continue;
+      }
+      if (!requiresHold) continue;
+
+      // This input satisfies the preconditions — the proof promises the body
+      // completes and every proven ensures holds. A callee guard firing here
+      // is a spurious runtime throw the caller's contract does not allow.
+      let result: Value;
+      try {
+        result = evalExpr(fn.body, env, byName);
+      } catch (err) {
+        if (err instanceof GuardViolation) {
+          const key = `${err.callee}|${err.guardPretty}`;
+          if (!seenGuards.has(key)) {
+            seenGuards.add(key);
+            issues.push({
+              function: fn.name,
+              kind: "callee-guard",
+              axiomId: `(calls ${err.callee})`,
+              pretty: err.guardPretty,
+              inputs: witnessInputs(),
+              result: `(throws — ${err.callee} requires ${err.guardPretty})`,
+              note: "the call-site precondition was proven over exact reals, but float64 rounding of the computed argument violates the callee's guard, so the emitted code throws on an input this function's contract accepts.",
+            });
+          }
+        }
+        continue;
       }
       const ensuresEnv = new Map(env);
       ensuresEnv.set("result", result);
@@ -235,13 +329,12 @@ export function checkConformance(
           holds = false;
         }
         if (!holds) {
-          const inputs: Record<string, string> = {};
-          for (const p of fn.params) inputs[p.name] = String(env.get(p.name));
           issues.push({
             function: fn.name,
+            kind: "postcondition",
             axiomId: clause.axiomId,
             pretty: prettyExpr(clause.expr, "math"),
-            inputs,
+            inputs: witnessInputs(),
             result: String(result),
             note: "proven over exact reals but false in float64 execution — the postcondition uses exact arithmetic the emitted code cannot honor (rounding, non-finite, or exact equality).",
           });
@@ -250,7 +343,7 @@ export function checkConformance(
           break;
         }
       }
-      if (provenAxioms.size === 0) break;
+      if (provenAxioms.size === 0 && !bodyHasCalls) break;
     }
   }
   return issues;
