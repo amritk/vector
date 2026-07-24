@@ -10,7 +10,7 @@ import { renderDashboard, verdictStatus } from "./report/dashboard.ts";
 import { verifyProgramViaSolver } from "./solve/runner.ts";
 import { verifySpecAndProgram } from "./verify.ts";
 
-// vector CLI. Four modes:
+// vector CLI. Five modes:
 //   vector "Build a USD to EUR converter..."            (full LLM pipeline)
 //   vector --fixture test/fixtures/currency.json        (solver-only, no API key)
 //   vector --verify spec.json program.json --json       (verify LLM-emitted JSON;
@@ -18,6 +18,10 @@ import { verifySpecAndProgram } from "./verify.ts";
 //   vector --diff old-program.json new-program.json     (prove a regeneration
 //                                                      behavior-preserving, or
 //                                                      show the concrete deltas)
+//   vector --review spec.json [--baseline old-spec.json]
+//                             [--deltas diff.json]
+//                             [--intent-file pr.md]     (adversarial LLM review of
+//                                                      contract ⊨ intent; API key)
 
 interface CliArgs {
   prompt?: string;
@@ -26,6 +30,11 @@ interface CliArgs {
   program?: string;
   diffOld?: string;
   diffNew?: string;
+  review?: string;
+  baseline?: string;
+  deltas?: string;
+  intent?: string;
+  intentFile?: string;
   maxRetries: number;
   json: boolean;
   emit?: string;
@@ -48,6 +57,21 @@ function parseArgs(argv: string[]): CliArgs {
         // Two positional paths follow: the old and the new program.
         args.diffOld = argv[++i];
         args.diffNew = argv[++i];
+        break;
+      case "--review":
+        args.review = argv[++i];
+        break;
+      case "--baseline":
+        args.baseline = argv[++i];
+        break;
+      case "--deltas":
+        args.deltas = argv[++i];
+        break;
+      case "--intent":
+        args.intent = argv[++i];
+        break;
+      case "--intent-file":
+        args.intentFile = argv[++i];
         break;
       case "--spec":
         args.spec = argv[++i];
@@ -245,6 +269,58 @@ async function runDiff(args: CliArgs): Promise<number> {
   }
 }
 
+// Adversarial LLM review of contract ⊨ intent — the one link Z3 cannot check.
+// Needs ANTHROPIC_API_KEY. Exit codes: 0 = CLEAR, 1 = FLAGGED, 2 = invalid
+// input or infrastructure error — so CI can distinguish "unsafe to merge on
+// the proof alone" from "the review itself did not run".
+async function runReview(args: CliArgs): Promise<number> {
+  if (!args.review) throw new Error("runReview requires --review <spec.json>");
+  const { parseSpecPlan } = await import("./generated/spec-plan/index.ts");
+  const { validateSpecPlanShape } = await import("./lang/shape.ts");
+
+  const loadSpec = (path: string) => {
+    const spec = parseSpecPlan(JSON.parse(readFileSync(path, "utf8")));
+    const errors = validateSpecPlanShape(spec);
+    if (errors.length > 0) {
+      throw new Error(
+        `${path} failed shape validation:\n- ${errors.join("\n- ")}`,
+      );
+    }
+    return spec;
+  };
+
+  let exit = 2;
+  try {
+    const spec = loadSpec(args.review);
+    const baselineSpec = args.baseline ? loadSpec(args.baseline) : undefined;
+    const deltas = args.deltas
+      ? JSON.parse(readFileSync(args.deltas, "utf8"))
+      : undefined;
+    const intentParts = [
+      args.intent,
+      args.intentFile ? readFileSync(args.intentFile, "utf8") : undefined,
+    ].filter((part): part is string => Boolean(part?.trim()));
+    const intent =
+      intentParts.length > 0 ? intentParts.join("\n\n") : undefined;
+
+    const { reviewSpecPlan } = await import("./agents/adversary.ts");
+    const result = await reviewSpecPlan({ spec, baselineSpec, intent, deltas });
+
+    if (args.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      const { renderReviewMarkdown } = await import("./report/review.ts");
+      console.log(renderReviewMarkdown(result));
+    }
+    exit = result.verdict === "CLEAR" ? 0 : 1;
+  } catch (err) {
+    console.error(
+      `Review failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  return exit;
+}
+
 async function runPrompt(args: CliArgs): Promise<number> {
   if (!args.prompt) throw new Error("runPrompt requires a prompt");
   const { runPipeline } = await import("./pipeline.ts");
@@ -287,18 +363,23 @@ async function runPrompt(args: CliArgs): Promise<number> {
 const args = parseArgs(process.argv.slice(2));
 const verifyMode = Boolean(args.spec || args.program);
 const diffMode = Boolean(args.diffOld || args.diffNew);
-if (!args.fixture && !args.prompt && !verifyMode && !diffMode) {
+const reviewMode = Boolean(args.review);
+if (!args.fixture && !args.prompt && !verifyMode && !diffMode && !reviewMode) {
   console.error(
     'Usage: vector "<prompt>" [--max-retries N] [--json] [--emit <file>]\n' +
       "       vector --fixture <program.json> [--json] [--emit <file>]\n" +
       "       vector --verify <spec.json> <program.json> [--json] [--emit <file>]\n" +
-      "       vector --diff <old-program.json> <new-program.json> [--json]",
+      "       vector --diff <old-program.json> <new-program.json> [--json]\n" +
+      "       vector --review <spec.json> [--baseline <old-spec.json>] [--deltas <diff.json>]\n" +
+      '                      [--intent "<text>"] [--intent-file <file>] [--json]',
   );
   process.exit(2);
 }
 
 let exitCode: number;
-if (diffMode) {
+if (reviewMode) {
+  exitCode = await runReview(args);
+} else if (diffMode) {
   exitCode = await runDiff(args);
 } else if (verifyMode) {
   exitCode = await runVerify(args);

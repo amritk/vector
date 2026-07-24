@@ -1,0 +1,179 @@
+# vector gate — copy this file into <your-repo>/.github/workflows/vector-gate.yml
+#
+# The autonomous PR flow for repos that keep verified kernels under verified/:
+#
+#   verified/<name>/spec.json      SpecPlan — the reviewed source of truth
+#   verified/<name>/program.json   generated Program — build artifact
+#   verified/<name>/<name>.ts      emitted TypeScript — build artifact
+#
+# On every PR touching verified/**, this workflow:
+#   1. VERIFY  — Z3 proves program ⊨ spec (hard gate: not PROVEN → red).
+#   2. DIFF    — Z3 compares the PR's program against the base branch's and
+#                lists every behavioral delta with a concrete witness input.
+#   3. REVIEW  — an adversarial LLM (vector --review) attacks contract ⊨ intent,
+#                using the PR title+body as the stated intent and the deltas
+#                from step 2. Any blocking finding → FLAGGED → red.
+#   4. REPORT  — posts one sticky PR comment with the proof dashboard, the
+#                deltas, and the review. That comment IS the review surface:
+#                if all checks are green, the human decision left is
+#                "does this evidence match what I asked for?" — then merge.
+#
+# A DIFFERENT diff alone does not fail the gate: the adversary receives the
+# deltas and the intent, and flags (blocking) any delta the intent does not
+# justify. Deltas your PR description explains ride through green.
+#
+# Setup in your repo:
+#   - secrets.ANTHROPIC_API_KEY        (for the --review step only)
+#   - branch protection: require the "vector-gate" check
+#   - either set VECTOR_BINARY_URL below to a compiled `dist/vector` you host
+#     (bun run build in the vector repo, attach to a release), or leave it
+#     empty to build vector from source on each run.
+
+name: vector-gate
+
+on:
+  pull_request:
+    paths:
+      - "verified/**"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  VECTOR_REPO: https://github.com/amritk/vector
+  VECTOR_BINARY_URL: "" # optional: a hosted compiled `vector` binary
+
+jobs:
+  vector-gate:
+    name: vector-gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.base_ref }}
+          path: .vector-base
+
+      - name: Install vector
+        run: |
+          if [ -n "$VECTOR_BINARY_URL" ]; then
+            curl -fsSL -o /usr/local/bin/vector "$VECTOR_BINARY_URL"
+            chmod +x /usr/local/bin/vector
+            echo "VECTOR=vector" >> "$GITHUB_ENV"
+          else
+            curl -fsSL https://bun.sh/install | bash
+            export PATH="$HOME/.bun/bin:$PATH"
+            git clone --depth 1 "$VECTOR_REPO" "$HOME/.vector-src"
+            cd "$HOME/.vector-src" && bun install && bun run fetch-z3
+            echo "PATH=$HOME/.bun/bin:$PATH" >> "$GITHUB_ENV"
+            echo "VECTOR=bun $HOME/.vector-src/src/cli.ts" >> "$GITHUB_ENV"
+          fi
+
+      - name: Verify, diff, review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          # +e: diff/review exit nonzero by design; we collect codes ourselves.
+          set +e -u
+          mkdir -p .vector-out
+          printf '%s\n\n%s\n' "$PR_TITLE" "$PR_BODY" > .vector-out/intent.md
+          report=.vector-out/report.md
+          echo "## vector gate" > "$report"
+          gate_failed=0
+
+          for dir in verified/*/; do
+            name=$(basename "$dir")
+            spec="$dir/spec.json"; program="$dir/program.json"
+            [ -f "$spec" ] && [ -f "$program" ] || continue
+            echo "" >> "$report"
+            echo "### \`$name\`" >> "$report"
+
+            # 1. VERIFY — hard gate
+            if $VECTOR --verify "$spec" "$program" --json > .vector-out/verify.json; then
+              echo "**Proof:** ✅ PROVEN — every postcondition holds for all inputs." >> "$report"
+              {
+                echo ""
+                echo "<details><summary>Dijkstra Dashboard</summary>"
+                echo ""
+                echo '```'
+                jq -r '.dashboard' .vector-out/verify.json
+                echo '```'
+                echo "</details>"
+              } >> "$report"
+            else
+              echo "**Proof:** ❌ NOT PROVEN — merge blocked." >> "$report"
+              {
+                echo ""
+                echo '```'
+                jq -r '.feedback // (.errors | join("\n")) // .message' .vector-out/verify.json
+                echo '```'
+              } >> "$report"
+              gate_failed=1
+              continue
+            fi
+
+            # 2. DIFF vs base branch (if the kernel existed there)
+            deltas_args=""
+            base_program=".vector-base/$dir/program.json"
+            if [ -f "$base_program" ]; then
+              $VECTOR --diff "$base_program" "$program" --json > .vector-out/diff.json
+              diff_status=$(jq -r '.status' .vector-out/diff.json)
+              if [ "$diff_status" = "EQUIVALENT" ]; then
+                echo "" >> "$report"
+                echo "**Behavior vs base:** ✅ EQUIVALENT — provably identical for all inputs." >> "$report"
+              else
+                deltas_args="--deltas .vector-out/diff.json"
+                {
+                  echo ""
+                  echo "**Behavior vs base:** ⚠️ $diff_status — deltas below; the adversarial review judges them against this PR's description."
+                  echo ""
+                  echo '```'
+                  jq -r '.summary // empty' .vector-out/diff.json
+                  echo '```'
+                } >> "$report"
+              fi
+            else
+              echo "" >> "$report"
+              echo "**Behavior vs base:** new kernel (no base-branch version)." >> "$report"
+            fi
+
+            # 3. ADVERSARIAL REVIEW — contract ⊨ intent
+            baseline_args=""
+            [ -f ".vector-base/$spec" ] && baseline_args="--baseline .vector-base/$spec"
+            # shellcheck disable=SC2086
+            $VECTOR --review "$spec" $baseline_args $deltas_args \
+              --intent-file .vector-out/intent.md > .vector-out/review.md
+            review_exit=$?
+            echo "" >> "$report"
+            cat .vector-out/review.md >> "$report"
+            if [ "$review_exit" -eq 1 ]; then
+              gate_failed=1
+            elif [ "$review_exit" -ge 2 ]; then
+              echo "" >> "$report"
+              echo "_Adversarial review did not run (infrastructure error) — gate blocked conservatively._" >> "$report"
+              gate_failed=1
+            fi
+          done
+
+          exit "$gate_failed"
+
+      - name: Post sticky PR comment
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          marker="<!-- vector-gate -->"
+          printf '%s\n' "$marker" | cat - .vector-out/report.md > .vector-out/comment.md
+          existing=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -1)
+          if [ -n "$existing" ]; then
+            gh api --method PATCH "repos/${{ github.repository }}/issues/comments/$existing" \
+              -F body=@.vector-out/comment.md > /dev/null
+          else
+            gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+              -F body=@.vector-out/comment.md > /dev/null
+          fi

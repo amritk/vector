@@ -1,0 +1,58 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Two or three sentences: what the contract claims, what the intent asks for, and where the sharpest gap is (or why none was found)."
+    },
+    "findings": {
+      "type": "array",
+      "description": "Every gap the adversarial review found between the contract and the intent. Empty array means the review found nothing to attack.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["blocking", "advisory"],
+            "description": "blocking = the contract permits behavior the intent forbids, the intent requires a property no axiom enforces, or a behavioral delta is not justified by the stated intent. advisory = a weakness worth noting that does not by itself make the merge unsafe."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "missing-axiom",
+              "intent-conflict",
+              "unjustified-delta",
+              "underspecified-domain",
+              "formula-shaped-axiom",
+              "out-of-scope"
+            ],
+            "description": "missing-axiom = the intent implies a property (bound, monotonicity, conservation, error behavior) that no axiom enforces. intent-conflict = the axioms permit a concrete behavior the intent forbids. unjustified-delta = a behavioral delta between generations is not explained by the stated intent. underspecified-domain = an input region where the contract pins nothing down. formula-shaped-axiom = an axiom that restates the algorithm instead of a property. out-of-scope = the intent needs something outside the verified numeric kernel."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One line naming the gap."
+          },
+          "detail": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The argument: which axiom(s), which intent clause, why the gap is real."
+          },
+          "scenario": {
+            "type": "string",
+            "description": "Concrete numbers where possible: an input the contract accepts and the output it permits that the intent would reject."
+          },
+          "suggestedAxiom": {
+            "type": "string",
+            "description": "A property-shaped axiom statement that would close the gap, phrased like a SpecPlan axiom statement."
+          }
+        },
+        "required": ["severity", "kind", "title", "detail"]
+      }
+    }
+  },
+  "required": ["summary", "findings"]
+}

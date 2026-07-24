@@ -30,6 +30,7 @@ the program is repaired, up to a retry bound. **Unproven code is never emitted.*
   - [Verify mode (deterministic, no API key)](#verify-mode-deterministic-no-api-key)
   - [Fixture mode](#fixture-mode)
   - [Diff mode (the regeneration gate)](#diff-mode-the-regeneration-gate)
+  - [Review mode (the adversarial gate)](#review-mode-the-adversarial-gate)
   - [Flags](#flags)
 - [Standalone binary](#standalone-binary)
 - [The Claude Code skill](#the-claude-code-skill)
@@ -37,6 +38,7 @@ the program is repaired, up to a retry bound. **Unproven code is never emitted.*
 - [The two artifacts](#the-two-artifacts)
 - [Verify output (the JSON contract)](#verify-output-the-json-contract)
 - [Contract-driven development (code as build artifact)](#contract-driven-development-code-as-build-artifact)
+- [Using vector in another repo (the autonomous PR flow)](#using-vector-in-another-repo-the-autonomous-pr-flow)
 - [The Dijkstra Dashboard](#the-dijkstra-dashboard)
 - [Schema-driven types](#schema-driven-types)
 - [Project layout](#project-layout)
@@ -196,6 +198,38 @@ invalid input or solver failure → `2`. Both sides are assumed to individually
 pass `--verify` first (gate on that in CI); `--diff` re-runs only shape and
 type checks.
 
+### Review mode (the adversarial gate)
+
+Z3 proves *code ⊨ contract*; the one unproven link is *contract ⊨ intent*.
+`--review` puts an **adversarial LLM** on that link: it receives the SpecPlan
+(plus, optionally, the base-branch SpecPlan, the `--diff` deltas, and the PR /
+ticket text as the *stated intent*) and is prompted to attack — construct
+concrete behaviors the axioms permit but the intent forbids, find properties
+the intent implies that no axiom enforces, and flag behavioral deltas the
+intent doesn't justify. Needs `ANTHROPIC_API_KEY`.
+
+```bash
+bun run vector --review spec.json \
+  --baseline base-spec.json \       # the spec on the base branch (optional)
+  --deltas diff.json \              # `vector --diff --json` output (optional)
+  --intent-file pr.md               # the PR description = the stated intent
+```
+
+Output is PR-ready markdown (or `--json` for the structured findings). The
+verdict is **derived deterministically** from the findings — `FLAGGED` iff any
+finding has severity `blocking` — never taken from the model's own judgement.
+Exit codes: `CLEAR` → `0`, `FLAGGED` → `1`, invalid input / infrastructure
+error → `2` (so CI can tell "unsafe to merge" from "the review didn't run").
+
+Finding kinds: `intent-conflict`, `missing-axiom`, `unjustified-delta`,
+`underspecified-domain`, `formula-shaped-axiom`, `out-of-scope`. Blocking is
+reserved for the first three — the cases where merging on the proof alone
+would be unsafe.
+
+> An LLM review is a strong *filter*, not a proof — it can miss gaps and it
+> can overreach. It replaces the human's line-by-line reading, not the human's
+> final yes/no on the evidence bundle.
+
 ### Flags
 
 | Flag | Modes | Meaning |
@@ -203,6 +237,10 @@ type checks.
 | `--verify <spec> <program>` | verify | Verify a spec-plan + program pair. |
 | `--spec <file>` / `--program <file>` | verify | Explicit form of the two `--verify` paths. |
 | `--diff <old> <new>` | diff | Prove a regeneration behavior-preserving, or show the deltas. |
+| `--review <spec>` | review | Adversarial LLM review of contract ⊨ intent. |
+| `--baseline <file>` | review | The base-branch SpecPlan, for change-aware review. |
+| `--deltas <file>` | review | A `--diff --json` outcome to judge against the intent. |
+| `--intent "<text>"` / `--intent-file <file>` | review | The stated intent (PR/ticket text); both may be given. |
 | `--fixture <file>` | fixture | Verify a lone Program JSON. |
 | `--max-retries N` | prompt | Generator repair attempts (default `3`). |
 | `--json` | all | Emit machine-readable JSON instead of the dashboard. |
@@ -519,6 +557,60 @@ numeric function into the kernel, and keep the glue thin.
 
 ---
 
+## Using vector in another repo (the autonomous PR flow)
+
+The end state: a PR arrives, CI runs, and the **only human act left is reading
+the PR's sticky comment** — proof status, behavioral deltas, adversarial
+review — and clicking merge if the evidence matches what was asked for. No
+code is read.
+
+**1. Lay out verified kernels as data:**
+
+```
+your-repo/
+  verified/
+    fee-calculator/
+      spec.json             # SpecPlan — the reviewed source of truth
+      program.json          # generated Program — build artifact (like a lockfile)
+      fee-calculator.ts     # emitted TypeScript — build artifact; imported by glue code
+  .github/workflows/
+    vector-gate.yml         # copied from vector's templates/github/
+```
+
+**2. Get a `vector` binary into CI.** Either build `dist/vector` once
+(`bun run build`) and host it (a GitHub release on your infra repo works),
+setting `VECTOR_BINARY_URL` in the workflow — or leave it empty and the
+workflow builds vector from source each run.
+
+**3. Copy [`templates/github/vector-gate.yml`](templates/github/vector-gate.yml)**
+into `.github/workflows/` and add `ANTHROPIC_API_KEY` to the repo's secrets
+(used only by the review step). Require the `vector-gate` check in branch
+protection. On every PR touching `verified/**` it runs, per kernel:
+
+| Gate | Tool | Question | Red when |
+|---|---|---|---|
+| Proof | `vector --verify` | Does the program provably satisfy every axiom? | not `PROVEN` |
+| Deltas | `vector --diff` | Where does behavior differ from the base branch? | never (feeds the review) |
+| Adversary | `vector --review` | Does the contract actually capture the PR's stated intent — and are the deltas justified by it? | `FLAGGED` |
+
+Note the division of labor: a `DIFFERENT` diff alone is **not** red. The
+deltas and the PR description both go to the adversarial reviewer, which
+blocks only deltas the intent doesn't justify. So "raise the cap to 40" with
+deltas confined to the old cap boundary rides through green; the same deltas
+under a PR titled "refactor" get flagged.
+
+**4. Author changes as SpecPlan diffs.** Inside Claude Code (with the vector
+skill) or via `vector "<prompt>"`, regenerate `program.json` + the emitted
+`.ts` from the updated spec, and write a PR description that states the
+intended behavior change — it is literally an input to the gate.
+
+The trust chain, end to end: Z3 proves *code ⊨ contract* (machine, sound);
+the adversary attacks *contract ⊨ intent* (LLM, a filter); the human confirms
+*intent ⊨ what I meant* by reading the PR comment. Each layer only has to
+carry what the layer below can't.
+
+---
+
 ## The Dijkstra Dashboard
 
 The human-readable proof report: per-layer Hoare triples, one checkmark per
@@ -607,12 +699,14 @@ src/
   diff.ts           the regeneration gate: old vs new program → EQUIVALENT or
                     concrete behavioral deltas
   lang/             AST types (generated), shape validator, typechecker, style lint
-  agents/           Architect + Generator LLM phases (prompt mode)
+  agents/           Architect + Generator LLM phases (prompt mode) and the
+                    Adversary (review mode)
   solve/            vector-lang → SMT-LIB2 (smt.ts) → native z3 → report (runner.ts);
                     equivalence checking (equiv.ts)
   emit/             AST → runnable TypeScript
-  report/           pretty-printer + Dijkstra Dashboard
+  report/           pretty-printer + Dijkstra Dashboard + review markdown
   generated/        mjst output (checked in)
+templates/github/   vector-gate.yml — the CI workflow consuming repos copy in
 test/               bun test suites + fixtures
 .claude/skills/vector/
   SKILL.md          the skill: the Architect→Generator→verify→repair loop
@@ -683,6 +777,8 @@ vector verifies exactly the fragment Z3 can decide, and no more:
   usual culprit; prefer inequalities or an explicit tolerance.
 - **Trust boundary:** Z3 proves *code ⊨ contract*. It cannot prove *contract ⊨
   your intent* — the displayed Hoare triples are what you should read and sign
-  off on. vector makes that contract small and auditable; it does not read your
-  mind.
+  off on. [`vector --review`](#review-mode-the-adversarial-gate) puts an
+  adversarial LLM on that link, but that is a filter, not a proof: the final
+  sign-off on intent stays human. vector makes that contract small and
+  auditable; it does not read your mind.
 ```
