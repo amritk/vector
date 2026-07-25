@@ -23,7 +23,13 @@
 # justify. Deltas your PR description explains ride through green.
 #
 # Setup in your repo:
-#   - secrets.ANTHROPIC_API_KEY        (for the --review step only)
+#   - LLM credentials for the --review step only — ONE of:
+#       secrets.ANTHROPIC_API_KEY        (API, pay-per-token)
+#       secrets.CLAUDE_CODE_OAUTH_TOKEN  (Claude Pro/Max subscription; generate
+#                                         once with `claude setup-token`. The
+#                                         review then runs through headless
+#                                         Claude Code — uncomment the claude
+#                                         CLI install line below.)
 #   - branch protection: require the "vector-gate" check
 #   - either set VECTOR_BINARY_URL below to a compiled `dist/vector` you host
 #     (bun run build in the vector repo, attach to a release), or leave it
@@ -70,10 +76,15 @@ jobs:
             echo "PATH=$HOME/.bun/bin:$PATH" >> "$GITHUB_ENV"
             echo "VECTOR=bun $HOME/.vector-src/src/cli.ts" >> "$GITHUB_ENV"
           fi
+          # Billing --review to a Claude Pro/Max subscription instead of an
+          # API key? Install the claude CLI; vector uses it automatically
+          # whenever ANTHROPIC_API_KEY is absent:
+          # npm install -g @anthropic-ai/claude-code
 
       - name: Verify, diff, review
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |

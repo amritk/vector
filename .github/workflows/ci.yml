@@ -1,0 +1,48 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    name: ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install --frozen-lockfile
+
+      - name: Fetch native z3
+        run: bun run fetch-z3
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Schema drift (generated parsers must match schemas/)
+        run: |
+          bun run generate:schemas
+          git diff --exit-code src/generated
+
+      - name: Test
+        run: bun test
+
+      - name: Verify gate smoke (fixture pair must prove, exit 0)
+        run: bun src/cli.ts --verify test/fixtures/currency-spec.json test/fixtures/currency.json --json > /dev/null
+
+      - name: Refuted fixture smoke (must exit 1)
+        run: |
+          if bun src/cli.ts --fixture test/fixtures/unsat.json > /dev/null 2>&1; then
+            echo "unsat fixture unexpectedly proved" && exit 1
+          fi
+
+      - name: Standalone binary smoke
+        run: |
+          bun run build
+          ./dist/vector --fixture test/fixtures/currency.json > /dev/null

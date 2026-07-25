@@ -97,13 +97,24 @@ bun run fetch-z3    # puts a native z3 into .z3/ (see below)
 
 - [**Bun**](https://bun.sh) — runs the `vector` CLI and the test suite.
 - **A native `z3`** — the solver. `bun run fetch-z3` fetches a version-matched
-  one into `.z3/` (via pip; needs Python). Alternatively set `$VECTOR_Z3` to a
-  `z3` binary or put one on `PATH`. The compiled binary bundles its own, so it
+  one into `.z3/`: it downloads the platform-matched zip straight from Z3's
+  GitHub releases (no Python needed — the zip is unpacked by a built-in
+  reader), falling back to pip's `z3-solver` wheel where github.com is
+  unreachable (that path needs Python). Force either with
+  `VECTOR_Z3_SOURCE=github|pip`. Alternatively set `$VECTOR_Z3` to a `z3`
+  binary or put one on `PATH`. The compiled binary bundles its own, so it
   needs none of this (see [Architecture notes](#architecture-notes)). No Node
   required anywhere.
-- **`ANTHROPIC_API_KEY`** — only for *prompt mode*. Put it in `.env` (see
-  `.env.example`) or the environment. The verify/fixture paths and the Claude
-  Code skill need **no** key.
+- **An LLM backend** — only for the generative modes (*prompt* and *review*;
+  verify/fixture/diff and the Claude Code skill need none). Two options:
+  - `ANTHROPIC_API_KEY` (API, pay-per-token) — put it in `.env` (see
+    `.env.example`) or the environment.
+  - **A Claude Pro/Max subscription** — with no API key set, vector runs its
+    LLM calls through headless Claude Code (`claude -p`), which bills your
+    subscription. Locally that's your existing `claude` login; in CI generate
+    a long-lived token with `claude setup-token` and set it as
+    `CLAUDE_CODE_OAUTH_TOKEN`. Force a backend with `VECTOR_LLM=api` or
+    `VECTOR_LLM=claude-cli`.
 
 ---
 
@@ -206,7 +217,9 @@ Z3 proves *code ⊨ contract*; the one unproven link is *contract ⊨ intent*.
 ticket text as the *stated intent*) and is prompted to attack — construct
 concrete behaviors the axioms permit but the intent forbids, find properties
 the intent implies that no axiom enforces, and flag behavioral deltas the
-intent doesn't justify. Needs `ANTHROPIC_API_KEY`.
+intent doesn't justify. Needs an LLM backend — `ANTHROPIC_API_KEY`, or a
+Claude Pro/Max subscription via the `claude` CLI (see
+[Install & requirements](#install--requirements)).
 
 ```bash
 bun run vector --review spec.json \
