@@ -15,6 +15,7 @@
     "fetch-z3": "bun scripts/fetch-z3.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
+    "coverage": "bun scripts/coverage.ts",
     "generate:schemas": "mjst --schema-dir schemas --out-dir src/generated --strict",
     "format": "biome check . --write",
     "lint": "biome check ."
