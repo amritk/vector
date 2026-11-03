@@ -327,6 +327,10 @@ async function runPrompt(args: CliArgs): Promise<number> {
 }
 
 export async function main(argv: string[]): Promise<number> {
+  if (argv[0] === "rfc") {
+    const { rfcMain } = await import("./rfc/cli.ts");
+    return rfcMain(argv.slice(1));
+  }
   try {
     const args = parseArgs(argv);
     const verifyMode = Boolean(args.spec || args.program);
@@ -336,7 +340,8 @@ export async function main(argv: string[]): Promise<number> {
         'Usage: vector "<prompt>" [--max-retries N] [--json] [--emit <file>]\n' +
           "       vector --fixture <program.json> [--json] [--emit <file>]\n" +
           "       vector --verify <spec.json> <program.json> [--json] [--emit <file>]\n" +
-          "       vector --diff <old-program.json> <new-program.json> [--json]",
+          "       vector --diff <old-program.json> <new-program.json> [--json]\n" +
+          "       vector rfc check|emit|run|extract …   (RFC → contract → nish test)",
       );
       return 2;
     }
