@@ -586,7 +586,7 @@ export function validateContractShape(input: unknown): string[] {
     if (v === undefined) return;
     if (typeof v !== "string" || !ids.has(v)) {
       errors.push(
-        `${at}: an id from contract.sources (${[...ids].join(", ") || "none declared"})`,
+        `${at}: ${JSON.stringify(v)} is not an id from contract.sources (${[...ids].join(", ") || "none declared"})`,
       );
     }
   };

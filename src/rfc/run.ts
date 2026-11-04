@@ -110,8 +110,11 @@ function spawnCollect(
   cwd?: string,
 ): Promise<Spawned> {
   return new Promise((resolve) => {
+    // Its own process group, so a timeout kills what it started too: a
+    // grandchild holding stdout open would otherwise outlive the deadline.
     const child = spawn(bin, args, {
       cwd,
+      detached: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
@@ -119,7 +122,11 @@ function spawnCollect(
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGKILL");
+      try {
+        process.kill(-(child.pid as number), "SIGKILL");
+      } catch {
+        child.kill("SIGKILL");
+      }
     }, timeoutMs);
     child.stdout.on("data", (d) => {
       stdout += d;
