@@ -25,13 +25,13 @@ fail() {
 seed="$(cd "$(dirname "$nish_bin")/.." && pwd)"
 [ -x "$seed/libexec/nish" ] || fail "no $seed/libexec/nish: $nish_bin is not a seed install"
 [ -d "$nish_src/std" ] || fail "no nish std sources at $nish_src/std (set NISH_SRC)"
-[ ! -e "$nish_src/std/hex.ts" ] || fail "$nish_src/std/hex.ts already exists; this fixture would shadow it"
 command -v python3 >/dev/null || fail "python3 is missing (V5/V6 sources)"
 
 scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' EXIT
 
-# The scratch install: the seed, with std/ replaced by the checkout's plus hex.ts.
+# The scratch install: the seed, with std/ replaced by the checkout's plus
+# hex.ts (over any std/hex.ts the checkout has, so the fixture is what runs).
 cp -R "$seed" "$scratch/install"
 rm -rf "$scratch/install/std"
 cp -R "$nish_src/std" "$scratch/install/std"
