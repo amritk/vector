@@ -46,6 +46,7 @@ import {
 } from "./contract.ts";
 import {
   type RfcDocument,
+  type RfcSection,
   findSection,
   hexPrinted,
   hexRuns,
@@ -375,9 +376,27 @@ function checkFidelity(
     const check = literalCheck(sec, place(c, docs, at), k.id, issues, warnings);
     k.args.forEach((a, i) => check(a, `args[${i}]`));
     // A command or spec source vouches for the expected value instead.
-    if ("cite" in k.source) check(k.expect, "expect");
+    if (!("cite" in k.source)) continue;
+    const word = resultWord(k.expect);
+    if (word === null) check(k.expect, "expect");
+    else if (!statesResult(sec, word)) {
+      issues.push({
+        gate: "fidelity",
+        at: `${k.id}.expect`,
+        message: `${place(c, docs, at)} ("${sec.title}") never says "${word}", so it does not state the expected result`,
+      });
+    }
   }
 }
+
+/** "null", "true" or "false" for an expected null or bool; null otherwise. */
+function resultWord(lit: Literal): string | null {
+  if ("null" in lit) return "null";
+  return "bool" in lit ? String(lit.bool) : null;
+}
+
+const statesResult = (sec: RfcSection, word: string): boolean =>
+  new RegExp(`\\b${word}\\b`, "i").test(sectionText(sec));
 
 /** Checks literals against one section's text. */
 function literalCheck(
@@ -472,11 +491,8 @@ function checkProvenance(
         issues,
       );
       if (!sec) continue;
-      const word =
-        "null" in k.expect
-          ? "null"
-          : String((k.expect as { bool: boolean }).bool);
-      if (!new RegExp(`\\b${word}\\b`, "i").test(sectionText(sec))) {
+      const word = resultWord(k.expect) as string;
+      if (!statesResult(sec, word)) {
         issues.push({
           gate: "provenance",
           at: `${k.id}.source`,

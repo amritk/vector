@@ -16,8 +16,8 @@ import {
   reportJson,
   reportStatus,
 } from "./report.ts";
-import { parseDocument } from "./spectext.ts";
 import { sampleContract } from "./sample.ts";
+import { parseDocument } from "./spectext.ts";
 
 export const EXTRACTOR_SYSTEM_PROMPT = `You turn an RFC into a test contract for an implementation \
 of it. The contract is JSON (the schema is enforced). It is checked mechanically against the RFC \
