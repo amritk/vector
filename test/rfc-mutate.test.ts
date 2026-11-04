@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -311,6 +312,19 @@ describe("scratch installs", () => {
       ).toThrow(/is not a path under std\//);
     rmSync(join(r, "build"), { recursive: true });
     expect(() => makeScratch({ nishRoot: r })).toThrow(/does not exist/);
+    rmSync(r, { recursive: true, force: true });
+  });
+
+  test("a failed copy removes the half-made install", () => {
+    const r = fakeRoot();
+    const made = () =>
+      readdirSync(tmpdir()).filter((n) => n.startsWith("vector-scratch-"));
+    const before = made();
+    // std/io.ts is a file, so the override's directory cannot be made.
+    expect(() =>
+      makeScratch({ nishRoot: r, overrides: { "std/io.ts/x.ts": "x" } }),
+    ).toThrow(/ENOTDIR|EEXIST/);
+    expect(made()).toEqual(before);
     rmSync(r, { recursive: true, force: true });
   });
 });
