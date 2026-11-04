@@ -327,7 +327,7 @@ async function runPrompt(args: CliArgs): Promise<number> {
 }
 
 export async function main(argv: string[]): Promise<number> {
-  if (argv[0] === "rfc") {
+  if (argv[0] === "spec" || argv[0] === "rfc") {
     const { rfcMain } = await import("./rfc/cli.ts");
     return rfcMain(argv.slice(1));
   }
@@ -341,7 +341,7 @@ export async function main(argv: string[]): Promise<number> {
           "       vector --fixture <program.json> [--json] [--emit <file>]\n" +
           "       vector --verify <spec.json> <program.json> [--json] [--emit <file>]\n" +
           "       vector --diff <old-program.json> <new-program.json> [--json]\n" +
-          "       vector rfc check|emit|run|extract …   (RFC → contract → nish test)",
+          "       vector spec check|emit|run|extract …  (spec or RFC → contract → nish test; alias: vector rfc)",
       );
       return 2;
     }

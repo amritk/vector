@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "RfcContract",
-  "description": "What an RFC requires of a set of functions: verbatim requirements, the functions' signatures, and the clauses (RFC test vectors and properties) that check them. Checked against the RFC text by `vector rfc check`, then compiled to a Nish test.",
+  "description": "What a specification (an RFC, or markdown with numbered headings) requires of a set of functions: verbatim requirements, the functions' signatures, and the clauses (test vectors and properties) that check them. Checked against the spec text by `vector spec check`, then compiled to a Nish test.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -16,15 +16,28 @@
     "source": {
       "type": "object",
       "additionalProperties": false,
+      "description": "rfc alone: a single-RFC contract. With `sources`, give `main` (the source the completeness gate reads) instead of rfc.",
       "properties": {
         "rfc": {
           "type": "integer"
         },
         "title": {
           "type": "string"
+        },
+        "main": {
+          "$ref": "#/$defs/id",
+          "description": "The id of the main entry of `sources`."
         }
       },
-      "required": ["rfc", "title"]
+      "required": ["title"]
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/sourceDecl"
+      },
+      "description": "The documents the contract cites, by id. Citations name one with `source` (default: the main one)."
     },
     "target": {
       "type": "object",
@@ -89,7 +102,7 @@
     "section": {
       "type": "string",
       "pattern": "^(?:\\d+(?:\\.\\d+)*|[A-Z](?:\\.\\d+)*)$",
-      "description": "An RFC section number: 2.3, A.1, 4."
+      "description": "A section number: 2.3, A.1, 4 (an RFC's, or a markdown spec's numbered heading)."
     },
     "valueType": {
       "enum": ["bytes", "bytes?", "string", "string?", "i32", "u32", "bool"],
@@ -101,6 +114,10 @@
       "properties": {
         "id": {
           "$ref": "#/$defs/id"
+        },
+        "source": {
+          "$ref": "#/$defs/id",
+          "description": "The id of the cited source (default: the main one)."
         },
         "section": {
           "$ref": "#/$defs/section"
@@ -135,6 +152,10 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "source": {
+          "$ref": "#/$defs/id",
+          "description": "The id of the cited source (default: the main one)."
+        },
         "section": {
           "$ref": "#/$defs/section"
         },
@@ -401,7 +422,7 @@
     "vectorClause": {
       "type": "object",
       "additionalProperties": false,
-      "description": "A known answer printed in the RFC: call(args) == expect. Every value must be printed in `section`.",
+      "description": "A known answer: call(args) == expect. The args are printed in the cited section (with a cite source) or in `section`; `source` says where the expected value comes from.",
       "properties": {
         "kind": {
           "const": "vector"
@@ -419,8 +440,12 @@
             "$ref": "#/$defs/id"
           }
         },
+        "source": {
+          "$ref": "#/$defs/vectorSource"
+        },
         "section": {
-          "$ref": "#/$defs/section"
+          "$ref": "#/$defs/section",
+          "description": "Only with a command or spec source: the main-source section printing the args."
         },
         "call": {
           "type": "string"
@@ -440,7 +465,7 @@
         "id",
         "title",
         "covers",
-        "section",
+        "source",
         "call",
         "args",
         "expect"
@@ -557,6 +582,73 @@
         }
       },
       "required": ["kind", "id", "title", "covers", "forall", "assert"]
+    },
+    "sourceDecl": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "rfc": {
+          "type": "integer",
+          "description": "An RFC number: rfcs/rfc<N>.txt."
+        },
+        "path": {
+          "type": "string",
+          "description": "The spec's file, relative to the contract."
+        }
+      },
+      "required": ["id"]
+    },
+    "citation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/id",
+          "description": "The id of the cited source (default: the main one)."
+        },
+        "section": {
+          "$ref": "#/$defs/section"
+        }
+      },
+      "required": ["section"]
+    },
+    "vectorSource": {
+      "description": "Where the expected value comes from: printed in a cited section; the stdout of a command (run under --run-sources); or, for an expected null or bool, a section that states it.",
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cite": {
+              "$ref": "#/$defs/citation"
+            }
+          },
+          "required": ["cite"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "command": {
+              "type": "string"
+            }
+          },
+          "required": ["command"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "spec": {
+              "$ref": "#/$defs/section"
+            }
+          },
+          "required": ["spec"]
+        }
+      ]
     }
   }
 }
