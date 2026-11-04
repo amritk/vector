@@ -432,15 +432,15 @@ describe("contract sources", () => {
 describe("vector provenance", () => {
   test("refuses a vector with no source", () => {
     const c = hexContract();
-    delete (vec(c, "V-CITE") as Partial<VectorClause>).source;
+    (vec(c, "V-CITE") as Partial<VectorClause>).source = undefined;
     expect(validateContractShape(c).join("\n")).toContain("clauses[0].source");
   });
 
   test("refuses a section on a cite source, and none on a command or spec", () => {
     const c = hexContract();
     vec(c, "V-CITE").section = "3";
-    delete vec(c, "V-SPEC").section;
-    delete vec(c, "V-CMD").section;
+    vec(c, "V-SPEC").section = undefined;
+    vec(c, "V-CMD").section = undefined;
     const errors = validateContractShape(c).join("\n");
     expect(errors).toContain("clauses[0].section");
     expect(errors).toContain("clauses[1].section");
@@ -518,7 +518,7 @@ describe("vector provenance", () => {
   test("a cite source for a null must say null", () => {
     const c = hexContract();
     vec(c, "V-SPEC").source = { cite: { section: "2" } };
-    delete vec(c, "V-SPEC").section;
+    vec(c, "V-SPEC").section = undefined;
     vec(c, "V-SPEC").args = [{ str: "encoder" }];
     const r = runGates(c, { docs: docs(), commands: passed("V-CMD") });
     // §2 includes 2.1, which says null; §3 does not.
@@ -763,7 +763,7 @@ describe("vector spec (the command)", () => {
 
   test("a contract of the wrong shape is refused without reading sources", async () => {
     const c = hexContract();
-    delete (vec(c, "V-CMD") as Partial<VectorClause>).source;
+    (vec(c, "V-CMD") as Partial<VectorClause>).source = undefined;
     writeFileSync(contract(), JSON.stringify(c));
     expect(await rfcMain(["check", contract(), "--run-sources"])).toBe(1);
     expect(out.join("\n")).toContain("clauses[2].source");
