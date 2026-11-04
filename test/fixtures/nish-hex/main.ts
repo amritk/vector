@@ -53,12 +53,12 @@ const smokeDecodes = (
 ): boolean => {
   const got = hexDecode(text);
   if (got === null) {
-    return t.fail(name, "expected " + hexEncode(expected) + ", got null");
+    return t.fail(name, `expected ${hexEncode(expected)}, got null`);
   }
   if (!smokeSame(got, expected)) {
     return t.fail(
       name,
-      "expected " + hexEncode(expected) + ", got " + hexEncode(got),
+      `expected ${hexEncode(expected)}, got ${hexEncode(got)}`,
     );
   }
   return t.pass(name);
@@ -70,7 +70,7 @@ const smokeRefuses = (t: Suite, name: string, text: string): boolean => {
   if (got === null) {
     return t.pass(name);
   }
-  return t.fail(name, "expected null, got " + hexEncode(got));
+  return t.fail(name, `expected null, got ${hexEncode(got)}`);
 };
 
 /** The nibble of a hex digit byte by the obvious branches, or -1. */
