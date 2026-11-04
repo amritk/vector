@@ -120,8 +120,6 @@ interface Line {
   /** 1-based number. */
   n: number;
   text: string;
-  /** Offset of the line's first character in the source. */
-  at: number;
   /** The line with every non-code character replaced by a space. */
   code: string;
 }
@@ -132,7 +130,7 @@ function splitLines(src: string, mask: boolean[]): Line[] {
   for (const [k, text] of src.split("\n").entries()) {
     let code = "";
     for (let j = 0; j < text.length; j++) code += mask[at + j] ? text[j] : " ";
-    out.push({ n: k + 1, text, at, code });
+    out.push({ n: k + 1, text, code });
     at += text.length + 1;
   }
   return out;
@@ -199,6 +197,15 @@ function intLiterals(l: Line, push: Push): void {
   }
 }
 
+/** Whether the next line with code carries on line `k`'s expression. */
+function nextContinues(lines: Line[], k: number): boolean {
+  const next = lines
+    .slice(k + 1)
+    .find((p) => p.code.trim() !== "")
+    ?.code.trim();
+  return next !== undefined && CONTINUES.test(next) && !next.startsWith("}");
+}
+
 function deleteStatement(lines: Line[], k: number, push: Push): void {
   const l = lines[k];
   const code = l.code.trim();
@@ -210,13 +217,7 @@ function deleteStatement(lines: Line[], k: number, push: Push): void {
     .find((p) => p.code.trim() !== "");
   const p = prev?.code.trim() ?? "";
   if (!p.endsWith("{") && OPEN_END.test(p)) return;
-  const next = lines.slice(k + 1).find((p) => p.code.trim() !== "");
-  if (
-    next &&
-    CONTINUES.test(next.code.trim()) &&
-    !next.code.trim().startsWith("}")
-  )
-    return;
+  if (nextContinues(lines, k)) return;
   push("delete-statement", l.code.search(/\S/), "");
 }
 
@@ -249,13 +250,7 @@ function returnNull(
   const l = lines[k];
   const m = l.code.match(/^(\s*)return\s+(\S.*?)\s*;?\s*$/);
   if (!m || m[2] === "null" || !balanced(m[2]) || OPEN_END.test(m[2])) return;
-  const next = lines.slice(k + 1).find((p) => p.code.trim() !== "");
-  if (
-    next &&
-    CONTINUES.test(next.code.trim()) &&
-    !next.code.trim().startsWith("}")
-  )
-    return;
+  if (nextContinues(lines, k)) return;
   for (const o of [...open[k]].reverse()) {
     const admits = headerAdmitsNull(lines[o].code);
     if (admits === undefined) continue;
@@ -480,8 +475,12 @@ export async function runMutants(
   const all = generateMutants(o.source, o.ranges);
   let chosen = all;
   if (o.mutants) {
-    const ids = new Set(all.map((m) => m.id));
-    const foreign = o.mutants.find((m) => !ids.has(m.id));
+    const made = new Set(
+      all.map((m) => `${m.id}\n${m.original}\n${m.mutated}`),
+    );
+    const foreign = o.mutants.find(
+      (m) => !made.has(`${m.id}\n${m.original}\n${m.mutated}`),
+    );
     if (foreign)
       throw new MutationRunError(
         `mutant ${foreign.id} is not one this source and these ranges make`,
@@ -493,7 +492,7 @@ export async function runMutants(
   const base = await exec(o.source);
   if (base.timedOut || base.run.status !== "SATISFIED")
     throw new MutationRunError(
-      `the test does not pass on the unmutated ${o.modulePath} (${base.timedOut ? "timeout" : base.run.status}), so no mutant can be judged: ${base.run.stderr.trim().split("\n")[0] ?? ""}`,
+      `the test does not pass on the unmutated ${o.modulePath} (${base.timedOut ? "timeout" : base.run.status}), so no mutant can be judged: ${base.run.stderr.trim().split("\n")[0]}`,
     );
 
   const results = await pool(chosen, o.jobs ?? 1, async (mutant) => {

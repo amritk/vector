@@ -554,7 +554,7 @@ describe.skipIf(!nish)("planted mutants against nish", () => {
   const live = async (
     c: RfcContract,
     path: string,
-    planted: [string, string][],
+    planted: [op: string, original: string, mutated: string][],
     sample: number,
   ) => {
     const diff = diffs.find((d) => d.file === path);
@@ -562,9 +562,16 @@ describe.skipIf(!nish)("planted mutants against nish", () => {
     const source = readFileSync(join(base, path), "utf8");
     const ranges = diff?.ranges ?? [];
     const all = generateMutants(source, ranges);
-    const found = planted.map(([op, text]) => {
-      const m = all.find((x) => x.operator === op && x.mutated.includes(text));
-      expect(m, `${op} → ${text}`).toBeDefined();
+    // Matched on the whole line before and after, so a look-alike on a
+    // neighbouring line (tag[14] → tag[15]) cannot stand in for the planted one.
+    const found = planted.map(([op, original, mutated]) => {
+      const m = all.find(
+        (x) =>
+          x.operator === op &&
+          x.original.trim() === original &&
+          x.mutated.trim() === mutated,
+      );
+      expect(m, `${op}: ${original} → ${mutated}`).toBeDefined();
       return m as Mutant;
     });
     const others = spread(
@@ -599,7 +606,13 @@ describe.skipIf(!nish)("planted mutants against nish", () => {
     await live(
       hkdf,
       modules.hkdf,
-      [["int-literal", "HKDF_MAX_BLOCKS: i32 = 256"]],
+      [
+        [
+          "int-literal",
+          "const HKDF_MAX_BLOCKS: i32 = 255",
+          "const HKDF_MAX_BLOCKS: i32 = 256",
+        ],
+      ],
       3,
     );
   }, 600_000);
@@ -609,8 +622,16 @@ describe.skipIf(!nish)("planted mutants against nish", () => {
       aead,
       modules.aead,
       [
-        ["int-literal", "toU32(tag[15] ^ sealed[p + 14])"],
-        ["logical", "i < tail || i < toI32(last.length)"],
+        [
+          "int-literal",
+          "toU32(tag[15] ^ sealed[p + 15])",
+          "toU32(tag[15] ^ sealed[p + 14])",
+        ],
+        [
+          "logical",
+          "for (let i: i32 = 0; i < tail && i < toI32(last.length); i++) {",
+          "for (let i: i32 = 0; i < tail || i < toI32(last.length); i++) {",
+        ],
       ],
       3,
     );
