@@ -24,7 +24,8 @@ export interface FileDiff {
 export class DiffParseError extends Error {}
 
 const HUNK_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: .*)?$/;
-const EXPORT_RE = /^\s*export\s+(?:const|function)\s+([A-Za-z_$][\w$]*)/;
+const EXPORT_RE =
+  /^\s*export\s+(?:default\s+)?(?:declare\s+)?(?:async\s+)?(?:const|let|var|function\s*\*?|class|interface|type|enum)\s*([A-Za-z_$][\w$]*)/;
 /** Extended header lines git prints between `diff --git` and the first hunk. */
 const HEADER_RE =
   /^(?:index |old mode |new mode |deleted file mode |new file mode |similarity index |dissimilarity index |rename from |rename to |copy from |copy to )/;
@@ -131,6 +132,10 @@ export function gitDiff(
       "--no-color",
       "--no-ext-diff",
       "--no-renames",
+      "--no-textconv",
+      // Whatever diff.noprefix or diff.mnemonicPrefix say: path() reads a/ and b/.
+      "--src-prefix=a/",
+      "--dst-prefix=b/",
       base,
       "--",
       ...paths,

@@ -102,6 +102,31 @@ describe("reading git diff -U0", () => {
     rmSync(d, { recursive: true, force: true });
   });
 
+  test("reads a/ and b/ paths whatever the user's prefix config says", () => {
+    const d = repo();
+    write(d, "a/x.ts", "1\n");
+    commit(d);
+    write(d, "a/x.ts", "2\nexport async function k() {}\nexport class C {}\n");
+    for (const [k, v] of [
+      ["diff.noprefix", "true"],
+      ["diff.mnemonicPrefix", "true"],
+    ]) {
+      git(d, "config", k, v);
+      expect(gitDiff(d, "HEAD")).toEqual([
+        {
+          file: "a/x.ts",
+          ranges: [[1, 3]],
+          exports: [
+            { name: "k", kind: "added" },
+            { name: "C", kind: "added" },
+          ],
+        },
+      ]);
+      git(d, "config", "--unset", k);
+    }
+    rmSync(d, { recursive: true, force: true });
+  });
+
   test("a git error is an error, not an empty diff", () => {
     const d = repo();
     expect(() => gitDiff(d, "no-such-rev")).toThrow(
@@ -232,6 +257,15 @@ describe("the operators", () => {
         (m) => m.operator === "return-null",
       ),
     ).toEqual([]);
+    // An unannotated callback inside a function that admits null: its own
+    // return type is unknown, so it is not judged by the outer one.
+    for (const head of ["xs.map((x) => {", "xs.map(function (x) {"])
+      expect(
+        generateMutants(
+          `function f(xs): u8[] | null {\n  ${head}\n    return x + 1\n  })\n}\n`,
+          [[3, 3]],
+        ).filter((m) => m.operator === "return-null"),
+      ).toEqual([]);
   });
 
   test("deletes whole statements, never a piece of a longer one", () => {
@@ -248,6 +282,15 @@ describe("the operators", () => {
     expect(del("let x = 1\n", 1)).toEqual([]);
     expect(del("}\n", 1)).toEqual([]);
     expect(del("\n", 1)).toEqual([]);
+    // The body of a braceless head: deleting it would re-parent the next line.
+    for (const head of [
+      "if (bad)",
+      "} else",
+      "else if (x)",
+      "for (;;)",
+      "while (x)",
+    ])
+      expect(del(`${head}\n  throw err\nout.push(v)\n`, 2)).toEqual([]);
   });
 
   test("applying a mutant changes its one line, and refuses another source", () => {
@@ -504,23 +547,31 @@ describe("running mutants with a fake runner", () => {
       );
   });
 
-  test("a runner error on any mutant fails the run", async () => {
-    const exec: Exec = async (c) =>
-      c === src ? result(pass) : result("", "", 0);
-    await expect(runMutants({ ...opts, exec })).rejects.toThrow(
+  test("a runner error on any mutant fails the run, and no more are run", async () => {
+    let calls = 0;
+    const exec: Exec = async (c) => {
+      calls++;
+      if (c === src) return result(pass);
+      return calls === 2 ? result("", "", 0) : result(pass);
+    };
+    await expect(runMutants({ ...opts, exec, jobs: 2 })).rejects.toThrow(
       MutationRunError,
     );
+    // The base, the failing mutant and the one already running beside it.
+    expect(mutants.length).toBeGreaterThan(3);
+    expect(calls).toBe(3);
   });
 
   test("the default exec runs the test in a scratch install with the module replaced", async () => {
     // A stand-in compiler: passes every clause unless the module says FAIL,
-    // never finishes if it says HANG.
+    // never finishes if it says HANG. Its sleep is a child holding the output
+    // pipes open, as the program `nish run` starts is.
     const r = tmp("vector-mut-fake-");
     const out = ids.map((id) => `PASS  [${id}] ok`).join("\\n");
     write(
       r,
       "build/seed/libexec/nish",
-      `#!/bin/sh\nm="$(dirname "$0")/../std/f.ts"\ngrep -q HANG "$m" && exec sleep 30\ngrep -q FAIL "$m" && { printf 'FAIL  [${ids[0]}] x\\n'; exit 1; }\nprintf '${out}\\n'\n`,
+      `#!/bin/sh\nm="$(dirname "$0")/../std/f.ts"\ngrep -q HANG "$m" && { sleep 30; exit 0; }\ngrep -q FAIL "$m" && { printf 'FAIL  [${ids[0]}] x\\n'; exit 1; }\nprintf '${out}\\n'\n`,
     );
     chmodSync(join(r, "build/seed/libexec/nish"), 0o755);
     write(r, "std/f.ts", "base");

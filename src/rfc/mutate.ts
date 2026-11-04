@@ -7,6 +7,8 @@
 // are code (not a string or a comment), and every operator looks only at code.
 // A mutant that does not compile is "stillborn" and is not counted.
 
+import { existsSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { RfcContract } from "./contract.ts";
 import type { LineRange } from "./gitdiff.ts";
 import { type RunResult, runNishTest } from "./run.ts";
@@ -116,6 +118,9 @@ const OPEN_END = /(?:[.?:|&+\-*/%,([{=<>^!]|=>)$/;
 const NOT_STATEMENT =
   /^(?:const|let|var|function|export|import|type|interface|class|if|else|for|while|do|switch|case|default|try|catch|finally|return)\b/;
 
+const BRACELESS_HEAD =
+  /^(?:\}\s*)?(?:else(?:\s+if\s*\(.*\))?|(?:if|for|while)\s*\(.*\)|do)$/;
+
 interface Line {
   /** 1-based number. */
   n: number;
@@ -217,6 +222,9 @@ function deleteStatement(lines: Line[], k: number, push: Push): void {
     .find((p) => p.code.trim() !== "");
   const p = prev?.code.trim() ?? "";
   if (!p.endsWith("{") && OPEN_END.test(p)) return;
+  // The body of a braceless `if (…)`/`else`/loop: deleting it would make the
+  // next statement the body, which is a second change.
+  if (BRACELESS_HEAD.test(p)) return;
   if (nextContinues(lines, k)) return;
   push("delete-statement", l.code.search(/\S/), "");
 }
@@ -252,8 +260,14 @@ function returnNull(
   if (!m || m[2] === "null" || !balanced(m[2]) || OPEN_END.test(m[2])) return;
   if (nextContinues(lines, k)) return;
   for (const o of [...open[k]].reverse()) {
-    const admits = headerAdmitsNull(lines[o].code);
-    if (admits === undefined) continue;
+    const head = lines[o].code.trimEnd();
+    const admits = headerAdmitsNull(head);
+    if (admits === undefined) {
+      // An unannotated function: its return type is not written down, so
+      // whether it admits null is unknown. Any other block: look further out.
+      if (/=>\s*\{$|\bfunction\b/.test(head)) return;
+      continue;
+    }
     if (admits) push("return-null", m[1].length, `${m[1]}return null`);
     return;
   }
@@ -370,7 +384,12 @@ export function classify(r: ExecResult): {
   const failed = clauses.find((c) => c.outcome === "fail");
   if (failed) return { outcome: "killed", detail: failed.line };
   const stderr = run.stderr.trim();
-  if (run.exitCode === null && stderr.includes(`failed to start ${run.nish}`))
+  // run.ts reports a binary that did not start with a null exit; the
+  // watchdog reports nish not starting with 127.
+  if (
+    (run.exitCode === null || run.exitCode === 127) &&
+    stderr.includes("failed to start ")
+  )
     throw new MutationRunError(stderr);
   const ran = clauses.some((c) => c.outcome !== "not-run");
   const diag = ran ? null : stderr.match(DIAGNOSTIC_RE);
@@ -403,10 +422,17 @@ async function pool<T, R>(
 ): Promise<R[]> {
   const out = new Array<R>(xs.length);
   let next = 0;
+  let failed = false;
   const worker = async () => {
-    while (next < xs.length) {
+    // After one job throws, the others take no more.
+    while (!failed && next < xs.length) {
       const k = next++;
-      out[k] = await f(xs[k]);
+      try {
+        out[k] = await f(xs[k]);
+      } catch (err) {
+        failed = true;
+        throw err;
+      }
     }
   };
   await Promise.all(
@@ -438,6 +464,38 @@ export interface RunMutantsOptions {
   exec?: Exec;
 }
 
+const WATCHDOG_GRACE_MS = 10_000;
+
+/**
+ * A script that runs `nish` in its own process group and kills the whole
+ * group after `ms`, leaving `marker` behind. `nish run` starts the compiled
+ * program as a child, so killing `nish` alone would leave a looping mutant
+ * running with the test's output pipes open, and the run would never end.
+ */
+function watchdog(nish: string, ms: number, marker: string): string {
+  return `#!${process.execPath}
+const { spawn } = require("node:child_process");
+const { writeFileSync } = require("node:fs");
+const { signals } = require("node:os").constants;
+const child = spawn(${JSON.stringify(nish)}, process.argv.slice(2), {
+  stdio: "inherit",
+  detached: true,
+});
+const timer = setTimeout(() => {
+  writeFileSync(${JSON.stringify(marker)}, "");
+  process.kill(-child.pid, "SIGKILL");
+}, ${ms});
+child.on("error", (err) => {
+  console.error("failed to start " + ${JSON.stringify(nish)} + ": " + err.message);
+  process.exit(127);
+});
+child.on("exit", (code, signal) => {
+  clearTimeout(timer);
+  process.exit(code ?? 128 + (signals[signal] ?? 0));
+});
+`;
+}
+
 /** The default exec: a fresh scratch install per run, removed after. */
 export function scratchExec(o: {
   contract: RfcContract;
@@ -452,10 +510,19 @@ export function scratchExec(o: {
       overrides: { [o.modulePath]: contents },
     });
     try {
-      const t0 = Date.now();
-      const run = await runNishTest(o.contract, o.test, s.nish, o.timeoutMs);
-      const timedOut = run.exitCode === null && Date.now() - t0 >= o.timeoutMs;
-      return { run, timedOut };
+      const marker = join(s.dir, "timed-out");
+      const bin = join(s.dir, "vector-watchdog");
+      writeFileSync(bin, watchdog(s.nish, o.timeoutMs, marker), {
+        mode: 0o755,
+      });
+      // run.ts's own kill is the backstop; the watchdog fires first.
+      const run = await runNishTest(
+        o.contract,
+        o.test,
+        bin,
+        o.timeoutMs + WATCHDOG_GRACE_MS,
+      );
+      return { run: { ...run, nish: s.nish }, timedOut: existsSync(marker) };
     } finally {
       s.dispose();
     }
