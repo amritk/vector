@@ -22,7 +22,7 @@ import {
   sectionLines,
   sectionText,
 } from "../src/rfc/rfctext.ts";
-import { runSourceCommands } from "../src/rfc/run.ts";
+import { runNishTest, runSourceCommands } from "../src/rfc/run.ts";
 import {
   LOOSE_SECTION,
   detectFormat,
@@ -290,6 +290,33 @@ describe("a markdown contract", () => {
     ]);
   });
 
+  test("an exclusion accounts for a MUST, and must quote the section", () => {
+    const c = hexContract();
+    c.requirements = c.requirements.filter((r) => r.id !== "R-ODD");
+    for (const k of c.clauses) k.covers = ["R-LOWER"];
+    c.exclusions = [
+      {
+        section: "2.1",
+        quote: "A decoder MUST return null for a string of odd length",
+        reason: "tested elsewhere",
+      },
+    ];
+    const ok = runGates(c, { docs: docs(), commands: passed("V-CMD") });
+    expect(messages(ok)).toEqual([]);
+    expect(ok.warnings).toContainEqual({
+      at: "§2.1",
+      message: "excluded: tested elsewhere",
+    });
+    expect(renderReport({ contract: c, gates: ok })).toContain(
+      '§2.1 "A decoder MUST return null for a string of odd length" — tested elsewhere',
+    );
+    c.exclusions[0].quote = "A decoder MAY refuse";
+    const r = runGates(c, { docs: docs(), commands: passed("V-CMD") });
+    expect(messages(r)[0]).toBe(
+      '[fidelity] exclusion §2.1: quote not found in §2.1: "A decoder MAY refuse"',
+    );
+  });
+
   test("refuses a section the markdown spec does not have", () => {
     const c = hexContract();
     vec(c, "V-CITE").source = { cite: { section: "9" } };
@@ -352,6 +379,33 @@ describe("contract sources", () => {
     expect(validateContractShape(legacy)).toContain(
       "contract.source.main: only with contract.sources",
     );
+  });
+
+  test("refuses a malformed source or sources", () => {
+    const shape = (patch: Record<string, unknown>) =>
+      validateContractShape({ ...hexContract(), ...patch }).join("\n");
+    expect(shape({ source: "hex" })).toContain("contract.source: an object");
+    expect(shape({ sources: [] })).toContain(
+      "contract.sources: a non-empty array",
+    );
+    const legacy = clone(hkdf) as unknown as {
+      source: Record<string, unknown>;
+    };
+    legacy.source.rfc = 0;
+    expect(validateContractShape(legacy)).toContain(
+      "contract.source.rfc: the RFC number",
+    );
+    const bad = shape({
+      sources: [
+        "hex.md",
+        { id: "has space", path: "hex.md" },
+        { id: "hex", rfc: 1.5, path: "" },
+      ],
+    });
+    expect(bad).toContain("sources[0]: an object");
+    expect(bad).toContain("sources[1].id: an id");
+    expect(bad).toContain("sources[2].rfc: the RFC number");
+    expect(bad).toContain("sources[2].path: a file path");
   });
 
   test("a legacy single-RFC contract still passes", () => {
@@ -434,6 +488,34 @@ describe("vector provenance", () => {
     const c = hexContract();
     (vec(c, "V-CITE") as Partial<VectorClause>).source = undefined;
     expect(validateContractShape(c).join("\n")).toContain("clauses[0].source");
+  });
+
+  test("refuses a malformed vector source", () => {
+    const shape = (source: unknown) => {
+      const c = hexContract();
+      (vec(c, "V-CMD") as { source: unknown }).source = source;
+      return validateContractShape(c).join("\n");
+    };
+    expect(shape({})).toContain(
+      'clauses[2].source: exactly one of "cite", "command", "spec"',
+    );
+    expect(shape({ cite: { section: "3" }, spec: "3" })).toContain(
+      "exactly one of",
+    );
+    expect(shape({ cite: "3" })).toContain(
+      'clauses[2].source.cite: {"source"?',
+    );
+    expect(shape({ cite: { section: "three" } })).toContain(
+      "clauses[2].source.cite.section: a section number",
+    );
+    expect(shape({ command: " " })).toContain(
+      "clauses[2].source.command: a shell command",
+    );
+    const spec = hexContract();
+    (vec(spec, "V-SPEC").source as { spec: string }).spec = "two";
+    expect(validateContractShape(spec).join("\n")).toContain(
+      "clauses[1].source.spec: a main-source section number",
+    );
   });
 
   test("refuses a section on a cite source, and none on a command or spec", () => {
@@ -562,6 +644,12 @@ describe("vector provenance", () => {
     ]);
   });
 
+  test("a test runner that cannot start is reported, not passed", async () => {
+    const r = await runNishTest(hexContract(), "", "/nonexistent/nish");
+    expect(r.status).toBe("ERROR");
+    expect(r.stderr).toContain("failed to start /nonexistent/nish");
+  });
+
   /** The hex contract with V-CMD's command and expected value replaced. */
   const withCommand = (command: string, expect: VectorClause["expect"]) => {
     const c = hexContract();
@@ -655,6 +743,9 @@ describe("vector provenance", () => {
       },
     });
     expect(
+      (reportJson({ contract: null, gates }) as { sources: unknown }).sources,
+    ).toBeUndefined();
+    expect(
       (reportJson({ contract: c, gates }) as { sources: unknown }).sources,
     ).toEqual({
       "V-CMD": { command: "printf deadbeef", outcome: "not-run" },
@@ -719,6 +810,24 @@ describe("vector spec (the command)", () => {
     expect(await rfcMain(["help"])).toBe(2);
     expect(err.join("\n")).toContain("Usage: vector spec check");
     expect(err.join("\n")).toContain("vector rfc … is the same command");
+  });
+
+  test("emit writes the nish test for a markdown contract", async () => {
+    const file = join(dir, "main.ts");
+    expect(await rfcMain(["emit", contract(), "-o", file])).toBe(0);
+    expect(readFileSync(file, "utf8")).toContain(
+      `vector spec emit ${contract()} -o ${file}`,
+    );
+    expect(out.join("\n")).toContain(`(written to ${file})`);
+  });
+
+  test("usage names vector spec, for the CLI and for extract", async () => {
+    expect(await main([])).toBe(2);
+    expect(err.join("\n")).toContain(
+      "vector spec check|emit|run|extract …  (spec or RFC → contract → nish test; alias: vector rfc)",
+    );
+    expect(await rfcMain(["extract"])).toBe(2);
+    expect(err.join("\n")).toContain("error: extract needs --spec <file>");
   });
 
   test("--spec gives the main source's text; --rfc is the same", async () => {

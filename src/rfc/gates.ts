@@ -496,7 +496,7 @@ function checkProvenance(
         issues.push({
           gate: "provenance",
           at: `${k.id}.source`,
-          message: `§${s.spec} ("${sec.title}") never says "${word}", so it does not state the expected result`,
+          message: `${place(c, docs, { section: s.spec })} ("${sec.title}") never says "${word}", so it does not state the expected result`,
         });
       }
     } else if ("command" in s) {

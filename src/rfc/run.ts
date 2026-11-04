@@ -125,7 +125,7 @@ function spawnCollect(
       try {
         process.kill(-(child.pid as number), "SIGKILL");
       } catch {
-        child.kill("SIGKILL");
+        // ESRCH: the whole group already exited; "close" is on its way.
       }
     }, timeoutMs);
     child.stdout.on("data", (d) => {
