@@ -473,6 +473,10 @@ describe("running mutants with a fake runner", () => {
     await expect(
       runMutants({ ...opts, exec: fake(), mutants: [other] }),
     ).rejects.toThrow(/is not one this source and these ranges make/);
+    const forged = { ...mutants[0], mutated: "  if (true) {" };
+    await expect(
+      runMutants({ ...opts, exec: fake(), mutants: [forged] }),
+    ).rejects.toThrow(/is not one this source and these ranges make/);
   });
 
   test("fails unless the test passes on the unmutated module", async () => {
