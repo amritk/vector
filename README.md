@@ -7,6 +7,11 @@ box: an SMT solver (Z3) **proves** every postcondition holds for **all** inputs
 before a single line of code is emitted. If a contract can't be proven, the code
 is withheld.
 
+It also turns **RFCs into conformance contracts** for nish's crypto: requirements
+checked verbatim against the RFC text, the RFC's own test vectors, and properties
+sampled at solver-chosen boundaries, compiled to a Nish test — see
+[RFC → contract → Nish test](#rfc--contract--nish-test).
+
 ```
 prompt ─▶ Architect ─▶ formal axioms + a layered decomposition   (the SpecPlan)
        ─▶ Generator ─▶ program + contracts in "vector-lang"          (the Program)
@@ -22,6 +27,7 @@ the program is repaired, up to a retry bound. **Unproven code is never emitted.*
 
 ## Contents
 
+- [RFC → contract → Nish test](#rfc--contract--nish-test)
 - [The idea](#the-idea)
 - [Two ways to run it](#two-ways-to-run-it)
 - [Install & requirements](#install--requirements)
@@ -43,6 +49,93 @@ the program is repaired, up to a retry bound. **Unproven code is never emitted.*
 - [Architecture notes](#architecture-notes)
 - [Develop](#develop)
 - [Limitations](#limitations)
+
+
+## RFC → contract → Nish test
+
+`vector rfc` turns an RFC into a **contract** and the contract into a **Nish
+test** that checks an implementation (nish's `std/crypto`) against it. The same
+split as the rest of vector holds: a model (or you) *proposes* the contract;
+deterministic code and Z3 decide whether it is faithful; nish runs it.
+
+```
+RFC text ─▶ contract (JSON) ─▶ gates ─▶ Z3 samples ─▶ main.ts (nish/testing) ─▶ nish run
+            requirements        fidelity   boundaries      one PASS/FAIL per      ─▶ per-requirement
+            vectors, properties completeness + seeded       clause, RFC quoted     verdict
+            exclusions          coverage   random           above it
+```
+
+A contract (`schemas/rfc-contract.json`) has:
+
+- **requirements**: verbatim quotes, each cited to a section and a BCP 14 level
+  (or `DEFINITION`);
+- **exclusions**: the MUST/SHALL sentences a functional test cannot observe
+  (nonce uniqueness, constant-time comparison), each with its reason;
+- **functions**: the implementation's signatures (`bytes`, `bytes?`, `i32`,
+  `u32`, `bool`), plus any reference function from another module;
+- **clauses**: **vectors** (the RFC's own known answers) and **properties**
+  (`forall` a typed domain, `where` restricts it, `assert` must hold).
+
+### The gates (no model involved)
+
+| Gate | Refuses |
+|---|---|
+| fidelity | a quote not in its cited section; a test-vector byte string not printed in its section (hexdumps, `0x…`, colon-hex split mid-byte across lines are all read) |
+| completeness | any MUST / MUST NOT / SHALL / SHALL NOT / REQUIRED sentence of the RFC that is neither inside a requirement's quote nor an exclusion's |
+| coverage | a binding requirement no clause checks; a clause citing a requirement the contract does not state |
+| typing | an ill-typed call or expression (`bytes?` must be `unwrap`ped; `where` may not call the implementation) |
+| signatures | a declared signature that is not the module's export (`--nish-root` / `--module`) |
+| domain | a property whose domain is empty (Z3 `unsat`: it would pass vacuously) |
+
+Then **Z3 picks the samples**: for every integer comparison in a property it
+solves for inputs on the edge and one either side (`n <= 255*32` gives
+`n = 8159, 8160, 8161`; `bit < 8*(len(pt)+16)` gives the last bit of the tag),
+plus each variable's extremes, and a seeded PRNG adds random ones. Samples are
+baked into the generated test, so a failure reproduces byte for byte.
+
+### Usage
+
+```bash
+bun run vector rfc check contracts/rfc8439-chacha20-poly1305.json --nish-root ../nish
+bun run vector rfc emit  contracts/rfc8439-chacha20-poly1305.json -o aead_rfc8439.ts
+bun run vector rfc run   contracts/rfc8439-chacha20-poly1305.json --nish-root ../nish
+bun run vector rfc extract --rfc rfcs/rfc5869.txt --module ../nish/std/crypto/hkdf.ts \
+  --target nish/crypto/hkdf -o contracts/new.json      # model proposes, gates repair (needs a key)
+```
+
+`check` exits 0 when the contract is valid, `run` when every clause passed
+(`SATISFIED`); `VIOLATED` / `ERROR` / `INVALID` exit 1, usage errors 2.
+`--nish-root` uses `build/nish` (the working tree's std); without it, the seed
+— whose `nish/…` is the last release — and it warns. Inside Claude Code the
+`vector-rfc` skill plays the extractor with no API key.
+
+### What it catches
+
+Both shipped contracts are `SATISFIED` by nish's std. Bugs planted in a copy of
+it, one at a time:
+
+| Planted bug | Caught by | At |
+|---|---|---|
+| HKDF-Expand accepts `L = 255*HashLen + 1` | P-EXPAND-LENGTH | `n = 8161` (Z3 boundary) |
+| AEAD tag compare skips the last byte | P-TAMPER-SEALED | `bit = 127`, empty plaintext (Z3 boundary) |
+| AEAD pads block-aligned AAD with 16 zeros instead of none | P-TAG-IS-POLY1305 | `len(aad) = 0` (Z3 boundary) |
+
+The third passes every test vector RFC 8439 prints: only the property, which
+rebuilds §2.8's MAC input from the other functions, catches it.
+
+### What a pass means — and why not Lean
+
+A `SATISFIED` contract is **evidence, not proof**: properties are sampled, and
+the implementation is run, not reasoned about. That is deliberate. A Lean (or
+Coq) proof is a proof about a *model*; nothing connects that model to nish's
+code, which is where the bugs are, and building that bridge means a formal
+semantics of Nish. What this gives instead, today, is a contract that provably
+says what the RFC says (fidelity + completeness), tests chosen by a solver at
+the RFC's edges, and an honest list of what was not tested. The proof route
+that *does* reach the code is to verify the LLVM IR nish emits against an
+executable spec (SAW/Cryptol style, or Z3 over bit-vectors for the fixed-size
+primitives); the contract's requirements and properties are the statement such
+a proof would discharge.
 
 ---
 
@@ -618,9 +711,17 @@ src/
   emit/             AST → runnable TypeScript
   report/           pretty-printer + Dijkstra Dashboard
   generated/        mjst output (checked in)
+  rfc/              RFC → contract → Nish test: contract.ts (format, typing),
+                    rfctext.ts (sections, hex, BCP 14 sentences), gates.ts,
+                    sample.ts (Z3 boundaries), emit-nish.ts, run.ts, report.ts,
+                    extract.ts (model-proposed contracts), cli.ts (`vector rfc`)
+contracts/          RFC contracts (RFC 5869 HKDF, RFC 8439 ChaCha20-Poly1305)
+rfcs/               the RFCs' plain text, unmodified, as rfc-editor.org serves it
 test/               bun test suites + fixtures
 .claude/skills/vector/
   SKILL.md          the skill: the Architect→Generator→verify→repair loop
+.claude/skills/vector-rfc/
+  SKILL.md          the skill: RFC → contract → check → run
   reference/
     vector-lang.md     the vector-lang manual Claude reads before emitting artifacts
 ```
