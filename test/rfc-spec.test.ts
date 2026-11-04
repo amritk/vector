@@ -147,6 +147,11 @@ function hexContract(): RfcContract {
 }
 
 const doc = parseMarkdownSpec(SPEC);
+const section = (id: string) => {
+  const s = doc.sections.get(id);
+  if (!s) throw new Error(`no section ${id}`);
+  return s;
+};
 const docs = (d: RfcDocument = doc, extra: [string, RfcDocument][] = []) =>
   new Map<string, RfcDocument>([["hex", d], ...extra]);
 const passed = (id: string): Map<string, SourceRun> =>
@@ -178,11 +183,11 @@ describe("reading a spec", () => {
     expect([...doc.sections.keys()]).toEqual(["1", "2", "2.1", "3", "A"]);
     expect(doc.sections.get("2")?.title).toBe("Encoding");
     expect(doc.sections.get("A")?.title).toBe("Sizes");
-    const two = doc.sections.get("2");
-    expect(sectionText(two!)).toContain("A decoder MUST return null");
+    const two = section("2");
+    expect(sectionText(two)).toContain("A decoder MUST return null");
     // Its own text stops at 2.1, and the unnumbered "Notes" ends both.
-    expect(two?.ownLines.join("\n")).not.toContain("decoder");
-    expect(sectionText(two!)).not.toContain("not a heading");
+    expect(two.ownLines.join("\n")).not.toContain("decoder");
+    expect(sectionText(two)).not.toContain("not a heading");
   });
 
   test("text under an unnumbered heading is loose; code in a fence is kept verbatim", () => {
@@ -195,15 +200,13 @@ describe("reading a spec", () => {
   });
 
   test("table cells are lines, inline code loses its backticks, byte lists are hex", () => {
-    const three = doc.sections.get("3");
-    expect(three?.lines).toContain("deadbeef");
-    expect(three?.lines).toContain("toHex");
-    expect(three?.lines.join("\n")).not.toContain("|");
-    expect(three?.lines.join("\n")).not.toContain("---");
-    expect(hexRuns(three!)).toContain("deadbeef");
-    expect(sectionText(doc.sections.get("2.1")!)).toContain(
-      "abc decodes to null",
-    );
+    const three = section("3");
+    expect(three.lines).toContain("deadbeef");
+    expect(three.lines).toContain("toHex");
+    expect(three.lines.join("\n")).not.toContain("|");
+    expect(three.lines.join("\n")).not.toContain("---");
+    expect(hexRuns(three)).toContain("deadbeef");
+    expect(sectionText(section("2.1"))).toContain("abc decodes to null");
   });
 
   test("an escaped pipe stays in its cell; a fence closes only on its own kind", () => {
@@ -219,11 +222,11 @@ describe("reading a spec", () => {
   test("the BCP 14 paragraph is not normative; every other MUST is", () => {
     const found = normativeSentences(doc).map((n) => n.section);
     expect(found).toEqual(["2", "2.1"]);
-    expect(sectionText(doc.sections.get("1")!)).not.toContain("BCP 14");
+    expect(sectionText(section("1"))).not.toContain("BCP 14");
   });
 
   test("a labelled int in a markdown section", () => {
-    const a = doc.sections.get("A")!;
+    const a = section("A");
     expect(intLabelled(sectionLines(a), "Block Count", 4)).toBe(true);
     expect(intLabelled(sectionLines(a), "Block Count", 5)).toBe(false);
   });
