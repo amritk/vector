@@ -258,8 +258,10 @@ function returnNull(
   push: Push,
 ): void {
   const l = lines[k];
-  const m = l.code.match(/^(\s*)return\s+(\S.*?)\s*;?\s*$/);
+  const m = l.code.match(/^(\s*return\s+)(\S.*?)\s*;?\s*$/);
   if (!m || m[2] === "null" || !balanced(m[2]) || OPEN_END.test(m[2])) return;
+  // Only the expression is replaced: a `;` or a comment after it stays.
+  const at = m[1].length;
   if (nextContinues(lines, k)) return;
   for (const o of [...open[k]].reverse()) {
     const head = lines[o].code.trimEnd();
@@ -270,7 +272,8 @@ function returnNull(
       if (/=>\s*\{$|\bfunction\b/.test(head)) return;
       continue;
     }
-    if (admits) push("return-null", m[1].length, `${m[1]}return null`);
+    if (admits)
+      push("return-null", at, splice(l.text, at, m[2].length, "null"));
     return;
   }
 }
@@ -353,13 +356,16 @@ export interface MutationReport {
   counts: Record<MutantOutcome, number>;
   /** Survivors no allowSurvivors entry covers. */
   survivors: MutantResult[];
-  /** allowSurvivors entries for this file that matched no survivor. */
+  /** allowSurvivors entries that matched no survivor, whatever their file. */
   unusedAllowances: AllowedSurvivor[];
 }
 
 /** One run of the test against the module with `contents` in place. */
 export interface ExecResult {
   run: RunResult;
+  /** The test built and its binary was started: anything after is the test's doing. */
+  started: boolean;
+  /** The test ran past the time limit and was killed. */
   timedOut: boolean;
 }
 export type Exec = (contents: string) => Promise<ExecResult>;
@@ -370,37 +376,41 @@ export class MutationRunError extends Error {}
 const DIAGNOSTIC_RE = /^\S+:\d+:\d+: (?:[a-z]+ )?error: .*/m;
 
 /**
- * killed: the test fails, or it exits non-zero or on a signal (a panic before
- * or after the first clause). survived: it passes. stillborn: nothing ran and
- * nish printed a compile diagnostic. Anything else (the binary did not start,
- * or the test exited 0 without a verdict on every clause) throws.
+ * A run that never started its test binary is stillborn when nish printed a
+ * compile diagnostic, and an error otherwise (nish or the linker failed, the
+ * build hung or was killed): no mutant is counted on a run that did not run.
+ * Once started: timeout past the limit; survived when every clause passed;
+ * killed on a failed clause or a non-zero exit (a panic). A null exit (the
+ * runner itself was killed) or exit 0 without a verdict on every clause throws.
  */
 export function classify(r: ExecResult): {
   outcome: MutantOutcome;
   detail?: string;
 } {
-  if (r.timedOut) return { outcome: "timeout" };
   const { run } = r;
-  if (run.status === "SATISFIED") return { outcome: "survived" };
+  const stderr = run.stderr.trim();
   const clauses = [...run.clauses.values()];
+  if (!r.started) {
+    const diag = stderr.match(DIAGNOSTIC_RE);
+    const ran = clauses.some((c) => c.outcome !== "not-run");
+    if (diag && !ran && run.exitCode !== null && run.exitCode !== 0)
+      return { outcome: "stillborn", detail: diag[0] };
+    throw new MutationRunError(
+      `the test never started (exit ${run.exitCode ?? "on a signal"}): ${stderr || "(no output)"}`,
+    );
+  }
+  if (r.timedOut) return { outcome: "timeout" };
+  if (run.exitCode === null)
+    throw new MutationRunError(
+      `the run was killed before it finished: ${stderr || "(no output)"}`,
+    );
+  if (run.status === "SATISFIED") return { outcome: "survived" };
   const failed = clauses.find((c) => c.outcome === "fail");
   if (failed) return { outcome: "killed", detail: failed.line };
-  const stderr = run.stderr.trim();
-  // run.ts reports a binary that did not start with a null exit; the
-  // watchdog reports nish not starting with 127.
-  if (
-    (run.exitCode === null || run.exitCode === 127) &&
-    stderr.includes("failed to start ")
-  )
-    throw new MutationRunError(stderr);
-  const ran = clauses.some((c) => c.outcome !== "not-run");
-  const diag = ran ? null : stderr.match(DIAGNOSTIC_RE);
-  if (diag && run.exitCode !== 0)
-    return { outcome: "stillborn", detail: diag[0] };
   if (run.exitCode !== 0)
     return {
       outcome: "killed",
-      detail: stderr.split("\n")[0] || `exit ${run.exitCode ?? "on a signal"}`,
+      detail: stderr.split("\n")[0] || `exit ${run.exitCode}`,
     };
   throw new MutationRunError(
     `the test exited 0 without a verdict on every clause: ${stderr || "(no output)"}`,
@@ -436,9 +446,13 @@ async function pool<T, R>(
       }
     }
   };
-  await Promise.all(
-    Array.from({ length: Math.max(1, Math.min(jobs, xs.length)) }, worker),
+  // Every job in flight finishes (and cleans up its scratch install) before
+  // the first error is rethrown.
+  const settled = await Promise.allSettled(
+    Array.from({ length: Math.min(jobs, xs.length) }, worker),
   );
+  const err = settled.find((x) => x.status === "rejected");
+  if (err) throw (err as PromiseRejectedResult).reason;
   return out;
 }
 
@@ -468,31 +482,74 @@ export interface RunMutantsOptions {
 const WATCHDOG_GRACE_MS = 10_000;
 
 /**
- * A script that runs `nish` in its own process group and kills the whole
- * group after `ms`, leaving `marker` behind. `nish run` starts the compiled
- * program as a child, so killing `nish` alone would leave a looping mutant
- * running with the test's output pipes open, and the run would never end.
+ * A script that stands in for `nish` as run.ts calls it (`run <file>`) and does
+ * it in two steps, each in its own process group and each with `ms` to finish:
+ * build the test with `nish <file> --link <bin>`, then, only if that worked,
+ * leave `started` behind and run `<bin>`. A run past its time is killed as a
+ * group (a looping mutant's children would otherwise hold the output pipes
+ * open) and leaves `timedOut` behind. A build that fails prints its output and
+ * exits with its code; one that hangs exits 125. Neither leaves `started`, so a
+ * run that never ran is never mistaken for the test failing.
  */
-function watchdog(nish: string, ms: number, marker: string): string {
+function watchdog(o: {
+  nish: string;
+  bin: string;
+  ms: number;
+  started: string;
+  timedOut: string;
+}): string {
+  const j = JSON.stringify;
   return `#!${process.execPath}
 const { spawn } = require("node:child_process");
 const { writeFileSync } = require("node:fs");
 const { signals } = require("node:os").constants;
-const child = spawn(${JSON.stringify(nish)}, process.argv.slice(2), {
-  stdio: "inherit",
-  detached: true,
-});
-const timer = setTimeout(() => {
-  writeFileSync(${JSON.stringify(marker)}, "");
-  process.kill(-child.pid, "SIGKILL");
-}, ${ms});
-child.on("error", (err) => {
-  console.error("failed to start " + ${JSON.stringify(nish)} + ": " + err.message);
-  process.exit(127);
-});
-child.on("exit", (code, signal) => {
-  clearTimeout(timer);
-  process.exit(code ?? 128 + (signals[signal] ?? 0));
+const args = process.argv.slice(2);
+if (args.length !== 2 || args[0] !== "run") {
+  console.error("vector-watchdog: expected run <file>, got " + args.join(" "));
+  process.exit(125);
+}
+const status = (code, signal) => code ?? 128 + (signals[signal] ?? 0);
+const killGroup = (child) => {
+  try {
+    process.kill(-child.pid, "SIGKILL");
+    return true;
+  } catch {
+    return false; // the group is already gone
+  }
+};
+const start = (cmd, argv, stdio) => {
+  const child = spawn(cmd, argv, { stdio, detached: true });
+  child.on("error", (err) => {
+    console.error("failed to start " + cmd + ": " + err.message);
+    process.exit(127);
+  });
+  return child;
+};
+const build = start(${j(o.nish)}, [args[1], "--link", ${j(o.bin)}], ["ignore", "pipe", "pipe"]);
+let out = "";
+build.stdout.on("data", (d) => { out += d; });
+build.stderr.on("data", (d) => { out += d; });
+const buildTimer = setTimeout(() => {
+  killGroup(build);
+  console.error(out + "vector-watchdog: the build took longer than ${o.ms} ms");
+  process.exit(125);
+}, ${o.ms});
+build.on("close", (code, signal) => {
+  clearTimeout(buildTimer);
+  if (code !== 0) {
+    process.stderr.write(out);
+    process.exit(status(code, signal) || 125);
+  }
+  writeFileSync(${j(o.started)}, "");
+  const test = start(${j(o.bin)}, [], "inherit");
+  const timer = setTimeout(() => {
+    if (killGroup(test)) writeFileSync(${j(o.timedOut)}, "");
+  }, ${o.ms});
+  test.on("exit", (code, signal) => {
+    clearTimeout(timer);
+    killGroup(test);
+    process.exit(status(code, signal));
+  });
 });
 `;
 }
@@ -511,19 +568,32 @@ export function scratchExec(o: {
       overrides: { [o.modulePath]: contents },
     });
     try {
-      const marker = join(s.dir, "timed-out");
+      const started = join(s.dir, "vector-started");
+      const timedOut = join(s.dir, "vector-timed-out");
       const bin = join(s.dir, "vector-watchdog");
-      writeFileSync(bin, watchdog(s.nish, o.timeoutMs, marker), {
-        mode: 0o755,
-      });
-      // run.ts's own kill is the backstop; the watchdog fires first.
+      writeFileSync(
+        bin,
+        watchdog({
+          nish: s.nish,
+          bin: join(s.dir, "vector-test"),
+          ms: o.timeoutMs,
+          started,
+          timedOut,
+        }),
+        { mode: 0o755 },
+      );
+      // run.ts's own kill is the backstop, past both of the watchdog's limits.
       const run = await runNishTest(
         o.contract,
         o.test,
         bin,
-        o.timeoutMs + WATCHDOG_GRACE_MS,
+        2 * o.timeoutMs + WATCHDOG_GRACE_MS,
       );
-      return { run: { ...run, nish: s.nish }, timedOut: existsSync(marker) };
+      return {
+        run: { ...run, nish: s.nish },
+        started: existsSync(started),
+        timedOut: existsSync(timedOut),
+      };
     } finally {
       s.dispose();
     }
@@ -538,6 +608,20 @@ export function scratchExec(o: {
 export async function runMutants(
   o: RunMutantsOptions,
 ): Promise<MutationReport> {
+  const positive = (name: string, v: number | undefined) => {
+    if (v !== undefined && !(Number.isInteger(v) && v > 0))
+      throw new MutationRunError(
+        `${name} must be a positive integer, not ${v}`,
+      );
+  };
+  positive("jobs", o.jobs);
+  positive("max", o.max);
+  positive("timeoutMs", o.timeoutMs);
+  for (const a of o.allowSurvivors ?? [])
+    if (a.reason.trim() === "")
+      throw new MutationRunError(
+        `the allowance for ${a.file}:${a.line} gives no reason`,
+      );
   const timeoutMs = o.timeoutMs ?? 120_000;
   const exec = o.exec ?? scratchExec({ ...o, timeoutMs });
   const all = generateMutants(o.source, o.ranges);
@@ -553,11 +637,16 @@ export async function runMutants(
     chosen = o.mutants;
   }
   chosen = spread(chosen, o.max);
+  // Nothing to mutate proves nothing: a gate that runs no mutant must not pass.
+  if (chosen.length === 0)
+    throw new MutationRunError(
+      `no mutants in the changed lines of ${o.modulePath}`,
+    );
 
   const base = await exec(o.source);
-  if (base.timedOut || base.run.status !== "SATISFIED")
+  if (!base.started || base.timedOut || base.run.status !== "SATISFIED")
     throw new MutationRunError(
-      `the test does not pass on the unmutated ${o.modulePath} (${base.timedOut ? "timeout" : base.run.status}), so no mutant can be judged: ${base.run.stderr.trim().split("\n")[0]}`,
+      `the test does not pass on the unmutated ${o.modulePath} (${!base.started ? "never started" : base.timedOut ? "timeout" : base.run.status}), so no mutant can be judged: ${base.run.stderr.trim().split("\n")[0]}`,
     );
 
   const results = await pool(chosen, o.jobs ?? 1, async (mutant) => {
@@ -565,11 +654,13 @@ export async function runMutants(
     return { mutant, ...c } as MutantResult;
   });
 
-  const allow = (o.allowSurvivors ?? []).filter((a) => a.file === o.modulePath);
+  const allow = o.allowSurvivors ?? [];
   const used = new Set<AllowedSurvivor>();
   for (const r of results) {
     if (r.outcome !== "survived") continue;
-    const a = allow.find((x) => x.line === r.mutant.line);
+    const a = allow.find(
+      (x) => x.file === o.modulePath && x.line === r.mutant.line,
+    );
     if (a) {
       r.allowed = a.reason;
       used.add(a);

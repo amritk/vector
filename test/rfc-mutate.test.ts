@@ -76,7 +76,7 @@ describe("reading git diff -U0", () => {
     );
     rmSync(join(d, "gone.ts"));
     chmodSync(join(d, "mode.sh"), 0o755);
-    write(d, "new dir/n.ts", "x\n\texport const n = 0\n");
+    write(d, "new dir/n.ts", "x\nexport const n = 0\n");
     git(d, "add", "-A");
     const diffs = gitDiff(d, "HEAD");
     expect(diffs).toEqual([
@@ -91,7 +91,11 @@ describe("reading git diff -U0", () => {
           { name: "g", kind: "added" },
         ],
       },
-      { file: "gone.ts", ranges: [], exports: [] },
+      {
+        file: "gone.ts",
+        ranges: [],
+        exports: [{ name: "old", kind: "deleted" }],
+      },
       {
         file: "new dir/n.ts",
         ranges: [[1, 2]],
@@ -135,19 +139,192 @@ describe("reading git diff -U0", () => {
     rmSync(d, { recursive: true, force: true });
   });
 
+  test("an untracked file is wholly added; ignored ones are not", () => {
+    const d = repo();
+    write(d, "a.ts", "1\n");
+    write(d, ".gitignore", "*.log\n");
+    commit(d);
+    write(
+      d,
+      "std/new.ts",
+      "// hi\nexport function n(): i32 {\n  return 1\n}\n",
+    );
+    write(d, "std/empty.ts", "");
+    write(d, "x.log", "export const no = 1\n");
+    // Neither added nor intent-to-add: still part of the change.
+    expect(gitDiff(d, "HEAD")).toEqual([
+      { file: "std/empty.ts", ranges: [], exports: [] },
+      {
+        file: "std/new.ts",
+        ranges: [[1, 4]],
+        exports: [{ name: "n", kind: "added" }],
+      },
+    ]);
+    // Paths are the repository's, from wherever git is run.
+    expect(gitDiff(join(d, "std"), "HEAD", ["new.ts"])).toEqual([
+      {
+        file: "std/new.ts",
+        ranges: [[1, 4]],
+        exports: [{ name: "n", kind: "added" }],
+      },
+    ]);
+    // Intent-to-add: git diff shows it; it is not listed twice.
+    git(d, "add", "-N", "std/new.ts");
+    expect(gitDiff(d, "HEAD", ["std/new.ts"])).toEqual([
+      {
+        file: "std/new.ts",
+        ranges: [[1, 4]],
+        exports: [{ name: "n", kind: "added" }],
+      },
+    ]);
+    write(d, "bin.dat", "a\0b");
+    expect(() => gitDiff(d, "HEAD")).toThrow(/untracked binary file/);
+    rmSync(d, { recursive: true, force: true });
+  });
+
+  test("a rename is a deletion and an addition, so every line of it is new", () => {
+    const d = repo();
+    write(d, "old.ts", "export function f(): i32 {\n  return 1\n}\n");
+    commit(d);
+    git(d, "mv", "old.ts", "new.ts");
+    expect(gitDiff(d, "HEAD")).toEqual([
+      {
+        file: "new.ts",
+        ranges: [[1, 3]],
+        exports: [{ name: "f", kind: "added" }],
+      },
+      {
+        file: "old.ts",
+        ranges: [],
+        exports: [{ name: "f", kind: "deleted" }],
+      },
+    ]);
+    rmSync(d, { recursive: true, force: true });
+  });
+
+  test("a change inside an export's body changes that export", () => {
+    const d = repo();
+    const before = [
+      "export function f(a: i32): i32 {", // 1
+      "  const b = a + 1", // 2
+      "  return b", // 3
+      "}", // 4
+      "", // 5
+      "// g's doc", // 6
+      "export const g: i32 =", // 7
+      "  1 +", // 8
+      "  2", // 9
+      "function h(): void {}", // 10
+      "export function k(): i32 {", // 11
+      "  const x = 1", // 12
+      "  const y = 2", // 13
+      "  return x", // 14
+      "}", // 15
+      "export function gone(): void {}", // 16
+      "",
+    ].join("\n");
+    write(d, "m.ts", before);
+    commit(d);
+    const after = before
+      .replace("a + 1", "a + 2") // f's body
+      .replace("  2\n", "  3\n") // g's continuation line
+      .replace("function h(): void {}", "function h(): void { }") // not exported
+      .replace("  const y = 2\n", "") // a pure deletion inside k
+      .replace("export function gone(): void {}\n", "");
+    write(d, "m.ts", after);
+    expect(gitDiff(d, "HEAD")).toEqual([
+      {
+        file: "m.ts",
+        ranges: [
+          [2, 2],
+          [9, 10],
+        ],
+        exports: [
+          { name: "f", kind: "changed" },
+          { name: "g", kind: "changed" },
+          { name: "k", kind: "changed" },
+          { name: "gone", kind: "deleted" },
+        ],
+      },
+    ]);
+    // A changed comment between items touches neither.
+    write(d, "m.ts", before.replace("// g's doc", "// g's docs"));
+    expect(gitDiff(d, "HEAD")).toEqual([
+      { file: "m.ts", ranges: [[6, 6]], exports: [] },
+    ]);
+    rmSync(d, { recursive: true, force: true });
+  });
+
+  test("names every declaration form, and refuses an export it cannot name", () => {
+    const d = repo();
+    write(d, "a.ts", "\n");
+    commit(d);
+    write(
+      d,
+      "a.ts",
+      [
+        "export const enum E { A }",
+        "export abstract class A {}",
+        "export namespace N {",
+        "  export const inner = 1",
+        "}",
+        "export declare function d(): void",
+        "export function* gen() {}",
+        "export default function () {}",
+        "",
+      ].join("\n"),
+    );
+    expect(gitDiff(d, "HEAD")[0].exports.map((e) => e.name)).toEqual([
+      "E",
+      "A",
+      "N",
+      "d",
+      "gen",
+      "default",
+    ]);
+    for (const form of [
+      "export { x }",
+      "export * from './b.ts'",
+      "export { y as z } from './b.ts'",
+      "export = q",
+    ]) {
+      write(d, "a.ts", `const x = 1\n${form}\n`);
+      expect(() => gitDiff(d, "HEAD")).toThrow(/an export it cannot name/);
+    }
+    // Untouched, it is not this change's business.
+    write(d, "a.ts", "\nexport { x }\n");
+    commit(d);
+    write(d, "a.ts", "const x = 1\nexport { x }\n");
+    expect(gitDiff(d, "HEAD")).toEqual([
+      { file: "a.ts", ranges: [[1, 1]], exports: [] },
+    ]);
+    // Removed, too, it is refused.
+    write(d, "a.ts", "const x = 1\n");
+    expect(() => gitDiff(d, "HEAD")).toThrow(/an export it cannot name/);
+    rmSync(d, { recursive: true, force: true });
+  });
+
+  test("refuses a base that looks like an option", () => {
+    const d = repo();
+    expect(() => gitDiff(d, "--output=/tmp/x")).toThrow(/looks like an option/);
+    rmSync(d, { recursive: true, force: true });
+  });
+
   const one = (hunks: string) =>
     `diff --git a/f.ts b/f.ts\nindex 1..2 100644\n--- a/f.ts\n+++ b/f.ts\n${hunks}`;
+  const blank = () => "";
 
   test("a hunk header without counts means one line, and a 0 count adds no range", () => {
     expect(
-      parseGitDiff(one("@@ -3 +3 @@ fn\n-a\n+b\n@@ -7,1 +6,0 @@\n-c\n")),
+      parseGitDiff(one("@@ -3 +3 @@ fn\n-a\n+b\n@@ -7,1 +6,0 @@\n-c\n"), blank),
     ).toEqual([{ file: "f.ts", ranges: [[3, 3]], exports: [] }]);
     expect(
       parseGitDiff(
         one("@@ -1,0 +2,2 @@\n+a\n+b\n\\ No newline at end of file\n"),
+        blank,
       ),
     ).toEqual([{ file: "f.ts", ranges: [[2, 3]], exports: [] }]);
-    expect(parseGitDiff("")).toEqual([]);
+    expect(parseGitDiff("", blank)).toEqual([]);
   });
 
   test("refuses what it cannot read: never an empty or partial result", () => {
@@ -168,17 +345,23 @@ describe("reading git diff -U0", () => {
       ['diff --git a/f b/f\n--- "a/\\303"\n+++ b/f\n', /quoted path/],
       ["diff --git a/f b/f\n--- f\n+++ b/f\n", /cannot read the path/],
       ["diff --git a/f b/f\n--- /dev/null\n+++ /dev/null\n", /both sides/],
+      // CRLF text: the \r is never taken as part of a path.
+      [
+        "diff --git a/f b/f\r\n--- a/f\r\n+++ b/f\r\n@@ -1 +1 @@ x\r\n-a\r\n+b\r\n",
+        /carriage return/,
+      ],
+      [one("@@ -1 +1 @@\n-a\n+export const v = 1\n"), /not a top-level item/],
     ];
     for (const [text, why] of bad) {
-      expect(() => parseGitDiff(text)).toThrow(DiffParseError);
-      expect(() => parseGitDiff(text)).toThrow(why);
+      expect(() => parseGitDiff(text, blank)).toThrow(DiffParseError);
+      expect(() => parseGitDiff(text, blank)).toThrow(why);
     }
   });
 
   test("a mode change or a rename with no hunks is no entry", () => {
     const text =
       "diff --git a/m b/m\nold mode 100644\nnew mode 100755\ndiff --git a/r b/s\nsimilarity index 100%\nrename from r\nrename to s\n";
-    expect(parseGitDiff(text)).toEqual([]);
+    expect(parseGitDiff(text, blank)).toEqual([]);
   });
 });
 
@@ -233,7 +416,7 @@ describe("the operators", () => {
   });
 
   test("return x → return null only where the declared type admits null", () => {
-    expect(on(9)).toEqual(["9:3:return-null return null"]);
+    expect(on(9)).toEqual(["9:10:return-null return null"]);
     expect(on(4)).toEqual([]);
     expect(on(12)).toEqual([
       "12:14:int-literal:plus return x * 3",
@@ -247,7 +430,9 @@ describe("the operators", () => {
         .filter((m) => m.operator === "return-null")
         .map((m) => m.mutated);
     expect(ret("    return a")).toEqual(["    return null"]);
-    expect(ret("    return a;", "u8[] | null")).toEqual(["    return null"]);
+    // Only the expression is replaced: the `;` and a comment after it stay.
+    expect(ret("    return a;", "u8[] | null")).toEqual(["    return null;"]);
+    expect(ret("    return f(a) // why")).toEqual(["    return null // why"]);
     expect(ret("    return a", "u8")).toEqual([]);
     expect(ret("    return a +")).toEqual([]);
     expect(ret("    return f(")).toEqual([]);
@@ -379,9 +564,11 @@ const result = (
   stderr = "",
   exitCode: number | null = 0,
   timedOut = false,
+  started = true,
 ): ExecResult => {
   const clauses = parseTestOutput(hkdf, stdout);
   return {
+    started,
     timedOut,
     run: {
       ...judge(hkdf, clauses, exitCode),
@@ -397,6 +584,10 @@ const pass = ids.map((id) => `PASS  [${id}] ok`).join("\n");
 const failOne = pass.replace(`PASS  [${ids[1]}]`, `FAIL  [${ids[1]}]`);
 
 describe("classifying a run", () => {
+  // Never started: result(stdout, stderr, exit, timedOut, started = false).
+  const unstarted = (stderr: string, exit: number | null) =>
+    result("", stderr, exit, false, false);
+
   test("killed, survived, stillborn and timeout", () => {
     expect(classify(result(pass)).outcome).toBe("survived");
     expect(classify(result(failOne, "", 1))).toEqual({
@@ -410,12 +601,15 @@ describe("classifying a run", () => {
       outcome: "killed",
       detail: "index out of range: 34 >= 34",
     });
+    // A panic before the first clause, once the test has started, is a kill.
     expect(
       classify(result("", "index out of range: 1 >= 1\n", 1)).outcome,
     ).toBe("killed");
-    expect(classify(result(panic, "", null))).toEqual({
+    // The test binary killed by a signal (137, 139): the watchdog reports
+    // 128 + the signal, and the test did start.
+    expect(classify(result(panic, "", 137))).toEqual({
       outcome: "killed",
-      detail: "exit on a signal",
+      detail: "exit 137",
     });
     expect(classify(result(panic, "", 2))).toEqual({
       outcome: "killed",
@@ -425,22 +619,61 @@ describe("classifying a run", () => {
       "std/crypto/hkdf.ts:113:1: syntax error: unexpected }",
       "std/crypto/hkdf.ts:164:17: error: Unknown identifier x",
     ])
-      expect(classify(result("", `${d}\n`, 1))).toEqual({
+      expect(classify(unstarted(`${d}\n`, 1))).toEqual({
         outcome: "stillborn",
         detail: d,
       });
-    expect(classify(result("", "", null, true)).outcome).toBe("timeout");
+    expect(classify(result("", "", 137, true)).outcome).toBe("timeout");
   });
 
-  test("a diagnostic after clauses ran is a kill, not a stillborn mutant", () => {
+  test("a run that never started is never a kill", () => {
+    // Every way a run can end with no clause run and no compile diagnostic:
+    // nish killed (OOM, 137), nish or the linker failing, the build hanging,
+    // nish not starting, the watchdog itself killed.
+    for (const [stderr, exit] of [
+      ["", 137],
+      ["Killed\n", 137],
+      ["clang: error: linker command failed with exit code 1\n", 1],
+      ["ld.lld: error: undefined symbol: nish_rt_alloc\n", 1],
+      ["vector-watchdog: the build took longer than 100 ms\n", 125],
+      ["failed to start /x/nish: ENOENT\n", 127],
+      ["", null],
+      ["", 0],
+      ["", 1],
+    ] as const)
+      expect(
+        () => classify(unstarted(stderr, exit)),
+        `${exit} ${stderr}`,
+      ).toThrow(/the test never started/);
+    // A diagnostic with no failing exit, or a timeout before the start, is
+    // not a verdict either.
+    expect(() => classify(unstarted("std/a.ts:1:1: error: x\n", 0))).toThrow(
+      /never started/,
+    );
+    expect(() => classify(unstarted("std/a.ts:1:1: error: x\n", null))).toThrow(
+      /never started/,
+    );
+    expect(() => classify(result("", "", 137, true, false))).toThrow(
+      /never started/,
+    );
+  });
+
+  test("a diagnostic after the test started is a kill, not a stillborn mutant", () => {
     const r = result(`PASS  [${ids[0]}] ok`, "std/a.ts:1:1: error: x\n", 1);
     expect(classify(r).outcome).toBe("killed");
+    expect(classify(result("", "std/a.ts:1:1: error: x\n", 1)).outcome).toBe(
+      "killed",
+    );
   });
 
   test("a runner failure or a silent stop fails the run", () => {
-    expect(() =>
-      classify(result("", "failed to start /x/nish: ENOENT", null)),
-    ).toThrow(MutationRunError);
+    // Started, then the runner itself killed: no exit status to judge.
+    expect(() => classify(result(`PASS  [${ids[0]}] ok`, "", null))).toThrow(
+      /killed before it finished/,
+    );
+    expect(() => classify(result(failOne, "", null))).toThrow(
+      /killed before it finished/,
+    );
     expect(() => classify(result(`PASS  [${ids[0]}] ok`, "", 0))).toThrow(
       /exited 0 without a verdict/,
     );
@@ -461,8 +694,8 @@ describe("running mutants with a fake runner", () => {
       if (contents === src) return base;
       if (contents.includes("n > xs")) return result(pass);
       if (contents.includes("< -1"))
-        return result("", "f.ts:3:9: error: bad\n", 1);
-      if (contents.includes("0 && n")) return result("", "", null, true);
+        return result("", "f.ts:3:9: error: bad\n", 1, false, false);
+      if (contents.includes("0 && n")) return result("", "", 137, true);
       return result(failOne, "", 1);
     };
   const opts = {
@@ -494,7 +727,7 @@ describe("running mutants with a fake runner", () => {
     expect(r.unusedAllowances).toEqual([]);
   });
 
-  test("an allowance covers a survivor on its file and line; an unused one is reported", async () => {
+  test("an allowance covers a survivor on its file and line; every unused one is reported", async () => {
     const allowSurvivors = [
       { file: "std/f.ts", line: 3, reason: "equivalent at the bound" },
       { file: "std/f.ts", line: 9, reason: "stale" },
@@ -503,14 +736,57 @@ describe("running mutants with a fake runner", () => {
     const r = await runMutants({ ...opts, exec: fake(), allowSurvivors });
     expect(r.survivors).toEqual([]);
     expect(r.results[4].allowed).toBe("equivalent at the bound");
-    expect(r.unusedAllowances).toEqual([allowSurvivors[1]]);
+    // One for a file this run did not mutate is unused too, not dropped.
+    expect(r.unusedAllowances).toEqual([allowSurvivors[1], allowSurvivors[2]]);
+    // Another file's allowance never covers this file's survivor.
+    const other = await runMutants({
+      ...opts,
+      exec: fake(),
+      allowSurvivors: [allowSurvivors[2]],
+    });
+    expect(other.survivors.map((x) => x.mutant.id)).toEqual([
+      "3:18:relational",
+    ]);
+  });
+
+  test("an allowance with no reason is refused", async () => {
+    for (const reason of ["", "   "])
+      await expect(
+        runMutants({
+          ...opts,
+          exec: fake(),
+          allowSurvivors: [{ file: "std/f.ts", line: 3, reason }],
+        }),
+      ).rejects.toThrow(/gives no reason/);
+  });
+
+  test("no mutant to run fails the run; so does a max, jobs or timeout that is not a positive integer", async () => {
+    let calls = 0;
+    const exec: Exec = async (c) => {
+      calls++;
+      return fake()(c);
+    };
+    // A change that touches only a comment (line 1) or nothing at all.
+    for (const r of [[[1, 1]], []] as [number, number][][])
+      await expect(runMutants({ ...opts, ranges: r, exec })).rejects.toThrow(
+        /no mutants in the changed lines of std\/f.ts/,
+      );
+    await expect(runMutants({ ...opts, exec, mutants: [] })).rejects.toThrow(
+      /no mutants/,
+    );
+    for (const k of ["max", "jobs", "timeoutMs"])
+      for (const v of [0, -1, Number.NaN, 1.5, Number.POSITIVE_INFINITY])
+        await expect(runMutants({ ...opts, exec, [k]: v })).rejects.toThrow(
+          `${k} must be a positive integer`,
+        );
+    // Refused before anything ran.
+    expect(calls).toBe(0);
   });
 
   test("max takes an even, deterministic spread; mutants picks which", async () => {
     expect(spread([1, 2, 3, 4, 5, 6], 3)).toEqual([1, 3, 5]);
     expect(spread([1, 2], 5)).toEqual([1, 2]);
     expect(spread([1, 2], undefined)).toEqual([1, 2]);
-    expect(spread([1, 2], 0)).toEqual([]);
     const r = await runMutants({ ...opts, exec: fake(), max: 2 });
     expect(r.generated).toBe(5);
     expect(r.results.map((x) => x.mutant.id)).toEqual([
@@ -539,8 +815,9 @@ describe("running mutants with a fake runner", () => {
   test("fails unless the test passes on the unmutated module", async () => {
     for (const base of [
       result(failOne, "", 1),
-      result("", "", null, true),
+      result("", "", 137, true),
       result(pass, "", 1),
+      result(pass, "", 0, false, false),
     ])
       await expect(runMutants({ ...opts, exec: fake(base) })).rejects.toThrow(
         /does not pass on the unmutated std\/f.ts/,
@@ -562,18 +839,64 @@ describe("running mutants with a fake runner", () => {
     expect(calls).toBe(3);
   });
 
-  test("the default exec runs the test in a scratch install with the module replaced", async () => {
-    // A stand-in compiler: passes every clause unless the module says FAIL,
-    // never finishes if it says HANG. Its sleep is a child holding the output
-    // pipes open, as the program `nish run` starts is.
+  test("the run fails only once the mutants already running have finished", async () => {
+    let calls = 0;
+    let finished = false;
+    const exec: Exec = async (c) => {
+      calls++;
+      if (c === src) return result(pass);
+      if (calls === 2) return result("", "", 0);
+      await new Promise((r) => setTimeout(r, 50));
+      finished = true;
+      return result(pass);
+    };
+    await expect(runMutants({ ...opts, exec, jobs: 2 })).rejects.toThrow(
+      /exited 0 without a verdict/,
+    );
+    // Its scratch install is gone before the caller hears of the failure.
+    expect(finished).toBe(true);
+  });
+
+  test("the default exec builds, then runs, the test in a scratch install with the module replaced", async () => {
+    // A stand-in compiler, called as `nish <file> --link <bin>`: it fails the
+    // build as the module says, else links a stand-in test that passes every
+    // clause unless the module says FAIL, crashes on CRASH, and never finishes
+    // on HANG. Its sleep is a child holding the output pipes open, as a
+    // mutant's own children would.
     const r = tmp("vector-mut-fake-");
     const out = ids.map((id) => `PASS  [${id}] ok`).join("\\n");
     write(
       r,
       "build/seed/libexec/nish",
-      `#!/bin/sh\nm="$(dirname "$0")/../std/f.ts"\ngrep -q HANG "$m" && { sleep 30; exit 0; }\ngrep -q FAIL "$m" && { printf 'FAIL  [${ids[0]}] x\\n'; exit 1; }\nprintf '${out}\\n'\n`,
+      [
+        "#!/bin/sh",
+        'd="$(dirname "$0")"',
+        'm="$d/../std/f.ts"',
+        '[ "$2" = --link ] && [ -f "$1" ] || { echo "bad args: $*" >&2; exit 2; }',
+        'grep -q BUILD_DIAG "$m" && { echo "std/f.ts:1:1: error: bad" >&2; exit 1; }',
+        'grep -q BUILD_OOM "$m" && kill -9 $$',
+        'grep -q LINK_FAIL "$m" && { echo "clang: error: linker command failed with exit code 1" >&2; exit 1; }',
+        'grep -q BUILD_HANG "$m" && { sleep 30; exit 0; }',
+        'echo "linked $3"',
+        'cp "$d/test.sh" "$3"',
+        "",
+      ].join("\n"),
+    );
+    write(
+      r,
+      "build/seed/libexec/test.sh",
+      [
+        "#!/bin/sh",
+        'm="$(dirname "$0")/std/f.ts"',
+        'grep -q HANG "$m" && { sleep 30; exit 0; }',
+        'grep -q CRASH "$m" && kill -9 $$',
+        `grep -q FAIL "$m" && { printf 'FAIL  [${ids[0]}] x\\n'; exit 1; }`,
+        `printf '${out}\\n'`,
+        "",
+      ].join("\n"),
     );
     chmodSync(join(r, "build/seed/libexec/nish"), 0o755);
+    chmodSync(join(r, "build/seed/libexec/test.sh"), 0o755);
     write(r, "std/f.ts", "base");
     const exec = scratchExec({
       contract: hkdf,
@@ -582,13 +905,35 @@ describe("running mutants with a fake runner", () => {
       modulePath: "std/f.ts",
       timeoutMs: 1500,
     });
-    expect(classify(await exec("ok")).outcome).toBe("survived");
+    const ok = await exec("ok");
+    expect(ok.started).toBe(true);
+    expect(classify(ok).outcome).toBe("survived");
     expect(classify(await exec("FAIL")).outcome).toBe("killed");
+    const crash = await exec("CRASH");
+    expect(crash.run.exitCode).toBe(137);
+    expect(classify(crash).outcome).toBe("killed");
     const hung = await exec("HANG");
-    expect(hung.timedOut).toBe(true);
+    expect([hung.started, hung.timedOut]).toEqual([true, true]);
     expect(classify(hung).outcome).toBe("timeout");
+    const diag = await exec("BUILD_DIAG");
+    expect(diag.started).toBe(false);
+    expect(classify(diag)).toEqual({
+      outcome: "stillborn",
+      detail: "std/f.ts:1:1: error: bad",
+    });
+    // The build dying, the linker failing, or the build hanging: the test
+    // never ran, so the mutant is neither killed nor stillborn.
+    for (const [m, why] of [
+      ["BUILD_OOM", /never started \(exit 137\)/],
+      ["LINK_FAIL", /never started \(exit 1\): clang: error: linker/],
+      ["BUILD_HANG", /never started \(exit 125\).*took longer than 1500 ms/s],
+    ] as const) {
+      const x = await exec(m);
+      expect([m, x.started, x.timedOut]).toEqual([m, false, false]);
+      expect(() => classify(x)).toThrow(why);
+    }
     rmSync(r, { recursive: true, force: true });
-  });
+  }, 30_000);
 });
 
 // Live: the planted mutants against nish's real std. VECTOR_NISH is the seed's
@@ -686,7 +1031,7 @@ describe.skipIf(!nish)("planted mutants against nish", () => {
     );
   }, 600_000);
 
-  test("ChaCha20-Poly1305: tag byte 15 and the tail bound are generated and killed", async () => {
+  test("ChaCha20-Poly1305: tag byte 15, tail > 0 and the tail loop bound are generated and killed", async () => {
     await live(
       aead,
       modules.aead,
@@ -696,6 +1041,11 @@ describe.skipIf(!nish)("planted mutants against nish", () => {
           "toU32(tag[15] ^ sealed[p + 15])",
           "toU32(tag[15] ^ sealed[p + 14])",
         ],
+        // `tail > 0` → `tail >= 0`: the mutant pads a part with no partial
+        // block, so a contract that never tags such a part lets it survive.
+        ["relational", "if (tail > 0) {", "if (tail >= 0) {"],
+        // Dies of the module's own panic (index out of range), not a clause:
+        // a kill, but proof only that the loop bound is load-bearing.
         [
           "logical",
           "for (let i: i32 = 0; i < tail && i < toI32(last.length); i++) {",
