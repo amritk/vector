@@ -176,13 +176,23 @@ export function hexPrinted(runs: string[], hex: string): boolean {
   return false;
 }
 
-/** Is the integer printed in the section, in decimal or as 0x hex? */
-export function intPrinted(text: string, n: number): boolean {
-  const dec = new RegExp(`(?<![0-9A-Za-z.])${n}(?![0-9A-Za-z])`);
-  if (dec.test(text)) return true;
-  if (n < 0) return false;
-  const hex = n.toString(16);
-  return new RegExp(`0x0*${hex}(?![0-9a-fA-F])`, "i").test(text);
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Is the integer printed right after its label — `L = 42`, `Block Count: 1`,
+ * `L 42` — in decimal or as 0x hex? A bare number proves nothing (every
+ * section prints small integers), so the label pins it to the value it names.
+ */
+export function intLabelled(text: string, label: string, n: number): boolean {
+  const hex = n
+    .toString(16)
+    .replace(/[a-f]/g, (d) => `[${d}${d.toUpperCase()}]`);
+  const value = n < 0 ? `${n}` : `(?:${n}|0[xX]0*${hex})`;
+  // Neither end may run into a longer identifier (`MAX_L`, `T-L`, `x.L`) or
+  // a longer number (`1,000`, `4-5`, `12:30`, `255/256`, `1.5`).
+  return new RegExp(
+    `(?<![0-9A-Za-z_.-])${escapeRe(normalizeText(label))}(?:\\s*[=:]\\s*|\\s+)${value}(?![0-9A-Za-z_]|[.,:/-]\\d)`,
+  ).test(text);
 }
 
 export function findSection(doc: RfcDocument, id: string): RfcSection | null {

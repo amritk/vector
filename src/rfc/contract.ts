@@ -8,12 +8,21 @@
 //                 BCP 14 level. These are the *claims*; nothing else may be
 //                 invented.
 //   functions     the signatures of the implementation under test, in a tiny
-//                 type vocabulary (bytes, bytes?, i32, u32, bool).
+//                 type vocabulary (bytes, bytes?, string, string?, i32,
+//                 u32, bool).
 //   clauses       the *evidence*: known-answer vectors copied from the RFC, and
 //                 properties quantified over a typed domain. Every clause
 //                 cites the requirements it checks, and every MUST is cited.
 
-export const VALUE_TYPES = ["bytes", "bytes?", "i32", "u32", "bool"] as const;
+export const VALUE_TYPES = [
+  "bytes",
+  "bytes?",
+  "string",
+  "string?",
+  "i32",
+  "u32",
+  "bool",
+] as const;
 export type ValueTy = (typeof VALUE_TYPES)[number];
 
 export const LEVELS = [
@@ -78,11 +87,15 @@ export interface Exclusion {
  * A literal value. `hex` and `ascii` are checked against the RFC text unless
  * `unchecked` says why they are not printed there; `concat` is checked part by
  * part. `repeat` writes `hex` that many times (RFC-printed runs like 22 × 0b).
+ * `str` is a string value (`ascii` is bytes); both are checked as text. An
+ * `int` is checked only next to its `label`, the name the RFC prints it under
+ * ("L = 42"); without one it is unchecked, and the report says so.
  */
 export type Literal =
   | { hex: string; repeat?: number; unchecked?: string }
   | { ascii: string; unchecked?: string }
-  | { int: number; unchecked?: string }
+  | { str: string; unchecked?: string }
+  | { int: number; label?: string; unchecked?: string }
   | { bool: boolean }
   | { null: true }
   | { concat: Literal[] };
@@ -112,18 +125,77 @@ export const OPS = [
   "or",
   "not",
   "implies",
+  "strLen",
+  "strConcat",
+  "lower",
+  "upper",
+  "utf8",
+  "ascii",
+  "charAt",
 ] as const;
 export type Op = (typeof OPS)[number];
+
+/** `let` names values for its `in`; each binding may use the ones before it. */
+export interface LetExpr {
+  let: { name: string; value: Expr }[];
+  in: Expr;
+}
 
 export type Expr =
   | Literal
   | { var: string }
   | { call: string; args: Expr[] }
-  | { op: Op; args: Expr[] };
+  | { op: Op; args: Expr[] }
+  | LetExpr;
 
 export type Var =
   | { name: string; type: "i32"; min: number; max: number }
-  | { name: string; type: "bytes"; minLen: number; maxLen: number };
+  | { name: string; type: "bytes"; minLen: number; maxLen: number }
+  | {
+      name: string;
+      type: "string";
+      minLen: number;
+      maxLen: number;
+      /** Characters and character classes (see ALPHABET_CLASSES). */
+      alphabet: string[];
+    };
+
+const range = (lo: number, hi: number) =>
+  Array.from({ length: hi - lo + 1 }, (_, i) => String.fromCharCode(lo + i));
+const DIGITS = range(0x30, 0x39);
+
+/** The named character classes a string variable's alphabet may use. */
+export const ALPHABET_CLASSES: Record<string, string[]> = {
+  hexdigit: [...DIGITS, ...range(0x61, 0x66)],
+  HEXDIGIT: [...DIGITS, ...range(0x41, 0x46)],
+  digit: DIGITS,
+  alpha: [...range(0x41, 0x5a), ...range(0x61, 0x7a)],
+  space: [" ", "\t", "\n", "\r"],
+  "ascii-printable": range(0x20, 0x7e),
+};
+
+/**
+ * The characters a string may be written with: printable ASCII, tab, LF and
+ * CR. ASCII keeps a character one byte, so lengths, `charAt` and `lower`/
+ * `upper` mean the same in the evaluator and in Nish (whose strings are UTF-8
+ * bytes); `ascii(bytes)` can still produce any ASCII byte at run time.
+ */
+export const STRING_CHAR_RE = /^[\x20-\x7e\t\n\r]*$/;
+
+/** The distinct characters an alphabet spells, in order; null if it names an unknown class. */
+export function alphabetChars(alphabet: string[]): string[] | null {
+  const out = new Set<string>();
+  for (const a of alphabet) {
+    const chars = Object.hasOwn(ALPHABET_CLASSES, a)
+      ? ALPHABET_CLASSES[a]
+      : a.length === 1
+        ? [a]
+        : null;
+    if (!chars) return null;
+    for (const ch of chars) out.add(ch);
+  }
+  return [...out];
+}
 
 export interface VectorClause {
   kind: "vector";
@@ -173,6 +245,7 @@ export const I32_MAX = 2147483647;
 export const isLiteral = (e: Expr): e is Literal =>
   "hex" in e ||
   "ascii" in e ||
+  "str" in e ||
   "int" in e ||
   "bool" in e ||
   "null" in e ||
@@ -253,8 +326,21 @@ function shapeLiteral(v: unknown, at: string, errors: string[]): void {
   } else if ("ascii" in v) {
     checkKeys(v, ["ascii", "unchecked"], at, errors);
     if (typeof v.ascii !== "string") errors.push(`${at}.ascii: a string`);
+  } else if ("str" in v) {
+    checkKeys(v, ["str", "unchecked"], at, errors);
+    if (typeof v.str !== "string" || !STRING_CHAR_RE.test(v.str)) {
+      errors.push(`${at}.str: a string of printable ASCII, tab, LF or CR`);
+    }
   } else if ("int" in v) {
-    checkKeys(v, ["int", "unchecked"], at, errors);
+    checkKeys(v, ["int", "label", "unchecked"], at, errors);
+    if (
+      v.label !== undefined &&
+      (typeof v.label !== "string" || !/[0-9A-Za-z]/.test(v.label))
+    ) {
+      errors.push(
+        `${at}.label: the name the RFC prints the value under, with a letter or digit`,
+      );
+    }
     if (
       !Number.isInteger(v.int) ||
       (v.int as number) < I32_MIN ||
@@ -273,10 +359,17 @@ function shapeLiteral(v: unknown, at: string, errors: string[]): void {
     if (!Array.isArray(v.concat) || v.concat.length === 0) {
       errors.push(`${at}.concat: a non-empty array`);
     } else {
-      v.concat.forEach((p, i) => shapeLiteral(p, `${at}.concat[${i}]`, errors));
+      v.concat.forEach((p, i) => {
+        const pat = `${at}.concat[${i}]`;
+        if (isObj(p) && !("hex" in p || "ascii" in p || "concat" in p)) {
+          errors.push(`${pat}: a bytes literal (hex, ascii, concat)`);
+        } else shapeLiteral(p, pat, errors);
+      });
     }
   } else {
-    errors.push(`${at}: not a literal (hex, ascii, int, bool, null, concat)`);
+    errors.push(
+      `${at}: not a literal (hex, ascii, str, int, bool, null, concat)`,
+    );
   }
   if (
     "unchecked" in v &&
@@ -286,9 +379,43 @@ function shapeLiteral(v: unknown, at: string, errors: string[]): void {
   }
 }
 
-function shapeExpr(v: unknown, at: string, errors: string[]): void {
+/**
+ * `letOk` is true only at the top of `assert` (and in a let's `in`): the
+ * emitted test computes bindings once, before the assertion, so a `let` under
+ * an `implies` or `and` would run where the evaluator short-circuits.
+ */
+function shapeExpr(
+  v: unknown,
+  at: string,
+  errors: string[],
+  letOk = false,
+): void {
   if (!isObj(v)) {
     errors.push(`${at}: expected an expression object`);
+    return;
+  }
+  if ("let" in v) {
+    checkKeys(v, ["let", "in"], at, errors);
+    if (!letOk) {
+      errors.push(`${at}: a let may only open the assert (or a let's "in")`);
+    }
+    if (!Array.isArray(v.let) || v.let.length === 0) {
+      errors.push(`${at}.let: a non-empty array of {name, value}`);
+    } else {
+      v.let.forEach((b, i) => {
+        const bat = `${at}.let[${i}]`;
+        if (!isObj(b)) {
+          errors.push(`${bat}: an object`);
+          return;
+        }
+        checkKeys(b, ["name", "value"], bat, errors);
+        if (typeof b.name !== "string" || !IDENT_RE.test(b.name)) {
+          errors.push(`${bat}.name: an identifier`);
+        }
+        shapeExpr(b.value, `${bat}.value`, errors);
+      });
+    }
+    shapeExpr(v.in, `${at}.in`, errors, true);
     return;
   }
   if ("var" in v) {
@@ -318,6 +445,39 @@ function shapeExpr(v: unknown, at: string, errors: string[]): void {
     return;
   }
   shapeLiteral(v, at, errors);
+}
+
+function shapeLengths(v: Obj, at: string, what: string, errors: string[]) {
+  const ok =
+    Number.isInteger(v.minLen) &&
+    Number.isInteger(v.maxLen) &&
+    (v.minLen as number) >= 0 &&
+    (v.maxLen as number) <= MAX_BYTES_LEN &&
+    (v.minLen as number) <= (v.maxLen as number);
+  if (!ok) {
+    errors.push(
+      `${at}: ${what} needs integer 0 <= minLen <= maxLen <= ${MAX_BYTES_LEN}`,
+    );
+  }
+}
+
+function shapeAlphabet(a: unknown, at: string, errors: string[]): void {
+  if (!Array.isArray(a) || a.length === 0) {
+    errors.push(`${at}: a non-empty array of characters and classes`);
+    return;
+  }
+  const classes = Object.keys(ALPHABET_CLASSES).join(" ");
+  a.forEach((x, i) => {
+    const ok =
+      typeof x === "string" &&
+      (Object.hasOwn(ALPHABET_CLASSES, x) ||
+        (x.length === 1 && STRING_CHAR_RE.test(x)));
+    if (!ok) {
+      errors.push(
+        `${at}[${i}]: one printable ASCII character (or tab, LF, CR) or a class: ${classes}`,
+      );
+    }
+  });
 }
 
 const strField = (o: Obj, k: string, at: string, errors: string[]) => {
@@ -527,24 +687,23 @@ export function validateContractShape(input: unknown): string[] {
               if (!ok) errors.push(`${vat}: i32 needs integer min <= max`);
             } else if (v.type === "bytes") {
               checkKeys(v, ["name", "type", "minLen", "maxLen"], vat, errors);
-              const ok =
-                Number.isInteger(v.minLen) &&
-                Number.isInteger(v.maxLen) &&
-                (v.minLen as number) >= 0 &&
-                (v.maxLen as number) <= MAX_BYTES_LEN &&
-                (v.minLen as number) <= (v.maxLen as number);
-              if (!ok) {
-                errors.push(
-                  `${vat}: bytes needs integer 0 <= minLen <= maxLen <= ${MAX_BYTES_LEN}`,
-                );
-              }
+              shapeLengths(v, vat, "bytes", errors);
+            } else if (v.type === "string") {
+              checkKeys(
+                v,
+                ["name", "type", "minLen", "maxLen", "alphabet"],
+                vat,
+                errors,
+              );
+              shapeLengths(v, vat, "string", errors);
+              shapeAlphabet(v.alphabet, `${vat}.alphabet`, errors);
             } else {
-              errors.push(`${vat}.type: "i32" or "bytes"`);
+              errors.push(`${vat}.type: "i32", "bytes" or "string"`);
             }
           });
         }
         if (c.where !== undefined) shapeExpr(c.where, `${at}.where`, errors);
-        shapeExpr(c.assert, `${at}.assert`, errors);
+        shapeExpr(c.assert, `${at}.assert`, errors, true);
         if (
           c.samples !== undefined &&
           !(
@@ -579,15 +738,21 @@ export interface TypeEnv {
 export function assignable(from: ExprTy, to: ValueTy): boolean {
   if (from === to) return true;
   if (to === "bytes?") return from === "bytes" || from === "null";
+  if (to === "string?") return from === "string" || from === "null";
   if (to === "u32") return from === "i32";
   return false;
 }
 
-const isBytesLike = (t: ExprTy) =>
+/** bytes, bytes? or null (bytes with a null on the other side). */
+export const isBytesLike = (t: ExprTy) =>
   t === "bytes" || t === "bytes?" || t === "null";
+/** string, string? or null. */
+export const isStringLike = (t: ExprTy) =>
+  t === "string" || t === "string?" || t === "null";
 
 export function typeOfLiteral(lit: Literal): ExprTy {
   if ("hex" in lit || "ascii" in lit || "concat" in lit) return "bytes";
+  if ("str" in lit) return "string";
   if ("int" in lit) return "i32";
   if ("bool" in lit) return "bool";
   return "null";
@@ -616,6 +781,24 @@ export function typeOf(
       return null;
     }
     return t;
+  }
+  if ("let" in e) {
+    const vars = new Map(env.vars);
+    let ok = true;
+    e.let.forEach((b, i) => {
+      const bat = `${at}.let[${i}]`;
+      const t = typeOf(b.value, { ...env, vars }, `${bat}.value`, errors);
+      if (vars.has(b.name) || env.fns.has(b.name)) {
+        errors.push(`${bat}: "${b.name}" shadows a name already in scope`);
+        ok = false;
+      } else if (t === "null") {
+        errors.push(`${bat}: a bare null has no type to bind`);
+        ok = false;
+      } else if (t === null) ok = false;
+      else vars.set(b.name, t);
+    });
+    const t = typeOf(e.in, { ...env, vars }, `${at}.in`, errors);
+    return ok ? t : null;
   }
   if ("call" in e) {
     if (!env.allowCalls) {
@@ -686,15 +869,15 @@ export function typeOf(
     case "flipBit":
       return want(2) && expect(0, "bytes") && expect(1, "i32") ? "bytes" : null;
     case "unwrap":
-      return want(1) && expect(0, "bytes?") ? "bytes" : null;
     case "isNull":
     case "notNull":
       if (!want(1)) return null;
-      if (ts[0] !== "bytes?") {
-        errors.push(`${at}: ${e.op} wants bytes?, got ${ts[0]}`);
+      if (ts[0] !== "bytes?" && ts[0] !== "string?") {
+        errors.push(`${at}: ${e.op} wants bytes? or string?, got ${ts[0]}`);
         return null;
       }
-      return "bool";
+      if (e.op !== "unwrap") return "bool";
+      return ts[0] === "bytes?" ? "bytes" : "string";
     case "+":
     case "-":
     case "*":
@@ -713,6 +896,9 @@ export function typeOf(
       const [a, b] = ts as ExprTy[];
       const same =
         (isBytesLike(a) && isBytesLike(b) && !(a === "null" && b === "null")) ||
+        (isStringLike(a) &&
+          isStringLike(b) &&
+          !(a === "null" && b === "null")) ||
         (a === "i32" && b === "i32") ||
         (a === "bool" && b === "bool");
       if (!same) {
@@ -732,12 +918,32 @@ export function typeOf(
       return want(1) && expect(0, "bool") ? "bool" : null;
     case "implies":
       return want(2) && expect(0, "bool") && expect(1, "bool") ? "bool" : null;
+    case "strLen":
+      return want(1) && expect(0, "string") ? "i32" : null;
+    case "strConcat":
+      return want(2) && expect(0, "string") && expect(1, "string")
+        ? "string"
+        : null;
+    case "lower":
+    case "upper":
+      return want(1) && expect(0, "string") ? "string" : null;
+    case "utf8":
+      return want(1) && expect(0, "string") ? "bytes" : null;
+    case "ascii":
+      return want(1) && expect(0, "bytes") ? "string?" : null;
+    case "charAt":
+      return want(2) && expect(0, "string") && expect(1, "i32")
+        ? "string"
+        : null;
   }
 }
 
 /** Collect every call target in an expression. */
 export function callsIn(e: Expr, out: Set<string> = new Set()): Set<string> {
-  if ("call" in e) {
+  if ("let" in e) {
+    for (const b of e.let) callsIn(b.value, out);
+    callsIn(e.in, out);
+  } else if ("call" in e) {
     out.add(e.call);
     for (const a of e.args) callsIn(a, out);
   } else if ("op" in e) {

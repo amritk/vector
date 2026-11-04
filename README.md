@@ -71,19 +71,39 @@ A contract (`schemas/rfc-contract.json`) has:
   (or `DEFINITION`);
 - **exclusions**: the MUST/SHALL sentences a functional test cannot observe
   (nonce uniqueness, constant-time comparison), each with its reason;
-- **functions**: the implementation's signatures (`bytes`, `bytes?`, `i32`,
-  `u32`, `bool`), plus any reference function from another module;
+- **functions**: the implementation's signatures (`bytes`, `bytes?`,
+  `string`, `string?`, `i32`, `u32`, `bool`), plus any reference function
+  from another module;
 - **clauses**: **vectors** (the RFC's own known answers) and **properties**
   (`forall` a typed domain, `where` restricts it, `assert` must hold).
+
+Expressions are JSON. Besides bytes and integers they have:
+
+- **strings** — `{"str":"abc"}` (printable ASCII, tab, LF, CR: one byte per
+  character) and the ops `strLen`, `strConcat`, `lower`, `upper` (ASCII only),
+  `utf8` (string → bytes), `ascii` (bytes → `string?`, null when any byte is
+  ≥ 0x80) and `charAt` (`""` out of range). A `forall` variable can be a
+  string: `{"name":"s","type":"string","minLen":0,"maxLen":64,"alphabet":["hexdigit","-"]}`;
+  the alphabet lists characters and the classes `hexdigit`, `HEXDIGIT`,
+  `digit`, `alpha`, `space`, `ascii-printable`. Z3 picks the lengths, the
+  seeded PRNG the characters.
+- **let** — `{"let":[{"name":"sealed","value":…}],"in":…}` names a value once
+  (each binding sees the ones before it). It may only open an `assert` (or a
+  let's `in`), may not shadow a variable or function, and is emitted as Nish
+  `const` locals ahead of the assertion.
+- **labelled ints** — `{"int":42,"label":"L"}` in a vector passes fidelity
+  only when its section prints `L = 42`, `L: 42` or `L 42` (decimal or `0x`).
+  A bare number proves nothing — every section prints small integers — so an
+  unlabelled int is reported as a warning, unchecked.
 
 ### The gates (no model involved)
 
 | Gate | Refuses |
 |---|---|
-| fidelity | a quote not in its cited section; a test-vector byte string not printed in its section (hexdumps, `0x…`, colon-hex split mid-byte across lines are all read) |
+| fidelity | a quote not in its cited section; a test-vector byte string not printed in its section (hexdumps, `0x…`, colon-hex split mid-byte across lines are all read); a `str` not printed there; a labelled int not printed after its label |
 | completeness | any MUST / MUST NOT / SHALL / SHALL NOT / REQUIRED sentence of the RFC that is neither inside a requirement's quote nor an exclusion's |
 | coverage | a binding requirement no clause checks; a clause citing a requirement the contract does not state |
-| typing | an ill-typed call or expression (`bytes?` must be `unwrap`ped; `where` may not call the implementation) |
+| typing | an ill-typed call or expression (`bytes?`/`string?` must be `unwrap`ped; `where` may not call the implementation; a `let` may not shadow a name or bind a bare `null`) |
 | signatures | a declared signature that is not the module's export (`--nish-root` / `--module`) |
 | domain | a property whose domain is empty (Z3 `unsat`: it would pass vacuously) |
 
@@ -764,6 +784,13 @@ The solver-backed suites need a native z3 (`bun run fetch-z3`, or `$VECTOR_Z3` /
 `PATH`). They cover the shape validator, typechecker, emitter, the solver, the
 `verify.ts` gate (PROVEN / REFUTED / INVALID paths), and the full prompt-mode
 retry loop with the LLM agents mocked and the real z3 subprocess.
+
+The RFC suites (`test/rfc.test.ts`, `test/rfc-lang.test.ts`) also run the
+generated tests against a real nish when `VECTOR_NISH` points at a nish binary,
+and skip those live tests without one. Set `VECTOR_REQUIRE_NISH=1` wherever a
+nish is available (a local checkout, a release check) to make a missing
+`VECTOR_NISH` a failure instead of a skip. CI has no nish and does not set it, so
+CI does not run the live tests.
 
 ---
 

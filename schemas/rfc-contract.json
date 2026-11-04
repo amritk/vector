@@ -92,7 +92,7 @@
       "description": "An RFC section number: 2.3, A.1, 4."
     },
     "valueType": {
-      "enum": ["bytes", "bytes?", "i32", "u32", "bool"],
+      "enum": ["bytes", "bytes?", "string", "string?", "i32", "u32", "bool"],
       "description": "bytes? is bytes or null (a refusal)."
     },
     "requirement": {
@@ -221,8 +221,29 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "str": {
+              "type": "string",
+              "pattern": "^[\\x20-\\x7e\\t\\n\\r]*$",
+              "description": "A string value: printable ASCII, tab, LF and CR."
+            },
+            "unchecked": {
+              "type": "string"
+            }
+          },
+          "required": ["str"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
             "int": {
               "type": "integer"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "[0-9A-Za-z]",
+              "description": "The name the RFC prints right before the value (`L = 42`, `Block Count: 1`); fidelity checks the pair. Without one the int is unchecked and reported as a warning."
             },
             "unchecked": {
               "type": "string"
@@ -326,7 +347,14 @@
                 "and",
                 "or",
                 "not",
-                "implies"
+                "implies",
+                "strLen",
+                "strConcat",
+                "lower",
+                "upper",
+                "utf8",
+                "ascii",
+                "charAt"
               ]
             },
             "args": {
@@ -337,7 +365,36 @@
             }
           },
           "required": ["op", "args"],
-          "description": "len(bytes)->i32; concat(bytes,bytes); slice(bytes,from,to) clamped; zeros(n); fill(byte,n); flipBit(bytes,bit); unwrap(bytes?)->bytes (a null fails the sample); isNull/notNull(bytes?); + - * % on i32; le64(i32)->8 bytes; comparisons; == != on i32, bool or bytes/bytes?/null; and/or (2+), not, implies."
+          "description": "len(bytes)->i32; concat(bytes,bytes); slice(bytes,from,to) clamped; zeros(n); fill(byte,n); flipBit(bytes,bit); unwrap(bytes?)->bytes (a null fails the sample); isNull/notNull(bytes?); + - * % on i32; le64(i32)->8 bytes; comparisons; == != on i32, bool or bytes/bytes?/null; and/or (2+), not, implies; strLen(string)->i32; strConcat(string,string); lower/upper(string) (ASCII only); utf8(string)->bytes; ascii(bytes)->string? (null when any byte >= 0x80); charAt(string,i32)->string (\"\" out of range); unwrap/isNull/notNull also take string?; == != also on string/string?/null."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Names for values, bound in order (each may use the ones before it), scoped over `in`. Only at the top of an assert (or a let's `in`); a name may not shadow a variable or function.",
+          "properties": {
+            "let": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+                  },
+                  "value": {
+                    "$ref": "#/$defs/expr"
+                  }
+                },
+                "required": ["name", "value"]
+              }
+            },
+            "in": {
+              "$ref": "#/$defs/expr"
+            }
+          },
+          "required": ["let", "in"]
         }
       ]
     },
@@ -453,6 +510,35 @@
                   }
                 },
                 "required": ["name", "type", "minLen", "maxLen"]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "string"
+                  },
+                  "minLen": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "maxLen": {
+                    "type": "integer",
+                    "maximum": 4096
+                  },
+                  "alphabet": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Single characters and/or the classes hexdigit, HEXDIGIT, digit, alpha, space, ascii-printable."
+                  }
+                },
+                "required": ["name", "type", "minLen", "maxLen", "alphabet"]
               }
             ]
           }
