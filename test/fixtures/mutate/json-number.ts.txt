@@ -1,0 +1,34 @@
+// Copied from nish v0.34.0 std/json-typed.ts (lines 151-181), the class closed
+// early: a declaration whose string starts on its next line.
+  "nish/json-typed: jsonDecode and jsonEncode are written by the compiler from the class's fields, and under Node the types are erased"
+
+/**
+ * A JSON number kept as the text it was written in, so that no digit is lost:
+ * an integer wider than a `u64` and a fraction with more digits than an `f64`
+ * holds are decoded and encoded again byte for byte. A field of this class is
+ * read and written as one number, not as an object: `jsonDecode` copies the
+ * number's text into it, and `jsonEncode` writes that text back unchanged.
+ *
+ * It reads its text as `nish/json-value` reads a number (`numberText`,
+ * `isI64`, `i64`, `isU64`, `u64`, `f64`), through a tokenizer of its own, so
+ * the two answer alike; the two are separate types until the typed layer
+ * can name a `JsonValue`'s number directly.
+ *
+ * A new one holds `0`. Decoding into one reuses its bytes, so an object
+ * decoded again with numbers no longer than before allocates nothing for
+ * them.
+ */
+export class JsonNumber {
+  /** The text is `bytes[0, count)`, one JSON number; the bytes past it are room. */
+  bytes: u8[]
+  count: i32 = 1
+
+  constructor() {
+    this.bytes = [48]
+  }
+
+  /** The number's text, exactly as it was written or set. */
+  text(): string {
+    return String.fromBytes(this.bytes, 0, this.count)
+  }
+}

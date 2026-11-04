@@ -304,6 +304,159 @@ describe("reading git diff -U0", () => {
     rmSync(d, { recursive: true, force: true });
   });
 
+  // An edit to `line` of `src` (committed first): the exports the diff names.
+  const touched = (src: string, line: number) => {
+    const d = repo();
+    write(d, "m.ts", src);
+    commit(d);
+    const lines = src.split("\n");
+    lines[line - 1] += " ";
+    write(d, "m.ts", lines.join("\n"));
+    try {
+      return gitDiff(d, "HEAD").flatMap((f) =>
+        f.exports.map((e) => `${e.name}:${e.kind}`),
+      );
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
+  };
+
+  test("an item after a line that ends in a string is its own (nish std/cli.ts, std/json-typed.ts)", () => {
+    // Before: `class Style` was read as part of `SGR_STRIKETHROUGH = "9"`, and
+    // `class JsonNumber` as part of the unexported string before it.
+    const cli = readFileSync("test/fixtures/mutate/cli-style.ts.txt", "utf8");
+    const at = (src: string, text: string) =>
+      src.split("\n").findIndex((l) => l.includes(text)) + 1;
+    expect(touched(cli, at(cli, "  metaThemed: string"))).toEqual([
+      "Style:changed",
+    ]);
+    expect(touched(cli, at(cli, 'SGR_BLACK: string = "30"'))).toEqual([
+      "SGR_BLACK:changed",
+    ]);
+    const json = readFileSync(
+      "test/fixtures/mutate/json-number.ts.txt",
+      "utf8",
+    );
+    expect(touched(json, at(json, "return String.fromBytes"))).toEqual([
+      "JsonNumber:changed",
+    ]);
+    expect(touched(json, at(json, '"nish/json-typed: jsonDecode'))).toEqual([]);
+  });
+
+  test("an item starts at its declaration whatever the line before ends in", () => {
+    const enders = [
+      'export const s = "a"',
+      "export const t = `x${y}`",
+      "export const c = 'c'",
+      "export const g: Map<string, number> = m",
+      "export type T = Array<number>",
+      "export const n = x!",
+      "export let i = j++",
+      "export let k = j--",
+      "export const r = /a+/",
+      'const s2: string =\n  "two lines"',
+      "export const v = `\nmulti ${x}\n`",
+    ];
+    for (const end of enders) {
+      for (const gap of ["", "\n"]) {
+        const src = `${end}\n${gap}export function f(): void {\n  body()\n}\n`;
+        const body = src.split("\n").indexOf("  body()") + 1;
+        expect(touched(src, body), `${end} ${JSON.stringify(gap)}`).toEqual([
+          "f:changed",
+        ]);
+      }
+    }
+    // Allman braces: the `{` at column 0 is the function's.
+    expect(
+      touched("export const a = 1\nexport function f()\n{\n  body()\n}\n", 4),
+    ).toEqual(["f:changed"]);
+    // A function as a value: `=` before it needs an operand, so it carries on.
+    expect(
+      touched("export const h =\nfunction () {\n  body()\n}\n", 3),
+    ).toEqual(["h:changed"]);
+    // A top-level statement that is no declaration belongs to the item before.
+    expect(touched("export const a = 1\nmain()\n", 2)).toEqual(["a:changed"]);
+  });
+
+  test("refuses brackets it cannot balance, and an export it cannot place", () => {
+    // A regex literal with a bracket in it: the depth is wrong from there on.
+    expect(() =>
+      touched("export const re = /[(]/\nexport const b = 1\n", 2),
+    ).toThrow(/never closed/);
+    expect(() =>
+      touched("export const re = /[)]/\nexport const b = 1\n", 2),
+    ).toThrow(/a closing bracket with none open/);
+    // Two exports on one line, or one after other code: touched, refused.
+    expect(() =>
+      touched("export const a = 1; export const b = 2\n", 1),
+    ).toThrow(/not its line's first code/);
+    expect(() =>
+      touched("export function f() {\n  x()\n} export const b = 2\n", 2),
+    ).toThrow(/not its line's first code/);
+    // Untouched, they are not this change's business.
+    expect(
+      touched(
+        "export const a = 1; export const b = 2\nexport const c = 3\n",
+        2,
+      ),
+    ).toEqual(["c:changed"]);
+  });
+
+  test("an indented or commented export, a BOM, and a namespace's own exports", () => {
+    expect(touched("  export function x(): void {\n  body()\n}\n", 2)).toEqual([
+      "x:changed",
+    ]);
+    expect(
+      touched("/** d */ export function y(): void {\n  body()\n}\n", 2),
+    ).toEqual(["y:changed"]);
+    expect(
+      touched("\uFEFFexport function z(): void {\n  body()\n}\n", 2),
+    ).toEqual(["z:changed"]);
+    expect(
+      touched("export namespace N {\n  export const inner = 1\n}\n", 2),
+    ).toEqual(["N:changed"]);
+    // A BOM on an untracked file's first line: still named.
+    const d = repo();
+    write(d, "a.ts", "\n");
+    commit(d);
+    write(d, "b.ts", "\uFEFFexport const q = 1\n");
+    expect(gitDiff(d, "HEAD")).toEqual([
+      {
+        file: "b.ts",
+        ranges: [[1, 1]],
+        exports: [{ name: "q", kind: "added" }],
+      },
+    ]);
+    rmSync(d, { recursive: true, force: true });
+  });
+
+  test("exports are read only in script files; another file has lines, not exports", () => {
+    const d = repo();
+    write(d, "env.sh", "export FOO=bar\n");
+    write(d, "m.ts", "export const a = 1\n");
+    commit(d);
+    write(d, "env.sh", "export FOO=baz\nexport BAR=1\n");
+    write(d, "m.ts", "export const a = 2\n");
+    write(d, "new.sh", "export NEW=1\n");
+    expect(gitDiff(d, "HEAD")).toEqual([
+      { file: "env.sh", ranges: [[1, 2]], exports: [] },
+      {
+        file: "m.ts",
+        ranges: [[1, 1]],
+        exports: [{ name: "a", kind: "changed" }],
+      },
+      { file: "new.sh", ranges: [[1, 1]], exports: [] },
+    ]);
+    rmSync(d, { recursive: true, force: true });
+  });
+
+  test("refuses a range base: the post-image read is the working tree's", () => {
+    const d = repo();
+    for (const base of ["HEAD~1..HEAD", "main...topic"])
+      expect(() => gitDiff(d, base)).toThrow(/a range/);
+    rmSync(d, { recursive: true, force: true });
+  });
+
   test("refuses a base that looks like an option", () => {
     const d = repo();
     expect(() => gitDiff(d, "--output=/tmp/x")).toThrow(/looks like an option/);
@@ -433,6 +586,16 @@ describe("the operators", () => {
     // Only the expression is replaced: the `;` and a comment after it stay.
     expect(ret("    return a;", "u8[] | null")).toEqual(["    return null;"]);
     expect(ret("    return f(a) // why")).toEqual(["    return null // why"]);
+    // A string is part of the expression: the whole of it is replaced.
+    expect(ret('    return "abc";')).toEqual(["    return null;"]);
+    expect(ret("    return `t${a}x`")).toEqual(["    return null"]);
+    expect(ret('    return "x" + g(a); // why')).toEqual([
+      "    return null; // why",
+    ]);
+    expect(ret('    return "a" /* c */;')).toEqual([
+      "    return null /* c */;",
+    ]);
+    expect(ret('    return "a" +')).toEqual([]);
     expect(ret("    return a", "u8")).toEqual([]);
     expect(ret("    return a +")).toEqual([]);
     expect(ret("    return f(")).toEqual([]);
@@ -557,7 +720,10 @@ describe("scratch installs", () => {
   });
 });
 
-// A run of the hkdf test as nish would report it.
+// A run of the hkdf test as nish would report it: nish names the mutated std
+// module by its std path and the emitted test by its absolute one.
+const TEST_FILE = "/tmp/vector-rfc-x/main.ts";
+const SOURCES = ["std/crypto/hkdf.ts", TEST_FILE];
 const ids = hkdf.clauses.map((k) => k.id);
 const result = (
   stdout: string,
@@ -570,6 +736,7 @@ const result = (
   return {
     started,
     timedOut,
+    sources: SOURCES,
     run: {
       ...judge(hkdf, clauses, exitCode),
       clauses,
@@ -647,23 +814,55 @@ describe("classifying a run", () => {
       ).toThrow(/the test never started/);
     // A diagnostic with no failing exit, or a timeout before the start, is
     // not a verdict either.
-    expect(() => classify(unstarted("std/a.ts:1:1: error: x\n", 0))).toThrow(
-      /never started/,
-    );
-    expect(() => classify(unstarted("std/a.ts:1:1: error: x\n", null))).toThrow(
-      /never started/,
-    );
+    expect(() =>
+      classify(unstarted("std/crypto/hkdf.ts:1:1: error: x\n", 0)),
+    ).toThrow(/never started/);
+    expect(() =>
+      classify(unstarted("std/crypto/hkdf.ts:1:1: error: x\n", null)),
+    ).toThrow(/never started/);
     expect(() => classify(result("", "", 137, true, false))).toThrow(
       /never started/,
     );
   });
 
+  test("a diagnostic is the mutant's only in the mutated module or the test", () => {
+    const real =
+      "std/crypto/hkdf.ts:136:10: syntax error: expected `;`, found `)`";
+    const inTest = `${TEST_FILE}:1:10: error: Module \`nish/crypto/hkdf\` has no exported function \`nope\``;
+    const quoted = "  136 |     return error: x\n      |          ^";
+    for (const d of [real, inTest])
+      expect(
+        classify(unstarted(`${d}\n${quoted}\n${d}\n2 errors\n`, 1)),
+      ).toEqual({
+        outcome: "stillborn",
+        detail: d,
+      });
+    // The C toolchain, another std module, or a relative test path: not
+    // the mutant's doing, so the run never started.
+    const c =
+      "runtime/x.c:1:10: fatal error: stdio.h: No such file or directory";
+    for (const stderr of [
+      c,
+      `${real}\n${c}`,
+      `${real}\nclang: error: linker command failed with exit code 1`,
+      "std/other.ts:1:1: error: x",
+      "main.ts:1:1: error: x",
+    ])
+      expect(() => classify(unstarted(`${stderr}\n`, 1)), stderr).toThrow(
+        /the test never started/,
+      );
+  });
+
   test("a diagnostic after the test started is a kill, not a stillborn mutant", () => {
-    const r = result(`PASS  [${ids[0]}] ok`, "std/a.ts:1:1: error: x\n", 1);
-    expect(classify(r).outcome).toBe("killed");
-    expect(classify(result("", "std/a.ts:1:1: error: x\n", 1)).outcome).toBe(
-      "killed",
+    const r = result(
+      `PASS  [${ids[0]}] ok`,
+      "std/crypto/hkdf.ts:1:1: error: x\n",
+      1,
     );
+    expect(classify(r).outcome).toBe("killed");
+    expect(
+      classify(result("", "std/crypto/hkdf.ts:1:1: error: x\n", 1)).outcome,
+    ).toBe("killed");
   });
 
   test("a runner failure or a silent stop fails the run", () => {
@@ -694,7 +893,13 @@ describe("running mutants with a fake runner", () => {
       if (contents === src) return base;
       if (contents.includes("n > xs")) return result(pass);
       if (contents.includes("< -1"))
-        return result("", "f.ts:3:9: error: bad\n", 1, false, false);
+        return result(
+          "",
+          "std/crypto/hkdf.ts:3:9: error: bad\n",
+          1,
+          false,
+          false,
+        );
       if (contents.includes("0 && n")) return result("", "", 137, true);
       return result(failOne, "", 1);
     };
@@ -877,6 +1082,11 @@ describe("running mutants with a fake runner", () => {
         'grep -q BUILD_OOM "$m" && kill -9 $$',
         'grep -q LINK_FAIL "$m" && { echo "clang: error: linker command failed with exit code 1" >&2; exit 1; }',
         'grep -q BUILD_HANG "$m" && { sleep 30; exit 0; }',
+        'grep -q TEST_DIAG "$m" && { echo "$1:1:10: error: no export" >&2; exit 1; }',
+        'grep -q C_DIAG "$m" && { echo "std/f.ts:1:1: error: bad" >&2; echo "runtime/x.c:1:10: fatal error: stdio.h: No such file or directory" >&2; exit 1; }',
+        // The build says it linked, but left no binary, or one that cannot run.
+        'grep -q NO_BIN "$m" && exit 0',
+        'grep -q NO_EXEC "$m" && { echo x > "$3"; chmod 644 "$3"; exit 0; }',
         'echo "linked $3"',
         'cp "$d/test.sh" "$3"',
         "",
@@ -921,9 +1131,19 @@ describe("running mutants with a fake runner", () => {
       outcome: "stillborn",
       detail: "std/f.ts:1:1: error: bad",
     });
-    // The build dying, the linker failing, or the build hanging: the test
-    // never ran, so the mutant is neither killed nor stillborn.
+    // A diagnostic in the test, named by the path run.ts gave it: stillborn.
+    const inTest = await exec("TEST_DIAG");
+    expect(classify(inTest).outcome).toBe("stillborn");
+    expect(classify(inTest).detail).toMatch(
+      /^\/.*main\.ts:1:10: error: no export$/,
+    );
+    // The build dying, the linker failing, the build hanging, a C toolchain
+    // error beside a diagnostic, or a binary that is missing or cannot run:
+    // the test never ran, so the mutant is neither killed nor stillborn.
     for (const [m, why] of [
+      ["C_DIAG", /never started \(exit 1\).*runtime\/x\.c/s],
+      ["NO_BIN", /never started \(exit 127\).*failed to start/s],
+      ["NO_EXEC", /never started \(exit 127\).*failed to start/s],
       ["BUILD_OOM", /never started \(exit 137\)/],
       ["LINK_FAIL", /never started \(exit 1\): clang: error: linker/],
       ["BUILD_HANG", /never started \(exit 125\).*took longer than 1500 ms/s],

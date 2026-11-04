@@ -7,7 +7,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { codeMask } from "./mutate.ts";
+import { maskLines } from "./mutate.ts";
 
 export type LineRange = [start: number, end: number];
 
@@ -64,7 +64,13 @@ function path(line: string, prefix: string, n: number): string | null {
  * export it cannot name (`export { a }`, `export * from …`): a re-export
  * changes what a module offers without any declaration to point at.
  */
-export function exportName(line: string, where: string): string | null {
+export function exportName(raw: string, where: string): string | null {
+  // An indented line is inside something (a namespace's own exports);
+  // topLevelItems names an indented export that is not. Otherwise its code
+  // alone: no BOM and no comment before it.
+  const text = raw.replace(/^\uFEFF/, "");
+  if (/^\s/.test(text)) return null;
+  const line = maskLines(text)[0].expr.trim();
   if (!line.startsWith("export")) return null;
   const e = line.match(EXPORT_RE);
   if (e) return e[1];
@@ -84,46 +90,74 @@ interface Item {
   bad?: string;
 }
 
+/** A declaration that never carries on an expression: always a new item. */
+const DECL_HEAD =
+  /^(?:export|import|const|let|var|interface|enum|declare|abstract|namespace|module|type\s+[A-Za-z_$])\b/;
+/** A declaration that can also be an expression's operand (`= function …`). */
+const VALUE_HEAD = /^(?:function|class|async)\b/;
+/** A line that ends like this needs an operand on the next. */
+const NEEDS_OPERAND = /(?:[=(,?:[]|=>|&&|\|\||\?\?)$/;
+/** `export` as a keyword, not a property (`.export`) or part of a name. */
+const EXPORT_WORD = /(?<![\w$.])export(?![\w$])/g;
+
 /**
- * The top-level items of `src`: each starts at a line whose code begins at
- * column 0 outside any bracket and does not carry on the line before, and
- * ends at the last line with code before the next one starts.
+ * The top-level items of `src`. An item starts at a line, outside any
+ * bracket, whose code begins with a declaration keyword (`function`, `class`
+ * or `async` only when the line before does not need an operand), and takes
+ * in every line after it up to the next. A string counts as an operand, so a
+ * line ending in one never carries on. Fails closed: brackets that do not
+ * balance (a regex literal with a bracket in it) are an error, and an item
+ * with a second `export` in it (two on a line) cannot be named.
  */
-function topLevelItems(src: string, file: string): Item[] {
-  const mask = codeMask(src);
+function topLevelItems(source: string, file: string): Item[] {
+  const src = source.replace(/^\uFEFF/, "");
   const items: Item[] = [];
   let depth = 0;
-  let at = 0;
-  let prevCode = "";
-  for (const [k, text] of src.split("\n").entries()) {
-    let code = "";
-    for (let j = 0; j < text.length; j++) code += mask[at + j] ? text[j] : " ";
-    at += text.length + 1;
-    const trimmed = code.trim();
+  let prev = "";
+  for (const [k, { expr }] of maskLines(src).entries()) {
+    const trimmed = expr.trim();
     if (trimmed === "") continue;
     const head =
       depth === 0 &&
-      code[0] !== " " &&
-      code[0] !== "\t" &&
-      !/^[)\]}.?:|&+\-*/%,=<>^]/.test(trimmed) &&
-      !/(?:[.?:|&+\-*/%,([{=<>^!]|=>)$/.test(prevCode);
+      (DECL_HEAD.test(trimmed) ||
+        (VALUE_HEAD.test(trimmed) && !NEEDS_OPERAND.test(prev)));
+    const where = `${file}:${k + 1}`;
     if (head) {
       const it: Item = { start: k + 1, end: k + 1, name: null };
       try {
-        it.name = exportName(text, `${file}:${k + 1}`);
+        it.name = exportName(trimmed, where);
       } catch (err) {
         it.bad = (err as Error).message;
       }
       items.push(it);
     } else if (items.length > 0) items[items.length - 1].end = k + 1;
-    for (const c of code) {
+    const lead = expr.length - expr.trimStart().length;
+    // Each `export` outside every bracket must be the first code of an item's
+    // head: a second one on a line declares something this reader misses.
+    const exportsAt = new Set(
+      [...expr.matchAll(EXPORT_WORD)].map((e) => e.index),
+    );
+    for (let j = 0; j < expr.length; j++) {
+      const c = expr[j];
+      if (depth === 0 && exportsAt.has(j) && !(head && j === lead)) {
+        const it = items.at(-1);
+        if (it)
+          it.bad ??= `${where}: an export that is not its line's first code`;
+        else throw new DiffParseError(`${where}: an export it cannot place`);
+      }
       if ("([{".includes(c)) depth++;
-      else if (")]}".includes(c)) depth--;
+      else if (")]}".includes(c) && --depth < 0)
+        throw new DiffParseError(`${where}: a closing bracket with none open`);
     }
-    prevCode = trimmed;
+    prev = trimmed;
   }
+  if (depth !== 0)
+    throw new DiffParseError(`${file}: ${depth} bracket(s) never closed`);
   return items;
 }
+
+/** A file whose exports this reads: JavaScript or TypeScript. Others have lines only. */
+const SCRIPT_RE = /\.(?:[cm]?[jt]s|[jt]sx)$/;
 
 /** Reads a file's new contents by its path in the diff. */
 export type ReadPostImage = (file: string) => string;
@@ -161,6 +195,9 @@ export function parseGitDiff(text: string, read: ReadPostImage): FileDiff[] {
     i++;
     const file = newPath ?? oldPath;
     if (file === null) fail("both sides are /dev/null");
+    const script = SCRIPT_RE.test(file);
+    const name = (l: string, n: number) =>
+      script ? exportName(l, `line ${n}`) : null;
     const ranges: LineRange[] = [];
     /** New-file line numbers a pure deletion sits just after. */
     const cuts: number[] = [];
@@ -181,11 +218,11 @@ export function parseGitDiff(text: string, read: ReadPostImage): FileDiff[] {
         if (l === undefined) fail(`the hunk for ${file} ends early`);
         if (l.startsWith("-") && oldLeft > 0) {
           oldLeft--;
-          const e = exportName(l.slice(1), `line ${i + 1}`);
+          const e = name(l.slice(1), i + 1);
           if (e !== null) removed.add(e);
         } else if (l.startsWith("+") && newLeft > 0) {
           newLeft--;
-          const e = exportName(l.slice(1), `line ${i + 1}`);
+          const e = name(l.slice(1), i + 1);
           if (e !== null) added.add(e);
         } else if (!l.startsWith("\\")) {
           fail(`a line the hunk header for ${file} does not count: ${l}`);
@@ -196,7 +233,8 @@ export function parseGitDiff(text: string, read: ReadPostImage): FileDiff[] {
     }
     if (i < lines.length && !lines[i].startsWith("diff --git "))
       fail(`unexpected line after the hunks for ${file}: ${lines[i]}`);
-    const items = newPath === null ? [] : topLevelItems(read(newPath), newPath);
+    const items =
+      newPath === null || !script ? [] : topLevelItems(read(newPath), newPath);
     out.push({
       file,
       ranges,
@@ -266,6 +304,10 @@ export function gitDiff(
   // A base that looks like an option would be read as one.
   if (base.startsWith("-"))
     throw new Error(`git diff: the base ${base} looks like an option`);
+  // `A..B` or `A...B` diffs two commits, but the post-image is read from the
+  // working tree: the exports would be judged against the wrong file.
+  if (base.includes(".."))
+    throw new Error(`git diff: the base ${base} is a range; give one commit`);
   const top = run(
     cwd,
     ["rev-parse", "--show-toplevel"],
@@ -315,6 +357,10 @@ export function gitDiff(
       throw new DiffParseError(`${file}: an untracked binary file`);
     const n = src.split("\n").length - (src.endsWith("\n") ? 1 : 0);
     const ranges: LineRange[] = src === "" ? [] : [[1, n]];
+    if (!SCRIPT_RE.test(file)) {
+      diffs.push({ file, ranges, exports: [] });
+      continue;
+    }
     const added = new Set(
       src.split("\n").flatMap((l, k) => {
         const e = exportName(l, `${file}:${k + 1}`);

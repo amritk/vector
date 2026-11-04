@@ -7,7 +7,7 @@
 // are code (not a string or a comment), and every operator looks only at code.
 // A mutant that does not compile is "stillborn" and is not counted.
 
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { RfcContract } from "./contract.ts";
 import type { LineRange } from "./gitdiff.ts";
@@ -37,12 +37,20 @@ export interface Mutant {
 // ---------------------------------------------------------------------------
 // Which characters are code
 
+/** What each character of a source is: code, string or template text, or a comment. */
+export const COMMENT = 0;
+export const CODE = 1;
+export const STRING = 2;
+
 /**
- * `true` at each index of `src` that is code: not inside a string, a template
- * literal's text, or a comment. Template `${…}` expressions are code.
+ * The kind of each index of `src`: CODE, STRING (a string or a template
+ * literal's text, quotes included) or COMMENT. Template `${…}` expressions are
+ * code. Whitespace between tokens is CODE.
  */
-export function codeMask(src: string): boolean[] {
-  const mask = new Array<boolean>(src.length).fill(false);
+export function sourceKinds(src: string): Uint8Array {
+  const kinds = new Uint8Array(src.length);
+  const mark = (from: number, to: number, k: number) =>
+    kinds.fill(k, from, Math.min(to, src.length));
   // A stack of open template literals; each entry is the brace depth its
   // current `${` started at, or -1 while in the template's text.
   const templates: number[] = [];
@@ -52,30 +60,44 @@ export function codeMask(src: string): boolean[] {
     const c = src[i];
     const inText = templates.at(-1) === -1;
     if (inText) {
-      if (c === "\\") i += 2;
-      else if (c === "`") {
+      if (c === "\\") {
+        mark(i, i + 2, STRING);
+        i += 2;
+      } else if (c === "`") {
         templates.pop();
+        mark(i, i + 1, STRING);
         i++;
       } else if (c === "$" && src[i + 1] === "{") {
         templates[templates.length - 1] = depth;
         depth++;
+        mark(i, i + 2, STRING);
         i += 2;
-      } else i++;
+      } else {
+        mark(i, i + 1, STRING);
+        i++;
+      }
       continue;
     }
     if (c === "/" && src[i + 1] === "/") {
+      const from = i;
       while (i < src.length && src[i] !== "\n") i++;
+      mark(from, i, COMMENT);
     } else if (c === "/" && src[i + 1] === "*") {
       const end = src.indexOf("*/", i + 2);
-      i = end === -1 ? src.length : end + 2;
+      const to = end === -1 ? src.length : end + 2;
+      mark(i, to, COMMENT);
+      i = to;
     } else if (c === '"' || c === "'") {
+      const from = i;
       i++;
       while (i < src.length && src[i] !== c && src[i] !== "\n") {
         i += src[i] === "\\" ? 2 : 1;
       }
       i++;
+      mark(from, i, STRING);
     } else if (c === "`") {
       templates.push(-1);
+      mark(i, i + 1, STRING);
       i++;
     } else {
       if (c === "{") depth++;
@@ -83,15 +105,48 @@ export function codeMask(src: string): boolean[] {
         depth--;
         if (templates.at(-1) === depth) {
           templates[templates.length - 1] = -1;
+          mark(i, i + 1, STRING);
           i++;
           continue;
         }
       }
-      mask[i] = true;
+      kinds[i] = CODE;
       i++;
     }
   }
-  return mask;
+  return kinds;
+}
+
+/**
+ * `true` at each index of `src` that is code: not inside a string, a template
+ * literal's text, or a comment. Template `${…}` expressions are code.
+ */
+export function codeMask(src: string): boolean[] {
+  return Array.from(sourceKinds(src), (k) => k === CODE);
+}
+
+/**
+ * Each line of `src` twice over: `code` with every non-code character a space,
+ * and `expr` with comments spaces but each string or template character `_`,
+ * so a line that ends in a string ends in an operand, not in the `=` or `(`
+ * before it.
+ */
+export function maskLines(src: string): { code: string; expr: string }[] {
+  const kinds = sourceKinds(src);
+  const out: { code: string; expr: string }[] = [];
+  let at = 0;
+  for (const text of src.split("\n")) {
+    let code = "";
+    let expr = "";
+    for (let j = 0; j < text.length; j++) {
+      const k = kinds[at + j];
+      code += k === CODE ? text[j] : " ";
+      expr += k === CODE ? text[j] : k === STRING ? "_" : " ";
+    }
+    out.push({ code, expr });
+    at += text.length + 1;
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -127,18 +182,13 @@ interface Line {
   text: string;
   /** The line with every non-code character replaced by a space. */
   code: string;
+  /** The line with comments spaces and string characters `_` (see maskLines). */
+  expr: string;
 }
 
-function splitLines(src: string, mask: boolean[]): Line[] {
-  const out: Line[] = [];
-  let at = 0;
-  for (const [k, text] of src.split("\n").entries()) {
-    let code = "";
-    for (let j = 0; j < text.length; j++) code += mask[at + j] ? text[j] : " ";
-    out.push({ n: k + 1, text, code });
-    at += text.length + 1;
-  }
-  return out;
+function splitLines(src: string): Line[] {
+  const masks = maskLines(src);
+  return src.split("\n").map((text, k) => ({ n: k + 1, text, ...masks[k] }));
 }
 
 const balanced = (code: string): boolean => {
@@ -208,21 +258,21 @@ function intLiterals(l: Line, push: Push): void {
 function nextContinues(lines: Line[], k: number): boolean {
   const next = lines
     .slice(k + 1)
-    .find((p) => p.code.trim() !== "")
-    ?.code.trim();
+    .find((p) => p.expr.trim() !== "")
+    ?.expr.trim();
   return next !== undefined && CONTINUES.test(next) && !next.startsWith("}");
 }
 
 function deleteStatement(lines: Line[], k: number, push: Push): void {
   const l = lines[k];
-  const code = l.code.trim();
+  const code = l.expr.trim();
   if (code === "" || NOT_STATEMENT.test(code) || CONTINUES.test(code)) return;
   if (OPEN_END.test(code) || !balanced(code)) return;
   const prev = lines
     .slice(0, k)
     .reverse()
-    .find((p) => p.code.trim() !== "");
-  const p = prev?.code.trim() ?? "";
+    .find((p) => p.expr.trim() !== "");
+  const p = prev?.expr.trim() ?? "";
   if (!p.endsWith("{") && OPEN_END.test(p)) return;
   // The body of a braceless `if (…)`/`else`/loop: deleting it would make the
   // next statement the body, which is a second change.
@@ -258,7 +308,9 @@ function returnNull(
   push: Push,
 ): void {
   const l = lines[k];
-  const m = l.code.match(/^(\s*return\s+)(\S.*?)\s*;?\s*$/);
+  // Matched on `expr`, where a string is part of the expression and a comment
+  // is not, then spliced into the raw text at the same columns.
+  const m = l.expr.match(/^(\s*return\s+)(\S.*?)\s*;?\s*$/);
   if (!m || m[2] === "null" || !balanced(m[2]) || OPEN_END.test(m[2])) return;
   // Only the expression is replaced: a `;` or a comment after it stays.
   const at = m[1].length;
@@ -293,7 +345,7 @@ const within = (n: number, ranges: LineRange[]): boolean =>
  * one thing on one line; strings and comments are never touched.
  */
 export function generateMutants(src: string, ranges: LineRange[]): Mutant[] {
-  const lines = splitLines(src, codeMask(src));
+  const lines = splitLines(src);
   const open = openers(lines);
   const out: Mutant[] = [];
   for (const [k, l] of lines.entries()) {
@@ -367,17 +419,43 @@ export interface ExecResult {
   started: boolean;
   /** The test ran past the time limit and was killed. */
   timedOut: boolean;
+  /**
+   * The paths, as the compiler names them, of the files this run put there:
+   * the mutated module and the test. Only a diagnostic in one of them is the
+   * mutant's doing.
+   */
+  sources: string[];
 }
 export type Exec = (contents: string) => Promise<ExecResult>;
 
 export class MutationRunError extends Error {}
 
 /** `std/x.ts:12:3: error: …` or `…: syntax error: …`: the compiler refused it. */
-const DIAGNOSTIC_RE = /^\S+:\d+:\d+: (?:[a-z]+ )?error: .*/m;
+const DIAGNOSTIC_RE = /^(\S+):\d+:\d+: (?:[a-z]+ )?error: .*/;
+
+/**
+ * The first compile diagnostic in `stderr` when every line that reports an
+ * error is a diagnostic in one of `sources`; null when there is none, or when
+ * anything else reported an error too (a C toolchain's `runtime/x.c:1:10:
+ * fatal error: …`, `clang: error: …`): that failure is not the mutant's.
+ * Indented lines are the compiler quoting source, not reports.
+ */
+function mutantDiagnostic(stderr: string, sources: string[]): string | null {
+  let first: string | null = null;
+  for (const line of stderr.split("\n")) {
+    if (/^\s/.test(line) || !/\berror\b/.test(line)) continue;
+    if (/^\d+ errors?$/.test(line)) continue; // nish's closing count
+    const m = line.match(DIAGNOSTIC_RE);
+    if (!m || !sources.includes(m[1])) return null;
+    first ??= m[0];
+  }
+  return first;
+}
 
 /**
  * A run that never started its test binary is stillborn when nish printed a
- * compile diagnostic, and an error otherwise (nish or the linker failed, the
+ * compile diagnostic in the mutated module or the test and nothing else
+ * reported an error, and an error otherwise (nish or the linker failed, the
  * build hung or was killed): no mutant is counted on a run that did not run.
  * Once started: timeout past the limit; survived when every clause passed;
  * killed on a failed clause or a non-zero exit (a panic). A null exit (the
@@ -391,10 +469,10 @@ export function classify(r: ExecResult): {
   const stderr = run.stderr.trim();
   const clauses = [...run.clauses.values()];
   if (!r.started) {
-    const diag = stderr.match(DIAGNOSTIC_RE);
+    const diag = mutantDiagnostic(stderr, r.sources);
     const ran = clauses.some((c) => c.outcome !== "not-run");
     if (diag && !ran && run.exitCode !== null && run.exitCode !== 0)
-      return { outcome: "stillborn", detail: diag[0] };
+      return { outcome: "stillborn", detail: diag };
     throw new MutationRunError(
       `the test never started (exit ${run.exitCode ?? "on a signal"}): ${stderr || "(no output)"}`,
     );
@@ -484,8 +562,10 @@ const WATCHDOG_GRACE_MS = 10_000;
 /**
  * A script that stands in for `nish` as run.ts calls it (`run <file>`) and does
  * it in two steps, each in its own process group and each with `ms` to finish:
- * build the test with `nish <file> --link <bin>`, then, only if that worked,
- * leave `started` behind and run `<bin>`. A run past its time is killed as a
+ * leave `<file>`'s path in `testPath`, build the test with
+ * `nish <file> --link <bin>`, then, only if that worked, run `<bin>` and leave
+ * `started` behind once it has started (not when it fails to: a missing or
+ * non-executable binary exits 127 and never ran). A run past its time is killed as a
  * group (a looping mutant's children would otherwise hold the output pipes
  * open) and leaves `timedOut` behind. A build that fails prints its output and
  * exits with its code; one that hangs exits 125. Neither leaves `started`, so a
@@ -497,6 +577,7 @@ function watchdog(o: {
   ms: number;
   started: string;
   timedOut: string;
+  testPath: string;
 }): string {
   const j = JSON.stringify;
   return `#!${process.execPath}
@@ -508,6 +589,7 @@ if (args.length !== 2 || args[0] !== "run") {
   console.error("vector-watchdog: expected run <file>, got " + args.join(" "));
   process.exit(125);
 }
+writeFileSync(${j(o.testPath)}, args[1]);
 const status = (code, signal) => code ?? 128 + (signals[signal] ?? 0);
 const killGroup = (child) => {
   try {
@@ -540,8 +622,8 @@ build.on("close", (code, signal) => {
     process.stderr.write(out);
     process.exit(status(code, signal) || 125);
   }
-  writeFileSync(${j(o.started)}, "");
   const test = start(${j(o.bin)}, [], "inherit");
+  test.on("spawn", () => writeFileSync(${j(o.started)}, ""));
   const timer = setTimeout(() => {
     if (killGroup(test)) writeFileSync(${j(o.timedOut)}, "");
   }, ${o.ms});
@@ -570,6 +652,7 @@ export function scratchExec(o: {
     try {
       const started = join(s.dir, "vector-started");
       const timedOut = join(s.dir, "vector-timed-out");
+      const testPath = join(s.dir, "vector-test-path");
       const bin = join(s.dir, "vector-watchdog");
       writeFileSync(
         bin,
@@ -579,6 +662,7 @@ export function scratchExec(o: {
           ms: o.timeoutMs,
           started,
           timedOut,
+          testPath,
         }),
         { mode: 0o755 },
       );
@@ -593,6 +677,10 @@ export function scratchExec(o: {
         run: { ...run, nish: s.nish },
         started: existsSync(started),
         timedOut: existsSync(timedOut),
+        sources: [
+          o.modulePath,
+          ...(existsSync(testPath) ? [readFileSync(testPath, "utf8")] : []),
+        ],
       };
     } finally {
       s.dispose();
