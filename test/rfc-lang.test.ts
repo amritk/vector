@@ -171,6 +171,22 @@ describe("string values", () => {
     expect(
       validateContractShape(langContract({ text: "x" } as never)).join("\n"),
     ).toContain("not a literal (hex, ascii, str, int, bool, null, concat)");
+    for (const part of [
+      { int: 5 },
+      { str: "a" },
+      { bool: true },
+      { null: true },
+    ]) {
+      expect(
+        validateContractShape(
+          langContract(
+            op("==", op("utf8", v("s")), {
+              concat: [{ ascii: "a" }, part],
+            } as never),
+          ),
+        ).join("\n"),
+      ).toContain(".concat[1]: a bytes literal (hex, ascii, concat)");
+    }
     expect(bad(op("isNull", v("s")))).toContain(
       "isNull wants bytes? or string?, got string",
     );
@@ -198,15 +214,30 @@ describe("string values", () => {
   });
 
   test("the declared signature types read string and string | null", () => {
-    const g = runGates(langContract(roundTrip, evenLen), {
-      moduleSource: [
-        "export const toHex = (b: u8[]): string => {",
-        "export const fromHex = (s: string): u8[] | null => {",
-      ].join("\n"),
-    });
-    const sig = g.issues.filter((i) => i.gate === "signatures");
-    expect(sig.map((i) => i.at)).not.toContain("toHex");
-    expect(sig.map((i) => i.at)).not.toContain("fromHex");
+    // In the target module, so the signature gate reads them.
+    const c = langContract(roundTrip, evenLen);
+    for (const f of c.functions) f.module = undefined;
+    const fromHex = c.functions.find((f) => f.name === "fromHex");
+    if (fromHex) fromHex.params[0].type = "string?";
+    const sigs = (toHex: string, fromHexSig: string) =>
+      runGates(c, {
+        moduleSource: [
+          `export const toHex = ${toHex} => {`,
+          `export const fromHex = ${fromHexSig} => {`,
+        ].join("\n"),
+      })
+        .issues.filter((i) => i.gate === "signatures" && i.at.endsWith("Hex"))
+        .map((i) => i.message);
+    expect(
+      sigs("(b: u8[]): string", "(s: string | null): u8[] | null"),
+    ).toEqual([]);
+    expect(
+      sigs("(b: u8[]): string", "(s: null | string): u8[] | null"),
+    ).toEqual([]);
+    expect(sigs("(b: u8[]): u8[]", "(s: string): u8[] | null")).toEqual([
+      "declared (bytes) -> string, but nish/crypto/hkdf has (u8[]): u8[]",
+      "declared (string?) -> bytes?, but nish/crypto/hkdf has (string): u8[] | null",
+    ]);
   });
 });
 
@@ -331,6 +362,13 @@ describe("the pure evaluator", () => {
       in: op("strLen", v("b")),
     } as Expr;
     expect(evalPure(e, { s: "xy" })).toBe(4);
+  });
+
+  test("a binding named __proto__ is an ordinary name", () => {
+    for (const name of ["__proto__", "constructor", "toString"]) {
+      const e = { let: [{ name, value: int(5) }], in: v(name) } as Expr;
+      expect(evalPure(e, {})).toBe(5);
+    }
   });
 });
 
@@ -548,6 +586,40 @@ describe("labelled ints", () => {
     expect(intLabelled("a.b (c) = 7", "a.b (c)", 7)).toBe(true);
   });
 
+  test("the label and the number both end at a real boundary", () => {
+    for (const t of [
+      "(L = 42)",
+      "L = 42, M = 1",
+      "L = 42.",
+      "L = 0x2A;",
+      "L = 42/",
+    ])
+      expect(intLabelled(t, "L", 42)).toBe(true);
+    // The label is the tail of a longer identifier.
+    for (const t of [
+      "MAX_L = 42",
+      "key_L: 42",
+      "T-L = 42",
+      "x.L = 42",
+      "XL = 42",
+    ])
+      expect(intLabelled(t, "L", 42)).toBe(false);
+    // The number is the head of a longer one.
+    for (const [t, n] of [
+      ["L = 1,000", 1],
+      ["L = 4-5", 4],
+      ["L = 12:30", 12],
+      ["L = 255/256", 255],
+      ["L = 1.5", 1],
+      ["L = 42_0", 42],
+      ["L = 0x2a,0x2b", 42],
+      ["L = 0x2a-0x2b", 42],
+      ["L = 0x2ab", 42],
+      ["L = -42", 42],
+    ] as const)
+      expect(intLabelled(t, "L", n)).toBe(false);
+  });
+
   test("the shipped contracts label every vector int, and they are found", () => {
     for (const [c, rfc] of [
       [hkdf, rfc5869],
@@ -584,15 +656,20 @@ describe("labelled ints", () => {
     len.int += 1;
     g = runGates(c, { rfc: rfc5869 });
     expect(g.ok).toBe(false);
+    expect(g.issues.map((i) => i.message)).toContain(
+      `RFC §A.1 does not print "L" followed by ${len.int}`,
+    );
   });
 
-  test("the shape refuses an empty label", () => {
-    const c = clone(hkdf);
-    const k = clause<VectorClause>(c, "A.1-OKM");
-    (k.args.find((a) => "int" in a) as { label: string }).label = " ";
-    expect(validateContractShape(c).join("\n")).toContain(
-      ".label: the name the RFC prints the value under",
-    );
+  test("the shape refuses a label without a letter or digit", () => {
+    for (const label of [" ", "=", ": ", "-"]) {
+      const c = clone(hkdf);
+      const k = clause<VectorClause>(c, "A.1-OKM");
+      (k.args.find((a) => "int" in a) as { label: string }).label = label;
+      expect(validateContractShape(c).join("\n")).toContain(
+        ".label: the name the RFC prints the value under, with a letter or digit",
+      );
+    }
   });
 });
 
@@ -623,6 +700,14 @@ describe("str fidelity", () => {
         `the string "HKDF-Extract(salt, IKM, X)" is not printed in RFC §2.2 ("Step 1: Extract")`,
       ],
     );
+  });
+
+  test("an empty or unnormalised str is refused, not matched", () => {
+    for (const s of ["", " ", "HKDF-Extract(salt,   IKM)", " HKDF", "HKDF\n"]) {
+      expect(withStr(s).map((i) => i.message)).toEqual([
+        `the string ${JSON.stringify(s)} is empty or has leading, trailing or repeated whitespace, so it cannot be matched against the RFC text`,
+      ]);
+    }
   });
 });
 

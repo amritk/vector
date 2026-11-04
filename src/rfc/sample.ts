@@ -105,7 +105,11 @@ class Undefined extends Error {}
  */
 export function evalPure(e: Expr, env: Record<string, Value>): Value {
   if ("let" in e) {
-    const scope = { ...env };
+    // No prototype, so a binding named __proto__ is an ordinary key.
+    const scope: Record<string, Value> = Object.assign(
+      Object.create(null),
+      env,
+    );
     for (const b of e.let) scope[b.name] = evalPure(b.value, scope);
     return evalPure(e.in, scope);
   }

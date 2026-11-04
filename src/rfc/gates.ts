@@ -325,7 +325,15 @@ function checkFidelity(
           });
         }
       } else if ("str" in lit) {
-        if (!text.includes(normalizeText(lit.str))) {
+        // The section text is whitespace-collapsed, so only a string already
+        // in that form is compared as the test uses it; "" is in every text.
+        if (lit.str === "" || lit.str !== normalizeText(lit.str)) {
+          issues.push({
+            gate: "fidelity",
+            at: `${k.id}.${at}`,
+            message: `the string ${JSON.stringify(lit.str)} is empty or has leading, trailing or repeated whitespace, so it cannot be matched against the RFC text`,
+          });
+        } else if (!text.includes(lit.str)) {
           issues.push({
             gate: "fidelity",
             at: `${k.id}.${at}`,

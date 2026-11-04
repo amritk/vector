@@ -787,8 +787,10 @@ retry loop with the LLM agents mocked and the real z3 subprocess.
 
 The RFC suites (`test/rfc.test.ts`, `test/rfc-lang.test.ts`) also run the
 generated tests against a real nish when `VECTOR_NISH` points at a nish binary,
-and skip those live tests without one. Set `VECTOR_REQUIRE_NISH=1` (as CI
-should) to make a missing `VECTOR_NISH` a failure instead of a skip.
+and skip those live tests without one. Set `VECTOR_REQUIRE_NISH=1` wherever a
+nish is available (a local checkout, a release check) to make a missing
+`VECTOR_NISH` a failure instead of a skip. CI has no nish and does not set it, so
+CI does not run the live tests.
 
 ---
 

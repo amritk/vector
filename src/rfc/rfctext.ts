@@ -188,8 +188,10 @@ export function intLabelled(text: string, label: string, n: number): boolean {
     .toString(16)
     .replace(/[a-f]/g, (d) => `[${d}${d.toUpperCase()}]`);
   const value = n < 0 ? `${n}` : `(?:${n}|0[xX]0*${hex})`;
+  // Neither end may run into a longer identifier (`MAX_L`, `T-L`, `x.L`) or
+  // a longer number (`1,000`, `4-5`, `12:30`, `255/256`, `1.5`).
   return new RegExp(
-    `(?<![0-9A-Za-z])${escapeRe(normalizeText(label))}(?:\\s*[=:]\\s*|\\s+)${value}(?![0-9A-Za-z]|\\.\\d)`,
+    `(?<![0-9A-Za-z_.-])${escapeRe(normalizeText(label))}(?:\\s*[=:]\\s*|\\s+)${value}(?![0-9A-Za-z_]|[.,:/-]\\d)`,
   ).test(text);
 }
 

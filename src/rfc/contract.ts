@@ -335,9 +335,11 @@ function shapeLiteral(v: unknown, at: string, errors: string[]): void {
     checkKeys(v, ["int", "label", "unchecked"], at, errors);
     if (
       v.label !== undefined &&
-      (typeof v.label !== "string" || v.label.trim() === "")
+      (typeof v.label !== "string" || !/[0-9A-Za-z]/.test(v.label))
     ) {
-      errors.push(`${at}.label: the name the RFC prints the value under`);
+      errors.push(
+        `${at}.label: the name the RFC prints the value under, with a letter or digit`,
+      );
     }
     if (
       !Number.isInteger(v.int) ||
@@ -357,7 +359,12 @@ function shapeLiteral(v: unknown, at: string, errors: string[]): void {
     if (!Array.isArray(v.concat) || v.concat.length === 0) {
       errors.push(`${at}.concat: a non-empty array`);
     } else {
-      v.concat.forEach((p, i) => shapeLiteral(p, `${at}.concat[${i}]`, errors));
+      v.concat.forEach((p, i) => {
+        const pat = `${at}.concat[${i}]`;
+        if (isObj(p) && !("hex" in p || "ascii" in p || "concat" in p)) {
+          errors.push(`${pat}: a bytes literal (hex, ascii, concat)`);
+        } else shapeLiteral(p, pat, errors);
+      });
     }
   } else {
     errors.push(
