@@ -32,6 +32,7 @@ export interface ScratchOptions {
 /** `std/crypto/hkdf.ts` → itself, or an error for a path outside std/. */
 function stdPath(rel: string): string {
   const n = normalize(rel).split(sep).join("/");
+  // normalize() already folds `std/../x` to `x`; the `..` check is defence in depth.
   if (!n.startsWith("std/") || n.split("/").includes("..")) {
     throw new Error(`scratch: override ${rel} is not a path under std/`);
   }

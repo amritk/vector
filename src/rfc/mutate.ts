@@ -50,7 +50,7 @@ export function codeMask(src: string): boolean[] {
   let i = 0;
   while (i < src.length) {
     const c = src[i];
-    const inText = templates.length > 0 && templates.at(-1) === -1;
+    const inText = templates.at(-1) === -1;
     if (inText) {
       if (c === "\\") i += 2;
       else if (c === "`") {
@@ -81,7 +81,7 @@ export function codeMask(src: string): boolean[] {
       if (c === "{") depth++;
       else if (c === "}") {
         depth--;
-        if (templates.length > 0 && templates.at(-1) === depth) {
+        if (templates.at(-1) === depth) {
           templates[templates.length - 1] = -1;
           i++;
           continue;
@@ -166,6 +166,8 @@ function relationalAndLogical(l: Line, push: Push): void {
     const tok = code.slice(j, k);
     const before = code[j - 1];
     const after = code[k];
+    // Only space-surrounded binary operators are flipped, so what mutates
+    // depends on the source being formatted (nish's std is).
     const spaced = before === " " && after === " ";
     if (spaced && tok in FLIP) {
       const op = tok === "&&" || tok === "||" ? "logical" : "relational";
@@ -408,7 +410,6 @@ export function classify(r: ExecResult): {
 /** Up to `max` of `xs`, spread evenly over them, in order. */
 export function spread<T>(xs: T[], max: number | undefined): T[] {
   if (max === undefined || max >= xs.length) return xs;
-  if (max <= 0) return [];
   return Array.from(
     { length: max },
     (_, k) => xs[Math.floor((k * xs.length) / max)],
@@ -542,12 +543,9 @@ export async function runMutants(
   const all = generateMutants(o.source, o.ranges);
   let chosen = all;
   if (o.mutants) {
-    const made = new Set(
-      all.map((m) => `${m.id}\n${m.original}\n${m.mutated}`),
-    );
-    const foreign = o.mutants.find(
-      (m) => !made.has(`${m.id}\n${m.original}\n${m.mutated}`),
-    );
+    const key = (m: Mutant) => `${m.id}\n${m.original}\n${m.mutated}`;
+    const made = new Set(all.map(key));
+    const foreign = o.mutants.find((m) => !made.has(key(m)));
     if (foreign)
       throw new MutationRunError(
         `mutant ${foreign.id} is not one this source and these ranges make`,

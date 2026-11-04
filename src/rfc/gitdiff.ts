@@ -48,9 +48,9 @@ export function parseGitDiff(text: string): FileDiff[] {
   if (lines.at(-1) === "") lines.pop();
   const out: FileDiff[] = [];
   let i = 0;
-  const fail = (msg: string): never => {
+  function fail(msg: string): never {
     throw new DiffParseError(`line ${i + 1}: ${msg}`);
-  };
+  }
   while (i < lines.length) {
     if (!lines[i].startsWith("diff --git "))
       fail(`expected "diff --git", found ${JSON.stringify(lines[i])}`);
@@ -71,7 +71,7 @@ export function parseGitDiff(text: string): FileDiff[] {
     const newPath = path(lines[i], "+++ ", i + 1);
     i++;
     const file = newPath ?? oldPath;
-    if (file === null) return fail("both sides are /dev/null");
+    if (file === null) fail("both sides are /dev/null");
     const ranges: LineRange[] = [];
     const added = new Set<string>();
     const removed = new Set<string>();
@@ -79,10 +79,9 @@ export function parseGitDiff(text: string): FileDiff[] {
     while (i < lines.length && lines[i].startsWith("@@")) {
       const m = lines[i].match(HUNK_RE);
       if (!m) fail(`cannot parse the hunk header ${JSON.stringify(lines[i])}`);
-      const h = m as RegExpMatchArray;
-      let oldLeft = h[2] === undefined ? 1 : Number(h[2]);
-      let newLeft = h[4] === undefined ? 1 : Number(h[4]);
-      const start = Number(h[3]);
+      let oldLeft = m[2] === undefined ? 1 : Number(m[2]);
+      let newLeft = m[4] === undefined ? 1 : Number(m[4]);
+      const start = Number(m[3]);
       if (newLeft > 0) ranges.push([start, start + newLeft - 1]);
       i++;
       while (oldLeft > 0 || newLeft > 0) {
