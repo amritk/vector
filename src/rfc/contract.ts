@@ -52,6 +52,8 @@ export const BINDING_LEVELS: ReadonlySet<Level> = new Set<Level>([
 
 export interface Requirement {
   id: string;
+  /** The source document it is quoted from (default: the main one). */
+  source?: string;
   section: string;
   level: Level;
   /** Verbatim text from the cited section (whitespace-insensitive). */
@@ -78,6 +80,8 @@ export interface FnSig {
  * functional test observes (constant-time comparison). Listed, never silent.
  */
 export interface Exclusion {
+  /** The source document it is quoted from (default: the main one). */
+  source?: string;
   section: string;
   quote: string;
   reason: string;
@@ -197,13 +201,40 @@ export function alphabetChars(alphabet: string[]): string[] | null {
   return [...out];
 }
 
+/** A section of one of the contract's source documents. */
+export interface Citation {
+  /** A source id from `sources` (default: the main source). */
+  source?: string;
+  section: string;
+}
+
+/**
+ * Where a vector's expected value comes from. Every vector has one.
+ *
+ *   cite     the value is printed in the cited section; so are the args.
+ *   command  a shell command prints it (trimmed stdout: hex for bytes, the
+ *            text for a string). It runs only under `--run-sources`, and until
+ *            then the vector's provenance is reported as not run.
+ *   spec     the section states the result in words: only for an expected
+ *            null or bool, which the section must name ("null", "true",
+ *            "false").
+ *
+ * With `command` or `spec`, the vector's own `section` (in the main source)
+ * is where its args are printed.
+ */
+export type VectorSource =
+  | { cite: Citation }
+  | { command: string }
+  | { spec: string };
+
 export interface VectorClause {
   kind: "vector";
   id: string;
   title: string;
   covers: string[];
-  /** The RFC section the values are printed in. */
-  section: string;
+  source: VectorSource;
+  /** With a `command` or `spec` source: the main-source section printing the args. */
+  section?: string;
   call: string;
   args: Literal[];
   expect: Literal;
@@ -224,9 +255,23 @@ export interface PropertyClause {
 
 export type Clause = VectorClause | PropertyClause;
 
+/** A document the contract cites: an RFC by number, a file, or both. */
+export interface SourceDecl {
+  id: string;
+  rfc?: number;
+  /** Relative to the contract's directory. */
+  path?: string;
+}
+
 export interface RfcContract {
   contract: string;
-  source: { rfc: number; title: string };
+  /**
+   * `rfc` alone: a single-RFC contract, whose one source is that RFC. With
+   * `sources`, `main` names the source the completeness gate reads; `rfc` is
+   * then given on the source's own entry.
+   */
+  source: { title: string; rfc?: number; main?: string };
+  sources?: SourceDecl[];
   /** The module under test, as the generated test imports it ("nish/crypto/hkdf"). */
   target: { module: string };
   requirements: Requirement[];
@@ -239,6 +284,33 @@ export const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 export const IDENT_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 export const SECTION_RE = /^(?:\d+(?:\.\d+)*|[A-Z](?:\.\d+)*)$/;
 export const MAX_BYTES_LEN = 4096;
+
+/** The contract's sources and its main one; a single-RFC contract has one. */
+export function declaredSources(c: RfcContract): {
+  main: string;
+  list: SourceDecl[];
+} {
+  if (c.sources) return { main: c.source.main as string, list: c.sources };
+  const id = `rfc${c.source.rfc}`;
+  return { main: id, list: [{ id, rfc: c.source.rfc }] };
+}
+
+/** The source a citation names, its default resolved. */
+export const sourceOf = (c: RfcContract, cited: string | undefined): string =>
+  cited ?? declaredSources(c).main;
+
+/** Where a vector's args are printed. */
+export function vectorArgsAt(k: VectorClause): Citation {
+  return "cite" in k.source ? k.source.cite : { section: k.section as string };
+}
+
+/** A short human form of a citation: "§A.1", "rfc4648 §10". */
+export function citeLabel(c: RfcContract, at: Citation): string {
+  const src = sourceOf(c, at.source);
+  return src === declaredSources(c).main
+    ? `§${at.section}`
+    : `${src} §${at.section}`;
+}
 export const I32_MIN = -2147483648;
 export const I32_MAX = 2147483647;
 
@@ -335,10 +407,10 @@ function shapeLiteral(v: unknown, at: string, errors: string[]): void {
     checkKeys(v, ["int", "label", "unchecked"], at, errors);
     if (
       v.label !== undefined &&
-      (typeof v.label !== "string" || !/[0-9A-Za-z]/.test(v.label))
+      (typeof v.label !== "string" || !/[A-Za-z]/.test(v.label))
     ) {
       errors.push(
-        `${at}.label: the name the RFC prints the value under, with a letter or digit`,
+        `${at}.label: the name the RFC prints the value under, with a letter`,
       );
     }
     if (
@@ -496,6 +568,7 @@ export function validateContractShape(input: unknown): string[] {
       "$schema",
       "contract",
       "source",
+      "sources",
       "target",
       "requirements",
       "functions",
@@ -508,13 +581,15 @@ export function validateContractShape(input: unknown): string[] {
   if (typeof input.contract !== "string" || !ID_RE.test(input.contract)) {
     errors.push("contract.contract: an id ([A-Za-z0-9._-])");
   }
-  if (!isObj(input.source)) errors.push("contract.source: an object");
-  else {
-    if (!Number.isInteger(input.source.rfc)) {
-      errors.push("contract.source.rfc: the RFC number");
+  const ids = shapeSources(input, errors);
+  const sourceRef = (v: unknown, at: string) => {
+    if (v === undefined) return;
+    if (typeof v !== "string" || !ids.has(v)) {
+      errors.push(
+        `${at}: an id from contract.sources (${[...ids].join(", ") || "none declared"})`,
+      );
     }
-    strField(input.source, "title", "contract.source", errors);
-  }
+  };
   if (!isObj(input.target)) errors.push("contract.target: an object");
   else strField(input.target, "module", "contract.target", errors);
 
@@ -527,7 +602,13 @@ export function validateContractShape(input: unknown): string[] {
         errors.push(`${at}: an object`);
         return;
       }
-      checkKeys(r, ["id", "section", "level", "quote", "note"], at, errors);
+      checkKeys(
+        r,
+        ["id", "source", "section", "level", "quote", "note"],
+        at,
+        errors,
+      );
+      sourceRef(r.source, `${at}.source`);
       if (typeof r.id !== "string" || !ID_RE.test(r.id)) {
         errors.push(`${at}.id: an id`);
       }
@@ -593,7 +674,8 @@ export function validateContractShape(input: unknown): string[] {
           errors.push(`${at}: an object`);
           return;
         }
-        checkKeys(x, ["section", "quote", "reason"], at, errors);
+        checkKeys(x, ["source", "section", "quote", "reason"], at, errors);
+        sourceRef(x.source, `${at}.source`);
         if (typeof x.section !== "string" || !SECTION_RE.test(x.section)) {
           errors.push(`${at}.section: a section number`);
         }
@@ -631,6 +713,7 @@ export function validateContractShape(input: unknown): string[] {
             "id",
             "title",
             "covers",
+            "source",
             "section",
             "call",
             "args",
@@ -639,9 +722,7 @@ export function validateContractShape(input: unknown): string[] {
           at,
           errors,
         );
-        if (typeof c.section !== "string" || !SECTION_RE.test(c.section)) {
-          errors.push(`${at}.section: a section number`);
-        }
+        shapeVectorSource(c, at, sourceRef, errors);
         if (typeof c.call !== "string" || !IDENT_RE.test(c.call)) {
           errors.push(`${at}.call: a function name`);
         }
@@ -720,6 +801,141 @@ export function validateContractShape(input: unknown): string[] {
     });
   }
   return errors;
+}
+
+/** `source` and `sources`; returns the declared source ids. */
+function shapeSources(input: Obj, errors: string[]): Set<string> {
+  const ids = new Set<string>();
+  if (!isObj(input.source)) {
+    errors.push("contract.source: an object");
+    return ids;
+  }
+  const src = input.source;
+  checkKeys(src, ["rfc", "title", "main"], "contract.source", errors);
+  strField(src, "title", "contract.source", errors);
+  if (input.sources === undefined) {
+    if (!Number.isInteger(src.rfc) || (src.rfc as number) < 1) {
+      errors.push("contract.source.rfc: the RFC number");
+    } else ids.add(`rfc${src.rfc}`);
+    if (src.main !== undefined) {
+      errors.push("contract.source.main: only with contract.sources");
+    }
+    return ids;
+  }
+  if (src.rfc !== undefined) {
+    errors.push(
+      "contract.source.rfc: with contract.sources, give the RFC number on its entry there",
+    );
+  }
+  if (!Array.isArray(input.sources) || input.sources.length === 0) {
+    errors.push("contract.sources: a non-empty array");
+    return ids;
+  }
+  input.sources.forEach((d, i) => {
+    const at = `sources[${i}]`;
+    if (!isObj(d)) {
+      errors.push(`${at}: an object`);
+      return;
+    }
+    checkKeys(d, ["id", "rfc", "path"], at, errors);
+    if (typeof d.id !== "string" || !ID_RE.test(d.id)) {
+      errors.push(`${at}.id: an id`);
+    } else if (ids.has(d.id)) {
+      errors.push(`${at}.id: duplicate source id "${d.id}"`);
+    } else ids.add(d.id);
+    if (
+      d.rfc !== undefined &&
+      !(Number.isInteger(d.rfc) && (d.rfc as number) >= 1)
+    ) {
+      errors.push(`${at}.rfc: the RFC number`);
+    }
+    if (d.path !== undefined && (typeof d.path !== "string" || d.path === "")) {
+      errors.push(`${at}.path: a file path`);
+    }
+    if (d.rfc === undefined && d.path === undefined) {
+      errors.push(`${at}: needs "rfc", "path" or both`);
+    }
+  });
+  if (typeof src.main !== "string" || !ids.has(src.main)) {
+    errors.push(
+      "contract.source.main: the id of the main source in contract.sources",
+    );
+  }
+  return ids;
+}
+
+/** A vector's `source` (provenance) and the `section` it may need. */
+function shapeVectorSource(
+  c: Obj,
+  at: string,
+  sourceRef: (v: unknown, at: string) => void,
+  errors: string[],
+): void {
+  const s = c.source;
+  const needSection = () => {
+    if (typeof c.section !== "string" || !SECTION_RE.test(c.section)) {
+      errors.push(
+        `${at}.section: the main-source section number printing the args`,
+      );
+    }
+  };
+  if (!isObj(s)) {
+    errors.push(
+      `${at}.source: where the expected value comes from: {"cite": {"section": …}}, {"command": "…"} or {"spec": "<section>"}`,
+    );
+    return;
+  }
+  const kinds = ["cite", "command", "spec"].filter((k) => k in s);
+  if (kinds.length !== 1) {
+    errors.push(`${at}.source: exactly one of "cite", "command", "spec"`);
+    return;
+  }
+  checkKeys(s, kinds, `${at}.source`, errors);
+  const expect = isObj(c.expect) ? c.expect : {};
+  if (isObj(s.cite)) {
+    checkKeys(s.cite, ["source", "section"], `${at}.source.cite`, errors);
+    sourceRef(s.cite.source, `${at}.source.cite.source`);
+    if (
+      typeof s.cite.section !== "string" ||
+      !SECTION_RE.test(s.cite.section)
+    ) {
+      errors.push(`${at}.source.cite.section: a section number`);
+    }
+    if (c.section !== undefined) {
+      errors.push(
+        `${at}.section: a cited vector's args are read in source.cite; drop "section"`,
+      );
+    }
+  } else if ("cite" in s) {
+    errors.push(`${at}.source.cite: {"source"?: id, "section": …}`);
+  } else if ("command" in s) {
+    if (typeof s.command !== "string" || s.command.trim() === "") {
+      errors.push(`${at}.source.command: a shell command`);
+    }
+    if (
+      !(
+        "hex" in expect ||
+        "ascii" in expect ||
+        "concat" in expect ||
+        "str" in expect
+      )
+    ) {
+      errors.push(
+        `${at}.expect: a command source prints bytes (as hex) or a string`,
+      );
+    }
+    needSection();
+  } else {
+    if (typeof s.spec !== "string" || !SECTION_RE.test(s.spec)) {
+      errors.push(`${at}.source.spec: a main-source section number`);
+    }
+    if (!("null" in expect || "bool" in expect)) {
+      errors.push(
+        `${at}.expect: a spec source states only null or a bool; cite or compute any other value`,
+      );
+    }
+    needSection();
+  }
 }
 
 // ── Typing ─────────────────────────────────────────────────────────────────

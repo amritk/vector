@@ -6,10 +6,17 @@
 //   coverage     every MUST/SHALL/REQUIRED requirement is cited by a clause, and
 //                every citation names a real requirement (anti-gaming: a
 //                contract cannot drop a requirement or invent one)
-//   fidelity     every quote appears in its cited RFC section; every hex/ascii/
-//                str a vector uses appears in the vector's cited section, and
-//                every labelled int appears there right after its label (an
-//                unlabelled int is reported as unchecked)
+//   fidelity     every quote appears in its cited section of its source
+//                document; every hex/ascii/str a vector uses appears in the
+//                section it cites, and every labelled int appears there right
+//                after its label, on the same line (an unlabelled int is
+//                reported as unchecked)
+//   completeness every MUST/SHALL/REQUIRED of the main source is quoted by a
+//                requirement or an exclusion
+//   provenance   every vector says where its expected value comes from, and it
+//                does: printed in the cited section, stated by the spec
+//                section (null/bool only), or printed by a source command run
+//                under --run-sources
 //   signatures   (with the module source) the declared signatures are the
 //                implementation's exported ones
 //
@@ -17,6 +24,7 @@
 
 import {
   BINDING_LEVELS,
+  type Citation,
   type Clause,
   type ExprTy,
   type FnSig,
@@ -24,12 +32,17 @@ import {
   type RfcContract,
   type TypeEnv,
   type ValueTy,
+  type VectorClause,
   assignable,
   bytesToHex,
+  citeLabel,
+  declaredSources,
   literalBytes,
+  sourceOf,
   typeOf,
   typeOfLiteral,
   validateContractShape,
+  vectorArgsAt,
 } from "./contract.ts";
 import {
   type RfcDocument,
@@ -40,6 +53,7 @@ import {
   normalizeText,
   normativeSentences,
   ownSpans,
+  sectionLines,
   sectionText,
 } from "./rfctext.ts";
 
@@ -50,6 +64,7 @@ export interface GateIssue {
     | "coverage"
     | "fidelity"
     | "completeness"
+    | "provenance"
     | "signatures";
   at: string;
   message: string;
@@ -68,9 +83,27 @@ export interface GateResult {
   coverage: Map<string, string[]>;
 }
 
+/** What running a vector's source command showed. */
+export interface SourceRun {
+  id: string;
+  command: string;
+  outcome: "pass" | "fail";
+  detail?: string;
+}
+
 export interface GateOptions {
-  /** The RFC's text; without it the fidelity gate is skipped (and says so). */
+  /**
+   * The main source's text (a single-RFC contract's RFC); without it, and
+   * without `docs`, the fidelity gates are skipped (and say so).
+   */
   rfc?: RfcDocument;
+  /**
+   * Every source's text, by source id. A declared source missing here is a
+   * fidelity failure: a cited document that cannot be read fails closed.
+   */
+  docs?: Map<string, RfcDocument>;
+  /** Source command results by vector id (from --run-sources). */
+  commands?: Map<string, SourceRun>;
   /** The target module's source; without it the signature gate is skipped. */
   moduleSource?: string;
 }
@@ -121,16 +154,33 @@ export function runGates(input: unknown, opts: GateOptions = {}): GateResult {
   checkTyping(c, issues);
   checkCoverage(c, issues, warnings, coverage);
 
-  if (opts.rfc) {
-    if (opts.rfc.number !== null && opts.rfc.number !== c.source.rfc) {
-      issues.push({
-        gate: "fidelity",
-        at: "source.rfc",
-        message: `the contract cites RFC ${c.source.rfc} but the text is RFC ${opts.rfc.number}`,
-      });
+  const { main, list } = declaredSources(c);
+  const docs = new Map(opts.docs);
+  if (opts.rfc && !docs.has(main)) docs.set(main, opts.rfc);
+  if (opts.docs || opts.rfc) {
+    for (const d of list) {
+      const doc = docs.get(d.id);
+      if (!doc) {
+        issues.push({
+          gate: "fidelity",
+          at: `sources.${d.id}`,
+          message: `the text of source "${d.id}" was not given, so nothing citing it can be checked`,
+        });
+      } else if (
+        d.rfc !== undefined &&
+        doc.number !== null &&
+        doc.number !== d.rfc
+      ) {
+        issues.push({
+          gate: "fidelity",
+          at: c.sources ? `sources.${d.id}.rfc` : "source.rfc",
+          message: `the contract cites RFC ${d.rfc} but the text is RFC ${doc.number}`,
+        });
+      }
     }
-    checkFidelity(c, opts.rfc, issues, warnings);
-    checkCompleteness(c, opts.rfc, issues, warnings);
+    checkFidelity(c, docs, issues, warnings);
+    const mainDoc = docs.get(main);
+    if (mainDoc) checkCompleteness(c, main, mainDoc, docs, issues, warnings);
   } else {
     warnings.push({
       at: "fidelity",
@@ -138,6 +188,7 @@ export function runGates(input: unknown, opts: GateOptions = {}): GateResult {
         "no RFC text given: quotes and test vectors were NOT checked against the RFC",
     });
   }
+  checkProvenance(c, docs, opts.commands, issues, warnings);
 
   if (opts.moduleSource !== undefined) {
     checkSignatures(c, opts.moduleSource, issues);
@@ -246,7 +297,7 @@ function checkCoverage(
       issues.push({
         gate: "coverage",
         at: r.id,
-        message: `${r.level} requirement (RFC §${r.section}) is not checked by any clause`,
+        message: `${r.level} requirement (${c.sources ? "" : "RFC "}${citeLabel(c, r)}) is not checked by any clause`,
       });
     } else {
       warnings.push({
@@ -264,99 +315,189 @@ function checkCoverage(
   }
 }
 
+/** The cited section, or an issue saying why there is none. */
+function citedSection(
+  c: RfcContract,
+  docs: Map<string, RfcDocument>,
+  at: Citation,
+  where: string,
+  issues: GateIssue[],
+) {
+  const src = sourceOf(c, at.source);
+  const doc = docs.get(src);
+  if (!doc) return null; // reported once, as a missing source
+  const sec = findSection(doc, at.section);
+  if (!sec) {
+    const name = doc.number !== null ? `RFC ${doc.number}` : `source "${src}"`;
+    issues.push({
+      gate: "fidelity",
+      at: where,
+      message: `${name} has no section ${at.section}`,
+    });
+  }
+  return sec;
+}
+
+/** "RFC §A.1" in the main RFC, "§3.1" in a main markdown spec, "rfc4648 §10" elsewhere. */
+function place(
+  c: RfcContract,
+  docs: Map<string, RfcDocument>,
+  at: Citation,
+): string {
+  const label = citeLabel(c, at);
+  const main = sourceOf(c, at.source) === declaredSources(c).main;
+  return main && docs.get(declaredSources(c).main)?.number != null
+    ? `RFC ${label}`
+    : label;
+}
+
 function checkFidelity(
   c: RfcContract,
-  rfc: RfcDocument,
+  docs: Map<string, RfcDocument>,
   issues: GateIssue[],
   warnings: GateWarning[],
 ): void {
   for (const r of c.requirements) {
-    const sec = findSection(rfc, r.section);
-    if (!sec) {
+    const sec = citedSection(c, docs, r, r.id, issues);
+    if (sec && !sectionText(sec).includes(normalizeText(r.quote))) {
       issues.push({
         gate: "fidelity",
         at: r.id,
-        message: `RFC ${c.source.rfc} has no section ${r.section}`,
-      });
-      continue;
-    }
-    if (!sectionText(sec).includes(normalizeText(r.quote))) {
-      issues.push({
-        gate: "fidelity",
-        at: r.id,
-        message: `quote not found in RFC §${r.section} ("${sec.title}"): ${JSON.stringify(r.quote)}`,
+        message: `quote not found in ${place(c, docs, r)} ("${sec.title}"): ${JSON.stringify(r.quote)}`,
       });
     }
   }
   for (const k of c.clauses) {
     if (k.kind !== "vector") continue;
-    const sec = findSection(rfc, k.section);
-    if (!sec) {
-      issues.push({
-        gate: "fidelity",
-        at: k.id,
-        message: `RFC ${c.source.rfc} has no section ${k.section}`,
-      });
-      continue;
-    }
-    const runs = hexRuns(sec);
-    const text = sectionText(sec);
-    const check = (lit: Literal, at: string) => {
-      if ("concat" in lit) {
-        lit.concat.forEach((p, i) => check(p, `${at}.concat[${i}]`));
-        return;
-      }
-      if ("unchecked" in lit && lit.unchecked) {
-        warnings.push({
-          at: `${k.id}.${at}`,
-          message: `not checked against the RFC: ${lit.unchecked}`,
-        });
-        return;
-      }
-      if ("hex" in lit || "ascii" in lit) {
-        const bytes = literalBytes(lit) as Uint8Array;
-        const printedAsText =
-          "ascii" in lit && text.includes(normalizeText(lit.ascii));
-        if (!printedAsText && !hexPrinted(runs, bytesToHex(bytes))) {
-          issues.push({
-            gate: "fidelity",
-            at: `${k.id}.${at}`,
-            message: `${bytes.length}-byte value is not printed in RFC §${k.section} ("${sec.title}")`,
-          });
-        }
-      } else if ("str" in lit) {
-        // The section text is whitespace-collapsed, so only a string already
-        // in that form is compared as the test uses it; "" is in every text.
-        if (lit.str === "" || lit.str !== normalizeText(lit.str)) {
-          issues.push({
-            gate: "fidelity",
-            at: `${k.id}.${at}`,
-            message: `the string ${JSON.stringify(lit.str)} is empty or has leading, trailing or repeated whitespace, so it cannot be matched against the RFC text`,
-          });
-        } else if (!text.includes(lit.str)) {
-          issues.push({
-            gate: "fidelity",
-            at: `${k.id}.${at}`,
-            message: `the string ${JSON.stringify(lit.str)} is not printed in RFC §${k.section} ("${sec.title}")`,
-          });
-        }
-      } else if ("int" in lit) {
-        if (lit.label === undefined) {
-          warnings.push({
-            at: `${k.id}.${at}`,
-            message: `not checked against the RFC: the integer ${lit.int} has no "label" to find it by`,
-          });
-        } else if (!intLabelled(text, lit.label, lit.int)) {
-          issues.push({
-            gate: "fidelity",
-            at: `${k.id}.${at}`,
-            message: `RFC §${k.section} does not print "${lit.label}" followed by ${lit.int}`,
-          });
-        }
-      }
-    };
+    const at = vectorArgsAt(k);
+    const sec = citedSection(c, docs, at, k.id, issues);
+    if (!sec) continue;
+    const check = literalCheck(sec, place(c, docs, at), k.id, issues, warnings);
     k.args.forEach((a, i) => check(a, `args[${i}]`));
-    check(k.expect, "expect");
+    // A command or spec source vouches for the expected value instead.
+    if ("cite" in k.source) check(k.expect, "expect");
+  }
+}
+
+/** Checks literals against one section's text. */
+function literalCheck(
+  sec: NonNullable<ReturnType<typeof findSection>>,
+  where: string,
+  id: string,
+  issues: GateIssue[],
+  warnings: GateWarning[],
+) {
+  const runs = hexRuns(sec);
+  const text = sectionText(sec);
+  const lines = sectionLines(sec);
+  const check = (lit: Literal, at: string) => {
+    if ("concat" in lit) {
+      lit.concat.forEach((p, i) => check(p, `${at}.concat[${i}]`));
+      return;
+    }
+    if ("unchecked" in lit && lit.unchecked) {
+      warnings.push({
+        at: `${id}.${at}`,
+        message: `not checked against the RFC: ${lit.unchecked}`,
+      });
+      return;
+    }
+    if ("hex" in lit || "ascii" in lit) {
+      const bytes = literalBytes(lit) as Uint8Array;
+      const printedAsText =
+        "ascii" in lit && text.includes(normalizeText(lit.ascii));
+      if (!printedAsText && !hexPrinted(runs, bytesToHex(bytes))) {
+        issues.push({
+          gate: "fidelity",
+          at: `${id}.${at}`,
+          message: `${bytes.length}-byte value is not printed in ${where} ("${sec.title}")`,
+        });
+      }
+    } else if ("str" in lit) {
+      // The section text is whitespace-collapsed, so only a string already
+      // in that form is compared as the test uses it; "" is in every text.
+      if (lit.str === "" || lit.str !== normalizeText(lit.str)) {
+        issues.push({
+          gate: "fidelity",
+          at: `${id}.${at}`,
+          message: `the string ${JSON.stringify(lit.str)} is empty or has leading, trailing or repeated whitespace, so it cannot be matched against the RFC text`,
+        });
+      } else if (!text.includes(lit.str)) {
+        issues.push({
+          gate: "fidelity",
+          at: `${id}.${at}`,
+          message: `the string ${JSON.stringify(lit.str)} is not printed in ${where} ("${sec.title}")`,
+        });
+      }
+    } else if ("int" in lit) {
+      if (lit.label === undefined) {
+        warnings.push({
+          at: `${id}.${at}`,
+          message: `not checked against the RFC: the integer ${lit.int} has no "label" to find it by`,
+        });
+      } else if (!intLabelled(lines, lit.label, lit.int)) {
+        issues.push({
+          gate: "fidelity",
+          at: `${id}.${at}`,
+          message: `${where} does not print "${lit.label}" followed by ${lit.int}`,
+        });
+      }
+    }
+  };
+  return check;
+}
+
+/**
+ * Every vector's expected value has a provenance, and it holds: a `spec`
+ * section names the null or bool it expects; a `command` printed it (when the
+ * commands were run; until then it is reported as not run, never as passed).
+ * A `cite` source is checked by the fidelity gate.
+ */
+function checkProvenance(
+  c: RfcContract,
+  docs: Map<string, RfcDocument>,
+  commands: Map<string, SourceRun> | undefined,
+  issues: GateIssue[],
+  warnings: GateWarning[],
+): void {
+  for (const k of c.clauses) {
+    if (k.kind !== "vector") continue;
+    const s = (k as VectorClause).source;
+    if ("spec" in s) {
+      const sec = citedSection(
+        c,
+        docs,
+        { section: s.spec },
+        `${k.id}.source`,
+        issues,
+      );
+      if (!sec) continue;
+      const word =
+        "null" in k.expect
+          ? "null"
+          : String((k.expect as { bool: boolean }).bool);
+      if (!new RegExp(`\\b${word}\\b`, "i").test(sectionText(sec))) {
+        issues.push({
+          gate: "provenance",
+          at: `${k.id}.source`,
+          message: `§${s.spec} ("${sec.title}") never says "${word}", so it does not state the expected result`,
+        });
+      }
+    } else if ("command" in s) {
+      const run = commands?.get(k.id);
+      if (!run) {
+        warnings.push({
+          at: `${k.id}.source`,
+          message: `source command not run (pass --run-sources): the expected value is unverified: $ ${s.command}`,
+        });
+      } else if (run.outcome === "fail") {
+        issues.push({
+          gate: "provenance",
+          at: `${k.id}.source`,
+          message: `source command ${run.detail ?? "failed"}: $ ${s.command}`,
+        });
+      }
+    }
   }
 }
 
@@ -368,32 +509,45 @@ function checkFidelity(
  */
 function checkCompleteness(
   c: RfcContract,
+  main: string,
   rfc: RfcDocument,
+  docs: Map<string, RfcDocument>,
   issues: GateIssue[],
   warnings: GateWarning[],
 ): void {
-  const quotes = [
-    ...c.requirements.map((r) => ({ section: r.section, quote: r.quote })),
-    ...(c.exclusions ?? []).map((x) => ({
-      section: x.section,
-      quote: x.quote,
-    })),
-  ];
+  const inMain = (x: { source?: string }) => sourceOf(c, x.source) === main;
+  const quotes = [...c.requirements, ...(c.exclusions ?? [])]
+    .filter(inMain)
+    .map((x) => ({ section: x.section, quote: x.quote }));
   for (const x of c.exclusions ?? []) {
-    const sec = findSection(rfc, x.section);
-    if (!sec || !sectionText(sec).includes(normalizeText(x.quote))) {
+    const where = `exclusion §${x.section}`;
+    const sec = citedSection(c, docs, x, where, issues);
+    if (!sec) continue;
+    if (!sectionText(sec).includes(normalizeText(x.quote))) {
       issues.push({
         gate: "fidelity",
-        at: `exclusion §${x.section}`,
-        message: `quote not found in RFC §${x.section}: ${JSON.stringify(x.quote)}`,
+        at: where,
+        message: `quote not found in ${place(c, docs, x)}: ${JSON.stringify(x.quote)}`,
       });
     } else {
-      warnings.push({ at: `§${x.section}`, message: `excluded: ${x.reason}` });
+      warnings.push({
+        at: citeLabel(c, x),
+        message: `excluded: ${x.reason}`,
+      });
     }
   }
   for (const n of normativeSentences(rfc)) {
     const sec = findSection(rfc, n.section);
-    if (!sec) continue;
+    if (!sec) {
+      // Text outside every numbered section cannot be cited, so its
+      // normative sentences can be neither tested nor excluded.
+      issues.push({
+        gate: "completeness",
+        at: n.section,
+        message: `${n.keyword} sentence is outside every numbered section, so it can be neither a requirement nor an exclusion: ${JSON.stringify(n.sentence)}`,
+      });
+      continue;
+    }
     const covered = quotes.some(
       (q) =>
         q.section === n.section &&

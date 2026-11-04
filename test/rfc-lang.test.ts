@@ -530,7 +530,7 @@ describe("emitting strings and lets", () => {
         id,
         title: id,
         covers: ["R-EXTRACT"],
-        section: "2.2",
+        source: { cite: { section: "2.2" } },
         call: fn,
         args: [{ hex: "41" }],
         expect,
@@ -661,13 +661,13 @@ describe("labelled ints", () => {
     );
   });
 
-  test("the shape refuses a label without a letter or digit", () => {
-    for (const label of [" ", "=", ": ", "-"]) {
+  test("the shape refuses a label without a letter", () => {
+    for (const label of [" ", "=", ": ", "-", "5", "1 2"]) {
       const c = clone(hkdf);
       const k = clause<VectorClause>(c, "A.1-OKM");
       (k.args.find((a) => "int" in a) as { label: string }).label = label;
       expect(validateContractShape(c).join("\n")).toContain(
-        ".label: the name the RFC prints the value under, with a letter or digit",
+        ".label: the name the RFC prints the value under, with a letter",
       );
     }
   });
@@ -682,7 +682,7 @@ describe("str fidelity", () => {
         id: "V-STR",
         title: "x",
         covers: ["R-EXTRACT"],
-        section: "2.2",
+        source: { cite: { section: "2.2" } },
         call: "toHex",
         args: [{ hex: "00", unchecked: "not an RFC value" }],
         expect: { str: s },

@@ -114,7 +114,11 @@
       "id": "A.1-PRK",
       "title": "RFC 5869 A.1: HKDF-Extract gives the printed PRK",
       "covers": ["R-EXTRACT", "R-PRK-LEN"],
-      "section": "A.1",
+      "source": {
+        "cite": {
+          "section": "A.1"
+        }
+      },
       "call": "hkdfExtractSha256",
       "args": [
         {
@@ -133,7 +137,11 @@
       "id": "A.1-OKM",
       "title": "RFC 5869 A.1: HKDF-Expand gives the printed OKM (L = 42)",
       "covers": ["R-T", "R-OKM-LEN", "R-OKM-FIRST"],
-      "section": "A.1",
+      "source": {
+        "cite": {
+          "section": "A.1"
+        }
+      },
       "call": "hkdfExpandSha256",
       "args": [
         {
@@ -156,7 +164,11 @@
       "id": "A.2-PRK",
       "title": "RFC 5869 A.2: HKDF-Extract gives the printed PRK",
       "covers": ["R-EXTRACT", "R-PRK-LEN"],
-      "section": "A.2",
+      "source": {
+        "cite": {
+          "section": "A.2"
+        }
+      },
       "call": "hkdfExtractSha256",
       "args": [
         {
@@ -175,7 +187,11 @@
       "id": "A.2-OKM",
       "title": "RFC 5869 A.2: HKDF-Expand gives the printed OKM (L = 82)",
       "covers": ["R-T", "R-OKM-LEN", "R-OKM-FIRST"],
-      "section": "A.2",
+      "source": {
+        "cite": {
+          "section": "A.2"
+        }
+      },
       "call": "hkdfExpandSha256",
       "args": [
         {
@@ -198,7 +214,11 @@
       "id": "A.3-PRK",
       "title": "RFC 5869 A.3: HKDF-Extract gives the printed PRK",
       "covers": ["R-EXTRACT", "R-PRK-LEN", "R-SALT"],
-      "section": "A.3",
+      "source": {
+        "cite": {
+          "section": "A.3"
+        }
+      },
       "call": "hkdfExtractSha256",
       "args": [
         {
@@ -217,7 +237,11 @@
       "id": "A.3-OKM",
       "title": "RFC 5869 A.3: HKDF-Expand gives the printed OKM (L = 42)",
       "covers": ["R-T", "R-OKM-LEN", "R-OKM-FIRST", "R-INFO-EMPTY"],
-      "section": "A.3",
+      "source": {
+        "cite": {
+          "section": "A.3"
+        }
+      },
       "call": "hkdfExpandSha256",
       "args": [
         {
@@ -529,7 +553,7 @@
     {
       "kind": "property",
       "id": "P-T1-T2",
-      "title": "the first two blocks are T(1) and T(2) as \u00a72.3 defines them",
+      "title": "the first two blocks are T(1) and T(2) as §2.3 defines them",
       "covers": ["R-T"],
       "forall": [
         {
