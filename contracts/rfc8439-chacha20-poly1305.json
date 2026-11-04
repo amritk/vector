@@ -259,7 +259,8 @@
           "hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
         },
         {
-          "int": 1
+          "int": 1,
+          "label": "Block Count"
         },
         {
           "hex": "000000090000004a00000000"
@@ -281,7 +282,8 @@
           "hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
         },
         {
-          "int": 1
+          "int": 1,
+          "label": "Initial Counter"
         },
         {
           "hex": "000000000000004a00000000"
@@ -1075,287 +1077,249 @@
         }
       ],
       "assert": {
-        "op": "==",
-        "args": [
+        "let": [
           {
-            "op": "slice",
-            "args": [
-              {
-                "op": "unwrap",
-                "args": [
-                  {
-                    "call": "chacha20Poly1305Seal",
-                    "args": [
-                      {
-                        "var": "key"
-                      },
-                      {
-                        "var": "nonce"
-                      },
-                      {
-                        "var": "aad"
-                      },
-                      {
-                        "var": "pt"
-                      }
-                    ]
-                  }
-                ]
-              },
-              {
-                "op": "len",
-                "args": [
-                  {
-                    "var": "pt"
-                  }
-                ]
-              },
-              {
-                "op": "+",
-                "args": [
-                  {
-                    "op": "len",
-                    "args": [
-                      {
-                        "var": "pt"
-                      }
-                    ]
-                  },
-                  {
-                    "int": 16
-                  }
-                ]
-              }
-            ]
+            "name": "sealed",
+            "value": {
+              "op": "unwrap",
+              "args": [
+                {
+                  "call": "chacha20Poly1305Seal",
+                  "args": [
+                    {
+                      "var": "key"
+                    },
+                    {
+                      "var": "nonce"
+                    },
+                    {
+                      "var": "aad"
+                    },
+                    {
+                      "var": "pt"
+                    }
+                  ]
+                }
+              ]
+            }
           },
           {
-            "op": "unwrap",
-            "args": [
-              {
-                "call": "poly1305",
-                "args": [
-                  {
-                    "op": "unwrap",
-                    "args": [
-                      {
-                        "call": "poly1305KeyGen",
-                        "args": [
-                          {
-                            "var": "key"
-                          },
-                          {
-                            "var": "nonce"
-                          }
-                        ]
-                      }
-                    ]
-                  },
-                  {
-                    "op": "concat",
-                    "args": [
-                      {
-                        "op": "concat",
-                        "args": [
-                          {
-                            "op": "concat",
-                            "args": [
-                              {
-                                "op": "concat",
-                                "args": [
-                                  {
-                                    "op": "concat",
-                                    "args": [
-                                      {
-                                        "var": "aad"
-                                      },
-                                      {
-                                        "op": "zeros",
-                                        "args": [
-                                          {
-                                            "op": "%",
-                                            "args": [
-                                              {
-                                                "op": "-",
-                                                "args": [
-                                                  {
-                                                    "int": 16
-                                                  },
-                                                  {
-                                                    "op": "%",
-                                                    "args": [
-                                                      {
-                                                        "op": "len",
-                                                        "args": [
-                                                          {
-                                                            "var": "aad"
-                                                          }
-                                                        ]
-                                                      },
-                                                      {
-                                                        "int": 16
-                                                      }
-                                                    ]
-                                                  }
-                                                ]
-                                              },
-                                              {
-                                                "int": 16
-                                              }
-                                            ]
-                                          }
-                                        ]
-                                      }
-                                    ]
-                                  },
-                                  {
-                                    "op": "slice",
-                                    "args": [
-                                      {
-                                        "op": "unwrap",
-                                        "args": [
-                                          {
-                                            "call": "chacha20Poly1305Seal",
-                                            "args": [
-                                              {
-                                                "var": "key"
-                                              },
-                                              {
-                                                "var": "nonce"
-                                              },
-                                              {
-                                                "var": "aad"
-                                              },
-                                              {
-                                                "var": "pt"
-                                              }
-                                            ]
-                                          }
-                                        ]
-                                      },
-                                      {
-                                        "int": 0
-                                      },
-                                      {
-                                        "op": "len",
-                                        "args": [
-                                          {
-                                            "var": "pt"
-                                          }
-                                        ]
-                                      }
-                                    ]
-                                  }
-                                ]
-                              },
-                              {
-                                "op": "zeros",
-                                "args": [
-                                  {
-                                    "op": "%",
-                                    "args": [
-                                      {
-                                        "op": "-",
-                                        "args": [
-                                          {
-                                            "int": 16
-                                          },
-                                          {
-                                            "op": "%",
-                                            "args": [
-                                              {
-                                                "op": "len",
-                                                "args": [
-                                                  {
-                                                    "op": "slice",
-                                                    "args": [
-                                                      {
-                                                        "op": "unwrap",
-                                                        "args": [
-                                                          {
-                                                            "call": "chacha20Poly1305Seal",
-                                                            "args": [
-                                                              {
-                                                                "var": "key"
-                                                              },
-                                                              {
-                                                                "var": "nonce"
-                                                              },
-                                                              {
-                                                                "var": "aad"
-                                                              },
-                                                              {
-                                                                "var": "pt"
-                                                              }
-                                                            ]
-                                                          }
-                                                        ]
-                                                      },
-                                                      {
-                                                        "int": 0
-                                                      },
-                                                      {
-                                                        "op": "len",
-                                                        "args": [
-                                                          {
-                                                            "var": "pt"
-                                                          }
-                                                        ]
-                                                      }
-                                                    ]
-                                                  }
-                                                ]
-                                              },
-                                              {
-                                                "int": 16
-                                              }
-                                            ]
-                                          }
-                                        ]
-                                      },
-                                      {
-                                        "int": 16
-                                      }
-                                    ]
-                                  }
-                                ]
-                              }
-                            ]
-                          },
-                          {
-                            "op": "le64",
-                            "args": [
-                              {
-                                "op": "len",
-                                "args": [
-                                  {
-                                    "var": "aad"
-                                  }
-                                ]
-                              }
-                            ]
-                          }
-                        ]
-                      },
-                      {
-                        "op": "le64",
-                        "args": [
-                          {
-                            "op": "len",
-                            "args": [
-                              {
-                                "var": "pt"
-                              }
-                            ]
-                          }
-                        ]
-                      }
-                    ]
-                  }
-                ]
-              }
-            ]
+            "name": "ct",
+            "value": {
+              "op": "slice",
+              "args": [
+                {
+                  "var": "sealed"
+                },
+                {
+                  "int": 0
+                },
+                {
+                  "op": "len",
+                  "args": [
+                    {
+                      "var": "pt"
+                    }
+                  ]
+                }
+              ]
+            }
           }
-        ]
+        ],
+        "in": {
+          "op": "==",
+          "args": [
+            {
+              "op": "slice",
+              "args": [
+                {
+                  "var": "sealed"
+                },
+                {
+                  "op": "len",
+                  "args": [
+                    {
+                      "var": "pt"
+                    }
+                  ]
+                },
+                {
+                  "op": "+",
+                  "args": [
+                    {
+                      "op": "len",
+                      "args": [
+                        {
+                          "var": "pt"
+                        }
+                      ]
+                    },
+                    {
+                      "int": 16
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "op": "unwrap",
+              "args": [
+                {
+                  "call": "poly1305",
+                  "args": [
+                    {
+                      "op": "unwrap",
+                      "args": [
+                        {
+                          "call": "poly1305KeyGen",
+                          "args": [
+                            {
+                              "var": "key"
+                            },
+                            {
+                              "var": "nonce"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "op": "concat",
+                      "args": [
+                        {
+                          "op": "concat",
+                          "args": [
+                            {
+                              "op": "concat",
+                              "args": [
+                                {
+                                  "op": "concat",
+                                  "args": [
+                                    {
+                                      "op": "concat",
+                                      "args": [
+                                        {
+                                          "var": "aad"
+                                        },
+                                        {
+                                          "op": "zeros",
+                                          "args": [
+                                            {
+                                              "op": "%",
+                                              "args": [
+                                                {
+                                                  "op": "-",
+                                                  "args": [
+                                                    {
+                                                      "int": 16
+                                                    },
+                                                    {
+                                                      "op": "%",
+                                                      "args": [
+                                                        {
+                                                          "op": "len",
+                                                          "args": [
+                                                            {
+                                                              "var": "aad"
+                                                            }
+                                                          ]
+                                                        },
+                                                        {
+                                                          "int": 16
+                                                        }
+                                                      ]
+                                                    }
+                                                  ]
+                                                },
+                                                {
+                                                  "int": 16
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "var": "ct"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "op": "zeros",
+                                  "args": [
+                                    {
+                                      "op": "%",
+                                      "args": [
+                                        {
+                                          "op": "-",
+                                          "args": [
+                                            {
+                                              "int": 16
+                                            },
+                                            {
+                                              "op": "%",
+                                              "args": [
+                                                {
+                                                  "op": "len",
+                                                  "args": [
+                                                    {
+                                                      "var": "ct"
+                                                    }
+                                                  ]
+                                                },
+                                                {
+                                                  "int": 16
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "int": 16
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "op": "le64",
+                              "args": [
+                                {
+                                  "op": "len",
+                                  "args": [
+                                    {
+                                      "var": "aad"
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "op": "le64",
+                          "args": [
+                            {
+                              "op": "len",
+                              "args": [
+                                {
+                                  "var": "pt"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
       }
     },
     {
@@ -1702,88 +1666,79 @@
         }
       ],
       "assert": {
-        "op": "isNull",
-        "args": [
+        "let": [
           {
-            "call": "chacha20Poly1305Open",
-            "args": [
-              {
-                "var": "key"
-              },
-              {
-                "var": "nonce"
-              },
-              {
-                "var": "aad"
-              },
-              {
-                "op": "slice",
-                "args": [
-                  {
-                    "op": "unwrap",
-                    "args": [
-                      {
-                        "call": "chacha20Poly1305Seal",
-                        "args": [
-                          {
-                            "var": "key"
-                          },
-                          {
-                            "var": "nonce"
-                          },
-                          {
-                            "var": "aad"
-                          },
-                          {
-                            "var": "pt"
-                          }
-                        ]
-                      }
-                    ]
-                  },
-                  {
-                    "int": 0
-                  },
-                  {
-                    "op": "-",
-                    "args": [
-                      {
-                        "op": "len",
-                        "args": [
-                          {
-                            "op": "unwrap",
-                            "args": [
-                              {
-                                "call": "chacha20Poly1305Seal",
-                                "args": [
-                                  {
-                                    "var": "key"
-                                  },
-                                  {
-                                    "var": "nonce"
-                                  },
-                                  {
-                                    "var": "aad"
-                                  },
-                                  {
-                                    "var": "pt"
-                                  }
-                                ]
-                              }
-                            ]
-                          }
-                        ]
-                      },
-                      {
-                        "var": "cut"
-                      }
-                    ]
-                  }
-                ]
-              }
-            ]
+            "name": "sealed",
+            "value": {
+              "op": "unwrap",
+              "args": [
+                {
+                  "call": "chacha20Poly1305Seal",
+                  "args": [
+                    {
+                      "var": "key"
+                    },
+                    {
+                      "var": "nonce"
+                    },
+                    {
+                      "var": "aad"
+                    },
+                    {
+                      "var": "pt"
+                    }
+                  ]
+                }
+              ]
+            }
           }
-        ]
+        ],
+        "in": {
+          "op": "isNull",
+          "args": [
+            {
+              "call": "chacha20Poly1305Open",
+              "args": [
+                {
+                  "var": "key"
+                },
+                {
+                  "var": "nonce"
+                },
+                {
+                  "var": "aad"
+                },
+                {
+                  "op": "slice",
+                  "args": [
+                    {
+                      "var": "sealed"
+                    },
+                    {
+                      "int": 0
+                    },
+                    {
+                      "op": "-",
+                      "args": [
+                        {
+                          "op": "len",
+                          "args": [
+                            {
+                              "var": "sealed"
+                            }
+                          ]
+                        },
+                        {
+                          "var": "cut"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
       }
     },
     {

@@ -266,6 +266,22 @@ describe("sampling", () => {
       Uint8Array.from([44, 1, 0, 0, 0, 0, 0, 0]),
     );
     expect(evalPure({ op: "%", args: [{ int: 34 }, { int: 16 }] }, {})).toBe(2);
+    // Strings: ASCII-only case mapping, charAt "" out of range, ascii null on
+    // any byte >= 0x80 (shiftCase, charAtStr and asciiOrNull in the test).
+    const s = "aZ-9";
+    const str = (op: string, ...args: object[]) =>
+      evalPure({ op, args: [{ var: "s" }, ...args] } as never, { s });
+    expect(str("strLen")).toBe(4);
+    expect(str("strConcat", { str: "!" })).toBe("aZ-9!");
+    expect(str("lower")).toBe("az-9");
+    expect(str("upper")).toBe("AZ-9");
+    expect(str("utf8")).toEqual(Uint8Array.from([97, 90, 45, 57]));
+    expect(str("charAt", { int: 1 })).toBe("Z");
+    expect(str("charAt", { int: 4 })).toBe("");
+    expect(evalPure({ op: "ascii", args: [{ hex: "7f41" }] }, {})).toBe(
+      "\x7fA",
+    );
+    expect(evalPure({ op: "ascii", args: [{ hex: "4180" }] }, {})).toBeNull();
   });
 });
 
@@ -351,7 +367,14 @@ describe("extraction with a model in the loop", () => {
 });
 
 // Against a real nish (VECTOR_NISH=<path to a nish binary>): both contracts hold.
+// They skip without one, unless VECTOR_REQUIRE_NISH=1 makes that a failure.
 const nish = process.env.VECTOR_NISH;
+if (process.env.VECTOR_REQUIRE_NISH === "1" && !nish)
+  test("VECTOR_NISH is set (VECTOR_REQUIRE_NISH=1)", () => {
+    throw new Error(
+      "VECTOR_REQUIRE_NISH=1 but VECTOR_NISH is unset: the live nish tests would skip",
+    );
+  });
 describe.skipIf(!nish)("against nish", () => {
   for (const c of [hkdf, aead]) {
     test(`${c.contract} is SATISFIED`, async () => {

@@ -15,10 +15,16 @@
 
 import { runZ3Script } from "../solve/runner.ts";
 import { SMT_PREAMBLE } from "../solve/smt.ts";
-import type { Expr, PropertyClause, RfcContract, Var } from "./contract.ts";
+import {
+  type Expr,
+  type PropertyClause,
+  type RfcContract,
+  type Var,
+  alphabetChars,
+} from "./contract.ts";
 
-export type Value = Uint8Array | number | boolean | null;
-export type Sample = Record<string, Uint8Array | number>;
+export type Value = Uint8Array | string | number | boolean | null;
+export type Sample = Record<string, Uint8Array | string | number>;
 
 export interface PropertySamples {
   clauseId: string;
@@ -79,12 +85,30 @@ function randomBytes(rnd: () => number, n: number): Uint8Array {
   return out;
 }
 
+function randomString(rnd: () => number, chars: string[], n: number): string {
+  let out = "";
+  for (let i = 0; i < n; i++) out += chars[Math.floor(rnd() * chars.length)];
+  return out;
+}
+
+/** ASCII case mapping; every other byte is kept (strings here are ASCII). */
+const mapCase = (s: string, from: RegExp, delta: number) =>
+  s.replace(from, (ch) => String.fromCharCode(ch.charCodeAt(0) + delta));
+
 // ── A pure evaluator, for `where` ─────────────────────────────────────────
 
 class Undefined extends Error {}
 
-/** Evaluate a call-free expression. Throws Undefined on unwrap(null). */
+/**
+ * Evaluate a call-free expression. Throws Undefined on unwrap(null). A `let`
+ * evaluates every binding before its `in`, as the emitted test does.
+ */
 export function evalPure(e: Expr, env: Record<string, Value>): Value {
+  if ("let" in e) {
+    const scope = { ...env };
+    for (const b of e.let) scope[b.name] = evalPure(b.value, scope);
+    return evalPure(e.in, scope);
+  }
   if ("hex" in e) {
     const one = Uint8Array.from(Buffer.from(e.hex, "hex"));
     const n = e.repeat ?? 1;
@@ -93,6 +117,7 @@ export function evalPure(e: Expr, env: Record<string, Value>): Value {
     return out;
   }
   if ("ascii" in e) return new TextEncoder().encode(e.ascii);
+  if ("str" in e) return e.str;
   if ("int" in e) return e.int;
   if ("bool" in e) return e.bool;
   if ("null" in e) return null;
@@ -105,6 +130,7 @@ export function evalPure(e: Expr, env: Record<string, Value>): Value {
   const a = e.args.map((x) => () => evalPure(x, env));
   const n = (i: number) => a[i]() as number;
   const b = (i: number) => a[i]() as Uint8Array;
+  const s = (i: number) => a[i]() as string;
   const t = (i: number) => a[i]() as boolean;
   switch (e.op) {
     case "len":
@@ -174,6 +200,25 @@ export function evalPure(e: Expr, env: Record<string, Value>): Value {
       return !t(0);
     case "implies":
       return !t(0) || t(1);
+    case "strLen":
+      return s(0).length;
+    case "strConcat":
+      return s(0) + s(1);
+    case "lower":
+      return mapCase(s(0), /[A-Z]/g, 32);
+    case "upper":
+      return mapCase(s(0), /[a-z]/g, -32);
+    case "utf8":
+      return new TextEncoder().encode(s(0));
+    case "ascii": {
+      const src = b(0);
+      return src.every((x) => x < 0x80) ? String.fromCharCode(...src) : null;
+    }
+    case "charAt": {
+      const str = s(0);
+      const i = n(1);
+      return i >= 0 && i < str.length ? str[i] : "";
+    }
   }
 }
 
@@ -203,6 +248,24 @@ const smtName = (v: Var) =>
   v.type === "i32" ? `v_${v.name}` : `len_${v.name}`;
 
 /**
+ * `e` with every let-bound name replaced by its value, for the integer
+ * skeleton only (a binding is just a name for its value there).
+ */
+function inlineLets(e: Expr, bound: Map<string, Expr> = new Map()): Expr {
+  if ("let" in e) {
+    const inner = new Map(bound);
+    for (const b of e.let) inner.set(b.name, inlineLets(b.value, inner));
+    return inlineLets(e.in, inner);
+  }
+  if ("var" in e) return bound.get(e.var) ?? e;
+  if ("op" in e)
+    return { op: e.op, args: e.args.map((x) => inlineLets(x, bound)) };
+  if ("call" in e)
+    return { call: e.call, args: e.args.map((x) => inlineLets(x, bound)) };
+  return e;
+}
+
+/**
  * The SMT term for an integer expression, or null when it is not in the
  * linear-integer skeleton (a call, a bytes comparison, a slice's length…).
  */
@@ -213,7 +276,7 @@ function intTerm(e: Expr, vars: Map<string, Var>): string | null {
     return v && v.type === "i32" ? smtName(v) : null;
   }
   if (!("op" in e)) return null;
-  if (e.op === "len") return lenTerm(e.args[0], vars);
+  if (e.op === "len" || e.op === "strLen") return lenTerm(e.args[0], vars);
   if (e.op === "+" || e.op === "-" || e.op === "*") {
     const l = intTerm(e.args[0], vars);
     const r = intTerm(e.args[1], vars);
@@ -231,22 +294,30 @@ function intTerm(e: Expr, vars: Map<string, Var>): string | null {
   return null;
 }
 
+/** The length term of a bytes or string expression (one byte per character). */
 function lenTerm(e: Expr, vars: Map<string, Var>): string | null {
   if ("var" in e) {
     const v = vars.get(e.var);
-    return v && v.type === "bytes" ? smtName(v) : null;
+    return v && v.type !== "i32" ? smtName(v) : null;
   }
   if ("hex" in e) return String((e.hex.length / 2) * (e.repeat ?? 1));
+  if ("str" in e) return String(e.str.length);
   if (!("op" in e)) return null;
-  if (e.op === "concat") {
+  if (e.op === "concat" || e.op === "strConcat") {
     const l = lenTerm(e.args[0], vars);
     const r = lenTerm(e.args[1], vars);
     return l && r ? `(+ ${l} ${r})` : null;
   }
   if (e.op === "zeros") return nonNeg(intTerm(e.args[0], vars));
   if (e.op === "fill") return nonNeg(intTerm(e.args[1], vars));
-  if (e.op === "flipBit") return lenTerm(e.args[0], vars);
+  if (["flipBit", "lower", "upper", "utf8"].includes(e.op))
+    return lenTerm(e.args[0], vars);
   if (e.op === "le64") return "8";
+  if (e.op === "charAt") {
+    const l = lenTerm(e.args[0], vars);
+    const i = intTerm(e.args[1], vars);
+    return l && i ? `(ite (and (>= ${i} 0) (< ${i} ${l})) 1 0)` : null;
+  }
   return null;
 }
 
@@ -363,7 +434,7 @@ async function sampleProperty(
   const queries: Query[] = [{ extra: "", pins: [] }];
   const edges = new Set<string>();
   if (k.where) comparisonEdges(k.where, varMap, edges);
-  comparisonEdges(k.assert, varMap, edges);
+  comparisonEdges(inlineLets(k.assert), varMap, edges);
   for (const d of edges) {
     const pins = k.forall
       .map(smtName)
@@ -397,13 +468,15 @@ async function sampleProperty(
   const fill = (ints: Record<string, number>): Sample => {
     const s: Sample = {};
     for (const v of k.forall) {
-      if (v.type === "i32")
+      if (v.type === "i32") {
         s[v.name] = ints[v.name] ?? biasedInt(rnd, v.min, v.max);
-      else
-        s[v.name] = randomBytes(
-          rnd,
-          ints[v.name] ?? biasedInt(rnd, v.minLen, v.maxLen),
-        );
+        continue;
+      }
+      const n = ints[v.name] ?? biasedInt(rnd, v.minLen, v.maxLen);
+      s[v.name] =
+        v.type === "bytes"
+          ? randomBytes(rnd, n)
+          : randomString(rnd, alphabetChars(v.alphabet) as string[], n);
     }
     return s;
   };

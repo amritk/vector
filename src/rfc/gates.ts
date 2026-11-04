@@ -7,7 +7,9 @@
 //                every citation names a real requirement (anti-gaming: a
 //                contract cannot drop a requirement or invent one)
 //   fidelity     every quote appears in its cited RFC section; every hex/ascii/
-//                int a vector uses appears in the vector's cited section
+//                str a vector uses appears in the vector's cited section, and
+//                every labelled int appears there right after its label (an
+//                unlabelled int is reported as unchecked)
 //   signatures   (with the module source) the declared signatures are the
 //                implementation's exported ones
 //
@@ -34,7 +36,7 @@ import {
   findSection,
   hexPrinted,
   hexRuns,
-  intPrinted,
+  intLabelled,
   normalizeText,
   normativeSentences,
   ownSpans,
@@ -322,12 +324,25 @@ function checkFidelity(
             message: `${bytes.length}-byte value is not printed in RFC §${k.section} ("${sec.title}")`,
           });
         }
-      } else if ("int" in lit) {
-        if (!intPrinted(text, lit.int)) {
+      } else if ("str" in lit) {
+        if (!text.includes(normalizeText(lit.str))) {
           issues.push({
             gate: "fidelity",
             at: `${k.id}.${at}`,
-            message: `the integer ${lit.int} is not printed in RFC §${k.section}`,
+            message: `the string ${JSON.stringify(lit.str)} is not printed in RFC §${k.section} ("${sec.title}")`,
+          });
+        }
+      } else if ("int" in lit) {
+        if (lit.label === undefined) {
+          warnings.push({
+            at: `${k.id}.${at}`,
+            message: `not checked against the RFC: the integer ${lit.int} has no "label" to find it by`,
+          });
+        } else if (!intLabelled(text, lit.label, lit.int)) {
+          issues.push({
+            gate: "fidelity",
+            at: `${k.id}.${at}`,
+            message: `RFC §${k.section} does not print "${lit.label}" followed by ${lit.int}`,
           });
         }
       }
@@ -392,6 +407,9 @@ const NISH_TYPES: Record<string, ValueTy> = {
   "u8[]": "bytes",
   "u8[] | null": "bytes?",
   "null | u8[]": "bytes?",
+  string: "string",
+  "string | null": "string?",
+  "null | string": "string?",
   i32: "i32",
   u32: "u32",
   boolean: "bool",

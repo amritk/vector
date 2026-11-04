@@ -23,13 +23,18 @@ import {
   type VectorClause,
   bytesToHex,
   callsIn,
+  isBytesLike,
+  isStringLike,
   literalBytes,
+  typeOf,
 } from "./contract.ts";
 import type { PropertySamples } from "./sample.ts";
 
 const NISH_TY: Record<ValueTy, string> = {
   bytes: "u8[]",
   "bytes?": "u8[] | null",
+  string: "string",
+  "string?": "string | null",
   i32: "i32",
   u32: "u32",
   bool: "boolean",
@@ -152,6 +157,68 @@ const le64 = (n: i32): u8[] => {
   }
   return out;
 };`,
+  strEq: `/** Equal characters, or both null. */
+const strEq = (a: string | null, b: string | null): boolean => {
+  if (a === null || b === null) {
+    return a === null && b === null;
+  }
+  const n: i32 = toI32(a.length);
+  if (n !== toI32(b.length)) {
+    return false;
+  }
+  for (let i: i32 = 0; i < n; i += 1) {
+    if (a.charCodeAt(i) !== b.charCodeAt(i)) {
+      return false;
+    }
+  }
+  return true;
+};`,
+  isNullStr: "const isNullStr = (s: string | null): boolean => s === null;",
+  strOrNull: `/** \`s\` in double quotes, or \`null\` spelled out. */
+const strOrNull = (s: string | null): string => {
+  if (s !== null) {
+    return \`"\${s}"\`;
+  }
+  return "null";
+};`,
+  shiftCase: `/** \`s\` with every byte in [lo, hi] moved by \`delta\` (ASCII case mapping). */
+const shiftCase = (s: string, lo: i32, hi: i32, delta: i32): string => {
+  const parts: string[] = [];
+  const n: i32 = toI32(s.length);
+  for (let i: i32 = 0; i < n; i += 1) {
+    let c: i32 = toI32(s.charCodeAt(i));
+    if (c >= lo && c <= hi) {
+      c = c + delta;
+    }
+    parts.push(String.fromCharCode(c));
+  }
+  return parts.join("");
+};`,
+  utf8Bytes: `/** The bytes of \`s\`. */
+const utf8Bytes = (s: string): u8[] => {
+  const out: u8[] = [];
+  const n: i32 = toI32(s.length);
+  for (let i: i32 = 0; i < n; i += 1) {
+    out.push(toU8(toI32(s.charCodeAt(i))));
+  }
+  return out;
+};`,
+  asciiOrNull: `/** \`b\` as a string, or null when any byte is not ASCII. */
+const asciiOrNull = (b: u8[]): string | null => {
+  for (const x of b) {
+    if (toI32(x) >= 128) {
+      return null;
+    }
+  }
+  return String.fromBytes(b, 0, toI32(b.length));
+};`,
+  charAtStr: `/** The character at \`i\`, or "" out of range. */
+const charAtStr = (s: string, i: i32): string => {
+  if (i < 0 || i >= toI32(s.length)) {
+    return "";
+  }
+  return s.slice(i, i + 1);
+};`,
   Unwrap: `/**
  * \`unwrap\` without exceptions: a null is recorded and stands in as no bytes,
  * and the sample that saw it fails.
@@ -173,16 +240,29 @@ class Unwrap {
 }`,
 };
 
+/** Spliced into Unwrap when a string? is unwrapped. */
+const UNWRAP_STR = `
+  str(s: string | null): string {
+    if (s !== null) {
+      return s
+    }
+    this.sawNull = true
+    return ""
+  }`;
+
 const HELPER_DEPS: Record<string, string[]> = {
   hexOrNull: ["hexOf"],
   unhex: ["nibble"],
   flipBit: ["sliceBytes"],
+  unwrapStr: ["Unwrap"],
 };
 const HELPER_ORDER = Object.keys(HELPERS);
 
 class Emitter {
   readonly used = new Set<string>();
   readonly fns: Map<string, FnSig>;
+  /** The types of the names in scope: the forall vars, then let bindings. */
+  vars = new Map<string, ValueTy>();
 
   constructor(readonly c: RfcContract) {
     this.fns = new Map(c.functions.map((f) => [f.name, f]));
@@ -206,17 +286,47 @@ class Emitter {
       if (ty === "u32") return `toU32(${lit.int})`;
       return lit.int < 0 ? `(${lit.int})` : String(lit.int);
     }
+    if ("str" in lit) return jsString(lit.str);
     return this.bytesLit(literalBytes(lit) as Uint8Array);
   }
 
-  /** An expression; `vars` maps contract names to emitted locals. */
+  /** The type of a (contract-checked) expression in the current scope. */
+  typeOf(e: Expr): ValueTy | "null" {
+    const env = { fns: this.fns, vars: this.vars, allowCalls: true };
+    return typeOf(e, env, "", []) as ValueTy | "null";
+  }
+
+  /**
+   * `const` locals for the lets that open `e` (each evaluated once, in order),
+   * pushed onto `out`; returns the expression they scope over.
+   */
+  bindings(assert: Expr, indent: string, out: string[]): Expr {
+    let e = assert;
+    while ("let" in e) {
+      for (const b of e.let) {
+        const ty = this.typeOf(b.value) as ValueTy;
+        out.push(
+          `${indent}const v_${b.name}: ${NISH_TY[ty]} = ${this.expr(b.value)};`,
+        );
+        this.vars.set(b.name, ty);
+      }
+      e = e.in;
+    }
+    return e;
+  }
+
+  /** An expression; contract names are emitted as `v_<name>` locals. */
   expr(e: Expr, want?: ValueTy): string {
-    if ("var" in e) return want === "u32" ? `toU32(v_${e.var})` : `v_${e.var}`;
+    if ("var" in e)
+      return want === "u32" && this.vars.get(e.var) !== "u32"
+        ? `toU32(v_${e.var})`
+        : `v_${e.var}`;
     if ("call" in e) {
       const sig = this.fns.get(e.call) as FnSig;
       const args = e.args.map((a, i) => this.expr(a, sig.params[i].type));
       return `${e.call}(${args.join(", ")})`;
     }
+    if ("let" in e) throw new Error("a let may only open the assert");
     if (!("op" in e)) {
       const lit = e as Literal;
       if ("int" in lit && want === "u32") return `toU32(${lit.int})`;
@@ -238,12 +348,18 @@ class Emitter {
       case "flipBit":
         return `${this.use("flipBit")}(${a(0)}, ${a(1)})`;
       case "unwrap":
+        if (this.typeOf(e.args[0]) === "string?") {
+          this.use("unwrapStr");
+          return `u.str(${a(0)})`;
+        }
         this.use("Unwrap");
         return `u.get(${a(0)})`;
       case "isNull":
-        return `${this.use("isNullBytes")}(${a(0)})`;
-      case "notNull":
-        return `!${this.use("isNullBytes")}(${a(0)})`;
+      case "notNull": {
+        const h =
+          this.typeOf(e.args[0]) === "string?" ? "isNullStr" : "isNullBytes";
+        return `${e.op === "notNull" ? "!" : ""}${this.use(h)}(${a(0)})`;
+      }
       case "+":
       case "-":
       case "*":
@@ -258,8 +374,16 @@ class Emitter {
         return `(${a(0)} ${e.op} ${a(1)})`;
       case "==":
       case "!=": {
-        if (isBytesish(e.args[0], this) || isBytesish(e.args[1], this)) {
-          const eq = `${this.use("bytesEq")}(${a(0)}, ${a(1)})`;
+        // A null literal takes its kind from the other side.
+        const l = this.typeOf(e.args[0]);
+        const side = l === "null" ? this.typeOf(e.args[1]) : l;
+        const h = isBytesLike(side)
+          ? "bytesEq"
+          : isStringLike(side)
+            ? "strEq"
+            : null;
+        if (h) {
+          const eq = `${this.use(h)}(${a(0)}, ${a(1)})`;
           return e.op === "==" ? eq : `!${eq}`;
         }
         return `(${a(0)} ${e.op === "==" ? "===" : "!=="} ${a(1)})`;
@@ -272,28 +396,22 @@ class Emitter {
         return `!${a(0)}`;
       case "implies":
         return `(!${a(0)} || ${a(1)})`;
+      case "strLen":
+        return wrapU32(`toI32(${a(0)}.length)`);
+      case "strConcat":
+        return `\`\${${a(0)}}\${${a(1)}}\``;
+      case "lower":
+        return `${this.use("shiftCase")}(${a(0)}, 65, 90, 32)`;
+      case "upper":
+        return `${this.use("shiftCase")}(${a(0)}, 97, 122, -32)`;
+      case "utf8":
+        return `${this.use("utf8Bytes")}(${a(0)})`;
+      case "ascii":
+        return `${this.use("asciiOrNull")}(${a(0)})`;
+      case "charAt":
+        return `${this.use("charAtStr")}(${a(0)}, ${a(1)})`;
     }
   }
-}
-
-function isBytesish(e: Expr, em: Emitter): boolean {
-  if ("hex" in e || "ascii" in e || "concat" in e || "null" in e) return true;
-  if ("call" in e) {
-    const r = em.fns.get(e.call)?.returns;
-    return r === "bytes" || r === "bytes?";
-  }
-  if ("op" in e) {
-    return [
-      "concat",
-      "slice",
-      "zeros",
-      "fill",
-      "flipBit",
-      "unwrap",
-      "le64",
-    ].includes(e.op);
-  }
-  return false;
 }
 
 /** A test name: "[id] title (covers R1, R2)". */
@@ -357,6 +475,14 @@ function emitVector(em: Emitter, k: VectorClause): string {
     case "u32":
       body = `t.eqStr(${name}, \`\${${call}}\`, ${jsString(String((k.expect as { int: number }).int))})`;
       break;
+    case "string":
+      body = `t.eqStr(${name}, ${call}, ${jsString((k.expect as { str: string }).str)})`;
+      break;
+    case "string?": {
+      const want = "str" in k.expect ? `"${k.expect.str}"` : "null";
+      body = `t.eqStr(${name}, ${em.use("strOrNull")}(${call}), ${jsString(want)})`;
+      break;
+    }
   }
   return `const ${fnName(k)} = (t: Suite): boolean => ${body};`;
 }
@@ -379,25 +505,30 @@ function emitProperty(
       const vals = ps.samples.map((s) => String(s[v.name] as number));
       out.push(`  const table_${v.name}: i32[] = [${vals.join(", ")}];`);
     } else {
-      em.use("unhex");
+      if (v.type === "bytes") em.use("unhex");
       const vals = ps.samples.map((s) =>
-        jsString(bytesToHex(s[v.name] as Uint8Array)),
+        jsString(
+          v.type === "bytes"
+            ? bytesToHex(s[v.name] as Uint8Array)
+            : (s[v.name] as string),
+        ),
       );
       out.push(`  const table_${v.name}: string[] = [`);
       for (const x of vals) out.push(`    ${x},`);
       out.push("  ];");
     }
   }
-  const assertCode = em.expr(k.assert);
   const usesUnwrap = JSON.stringify(k.assert).includes('"op":"unwrap"');
   out.push(`  for (let i: i32 = 0; i < ${count}; i += 1) {`);
+  em.vars = new Map(k.forall.map((v) => [v.name, v.type]));
   for (const v of k.forall) {
-    if (v.type === "i32")
-      out.push(`    const v_${v.name}: i32 = table_${v.name}[i];`);
-    else out.push(`    const v_${v.name}: u8[] = unhex(table_${v.name}[i]);`);
+    if (v.type === "bytes")
+      out.push(`    const v_${v.name}: u8[] = unhex(table_${v.name}[i]);`);
+    else out.push(`    const v_${v.name}: ${v.type} = table_${v.name}[i];`);
   }
   if (usesUnwrap) out.push("    const u: Unwrap = new Unwrap();");
-  out.push(`    const holds: boolean = ${assertCode};`);
+  const body = em.bindings(k.assert, "    ", out);
+  out.push(`    const holds: boolean = ${em.expr(body)};`);
   const failCond = usesUnwrap ? "u.sawNull || !holds" : "!holds";
   const shown = k.forall
     .map((v) =>
@@ -480,8 +611,10 @@ export function emitNishTest(
       ([mod, names]) => `import { ${names.join(", ")} } from ${jsString(mod)};`,
     ),
   ];
-  const helpers = HELPER_ORDER.filter((h) => em.used.has(h)).map(
-    (h) => HELPERS[h],
+  const helpers = HELPER_ORDER.filter((h) => em.used.has(h)).map((h) =>
+    h === "Unwrap" && em.used.has("unwrapStr")
+      ? HELPERS.Unwrap.replace(/\n\}$/, `\n${UNWRAP_STR}\n}`)
+      : HELPERS[h],
   );
   const main = [
     "export const main = (): i32 => {",

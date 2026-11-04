@@ -143,7 +143,8 @@
           "hex": "f0f1f2f3f4f5f6f7f8f9"
         },
         {
-          "int": 42
+          "int": 42,
+          "label": "L"
         }
       ],
       "expect": {
@@ -184,7 +185,8 @@
           "hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
         },
         {
-          "int": 82
+          "int": 82,
+          "label": "L"
         }
       ],
       "expect": {
@@ -225,7 +227,8 @@
           "hex": ""
         },
         {
-          "int": 42
+          "int": 42,
+          "label": "L"
         }
       ],
       "expect": {
