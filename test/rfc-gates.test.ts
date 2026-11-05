@@ -203,6 +203,78 @@ describe("spec frozen", () => {
     expect(frozenCheck({ repo: d, base: "HEAD" }).problems).toEqual([]);
   });
 
+  test("measured from the fork point: commits that landed on the base since do not count", () => {
+    const d = frozenRepo();
+    git(d, "branch", "-M", "main");
+    git(d, "checkout", "-qb", "pr");
+    write(d, "contracts/notes.md", "x\n");
+    commit(d);
+    git(d, "checkout", "-q", "main");
+    write(d, "src/a.ts", "export const a = 3\n");
+    commit(d);
+    git(d, "checkout", "-q", "pr");
+    const r = frozenCheck({ repo: d, base: "main" });
+    expect(r.changed).toEqual([{ path: "contracts/notes.md", kind: "spec" }]);
+    expect(r.problems).toEqual([]);
+    expect(r.at).toBe(git(d, "rev-parse", "HEAD~1").trim());
+    // The same PR with its own implementation change is still refused.
+    write(d, "src/a.ts", "export const a = 4\n");
+    expect(frozenCheck({ repo: d, base: "main" }).problems).toHaveLength(1);
+  });
+
+  test("a generated test is spec side: with its contract it passes, beside the code it is refused", () => {
+    const d = frozenRepo();
+    const c = clone(hkdf);
+    c.requirements[0].note = "edited";
+    write(d, "contracts/h.json", JSON.stringify(c));
+    write(
+      d,
+      "test/h.ts",
+      `// vector-contract-sha256: ${"0".repeat(64)}\nexport {}\n`,
+    );
+    const r = frozenCheck({ repo: d, base: "HEAD" });
+    expect(r.changed).toContainEqual({ path: "test/h.ts", kind: "generated" });
+    expect(r.problems).toEqual([]);
+    write(d, "src/a.ts", "export const a = 2\n");
+    const mixed = frozenCheck({ repo: d, base: "HEAD" });
+    expect(mixed.problems).toHaveLength(1);
+    expect(mixed.problems[0]).toContain("test/h.ts");
+  });
+
+  test("a generated test beside the code alone is refused too", () => {
+    const d = frozenRepo();
+    write(
+      d,
+      "test/h.ts",
+      `// vector-contract-sha256: ${"0".repeat(64)}\nexport {}\n`,
+    );
+    write(d, "src/a.ts", "export const a = 2\n");
+    expect(frozenCheck({ repo: d, base: "HEAD" }).problems).toHaveLength(1);
+  });
+
+  test("every source a contract declares is spec side, wherever it lives", () => {
+    const d = repo();
+    const c = clone(hkdf) as RfcContract;
+    const { rfc: _rfc, ...rest } = c.source;
+    c.source = { ...rest, main: "rfc5869" } as RfcContract["source"];
+    c.sources = [
+      { id: "rfc5869", rfc: 5869 },
+      { id: "errata", path: "../docs/errata.md" },
+    ];
+    write(d, "contracts/h.json", JSON.stringify(c));
+    mkdirSync(join(d, "rfcs"));
+    writeFileSync(join(d, "rfcs/rfc5869.txt"), rfc);
+    write(d, "docs/errata.md", "# 1. Errata\n");
+    write(d, "src/a.ts", "export const a = 1\n");
+    commit(d);
+    write(d, "docs/errata.md", "# 1. Errata\n\nchanged\n");
+    write(d, "src/a.ts", "export const a = 2\n");
+    const r = frozenCheck({ repo: d, base: "HEAD" });
+    expect(r.changed).toContainEqual({ path: "docs/errata.md", kind: "spec" });
+    expect(r.problems).toHaveLength(1);
+    expect(r.problems[0]).toContain("docs/errata.md");
+  });
+
   test("a main source that no longer matches source.sha256 is refused", () => {
     const d = frozenRepo();
     writeFileSync(join(d, "rfcs/rfc5869.txt"), `${rfc}\nchanged\n`);
@@ -596,7 +668,9 @@ describe("spec exports", () => {
     const root = exportsRepo();
     expect(() => check(root, hkdf, "nope")).toThrow();
     expect(() => check(root, hkdf, "-x")).toThrow();
-    expect(() => check(tmp("vector-norepo-"))).toThrow(/git rev-parse/);
+    expect(() => check(tmp("vector-norepo-"))).toThrow(
+      /git merge-base HEAD HEAD failed.*not a git repository/,
+    );
   });
 
   test("the CLI: 0 on OK, 1 on a problem, 2 on a git error or missing option", async () => {

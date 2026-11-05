@@ -340,7 +340,22 @@ export function checkBase(base: string): void {
 }
 
 /**
- * `git diff -U0 <base>` in `cwd` (the working tree against base), parsed, plus
+ * The commit the working tree forked from `base` at (`git merge-base base
+ * HEAD`): a PR is judged by its own changes, not by what landed on the base
+ * branch after it branched. Fails closed: no such commit is an error.
+ */
+export function forkPoint(cwd: string, base: string): string {
+  checkBase(base);
+  return git(
+    cwd,
+    ["merge-base", "--end-of-options", base, "HEAD"],
+    `git merge-base ${base} HEAD`,
+  ).replace(/\n$/, "");
+}
+
+/**
+ * `git diff -U0` in `cwd` of the working tree against its fork point from
+ * `base` (see forkPoint), parsed, plus
  * every untracked file (not ignored) as wholly added: a new module nobody has
  * `git add`ed yet is still part of the change. A git error is an error.
  */
@@ -349,7 +364,7 @@ export function gitDiff(
   base: string,
   paths: string[] = [],
 ): FileDiff[] {
-  checkBase(base);
+  const at = forkPoint(cwd, base);
   const top = git(
     cwd,
     ["rev-parse", "--show-toplevel"],
@@ -371,7 +386,7 @@ export function gitDiff(
       "--src-prefix=a/",
       "--dst-prefix=b/",
       "--end-of-options",
-      base,
+      at,
       "--",
       ...paths,
     ],

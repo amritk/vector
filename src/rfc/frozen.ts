@@ -6,7 +6,7 @@
 // source is a failure.
 
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
   type RfcContract,
@@ -14,7 +14,7 @@ import {
   declaredSources,
   validateContractShape,
 } from "./contract.ts";
-import { checkBase, git } from "./gitdiff.ts";
+import { forkPoint, git } from "./gitdiff.ts";
 
 export const VECTOR_ROOT = resolve(
   dirname(new URL(import.meta.url).pathname),
@@ -42,13 +42,18 @@ export function sourceFile(
 export const sha256 = (bytes: Uint8Array): string =>
   createHash("sha256").update(bytes).digest("hex");
 
-/** A changed path's side of the freeze. */
-export type PathKind = "spec" | "neutral" | "implementation";
+/**
+ * A changed path's side of the freeze. A generated test (one carrying a
+ * `// vector-contract-sha256:` line) is on the spec side: it is regenerated in
+ * the PR that changes its contract, and must not change beside the code.
+ */
+export type PathKind = "spec" | "generated" | "neutral" | "implementation";
 
 /**
  * specs/, contracts/ and rfcs/ (the documents contracts quote) are the spec
  * side. docs/ and top-level *.md files are neutral. Everything else, tests and
- * config included, is implementation.
+ * config included, is implementation. frozenCheck also puts every file a
+ * contract declares as a source, and every generated test, on the spec side.
  */
 export function pathKind(path: string): PathKind {
   if (/^(?:specs|contracts|rfcs)\//.test(path)) return "spec";
@@ -56,41 +61,38 @@ export function pathKind(path: string): PathKind {
   return "implementation";
 }
 
+const GENERATED_RE = /^\/\/ vector-contract-sha256: [0-9a-f]{64}$/m;
+
 export interface FrozenReport {
   base: string;
+  /** The commit the change is measured from: the fork point from `base`. */
+  at: string;
   changed: { path: string; kind: PathKind }[];
   contracts: { path: string; problem?: string }[];
   problems: string[];
 }
 
+/** The path with symlinks resolved when it exists, so paths compare equal. */
+const real = (p: string) => (existsSync(p) ? realpathSync(p) : resolve(p));
+
 const nulList = (s: string) => s.split("\0").filter((f) => f !== "");
 
 /**
- * Checks the working tree of `repo` against `base`. `contracts` defaults to
- * every contracts/*.json at the repository's top; finding none is a failure.
+ * Checks the working tree of `repo` against its fork point from `base`.
+ * `contracts` defaults to every contracts/*.json at the repository's top;
+ * finding none is a failure.
  */
 export function frozenCheck(o: {
   repo: string;
   base: string;
   contracts?: string[];
 }): FrozenReport {
-  checkBase(o.base);
   const top = git(
     o.repo,
     ["rev-parse", "--show-toplevel"],
     "git rev-parse",
   ).replace(/\n$/, "");
-  git(
-    top,
-    [
-      "rev-parse",
-      "--verify",
-      "--quiet",
-      "--end-of-options",
-      `${o.base}^{commit}`,
-    ],
-    `git rev-parse ${o.base}`,
-  );
+  const at = forkPoint(top, o.base);
   const paths = new Set([
     ...nulList(
       git(
@@ -101,7 +103,7 @@ export function frozenCheck(o: {
           "-z",
           "--no-renames",
           "--end-of-options",
-          o.base,
+          at,
           "--",
         ],
         `git diff --name-only ${o.base}`,
@@ -115,16 +117,6 @@ export function frozenCheck(o: {
       ),
     ),
   ]);
-  const changed = [...paths]
-    .sort()
-    .map((path) => ({ path, kind: pathKind(path) }));
-  const problems: string[] = [];
-  const spec = changed.filter((c) => c.kind === "spec");
-  const impl = changed.filter((c) => c.kind === "implementation");
-  if (spec.length > 0 && impl.length > 0)
-    problems.push(
-      `the change touches the spec side (${spec.map((c) => c.path).join(", ")}) and the implementation (${impl.map((c) => c.path).join(", ")}): change them in separate PRs`,
-    );
 
   let files = o.contracts ?? [];
   if (!o.contracts) {
@@ -136,17 +128,45 @@ export function frozenCheck(o: {
           .map((f) => join(dir, f))
       : [];
   }
+  const problems: string[] = [];
   if (files.length === 0) problems.push("no contracts to check");
+  const specFiles = new Set<string>();
   const contracts = files.map((path) => {
-    const problem = sourceProblem(path);
+    specFiles.add(real(path));
+    const problem = sourceProblem(path, specFiles);
     if (problem) problems.push(`${path}: ${problem}`);
     return { path, problem };
   });
-  return { base: o.base, changed, contracts, problems };
+
+  const kind = (path: string): PathKind => {
+    const abs = join(top, path);
+    if (specFiles.has(real(abs))) return "spec";
+    const k = pathKind(path);
+    if (k !== "implementation") return k;
+    try {
+      if (GENERATED_RE.test(readFileSync(abs, "utf8"))) return "generated";
+    } catch {
+      // Deleted or unreadable: implementation, the stricter reading.
+    }
+    return k;
+  };
+  const changed = [...paths].sort().map((path) => ({ path, kind: kind(path) }));
+  const spec = changed.filter(
+    (c) => c.kind === "spec" || c.kind === "generated",
+  );
+  const impl = changed.filter((c) => c.kind === "implementation");
+  if (spec.length > 0 && impl.length > 0)
+    problems.unshift(
+      `the change touches the spec side (${spec.map((c) => c.path).join(", ")}) and the implementation (${impl.map((c) => c.path).join(", ")}): change them in separate PRs`,
+    );
+  return { base: o.base, at, changed, contracts, problems };
 }
 
 /** Why the contract at `path` does not match its main source, or undefined. */
-function sourceProblem(path: string): string | undefined {
+function sourceProblem(
+  path: string,
+  specFiles: Set<string>,
+): string | undefined {
   let c: RfcContract;
   try {
     c = JSON.parse(readFileSync(path, "utf8"));
@@ -155,10 +175,14 @@ function sourceProblem(path: string): string | undefined {
   }
   const shape = validateContractShape(c);
   if (shape.length > 0) return `not a contract: ${shape[0]}`;
+  const { main, list } = declaredSources(c);
+  for (const s of list) {
+    const f = sourceFile(s, path);
+    if (f) specFiles.add(real(f));
+  }
   const want = c.source.sha256;
   if (!want)
     return "no source.sha256: record the sha256 of its main source file";
-  const { main, list } = declaredSources(c);
   const decl = list.find((s) => s.id === main) as SourceDecl;
   const file = sourceFile(decl, path);
   if (!file || !existsSync(file))

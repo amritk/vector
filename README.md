@@ -281,14 +281,22 @@ bun run vector spec mutate  contracts/rfc5869-hkdf-sha256.json --nish-root ../ni
 
 **frozen** — a PR changes the spec side or the implementation, never both, so
 a test can't be loosened in the PR that changes the code it tests. Paths are
-classed by their path from the repository top, for the committed diff
-against `--base` plus untracked files:
+classed by their path from the repository top, for the diff from the fork
+point (`git merge-base <base> HEAD`, so commits that landed on the base after
+the branch was cut don't count) plus untracked files:
 
 | Class | Paths |
 |---|---|
 | spec | `specs/…`, `contracts/…`, `rfcs/…` |
 | neutral | `docs/…`, and `*.md` at the top level (`README.md`) |
 | implementation | everything else: `src/`, `test/`, config, and `*.md` below the top outside `docs/` |
+
+Two kinds of file are spec side wherever they live: every file a contract
+declares as a source (its `sources[].path`, or the `rfc<N>.txt` it resolves
+to), so `docs/errata.md` named as a source is not neutral; and a generated
+test, any file carrying a `// vector-contract-sha256:` line (class
+`generated`), which is regenerated with its contract and must not change
+beside the code. A deleted file keeps its path's class.
 
 It also refuses a contract whose **main** source no longer hashes to its
 `source.sha256` (or that has none). Other `sources` are not hashed: their
@@ -328,13 +336,21 @@ and fails the gate, unless the contract allows it:
 `file` is the module's path from the nish root; the reason must be non-empty.
 Allowances that match no survivor are listed. Zero mutants (no changed code
 line) is a failure, as is a test that fails on the unmutated module. A mutant
-that does not build is *stillborn*: reported, not counted. `--max N` runs N
+that does not build is *stillborn*: reported, not counted; when every mutant
+is stillborn, none was judged, and that is a failure. `--max N` runs N
 mutants spread across the diff; `--jobs N` runs them in parallel.
 
 **`--format markdown`** (`check`, `run`, `mutate`) prints the dashboard for a
 PR comment: each requirement's quote, then a table of its clauses with their
 outcome and evidence, the exclusions, and the mutation survivors. Text is the
 default; `--json` / `--format json` is the machine form.
+
+**Known limits** (each refuses rather than passes): `exports` and `mutate`
+refuse a module with any export they cannot name, anywhere in it, not only in
+the diff; a generic type argument split across lines reads as a second
+declarator and is refused; a test or contract with CRLF line endings reads as
+stale; a mutation run that cannot start (bad contract, unbuildable scratch
+install) prints to stderr and exits 1 with no markdown.
 
 ### What a pass means — and why not Lean
 

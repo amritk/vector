@@ -19,8 +19,8 @@ import {
 import {
   type ExportChange,
   type FileDiff,
-  checkBase,
   exportedNames,
+  forkPoint,
   git,
   gitDiff,
 } from "./gitdiff.ts";
@@ -52,6 +52,8 @@ export interface ModuleDiff {
   modulePath: string;
   /** Its path from the top, as git names it. */
   file: string;
+  /** The commit the diff is against: the fork point from the base. */
+  at: string;
   /** Its diff; undefined when the diff does not touch it. */
   diff?: FileDiff;
 }
@@ -63,7 +65,7 @@ export function moduleDiff(
   base: string,
 ): ModuleDiff {
   const modulePath = targetModulePath(c);
-  checkBase(base);
+  const at = forkPoint(nishRoot, base);
   const top = git(
     nishRoot,
     ["rev-parse", "--show-toplevel"],
@@ -75,12 +77,12 @@ export function moduleDiff(
     "git rev-parse",
   ).replace(/\n$/, "");
   const file = `${prefix}${modulePath}`;
-  const diffs = gitDiff(nishRoot, base, [modulePath]);
+  const diffs = gitDiff(nishRoot, at, [modulePath]);
   if (diffs.some((d) => d.file !== file))
     throw new Error(
       `git diff for ${file} returned other files: ${diffs.map((d) => d.file).join(", ")}`,
     );
-  return { top, modulePath, file, diff: diffs[0] };
+  return { top, modulePath, file, at, diff: diffs[0] };
 }
 
 export function exportsCheck(o: {
@@ -91,16 +93,16 @@ export function exportsCheck(o: {
   const shape = validateContractShape(o.contract);
   if (shape.length > 0) throw new Error(`not a contract: ${shape.join("; ")}`);
   const c = o.contract as RfcContract;
-  const { top, file, diff: fd } = moduleDiff(c, o.nishRoot, o.base);
+  const { top, file, at, diff: fd } = moduleDiff(c, o.nishRoot, o.base);
 
-  // The module at the base, empty when it did not exist there.
+  // The module at the fork point, empty when it did not exist there.
   const listed = git(
     top,
-    ["ls-tree", "--name-only", "--end-of-options", o.base, "--", file],
+    ["ls-tree", "--name-only", "--end-of-options", at, "--", file],
     `git ls-tree ${o.base}`,
   );
   const before = listed.trim()
-    ? git(top, ["show", `${o.base}:${file}`], `git show ${o.base}:${file}`)
+    ? git(top, ["show", `${at}:${file}`], `git show ${o.base}:${file}`)
     : "";
   const headPath = join(top, file);
   const after = existsSync(headPath) ? readFileSync(headPath, "utf8") : "";

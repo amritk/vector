@@ -134,7 +134,7 @@ describe("reading git diff -U0", () => {
   test("a git error is an error, not an empty diff", () => {
     const d = repo();
     expect(() => gitDiff(d, "no-such-rev")).toThrow(
-      /git diff -U0 no-such-rev failed/,
+      /git merge-base no-such-rev HEAD failed/,
     );
     rmSync(d, { recursive: true, force: true });
   });
@@ -998,6 +998,16 @@ describe("running mutants with a fake runner", () => {
     });
     expect(r.survivors.map((x) => x.mutant.id)).toEqual(["3:18:relational"]);
     expect(r.unusedAllowances).toEqual([]);
+  });
+
+  test("every mutant stillborn: a failure, since none was judged", async () => {
+    const stillborn: Exec = async (contents) =>
+      contents === src
+        ? result(pass)
+        : result("", "std/crypto/hkdf.ts:3:9: error: bad\n", 1, false, false);
+    await expect(runMutants({ ...opts, exec: stillborn })).rejects.toThrow(
+      /none of the 5 mutant\(s\) of std\/f.ts built/,
+    );
   });
 
   test("an allowance covers a survivor on its file and line; every unused one is reported", async () => {
