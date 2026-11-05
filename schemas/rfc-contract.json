@@ -27,6 +27,11 @@
         "main": {
           "$ref": "#/$defs/id",
           "description": "The id of the main entry of `sources`."
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "The sha256 of the main source file's bytes. `vector spec frozen` fails when the file on disk differs; other sources are not checked."
         }
       },
       "required": ["title"]
@@ -84,6 +89,49 @@
         "$ref": "#/$defs/exclusion"
       },
       "description": "Normative (MUST/SHALL/REQUIRED) sentences deliberately not tested, each with its reason. Every such sentence of the RFC must be a requirement or an exclusion."
+    },
+    "outOfScope": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["name", "reason"]
+      },
+      "description": "Exports of the target module the contract deliberately does not test, each with its reason. `vector spec exports` fails when a diff adds or changes an export that is neither a tested function nor listed here. A tested function cannot be listed."
+    },
+    "allowSurvivors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Relative to the nish root, e.g. std/crypto/hkdf.ts."
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["file", "line", "reason"]
+      },
+      "description": "Lines whose surviving mutants `vector spec mutate` accepts, each with its reason."
     }
   },
   "required": [

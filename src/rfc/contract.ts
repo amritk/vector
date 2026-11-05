@@ -270,7 +270,11 @@ export interface RfcContract {
    * `sources`, `main` names the source the completeness gate reads; `rfc` is
    * then given on the source's own entry.
    */
-  source: { title: string; rfc?: number; main?: string };
+  /**
+   * `sha256`: the hex sha256 of the main source file's bytes, which
+   * `vector spec frozen` checks against the file on disk.
+   */
+  source: { title: string; rfc?: number; main?: string; sha256?: string };
   sources?: SourceDecl[];
   /** The module under test, as the generated test imports it ("nish/crypto/hkdf"). */
   target: { module: string };
@@ -278,6 +282,45 @@ export interface RfcContract {
   functions: FnSig[];
   clauses: Clause[];
   exclusions?: Exclusion[];
+  /** Exports of the target module the contract deliberately does not test. */
+  outOfScope?: OutOfScope[];
+  /** Mutants allowed to survive `vector spec mutate`, by line. */
+  allowSurvivors?: AllowedSurvivorDecl[];
+}
+
+/** An export of the target module the contract does not test, and why. */
+export interface OutOfScope {
+  name: string;
+  reason: string;
+}
+
+/** A line of the module whose surviving mutants are accepted, and why. */
+export interface AllowedSurvivorDecl {
+  /** Relative to the nish root, as `std/crypto/hkdf.ts`. */
+  file: string;
+  line: number;
+  reason: string;
+}
+
+/** The functions the contract tests in its target module. */
+export const targetFunctions = (c: RfcContract): Set<string> =>
+  new Set(
+    c.functions
+      .filter((f) => f.module === undefined || f.module === c.target.module)
+      .map((f) => f.name),
+  );
+
+export const SHA256_RE = /^[0-9a-f]{64}$/;
+
+/**
+ * A nish module's file from the nish root: `nish/crypto/hkdf` →
+ * `std/crypto/hkdf.ts`; undefined for any other module.
+ */
+export function nishModuleFile(module: string): string | undefined {
+  const m = module.match(/^nish\/([\w./-]+)$/);
+  if (!m || m[1].split("/").some((p) => p === "" || p === "." || p === ".."))
+    return undefined;
+  return `std/${m[1]}.ts`;
 }
 
 export const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -574,6 +617,8 @@ export function validateContractShape(input: unknown): string[] {
       "functions",
       "clauses",
       "exclusions",
+      "outOfScope",
+      "allowSurvivors",
     ],
     "contract",
     errors,
@@ -684,6 +729,9 @@ export function validateContractShape(input: unknown): string[] {
       });
     }
   }
+
+  shapeOutOfScope(input, errors);
+  shapeAllowSurvivors(input, errors);
 
   if (!Array.isArray(input.clauses) || input.clauses.length === 0) {
     errors.push("contract.clauses: a non-empty array");
@@ -803,6 +851,85 @@ export function validateContractShape(input: unknown): string[] {
   return errors;
 }
 
+/** Each element of an optional array field, or its error. */
+function eachOf(
+  input: Obj,
+  key: string,
+  errors: string[],
+  f: (x: Obj, at: string) => void,
+): void {
+  const v = input[key];
+  if (v === undefined) return;
+  if (!Array.isArray(v)) {
+    errors.push(`contract.${key}: an array`);
+    return;
+  }
+  v.forEach((x, i) => {
+    const at = `${key}[${i}]`;
+    if (!isObj(x)) errors.push(`${at}: an object`);
+    else f(x, at);
+  });
+}
+
+/**
+ * `outOfScope`: exports the contract does not test. Each needs a reason, and
+ * none may name a function the contract tests in its target module.
+ */
+function shapeOutOfScope(input: Obj, errors: string[]): void {
+  const tested = new Set<string>();
+  const target = isObj(input.target) ? input.target.module : undefined;
+  if (Array.isArray(input.functions))
+    for (const f of input.functions)
+      if (
+        isObj(f) &&
+        typeof f.name === "string" &&
+        (f.module === undefined || f.module === target)
+      )
+        tested.add(f.name);
+  const seen = new Set<string>();
+  eachOf(input, "outOfScope", errors, (x, at) => {
+    checkKeys(x, ["name", "reason"], at, errors);
+    strField(x, "reason", at, errors);
+    if (typeof x.name !== "string" || !IDENT_RE.test(x.name)) {
+      errors.push(`${at}.name: an identifier`);
+      return;
+    }
+    if (seen.has(x.name)) errors.push(`${at}.name: duplicate "${x.name}"`);
+    seen.add(x.name);
+    if (tested.has(x.name))
+      errors.push(
+        `${at}.name: "${x.name}" is a function the contract tests, so it cannot be out of scope`,
+      );
+  });
+}
+
+/**
+ * `allowSurvivors`: lines of the target module whose surviving mutants are
+ * accepted, each with a reason and named once.
+ */
+function shapeAllowSurvivors(input: Obj, errors: string[]): void {
+  const target =
+    isObj(input.target) && typeof input.target.module === "string"
+      ? nishModuleFile(input.target.module)
+      : undefined;
+  const seen = new Set<string>();
+  eachOf(input, "allowSurvivors", errors, (x, at) => {
+    checkKeys(x, ["file", "line", "reason"], at, errors);
+    strField(x, "file", at, errors);
+    strField(x, "reason", at, errors);
+    if (!Number.isInteger(x.line) || (x.line as number) < 1)
+      errors.push(`${at}.line: a line number >= 1`);
+    if (typeof x.file !== "string" || x.file === "") return;
+    if (target !== undefined && x.file !== target)
+      errors.push(
+        `${at}.file: ${x.file} is not the target module's file ${target}`,
+      );
+    const key = `${x.file}:${x.line}`;
+    if (seen.has(key)) errors.push(`${at}: duplicate allowance for ${key}`);
+    seen.add(key);
+  });
+}
+
 /** `source` and `sources`; returns the declared source ids. */
 function shapeSources(input: Obj, errors: string[]): Set<string> {
   const ids = new Set<string>();
@@ -811,8 +938,13 @@ function shapeSources(input: Obj, errors: string[]): Set<string> {
     return ids;
   }
   const src = input.source;
-  checkKeys(src, ["rfc", "title", "main"], "contract.source", errors);
+  checkKeys(src, ["rfc", "title", "main", "sha256"], "contract.source", errors);
   strField(src, "title", "contract.source", errors);
+  if (
+    src.sha256 !== undefined &&
+    (typeof src.sha256 !== "string" || !SHA256_RE.test(src.sha256))
+  )
+    errors.push("contract.source.sha256: 64 lowercase hex digits");
   if (input.sources === undefined) {
     if (!Number.isInteger(src.rfc) || (src.rfc as number) < 1) {
       errors.push("contract.source.rfc: the RFC number");
@@ -851,6 +983,8 @@ function shapeSources(input: Obj, errors: string[]): Set<string> {
     }
     if (d.path !== undefined && (typeof d.path !== "string" || d.path === "")) {
       errors.push(`${at}.path: a file path`);
+    } else if (typeof d.path === "string" && d.path.startsWith("/")) {
+      errors.push(`${at}.path: a path relative to the contract, not ${d.path}`);
     }
     if (d.rfc === undefined && d.path === undefined) {
       errors.push(`${at}: needs "rfc", "path" or both`);

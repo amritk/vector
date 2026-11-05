@@ -811,6 +811,11 @@ export async function runMutants(
     timeout: 0,
   };
   for (const r of results) counts[r.outcome]++;
+  // A mutant that does not build is not counted, so if none built, none was judged.
+  if (counts.stillborn === results.length)
+    throw new MutationRunError(
+      `none of the ${results.length} mutant(s) of ${o.modulePath} built, so none was judged`,
+    );
   return {
     file: o.modulePath,
     generated: all.length,

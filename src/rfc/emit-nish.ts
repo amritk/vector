@@ -12,6 +12,7 @@
 //     and the sample fails;
 //   - every helper is spelled for one type, and only the ones used are emitted.
 
+import { createHash } from "node:crypto";
 import {
   type Clause,
   type Expr,
@@ -564,6 +565,40 @@ function emitProperty(
 export interface EmitOptions {
   /** Shown in the header: how to regenerate the file. */
   regenerate?: string;
+  /**
+   * The sha256 of the contract file's bytes, written as a
+   * `// vector-contract-sha256: <hex>` line that `vector spec stale` checks.
+   */
+  contractSha256?: string;
+}
+
+export const sha256 = (bytes: Uint8Array): string =>
+  createHash("sha256").update(bytes).digest("hex");
+
+/** The hex of each `// vector-contract-sha256: <hex>` line in a test. */
+export const contractShaLines = (test: string): string[] =>
+  [...test.matchAll(/^\/\/ vector-contract-sha256: ([0-9a-f]{64})$/gm)].map(
+    (m) => m[1],
+  );
+
+/**
+ * Whether a generated test was emitted from these contract bytes: null when
+ * it was, else why not. A test with no `vector-contract-sha256` line, or more
+ * than one, is refused, as is one naming other bytes.
+ */
+export function staleReason(
+  test: string,
+  contractBytes: Uint8Array,
+): string | null {
+  const found = contractShaLines(test);
+  if (found.length === 0)
+    return "no `// vector-contract-sha256: <hex>` line: regenerate it with vector spec emit";
+  if (found.length > 1)
+    return `${found.length} vector-contract-sha256 lines: a test names one contract`;
+  const want = sha256(contractBytes);
+  if (found[0] !== want)
+    return `stale: emitted from a contract with sha256 ${found[0]}, but the contract's is ${want}: regenerate it with vector spec emit`;
+  return null;
 }
 
 /** The whole test program. */
@@ -599,6 +634,9 @@ export function emitNishTest(
     "// Each check names its clause in brackets and the requirements it covers in",
     "// parentheses; every requirement's RFC text is quoted above its checks.",
     "// Property samples were chosen by Z3 (boundaries) and a seeded PRNG.",
+    ...(opts.contractSha256
+      ? ["//", `// vector-contract-sha256: ${opts.contractSha256}`]
+      : []),
   ];
   const byModule = new Map<string, string[]>();
   for (const name of [...called].sort()) {

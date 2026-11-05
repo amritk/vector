@@ -3,7 +3,8 @@
   "contract": "rfc8439-chacha20-poly1305",
   "source": {
     "rfc": 8439,
-    "title": "ChaCha20 and Poly1305 for IETF Protocols"
+    "title": "ChaCha20 and Poly1305 for IETF Protocols",
+    "sha256": "25bef70fbf7a07ff45c2fe4cb7c6ce954eac687413d8610603268b4e4415324c"
   },
   "target": {
     "module": "nish/crypto/chacha20poly1305"
