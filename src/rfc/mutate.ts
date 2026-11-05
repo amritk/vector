@@ -48,7 +48,16 @@ export const STRING = 2;
  * code. Whitespace between tokens is CODE.
  */
 export function sourceKinds(src: string): Uint8Array {
+  return scanSource(src).kinds;
+}
+
+/**
+ * sourceKinds, plus `nested`: 1 at each index the scan reached while a
+ * template literal was open (in its text or in one of its `${…}`).
+ */
+function scanSource(src: string): { kinds: Uint8Array; nested: Uint8Array } {
   const kinds = new Uint8Array(src.length);
+  const nested = new Uint8Array(src.length);
   const mark = (from: number, to: number, k: number) =>
     kinds.fill(k, from, Math.min(to, src.length));
   // A stack of open template literals; each entry is the brace depth its
@@ -58,6 +67,7 @@ export function sourceKinds(src: string): Uint8Array {
   let i = 0;
   while (i < src.length) {
     const c = src[i];
+    if (templates.length > 0) nested[i] = 1;
     const inText = templates.at(-1) === -1;
     if (inText) {
       if (c === "\\") {
@@ -114,7 +124,7 @@ export function sourceKinds(src: string): Uint8Array {
       i++;
     }
   }
-  return kinds;
+  return { kinds, nested };
 }
 
 /**
@@ -129,11 +139,18 @@ export function codeMask(src: string): boolean[] {
  * Each line of `src` twice over: `code` with every non-code character a space,
  * and `expr` with comments spaces but each string or template character `_`,
  * so a line that ends in a string ends in an operand, not in the `=` or `(`
- * before it.
+ * before it. `plain`: the line starts and ends outside every string, template
+ * (text or `${…}`) and block comment, so it can be deleted or replaced whole.
  */
-export function maskLines(src: string): { code: string; expr: string }[] {
-  const kinds = sourceKinds(src);
-  const out: { code: string; expr: string }[] = [];
+export function maskLines(
+  src: string,
+): { code: string; expr: string; plain: boolean }[] {
+  const { kinds, nested } = scanSource(src);
+  // A line boundary outside every string, template and comment: the start
+  // or end of `src`, or a newline that is code with no template open.
+  const free = (i: number) =>
+    i < 0 || i >= src.length || (kinds[i] === CODE && nested[i] === 0);
+  const out: { code: string; expr: string; plain: boolean }[] = [];
   let at = 0;
   for (const text of src.split("\n")) {
     let code = "";
@@ -143,7 +160,7 @@ export function maskLines(src: string): { code: string; expr: string }[] {
       code += k === CODE ? text[j] : " ";
       expr += k === CODE ? text[j] : k === STRING ? "_" : " ";
     }
-    out.push({ code, expr });
+    out.push({ code, expr, plain: free(at - 1) && free(at + text.length) });
     at += text.length + 1;
   }
   return out;
@@ -184,6 +201,8 @@ interface Line {
   code: string;
   /** The line with comments spaces and string characters `_` (see maskLines). */
   expr: string;
+  /** Starts and ends outside every string, template and comment (see maskLines). */
+  plain: boolean;
 }
 
 function splitLines(src: string): Line[] {
@@ -265,6 +284,9 @@ function nextContinues(lines: Line[], k: number): boolean {
 
 function deleteStatement(lines: Line[], k: number, push: Push): void {
   const l = lines[k];
+  // A line that starts or ends inside a template, string or comment is part
+  // of a literal, not a statement.
+  if (!l.plain) return;
   const code = l.expr.trim();
   if (code === "" || NOT_STATEMENT.test(code) || CONTINUES.test(code)) return;
   if (OPEN_END.test(code) || !balanced(code)) return;
@@ -308,6 +330,9 @@ function returnNull(
   push: Push,
 ): void {
   const l = lines[k];
+  // `return \`…` whose template runs on: replacing it would leave the rest of
+  // the template as code.
+  if (!l.plain) return;
   // Matched on `expr`, where a string is part of the expression and a comment
   // is not, then spliced into the raw text at the same columns.
   const m = l.expr.match(/^(\s*return\s+)(\S.*?)\s*;?\s*$/);

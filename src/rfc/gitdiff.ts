@@ -37,7 +37,7 @@ export class DiffParseError extends Error {}
 const HUNK_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: .*)?$/;
 /** A top-level declaration's export and name (only top-level ones start at column 0). */
 const EXPORT_RE =
-  /^export\s+(?:declare\s+)?(?:async\s+)?(?:abstract\s+)?(?:const\s+enum|const|let|var|function\s*\*?|class|interface|type|enum|namespace|module)\s*([A-Za-z_$][\w$]*)/;
+  /^export\s+(?:declare\s+)?(?:async\s+)?(?:abstract\s+)?(?:const\s+enum(?![\w$])|const|let|var|function\s*\*?|class|interface|type|enum|namespace|module)\s*([A-Za-z_$][\w$]*)/;
 /** `export default …`: named "default" whatever follows. */
 const DEFAULT_RE = /^export\s+default\b/;
 /** Extended header lines git prints between `diff --git` and the first hunk. */
@@ -257,8 +257,10 @@ function exportChanges(
   for (const it of items) {
     const touched =
       ranges.some(([a, b]) => a <= it.end && b >= it.start) ||
-      // Lines deleted from between two of its lines.
-      cuts.some((c) => c >= it.start && c < it.end);
+      // Lines deleted from inside it or right at either end: a deletion
+      // between two items may have been either's first or last line, so
+      // both count as changed.
+      cuts.some((c) => c >= it.start - 1 && c <= it.end);
     if (touched && it.bad) throw new DiffParseError(it.bad);
     if (it.name === null) continue;
     exported.add(it.name);

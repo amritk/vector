@@ -264,6 +264,7 @@ describe("reading git diff -U0", () => {
       "a.ts",
       [
         "export const enum E { A }",
+        "export const enumerable = 1",
         "export abstract class A {}",
         "export namespace N {",
         "  export const inner = 1",
@@ -276,6 +277,8 @@ describe("reading git diff -U0", () => {
     );
     expect(gitDiff(d, "HEAD")[0].exports.map((e) => e.name)).toEqual([
       "E",
+      // Before: named `erable`, read as `const enum` + `erable`.
+      "enumerable",
       "A",
       "N",
       "d",
@@ -320,6 +323,46 @@ describe("reading git diff -U0", () => {
       rmSync(d, { recursive: true, force: true });
     }
   };
+
+  // `line` of `src` (committed first) deleted: the exports the diff names.
+  const cut = (src: string, line: number) => {
+    const d = repo();
+    write(d, "m.ts", src);
+    commit(d);
+    const lines = src.split("\n");
+    lines.splice(line - 1, 1);
+    write(d, "m.ts", lines.join("\n"));
+    try {
+      return gitDiff(d, "HEAD").flatMap((f) =>
+        f.exports.map((e) => `${e.name}:${e.kind}`),
+      );
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
+  };
+
+  test("a deleted first, middle or last line changes its export; at a boundary, both", () => {
+    // Before: a deletion just after an item's last line was nobody's.
+    const v = "export const v = (k) =>\n  check(k)\n";
+    expect(cut(v, 2)).toEqual(["v:changed"]);
+    const three = "export const a =\n  1 +\n  2\nexport const b = 3\n";
+    expect(cut(three, 2)).toEqual(["a:changed"]);
+    // `  2` was a's last line, right before b: the diff cannot tell whose, so
+    // both are changed.
+    expect(cut(three, 3)).toEqual(["a:changed", "b:changed"]);
+    const fn = "export function f(): i32 {\n  g()\n  return 1\n}\n";
+    expect(cut(`${fn}\nexport const z = 1\n`, 3)).toEqual(["f:changed"]);
+    // Deleting an item's first line deletes that export; it was right
+    // before b, so b is changed too.
+    expect(cut("export const a = 1\nexport const b =\n  2\n", 1)).toEqual([
+      "b:changed",
+      "a:deleted",
+    ]);
+    // A deleted line with a line kept on either side is neither item's.
+    expect(
+      cut("export const a = 1\n\n// x\n\nexport const b = 2\n", 3),
+    ).toEqual([]);
+  });
 
   test("an item after a line that ends in a string is its own (nish std/cli.ts, std/json-typed.ts)", () => {
     // Before: `class Style` was read as part of `SGR_STRIKETHROUGH = "9"`, and
@@ -600,6 +643,10 @@ describe("the operators", () => {
     expect(ret("    return a +")).toEqual([]);
     expect(ret("    return f(")).toEqual([]);
     expect(ret("    return a\n      .b")).toEqual([]);
+    // A template that runs onto the next line: `return null` would leave its
+    // rest as code. One that closes on this line is replaced whole (above).
+    expect(ret("    return `abc\ndef`")).toEqual([]);
+    expect(ret("    return `abc ${\n  a}`")).toEqual([]);
     expect(
       generateMutants("{\n  return a\n}\n", [[2, 2]]).filter(
         (m) => m.operator === "return-null",
@@ -630,6 +677,20 @@ describe("the operators", () => {
     expect(del("let x = 1\n", 1)).toEqual([]);
     expect(del("}\n", 1)).toEqual([]);
     expect(del("\n", 1)).toEqual([]);
+    // Lines of a multi-line template, its closing line, or inside a `${…}`
+    // that spans lines: part of a literal, not statements.
+    const tpl =
+      "function f(): string {\n  const s = `\nhello\n`;\n  g(`${\n  h()\n}`)\n  g(s);\n}\n";
+    expect(
+      generateMutants(tpl, [[1, 9]])
+        .filter((m) => m.operator === "delete-statement")
+        .map((m) => m.line),
+    ).toEqual([8]);
+    for (const line of [3, 4, 6]) expect(del(tpl, line)).toEqual([]);
+    // Nor inside a block comment that spans lines, or right after one.
+    expect(del("/* a\nf(x)\n*/ g(y)\nh(z)\n", 2)).toEqual([]);
+    expect(del("/* a\nf(x)\n*/ g(y)\nh(z)\n", 3)).toEqual([]);
+    expect(del("/* a\nf(x)\n*/ g(y)\nh(z)\n", 4)).toHaveLength(1);
     // The body of a braceless head: deleting it would re-parent the next line.
     for (const head of [
       "if (bad)",
