@@ -252,7 +252,11 @@
       "id": "2.3.2-BLOCK",
       "title": "RFC 8439 2.3.2: the ChaCha20 block function's serialized block",
       "covers": ["R-BLOCK"],
-      "section": "2.3.2",
+      "source": {
+        "cite": {
+          "section": "2.3.2"
+        }
+      },
       "call": "chacha20Block",
       "args": [
         {
@@ -275,7 +279,11 @@
       "id": "2.4.2-ENCRYPT",
       "title": "RFC 8439 2.4.2: ChaCha20 encrypts the sunscreen plaintext",
       "covers": ["R-STREAM"],
-      "section": "2.4.2",
+      "source": {
+        "cite": {
+          "section": "2.4.2"
+        }
+      },
       "call": "chacha20",
       "args": [
         {
@@ -301,7 +309,11 @@
       "id": "2.5.2-POLY1305",
       "title": "RFC 8439 2.5.2: Poly1305 tags the message",
       "covers": ["R-POLY"],
-      "section": "2.5.2",
+      "source": {
+        "cite": {
+          "section": "2.5.2"
+        }
+      },
       "call": "poly1305",
       "args": [
         {
@@ -320,7 +332,11 @@
       "id": "2.6.2-KEYGEN",
       "title": "RFC 8439 2.6.2: the Poly1305 one-time key",
       "covers": ["R-KEYGEN"],
-      "section": "2.6.2",
+      "source": {
+        "cite": {
+          "section": "2.6.2"
+        }
+      },
       "call": "poly1305KeyGen",
       "args": [
         {
@@ -339,7 +355,11 @@
       "id": "2.8.2-SEAL",
       "title": "RFC 8439 2.8.2: AEAD_CHACHA20_POLY1305 seals to the printed ciphertext and tag",
       "covers": ["R-OTK", "R-CTR1", "R-MAC-INPUT", "R-OUTPUT", "R-FULL-TAG"],
-      "section": "2.8.2",
+      "source": {
+        "cite": {
+          "section": "2.8.2"
+        }
+      },
       "call": "chacha20Poly1305Seal",
       "args": [
         {
@@ -378,7 +398,11 @@
       "id": "A.5-OPEN",
       "title": "RFC 8439 A.5: AEAD decryption of the Internet-Drafts message",
       "covers": ["R-DECRYPT", "R-AUTH"],
-      "section": "A.5",
+      "source": {
+        "cite": {
+          "section": "A.5"
+        }
+      },
       "call": "chacha20Poly1305Open",
       "args": [
         {
@@ -410,7 +434,11 @@
       "id": "A.5-KEYGEN",
       "title": "RFC 8439 A.5: the one-time key for the decryption example",
       "covers": ["R-KEYGEN"],
-      "section": "A.5",
+      "source": {
+        "cite": {
+          "section": "A.5"
+        }
+      },
       "call": "poly1305KeyGen",
       "args": [
         {
@@ -429,7 +457,11 @@
       "id": "A.5-POLY1305",
       "title": "RFC 8439 A.5: Poly1305 over the printed AEAD buffer gives the received tag",
       "covers": ["R-POLY", "R-MAC-INPUT"],
-      "section": "A.5",
+      "source": {
+        "cite": {
+          "section": "A.5"
+        }
+      },
       "call": "poly1305",
       "args": [
         {

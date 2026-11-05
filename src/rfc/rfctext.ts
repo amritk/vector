@@ -16,11 +16,27 @@ export interface RfcSection {
   lines: string[];
   /** Only the section's own lines, up to its first subsection. */
   ownLines: string[];
+  /**
+   * The lines hex runs are read from, when they differ from `lines` (the
+   * markdown reader adds each bracketed byte list on a line of its own).
+   */
+  hexLines?: string[];
+  /**
+   * `lines` with code, table cells and blockquotes blanked out, when the
+   * reader knows them (markdown); only prose states a vector's result.
+   */
+  proseLines?: string[];
 }
 
 export interface RfcDocument {
   number: number | null;
   sections: Map<string, RfcSection>;
+  /**
+   * Text outside every numbered section (a markdown spec's unnumbered
+   * headings and preamble). Its normative sentences cannot be cited, so the
+   * completeness gate refuses any it holds.
+   */
+  loose?: RfcSection;
 }
 
 // A page break in the .txt rendering: a footer line ending "[Page N]", a form
@@ -79,6 +95,14 @@ export function sectionText(sec: RfcSection): string {
   return normalizeText(sec.lines.join("\n"));
 }
 
+/** The section's lines, each whitespace-collapsed, still one per line. */
+export function sectionLines(sec: RfcSection): string {
+  return sec.lines
+    .map((l) => normalizeText(l))
+    .filter((l) => l !== "")
+    .join("\n");
+}
+
 // Hex as RFCs print it, in five shapes:
 //   hexdump      "016  65 6d 65 6e 20 6f 66  ...  emen of the clas" (RFC 8439)
 //   prefixed     "IKM  = 0x0b0b0b0b0b0b"                            (RFC 5869)
@@ -112,7 +136,7 @@ export function hexRuns(sec: RfcSection): string[] {
     cur = "";
     colonOpen = false;
   };
-  for (const rawLine of sec.lines) {
+  for (const rawLine of sec.hexLines ?? sec.lines) {
     const aside = rawLine.match(ASIDE_RE);
     const line =
       aside && !/^[0-9a-fA-F:\s]+$/.test(aside[1])
@@ -182,6 +206,8 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
  * Is the integer printed right after its label — `L = 42`, `Block Count: 1`,
  * `L 42` — in decimal or as 0x hex? A bare number proves nothing (every
  * section prints small integers), so the label pins it to the value it names.
+ * Label and value must share a line: pass `sectionLines`, not the collapsed
+ * section text, or "…the value of L" and a next line "5. Next" would match.
  */
 export function intLabelled(text: string, label: string, n: number): boolean {
   const hex = n
@@ -189,9 +215,9 @@ export function intLabelled(text: string, label: string, n: number): boolean {
     .replace(/[a-f]/g, (d) => `[${d}${d.toUpperCase()}]`);
   const value = n < 0 ? `${n}` : `(?:${n}|0[xX]0*${hex})`;
   // Neither end may run into a longer identifier (`MAX_L`, `T-L`, `x.L`) or
-  // a longer number (`1,000`, `4-5`, `12:30`, `255/256`, `1.5`).
+  // a longer number (`1,000`, `4-5`, `12:30`, `255/256`, `1.5`, `1 000`).
   return new RegExp(
-    `(?<![0-9A-Za-z_.-])${escapeRe(normalizeText(label))}(?:\\s*[=:]\\s*|\\s+)${value}(?![0-9A-Za-z_]|[.,:/-]\\d)`,
+    `(?<![0-9A-Za-z_.-])${escapeRe(normalizeText(label))}(?:[ \\t]*[=:][ \\t]*|[ \\t]+)${value}(?![0-9A-Za-z_]|[.,:/-]\\d|[ \\t]\\d)`,
   ).test(text);
 }
 
@@ -209,13 +235,19 @@ export interface NormativeSentence {
 }
 
 // BCP 14 keywords in capitals. A keyword in double quotes is the RFC 2119
-// boilerplate naming the keywords, not a requirement.
-const KEYWORD_RE = /(?<!")\b(MUST NOT|MUST|SHALL NOT|SHALL|REQUIRED)\b(?!")/g;
+// boilerplate naming the keywords, not a requirement. The boundaries are
+// letters and digits, not `\b`, so a markdown `_MUST_` or `__MUST NOT__`
+// (where `_` is a word character) is a keyword too.
+const KEYWORD_RE =
+  /(?<!")(?<![A-Za-z0-9])(MUST NOT|MUST|SHALL NOT|SHALL|REQUIRED)(?![A-Za-z0-9])(?!")/g;
 
 /** Every binding BCP 14 keyword in the RFC, with the sentence it sits in. */
 export function normativeSentences(doc: RfcDocument): NormativeSentence[] {
   const out: NormativeSentence[] = [];
-  for (const sec of doc.sections.values()) {
+  const all = doc.loose
+    ? [...doc.sections.values(), doc.loose]
+    : doc.sections.values();
+  for (const sec of all) {
     const text = normalizeText(sec.ownLines.join("\n"));
     for (const m of text.matchAll(KEYWORD_RE)) {
       const at = m.index ?? 0;

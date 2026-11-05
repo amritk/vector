@@ -1,33 +1,44 @@
-// `vector rfc …` — RFC → contract → Nish test.
+// `vector spec …` (alias `vector rfc …`) — spec → contract → Nish test. A spec
+// is an RFC's plain text or a markdown document with numbered headings.
 //
-//   vector rfc check   <contract.json>   gates + Z3 domains; exit 0 when valid
-//   vector rfc emit    <contract.json> -o <main.ts>
-//   vector rfc run     <contract.json>   check, emit, then run it with nish
-//   vector rfc extract --rfc <rfc.txt> --module <src.ts> --target <spec> -o <contract.json>
-//                                        (the LLM proposes; the gates dispose)
+//   vector spec check   <contract.json>   gates + Z3 domains; exit 0 when valid
+//   vector spec emit    <contract.json> -o <main.ts>
+//   vector spec run     <contract.json>   check, emit, then run it with nish
+//   vector spec extract --spec <spec> --module <src.ts> --target <spec> -o <contract.json>
+//                                         (the LLM proposes; the gates dispose)
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import type { RfcContract } from "./contract.ts";
+import {
+  type RfcContract,
+  declaredSources,
+  validateContractShape,
+} from "./contract.ts";
 import { emitNishTest } from "./emit-nish.ts";
-import { runGates } from "./gates.ts";
+import { type SourceRun, runGates } from "./gates.ts";
 import {
   type ContractReport,
   renderReport,
   reportJson,
   reportStatus,
 } from "./report.ts";
-import { type RfcDocument, parseRfc } from "./rfctext.ts";
-import { runNishTest } from "./run.ts";
+import type { RfcDocument } from "./rfctext.ts";
+import { runNishTest, runSourceCommands } from "./run.ts";
 import { sampleContract } from "./sample.ts";
+import { parseDocument } from "./spectext.ts";
 
-export const RFC_USAGE = `Usage: vector rfc check <contract.json> [options]
-       vector rfc emit  <contract.json> -o <main.ts> [options]
-       vector rfc run   <contract.json> [-o <main.ts>] [options]
-       vector rfc extract --rfc <rfc.txt> --module <src.ts> --target <module> -o <contract.json>
+export const RFC_USAGE = `Usage: vector spec check <contract.json> [options]
+       vector spec emit  <contract.json> -o <main.ts> [options]
+       vector spec run   <contract.json> [-o <main.ts>] [options]
+       vector spec extract --spec <file> --module <src.ts> --target <module> -o <contract.json>
+       (vector rfc … is the same command)
 
 Options:
-  --rfc <file>        the RFC's text (default: rfcs/rfc<N>.txt next to the contract or in vector)
+  --spec <file>       the main source's text, an RFC or a markdown spec (--rfc is the same)
+                      (default: the source's path, relative to the contract, or
+                      rfcs/rfc<N>.txt next to the contract or in vector)
+  --run-sources       run the vectors' \`command\` sources (30 s each) and check their output;
+                      without it they are reported as not run
   --module <file>     the target module's source, for the signature gate
   --nish-root <dir>   a nish checkout: finds the module (std/…) and the compiler
   --nish <bin>        the nish compiler (default: <nish-root>/build/seed/bin/nish, else nish)
@@ -44,13 +55,19 @@ interface RfcArgs {
   nish?: string;
   target?: string;
   json: boolean;
+  runSources: boolean;
   maxRetries: number;
 }
 
 class UsageError extends Error {}
 
 function parse(argv: string[]): RfcArgs {
-  const a: RfcArgs = { cmd: argv[0] ?? "", json: false, maxRetries: 3 };
+  const a: RfcArgs = {
+    cmd: argv[0] ?? "",
+    json: false,
+    runSources: false,
+    maxRetries: 3,
+  };
   for (let i = 1; i < argv.length; i++) {
     const x = argv[i];
     const val = () => {
@@ -64,7 +81,11 @@ function parse(argv: string[]): RfcArgs {
         a.out = val();
         break;
       case "--rfc":
+      case "--spec":
         a.rfc = val();
+        break;
+      case "--run-sources":
+        a.runSources = true;
         break;
       case "--module":
         a.module = val();
@@ -101,29 +122,50 @@ const VECTOR_ROOT = resolve(
   "../..",
 );
 
-function loadRfc(
-  a: RfcArgs,
-  rfcNumber: number | undefined,
-  contractPath?: string,
-): RfcDocument | undefined {
-  const candidates = a.rfc
-    ? [a.rfc]
-    : rfcNumber
-      ? [
-          ...(contractPath
-            ? [
-                join(dirname(contractPath), `rfc${rfcNumber}.txt`),
-                join(dirname(contractPath), "../rfcs", `rfc${rfcNumber}.txt`),
-              ]
-            : []),
-          join(VECTOR_ROOT, "rfcs", `rfc${rfcNumber}.txt`),
-        ]
-      : [];
-  for (const p of candidates) {
-    if (existsSync(p)) return parseRfc(readFileSync(p, "utf8"));
+function readSpec(path: string): RfcDocument {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    throw new UsageError(`cannot read ${path}`);
   }
-  if (a.rfc) throw new UsageError(`cannot read ${a.rfc}`);
-  return undefined;
+  try {
+    return parseDocument(text);
+  } catch (err) {
+    throw new UsageError(`${path}: ${(err as Error).message}`);
+  }
+}
+
+/**
+ * The text of every source the contract declares, by id. `--spec` gives the
+ * main one; a `path` is relative to the contract; an `rfc` is looked for as
+ * rfc<N>.txt beside the contract, in ../rfcs, then in vector's rfcs/. A source
+ * found nowhere is left out, and the fidelity gate refuses the contract for it.
+ */
+function loadSources(
+  a: RfcArgs,
+  c: RfcContract,
+  contractPath: string,
+): Map<string, RfcDocument> {
+  const docs = new Map<string, RfcDocument>();
+  const here = dirname(contractPath);
+  const { main, list } = declaredSources(c);
+  for (const src of list) {
+    const candidates =
+      src.id === main && a.rfc
+        ? [a.rfc]
+        : src.path
+          ? [resolve(here, src.path)]
+          : [
+              join(here, `rfc${src.rfc}.txt`),
+              join(here, "../rfcs", `rfc${src.rfc}.txt`),
+              join(VECTOR_ROOT, "rfcs", `rfc${src.rfc}.txt`),
+            ];
+    const found =
+      candidates.length === 1 ? candidates[0] : candidates.find(existsSync);
+    if (found) docs.set(src.id, readSpec(found));
+  }
+  return docs;
 }
 
 /** `nish/crypto/hkdf` → `<root>/std/crypto/hkdf.ts`. */
@@ -168,10 +210,21 @@ async function checkContract(a: RfcArgs): Promise<ContractReport> {
     );
   }
   const maybe = input as Partial<RfcContract>;
-  const rfc = loadRfc(a, maybe?.source?.rfc, a.contract);
+  // Sources are read (and commands run) only for a contract of valid shape;
+  // the shape gate reports the rest.
+  const shaped = validateContractShape(input).length === 0;
+  const docs = shaped
+    ? loadSources(a, input as RfcContract, a.contract)
+    : new Map<string, RfcDocument>();
+  let commands: Map<string, SourceRun> | undefined;
+  if (shaped && a.runSources)
+    commands = await runSourceCommands(input as RfcContract, {
+      cwd: dirname(resolve(a.contract)),
+    });
   const modPath = moduleFile(a, maybe?.target?.module);
   const gates = runGates(input, {
-    rfc,
+    docs,
+    commands,
     moduleSource: modPath ? readFileSync(modPath, "utf8") : undefined,
   });
   if (!modPath)
@@ -186,10 +239,11 @@ async function checkContract(a: RfcArgs): Promise<ContractReport> {
         ? null
         : (input as RfcContract),
       gates,
+      sources: commands,
     };
   const contract = input as RfcContract;
   const sampling = await sampleContract(contract);
-  return { contract, gates, sampling };
+  return { contract, gates, sampling, sources: commands };
 }
 
 function print(a: RfcArgs, r: ContractReport): void {
@@ -232,7 +286,7 @@ export async function rfcMain(argv: string[]): Promise<number> {
       print(a, report);
       return 0;
     }
-    const regenerate = `vector rfc emit ${a.contract} -o ${a.out ?? "<main.ts>"}`;
+    const regenerate = `vector spec emit ${a.contract} -o ${a.out ?? "<main.ts>"}`;
     const source = emitNishTest(report.contract, report.sampling.properties, {
       regenerate,
     });

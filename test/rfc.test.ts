@@ -97,7 +97,7 @@ describe("the gates", () => {
 
   test("fidelity: a value from another section is refused", () => {
     const c = clone(hkdf);
-    clause<VectorClause>(c, "A.1-PRK").section = "A.2";
+    clause<VectorClause>(c, "A.1-PRK").source = { cite: { section: "A.2" } };
     const g = runGates(c, { rfc: rfc5869 });
     expect(
       g.issues.some((i) => i.gate === "fidelity" && i.at.startsWith("A.1-PRK")),

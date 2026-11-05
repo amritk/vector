@@ -1,7 +1,12 @@
 // The contract dashboard: every requirement of the RFC with the evidence for it.
 
-import type { RfcContract } from "./contract.ts";
-import type { GateResult } from "./gates.ts";
+import {
+  type RfcContract,
+  type VectorClause,
+  citeLabel,
+  declaredSources,
+} from "./contract.ts";
+import type { GateResult, SourceRun } from "./gates.ts";
 import type { RunResult } from "./run.ts";
 import type { SamplingResult } from "./sample.ts";
 
@@ -22,6 +27,25 @@ export interface ContractReport {
   gates: GateResult;
   sampling?: SamplingResult;
   run?: RunResult;
+  /** Vector id → the result of its `command` source, under --run-sources. */
+  sources?: Map<string, SourceRun>;
+}
+
+/** "RFC 5869 (HKDF)", or the main source's id for a spec that is not an RFC. */
+function sourceTitle(c: RfcContract): string {
+  const { main, list } = declaredSources(c);
+  const rfc = list.find((s) => s.id === main)?.rfc;
+  return `${rfc ? `RFC ${rfc}` : main} (${c.source.title})`;
+}
+
+/** The vectors whose expected value comes from running a command. */
+function commandVectors(c: RfcContract): (VectorClause & {
+  source: { command: string };
+})[] {
+  return c.clauses.filter(
+    (k): k is VectorClause & { source: { command: string } } =>
+      k.kind === "vector" && "command" in k.source,
+  );
 }
 
 /** CONTRACT_VALID when every gate and every domain passed; the run's status after a run. */
@@ -34,10 +58,7 @@ export function renderReport(r: ContractReport): string {
   const out: string[] = [];
   const c = r.contract;
   out.push("── VECTOR RFC CONTRACT ─────────────────────────────────────────");
-  if (c)
-    out.push(
-      ` ${c.contract} · RFC ${c.source.rfc} (${c.source.title}) · ${c.target.module}`,
-    );
+  if (c) out.push(` ${c.contract} · ${sourceTitle(c)} · ${c.target.module}`);
   out.push(` Status: ${reportStatus(r)}`);
   if (r.sampling?.solver) out.push(` Solver: ${r.sampling.solver}`);
   if (r.run) out.push(` Tested: ${r.run.nish} (nish/… from the std beside it)`);
@@ -65,7 +86,7 @@ export function renderReport(r: ContractReport): string {
           ? "○"
           : "✘";
       out.push(
-        `  ${mark} ${req.id}  §${req.section} ${req.level}  "${short(req.quote, 64)}"`,
+        `  ${mark} ${req.id}  ${citeLabel(c, req)} ${req.level}  "${short(req.quote, 64)}"`,
       );
       const ev: string[] = [];
       for (const k of c.clauses) {
@@ -87,10 +108,20 @@ export function renderReport(r: ContractReport): string {
       for (const f of failed)
         out.push(`  ✘ ${f.id}: ${f.detail ?? "(no detail)"}`);
     }
+    const commands = commandVectors(c);
+    if (commands.length > 0) {
+      out.push("", " Vector sources run");
+      for (const k of commands) {
+        const run = r.sources?.get(k.id);
+        out.push(
+          `  ${MARK[run?.outcome ?? "not-run"]} ${k.id}: $ ${k.source.command}${run?.detail ? ` — ${run.detail}` : ""}`,
+        );
+      }
+    }
     if ((c.exclusions ?? []).length > 0) {
       out.push("", " Not tested, by decision");
       for (const x of c.exclusions ?? [])
-        out.push(`  §${x.section} "${short(x.quote, 56)}" — ${x.reason}`);
+        out.push(`  ${citeLabel(c, x)} "${short(x.quote, 56)}" — ${x.reason}`);
     }
   }
   const warnings = r.gates.warnings.filter(
@@ -136,6 +167,22 @@ export function reportJson(r: ContractReport): unknown {
           ]),
         )
       : undefined,
+    sources:
+      r.contract && commandVectors(r.contract).length > 0
+        ? Object.fromEntries(
+            commandVectors(r.contract).map((k) => {
+              const run = r.sources?.get(k.id);
+              return [
+                k.id,
+                {
+                  command: k.source.command,
+                  outcome: run?.outcome ?? "not-run",
+                  detail: run?.detail,
+                },
+              ];
+            }),
+          )
+        : undefined,
     run: r.run
       ? {
           status: r.run.status,

@@ -53,8 +53,10 @@ the program is repaired, up to a retry bound. **Unproven code is never emitted.*
 
 ## RFC → contract → Nish test
 
-`vector rfc` turns an RFC into a **contract** and the contract into a **Nish
-test** that checks an implementation (nish's `std/crypto`) against it. The same
+`vector spec` (or its alias `vector rfc`) turns a specification — an RFC's
+plain text, or a markdown document with numbered headings — into a
+**contract** and the contract into a **Nish test** that checks an
+implementation (nish's `std/crypto`) against it. The same
 split as the rest of vector holds: a model (or you) *proposes* the contract;
 deterministic code and Z3 decide whether it is faithful; nish runs it.
 
@@ -96,12 +98,129 @@ Expressions are JSON. Besides bytes and integers they have:
   A bare number proves nothing — every section prints small integers — so an
   unlabelled int is reported as a warning, unchecked.
 
+### Specs, sources and provenance
+
+A spec is read as an **RFC** when it has its `Request for Comments: N` header
+and form feeds, as **markdown** when it has a numbered `#` heading
+(`## 1. Introduction`); anything else is refused, including RFC text whose form
+feeds were stripped. In markdown, `## 3. Encoding` is section `3`,
+`### 3.1. Length` is `3.1`, `## Appendix A. Vectors` is `A` (the trailing dot
+is required; a heading given twice is refused). A MUST outside every numbered
+section is refused: completeness needs a section to cite.
+
+How the markdown reader treats each construct:
+
+- **Fenced code** is kept verbatim (a `#` there is not a heading, a `<!--` not
+  a comment, a MUST still counts). A fence that is never closed is refused.
+- **Inline code** loses its backticks; a `<!--` inside it is text. So is one on
+  an indented code line.
+- **HTML comments** are dropped, headings and MUSTs inside them included. A
+  `<!--` that is never closed is refused, not read as a comment to the end.
+- **Emphasis** is kept as written, and `_MUST_`, `__MUST NOT__` and `**MUST**`
+  are keywords.
+- **Hex runs** end at every blank line, fence, heading, table row and table
+  cell: a value counts only if one paragraph, one code block or one cell
+  prints it. `[00 0f ff]` byte lists count as hex.
+- **The BCP 14 key-words sentence** ("The key words MUST, … are to be
+  interpreted as … BCP 14 …") is removed, and nothing else: the rest of its
+  paragraph stays, and a sentence that only mentions key words ("The key words
+  in the header MUST be sorted, see BCP 14.") keeps its MUST.
+
+A contract may cite several documents:
+
+```json
+"source": { "title": "Hex encoding", "main": "hex" },
+"sources": [
+  { "id": "hex", "path": "../specs/hex.md" },
+  { "id": "rfc4648", "rfc": 4648 }
+]
+```
+
+A citation (`requirement`, `exclusion`, a vector's `cite`) names its document
+with `"source": "<id>"`, the main one by default. Fidelity reads the cited
+document; completeness reads the main one only. An undeclared id, or a declared
+source whose text cannot be found, fails `check` (a missing RFC file used to be
+a warning; it is now a failure). `"source": {"rfc": N,
+"title": …}` alone is the one-RFC form and still works.
+
+Every vector says where its expected value comes from (`source`):
+
+| `source` | The expected value is | Checked by |
+|---|---|---|
+| `{"cite": {"section": "A.1"}}` (`"source"` optional) | printed in that section, with the args | fidelity |
+| `{"command": "…"}`, with `"section"` for the args | the command's trimmed stdout (lowercase hex for bytes) | `--run-sources` only (`sh -c` from the contract's directory, 30 s); otherwise reported as not run, never as passed. A timeout, non-zero exit or other output fails |
+| `{"spec": "4.2"}`, with `"section"` for the args | `null` or a `bool` that section states | provenance: a requirement the vector covers, cited to that section, must state `null` / `true` / `false` as the result, by the rule below |
+
+A vector without a source fails the shape gate. A `cite` source for a `null` or
+`bool` is held to the same rule by fidelity.
+
+**When a section states `null`, `true` or `false`.** Only a requirement the
+vector covers states a result, and only through its own quote. The rule is an
+allow list and fails closed: a false refusal costs a rewording of the
+requirement's quote, a false pass would break the gate. There is no way around
+it — a `cite` source is held to the same rule, and a `command` source cannot
+expect `null` or a `bool`.
+
+1. The vector `covers` a requirement cited to that very section (same source,
+   same section). Otherwise: "covers no requirement cited to it".
+2. That requirement's quote is in the section's prose — not only in a code
+   block, a blockquote or a table cell.
+3. The section's prose is split into sentences: the heading on its own, then
+   each paragraph cut at `.` `;` `!` or `?` followed by whitespace and a
+   capital letter, an opening quote or bracket, or the end. Commas and colons
+   never end a sentence. The match below must lie inside the quote, but the
+   guards in steps 6 to 8 read the whole prose sentence around it, so a quote
+   cut out of "For example, a Python decoder MUST return null." is judged
+   with its "For example". Otherwise: "is cut from a sentence that qualifies
+   it before the quote". Every place the quote occurs in the prose must pass.
+4. Within one sentence, an affirmative keyword governs the result: `MUST`,
+   `SHALL` or `REQUIRED to` (so also `is REQUIRED to`), in capitals and not
+   followed by `NOT`. Nothing comes between the keyword and the verb except,
+   optionally, `always`.
+5. The verb is a result verb in its bare form — `return`, `be`,
+   `evaluate to`, `yield`, `give` or `output` — followed directly by the
+   value (in any case, optionally in backticks or emphasis) as a whole word.
+6. Nothing **before the keyword in that sentence** is a deny word, matched
+   case-insensitively as a whole word (so `_not_` and `**never**` count):
+   - negators: `not`, `never`, `no`, `none`, `nor`, `neither`, `nothing`,
+     `nobody`, `nowhere`, `cannot`, and any `…n't` / `…n’t`;
+   - avoiders: `avoid…`, `forb…`, `prohibit…`, `prevent…`, `refus…`,
+     `reject…`, `disallow…`, `instead`, `rather`, `except…`, `without`,
+     `unless`, `fail…`, `error…`, `invalid…`, `illegal…`, `unlike`, `other`,
+     `but`;
+   - conditions and hypotheticals: `if`, `when`, `whenever`, `while`,
+     `whether`, `assum…`, `suppos…`;
+   - examples and reported text: `example…`, `e.g.`, `i.e.`, `instance`,
+     `some`, `earlier`, `previous…`, `former…`, `draft…`, `said`, `says`,
+     `historic…`, `legacy`.
+7. The value is the whole result: it is not followed by `or` / `and`
+   (optionally after a comma), `/`, or any hyphen or dash (`null-terminated`
+   is not `null`). Otherwise: "offers an alternative right after …".
+8. Nothing later in any sentence the quote touches retracts it: `not`, `never`, `no`, `none`,
+   `nor`, `neither`, `cannot`, `…n't`, `avoid…`, `forb…`, `prohibit…`,
+   `prevent…`, `disallow…`, `instead`, `rather`, `wrong…`, `incorrect…`,
+   `bug…`, `an error`, `but`, `remov…`, `deprecat…`, `obsolete…`,
+   `retract…`, `withdr…`, `supersed…`, `replaced`. Otherwise: "retracts …".
+
+The refusal names the requirement and which step failed. So a vector covering
+the requirement "hexDecode MUST return null when the text has an odd length"
+(cited to that section) states null — its `when` comes after the value — as do
+"f MUST return true for valid input", "f SHALL be false" and "f MUST always
+return null on odd input". These do not: "MUST NOT, for any input, return
+null", "Implementations MUST NOT, e.g. Python or Go, return null", "f MUST, for
+every input, return null", "If the input is odd, f MUST return null", "f MUST
+return null or an empty array", "f MUST return null. This was a bug.", the same
+sentence only in a table or a code block, a requirement cited to another
+section, and — by design — any descriptive sentence without a keyword, such as
+"f returns null on failure" or "abc decodes to null".
+
 ### The gates (no model involved)
 
 | Gate | Refuses |
 |---|---|
 | fidelity | a quote not in its cited section; a test-vector byte string not printed in its section (hexdumps, `0x…`, colon-hex split mid-byte across lines are all read); a `str` not printed there; a labelled int not printed after its label |
-| completeness | any MUST / MUST NOT / SHALL / SHALL NOT / REQUIRED sentence of the RFC that is neither inside a requirement's quote nor an exclusion's |
+| completeness | any MUST / MUST NOT / SHALL / SHALL NOT / REQUIRED sentence of the main source that is neither inside a requirement's quote nor an exclusion's (or sits outside every numbered section) |
+| provenance | a `spec` source whose section never states the expected `null`/`bool`; a `command` source that failed under `--run-sources` |
 | coverage | a binding requirement no clause checks; a clause citing a requirement the contract does not state |
 | typing | an ill-typed call or expression (`bytes?`/`string?` must be `unwrap`ped; `where` may not call the implementation; a `let` may not shadow a name or bind a bare `null`) |
 | signatures | a declared signature that is not the module's export (`--nish-root` / `--module`) |
@@ -116,10 +235,11 @@ baked into the generated test, so a failure reproduces byte for byte.
 ### Usage
 
 ```bash
-bun run vector rfc check contracts/rfc8439-chacha20-poly1305.json --nish-root ../nish
-bun run vector rfc emit  contracts/rfc8439-chacha20-poly1305.json -o aead_rfc8439.ts
-bun run vector rfc run   contracts/rfc8439-chacha20-poly1305.json --nish-root ../nish
-bun run vector rfc extract --rfc rfcs/rfc5869.txt --module ../nish/std/crypto/hkdf.ts \
+bun run vector spec check contracts/rfc8439-chacha20-poly1305.json --nish-root ../nish
+bun run vector spec emit  contracts/rfc8439-chacha20-poly1305.json -o aead_rfc8439.ts
+bun run vector spec run   contracts/rfc8439-chacha20-poly1305.json --nish-root ../nish
+bun run vector spec check contracts/<name>.json --spec specs/<name>.md --run-sources
+bun run vector spec extract --spec rfcs/rfc5869.txt --module ../nish/std/crypto/hkdf.ts \
   --target nish/crypto/hkdf -o contracts/new.json      # model proposes, gates repair (needs a key)
 ```
 
@@ -127,7 +247,7 @@ bun run vector rfc extract --rfc rfcs/rfc5869.txt --module ../nish/std/crypto/hk
 (`SATISFIED`); `VIOLATED` / `ERROR` / `INVALID` exit 1, usage errors 2.
 `--nish-root` uses `build/nish` (the working tree's std); without it, the seed
 — whose `nish/…` is the last release — and it warns. Inside Claude Code the
-`vector-rfc` skill plays the extractor with no API key.
+`vector-spec` skill plays the extractor with no API key.
 
 ### What it catches
 
@@ -731,17 +851,18 @@ src/
   emit/             AST → runnable TypeScript
   report/           pretty-printer + Dijkstra Dashboard
   generated/        mjst output (checked in)
-  rfc/              RFC → contract → Nish test: contract.ts (format, typing),
-                    rfctext.ts (sections, hex, BCP 14 sentences), gates.ts,
+  rfc/              spec → contract → Nish test: contract.ts (format, typing),
+                    rfctext.ts (sections, hex, BCP 14 sentences), spectext.ts
+                    (markdown specs, format detection), gates.ts,
                     sample.ts (Z3 boundaries), emit-nish.ts, run.ts, report.ts,
-                    extract.ts (model-proposed contracts), cli.ts (`vector rfc`)
+                    extract.ts (model-proposed contracts), cli.ts (`vector spec`)
 contracts/          RFC contracts (RFC 5869 HKDF, RFC 8439 ChaCha20-Poly1305)
 rfcs/               the RFCs' plain text, unmodified, as rfc-editor.org serves it
 test/               bun test suites + fixtures
 .claude/skills/vector/
   SKILL.md          the skill: the Architect→Generator→verify→repair loop
-.claude/skills/vector-rfc/
-  SKILL.md          the skill: RFC → contract → check → run
+.claude/skills/vector-spec/
+  SKILL.md          the skill: spec → contract → check → run
   reference/
     vector-lang.md     the vector-lang manual Claude reads before emitting artifacts
 ```

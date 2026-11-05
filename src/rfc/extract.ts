@@ -16,8 +16,8 @@ import {
   reportJson,
   reportStatus,
 } from "./report.ts";
-import { parseRfc } from "./rfctext.ts";
 import { sampleContract } from "./sample.ts";
+import { parseDocument } from "./spectext.ts";
 
 export const EXTRACTOR_SYSTEM_PROMPT = `You turn an RFC into a test contract for an implementation \
 of it. The contract is JSON (the schema is enforced). It is checked mechanically against the RFC \
@@ -32,7 +32,8 @@ requirement's quote or an exclusion's quote. Exclude only what a functional test
 - Every requirement you state must be cited by at least one clause, and clauses may only cite \
 requirements you stated.
 - Vector clauses use the RFC's own test vectors: every hex/ascii/int value must be printed in the \
-clause's section. Use concat when the RFC prints a value in parts (ciphertext then tag; a fixed \
+cited section. Give each vector a source: {"cite": {"section": "A.1"}} when the section prints the \
+expected value too. Use concat when the RFC prints a value in parts (ciphertext then tag; a fixed \
 part then an IV). Never compute or invent a value.
 - Property clauses state what the RFC defines, over a typed domain: lengths, bounds (put the bound \
 in an integer comparison so the solver samples both sides of it), round trips, tamper rejection, \
@@ -40,7 +41,10 @@ and the RFC's own construction rebuilt from other functions under test (e.g. a b
 equals the formula that defines it). Keep 'where' free of calls.
 - functions[] are the implementation's real exported signatures, mapped to bytes (u8[]), \
 bytes? (u8[] | null), i32, u32, bool. A function from another module (a reference such as HMAC) \
-names its module.`;
+names its module.
+- The spec may be an RFC or a markdown document whose sections are numbered headings. For an RFC \
+set source.rfc to its number; for anything else declare sources: [{"id": "<short name>", "path": \
+"<file>"}] and source.main: "<that id>".`;
 
 export interface ExtractInputs {
   rfcText: string;
@@ -86,7 +90,7 @@ export async function extractContract(
   deps: ExtractDeps,
   maxRetries = 3,
 ): Promise<ExtractOutcome> {
-  const rfc = parseRfc(inputs.rfcText);
+  const rfc = parseDocument(inputs.rfcText);
   let previous: unknown;
   let feedback: string[] = [];
   let report: ContractReport = {
@@ -156,7 +160,7 @@ export async function runExtract(opts: {
 }): Promise<number> {
   if (!opts.rfcPath || !opts.modulePath || !opts.target || !opts.out) {
     console.error(
-      "error: extract needs --rfc <rfc.txt> --module <src.ts> --target <module> -o <contract.json>",
+      "error: extract needs --spec <file> --module <src.ts> --target <module> -o <contract.json>",
     );
     return 2;
   }
@@ -182,7 +186,7 @@ export async function runExtract(opts: {
   }
   writeFileSync(opts.out, `${JSON.stringify(outcome.contract, null, 2)}\n`);
   console.log(
-    `\n(contract written to ${opts.out} after ${outcome.attempts} attempt(s); review it, then \`vector rfc run\`)`,
+    `\n(contract written to ${opts.out} after ${outcome.attempts} attempt(s); review it, then \`vector spec check --run-sources\` before relying on its command sources, then \`vector spec run\`)`,
   );
   return 0;
 }
