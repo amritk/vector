@@ -661,6 +661,11 @@ describe("contract shape: allowSurvivors and source.sha256", () => {
         c.allowSurvivors = [{ file: "std/a.ts", line: 0, reason: "r" }];
       }),
     ).toEqual(["allowSurvivors[0].line: a line number >= 1"]);
+    expect(
+      shape((c) => {
+        c.allowSurvivors = { file: "std/a.ts", line: 3, reason: "r" };
+      }),
+    ).toEqual(["contract.allowSurvivors: an array"]);
   });
   test("source.sha256 is 64 lowercase hex digits", () => {
     expect(
@@ -784,6 +789,48 @@ describe("reports", () => {
     );
   });
 
+  test("markdown: exclusions, every vector source, uncovered requirements, a run that did not finish", () => {
+    const chacha = JSON.parse(
+      readFileSync(
+        join(VECTOR_ROOT, "contracts/rfc8439-chacha20-poly1305.json"),
+        "utf8",
+      ),
+    ) as RfcContract;
+    const md = renderMarkdown({ contract: chacha, gates: runGates(chacha) });
+    expect(md).toContain("### Not tested, by decision");
+    expect(md).toContain("which MUST not be repeated for the same key");
+
+    const c = clone(hkdf);
+    const vectors = c.clauses.filter((k) => k.kind === "vector");
+    vectors[0].source = { command: "openssl kdf" };
+    vectors[1].source = { spec: "A.1" };
+    c.requirements.push({
+      ...c.requirements[0],
+      id: "R-NOBODY",
+      quote: "nothing covers this",
+    });
+    // The gates of the unchanged contract: the renderer draws what it is given.
+    const md2 = renderMarkdown({
+      contract: c,
+      gates: runGates(hkdf),
+      run: {
+        status: "ERROR",
+        exitCode: 2,
+        clauses: new Map(),
+        requirements: new Map(),
+        stdout: "",
+        stderr: "error: ```boom```",
+        nish: "nish",
+      },
+    });
+    expect(md2).toContain("vector, expected from openssl kdf");
+    expect(md2).toContain("vector, spec A.1");
+    expect(md2).toContain("⭕ checked, not run");
+    expect(md2).toMatch(/#### R-NOBODY .*❌ uncovered/);
+    expect(md2).toContain("### The test did not complete");
+    expect(md2).toContain("error: ˋˋˋboomˋˋˋ");
+  });
+
   test("--format is checked, and markdown is only for reports", async () => {
     const contract = join(VECTOR_ROOT, "contracts/rfc5869-hkdf-sha256.json");
     for (const argv of [
@@ -801,6 +848,23 @@ describe("reports", () => {
       expect(r.err).toContain("error:");
     }
   });
+
+  test("mutate refuses an invalid contract before running anything", async () => {
+    const d = tmp("vector-mut-invalid-");
+    const c = clone(hkdf);
+    c.requirements[0].quote = "not in the RFC at all";
+    writeFileSync(join(d, "c.json"), JSON.stringify(c));
+    const r = await cli([
+      "mutate",
+      join(d, "c.json"),
+      "--base",
+      "HEAD",
+      "--nish-root",
+      d,
+    ]);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("INVALID");
+  }, 60_000);
 
   test("mutate needs --base and --nish-root", async () => {
     const contract = join(VECTOR_ROOT, "contracts/rfc5869-hkdf-sha256.json");
