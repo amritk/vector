@@ -263,6 +263,79 @@ it, one at a time:
 The third passes every test vector RFC 8439 prints: only the property, which
 rebuilds §2.8's MAC input from the other functions, catches it.
 
+### PR gates
+
+Four checks for CI on a PR, each deterministic and failing closed: a git
+error, an unreadable contract, a missing source or a diff it cannot read is a
+failure, never a pass. Results exit 0 (OK) or 1 (refused); usage and git
+errors exit 2.
+
+```bash
+bun run vector spec frozen  --base origin/main [contracts/*.json]
+bun run vector spec stale   test/aead_rfc8439.ts contracts/rfc8439-chacha20-poly1305.json
+node scripts/spec-stale.mjs test/aead_rfc8439.ts contracts/rfc8439-chacha20-poly1305.json
+bun run vector spec exports contracts/rfc5869-hkdf-sha256.json --nish-root ../nish --base origin/main
+bun run vector spec mutate  contracts/rfc5869-hkdf-sha256.json --nish-root ../nish --base origin/main \
+  [--jobs N] [--max N] [--format markdown]
+```
+
+**frozen** — a PR changes the spec side or the implementation, never both, so
+a test can't be loosened in the PR that changes the code it tests. Paths are
+classed by their path from the repository top, for the committed diff
+against `--base` plus untracked files:
+
+| Class | Paths |
+|---|---|
+| spec | `specs/…`, `contracts/…`, `rfcs/…` |
+| neutral | `docs/…`, and `*.md` at the top level (`README.md`) |
+| implementation | everything else: `src/`, `test/`, config, and `*.md` below the top outside `docs/` |
+
+It also refuses a contract whose **main** source no longer hashes to its
+`source.sha256` (or that has none). Other `sources` are not hashed: their
+quotes are still checked by the fidelity gate. Finding no contract is a
+failure.
+
+**stale** — `emit` writes `// vector-contract-sha256: <hex>` (the sha256 of the
+contract file's bytes) into the test's header. `spec stale <test> <contract>`
+refuses a test whose line names other bytes, or that has no such line or more
+than one. `scripts/spec-stale.mjs` is the same check with only `node:fs` and
+`node:crypto`, for a repository that does not install vector (nish's CI);
+`node scripts/spec-stale.mjs --self-test` shows one pass and two refusals.
+
+**exports** — every export the diff adds to or changes in the target module
+(`nish/crypto/hkdf` → `std/crypto/hkdf.ts`) must be a function the contract
+tests, or be listed in `outOfScope: [{ "name", "reason" }]` with a non-empty
+reason. A contract may not list a function it tests as out of scope. Deleting
+a tested function is refused (its test can no longer build); deleting an
+untested export is a note, which also says when its `outOfScope` entry can
+go. An export commented out counts as deleted. A re-export (`export { a }`),
+an `export const a = 1, b = 2`, or anything else it cannot name is refused.
+
+**mutate** — mutates only the module's lines changed since `--base`
+(relational and logical operators, integer literals, `!`, whole statements,
+`return null`) and runs the contract's test against each, in a scratch
+install built from `--nish-root`'s working tree (its `build/seed` and `std/`;
+the checkout is not touched). A mutant the test still passes on is reported
+as `file:line`, its mutated line, and *behaviour no requirement pins down*,
+and fails the gate, unless the contract allows it:
+
+```json
+"allowSurvivors": [
+  { "file": "std/crypto/hkdf.ts", "line": 342, "reason": "TLS label helper, outside RFC 5869" }
+]
+```
+
+`file` is the module's path from the nish root; the reason must be non-empty.
+Allowances that match no survivor are listed. Zero mutants (no changed code
+line) is a failure, as is a test that fails on the unmutated module. A mutant
+that does not build is *stillborn*: reported, not counted. `--max N` runs N
+mutants spread across the diff; `--jobs N` runs them in parallel.
+
+**`--format markdown`** (`check`, `run`, `mutate`) prints the dashboard for a
+PR comment: each requirement's quote, then a table of its clauses with their
+outcome and evidence, the exclusions, and the mutation survivors. Text is the
+default; `--json` / `--format json` is the machine form.
+
 ### What a pass means — and why not Lean
 
 A `SATISFIED` contract is **evidence, not proof**: properties are sampled, and

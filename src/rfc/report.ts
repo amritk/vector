@@ -7,7 +7,7 @@ import {
   declaredSources,
 } from "./contract.ts";
 import type { GateResult, SourceRun } from "./gates.ts";
-import type { MutationReport } from "./mutate.ts";
+import type { MutantResult, MutationReport } from "./mutate.ts";
 import type { RunResult } from "./run.ts";
 import type { SamplingResult } from "./sample.ts";
 
@@ -42,6 +42,10 @@ function mutationLine(m: MutationReport): string {
   const c = m.counts;
   return `${m.results.length} of ${m.generated} mutants run: ${c.killed} killed, ${c.timeout} timed out, ${c.survived} survived (${m.survivors.length} not allowed); ${c.stillborn} stillborn, not counted`;
 }
+
+/** The mutated line, or what a deleted statement was: its line is empty. */
+const mutatedText = (x: MutantResult) =>
+  x.mutant.mutated.trim() || `(deleted) ${x.mutant.original.trim()}`;
 
 const allowedSurvivors = (m: MutationReport) =>
   m.results.filter((r) => r.outcome === "survived" && r.allowed);
@@ -156,11 +160,11 @@ export function renderReport(r: ContractReport): string {
     out.push("", ` Mutation of ${m.file}`, `  ${mutationLine(m)}`);
     for (const x of m.survivors)
       out.push(
-        `  ✘ ${m.file}:${x.mutant.line}  ${x.mutant.mutated.trim()}  — ${SURVIVOR_MEANING}`,
+        `  ✘ ${m.file}:${x.mutant.line}  ${mutatedText(x)}  — ${SURVIVOR_MEANING}`,
       );
     for (const x of allowedSurvivors(m))
       out.push(
-        `  – ${m.file}:${x.mutant.line}  ${x.mutant.mutated.trim()}  — allowed: ${x.allowed}`,
+        `  – ${m.file}:${x.mutant.line}  ${mutatedText(x)}  — allowed: ${x.allowed}`,
       );
     for (const a of m.unusedAllowances)
       out.push(`  ! allowSurvivors ${a.file}:${a.line} matched no survivor`);
@@ -188,6 +192,9 @@ const code = (s: string) => {
   );
   return `${fence}${fence.length > 1 ? " " : ""}${t}${fence.length > 1 ? " " : ""}${fence}`;
 };
+
+/** Inline code in a table cell: GFM splits a row at `|` even inside code. */
+const codeCell = (s: string) => code(s).replace(/\|/g, "\\|");
 
 /** Where a vector's expected value comes from. */
 function vectorEvidence(c: RfcContract, k: VectorClause): string {
@@ -260,7 +267,7 @@ export function renderMarkdown(r: ContractReport): string {
               ? `${ps.samples.length} samples (${ps.boundary} boundary)`
               : "property";
         rows.push(
-          `| ${code(k.id)} | ${cell(k.title)} | ${res ? MD_MARK[res.outcome] : "⭕ not run"} | ${cell(evidence)} | ${cell(res?.detail ?? "")} |`,
+          `| ${codeCell(k.id)} | ${cell(k.title)} | ${res ? MD_MARK[res.outcome] : "⭕ not run"} | ${cell(evidence)} | ${cell(res?.detail ?? "")} |`,
         );
       }
       if (rows.length > 0)
@@ -298,7 +305,7 @@ export function renderMarkdown(r: ContractReport): string {
       out.push("| Where | Mutated line | Verdict |", "| --- | --- | --- |");
       for (const [x, verdict] of rows)
         out.push(
-          `| ${code(`${m.file}:${x.mutant.line}`)} | ${code(x.mutant.mutated)} | ${cell(verdict)} |`,
+          `| ${codeCell(`${m.file}:${x.mutant.line}`)} | ${codeCell(mutatedText(x))} | ${cell(verdict)} |`,
         );
       out.push("");
     }
@@ -391,6 +398,7 @@ export function reportJson(r: ContractReport): unknown {
           survivors: r.mutation.survivors.map((x) => ({
             at: `${r.mutation?.file}:${x.mutant.line}`,
             id: x.mutant.id,
+            original: x.mutant.original,
             mutated: x.mutant.mutated,
           })),
           allowed: allowedSurvivors(r.mutation).map((x) => ({
