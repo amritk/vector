@@ -20,9 +20,9 @@ import {
   declaredSources,
   validateContractShape,
 } from "./contract.ts";
-import { emitNishTest, staleReason } from "./emit-nish.ts";
+import { emitNishTest, sha256, staleReason } from "./emit-nish.ts";
 import { exportsCheck, moduleDiff, renderExports } from "./exports.ts";
-import { frozenCheck, renderFrozen, sha256, sourceFile } from "./frozen.ts";
+import { frozenCheck, renderFrozen, sourceFile } from "./frozen.ts";
 import { type SourceRun, runGates } from "./gates.ts";
 import { MutationRunError, runMutants } from "./mutate.ts";
 import {

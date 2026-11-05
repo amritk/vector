@@ -572,6 +572,15 @@ export interface EmitOptions {
   contractSha256?: string;
 }
 
+export const sha256 = (bytes: Uint8Array): string =>
+  createHash("sha256").update(bytes).digest("hex");
+
+/** The hex of each `// vector-contract-sha256: <hex>` line in a test. */
+export const contractShaLines = (test: string): string[] =>
+  [...test.matchAll(/^\/\/ vector-contract-sha256: ([0-9a-f]{64})$/gm)].map(
+    (m) => m[1],
+  );
+
 /**
  * Whether a generated test was emitted from these contract bytes: null when
  * it was, else why not. A test with no `vector-contract-sha256` line, or more
@@ -581,14 +590,12 @@ export function staleReason(
   test: string,
   contractBytes: Uint8Array,
 ): string | null {
-  const found = [
-    ...test.matchAll(/^\/\/ vector-contract-sha256: ([0-9a-f]{64})$/gm),
-  ].map((m) => m[1]);
+  const found = contractShaLines(test);
   if (found.length === 0)
     return "no `// vector-contract-sha256: <hex>` line: regenerate it with vector spec emit";
   if (found.length > 1)
     return `${found.length} vector-contract-sha256 lines: a test names one contract`;
-  const want = createHash("sha256").update(contractBytes).digest("hex");
+  const want = sha256(contractBytes);
   if (found[0] !== want)
     return `stale: emitted from a contract with sha256 ${found[0]}, but the contract's is ${want}: regenerate it with vector spec emit`;
   return null;

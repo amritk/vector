@@ -15,7 +15,7 @@ import hkdfContract from "../contracts/rfc5869-hkdf-sha256.json";
 import { rfcMain } from "../src/rfc/cli.ts";
 import type { RfcContract } from "../src/rfc/contract.ts";
 import { validateContractShape } from "../src/rfc/contract.ts";
-import { staleReason } from "../src/rfc/emit-nish.ts";
+import { sha256, staleReason } from "../src/rfc/emit-nish.ts";
 import {
   exportsCheck,
   renderExports,
@@ -26,7 +26,6 @@ import {
   frozenCheck,
   pathKind,
   renderFrozen,
-  sha256,
 } from "../src/rfc/frozen.ts";
 import { runGates } from "../src/rfc/gates.ts";
 import { DiffParseError, exportedNames } from "../src/rfc/gitdiff.ts";

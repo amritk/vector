@@ -5,7 +5,6 @@
 // unnoticed. Fails closed: a git error, an unreadable contract or a missing
 // source is a failure.
 
-import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
@@ -14,6 +13,7 @@ import {
   declaredSources,
   validateContractShape,
 } from "./contract.ts";
+import { contractShaLines, sha256 } from "./emit-nish.ts";
 import { forkPoint, git } from "./gitdiff.ts";
 
 export const VECTOR_ROOT = resolve(
@@ -39,9 +39,6 @@ export function sourceFile(
   ].find(existsSync);
 }
 
-export const sha256 = (bytes: Uint8Array): string =>
-  createHash("sha256").update(bytes).digest("hex");
-
 /**
  * A changed path's side of the freeze. A generated test (one carrying a
  * `// vector-contract-sha256:` line) is on the spec side: it is regenerated in
@@ -60,8 +57,6 @@ export function pathKind(path: string): PathKind {
   if (path.startsWith("docs/") || /^[^/]+\.md$/.test(path)) return "neutral";
   return "implementation";
 }
-
-const GENERATED_RE = /^\/\/ vector-contract-sha256: [0-9a-f]{64}$/m;
 
 export interface FrozenReport {
   base: string;
@@ -144,7 +139,8 @@ export function frozenCheck(o: {
     const k = pathKind(path);
     if (k !== "implementation") return k;
     try {
-      if (GENERATED_RE.test(readFileSync(abs, "utf8"))) return "generated";
+      if (contractShaLines(readFileSync(abs, "utf8")).length > 0)
+        return "generated";
     } catch {
       // Deleted or unreadable: implementation, the stricter reading.
     }
