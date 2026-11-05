@@ -1,0 +1,14 @@
+// Fixture for the mutation operators: one construct per line, numbered below.
+export function pick(xs: Array<u8>, n: i32): u8 | null {
+  if (n < 0 || n >= xs.length) {
+    return null
+  }
+  const ok: boolean = !done(xs) && n == 3
+  log("a < b && 7 == 7")
+  /* n <= 2 || 9 */
+  return xs[n]
+}
+export const twice = (x: i32): i32 => {
+  return x * 2
+}
+const t = `n < ${count + 1} && 5`
