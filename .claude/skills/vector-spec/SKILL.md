@@ -53,7 +53,9 @@ check` does, against the spec's own text.
        only under `--run-sources` (30 s timeout); otherwise it is reported as
        not run, never as passed.
      - `{"spec": "4.2"}` plus `"section"`: only for an expected `null` or
-       `bool`, which that section must state.
+       `bool`, which that section must state as an affirmative requirement
+       ("f MUST return null when …", "f SHALL be false"). A descriptive
+       "f returns null on failure" does not count; see the README's rule.
    - **property clauses**: the spec's definitions as checks over a typed
      domain — lengths, bounds written as integer comparisons (Z3 samples both
      sides of each), round trips, tamper rejection, and the construction

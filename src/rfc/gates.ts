@@ -395,11 +395,12 @@ function resultWord(lit: Literal): string | null {
   return "bool" in lit ? String(lit.bool) : null;
 }
 
-// A verb that gives a result. A bare "to" is not one ("set to true"); a
-// verb with it is ("decodes to null").
-const RESULT_VERB =
-  "(?:returns?|returned|returning|is|are|be|was|yields?|gives?|equals?|outputs?|(?:decodes?|encodes?|evaluates?|maps?|converts?|resolves?)\\s+to)";
-// Anything before the match in its sentence that reverses, avoids or
+// The allow list: an affirmative BCP 14 keyword (in capitals; MUST NOT and
+// SHALL NOT never match, as "NOT" is not a verb), optionally "always", then
+// a result verb in its bare form, then the value.
+const RESULT_KEYWORD = "(?:MUST|SHALL|REQUIRED\\s+to)";
+const RESULT_VERB = "(?:return|be|evaluate\\s+to|yield|give|output)";
+// Anything before the keyword in its sentence that reverses, avoids or
 // conditions the result. Deliberately broad: a false refusal costs a
 // rewording, a false pass breaks the gate. Word edges are letters and digits
 // (not \b), so `_not_` and `**never**` count; both apostrophes count in n't.
@@ -448,34 +449,6 @@ const DENY_RE = new RegExp(
   ].join("|")})(?![A-Za-z0-9])`,
   "i",
 );
-// After the value, a prohibition still reverses it ("Returning null is not
-// allowed", "returning null is forbidden"); conditions, "other", "invalid"
-// and "reject" do not ("returns null when the input has any other
-// character", "returns null for invalid input", "returns null to reject it").
-const DENY_AFTER_RE = new RegExp(
-  `(?<![A-Za-z0-9])(?:${[
-    "not",
-    "never",
-    "no",
-    "none",
-    "nor",
-    "neither",
-    "cannot",
-    "[A-Za-z]+n['’]t",
-    "avoid[a-z]*",
-    "forb[a-z]*",
-    "prohibit[a-z]*",
-    "prevent[a-z]*",
-    "disallow[a-z]*",
-    "instead",
-    "rather",
-    "wrong[a-z]*",
-    "incorrect[a-z]*",
-    "bug[a-z]*",
-    "an error",
-  ].join("|")})(?![A-Za-z0-9])`,
-  "i",
-);
 // A sentence ends at . ; ! ? followed by whitespace and a capital (or an
 // opening quote or bracket), or at the end of the text. Commas and colons
 // never end one, and neither does "e.g. return".
@@ -500,25 +473,26 @@ const sentences = (sec: RfcSection): string[] => {
 };
 
 /**
- * Does the section state `word` as a result? It must follow a result verb
- * ("returns null", "is false", "decodes to true") as a whole word (not
- * "null-terminated"), and nothing earlier in the same sentence may match
- * DENY_RE, nor anything after it DENY_AFTER_RE. So "MUST NOT, for any input, return null", "avoid returning
- * null", "instead of returning null", "if the input is null, f returns 5"
- * and even "when the text is odd, f returns null" do not count, while "f
- * MUST return null when the text has an odd length" does: its condition
- * comes after the value.
+ * Does the section state `word` as a result? Only an affirmative requirement
+ * does: within one sentence, MUST, SHALL or REQUIRED to (never followed by
+ * NOT), then optionally "always", then a result verb (return, be, evaluate
+ * to, yield, give, output), then `word` as a whole word not followed by "-"
+ * (so not "null-terminated"); and nothing before the keyword in that
+ * sentence may match DENY_RE. So "hexDecode MUST return null when the text
+ * has an odd length" counts, while descriptive "f returns null on failure",
+ * "MUST NOT, e.g. Python or Go, return null" and "If x, f MUST return null"
+ * do not. Everything this does not recognise is refused.
  */
 const statesResult = (sec: RfcSection, word: string): boolean => {
+  // The value in any case ("False", "TRUE"), optionally in code or emphasis.
+  const value = [...word].map((ch) => `[${ch}${ch.toUpperCase()}]`).join("");
   const re = new RegExp(
-    `(?<![A-Za-z0-9])${RESULT_VERB}\\s+${word}(?![A-Za-z0-9_-])`,
-    "gi",
+    `(?<![A-Za-z0-9])${RESULT_KEYWORD}\\s+(?:always\\s+)?${RESULT_VERB}\\s+[\`*_]*${value}[\`*_]*(?![A-Za-z0-9_\`*-])`,
+    "g",
   );
   return sentences(sec).some((sentence) =>
     [...sentence.matchAll(re)].some(
-      (m) =>
-        !DENY_RE.test(sentence.slice(0, m.index)) &&
-        !DENY_AFTER_RE.test(sentence.slice(m.index + m[0].length)),
+      (m) => !DENY_RE.test(sentence.slice(0, m.index)),
     ),
   );
 };

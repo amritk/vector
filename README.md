@@ -154,19 +154,25 @@ Every vector says where its expected value comes from (`source`):
 A vector without a source fails the shape gate. A `cite` source for a `null` or
 `bool` is held to the same rule by fidelity.
 
-**When a section states `null`, `true` or `false`.** The rule is deliberately
-crude and fails closed: a false refusal costs a rewording, a false pass would
-break the gate.
+**When a section states `null`, `true` or `false`.** Only an affirmative
+requirement states a result. The rule is an allow list and fails closed: a
+false refusal costs a rewording (or a `cite` source on a printed value), a
+false pass would break the gate.
 
 1. The section is split into sentences: the heading line on its own, then each
    paragraph (up to a blank line), each cut at `.` `;` `!` or `?` followed by
    whitespace and a capital letter, an opening quote or bracket, or the end.
-   Commas and colons never end a sentence, nor does `e.g. return`.
-2. The value must follow a result verb — `return(s|ed|ing)`, `is`, `are`, `be`,
-   `was`, `yield(s)`, `give(s)`, `equal(s)`, `output(s)`, or
-   `decode(s)`/`encode(s)`/`evaluate(s)`/`map(s)`/`convert(s)`/`resolve(s) to` —
-   as a whole word (`null-terminated` is not `null`).
-3. Nothing **earlier in the same sentence** may be a deny word, matched
+   Commas and colons never end a sentence.
+2. Within one sentence, an affirmative keyword governs the result: `MUST`,
+   `SHALL` or `REQUIRED to` (so also `is REQUIRED to`), in capitals and not
+   followed by `NOT`.
+3. Nothing comes between the keyword and the verb except, optionally,
+   `always`.
+4. The verb is a result verb in its bare form — `return`, `be`,
+   `evaluate to`, `yield`, `give` or `output` — followed directly by the
+   value (in any case, optionally in backticks or emphasis) as a whole word,
+   not followed by `-` (`null-terminated` is not `null`).
+5. Nothing **before the keyword in that sentence** is a deny word, matched
    case-insensitively as a whole word (so `_not_` and `**never**` count):
    - negators: `not`, `never`, `no`, `none`, `nor`, `neither`, `nothing`,
      `nobody`, `nowhere`, `cannot`, and any `…n't` / `…n’t`;
@@ -176,18 +182,16 @@ break the gate.
      `but`;
    - conditions and hypotheticals: `if`, `when`, `whenever`, `while`,
      `whether`, `assum…`, `suppos…`.
-4. Nothing **later in the same sentence** may be a prohibition: the negators
-   above (but not `nothing`, `nobody`, `nowhere`), `avoid…`, `forb…`,
-   `prohibit…`, `prevent…`, `disallow…`, `instead`, `rather`, `wrong…`,
-   `incorrect…`, `bug…` or `an error`. Conditions, `other`, `invalid` and
-   `reject` may follow the value.
 
-So "hexDecode MUST return null when the text has an odd length" states null
-(its `when` comes after the value). These do not: "MUST NOT, for any input,
-return null", "avoid returning null", "is forbidden from returning null",
-"Instead of returning null, f throws", "doesn’t return null", "an empty
-array, not null", "Returning null is not allowed", and also "When the text is odd, hexDecode returns null"
-(reword it with the condition last).
+Everything else is refused. So "hexDecode MUST return null when the text has
+an odd length" states null (its `when` comes after the value), as do "f MUST
+return true for valid input", "f SHALL be false" and "f MUST always return
+null on odd input". These do not: "MUST NOT, for any input, return null",
+"Implementations MUST NOT, e.g. Python or Go, return null", "f MUST, for every
+input, return null", "Implementations that return null are non-conforming",
+"an empty array, not null", "If the input is odd, f MUST return null", and —
+by design — any descriptive sentence without a keyword, such as "f returns
+null on failure" or "abc decodes to null".
 
 ### The gates (no model involved)
 
