@@ -312,6 +312,17 @@ export const targetFunctions = (c: RfcContract): Set<string> =>
 
 export const SHA256_RE = /^[0-9a-f]{64}$/;
 
+/**
+ * A nish module's file from the nish root: `nish/crypto/hkdf` →
+ * `std/crypto/hkdf.ts`; undefined for any other module.
+ */
+export function nishModuleFile(module: string): string | undefined {
+  const m = module.match(/^nish\/([\w./-]+)$/);
+  if (!m || m[1].split("/").some((p) => p === "" || p === "." || p === ".."))
+    return undefined;
+  return `std/${m[1]}.ts`;
+}
+
 export const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 export const IDENT_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 export const SECTION_RE = /^(?:\d+(?:\.\d+)*|[A-Z](?:\.\d+)*)$/;
@@ -892,14 +903,30 @@ function shapeOutOfScope(input: Obj, errors: string[]): void {
   });
 }
 
-/** `allowSurvivors`: lines whose surviving mutants are accepted, each with a reason. */
+/**
+ * `allowSurvivors`: lines of the target module whose surviving mutants are
+ * accepted, each with a reason and named once.
+ */
 function shapeAllowSurvivors(input: Obj, errors: string[]): void {
+  const target =
+    isObj(input.target) && typeof input.target.module === "string"
+      ? nishModuleFile(input.target.module)
+      : undefined;
+  const seen = new Set<string>();
   eachOf(input, "allowSurvivors", errors, (x, at) => {
     checkKeys(x, ["file", "line", "reason"], at, errors);
     strField(x, "file", at, errors);
     strField(x, "reason", at, errors);
     if (!Number.isInteger(x.line) || (x.line as number) < 1)
       errors.push(`${at}.line: a line number >= 1`);
+    if (typeof x.file !== "string" || x.file === "") return;
+    if (target !== undefined && x.file !== target)
+      errors.push(
+        `${at}.file: ${x.file} is not the target module's file ${target}`,
+      );
+    const key = `${x.file}:${x.line}`;
+    if (seen.has(key)) errors.push(`${at}: duplicate allowance for ${key}`);
+    seen.add(key);
   });
 }
 
@@ -956,6 +983,8 @@ function shapeSources(input: Obj, errors: string[]): Set<string> {
     }
     if (d.path !== undefined && (typeof d.path !== "string" || d.path === "")) {
       errors.push(`${at}.path: a file path`);
+    } else if (typeof d.path === "string" && d.path.startsWith("/")) {
+      errors.push(`${at}.path: a path relative to the contract, not ${d.path}`);
     }
     if (d.rfc === undefined && d.path === undefined) {
       errors.push(`${at}: needs "rfc", "path" or both`);

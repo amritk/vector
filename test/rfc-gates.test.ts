@@ -22,6 +22,7 @@ import {
   targetModulePath,
 } from "../src/rfc/exports.ts";
 import {
+  EMITTED_TESTS,
   VECTOR_ROOT,
   frozenCheck,
   pathKind,
@@ -221,57 +222,136 @@ describe("spec frozen", () => {
     expect(frozenCheck({ repo: d, base: "main" }).problems).toHaveLength(1);
   });
 
-  test("a generated test is spec side: with its contract it passes, beside the code it is refused", () => {
-    const d = frozenRepo();
+  /** The hkdf contract, edited so the PR changes it; written to contracts/h.json. */
+  const editContract = (d: string) => {
     const c = clone(hkdf);
     c.requirements[0].note = "edited";
-    write(d, "contracts/h.json", JSON.stringify(c));
-    write(
-      d,
-      "test/h.ts",
-      `// vector-contract-sha256: ${"0".repeat(64)}\nexport {}\n`,
-    );
+    const text = JSON.stringify(c);
+    write(d, "contracts/h.json", text);
+    return sha256(new TextEncoder().encode(text));
+  };
+  const marked = (sha: string) =>
+    `// vector-contract-sha256: ${sha}\nexport {}\n`;
+
+  test("a generated test is spec side only in test/spec/ with a head contract's sha256", () => {
+    const d = frozenRepo();
+    const sha = editContract(d);
+    write(d, `${EMITTED_TESTS}h.ts`, marked(sha));
     const r = frozenCheck({ repo: d, base: "HEAD" });
-    expect(r.changed).toContainEqual({ path: "test/h.ts", kind: "generated" });
+    expect(r.changed).toContainEqual({
+      path: "test/spec/h.ts",
+      kind: "generated",
+    });
     expect(r.problems).toEqual([]);
+    // Beside an implementation change it is refused like any spec-side file.
     write(d, "src/a.ts", "export const a = 2\n");
     const mixed = frozenCheck({ repo: d, base: "HEAD" });
     expect(mixed.problems).toHaveLength(1);
-    expect(mixed.problems[0]).toContain("test/h.ts");
+    expect(mixed.problems[0]).toContain("test/spec/h.ts");
   });
 
-  test("a generated test beside the code alone is refused too", () => {
+  test("a marker naming no head contract is implementation, even in test/spec/", () => {
     const d = frozenRepo();
-    write(
-      d,
-      "test/h.ts",
-      `// vector-contract-sha256: ${"0".repeat(64)}\nexport {}\n`,
-    );
-    write(d, "src/a.ts", "export const a = 2\n");
-    expect(frozenCheck({ repo: d, base: "HEAD" }).problems).toHaveLength(1);
+    editContract(d);
+    write(d, "test/spec/h.ts", marked("0".repeat(64)));
+    const r = frozenCheck({ repo: d, base: "HEAD" });
+    expect(r.changed).toContainEqual({
+      path: "test/spec/h.ts",
+      kind: "implementation",
+    });
+    expect(r.problems).toHaveLength(1);
+    expect(r.problems[0]).toContain("contracts/h.json");
+    expect(r.problems[0]).toContain("test/spec/h.ts");
   });
 
-  test("every source a contract declares is spec side, wherever it lives", () => {
+  test("a marker outside test/spec/ is implementation: a src/ file cannot pass as generated", () => {
+    const d = frozenRepo();
+    const sha = editContract(d);
+    // The zero-sha probe, and even the real sha, in code or a stray test.
+    write(d, "src/a.ts", `${marked("0".repeat(64))}export const a = 2\n`);
+    write(d, "src/b.ts", `${marked(sha)}export const b = 2\n`);
+    write(d, "test/h.ts", marked(sha));
+    const r = frozenCheck({ repo: d, base: "HEAD" });
+    for (const path of ["src/a.ts", "src/b.ts", "test/h.ts"])
+      expect(r.changed).toContainEqual({ path, kind: "implementation" });
+    expect(r.problems).toHaveLength(1);
+    expect(r.problems[0]).toContain("src/a.ts");
+  });
+
+  test("a marker in test/spec/ with two sha lines, or no contract changed beside it, is not generated", () => {
+    const d = frozenRepo();
+    const sha = editContract(d);
+    write(d, "test/spec/h.ts", `${marked(sha)}${marked(sha)}`);
+    expect(frozenCheck({ repo: d, base: "HEAD" }).problems).toHaveLength(1);
+    // With the contract unchanged, a fresh test/spec/ file is spec side alone.
+    const e = frozenRepo();
+    const at = readFileSync(join(e, "contracts/h.json"));
+    write(e, "test/spec/h.ts", marked(sha256(at)));
+    const r = frozenCheck({ repo: e, base: "HEAD" });
+    expect(r.changed).toEqual([{ path: "test/spec/h.ts", kind: "generated" }]);
+    expect(r.problems).toEqual([]);
+  });
+
+  /** A repo whose contract declares a second source at `path`. */
+  const sourcedRepo = (path: string) => {
     const d = repo();
     const c = clone(hkdf) as RfcContract;
     const { rfc: _rfc, ...rest } = c.source;
     c.source = { ...rest, main: "rfc5869" } as RfcContract["source"];
     c.sources = [
       { id: "rfc5869", rfc: 5869 },
-      { id: "errata", path: "../docs/errata.md" },
+      { id: "impl", path },
     ];
     write(d, "contracts/h.json", JSON.stringify(c));
     mkdirSync(join(d, "rfcs"));
     writeFileSync(join(d, "rfcs/rfc5869.txt"), rfc);
-    write(d, "docs/errata.md", "# 1. Errata\n");
+    write(d, "specs/errata.md", "# 1. Errata\n");
     write(d, "src/a.ts", "export const a = 1\n");
     commit(d);
-    write(d, "docs/errata.md", "# 1. Errata\n\nchanged\n");
+    return d;
+  };
+
+  test("a declared source under specs/ passes; its class still comes from its path", () => {
+    const d = sourcedRepo("../specs/errata.md");
+    expect(frozenCheck({ repo: d, base: "HEAD" }).problems).toEqual([]);
+    write(d, "specs/errata.md", "# 1. Errata\n\nchanged\n");
     write(d, "src/a.ts", "export const a = 2\n");
     const r = frozenCheck({ repo: d, base: "HEAD" });
-    expect(r.changed).toContainEqual({ path: "docs/errata.md", kind: "spec" });
+    expect(r.changed).toContainEqual({ path: "specs/errata.md", kind: "spec" });
     expect(r.problems).toHaveLength(1);
-    expect(r.problems[0]).toContain("docs/errata.md");
+    expect(r.problems[0]).toContain("specs/errata.md");
+  });
+
+  test("a declared source outside specs/ and rfcs/ is refused, and does not make code spec side", () => {
+    for (const path of ["../src/a.ts", "src/a.ts", "../../outside.md"]) {
+      const d = sourcedRepo(path);
+      write(d, "src/a.ts", "export const a = 2\n");
+      const r = frozenCheck({ repo: d, base: "HEAD" });
+      expect(r.changed).toContainEqual({
+        path: "src/a.ts",
+        kind: "implementation",
+      });
+      expect(r.contracts[0].problem).toContain(
+        `source impl is ${path}, outside specs/ and rfcs/`,
+      );
+      expect(r.problems.join("\n")).toContain("outside specs/ and rfcs/");
+    }
+  });
+
+  test("an absolute declared source is refused by the shape gate", () => {
+    const d = sourcedRepo("/etc/passwd");
+    const r = frozenCheck({ repo: d, base: "HEAD" });
+    expect(r.contracts[0].problem).toContain("not a contract");
+    expect(r.problems.join("\n")).toContain(
+      "a path relative to the contract, not /etc/passwd",
+    );
+  });
+
+  test("a declared source symlinked out of specs/ is refused", () => {
+    const d = sourcedRepo("../specs/link.md");
+    symlinkSync(join(d, "src/a.ts"), join(d, "specs/link.md"));
+    const r = frozenCheck({ repo: d, base: "HEAD" });
+    expect(r.contracts[0].problem).toContain("outside specs/ and rfcs/");
   });
 
   test("a deleted file keeps its path's class: implementation, beside a contract change", () => {
@@ -295,7 +375,9 @@ describe("spec frozen", () => {
     expect(r.problems.join("\n")).toContain(
       "the spec changed under the contract",
     );
-    expect(r.contracts[0].problem).toBeDefined();
+    expect(r.contracts[0].problem).toContain(
+      "the spec changed under the contract",
+    );
   });
 
   test("a contract with no source.sha256, no source on disk, or bad JSON is refused", () => {
@@ -309,7 +391,7 @@ describe("spec frozen", () => {
     const at = clone(hkdf);
     at.source.rfc = undefined;
     at.source.main = "s";
-    at.sources = [{ id: "s", path: "missing.md" }];
+    at.sources = [{ id: "s", path: "../specs/missing.md" }];
     write(d, "contracts/path.json", JSON.stringify(at));
     write(d, "contracts/bad.json", "{");
     write(d, "contracts/shape.json", "{}");
@@ -419,9 +501,14 @@ describe("spec stale", () => {
     expect(r.out).toContain("stale:");
     r = await cli(["stale", none, contract, "--json"]);
     expect(r.code).toBe(1);
-    expect(JSON.parse(r.out).problems).toHaveLength(1);
+    expect(JSON.parse(r.out).problems).toEqual([
+      "no `// vector-contract-sha256: <hex>` line: regenerate it with vector spec emit",
+    ]);
     r = await cli(["stale", two, contract]);
     expect(r.code).toBe(1);
+    expect(r.out).toContain(
+      "2 vector-contract-sha256 lines: a test names one contract",
+    );
     r = await cli(["stale", join(d, "missing.ts"), contract]);
     expect(r.code).toBe(2);
     r = await cli(["stale", fresh, join(d, "missing.json")]);
@@ -469,10 +556,29 @@ describe("spec stale", () => {
     expect(r.stdout).toContain("no line: refused");
   });
 
-  test("the script and the Bun command agree on the emitted line", () => {
+  test("the script and the Bun command agree: same files, same exit code and output", async () => {
     const src = readFileSync(script, "utf8");
-    expect(src).toContain("vector-contract-sha256: ([0-9a-f]{64})$");
     expect(src).not.toMatch(/from "(?!node:)/);
+    for (const test of [fresh, old, none, two]) {
+      const bun = await cli(["stale", test, contract]);
+      const n = node(test, contract);
+      expect(n.status, test).toBe(bun.code);
+      expect(n.stdout.trim(), test).toBe(bun.out.trim());
+    }
+    // Unreadable test or contract: both exit 2 with an error line, no stack.
+    for (const [test, c] of [
+      [join(d, "missing.ts"), contract],
+      [fresh, join(d, "missing.json")],
+    ]) {
+      const bun = await cli(["stale", test, c]);
+      const n = node(test, c);
+      expect(n.status).toBe(2);
+      expect(bun.code).toBe(2);
+      const missing = test === fresh ? c : test;
+      for (const err of [n.stderr, bun.err])
+        expect(err).toContain(`error: cannot read ${missing}: ENOENT`);
+      expect(n.stderr).not.toContain("    at ");
+    }
   });
 });
 
@@ -677,6 +783,27 @@ describe("spec exports", () => {
     ).toThrow(/not a contract/);
   });
 
+  test("an outOfScope entry with an empty reason is refused, library and CLI", async () => {
+    const root = exportsRepo();
+    const c = clone(hkdf) as RfcContract;
+    c.outOfScope = [{ name: "helper", reason: "" }];
+    expect(() => check(root, c)).toThrow(
+      "outOfScope[0].reason: a non-empty string",
+    );
+    const d = tmp("vector-exports-empty-");
+    writeFileSync(join(d, "c.json"), JSON.stringify(c));
+    const r = await cli([
+      "exports",
+      join(d, "c.json"),
+      "--nish-root",
+      root,
+      "--base",
+      "HEAD",
+    ]);
+    expect(r.code).not.toBe(0);
+    expect(r.err).toContain("outOfScope[0].reason: a non-empty string");
+  });
+
   test("a git error is a failure", () => {
     const root = exportsRepo();
     expect(() => check(root, hkdf, "nope")).toThrow();
@@ -732,20 +859,21 @@ describe("contract shape: allowSurvivors and source.sha256", () => {
     patch(c);
     return validateContractShape(c);
   };
+  const MOD = "std/crypto/hkdf.ts";
   test("a well-formed allowance passes; an empty reason or a bad line is refused", () => {
     expect(
       shape((c) => {
-        c.allowSurvivors = [{ file: "std/a.ts", line: 3, reason: "r" }];
+        c.allowSurvivors = [{ file: MOD, line: 3, reason: "r" }];
       }),
     ).toEqual([]);
     expect(
       shape((c) => {
-        c.allowSurvivors = [{ file: "std/a.ts", line: 3, reason: "" }];
+        c.allowSurvivors = [{ file: MOD, line: 3, reason: "" }];
       }),
     ).toEqual(["allowSurvivors[0].reason: a non-empty string"]);
     expect(
       shape((c) => {
-        c.allowSurvivors = [{ file: "std/a.ts", line: 0, reason: "r" }];
+        c.allowSurvivors = [{ file: MOD, line: 0, reason: "r" }];
       }),
     ).toEqual(["allowSurvivors[0].line: a line number >= 1"]);
     expect(
@@ -753,6 +881,36 @@ describe("contract shape: allowSurvivors and source.sha256", () => {
         c.allowSurvivors = { file: "std/a.ts", line: 3, reason: "r" };
       }),
     ).toEqual(["contract.allowSurvivors: an array"]);
+  });
+  test("an allowance for another file, or the same line twice, is refused", () => {
+    expect(
+      shape((c) => {
+        c.allowSurvivors = [{ file: "std/a.ts", line: 3, reason: "r" }];
+      }),
+    ).toEqual([
+      `allowSurvivors[0].file: std/a.ts is not the target module's file ${MOD}`,
+    ]);
+    expect(
+      shape((c) => {
+        c.allowSurvivors = [
+          { file: MOD, line: 3, reason: "r" },
+          { file: MOD, line: 4, reason: "r" },
+          { file: MOD, line: 3, reason: "again" },
+        ];
+      }),
+    ).toEqual([`allowSurvivors[2]: duplicate allowance for ${MOD}:3`]);
+  });
+  test("a declared source path is relative to the contract", () => {
+    expect(
+      shape((c) => {
+        const src = c.source as Record<string, unknown>;
+        src.rfc = undefined;
+        src.main = "s";
+        c.sources = [{ id: "s", path: "/etc/passwd" }];
+      }),
+    ).toContain(
+      "sources[0].path: a path relative to the contract, not /etc/passwd",
+    );
   });
   test("source.sha256 is 64 lowercase hex digits", () => {
     expect(
@@ -935,6 +1093,83 @@ describe("reports", () => {
     expect(md2).toContain("error: ˋˋˋboomˋˋˋ");
   });
 
+  /** A GFM table row's cells, split the way cmark-gfm does: `\x` is one escaped pair. */
+  const cells = (row: string) => {
+    const out = [""];
+    for (let i = 1; i < row.length - 1; i++) {
+      if (row[i] === "\\") out[out.length - 1] += row[i] + row[++i];
+      else if (row[i] === "|") out.push("");
+      else out[out.length - 1] += row[i];
+    }
+    return out.map((x) => x.trim());
+  };
+
+  test("markdown: the vector sources run, one row per command vector", () => {
+    const c = clone(hkdf);
+    const vectors = c.clauses.filter((k) => k.kind === "vector");
+    vectors[0].source = { command: "openssl kdf | tail -1" };
+    vectors[1].source = { command: "python3 h.py" };
+    const md = renderMarkdown({
+      contract: c,
+      gates: runGates(hkdf),
+      sources: new Map([
+        [
+          vectors[0].id,
+          {
+            id: vectors[0].id,
+            command: "openssl kdf | tail -1",
+            outcome: "fail",
+            detail: "got 00\n## forged",
+          },
+        ],
+      ]),
+    });
+    const lines = md.split("\n");
+    const at = lines.indexOf("### Vector sources run");
+    expect(at).toBeGreaterThan(0);
+    expect(lines.slice(at + 2, at + 4)).toEqual([
+      "| Clause | Command | Outcome | Detail |",
+      "| --- | --- | --- | --- |",
+    ]);
+    const rows = lines.slice(at + 4, at + 6).map(cells);
+    expect(rows).toEqual([
+      [
+        `\`${vectors[0].id}\``,
+        "`openssl kdf \\| tail -1`",
+        "❌ fail",
+        "got 00 ## forged",
+      ],
+      [`\`${vectors[1].id}\``, "`python3 h.py`", "⚪ not run", ""],
+    ]);
+    expect(lines.some((l) => l.startsWith("## forged"))).toBe(false);
+    // The text report has the same section.
+    expect(renderReport({ contract: c, gates: runGates(hkdf) })).toContain(
+      "Vector sources run",
+    );
+  });
+
+  test("markdown: a multi-line title cannot forge a heading; `\\|` cannot split a row", () => {
+    const c = clone(hkdf);
+    c.source.title = "HKDF\n## ✅ forged: SATISFIED\n";
+    c.clauses[0].title = "a \\| b";
+    const md = renderMarkdown({ contract: c, gates: runGates(hkdf) });
+    const lines = md.split("\n");
+    expect(lines.filter((l) => l.startsWith("## "))).toHaveLength(1);
+    expect(md).toContain("RFC 5869 (HKDF ## ✅ forged: SATISFIED )");
+    const row = lines.find((l) => l.startsWith(`| \`${c.clauses[0].id}\``));
+    expect(row && cells(row)).toHaveLength(5);
+    expect(row && cells(row)[1]).toBe("a \\\\\\| b");
+    // In a code cell too: an allowance's mutated line with a literal `\|`.
+    const m = mutation();
+    m.survivors[0].mutant.mutated = "const y = a \\| b";
+    const mr = renderMarkdown({ ...checked, mutation: m } as ContractReport)
+      .split("\n")
+      .filter((l) => l.startsWith("| `std/m.ts:"));
+    expect(mr).toHaveLength(2);
+    for (const r of mr) expect(cells(r)).toHaveLength(3);
+    expect(cells(mr[0])[1]).toBe("`const y = a \\\\\\| b`");
+  });
+
   test("--format is checked, and markdown is only for reports", async () => {
     const contract = join(VECTOR_ROOT, "contracts/rfc5869-hkdf-sha256.json");
     for (const argv of [
@@ -968,6 +1203,24 @@ describe("reports", () => {
     ]);
     expect(r.code).toBe(1);
     expect(r.out).toContain("INVALID");
+  }, 60_000);
+
+  test("mutate refuses an allowance with an empty reason before running anything", async () => {
+    const d = tmp("vector-mut-empty-");
+    const c = clone(hkdf);
+    c.allowSurvivors = [{ file: "std/crypto/hkdf.ts", line: 3, reason: "" }];
+    writeFileSync(join(d, "c.json"), JSON.stringify(c));
+    const r = await cli([
+      "mutate",
+      join(d, "c.json"),
+      "--base",
+      "HEAD",
+      "--nish-root",
+      d,
+    ]);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("INVALID");
+    expect(r.out).toContain("allowSurvivors[0].reason: a non-empty string");
   }, 60_000);
 
   test("mutate needs --base and --nish-root", async () => {

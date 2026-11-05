@@ -183,7 +183,10 @@ export function renderReport(r: ContractReport): string {
 
 /** A table cell: one line, no column breaks. */
 const cell = (s: string) =>
-  s.replace(/\s+/g, " ").trim().replace(/\|/g, "\\|") || " ";
+  s
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[\\|]/g, (ch) => `\\${ch}`) || " ";
 /** Inline code that survives any backticks in `s`. */
 const code = (s: string) => {
   const t = s.replace(/\s+/g, " ").trim();
@@ -193,8 +196,13 @@ const code = (s: string) => {
   return `${fence}${fence.length > 1 ? " " : ""}${t}${fence.length > 1 ? " " : ""}${fence}`;
 };
 
-/** Inline code in a table cell: GFM splits a row at `|` even inside code. */
-const codeCell = (s: string) => code(s).replace(/\|/g, "\\|");
+/**
+ * Inline code in a table cell: GFM splits a row at `|` even inside code, and
+ * reads `\\` as an escaped pair first, so a backslash run before a pipe is
+ * doubled too: `a\|b` becomes `a\\\|b`, never a column break.
+ */
+const codeCell = (s: string) =>
+  code(s).replace(/(\\*)\|/g, (_, bs: string) => `${bs}${bs}\\|`);
 
 /** Where a vector's expected value comes from. */
 function vectorEvidence(c: RfcContract, k: VectorClause): string {
@@ -223,7 +231,8 @@ export function renderMarkdown(r: ContractReport): string {
     `## ${ok ? "✅" : "❌"} ${c ? `${c.contract}: ` : ""}${status}`,
     "",
   ];
-  if (c) out.push(`${sourceTitle(c)} · target ${code(c.target.module)}`, "");
+  if (c)
+    out.push(`${cell(sourceTitle(c))} · target ${code(c.target.module)}`, "");
   if (r.run) out.push(`Tested with ${code(r.run.nish)}.`, "");
 
   const issues = [
@@ -277,6 +286,22 @@ export function renderMarkdown(r: ContractReport): string {
           ...rows,
           "",
         );
+    }
+    const commands = commandVectors(c);
+    if (commands.length > 0) {
+      out.push(
+        "### Vector sources run",
+        "",
+        "| Clause | Command | Outcome | Detail |",
+        "| --- | --- | --- | --- |",
+      );
+      for (const k of commands) {
+        const run = r.sources?.get(k.id);
+        out.push(
+          `| ${codeCell(k.id)} | ${codeCell(k.source.command)} | ${MD_MARK[run?.outcome ?? "not-run"]} | ${cell(run?.detail ?? "")} |`,
+        );
+      }
+      out.push("");
     }
     if ((c.exclusions ?? []).length > 0) {
       out.push(

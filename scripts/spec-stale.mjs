@@ -1,20 +1,31 @@
 #!/usr/bin/env node
 // `vector spec stale` without vector: spec-stale.mjs <test.ts> <contract.json> exits 0
 // when the test's one `// vector-contract-sha256:` line is the contract's sha256, 1 when
-// it is stale or missing, 2 on bad usage. --self-test shows a pass and two refusals.
+// it is stale, missing or repeated, 2 on bad usage or a file it cannot read. Its reasons
+// and output are `vector spec stale`'s, word for word. --self-test shows a pass and refusals.
 import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
 const hash = (b) => createHash("sha256").update(b).digest("hex");
 const LINE = /^\/\/ vector-contract-sha256: ([0-9a-f]{64})$/gm;
+function read(path, enc) {
+  try {
+    return readFileSync(path, enc);
+  } catch (err) {
+    console.error(`error: cannot read ${path}: ${err.message}`);
+    process.exit(2);
+  }
+}
 function stale(test, contract) {
-  const got = [...readFileSync(test, "utf8").matchAll(LINE)].map((m) => m[1]);
-  const want = hash(readFileSync(contract));
-  if (got.length !== 1)
-    return `${got.length} vector-contract-sha256 lines, want 1`;
+  const got = [...read(test, "utf8").matchAll(LINE)].map((m) => m[1]);
+  const want = hash(read(contract));
+  if (got.length === 0)
+    return "no `// vector-contract-sha256: <hex>` line: regenerate it with vector spec emit";
+  if (got.length > 1)
+    return `${got.length} vector-contract-sha256 lines: a test names one contract`;
   return got[0] === want
     ? null
-    : `stale: emitted from ${got[0]}, the contract is ${want}`;
+    : `stale: emitted from a contract with sha256 ${got[0]}, but the contract's is ${want}: regenerate it with vector spec emit`;
 }
 const [arg, contract] = process.argv.slice(2);
 if (arg === "--self-test") {
@@ -35,7 +46,12 @@ if (arg === "--self-test") {
       at("old.ts", `// vector-contract-sha256: ${hash("{ }\n")}\n`),
       "stale:",
     ],
-    ["no line", at("none.ts", "x\n"), "0 vector-contract-sha256"],
+    ["no line", at("none.ts", "x\n"), "no `// vector-contract-sha256"],
+    [
+      "two lines",
+      at("two.ts", `// vector-contract-sha256: ${hash("{}\n")}\n`.repeat(2)),
+      "2 vector-contract-sha256 lines",
+    ],
   ];
   let ok = true;
   for (const [name, test, want] of cases) {
@@ -53,5 +69,5 @@ if (process.argv.length !== 4) {
   process.exit(2);
 }
 const why = stale(arg, contract);
-console.log(`${arg}: ${why ?? "fresh"}`);
+console.log(`${arg}: ${why ?? `emitted from ${contract} as it is now`}`);
 process.exit(why ? 1 : 0);

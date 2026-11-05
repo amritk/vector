@@ -13,6 +13,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   type RfcContract,
+  nishModuleFile,
   targetFunctions,
   validateContractShape,
 } from "./contract.ts";
@@ -27,12 +28,12 @@ import {
 
 /** `nish/crypto/hkdf` → `std/crypto/hkdf.ts`; any other module is an error. */
 export function targetModulePath(c: RfcContract): string {
-  const m = c.target.module.match(/^nish\/([\w./-]+)$/);
-  if (!m || m[1].split("/").some((p) => p === "" || p === "." || p === ".."))
+  const file = nishModuleFile(c.target.module);
+  if (file === undefined)
     throw new Error(
       `target.module ${c.target.module} is not a nish/… module: cannot find its file`,
     );
-  return `std/${m[1]}.ts`;
+  return file;
 }
 
 export interface ExportsReport {

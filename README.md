@@ -272,8 +272,8 @@ errors exit 2.
 
 ```bash
 bun run vector spec frozen  --base origin/main [contracts/*.json]
-bun run vector spec stale   test/aead_rfc8439.ts contracts/rfc8439-chacha20-poly1305.json
-node scripts/spec-stale.mjs test/aead_rfc8439.ts contracts/rfc8439-chacha20-poly1305.json
+bun run vector spec stale   test/spec/aead_rfc8439.ts contracts/rfc8439-chacha20-poly1305.json
+node scripts/spec-stale.mjs test/spec/aead_rfc8439.ts contracts/rfc8439-chacha20-poly1305.json
 bun run vector spec exports contracts/rfc5869-hkdf-sha256.json --nish-root ../nish --base origin/main
 bun run vector spec mutate  contracts/rfc5869-hkdf-sha256.json --nish-root ../nish --base origin/main \
   [--jobs N] [--max N] [--format markdown]
@@ -291,12 +291,20 @@ the branch was cut don't count) plus untracked files:
 | neutral | `docs/…`, and `*.md` at the top level (`README.md`) |
 | implementation | everything else: `src/`, `test/`, config, and `*.md` below the top outside `docs/` |
 
-Two kinds of file are spec side wherever they live: every file a contract
-declares as a source (its `sources[].path`, or the `rfc<N>.txt` it resolves
-to), so `docs/errata.md` named as a source is not neutral; and a generated
-test, any file carrying a `// vector-contract-sha256:` line (class
-`generated`), which is regenerated with its contract and must not change
-beside the code. A deleted file keeps its path's class.
+The class comes from the path alone; nothing in a file's content moves it to
+the spec side. The one refinement is for generated tests, which live in
+`test/spec/` and nowhere else: a file there is `generated` (spec side) only if
+it has exactly one `// vector-contract-sha256:` line and that sha256 is the
+sha256 of a contract at the PR's head, so `spec stale` passes it against that
+contract. A marker anywhere else (`src/`, `test/`), or one naming no contract
+at the head, is ignored and the file is implementation. A deleted file keeps
+its path's class.
+
+A contract's declared sources (`sources[].path`) must resolve, symlinks
+followed, under `specs/` or `rfcs/`; frozen refuses one anywhere else
+(`../src/a.ts`, `src/a.ts`, or out of the repository), and the shape gate
+refuses an absolute path. So a contract can't name code as its spec to move it
+to the spec side.
 
 It also refuses a contract whose **main** source no longer hashes to its
 `source.sha256` (or that has none). Other `sources` are not hashed: their
@@ -307,8 +315,9 @@ failure.
 contract file's bytes) into the test's header. `spec stale <test> <contract>`
 refuses a test whose line names other bytes, or that has no such line or more
 than one. `scripts/spec-stale.mjs` is the same check with only `node:fs` and
-`node:crypto`, for a repository that does not install vector (nish's CI);
-`node scripts/spec-stale.mjs --self-test` shows one pass and two refusals.
+`node:crypto`, for a repository that does not install vector (nish's CI). Its reasons, output and exit codes are `spec stale`'s, including exit 2 for a
+file it cannot read; `node scripts/spec-stale.mjs --self-test` shows one pass
+and three refusals.
 
 **exports** — every export the diff adds to or changes in the target module
 (`nish/crypto/hkdf` → `std/crypto/hkdf.ts`) must be a function the contract
@@ -318,6 +327,8 @@ a tested function is refused (its test can no longer build); deleting an
 untested export is a note, which also says when its `outOfScope` entry can
 go. An export commented out counts as deleted. A re-export (`export { a }`),
 an `export const a = 1, b = 2`, or anything else it cannot name is refused.
+Only `target.module` is checked: a contract that also exercises another
+module (HKDF calls `hmacSha256`) does not gate that module's exports.
 
 **mutate** — mutates only the module's lines changed since `--base`
 (relational and logical operators, integer literals, `!`, whole statements,
@@ -333,16 +344,20 @@ and fails the gate, unless the contract allows it:
 ]
 ```
 
-`file` is the module's path from the nish root; the reason must be non-empty.
-Allowances that match no survivor are listed. Zero mutants (no changed code
-line) is a failure, as is a test that fails on the unmutated module. A mutant
+`file` is the target module's path from the nish root (any other file is
+refused), each `{file, line}` appears once, and the reason must be non-empty.
+Allowances that match no survivor are listed as a warning but do not fail the
+gate. Zero mutants is a failure: a diff that only deletes lines of the module
+has no changed line left to mutate, so it fails too. So does a test that fails
+on the unmutated module. A mutant
 that does not build is *stillborn*: reported, not counted; when every mutant
 is stillborn, none was judged, and that is a failure. `--max N` runs N
 mutants spread across the diff; `--jobs N` runs them in parallel.
 
-**`--format markdown`** (`check`, `run`, `mutate`) prints the dashboard for a
-PR comment: each requirement's quote, then a table of its clauses with their
-outcome and evidence, the exclusions, and the mutation survivors. Text is the
+**`--format markdown`** (`check`, `emit`, `run`, `mutate`) prints the dashboard
+for a PR comment: each requirement's quote, then a table of its clauses with
+their outcome and evidence, the vector sources run, the exclusions, and the
+mutation survivors. Text is the
 default; `--json` / `--format json` is the machine form.
 
 **Known limits** (each refuses rather than passes): `exports` and `mutate`

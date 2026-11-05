@@ -1,9 +1,12 @@
 // `vector spec frozen`: a PR either changes the spec side (specs/, contracts/,
 // rfcs/) or the implementation, never both, so a test can't be loosened to
-// match the code it tests. Each contract's main source must also still hash
-// to the `source.sha256` it records, so a spec can't change under a contract
-// unnoticed. Fails closed: a git error, an unreadable contract or a missing
-// source is a failure.
+// match the code it tests. A path's side is decided by the path, never by what
+// the PR writes: the one exception is a generated test under test/spec/, which
+// is spec side only while it names the sha256 of a contract at the PR's head.
+// Each contract's main source must also still hash to the `source.sha256` it
+// records, and every source it declares by path must lie under specs/ or
+// rfcs/. Fails closed: a git error, an unreadable contract or a missing source
+// is a failure.
 
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -40,17 +43,24 @@ export function sourceFile(
 }
 
 /**
- * A changed path's side of the freeze. A generated test (one carrying a
- * `// vector-contract-sha256:` line) is on the spec side: it is regenerated in
- * the PR that changes its contract, and must not change beside the code.
+ * A changed path's side of the freeze. A generated test is on the spec side:
+ * it is regenerated in the PR that changes its contract, and must not change
+ * beside the code.
  */
 export type PathKind = "spec" | "generated" | "neutral" | "implementation";
+
+/** Where emitted tests live, from the repository top. */
+export const EMITTED_TESTS = "test/spec/";
+
+/** The directories a contract's `sources[].path` may point into. */
+const SOURCE_DIRS = ["specs", "rfcs"];
 
 /**
  * specs/, contracts/ and rfcs/ (the documents contracts quote) are the spec
  * side. docs/ and top-level *.md files are neutral. Everything else, tests and
- * config included, is implementation. frozenCheck also puts every file a
- * contract declares as a source, and every generated test, on the spec side.
+ * config included, is implementation. frozenCheck puts a file under
+ * EMITTED_TESTS on the spec side, as `generated`, only when its one
+ * `// vector-contract-sha256:` line names a contract at the PR's head.
  */
 export function pathKind(path: string): PathKind {
   if (/^(?:specs|contracts|rfcs)\//.test(path)) return "spec";
@@ -125,22 +135,24 @@ export function frozenCheck(o: {
   }
   const problems: string[] = [];
   if (files.length === 0) problems.push("no contracts to check");
-  const specFiles = new Set<string>();
+  const shas = new Set<string>();
   const contracts = files.map((path) => {
-    specFiles.add(real(path));
-    const problem = sourceProblem(path, specFiles);
+    try {
+      shas.add(sha256(readFileSync(path)));
+    } catch {
+      // Unreadable: sourceProblem reports it.
+    }
+    const problem = sourceProblem(path, real(top));
     if (problem) problems.push(`${path}: ${problem}`);
     return { path, problem };
   });
 
   const kind = (path: string): PathKind => {
-    const abs = join(top, path);
-    if (specFiles.has(real(abs))) return "spec";
     const k = pathKind(path);
-    if (k !== "implementation") return k;
+    if (k !== "implementation" || !path.startsWith(EMITTED_TESTS)) return k;
     try {
-      if (contractShaLines(readFileSync(abs, "utf8")).length > 0)
-        return "generated";
+      const lines = contractShaLines(readFileSync(join(top, path), "utf8"));
+      if (lines.length === 1 && shas.has(lines[0])) return "generated";
     } catch {
       // Deleted or unreadable: implementation, the stricter reading.
     }
@@ -158,11 +170,11 @@ export function frozenCheck(o: {
   return { base: o.base, at, changed, contracts, problems };
 }
 
-/** Why the contract at `path` does not match its main source, or undefined. */
-function sourceProblem(
-  path: string,
-  specFiles: Set<string>,
-): string | undefined {
+/**
+ * Why the contract at `path` does not match its main source, or declares a
+ * source by a path outside `top`'s specs/ and rfcs/; undefined when neither.
+ */
+function sourceProblem(path: string, top: string): string | undefined {
   let c: RfcContract;
   try {
     c = JSON.parse(readFileSync(path, "utf8"));
@@ -173,8 +185,10 @@ function sourceProblem(
   if (shape.length > 0) return `not a contract: ${shape[0]}`;
   const { main, list } = declaredSources(c);
   for (const s of list) {
-    const f = sourceFile(s, path);
-    if (f) specFiles.add(real(f));
+    if (s.path === undefined) continue;
+    const f = real(resolve(dirname(path), s.path));
+    if (!SOURCE_DIRS.some((d) => f.startsWith(`${join(top, d)}/`)))
+      return `source ${s.id} is ${s.path}, outside ${SOURCE_DIRS.map((d) => `${d}/`).join(" and ")}: a contract's sources must be spec side`;
   }
   const want = c.source.sha256;
   if (!want)
