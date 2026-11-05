@@ -274,6 +274,20 @@ describe("spec frozen", () => {
     expect(r.problems[0]).toContain("docs/errata.md");
   });
 
+  test("a deleted file keeps its path's class: implementation, beside a contract change", () => {
+    const d = frozenRepo();
+    write(d, "src/gone.ts", "export const g = 1\n");
+    commit(d);
+    rmSync(join(d, "src/gone.ts"));
+    write(d, "contracts/note.json", "{}\n");
+    const r = frozenCheck({ repo: d, base: "HEAD" });
+    expect(r.changed).toContainEqual({
+      path: "src/gone.ts",
+      kind: "implementation",
+    });
+    expect(r.problems[0]).toContain("src/gone.ts");
+  });
+
   test("a main source that no longer matches source.sha256 is refused", () => {
     const d = frozenRepo();
     writeFileSync(join(d, "rfcs/rfc5869.txt"), `${rfc}\nchanged\n`);
@@ -852,6 +866,23 @@ describe("reports", () => {
     expect(json.mutation.allowed).toEqual([
       { at: "std/m.ts:5", id: "5:1:int-literal", reason: "dead code" },
     ]);
+  });
+
+  test("markdown: a requirement's run outcome is its mark", () => {
+    const md = renderMarkdown({
+      contract: hkdf,
+      gates: runGates(hkdf),
+      run: {
+        status: "VIOLATED",
+        exitCode: 1,
+        clauses: new Map(),
+        requirements: new Map([[hkdf.requirements[0].id, "fail"]]),
+        stdout: "",
+        stderr: "",
+        nish: "nish",
+      },
+    } as ContractReport);
+    expect(md).toMatch(new RegExp(`#### ${hkdf.requirements[0].id} .*❌ fail`));
   });
 
   test("every survivor allowed: MUTANTS_KILLED", () => {
