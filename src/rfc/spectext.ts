@@ -10,6 +10,7 @@
 //                      is required, as in an RFC. A section runs until the
 //                      next heading at its own level or above, so "3" includes
 //                      "3.1"; its own text stops at the next numbered heading.
+//                      The same id twice is refused.
 //   other headings     end nothing but their own heading line; an unnumbered
 //                      `##` heading at a section's level ends it, and the text
 //                      under it belongs to no section (see `loose`).
@@ -17,26 +18,39 @@
 //                      backtick; the closing fence is bare and at least as
 //                      long as the opening one): the fence lines are dropped, the
 //                      lines inside are kept verbatim (a `#` there is not a
-//                      heading), so a quote or hex value in code is found and a
-//                      MUST in code still has to be accounted for.
-//   indented code      kept verbatim, like any other line.
+//                      heading, a `<!--` not a comment), so a quote or hex
+//                      value in code is found and a MUST in code still has to
+//                      be accounted for. A fence never closed is refused.
+//   indented code      kept verbatim, like any other line; a `<!--` on a line
+//                      indented four spaces or a tab is text.
 //   inline code        the backticks are dropped: "`hexEncode`" reads as
-//                      "hexEncode" in quotes, strings and hex runs.
+//                      "hexEncode" in quotes, strings and hex runs. A `<!--`
+//                      inside a span is text.
 //   tables             each cell becomes a line of its own (the delimiter row
-//                      is dropped), and every cell ends a hex run, so a cell is
-//                      never glued to its neighbour in a quote or a hex run.
-//   HTML comments      `<!-- … -->` is dropped, headings inside it included.
+//                      is dropped); every row starts a new hex run and every
+//                      cell ends one, so a cell is never glued to its
+//                      neighbour, or a row to the line above, in a hex run.
+//   HTML comments      `<!-- … -->` is dropped, headings inside it included. A
+//                      `<!--` never closed is refused: it would otherwise hide
+//                      the rest of the document from every gate.
+//   blank lines        a paragraph break ends a hex run, as do fence lines and
+//                      headings, so a value is one paragraph's, block's or
+//                      cell's. A dump within one of them still joins.
 //   byte lists         "[00 0f f0 ff]" anywhere in a line is also read as hex,
 //                      a run of its own (only for hex runs, not for quotes).
-//   BCP 14 boilerplate the sentence from "The key words …" to the BCP 14 or
-//                      RFC 2119 reference and on to its full stop names the
+//   BCP 14 boilerplate the key-words sentence itself ("The key words", the
+//                      keyword list, "are to be interpreted", the BCP 14 or
+//                      RFC 2119 reference, on to its full stop) names the
 //                      keywords without using them, so that sentence alone is
 //                      removed: it is neither quotable nor normative. The rest
-//                      of its paragraph stays, so a MUST beside it still counts,
-//                      and a tail after the reference that names a keyword
-//                      itself ends the removal there.
-//   anything else      emphasis, links and lists are kept as written, so a
-//                      quote copies them verbatim (`**MUST**` stays starred).
+//                      of its paragraph stays, a keyword after the list ends
+//                      the removal there, and a sentence that only mentions
+//                      key words ("The key words in the header MUST be
+//                      sorted, see BCP 14.") is not boilerplate.
+//   emphasis           kept as written, so a quote copies it verbatim
+//                      (`**MUST**` stays starred); `_MUST_` and `__MUST__` are
+//                      keywords all the same (see rfctext.ts KEYWORD_RE).
+//   anything else      links and lists are kept as written.
 
 import { type RfcDocument, type RfcSection, parseRfc } from "./rfctext.ts";
 
@@ -49,13 +63,19 @@ const FENCE_RE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 const TABLE_DELIM_RE = /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)*\|?\s*$/;
 const BYTE_LIST_RE = /\[((?:[0-9a-fA-F]{2})(?:[ ,]+[0-9a-fA-F]{2})*)\]/g;
 const KEYWORD = "(?:MUST|SHALL|SHOULD|REQUIRED|RECOMMENDED|MAY|OPTIONAL)";
+/** A keyword as the boilerplate lists it: bare, quoted or emphasised. */
+const LISTED = `[*_"]*(?:MUST NOT|MUST|SHALL NOT|SHALL|SHOULD NOT|SHOULD|REQUIRED|NOT RECOMMENDED|RECOMMENDED|MAY|OPTIONAL)[*_"]*`;
 /**
- * The BCP 14 key-words sentence, whatever its verb phrase ("interpreted as
- * described in", "as in"): "key words", then a BCP 14 / RFC 2119 reference,
- * then up to its full stop, stopping early at a keyword after the reference.
+ * The BCP 14 key-words sentence itself: "key words", the list of keywords
+ * (if any),
+ * "are to be interpreted", a BCP 14 / RFC 2119 reference, then on to its full
+ * stop, stopping early at a keyword after the list. A sentence that only
+ * mentions key words ("The key words in the header MUST be sorted, see
+ * BCP 14.") is not it: its MUST is not in a list followed by "are to be
+ * interpreted", so nothing of it is dropped.
  */
 const BCP14_RE = new RegExp(
-  `\\b(?:[Tt]he\\s+)?[Kk]ey\\s+words\\b[^.]*?\\b(?:BCP\\s*14|RFC\\s*2119)\\b(?:(?!\\b${KEYWORD}\\b)[^.])*\\.?`,
+  `\\b(?:[Tt]he\\s+)?[Kk]ey\\s+words\\s+(?:${LISTED}(?:\\s*,?\\s*(?:(?:and|or)\\s+)?${LISTED})*\\s*,?\\s+)?(?:(?:in|of)\\s+this\\s+(?:document|specification|memo)\\s+)?are\\s+to\\s+be\\s+interpreted\\b(?:(?!${KEYWORD}(?![A-Za-z0-9]))[^.])*?\\b(?:BCP\\s*14|RFC\\s*2119)\\b(?:(?!${KEYWORD}(?![A-Za-z0-9]))[^.])*\\.?`,
   "g",
 );
 const NUMBERED_HEADING_RE =
@@ -104,52 +124,64 @@ const cells = (row: string): string[] =>
     .split(/(?<!\\)\|/)
     .map((c) => c.trim().replace(/\\\|/g, "|"));
 
+/** A line the gates see as blank, and a break in every hex run. */
+const BREAK = (): MdLine => ({ text: "", hex: ["--"] });
+
 function readLines(text: string): MdLine[] {
   const raw = text.replace(/\r\n?/g, "\n").split("\n");
   const out: MdLine[] = [];
-  let fence: string | null = null;
-  let comment = false;
-  for (const rawLine of raw) {
+  let fence: { mark: string; at: number } | null = null;
+  let comment: number | null = null;
+  for (let n = 0; n < raw.length; n++) {
+    const rawLine = raw[n];
     if (fence !== null) {
       const f = rawLine.match(FENCE_RE);
       if (
         f &&
-        f[1][0] === fence[0] &&
-        f[1].length >= fence.length &&
+        f[1][0] === fence.mark[0] &&
+        f[1].length >= fence.mark.length &&
         f[2].trim() === ""
       ) {
         fence = null;
-        out.push({ text: "", hex: [] });
-      } else out.push({ text: rawLine, hex: [] });
+        out.push(BREAK());
+      } else out.push(withBytes(rawLine));
       continue;
     }
-    const [line, open] = stripComments(rawLine, comment);
-    comment = open;
+    const [line, open] = stripComments(rawLine, comment !== null);
+    if (open && comment === null) comment = n + 1;
+    if (!open) comment = null;
     const f = line.match(FENCE_RE);
     if (f && !(f[1][0] === "`" && f[2].includes("`"))) {
-      fence = f[1];
-      out.push({ text: "", hex: [] });
+      if (open) {
+        throw new Error(
+          `line ${n + 1}: a code fence and an HTML comment open on one line`,
+        );
+      }
+      fence = { mark: f[1], at: n + 1 };
+      out.push(BREAK());
       continue;
     }
     const inline = line.replace(/`/g, "");
     const h = inline.match(MD_HEADING_RE);
     if (h) {
-      const n = h[2].match(NUMBERED_RE) ?? h[2].match(MD_APPENDIX_RE);
+      const id = h[2].match(NUMBERED_RE) ?? h[2].match(MD_APPENDIX_RE);
       out.push({
         text: h[2],
-        hex: [],
+        hex: ["--"],
         heading: {
           level: h[1].length,
-          id: n ? n[1] : null,
-          title: (n ? n[2] : h[2]).trim(),
+          id: id ? id[1] : null,
+          title: (id ? id[2] : h[2]).trim(),
         },
       });
       continue;
     }
     if (/^\s*\|/.test(inline)) {
       if (TABLE_DELIM_RE.test(inline)) continue;
-      // Every cell ends a hex run ("--" is never hex), so two cells or two
-      // rows are never read as one value.
+      // Every cell ends a hex run ("--" is never hex), and so does the start
+      // of a row, so two cells, two rows, or a row and the line above it are
+      // never read as one value.
+      out.push(BREAK());
       for (const cell of cells(inline)) {
         const l = withBytes(cell);
         l.hex.push("--");
@@ -159,31 +191,66 @@ function readLines(text: string): MdLine[] {
     }
     out.push(withBytes(inline));
   }
+  // An unterminated form would swallow the rest of the document (its
+  // headings and its MUSTs), so it is refused, never read to the end.
+  if (fence !== null) {
+    throw new Error(`line ${fence.at}: code fence is never closed`);
+  }
+  if (comment !== null) {
+    throw new Error(`line ${comment}: HTML comment "<!--" is never closed`);
+  }
   return dropBoilerplate(out);
 }
 
-/** The line without its HTML comments; whether a comment is still open after it. */
+/**
+ * The line without its HTML comments, and whether a comment is still open
+ * after it. A "<!--" inside an inline code span, or on an indented code line
+ * (four spaces or a tab), is text, not a comment.
+ */
 function stripComments(line: string, open: boolean): [string, boolean] {
+  if (!open && /^(?: {4}|\t)/.test(line)) return [line, false];
   let kept = "";
-  let rest = line;
+  let i = 0;
   let inside = open;
-  for (;;) {
+  while (i < line.length) {
     if (inside) {
-      const end = rest.indexOf("-->");
+      const end = line.indexOf("-->", i);
       if (end < 0) return [kept, true];
-      rest = rest.slice(end + 3);
+      i = end + 3;
       inside = false;
+      continue;
     }
-    const start = rest.indexOf("<!--");
-    if (start < 0) return [kept + rest, false];
-    kept += rest.slice(0, start);
-    rest = rest.slice(start + 4);
-    inside = true;
+    if (line[i] === "`") {
+      let n = i;
+      while (line[n] === "`") n++;
+      const ticks = line.slice(i, n);
+      // The span closes at the next run of exactly as many backticks.
+      const close = new RegExp(`(?<!\`)${ticks}(?!\`)`, "g");
+      close.lastIndex = n;
+      const m = close.exec(line);
+      const to = m ? m.index + ticks.length : n;
+      kept += line.slice(i, to);
+      i = to;
+      continue;
+    }
+    if (line.startsWith("<!--", i)) {
+      inside = true;
+      i += 4;
+      continue;
+    }
+    kept += line[i];
+    i++;
   }
+  return [kept, inside];
 }
 
-/** A line, plus each "[00 0f …]" in it as a hex-run line fenced by breaks. */
+/**
+ * A line, plus each "[00 0f …]" in it as a hex-run line fenced by breaks. A
+ * blank line is a paragraph break, so it ends a hex run too: in markdown a
+ * value is printed in one paragraph, one code block or one cell.
+ */
 function withBytes(text: string): MdLine {
+  if (text.trim() === "") return BREAK();
   const hex: string[] = [];
   for (const m of text.matchAll(BYTE_LIST_RE)) {
     hex.push(m[1].replace(/[ ,]+/g, " "), "--");
@@ -223,7 +290,11 @@ export function parseMarkdownSpec(text: string): RfcDocument {
   const take = (from: number, to: number) => lines.slice(from, to);
   lines.forEach((l, at) => {
     const h = l.heading;
-    if (!h || h.id === null || sections.has(h.id)) return;
+    if (!h || h.id === null) return;
+    // A second "## 3." would leave its text in no section, so it is refused.
+    if (sections.has(h.id)) {
+      throw new Error(`section ${h.id} has two headings`);
+    }
     let end = lines.length;
     let ownEnd = lines.length;
     for (let j = at + 1; j < lines.length; j++) {

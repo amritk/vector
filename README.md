@@ -101,13 +101,30 @@ Expressions are JSON. Besides bytes and integers they have:
 ### Specs, sources and provenance
 
 A spec is read as an **RFC** when it has its `Request for Comments: N` header
-and form feeds, as **markdown** when it has `#` headings; anything else is
-refused. In markdown, `## 3. Encoding` is section `3`, `### 3.1. Length` is
-`3.1`, `## Appendix A. Vectors` is `A` (the trailing dot is required). Fenced
-code is kept verbatim (a `#` there is not a heading), inline backticks are
-dropped, each table cell is its own line, `[00 0f ff]` byte lists count as hex,
-and the BCP 14 boilerplate paragraph is skipped. A MUST outside every numbered
+and form feeds, as **markdown** when it has a numbered `#` heading
+(`## 1. Introduction`); anything else is refused, including RFC text whose form
+feeds were stripped. In markdown, `## 3. Encoding` is section `3`,
+`### 3.1. Length` is `3.1`, `## Appendix A. Vectors` is `A` (the trailing dot
+is required; a heading given twice is refused). A MUST outside every numbered
 section is refused: completeness needs a section to cite.
+
+How the markdown reader treats each construct:
+
+- **Fenced code** is kept verbatim (a `#` there is not a heading, a `<!--` not
+  a comment, a MUST still counts). A fence that is never closed is refused.
+- **Inline code** loses its backticks; a `<!--` inside it is text. So is one on
+  an indented code line.
+- **HTML comments** are dropped, headings and MUSTs inside them included. A
+  `<!--` that is never closed is refused, not read as a comment to the end.
+- **Emphasis** is kept as written, and `_MUST_`, `__MUST NOT__` and `**MUST**`
+  are keywords.
+- **Hex runs** end at every blank line, fence, heading, table row and table
+  cell: a value counts only if one paragraph, one code block or one cell
+  prints it. `[00 0f ff]` byte lists count as hex.
+- **The BCP 14 key-words sentence** ("The key words MUST, … are to be
+  interpreted as … BCP 14 …") is removed, and nothing else: the rest of its
+  paragraph stays, and a sentence that only mentions key words ("The key words
+  in the header MUST be sorted, see BCP 14.") keeps its MUST.
 
 A contract may cite several documents:
 
@@ -132,15 +149,10 @@ Every vector says where its expected value comes from (`source`):
 |---|---|---|
 | `{"cite": {"section": "A.1"}}` (`"source"` optional) | printed in that section, with the args | fidelity |
 | `{"command": "…"}`, with `"section"` for the args | the command's trimmed stdout (lowercase hex for bytes) | `--run-sources` only (`sh -c` from the contract's directory, 30 s); otherwise reported as not run, never as passed. A timeout, non-zero exit or other output fails |
-| `{"spec": "4.2"}`, with `"section"` for the args | `null` or a `bool` that section states | provenance: the section must state `null` / `true` / `false` as the result, right after a verb (`returns null`, `is false`, `decodes to true`); a bare mention (`not null`, `true never`) does not count |
+| `{"spec": "4.2"}`, with `"section"` for the args | `null` or a `bool` that section states | provenance: the section must state `null` / `true` / `false` as the result, right after a verb (`returns null`, `is false`, `decodes to true`), in a clause that neither negates it nor makes the value a condition; a bare mention (`not null`, `true never`), `MUST NOT return null`, `never returns true` and `if the input is null, …` do not count |
 
 A vector without a source fails the shape gate. A `cite` source for a `null` or
 `bool` is held to the same rule by fidelity.
-
-In a markdown spec, a section is a numbered heading (`## 3.1. Length`); fenced
-code is kept verbatim, HTML comments are dropped, each table cell is its own
-line and ends any hex run, and only the BCP 14 key-words sentence is removed
-from its paragraph.
 
 ### The gates (no model involved)
 

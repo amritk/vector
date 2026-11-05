@@ -395,16 +395,34 @@ function resultWord(lit: Literal): string | null {
   return "bool" in lit ? String(lit.bool) : null;
 }
 
+// A verb that gives a result. A bare "to" is not one ("set to true"); a
+// verb with it is ("decodes to null").
+const RESULT_VERB =
+  "(?:returns?|returned|returning|is|are|be|was|yields?|gives?|equals?|outputs?|(?:decodes?|encodes?|evaluates?|maps?|converts?|resolves?)\\s+to)";
+// Before the verb in the same clause, these reverse or condition it: "MUST
+// NOT return null", "never returns true", "if the input is null, …".
+const NEGATION_RE = /\b(?:not|never|no|cannot|neither|nor)\b|n't\b/i;
+const CONDITION_RE = /\b(?:if|when|whenever|unless|while|whether)\b/i;
+
 /**
  * Does the section state `word` as a result: right after a verb that gives
- * one ("returns null", "is false", "decodes to true")? A bare mention ("true
- * never", "not null") does not count, so the polarity is the spec's own.
+ * one ("returns null", "is false", "decodes to true"), in a clause that
+ * neither negates the verb nor makes the value a condition? A bare mention
+ * ("true never", "not null"), "MUST NOT return null", "never returns true"
+ * and "if the input is null, f returns 5" do not count, so the polarity is
+ * the spec's own.
  */
-const statesResult = (sec: RfcSection, word: string): boolean =>
-  new RegExp(
-    `\\b(?:returns?|returned|returning|is|are|be|was|to|yields?|gives?|equals?|outputs?)\\s+${word}\\b`,
-    "i",
-  ).test(sectionText(sec));
+const statesResult = (sec: RfcSection, word: string): boolean => {
+  const re = new RegExp(`\\b${RESULT_VERB}\\s+${word}\\b`, "gi");
+  return sectionText(sec)
+    .split(/[.;:!?,](?=\s|$)/)
+    .some((clause) =>
+      [...clause.matchAll(re)].some((m) => {
+        const before = clause.slice(0, m.index);
+        return !NEGATION_RE.test(before) && !CONDITION_RE.test(before);
+      }),
+    );
+};
 
 /** Checks literals against one section's text. */
 function literalCheck(

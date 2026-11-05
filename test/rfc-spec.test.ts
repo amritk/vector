@@ -373,6 +373,270 @@ describe("reading a spec", () => {
     expect(hex.loose?.lines.join(" ")).not.toContain("BCP 14");
   });
 
+  test("a sentence that only mentions key words keeps its MUST", () => {
+    const d = parseMarkdownSpec(
+      "## 1. Rules\n\nThe key words in the header MUST be sorted, see BCP 14.\n",
+    );
+    expect(normativeSentences(d).map((n) => n.keyword)).toEqual(["MUST"]);
+    expect(sectionText(d.sections.get("1") as never)).toContain(
+      "MUST be sorted, see BCP 14.",
+    );
+    // A keyword after the list, before the reference, is not swallowed.
+    const mid = parseMarkdownSpec(
+      "## 1. Rules\n\nThe key words MUST and MAY are to be interpreted, and keys MUST be sorted, as in BCP 14.\n",
+    );
+    expect(normativeSentences(mid).map((n) => n.keyword)).toEqual([
+      "MUST",
+      "MUST",
+    ]);
+    // The boilerplate itself, its list emphasised, is still dropped.
+    const em = parseMarkdownSpec(
+      "## 1. Rules\n\nThe key words **MUST**, _MUST NOT_ and __MAY__ are to be interpreted as in BCP 14.\n",
+    );
+    expect(normativeSentences(em)).toEqual([]);
+  });
+
+  test("emphasised keywords are keywords: _MUST_, __MUST__, _MUST NOT_", () => {
+    const d = parseMarkdownSpec(
+      "## 1. Rules\n\nImplementations __MUST__ reject this. Others _MUST NOT_ accept it. A key _MUST_ be 32 bytes. *SHALL* and **REQUIRED** too.\n",
+    );
+    expect(normativeSentences(d).map((n) => n.keyword)).toEqual([
+      "MUST",
+      "MUST NOT",
+      "MUST",
+      "SHALL",
+      "REQUIRED",
+    ]);
+    // A longer word that holds one is not a keyword; a quoted one is not.
+    const not = parseMarkdownSpec(
+      '## 1. Rules\n\nMUSTARD and REQUIREDS, and "MUST" in quotes.\n',
+    );
+    expect(normativeSentences(not)).toEqual([]);
+  });
+
+  test("an HTML comment opener in inline or indented code is text", () => {
+    const d = parseMarkdownSpec(
+      "## 1. A\n\nUse `<!--` to open.\n\n## 2. B\n\nIt MUST do x.\n",
+    );
+    expect([...d.sections.keys()]).toEqual(["1", "2"]);
+    expect(normativeSentences(d).map((n) => n.section)).toEqual(["2"]);
+    expect(sectionText(d.sections.get("1") as never)).toContain(
+      "Use <!-- to open.",
+    );
+    const indented = parseMarkdownSpec(
+      "## 1. A\n\n    <!-- in code\n\n## 2. B\n\nIt MUST do x.\n",
+    );
+    expect([...indented.sections.keys()]).toEqual(["1", "2"]);
+    expect(normativeSentences(indented).map((n) => n.section)).toEqual(["2"]);
+  });
+
+  test("an unterminated comment or fence is refused, never read to the end", () => {
+    expect(() =>
+      parseMarkdownSpec("## 1. A\n\n<!-- open\n\n## 2. B\n\nIt MUST do x.\n"),
+    ).toThrow('line 3: HTML comment "<!--" is never closed');
+    expect(() =>
+      parseMarkdownSpec("## 1. A\n\n```\ncode\n\n## 2. B\n\nIt MUST do x.\n"),
+    ).toThrow("line 3: code fence is never closed");
+    expect(() =>
+      parseMarkdownSpec("## 1. A\n\n~~~\n```\n## 2. B\n```\n"),
+    ).toThrow("line 3: code fence is never closed");
+    expect(() => parseMarkdownSpec("## 1. A\n\n```js <!--\nx\n```\n")).toThrow(
+      "line 3: a code fence and an HTML comment open on one line",
+    );
+    // A section heading given twice would leave the second's text in none.
+    expect(() =>
+      parseMarkdownSpec("## 1. A\n\nx\n\n## 1. A again\n\nIt MUST do x.\n"),
+    ).toThrow("section 1 has two headings");
+  });
+
+  test("hex runs end at a fence and at a paragraph break", () => {
+    const d = parseMarkdownSpec(
+      "## 1. V\n\n```\n00 01\n```\n\n```\n02 03\n```\n\naabbccdd\n\n11223344\n",
+    );
+    expect(hexRuns(d.sections.get("1") as never)).toEqual([
+      "0001",
+      "0203",
+      "aabbccdd",
+      "11223344",
+    ]);
+    // Adjacent fences, with no blank line between them, still do not join.
+    const adjacent = parseMarkdownSpec(
+      "## 1. V\n\n```\n00 01\n```\n~~~\n02 03\n~~~\n",
+    );
+    expect(hexRuns(adjacent.sections.get("1") as never)).toEqual([
+      "0001",
+      "0203",
+    ]);
+    // A dump in one fence, or one paragraph, is still one value.
+    const one = parseMarkdownSpec("## 1. V\n\n```\n00 01\n02 03\n```\n");
+    expect(hexRuns(one.sections.get("1") as never)).toEqual(["00010203"]);
+    // So a cite vector spanning two fences or two paragraphs is refused.
+    const split = parseMarkdownSpec(
+      SPEC.replace(
+        "| [de ad be ef] | `deadbeef` |",
+        "| x |\n\n```\nde ad\n```\n\n```\nbe ef\n```\n\ndead\n\nbeef\n",
+      ),
+    );
+    expect(
+      messages(
+        runGates(hexContract(), {
+          docs: docs(split),
+          commands: passed("V-CMD"),
+        }),
+      ),
+    ).toEqual([
+      '[fidelity] V-CITE.args[0]: 4-byte value is not printed in §3 ("Test Vectors")',
+      '[fidelity] V-CITE.expect: the string "deadbeef" is not printed in §3 ("Test Vectors")',
+      '[fidelity] V-CMD.args[0]: 4-byte value is not printed in §3 ("Test Vectors")',
+    ]);
+  });
+
+  // Every construct the reader handles, next to every other (and itself):
+  // the sections, the normative sentences and the hex runs must be exactly
+  // each construct's own, so no construct's boundary swallows, drops or
+  // glues its neighbour's text.
+  describe("every construct next to every other", () => {
+    interface Block {
+      name: string;
+      md: (slot: number) => string;
+      sections: (slot: number) => string[];
+      keywords: string[];
+      hex: string[];
+    }
+    const none = () => [];
+    const blocks: Block[] = [
+      {
+        name: "code span",
+        md: () =>
+          "Write `<!--` or `## 9. x` or ``a ` b`` here; a reader MUST keep this.\na1a1",
+        sections: none,
+        keywords: ["MUST"],
+        hex: ["a1a1"],
+      },
+      {
+        name: "backtick fence",
+        md: () => "```text\n## 9. Not a heading\n<!-- not a comment\nb2b2\n```",
+        sections: none,
+        keywords: [],
+        hex: ["b2b2"],
+      },
+      {
+        name: "tilde fence",
+        md: () => "~~~\n```\nc3c3\n~~~",
+        sections: none,
+        keywords: [],
+        hex: ["c3c3"],
+      },
+      {
+        name: "indented code",
+        md: () => "    <!-- kept -->\n    d4d4",
+        sections: none,
+        keywords: [],
+        hex: ["d4d4"],
+      },
+      {
+        name: "table",
+        md: () => "| e5e5 | f6f6 |\n|---|---|\n| a7 | Cells MUST split |",
+        sections: none,
+        keywords: ["MUST"],
+        hex: ["e5e5", "f6f6", "a7"],
+      },
+      {
+        name: "one-line comment",
+        md: () => "<!-- ## 9. Hidden: it MUST vanish, 0909 -->",
+        sections: none,
+        keywords: [],
+        hex: [],
+      },
+      {
+        name: "inline comment",
+        md: () => "Before <!-- it MUST vanish --> after, which SHALL stay.",
+        sections: none,
+        keywords: ["SHALL"],
+        hex: [],
+      },
+      {
+        name: "multi-line comment",
+        md: () => "<!--\n## 8. Hidden\nIt MUST vanish.\n0808\n-->",
+        sections: none,
+        keywords: [],
+        hex: [],
+      },
+      {
+        name: "emphasis",
+        md: () =>
+          "Implementations _MUST_ reject; others __MUST NOT__ accept; **SHALL** too.\nb8b8",
+        sections: none,
+        keywords: ["MUST", "MUST NOT", "SHALL"],
+        hex: ["b8b8"],
+      },
+      {
+        name: "heading",
+        md: (slot) => `### 1.${slot + 1}. Sub\nc9c9`,
+        sections: (slot) => [`1.${slot + 1}`],
+        keywords: [],
+        hex: ["c9c9"],
+      },
+      {
+        name: "BCP 14 boilerplate",
+        md: () =>
+          "The key words MUST and MAY are to be interpreted as in BCP 14.",
+        sections: none,
+        keywords: [],
+        hex: [],
+      },
+      {
+        name: "blank line",
+        md: () => "",
+        sections: none,
+        keywords: [],
+        hex: [],
+      },
+    ];
+    const cases = blocks.flatMap((a) => blocks.map((b) => [a, b] as const));
+    test.each(cases.map(([a, b]) => [a.name, b.name, a, b]))(
+      "%s, then %s",
+      (_a, _b, a, b) => {
+        const md = `# Spec\n\n## 1. One\n\n${a.md(0)}\n${b.md(1)}\n\n## 2. Two\n\nIt MUST do x.\n`;
+        const d = parseMarkdownSpec(md);
+        expect([...d.sections.keys()]).toEqual([
+          "1",
+          ...a.sections(0),
+          ...b.sections(1),
+          "2",
+        ]);
+        const found = normativeSentences(d);
+        expect(found.map((n) => n.keyword)).toEqual([
+          ...a.keywords,
+          ...b.keywords,
+          "MUST",
+        ]);
+        expect(found.some((n) => n.section === LOOSE_SECTION)).toBe(false);
+        expect(found.filter((n) => n.section === "2")).toHaveLength(1);
+        expect(found[found.length - 1].sentence).toBe("Two It MUST do x.");
+        expect(hexRuns(d.sections.get("1") as never)).toEqual([
+          ...a.hex,
+          ...b.hex,
+        ]);
+      },
+    );
+    // Each construct's unterminated form, after every construct, is refused.
+    const open = [
+      ["<!-- never closed", "HTML comment"],
+      ["```\nnever closed", "code fence"],
+      ["~~~\nnever closed", "code fence"],
+    ] as const;
+    test.each(
+      blocks.flatMap((a) => open.map(([md, what]) => [a.name, what, a, md])),
+    )("%s, then an unterminated %s", (_a, what, a, md) => {
+      expect(() =>
+        parseMarkdownSpec(
+          `## 1. One\n\n${a.md(0)}\n${md}\n\n## 2. Two\n\nIt MUST do x.\n`,
+        ),
+      ).toThrow(`${what}`);
+    });
+  });
+
   test("a labelled int in a markdown section", () => {
     const a = section("A");
     expect(intLabelled(sectionLines(a), "Block Count", 4)).toBe(true);
@@ -769,6 +1033,68 @@ describe("vector provenance", () => {
     expect(
       messages(runGates(c, { docs: docs(stated), commands: passed("V-CMD") })),
     ).toEqual([]);
+  });
+
+  test("a negated or conditional mention does not state the result", () => {
+    const probe = (sentence: string) => {
+      const d = parseMarkdownSpec(`${SPEC}\n## 4. Probe\n\n${sentence}\n`);
+      const c = hexContract();
+      vec(c, "V-SPEC").source = { spec: "4" };
+      return messages(
+        runGates(c, { docs: docs(d), commands: passed("V-CMD") }),
+      ).filter((m) => m.startsWith("[provenance]"));
+    };
+    const refused = [
+      '[provenance] V-SPEC.source: §4 ("Probe") never says "null", so it does not state the expected result',
+    ];
+    expect(probe("hexDecode MUST NOT return null for any input.")).toEqual(
+      refused,
+    );
+    expect(probe("The key MUST NOT be null.")).toEqual(refused);
+    expect(probe("The key SHALL NOT be null.")).toEqual(refused);
+    expect(probe("f never returns null.")).toEqual(refused);
+    expect(probe("f doesn't return null.")).toEqual(refused);
+    expect(probe("If the input is null, f returns 5.")).toEqual(refused);
+    expect(probe("When the key is null the call fails.")).toEqual(refused);
+    expect(probe("f MUST return an empty array, not null.")).toEqual(refused);
+    expect(probe("The flag is set to null.")).toEqual(refused);
+    // Stated results pass: a condition after the result is not the value's.
+    expect(
+      probe("hexDecode MUST return null when the text has an odd length."),
+    ).toEqual([]);
+    expect(probe("When the text is odd, hexDecode returns null.")).toEqual([]);
+    expect(probe("abc decodes to null.")).toEqual([]);
+  });
+
+  test("the hex spec's §4.2 still states null", () => {
+    const hex = parseDocument(readFileSync("specs/example-hex.md", "utf8"));
+    const c = hexContract();
+    c.requirements = [
+      {
+        id: "R-ODD",
+        section: "4.2",
+        level: "MUST",
+        quote: "hexDecode MUST return null when the text has an odd length",
+      },
+    ];
+    c.clauses = [
+      {
+        ...vec(c, "V-SPEC"),
+        covers: ["R-ODD"],
+        source: { spec: "4.2" },
+        section: "4.2",
+      },
+    ];
+    const r = runGates(c, { docs: docs(hex) });
+    expect(messages(r).filter((m) => m.startsWith("[provenance]"))).toEqual([]);
+    vec(c, "V-SPEC").source = { spec: "4.3" };
+    expect(
+      messages(runGates(c, { docs: docs(hex) })).filter((m) =>
+        m.startsWith("[provenance]"),
+      ),
+    ).toEqual([
+      '[provenance] V-SPEC.source: §4.3 ("Empty input") never says "null", so it does not state the expected result',
+    ]);
   });
 
   test("a cite source for a null must say null", () => {
