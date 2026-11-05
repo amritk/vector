@@ -158,6 +158,9 @@ const passed = (id: string): Map<string, SourceRun> =>
   new Map([[id, { id, command: "printf deadbeef", outcome: "pass" }]]);
 const messages = (r: ReturnType<typeof runGates>) =>
   r.issues.map((i) => `[${i.gate}] ${i.at}: ${i.message}`);
+/** The refusal when requirement `id` is covered but never requires `word`. */
+const GENERIC = (id: string, word = "null") =>
+  `does not state the expected result: ${id} does not require "${word}" as the result (an affirmative MUST, SHALL or REQUIRED to, a result verb, then "${word}")`;
 
 describe("reading a spec", () => {
   test("detects an RFC and a markdown spec", () => {
@@ -699,6 +702,8 @@ describe("a markdown contract", () => {
   test("refuses a MUST of the main spec that is neither tested nor excluded", () => {
     const c = hexContract();
     c.requirements = c.requirements.filter((r) => r.id !== "R-ODD");
+    // With R-ODD gone nothing states V-SPEC's null, so V-SPEC goes too.
+    c.clauses = c.clauses.filter((k) => k.id !== "V-SPEC");
     for (const k of c.clauses) k.covers = ["R-LOWER"];
     const r = runGates(c, { docs: docs(), commands: passed("V-CMD") });
     expect(messages(r)).toEqual([
@@ -735,6 +740,8 @@ describe("a markdown contract", () => {
   test("an exclusion accounts for a MUST, and must quote the section", () => {
     const c = hexContract();
     c.requirements = c.requirements.filter((r) => r.id !== "R-ODD");
+    // With R-ODD gone nothing states V-SPEC's null, so V-SPEC goes too.
+    c.clauses = c.clauses.filter((k) => k.id !== "V-SPEC");
     for (const k of c.clauses) k.covers = ["R-LOWER"];
     c.exclusions = [
       {
@@ -992,7 +999,7 @@ describe("vector provenance", () => {
       "A decoder MUST refuse for a string of odd length";
     const r = runGates(c, { docs: docs(d), commands: passed("V-CMD") });
     expect(messages(r)).toEqual([
-      '[provenance] V-SPEC.source: §2.1 ("Decoding") never says "null", so it does not state the expected result',
+      `[provenance] V-SPEC.source: §2.1 ("Decoding") ${GENERIC("R-ODD")}`,
     ]);
   });
 
@@ -1028,8 +1035,8 @@ describe("vector provenance", () => {
     );
     const bare = runGates(c, { docs: docs(), commands: passed("V-CMD") });
     expect(messages(bare)).toEqual([
-      '[fidelity] V-BOOL-CITE.expect: §2.1 ("Decoding") never says "true", so it does not state the expected result',
-      '[provenance] V-BOOL-SPEC.source: §2.1 ("Decoding") never says "false", so it does not state the expected result',
+      `[fidelity] V-BOOL-CITE.expect: §2.1 ("Decoding") ${GENERIC("R-ODD", "true")}`,
+      `[provenance] V-BOOL-SPEC.source: §2.1 ("Decoding") ${GENERIC("R-ODD", "false")}`,
     ]);
     // "is True never" names the word but no keyword makes it the result, so
     // only "MUST be False" counts. The new MUST sentence is a requirement.
@@ -1052,7 +1059,7 @@ describe("vector provenance", () => {
         runGates(c, { docs: docs(onePolarity), commands: passed("V-CMD") }),
       ),
     ).toEqual([
-      '[fidelity] V-BOOL-CITE.expect: §2.1 ("Decoding") never says "true", so it does not state the expected result',
+      `[fidelity] V-BOOL-CITE.expect: §2.1 ("Decoding") ${GENERIC("R-ODD", "true")}; ${GENERIC("R-ISHEX", "true").replace("does not state the expected result: ", "")}`,
     ]);
     const stated = parseMarkdownSpec(
       SPEC.replace(
@@ -1073,11 +1080,24 @@ describe("vector provenance", () => {
   });
 
   test("only an affirmative requirement states the result", () => {
-    const probe = (sentence: string, bool?: boolean) => {
+    // `quote` set: the vector covers a requirement in §4 with that quote.
+    // Unset: the sentence is only section text, and the vector covers R-ODD,
+    // a requirement elsewhere (§2.1).
+    const probe = (sentence: string, bool?: boolean, quote?: string) => {
       const d = parseMarkdownSpec(`${SPEC}\n## 4. Probe\n\n${sentence}\n`);
       const c = hexContract();
       const v = vec(c, "V-SPEC");
       v.source = { spec: "4" };
+      if (quote !== undefined) {
+        c.requirements.push({
+          id: "R-PROBE",
+          section: "4",
+          level: "MUST",
+          // The markdown reader drops inline-code backticks.
+          quote: quote.replaceAll("`", ""),
+        });
+        v.covers.push("R-PROBE");
+      }
       if (bool !== undefined) {
         c.functions.push({
           name: "isHex",
@@ -1087,12 +1107,19 @@ describe("vector provenance", () => {
         v.call = "isHex";
         v.expect = { bool };
       }
+      // The probe's own quote must be found, or the case proves nothing.
       return messages(
         runGates(c, { docs: docs(d), commands: passed("V-CMD") }),
-      ).filter((m) => m.startsWith("[provenance]"));
+      ).filter((m) => m.startsWith("[provenance]") || m.includes("R-PROBE:"));
     };
-    const refused = (word = "null") => [
-      `[provenance] V-SPEC.source: §4 ("Probe") never says "${word}", so it does not state the expected result`,
+    const at = '[provenance] V-SPEC.source: §4 ("Probe") ';
+    const REASON = "does not state the expected result: ";
+    const uncovered = (word = "null") => [
+      `${at}does not state the expected result: V-SPEC covers no requirement cited to it, so nothing there requires the result "${word}"`,
+    ];
+    const refused = (word = "null") => [`${at}${GENERIC("R-PROBE", word)}`];
+    const because = (why: string) => [
+      `${at}does not state the expected result: R-PROBE ${why}`,
     ];
     for (const sentence of [
       // Round 2.
@@ -1160,10 +1187,188 @@ describe("vector provenance", () => {
       "If the input is odd, f MUST return null.",
       "Unless told otherwise, f SHALL return null.",
       "f MUST NOT always return null.",
+    ]) {
+      expect([sentence, probe(sentence)]).toEqual([sentence, uncovered()]);
+      // Covered, its quote still does not state the value (for one reason
+      // or another; the reasons are pinned below).
+      const got = probe(sentence, undefined, sentence);
+      expect([sentence, got.length]).toEqual([sentence, 1]);
+      expect([sentence, got[0]?.startsWith(`${at}${REASON}R-PROBE `)]).toEqual([
+        sentence,
+        true,
+      ]);
+    }
+    for (const [sentence, bool] of [
+      ["f SHALL be true.", false],
+      ["f MUST NOT return true.", true],
+    ] as const) {
+      expect(probe(sentence, bool)).toEqual(uncovered(String(bool)));
+      expect(probe(sentence, bool, sentence)).toEqual(refused(String(bool)));
+    }
+    // Round 5: the section text alone never states the value, whatever it
+    // says or wherever it says it.
+    for (const text of [
+      "Earlier drafts said that f MUST return null, but this was removed in draft 04.",
+      "Some implementations MUST return null, which is a bug.",
+      "For example, a Python decoder MUST return null.",
+      "> f MUST return null",
+      "| call | result |\n|------|--------|\n| f | MUST return null |",
+      "```js\n// f MUST return null\n```",
+      "f MUST return null or throw.",
+      "f MUST return null\u2011terminated strings.",
+      "f MUST return null.",
     ])
-      expect([sentence, probe(sentence)]).toEqual([sentence, refused()]);
-    expect(probe("f SHALL be true.", false)).toEqual(refused("false"));
-    expect(probe("f MUST NOT return true.", true)).toEqual(refused("true"));
+      expect([text, probe(text)]).toEqual([text, uncovered()]);
+    // Nor does a covered requirement that says it some other way.
+    const covered: [string, string, string[]][] = [
+      [
+        "Earlier drafts said that f MUST return null, but this was removed in draft 04.",
+        "Earlier drafts said that f MUST return null, but this was removed in draft 04.",
+        refused(),
+      ],
+      [
+        "f MUST return null, but this was removed in draft 04.",
+        "f MUST return null, but this was removed in draft 04.",
+        because('retracts "null" after stating it ("but")'),
+      ],
+      [
+        "Some implementations MUST return null, which is a bug.",
+        "Some implementations MUST return null, which is a bug.",
+        refused(),
+      ],
+      [
+        "f MUST return null, which is a bug.",
+        "f MUST return null, which is a bug.",
+        because('retracts "null" after stating it ("bug")'),
+      ],
+      [
+        "f MUST return null. This is deprecated.",
+        "f MUST return null. This is deprecated.",
+        because('retracts "null" after stating it ("deprecated")'),
+      ],
+      [
+        "f MUST return null; that is wrong.",
+        "f MUST return null; that is wrong.",
+        because('retracts "null" after stating it ("wrong")'),
+      ],
+      [
+        "f MUST return null, which is incorrect.",
+        "f MUST return null, which is incorrect.",
+        because('retracts "null" after stating it ("incorrect")'),
+      ],
+      [
+        "f MUST return null, which is an error.",
+        "f MUST return null, which is an error.",
+        because('retracts "null" after stating it ("an error")'),
+      ],
+      [
+        "f MUST return null; that is not allowed.",
+        "f MUST return null; that is not allowed.",
+        because('retracts "null" after stating it ("not")'),
+      ],
+      [
+        "f MUST return null, which is forbidden.",
+        "f MUST return null, which is forbidden.",
+        because('retracts "null" after stating it ("forbidden")'),
+      ],
+      [
+        "f MUST return null, now removed.",
+        "f MUST return null, now removed.",
+        because('retracts "null" after stating it ("removed")'),
+      ],
+      [
+        "f MUST return null; this is obsolete.",
+        "f MUST return null; this is obsolete.",
+        because('retracts "null" after stating it ("obsolete")'),
+      ],
+      [
+        "For example, a Python decoder MUST return null.",
+        "For example, a Python decoder MUST return null.",
+        refused(),
+      ],
+      [
+        "> f MUST return null",
+        "f MUST return null",
+        because("is not in its prose (only in code, a blockquote or a table)"),
+      ],
+      [
+        "| call | result |\n|------|--------|\n| f | MUST return null |",
+        "MUST return null",
+        because("is not in its prose (only in code, a blockquote or a table)"),
+      ],
+      [
+        "```js\n// f MUST return null\n```",
+        "f MUST return null",
+        because("is not in its prose (only in code, a blockquote or a table)"),
+      ],
+      [
+        "f MUST return null or throw.",
+        "f MUST return null or throw.",
+        because(
+          'offers an alternative right after "null" ("or"), so "null" is not the whole result',
+        ),
+      ],
+      [
+        "f MUST return null, and 5 otherwise.",
+        "f MUST return null, and 5 otherwise.",
+        because(
+          'offers an alternative right after "null" (", and"), so "null" is not the whole result',
+        ),
+      ],
+      [
+        "f MUST return null/undefined.",
+        "f MUST return null/undefined.",
+        because(
+          'offers an alternative right after "null" ("/"), so "null" is not the whole result',
+        ),
+      ],
+      ...["-", "\u2010", "\u2011", "\u2013", "\u2212"].map(
+        (h): [string, string, string[]] => [
+          `f MUST return null${h}terminated strings.`,
+          `f MUST return null${h}terminated strings.`,
+          because(
+            `offers an alternative right after "null" ("${h}"), so "null" is not the whole result`,
+          ),
+        ],
+      ),
+    ];
+    for (const [text, quote, want] of covered)
+      expect([text, probe(text, undefined, quote)]).toEqual([text, want]);
+    // A vector covering a different requirement of the same section is
+    // refused: the stating requirement must be one it covers.
+    {
+      const d = parseMarkdownSpec(
+        `${SPEC}\n## 4. Probe\n\nf MUST return null on odd input. f MUST emit hex.\n`,
+      );
+      const c = hexContract();
+      c.requirements.push(
+        {
+          id: "R-NULL",
+          section: "4",
+          level: "MUST",
+          quote: "f MUST return null on odd input.",
+        },
+        {
+          id: "R-EMIT",
+          section: "4",
+          level: "MUST",
+          quote: "f MUST emit hex.",
+        },
+      );
+      vec(c, "V-CITE").covers.push("R-NULL");
+      const v = vec(c, "V-SPEC");
+      v.source = { spec: "4" };
+      v.covers = ["R-EMIT"];
+      const run = () =>
+        messages(runGates(c, { docs: docs(d), commands: passed("V-CMD") }));
+      expect(run()).toEqual([
+        // R-ODD is now covered by nothing.
+        "[coverage] R-ODD: MUST requirement (§2.1) is not checked by any clause",
+        `${at}${GENERIC("R-EMIT")}`,
+      ]);
+      v.covers = ["R-ODD", "R-EMIT", "R-NULL"];
+      expect(run()).toEqual([]);
+    }
     // These pass: the keyword governs the value, and a condition after the
     // value is not the value's.
     for (const sentence of [
@@ -1176,41 +1381,59 @@ describe("vector provenance", () => {
       "f MUST return `null` for odd input.",
       "It is not hex. So f MUST return null.",
       "It is not hex.\n\nf MUST return null.",
-    ])
-      expect([sentence, probe(sentence)]).toEqual([sentence, []]);
-    expect(probe("f MUST return true for valid input.", true)).toEqual([]);
-    expect(probe("f SHALL be false.", false)).toEqual([]);
-    expect(probe("f MUST give False for it.", false)).toEqual([]);
+    ]) {
+      // Only as a covered requirement (quoting the paragraph that states
+      // it); as bare text, never.
+      const quote = sentence.split("\n\n").at(-1) as string;
+      expect([sentence, probe(sentence, undefined, quote)]).toEqual([
+        sentence,
+        [],
+      ]);
+      expect([sentence, probe(sentence)]).toEqual([sentence, uncovered()]);
+    }
+    for (const [sentence, bool] of [
+      ["f MUST return true for valid input.", true],
+      ["f SHALL be false.", false],
+      ["f MUST give False for it.", false],
+    ] as const) {
+      expect(probe(sentence, bool, sentence)).toEqual([]);
+      expect(probe(sentence, bool)).toEqual(uncovered(String(bool)));
+    }
   });
 
-  test("the hex spec's §4.2 still states null", () => {
+  test("the hex spec's §4.2 still states null for V7 to V9", () => {
     const hex = parseDocument(readFileSync("specs/example-hex.md", "utf8"));
     const c = hexContract();
     c.requirements = [
       {
-        id: "R-ODD",
+        id: "R-REJECT",
         section: "4.2",
         level: "MUST",
-        quote: "hexDecode MUST return null when the text has an odd length",
+        quote:
+          'hexDecode MUST return null when the text has an odd length or contains any other character, including whitespace and a "0x" prefix.',
       },
     ];
+    const base = vec(c, "V-SPEC");
     c.clauses = [
-      {
-        ...vec(c, "V-SPEC"),
-        covers: ["R-ODD"],
-        source: { spec: "4.2" },
-        section: "4.2",
-      },
-    ];
-    const r = runGates(c, { docs: docs(hex) });
-    expect(messages(r).filter((m) => m.startsWith("[provenance]"))).toEqual([]);
-    vec(c, "V-SPEC").source = { spec: "4.3" };
-    expect(
-      messages(runGates(c, { docs: docs(hex) })).filter((m) =>
-        m.startsWith("[provenance]"),
-      ),
-    ).toEqual([
-      '[provenance] V-SPEC.source: §4.3 ("Empty input") never says "null", so it does not state the expected result',
+      ["V7", "abc"],
+      ["V8", "0x00"],
+      ["V9", "ab cd"],
+    ].map(([id, arg]) => ({
+      ...base,
+      id,
+      covers: ["R-REJECT"],
+      source: { spec: "4.2" },
+      section: "6",
+      args: [{ str: arg }],
+    }));
+    const provenance = () =>
+      messages(runGates(c, { docs: docs(hex) })).filter(
+        (m) => m.startsWith("[provenance]") || m.startsWith("[fidelity]"),
+      );
+    expect(provenance()).toEqual([]);
+    vec(c, "V7").source = { spec: "4.3" };
+    expect(provenance()).toEqual([
+      '[provenance] V7.source: §4.3 ("Empty input") does not state the expected result: V7 covers no requirement cited to it, so nothing there requires the result "null"',
     ]);
   });
 
@@ -1219,15 +1442,24 @@ describe("vector provenance", () => {
     vec(c, "V-SPEC").source = { cite: { section: "2" } };
     vec(c, "V-SPEC").section = undefined;
     vec(c, "V-SPEC").args = [{ str: "encoder" }];
-    const r = runGates(c, { docs: docs(), commands: passed("V-CMD") });
-    // §2 includes 2.1, which says null; §3 does not.
-    expect(messages(r)).toEqual([]);
+    // §2 prints "encoder", but V-SPEC's R-ODD is cited to §2.1, not §2: the
+    // stating requirement must be cited to the very section.
+    expect(
+      messages(runGates(c, { docs: docs(), commands: passed("V-CMD") })),
+    ).toEqual([
+      '[fidelity] V-SPEC.expect: §2 ("Encoding") does not state the expected result: V-SPEC covers no requirement cited to it, so nothing there requires the result "null"',
+    ]);
+    vec(c, "V-SPEC").source = { cite: { section: "2.1" } };
+    vec(c, "V-SPEC").args = [{ str: "abc" }];
+    expect(
+      messages(runGates(c, { docs: docs(), commands: passed("V-CMD") })),
+    ).toEqual([]);
     vec(c, "V-SPEC").source = { cite: { section: "3" } };
     vec(c, "V-SPEC").args = [{ str: "toHex" }];
     expect(
       messages(runGates(c, { docs: docs(), commands: passed("V-CMD") })),
     ).toEqual([
-      '[fidelity] V-SPEC.expect: §3 ("Test Vectors") never says "null", so it does not state the expected result',
+      '[fidelity] V-SPEC.expect: §3 ("Test Vectors") does not state the expected result: V-SPEC covers no requirement cited to it, so nothing there requires the result "null"',
     ]);
   });
 

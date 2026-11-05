@@ -21,6 +21,11 @@ export interface RfcSection {
    * markdown reader adds each bracketed byte list on a line of its own).
    */
   hexLines?: string[];
+  /**
+   * `lines` with code, table cells and blockquotes blanked out, when the
+   * reader knows them (markdown); only prose states a vector's result.
+   */
+  proseLines?: string[];
 }
 
 export interface RfcDocument {

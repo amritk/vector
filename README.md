@@ -149,30 +149,33 @@ Every vector says where its expected value comes from (`source`):
 |---|---|---|
 | `{"cite": {"section": "A.1"}}` (`"source"` optional) | printed in that section, with the args | fidelity |
 | `{"command": "…"}`, with `"section"` for the args | the command's trimmed stdout (lowercase hex for bytes) | `--run-sources` only (`sh -c` from the contract's directory, 30 s); otherwise reported as not run, never as passed. A timeout, non-zero exit or other output fails |
-| `{"spec": "4.2"}`, with `"section"` for the args | `null` or a `bool` that section states | provenance: the section must state `null` / `true` / `false` as the result, by the rule below |
+| `{"spec": "4.2"}`, with `"section"` for the args | `null` or a `bool` that section states | provenance: a requirement the vector covers, cited to that section, must state `null` / `true` / `false` as the result, by the rule below |
 
 A vector without a source fails the shape gate. A `cite` source for a `null` or
 `bool` is held to the same rule by fidelity.
 
-**When a section states `null`, `true` or `false`.** Only an affirmative
-requirement states a result. The rule is an allow list and fails closed: a
-false refusal costs a rewording (or a `cite` source on a printed value), a
-false pass would break the gate.
+**When a section states `null`, `true` or `false`.** Only a requirement the
+vector covers states a result, and only through its own quote. The rule is an
+allow list and fails closed: a false refusal costs a rewording of the
+requirement's quote, a false pass would break the gate. There is no way around
+it — a `cite` source is held to the same rule, and a `command` source cannot
+expect `null` or a `bool`.
 
-1. The section is split into sentences: the heading line on its own, then each
-   paragraph (up to a blank line), each cut at `.` `;` `!` or `?` followed by
-   whitespace and a capital letter, an opening quote or bracket, or the end.
-   Commas and colons never end a sentence.
-2. Within one sentence, an affirmative keyword governs the result: `MUST`,
+1. The vector `covers` a requirement cited to that very section (same source,
+   same section). Otherwise: "covers no requirement cited to it".
+2. That requirement's quote is in the section's prose — not only in a code
+   block, a blockquote or a table cell.
+3. The quote is split into sentences: each paragraph cut at `.` `;` `!` or `?`
+   followed by whitespace and a capital letter, an opening quote or bracket,
+   or the end. Commas and colons never end a sentence.
+4. Within one sentence, an affirmative keyword governs the result: `MUST`,
    `SHALL` or `REQUIRED to` (so also `is REQUIRED to`), in capitals and not
-   followed by `NOT`.
-3. Nothing comes between the keyword and the verb except, optionally,
-   `always`.
-4. The verb is a result verb in its bare form — `return`, `be`,
+   followed by `NOT`. Nothing comes between the keyword and the verb except,
+   optionally, `always`.
+5. The verb is a result verb in its bare form — `return`, `be`,
    `evaluate to`, `yield`, `give` or `output` — followed directly by the
-   value (in any case, optionally in backticks or emphasis) as a whole word,
-   not followed by `-` (`null-terminated` is not `null`).
-5. Nothing **before the keyword in that sentence** is a deny word, matched
+   value (in any case, optionally in backticks or emphasis) as a whole word.
+6. Nothing **before the keyword in that sentence** is a deny word, matched
    case-insensitively as a whole word (so `_not_` and `**never**` count):
    - negators: `not`, `never`, `no`, `none`, `nor`, `neither`, `nothing`,
      `nobody`, `nowhere`, `cannot`, and any `…n't` / `…n’t`;
@@ -181,17 +184,30 @@ false pass would break the gate.
      `unless`, `fail…`, `error…`, `invalid…`, `illegal…`, `unlike`, `other`,
      `but`;
    - conditions and hypotheticals: `if`, `when`, `whenever`, `while`,
-     `whether`, `assum…`, `suppos…`.
+     `whether`, `assum…`, `suppos…`;
+   - examples and reported text: `example…`, `e.g.`, `i.e.`, `instance`,
+     `some`, `earlier`, `previous…`, `former…`, `draft…`, `said`, `says`,
+     `historic…`, `legacy`.
+7. The value is the whole result: it is not followed by `or` / `and`
+   (optionally after a comma), `/`, or any hyphen or dash (`null-terminated`
+   is not `null`). Otherwise: "offers an alternative right after …".
+8. Nothing later in the quote retracts it: `not`, `never`, `no`, `none`,
+   `nor`, `neither`, `cannot`, `…n't`, `avoid…`, `forb…`, `prohibit…`,
+   `prevent…`, `disallow…`, `instead`, `rather`, `wrong…`, `incorrect…`,
+   `bug…`, `an error`, `but`, `remov…`, `deprecat…`, `obsolete…`,
+   `retract…`, `withdr…`, `supersed…`, `replaced`. Otherwise: "retracts …".
 
-Everything else is refused. So "hexDecode MUST return null when the text has
-an odd length" states null (its `when` comes after the value), as do "f MUST
-return true for valid input", "f SHALL be false" and "f MUST always return
-null on odd input". These do not: "MUST NOT, for any input, return null",
-"Implementations MUST NOT, e.g. Python or Go, return null", "f MUST, for every
-input, return null", "Implementations that return null are non-conforming",
-"an empty array, not null", "If the input is odd, f MUST return null", and —
-by design — any descriptive sentence without a keyword, such as "f returns
-null on failure" or "abc decodes to null".
+The refusal names the requirement and which step failed. So a vector covering
+the requirement "hexDecode MUST return null when the text has an odd length"
+(cited to that section) states null — its `when` comes after the value — as do
+"f MUST return true for valid input", "f SHALL be false" and "f MUST always
+return null on odd input". These do not: "MUST NOT, for any input, return
+null", "Implementations MUST NOT, e.g. Python or Go, return null", "f MUST, for
+every input, return null", "If the input is odd, f MUST return null", "f MUST
+return null or an empty array", "f MUST return null. This was a bug.", the same
+sentence only in a table or a code block, a requirement cited to another
+section, and — by design — any descriptive sentence without a keyword, such as
+"f returns null on failure" or "abc decodes to null".
 
 ### The gates (no model involved)
 

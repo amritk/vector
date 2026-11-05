@@ -379,12 +379,14 @@ function checkFidelity(
     if (!("cite" in k.source)) continue;
     const word = resultWord(k.expect);
     if (word === null) check(k.expect, "expect");
-    else if (!statesResult(sec, word)) {
-      issues.push({
-        gate: "fidelity",
-        at: `${k.id}.expect`,
-        message: `${place(c, docs, at)} ("${sec.title}") never says "${word}", so it does not state the expected result`,
-      });
+    else {
+      const why = statesResult(c, docs, k, at, sec, word);
+      if (why !== null)
+        issues.push({
+          gate: "fidelity",
+          at: `${k.id}.expect`,
+          message: `${place(c, docs, at)} ("${sec.title}") does not state the expected result: ${why}`,
+        });
     }
   }
 }
@@ -446,6 +448,20 @@ const DENY_RE = new RegExp(
     "whether",
     "assum[a-z]*",
     "suppos[a-z]*",
+    // examples, other parties and history: not this spec's own statement
+    "example[a-z]*",
+    "e\\.g",
+    "i\\.e",
+    "instance",
+    "some",
+    "earlier",
+    "previous[a-z]*",
+    "former[a-z]*",
+    "draft[a-z]*",
+    "said",
+    "says",
+    "historic[a-z]*",
+    "legacy",
   ].join("|")})(?![A-Za-z0-9])`,
   "i",
 );
@@ -453,49 +469,135 @@ const DENY_RE = new RegExp(
 // opening quote or bracket), or at the end of the text. Commas and colons
 // never end one, and neither does "e.g. return".
 const SENTENCE_END = /[.;!?](?=\s+["'“(\[A-Z]|\s*$)/;
+// Right after the value: an alternative ("null or throw", "null, and 5") or
+// a hyphen of any kind ("null-terminated", U+2010 to U+2015, U+2212).
+const ALTERNATIVE_RE =
+  /^\s*(?:,\s*)?(?:(?:or|and)(?![A-Za-z0-9])|[/\-\u2010-\u2015\u2212])/i;
+// Anywhere after the value in the rest of the quote: a word that withdraws,
+// negates or condemns it ("…, but this was removed", "…, which is a bug").
+const RETRACT_RE = new RegExp(
+  `(?<![A-Za-z0-9])(?:${[
+    "not",
+    "never",
+    "no",
+    "none",
+    "nor",
+    "neither",
+    "cannot",
+    "[A-Za-z]+n['’]t",
+    "avoid[a-z]*",
+    "forb[a-z]*",
+    "prohibit[a-z]*",
+    "prevent[a-z]*",
+    "disallow[a-z]*",
+    "instead",
+    "rather",
+    "wrong[a-z]*",
+    "incorrect[a-z]*",
+    "bug[a-z]*",
+    "an\\s+error",
+    "but",
+    "remov[a-z]*",
+    "deprecat[a-z]*",
+    "obsolete[a-z]*",
+    "retract[a-z]*",
+    "withdr[a-z]*",
+    "supersed[a-z]*",
+    "replaced",
+  ].join("|")})(?![A-Za-z0-9])`,
+  "i",
+);
 
 /**
- * The section's sentences: its heading line on its own, then each paragraph
- * (lines up to a blank line), whitespace-collapsed and split at SENTENCE_END.
+ * The section's prose, whitespace-collapsed: its lines without code, table
+ * cells or blockquotes (as the markdown reader marks them; in an RFC, lines
+ * starting with ">"). A requirement stated only there is an example, a
+ * quotation or a cell, not the section's own statement.
  */
-const sentences = (sec: RfcSection): string[] => {
-  const [heading = "", ...body] = sec.lines;
-  const paragraphs = [heading];
-  let cur: string[] = [];
-  for (const line of [...body, ""]) {
-    if (line.trim() !== "") cur.push(line);
-    else if (cur.length) {
-      paragraphs.push(cur.join("\n"));
-      cur = [];
-    }
-  }
-  return paragraphs.flatMap((p) => normalizeText(p).split(SENTENCE_END));
-};
+const proseText = (sec: RfcSection): string =>
+  normalizeText(
+    (sec.proseLines ?? sec.lines)
+      .map((l) => (/^\s*>/.test(l) ? "" : l))
+      .join("\n"),
+  );
 
-/**
- * Does the section state `word` as a result? Only an affirmative requirement
- * does: within one sentence, MUST, SHALL or REQUIRED to (never followed by
- * NOT), then optionally "always", then a result verb (return, be, evaluate
- * to, yield, give, output), then `word` as a whole word not followed by "-"
- * (so not "null-terminated"); and nothing before the keyword in that
- * sentence may match DENY_RE. So "hexDecode MUST return null when the text
- * has an odd length" counts, while descriptive "f returns null on failure",
- * "MUST NOT, e.g. Python or Go, return null" and "If x, f MUST return null"
- * do not. Everything this does not recognise is refused.
- */
-const statesResult = (sec: RfcSection, word: string): boolean => {
+/** Why one quote does not state `word`, or null when it does. */
+const quoteStates = (quote: string, word: string): string | null => {
   // The value in any case ("False", "TRUE"), optionally in code or emphasis.
   const value = [...word].map((ch) => `[${ch}${ch.toUpperCase()}]`).join("");
   const re = new RegExp(
-    `(?<![A-Za-z0-9])${RESULT_KEYWORD}\\s+(?:always\\s+)?${RESULT_VERB}\\s+[\`*_]*${value}[\`*_]*(?![A-Za-z0-9_\`*-])`,
+    `(?<![A-Za-z0-9])${RESULT_KEYWORD}\\s+(?:always\\s+)?${RESULT_VERB}\\s+[\`*_]*${value}[\`*_]*(?![A-Za-z0-9_\`*])`,
     "g",
   );
-  return sentences(sec).some((sentence) =>
-    [...sentence.matchAll(re)].some(
-      (m) => !DENY_RE.test(sentence.slice(0, m.index)),
-    ),
-  );
+  const text = normalizeText(quote);
+  let why = `does not require "${word}" as the result (an affirmative MUST, SHALL or REQUIRED to, a result verb, then "${word}")`;
+  let start = 0;
+  for (const sentence of text.split(SENTENCE_END)) {
+    const at = text.indexOf(sentence, start);
+    start = at + sentence.length;
+    for (const m of sentence.matchAll(re)) {
+      if (DENY_RE.test(sentence.slice(0, m.index))) continue;
+      const rest = text.slice(at + (m.index ?? 0) + m[0].length);
+      const alt = ALTERNATIVE_RE.exec(rest);
+      if (alt) {
+        why = `offers an alternative right after "${word}" ("${alt[0].trim()}"), so "${word}" is not the whole result`;
+        continue;
+      }
+      const retract = RETRACT_RE.exec(rest);
+      if (retract) {
+        why = `retracts "${word}" after stating it ("${retract[0]}")`;
+        continue;
+      }
+      return null;
+    }
+  }
+  return why;
 };
+
+/**
+ * Does the section state `word` as the vector's result? Only through a
+ * requirement the vector covers, cited to that very section, whose verbatim
+ * quote (in the section's prose, not a code block, blockquote or table) says
+ * MUST, SHALL or REQUIRED to (never followed by NOT), optionally "always",
+ * a result verb, then `word` as a whole word; with nothing before the keyword
+ * in its sentence matching DENY_RE, no alternative or hyphen right after the
+ * value, and no retraction anywhere after it. Returns why it does not, or
+ * null when it does. Everything this does not recognise is refused.
+ */
+function statesResult(
+  c: RfcContract,
+  docs: Map<string, RfcDocument>,
+  k: VectorClause,
+  at: Citation,
+  sec: RfcSection,
+  word: string,
+): string | null {
+  const src = sourceOf(c, at.source);
+  const doc = docs.get(src);
+  const covered = c.requirements.filter(
+    (r) =>
+      k.covers.includes(r.id) &&
+      sourceOf(c, r.source) === src &&
+      doc !== undefined &&
+      findSection(doc, r.section) === sec,
+  );
+  if (covered.length === 0)
+    return `${k.id} covers no requirement cited to it, so nothing there requires the result "${word}"`;
+  const prose = proseText(sec);
+  const reasons: string[] = [];
+  for (const r of covered) {
+    if (!prose.includes(normalizeText(r.quote))) {
+      reasons.push(
+        `${r.id} is not in its prose (only in code, a blockquote or a table)`,
+      );
+      continue;
+    }
+    const why = quoteStates(r.quote, word);
+    if (why === null) return null;
+    reasons.push(`${r.id} ${why}`);
+  }
+  return reasons.join("; ");
+}
 
 /** Checks literals against one section's text. */
 function literalCheck(
@@ -591,13 +693,20 @@ function checkProvenance(
       );
       if (!sec) continue;
       const word = resultWord(k.expect) as string;
-      if (!statesResult(sec, word)) {
+      const why = statesResult(
+        c,
+        docs,
+        k as VectorClause,
+        { section: s.spec },
+        sec,
+        word,
+      );
+      if (why !== null)
         issues.push({
           gate: "provenance",
           at: `${k.id}.source`,
-          message: `${place(c, docs, { section: s.spec })} ("${sec.title}") never says "${word}", so it does not state the expected result`,
+          message: `${place(c, docs, { section: s.spec })} ("${sec.title}") does not state the expected result: ${why}`,
         });
-      }
     } else if ("command" in s) {
       const run = commands?.get(k.id);
       if (!run) {

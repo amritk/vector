@@ -21,6 +21,8 @@
 //                      heading, a `<!--` not a comment), so a quote or hex
 //                      value in code is found and a MUST in code still has to
 //                      be accounted for. A fence never closed is refused.
+//                      They are not prose (`proseLines`), so they never
+//                      state a vector's expected null or bool.
 //   indented code      kept verbatim, like any other line; a `<!--` on a line
 //                      indented four spaces or a tab is text.
 //   inline code        the backticks are dropped: "`hexEncode`" reads as
@@ -30,6 +32,8 @@
 //                      is dropped); every row starts a new hex run and every
 //                      cell ends one, so a cell is never glued to its
 //                      neighbour, or a row to the line above, in a hex run.
+//                      Cells are not prose either.
+//   blockquotes        kept as written, `>` included; not prose.
 //   HTML comments      `<!-- … -->` is dropped, headings inside it included. A
 //                      `<!--` never closed is refused: it would otherwise hide
 //                      the rest of the document from every gate.
@@ -113,7 +117,13 @@ interface MdLine {
   /** Extra hex-run lines this line contributes (its bracketed byte lists). */
   hex: string[];
   heading?: { level: number; id: string | null; title: string };
+  /** Code, a table cell or a blockquote: text, but not the spec's prose. */
+  quoted?: true;
 }
+
+/** The line, marked as not prose. */
+const quoted = (l: MdLine): MdLine =>
+  l.text === "" ? l : { ...l, quoted: true };
 
 /** Table cells, split on `|` not escaped as `\|`. */
 const cells = (row: string): string[] =>
@@ -144,7 +154,7 @@ function readLines(text: string): MdLine[] {
       ) {
         fence = null;
         out.push(BREAK());
-      } else out.push(withBytes(rawLine));
+      } else out.push(quoted(withBytes(rawLine)));
       continue;
     }
     const [line, open] = stripComments(rawLine, comment !== null);
@@ -185,11 +195,12 @@ function readLines(text: string): MdLine[] {
       for (const cell of cells(inline)) {
         const l = withBytes(cell);
         l.hex.push("--");
-        out.push(l);
+        out.push(quoted(l));
       }
       continue;
     }
-    out.push(withBytes(inline));
+    const l = withBytes(inline);
+    out.push(/^ {0,3}>/.test(inline) ? quoted(l) : l);
   }
   // An unterminated form would swallow the rest of the document (its
   // headings and its MUSTs), so it is refused, never read to the end.
@@ -334,6 +345,7 @@ export function parseMarkdownSpec(text: string): RfcDocument {
       lines: all.map((x) => x.text),
       ownLines: take(at, ownEnd).map((x) => x.text),
       hexLines: all.flatMap((x) => [x.text, ...x.hex]),
+      proseLines: all.map((x) => (x.quoted ? "" : x.text)),
     });
   });
   const looseLines = lines.filter((_, i) => !owned[i]).map((x) => x.text);
