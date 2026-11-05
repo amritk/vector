@@ -3,7 +3,8 @@
   "contract": "rfc5869-hkdf-sha256",
   "source": {
     "rfc": 5869,
-    "title": "HMAC-based Extract-and-Expand Key Derivation Function (HKDF)"
+    "title": "HMAC-based Extract-and-Expand Key Derivation Function (HKDF)",
+    "sha256": "7a40eb3835b35fc947eb12a2ed614db079d43b26e50dbc537c31fba16397089c"
   },
   "target": {
     "module": "nish/crypto/hkdf"

@@ -97,6 +97,15 @@ const DECL_HEAD =
 const VALUE_HEAD = /^(?:function|class|async)\b/;
 /** A line that ends like this needs an operand on the next. */
 const NEEDS_OPERAND = /(?:[=(,?:[]|=>|&&|\|\||\?\?)$/;
+/** `export const|let|var`: one statement may declare several names. */
+const VAR_EXPORT = /^export\s+(?:declare\s+)?(?:const|let|var)\s/;
+/**
+ * A comma, outside every bracket, that starts another declarator: a name and
+ * then `=`, `:`, `;`, `,` or the line's end, or nothing more on the line.
+ * Commas in a type's `<…>` are followed by a type, then `>` or `,`… which only
+ * a name with `,` after it also matches: that is refused too (fails closed).
+ */
+const NEXT_DECLARATOR = /^,\s*(?:[A-Za-z_$][\w$]*\s*(?:[=:;,]|$)|$)/;
 /** `export` as a keyword, not a property (`.export`) or part of a name. */
 const EXPORT_WORD = /(?<![\w$.])export(?![\w$])/g;
 
@@ -107,13 +116,15 @@ const EXPORT_WORD = /(?<![\w$.])export(?![\w$])/g;
  * in every line after it up to the next. A string counts as an operand, so a
  * line ending in one never carries on. Fails closed: brackets that do not
  * balance (a regex literal with a bracket in it) are an error, and an item
- * with a second `export` in it (two on a line) cannot be named.
+ * with a second `export` in it (two on a line), or an `export const` that
+ * declares more than one name, cannot be named.
  */
 function topLevelItems(source: string, file: string): Item[] {
   const src = source.replace(/^\uFEFF/, "");
   const items: Item[] = [];
   let depth = 0;
   let prev = "";
+  let varExport = false;
   for (const [k, { expr }] of maskLines(src).entries()) {
     const trimmed = expr.trim();
     if (trimmed === "") continue;
@@ -130,6 +141,7 @@ function topLevelItems(source: string, file: string): Item[] {
         it.bad = (err as Error).message;
       }
       items.push(it);
+      varExport = it.name !== null && VAR_EXPORT.test(trimmed);
     } else if (items.length > 0) items[items.length - 1].end = k + 1;
     const lead = expr.length - expr.trimStart().length;
     // Each `export` outside every bracket must be the first code of an item's
@@ -145,6 +157,15 @@ function topLevelItems(source: string, file: string): Item[] {
           it.bad ??= `${where}: an export that is not its line's first code`;
         else throw new DiffParseError(`${where}: an export it cannot place`);
       }
+      if (
+        depth === 0 &&
+        c === "," &&
+        varExport &&
+        NEXT_DECLARATOR.test(expr.slice(j))
+      ) {
+        const it = items[items.length - 1];
+        it.bad ??= `${where}: export ${it.name} declares more than one name; give each its own export`;
+      }
       if ("([{".includes(c)) depth++;
       else if (")]}".includes(c) && --depth < 0)
         throw new DiffParseError(`${where}: a closing bracket with none open`);
@@ -154,6 +175,19 @@ function topLevelItems(source: string, file: string): Item[] {
   if (depth !== 0)
     throw new DiffParseError(`${file}: ${depth} bracket(s) never closed`);
   return items;
+}
+
+/**
+ * Every name `source` exports at the top level. Fails closed: an export it
+ * cannot name, anywhere in the file, is an error.
+ */
+export function exportedNames(source: string, file: string): Set<string> {
+  const names = new Set<string>();
+  for (const it of topLevelItems(source, file)) {
+    if (it.bad) throw new DiffParseError(it.bad);
+    if (it.name !== null) names.add(it.name);
+  }
+  return names;
 }
 
 /** A file whose exports this reads: JavaScript or TypeScript. Others have lines only. */
@@ -280,7 +314,8 @@ function exportChanges(
   return out;
 }
 
-const run = (cwd: string, args: string[], what: string): string => {
+/** Runs git in `cwd` and returns its stdout; any failure is an error. */
+export const git = (cwd: string, args: string[], what: string): string => {
   const r = spawnSync("git", args, {
     cwd,
     encoding: "utf8",
@@ -293,6 +328,17 @@ const run = (cwd: string, args: string[], what: string): string => {
   return r.stdout;
 };
 
+/** Refuses a base git would misread: an option, or a range. */
+export function checkBase(base: string): void {
+  // A base that looks like an option would be read as one.
+  if (base.startsWith("-"))
+    throw new Error(`git diff: the base ${base} looks like an option`);
+  // `A..B` or `A...B` diffs two commits, but the post-image is read from the
+  // working tree: the exports would be judged against the wrong file.
+  if (base.includes(".."))
+    throw new Error(`git diff: the base ${base} is a range; give one commit`);
+}
+
 /**
  * `git diff -U0 <base>` in `cwd` (the working tree against base), parsed, plus
  * every untracked file (not ignored) as wholly added: a new module nobody has
@@ -303,20 +349,14 @@ export function gitDiff(
   base: string,
   paths: string[] = [],
 ): FileDiff[] {
-  // A base that looks like an option would be read as one.
-  if (base.startsWith("-"))
-    throw new Error(`git diff: the base ${base} looks like an option`);
-  // `A..B` or `A...B` diffs two commits, but the post-image is read from the
-  // working tree: the exports would be judged against the wrong file.
-  if (base.includes(".."))
-    throw new Error(`git diff: the base ${base} is a range; give one commit`);
-  const top = run(
+  checkBase(base);
+  const top = git(
     cwd,
     ["rev-parse", "--show-toplevel"],
     "git rev-parse",
   ).replace(/\n$/, "");
   const read = (file: string) => readFileSync(join(top, file), "utf8");
-  const text = run(
+  const text = git(
     cwd,
     [
       "-c",
@@ -338,7 +378,7 @@ export function gitDiff(
     `git diff -U0 ${base}`,
   );
   const diffs = parseGitDiff(text, read);
-  const untracked = run(
+  const untracked = git(
     cwd,
     [
       "ls-files",

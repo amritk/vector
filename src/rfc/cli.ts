@@ -6,6 +6,12 @@
 //   vector spec run     <contract.json>   check, emit, then run it with nish
 //   vector spec extract --spec <spec> --module <src.ts> --target <spec> -o <contract.json>
 //                                         (the LLM proposes; the gates dispose)
+//
+// The PR gates:
+//   vector spec frozen  [contract.json…] --base <ref>   spec side or implementation, not both
+//   vector spec stale   <test.ts> <contract.json>      the test was emitted from this contract
+//   vector spec exports <contract.json> --base <ref> --nish-root <dir>
+//   vector spec mutate  <contract.json> --base <ref> --nish-root <dir> [--jobs N] [--max N]
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -14,10 +20,14 @@ import {
   declaredSources,
   validateContractShape,
 } from "./contract.ts";
-import { emitNishTest } from "./emit-nish.ts";
+import { emitNishTest, staleReason } from "./emit-nish.ts";
+import { exportsCheck, moduleDiff, renderExports } from "./exports.ts";
+import { frozenCheck, renderFrozen, sha256, sourceFile } from "./frozen.ts";
 import { type SourceRun, runGates } from "./gates.ts";
+import { MutationRunError, runMutants } from "./mutate.ts";
 import {
   type ContractReport,
+  renderMarkdown,
   renderReport,
   reportJson,
   reportStatus,
@@ -31,6 +41,10 @@ export const RFC_USAGE = `Usage: vector spec check <contract.json> [options]
        vector spec emit  <contract.json> -o <main.ts> [options]
        vector spec run   <contract.json> [-o <main.ts>] [options]
        vector spec extract --spec <file> --module <src.ts> --target <module> -o <contract.json>
+       vector spec frozen  [<contract.json>…] --base <ref> [--repo <dir>]
+       vector spec stale   <test.ts> <contract.json>
+       vector spec exports <contract.json> --base <ref> --nish-root <dir>
+       vector spec mutate  <contract.json> --base <ref> --nish-root <dir> [--jobs <n>] [--max <n>]
        (vector rfc … is the same command)
 
 Options:
@@ -42,19 +56,30 @@ Options:
   --module <file>     the target module's source, for the signature gate
   --nish-root <dir>   a nish checkout: finds the module (std/…) and the compiler
   --nish <bin>        the nish compiler (default: <nish-root>/build/seed/bin/nish, else nish)
-  --json              machine-readable output
+  --base <ref>        frozen, exports, mutate: the commit the change is against
+  --repo <dir>        frozen: the repository (default: the current directory)
+  --jobs <n>          mutate: mutants run at once (default 1)
+  --max <n>           mutate: at most this many mutants, spread over the changed lines
+  --format <f>        text (default), markdown (check, emit, run, mutate: a PR comment) or json
+  --json              the same as --format json
   --max-retries <n>   extract: repair attempts (default 3)`;
 
 interface RfcArgs {
   cmd: string;
   contract?: string;
+  /** Every non-option argument; contract is the first. */
+  positional: string[];
   out?: string;
   rfc?: string;
   module?: string;
   nishRoot?: string;
   nish?: string;
   target?: string;
-  json: boolean;
+  base?: string;
+  repo?: string;
+  jobs?: number;
+  max?: number;
+  format: "text" | "markdown" | "json";
   runSources: boolean;
   maxRetries: number;
 }
@@ -64,7 +89,8 @@ class UsageError extends Error {}
 function parse(argv: string[]): RfcArgs {
   const a: RfcArgs = {
     cmd: argv[0] ?? "",
-    json: false,
+    positional: [],
+    format: "text",
     runSources: false,
     maxRetries: 3,
   };
@@ -74,6 +100,12 @@ function parse(argv: string[]): RfcArgs {
       const v = argv[++i];
       if (v === undefined) throw new UsageError(`${x} needs a value`);
       return v;
+    };
+    const count = () => {
+      const n = Number(val());
+      if (!Number.isInteger(n) || n < 1)
+        throw new UsageError(`${x} expects an integer >= 1`);
+      return n;
     };
     switch (x) {
       case "-o":
@@ -100,7 +132,28 @@ function parse(argv: string[]): RfcArgs {
         a.target = val();
         break;
       case "--json":
-        a.json = true;
+        a.format = "json";
+        break;
+      case "--format": {
+        const f = val();
+        if (f !== "text" && f !== "markdown" && f !== "json")
+          throw new UsageError(
+            `--format expects text, markdown or json, not ${f}`,
+          );
+        a.format = f;
+        break;
+      }
+      case "--base":
+        a.base = val();
+        break;
+      case "--repo":
+        a.repo = val();
+        break;
+      case "--jobs":
+        a.jobs = count();
+        break;
+      case "--max":
+        a.max = count();
         break;
       case "--max-retries":
         a.maxRetries = Number(val());
@@ -109,18 +162,32 @@ function parse(argv: string[]): RfcArgs {
         }
         break;
       default:
-        if (x.startsWith("-") || a.contract)
-          throw new UsageError(`unexpected argument ${x}`);
-        a.contract = x;
+        if (x.startsWith("-")) throw new UsageError(`unexpected argument ${x}`);
+        a.positional.push(x);
     }
   }
+  a.contract = a.positional[0];
+  // Each command takes its own number of files: frozen any, stale two, the rest one.
+  const want = a.cmd === "frozen" ? undefined : a.cmd === "stale" ? 2 : 1;
+  if (want !== undefined && a.positional.length > want)
+    throw new UsageError(`unexpected argument ${a.positional[want]}`);
+  if (a.cmd === "stale" && a.positional.length < 2)
+    throw new UsageError("stale needs <test.ts> <contract.json>");
+  if (
+    a.format === "markdown" &&
+    !["check", "emit", "run", "mutate"].includes(a.cmd)
+  )
+    throw new UsageError(
+      "--format markdown is for check, emit, run and mutate",
+    );
   return a;
 }
 
-const VECTOR_ROOT = resolve(
-  dirname(new URL(import.meta.url).pathname),
-  "../..",
-);
+/** A value the command cannot run without. */
+function need<T>(v: T | undefined, what: string): T {
+  if (v === undefined) throw new UsageError(`${what}`);
+  return v;
+}
 
 function readSpec(path: string): RfcDocument {
   let text: string;
@@ -138,9 +205,8 @@ function readSpec(path: string): RfcDocument {
 
 /**
  * The text of every source the contract declares, by id. `--spec` gives the
- * main one; a `path` is relative to the contract; an `rfc` is looked for as
- * rfc<N>.txt beside the contract, in ../rfcs, then in vector's rfcs/. A source
- * found nowhere is left out, and the fidelity gate refuses the contract for it.
+ * main one; the rest are where sourceFile finds them. A source found nowhere
+ * is left out, and the fidelity gate refuses the contract for it.
  */
 function loadSources(
   a: RfcArgs,
@@ -148,21 +214,10 @@ function loadSources(
   contractPath: string,
 ): Map<string, RfcDocument> {
   const docs = new Map<string, RfcDocument>();
-  const here = dirname(contractPath);
   const { main, list } = declaredSources(c);
   for (const src of list) {
-    const candidates =
-      src.id === main && a.rfc
-        ? [a.rfc]
-        : src.path
-          ? [resolve(here, src.path)]
-          : [
-              join(here, `rfc${src.rfc}.txt`),
-              join(here, "../rfcs", `rfc${src.rfc}.txt`),
-              join(VECTOR_ROOT, "rfcs", `rfc${src.rfc}.txt`),
-            ];
     const found =
-      candidates.length === 1 ? candidates[0] : candidates.find(existsSync);
+      src.id === main && a.rfc ? a.rfc : sourceFile(src, contractPath);
     if (found) docs.set(src.id, readSpec(found));
   }
   return docs;
@@ -248,8 +303,99 @@ async function checkContract(a: RfcArgs): Promise<ContractReport> {
 
 function print(a: RfcArgs, r: ContractReport): void {
   console.log(
-    a.json ? JSON.stringify(reportJson(r), null, 2) : renderReport(r),
+    a.format === "json"
+      ? JSON.stringify(reportJson(r), null, 2)
+      : a.format === "markdown"
+        ? renderMarkdown(r)
+        : renderReport(r),
   );
+}
+
+function readText(path: string): string {
+  try {
+    return readFileSync(path, "utf8");
+  } catch (err) {
+    throw new UsageError(`cannot read ${path}: ${(err as Error).message}`);
+  }
+}
+
+/** frozen, stale and exports: a report, as text or JSON, and its exit code. */
+function gateResult(
+  a: RfcArgs,
+  r: { problems: string[] },
+  text: string,
+): number {
+  console.log(a.format === "json" ? JSON.stringify(r, null, 2) : text);
+  return r.problems.length === 0 ? 0 : 1;
+}
+
+function stale(a: RfcArgs): number {
+  const [testPath, contractPath] = a.positional;
+  const test = readText(testPath);
+  let bytes: Uint8Array;
+  try {
+    bytes = readFileSync(contractPath);
+  } catch (err) {
+    throw new UsageError(
+      `cannot read ${contractPath}: ${(err as Error).message}`,
+    );
+  }
+  const why = staleReason(test, bytes);
+  const r = {
+    test: testPath,
+    contract: contractPath,
+    problems: why ? [why] : [],
+  };
+  return gateResult(
+    a,
+    r,
+    why
+      ? `${testPath}: ${why}`
+      : `${testPath}: emitted from ${contractPath} as it is now`,
+  );
+}
+
+/**
+ * Check, emit, then mutate the target module's changed lines in scratch
+ * installs of --nish-root, its working tree's std/ with one mutant each.
+ */
+async function mutate(a: RfcArgs): Promise<number> {
+  const base = need(a.base, "mutate needs --base <ref>");
+  const nishRoot = need(a.nishRoot, "mutate needs --nish-root <dir>");
+  const report = await checkContract(a);
+  if (
+    reportStatus(report) === "INVALID" ||
+    !report.contract ||
+    !report.sampling
+  ) {
+    print(a, report);
+    return 1;
+  }
+  const c = report.contract;
+  const md = moduleDiff(c, nishRoot, base);
+  const test = emitNishTest(c, report.sampling.properties, {
+    regenerate: `vector spec mutate ${a.contract} --base ${base} --nish-root ${nishRoot}`,
+    contractSha256: sha256(readFileSync(need(a.contract, "which contract?"))),
+  });
+  try {
+    report.mutation = await runMutants({
+      contract: c,
+      test,
+      nishRoot,
+      modulePath: md.modulePath,
+      source: readText(join(nishRoot, md.modulePath)),
+      ranges: md.diff?.ranges ?? [],
+      jobs: a.jobs,
+      max: a.max,
+      allowSurvivors: c.allowSurvivors,
+    });
+  } catch (err) {
+    if (!(err instanceof MutationRunError)) throw err;
+    console.error(`error: ${err.message}`);
+    return 1;
+  }
+  print(a, report);
+  return report.mutation.survivors.length === 0 ? 0 : 1;
 }
 
 export async function rfcMain(argv: string[]): Promise<number> {
@@ -264,9 +410,30 @@ export async function rfcMain(argv: string[]): Promise<number> {
         target: a.target,
         out: a.out,
         maxRetries: a.maxRetries,
-        json: a.json,
+        json: a.format === "json",
       });
     }
+    if (a.cmd === "stale") return stale(a);
+    if (a.cmd === "frozen") {
+      const r = frozenCheck({
+        repo: a.repo ?? process.cwd(),
+        base: need(a.base, "frozen needs --base <ref>"),
+        contracts:
+          a.positional.length > 0
+            ? a.positional.map((p) => resolve(p))
+            : undefined,
+      });
+      return gateResult(a, r, renderFrozen(r));
+    }
+    if (a.cmd === "exports") {
+      const r = exportsCheck({
+        contract: JSON.parse(readText(need(a.contract, "which contract?"))),
+        nishRoot: need(a.nishRoot, "exports needs --nish-root <dir>"),
+        base: need(a.base, "exports needs --base <ref>"),
+      });
+      return gateResult(a, r, renderExports(r));
+    }
+    if (a.cmd === "mutate") return await mutate(a);
     if (!["check", "emit", "run"].includes(a.cmd)) {
       console.error(RFC_USAGE);
       return 2;
@@ -289,10 +456,11 @@ export async function rfcMain(argv: string[]): Promise<number> {
     const regenerate = `vector spec emit ${a.contract} -o ${a.out ?? "<main.ts>"}`;
     const source = emitNishTest(report.contract, report.sampling.properties, {
       regenerate,
+      contractSha256: sha256(readFileSync(a.contract as string)),
     });
     if (a.out) writeFileSync(a.out, source);
     if (a.cmd === "emit") {
-      if (!a.json) {
+      if (a.format === "text") {
         print(a, report);
         console.log(`\n(written to ${a.out})`);
       } else print(a, report);
