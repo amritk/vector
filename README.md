@@ -149,10 +149,45 @@ Every vector says where its expected value comes from (`source`):
 |---|---|---|
 | `{"cite": {"section": "A.1"}}` (`"source"` optional) | printed in that section, with the args | fidelity |
 | `{"command": "…"}`, with `"section"` for the args | the command's trimmed stdout (lowercase hex for bytes) | `--run-sources` only (`sh -c` from the contract's directory, 30 s); otherwise reported as not run, never as passed. A timeout, non-zero exit or other output fails |
-| `{"spec": "4.2"}`, with `"section"` for the args | `null` or a `bool` that section states | provenance: the section must state `null` / `true` / `false` as the result, right after a verb (`returns null`, `is false`, `decodes to true`), in a clause that neither negates it nor makes the value a condition; a bare mention (`not null`, `true never`), `MUST NOT return null`, `never returns true` and `if the input is null, …` do not count |
+| `{"spec": "4.2"}`, with `"section"` for the args | `null` or a `bool` that section states | provenance: the section must state `null` / `true` / `false` as the result, by the rule below |
 
 A vector without a source fails the shape gate. A `cite` source for a `null` or
 `bool` is held to the same rule by fidelity.
+
+**When a section states `null`, `true` or `false`.** The rule is deliberately
+crude and fails closed: a false refusal costs a rewording, a false pass would
+break the gate.
+
+1. The section is split into sentences: the heading line on its own, then each
+   paragraph (up to a blank line), each cut at `.` `;` `!` or `?` followed by
+   whitespace and a capital letter, an opening quote or bracket, or the end.
+   Commas and colons never end a sentence, nor does `e.g. return`.
+2. The value must follow a result verb — `return(s|ed|ing)`, `is`, `are`, `be`,
+   `was`, `yield(s)`, `give(s)`, `equal(s)`, `output(s)`, or
+   `decode(s)`/`encode(s)`/`evaluate(s)`/`map(s)`/`convert(s)`/`resolve(s) to` —
+   as a whole word (`null-terminated` is not `null`).
+3. Nothing **earlier in the same sentence** may be a deny word, matched
+   case-insensitively as a whole word (so `_not_` and `**never**` count):
+   - negators: `not`, `never`, `no`, `none`, `nor`, `neither`, `nothing`,
+     `nobody`, `nowhere`, `cannot`, and any `…n't` / `…n’t`;
+   - avoiders: `avoid…`, `forb…`, `prohibit…`, `prevent…`, `refus…`,
+     `reject…`, `disallow…`, `instead`, `rather`, `except…`, `without`,
+     `unless`, `fail…`, `error…`, `invalid…`, `illegal…`, `unlike`, `other`,
+     `but`;
+   - conditions and hypotheticals: `if`, `when`, `whenever`, `while`,
+     `whether`, `assum…`, `suppos…`.
+4. Nothing **later in the same sentence** may be a prohibition: the negators
+   above (but not `nothing`, `nobody`, `nowhere`), `avoid…`, `forb…`,
+   `prohibit…`, `prevent…`, `disallow…`, `instead`, `rather`, `wrong…`,
+   `incorrect…`, `bug…` or `an error`. Conditions, `other`, `invalid` and
+   `reject` may follow the value.
+
+So "hexDecode MUST return null when the text has an odd length" states null
+(its `when` comes after the value). These do not: "MUST NOT, for any input,
+return null", "avoid returning null", "is forbidden from returning null",
+"Instead of returning null, f throws", "doesn’t return null", "an empty
+array, not null", "Returning null is not allowed", and also "When the text is odd, hexDecode returns null"
+(reword it with the condition last).
 
 ### The gates (no model involved)
 

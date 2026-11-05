@@ -430,6 +430,25 @@ describe("reading a spec", () => {
     expect(normativeSentences(indented).map((n) => n.section)).toEqual(["2"]);
   });
 
+  test("empty and escaped comment openers hide nothing", () => {
+    for (const opener of ["<!-->", "<!--->", "\\<!--"]) {
+      const d = parseMarkdownSpec(
+        `## 1. A\n\nSee ${opener} here.\n\nIt MUST do x.\n\n<!-- later -->\n`,
+      );
+      expect([opener, normativeSentences(d).map((n) => n.sentence)]).toEqual([
+        opener,
+        ["It MUST do x."],
+      ]);
+    }
+  });
+
+  test("dropping the BCP 14 sentence from a table cell keeps the cell break", () => {
+    const d = parseMarkdownSpec(
+      "## 1. A\n\n| a | b |\n|---|---|\n| The key words MUST and MAY are to be interpreted as in BCP 14. ab | cd |\n",
+    );
+    expect(hexRuns(d.sections.get("1") as never)).toEqual(["ab", "cd"]);
+  });
+
   test("an unterminated comment or fence is refused, never read to the end", () => {
     expect(() =>
       parseMarkdownSpec("## 1. A\n\n<!-- open\n\n## 2. B\n\nIt MUST do x.\n"),
@@ -1012,10 +1031,14 @@ describe("vector provenance", () => {
       '[fidelity] V-BOOL-CITE.expect: §2.1 ("Decoding") never says "true", so it does not state the expected result',
       '[provenance] V-BOOL-SPEC.source: §2.1 ("Decoding") never says "false", so it does not state the expected result',
     ]);
-    // "True never" names the word but does not state it as the result: the
-    // polarity is the spec's, so only "is False" counts.
+    // "is True never" names the word but does not state it as the result:
+    // the polarity is the spec's, so only "is False" counts. (In one sentence
+    // the trailing "never" would refuse both.)
     const onePolarity = parseMarkdownSpec(
-      SPEC.replace("to null.", "to null. isHex is False for it, True never."),
+      SPEC.replace(
+        "to null.",
+        "to null. isHex is False for it. It is True never.",
+      ),
     );
     expect(
       messages(
@@ -1058,12 +1081,57 @@ describe("vector provenance", () => {
     expect(probe("When the key is null the call fails.")).toEqual(refused);
     expect(probe("f MUST return an empty array, not null.")).toEqual(refused);
     expect(probe("The flag is set to null.")).toEqual(refused);
-    // Stated results pass: a condition after the result is not the value's.
+    // Round 3: the whole sentence is judged, against a broad deny list.
+    for (const sentence of [
+      "f MUST NOT, for any input, return null.",
+      "f MUST NOT: for any input, return null.",
+      "f MUST NOT, e.g. for odd input, return null.",
+      "f MUST avoid returning null.",
+      "f is forbidden from returning null.",
+      "f is prohibited from returning null.",
+      "f prevents returning null.",
+      "f refuses to return null.",
+      "f rejects input rather than returning null.",
+      "Instead of returning null, f throws.",
+      "Rather than returning null, f throws.",
+      "f doesn\u2019t return null.",
+      "f won't return null.",
+      "f _never_ returns null.",
+      "f **not** once returns null.",
+      "f returns 5 except it returns null.",
+      "f returns 5 without it returns null.",
+      "Unless the key is set, f returns null.",
+      "It fails to return null.",
+      "It is an error to return null.",
+      "When the text is odd, hexDecode returns null.",
+      "Whether f returns null is unspecified.",
+      "Assume f returns null.",
+      "No input is null.",
+      "None of the outputs is null.",
+      "f returns null-terminated strings.",
+      "Returning null is not allowed.",
+      "Returning null is forbidden.",
+      "Returning null is prohibited for any input.",
+      "f returning null is wrong.",
+      "f returns null, but never for valid input.",
+      "Returning null here is a bug.",
+      "Returning null is an error.",
+      "f returns null rather than throwing, never.",
+    ])
+      expect([sentence, probe(sentence)]).toEqual([sentence, refused]);
+    // Stated results pass: a condition after the result is not the value's,
+    // and a sentence before it is another sentence.
     expect(
       probe("hexDecode MUST return null when the text has an odd length."),
     ).toEqual([]);
-    expect(probe("When the text is odd, hexDecode returns null.")).toEqual([]);
     expect(probe("abc decodes to null.")).toEqual([]);
+    expect(probe("f returns null for invalid input.")).toEqual([]);
+    expect(probe("f returns null to reject the input.")).toEqual([]);
+    expect(
+      probe("f returns null when the text contains any other character."),
+    ).toEqual([]);
+    expect(probe("It is not hex. So f returns null.")).toEqual([]);
+    expect(probe("It is not hex.\n\nf returns null.")).toEqual([]);
   });
 
   test("the hex spec's §4.2 still states null", () => {

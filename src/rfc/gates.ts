@@ -399,29 +399,128 @@ function resultWord(lit: Literal): string | null {
 // verb with it is ("decodes to null").
 const RESULT_VERB =
   "(?:returns?|returned|returning|is|are|be|was|yields?|gives?|equals?|outputs?|(?:decodes?|encodes?|evaluates?|maps?|converts?|resolves?)\\s+to)";
-// Before the verb in the same clause, these reverse or condition it: "MUST
-// NOT return null", "never returns true", "if the input is null, …".
-const NEGATION_RE = /\b(?:not|never|no|cannot|neither|nor)\b|n't\b/i;
-const CONDITION_RE = /\b(?:if|when|whenever|unless|while|whether)\b/i;
+// Anything before the match in its sentence that reverses, avoids or
+// conditions the result. Deliberately broad: a false refusal costs a
+// rewording, a false pass breaks the gate. Word edges are letters and digits
+// (not \b), so `_not_` and `**never**` count; both apostrophes count in n't.
+const DENY_RE = new RegExp(
+  `(?<![A-Za-z0-9])(?:${[
+    // negators
+    "not",
+    "never",
+    "no",
+    "none",
+    "nor",
+    "neither",
+    "nothing",
+    "nobody",
+    "nowhere",
+    "cannot",
+    "[A-Za-z]+n['’]t",
+    // avoiders
+    "avoid[a-z]*",
+    "forb[a-z]*",
+    "prohibit[a-z]*",
+    "prevent[a-z]*",
+    "refus[a-z]*",
+    "reject[a-z]*",
+    "disallow[a-z]*",
+    "instead",
+    "rather",
+    "except[a-z]*",
+    "without",
+    "unless",
+    "fail[a-z]*",
+    "error[a-z]*",
+    "invalid[a-z]*",
+    "illegal[a-z]*",
+    "unlike",
+    "other",
+    "but",
+    // conditions and hypotheticals
+    "if",
+    "when",
+    "whenever",
+    "while",
+    "whether",
+    "assum[a-z]*",
+    "suppos[a-z]*",
+  ].join("|")})(?![A-Za-z0-9])`,
+  "i",
+);
+// After the value, a prohibition still reverses it ("Returning null is not
+// allowed", "returning null is forbidden"); conditions, "other", "invalid"
+// and "reject" do not ("returns null when the input has any other
+// character", "returns null for invalid input", "returns null to reject it").
+const DENY_AFTER_RE = new RegExp(
+  `(?<![A-Za-z0-9])(?:${[
+    "not",
+    "never",
+    "no",
+    "none",
+    "nor",
+    "neither",
+    "cannot",
+    "[A-Za-z]+n['’]t",
+    "avoid[a-z]*",
+    "forb[a-z]*",
+    "prohibit[a-z]*",
+    "prevent[a-z]*",
+    "disallow[a-z]*",
+    "instead",
+    "rather",
+    "wrong[a-z]*",
+    "incorrect[a-z]*",
+    "bug[a-z]*",
+    "an error",
+  ].join("|")})(?![A-Za-z0-9])`,
+  "i",
+);
+// A sentence ends at . ; ! ? followed by whitespace and a capital (or an
+// opening quote or bracket), or at the end of the text. Commas and colons
+// never end one, and neither does "e.g. return".
+const SENTENCE_END = /[.;!?](?=\s+["'“(\[A-Z]|\s*$)/;
 
 /**
- * Does the section state `word` as a result: right after a verb that gives
- * one ("returns null", "is false", "decodes to true"), in a clause that
- * neither negates the verb nor makes the value a condition? A bare mention
- * ("true never", "not null"), "MUST NOT return null", "never returns true"
- * and "if the input is null, f returns 5" do not count, so the polarity is
- * the spec's own.
+ * The section's sentences: its heading line on its own, then each paragraph
+ * (lines up to a blank line), whitespace-collapsed and split at SENTENCE_END.
+ */
+const sentences = (sec: RfcSection): string[] => {
+  const [heading = "", ...body] = sec.lines;
+  const paragraphs = [heading];
+  let cur: string[] = [];
+  for (const line of [...body, ""]) {
+    if (line.trim() !== "") cur.push(line);
+    else if (cur.length) {
+      paragraphs.push(cur.join("\n"));
+      cur = [];
+    }
+  }
+  return paragraphs.flatMap((p) => normalizeText(p).split(SENTENCE_END));
+};
+
+/**
+ * Does the section state `word` as a result? It must follow a result verb
+ * ("returns null", "is false", "decodes to true") as a whole word (not
+ * "null-terminated"), and nothing earlier in the same sentence may match
+ * DENY_RE, nor anything after it DENY_AFTER_RE. So "MUST NOT, for any input, return null", "avoid returning
+ * null", "instead of returning null", "if the input is null, f returns 5"
+ * and even "when the text is odd, f returns null" do not count, while "f
+ * MUST return null when the text has an odd length" does: its condition
+ * comes after the value.
  */
 const statesResult = (sec: RfcSection, word: string): boolean => {
-  const re = new RegExp(`\\b${RESULT_VERB}\\s+${word}\\b`, "gi");
-  return sectionText(sec)
-    .split(/[.;:!?,](?=\s|$)/)
-    .some((clause) =>
-      [...clause.matchAll(re)].some((m) => {
-        const before = clause.slice(0, m.index);
-        return !NEGATION_RE.test(before) && !CONDITION_RE.test(before);
-      }),
-    );
+  const re = new RegExp(
+    `(?<![A-Za-z0-9])${RESULT_VERB}\\s+${word}(?![A-Za-z0-9_-])`,
+    "gi",
+  );
+  return sentences(sec).some((sentence) =>
+    [...sentence.matchAll(re)].some(
+      (m) =>
+        !DENY_RE.test(sentence.slice(0, m.index)) &&
+        !DENY_AFTER_RE.test(sentence.slice(m.index + m[0].length)),
+    ),
+  );
 };
 
 /** Checks literals against one section's text. */

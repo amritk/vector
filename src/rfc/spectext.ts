@@ -233,6 +233,18 @@ function stripComments(line: string, open: boolean): [string, boolean] {
       i = to;
       continue;
     }
+    // A backslash escape is literal: `\<!--` opens nothing, `\`` no span.
+    if (line[i] === "\\" && i + 1 < line.length) {
+      kept += line.slice(i, i + 2);
+      i += 2;
+      continue;
+    }
+    // "<!-->" and "<!--->" are whole (empty) comments, as in CommonMark.
+    const empty = /^<!---?>/.exec(line.slice(i));
+    if (empty) {
+      i += empty[0].length;
+      continue;
+    }
     if (line.startsWith("<!--", i)) {
       inside = true;
       i += 4;
@@ -276,7 +288,13 @@ function dropBoilerplate(lines: MdLine[]): MdLine[] {
       .replace(BCP14_RE, (m) => m.replace(/[^\n]/g, ""))
       .split("\n");
     kept.forEach((text, j) => {
-      if (text !== para[j]) lines[i - para.length + j] = withBytes(text);
+      const at = i - para.length + j;
+      if (text === para[j]) return;
+      // A table cell's own hex break stays, so the cell still ends its run.
+      const next = withBytes(text);
+      if (lines[at].hex.at(-1) === "--" && next.hex.at(-1) !== "--")
+        next.hex.push("--");
+      lines[at] = next;
     });
   }
   return lines;
