@@ -263,7 +263,7 @@
             "label": {
               "type": "string",
               "minLength": 1,
-              "pattern": "[0-9A-Za-z]",
+              "pattern": "[A-Za-z]",
               "description": "The name the RFC prints right before the value (`L = 42`, `Block Count: 1`); fidelity checks the pair. Without one the int is unchecked and reported as a warning."
             },
             "unchecked": {

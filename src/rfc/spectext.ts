@@ -13,7 +13,9 @@
 //   other headings     end nothing but their own heading line; an unnumbered
 //                      `##` heading at a section's level ends it, and the text
 //                      under it belongs to no section (see `loose`).
-//   fenced code        ``` or ~~~ fences: the fence lines are dropped, the
+//   fenced code        ``` or ~~~ fences (a ``` fence's info string has no
+//                      backtick; the closing fence is bare and at least as
+//                      long as the opening one): the fence lines are dropped, the
 //                      lines inside are kept verbatim (a `#` there is not a
 //                      heading), so a quote or hex value in code is found and a
 //                      MUST in code still has to be accounted for.
@@ -21,13 +23,18 @@
 //   inline code        the backticks are dropped: "`hexEncode`" reads as
 //                      "hexEncode" in quotes, strings and hex runs.
 //   tables             each cell becomes a line of its own (the delimiter row
-//                      is dropped), so a cell is never glued to its neighbour
-//                      in a quote or a hex run.
+//                      is dropped), and every cell ends a hex run, so a cell is
+//                      never glued to its neighbour in a quote or a hex run.
+//   HTML comments      `<!-- … -->` is dropped, headings inside it included.
 //   byte lists         "[00 0f f0 ff]" anywhere in a line is also read as hex,
 //                      a run of its own (only for hex runs, not for quotes).
-//   BCP 14 paragraph   the "… are to be interpreted as described in BCP 14 …"
-//                      boilerplate names the keywords without using them, so
-//                      it is removed: it is neither quotable nor normative.
+//   BCP 14 boilerplate the sentence from "The key words …" to the BCP 14 or
+//                      RFC 2119 reference and on to its full stop names the
+//                      keywords without using them, so that sentence alone is
+//                      removed: it is neither quotable nor normative. The rest
+//                      of its paragraph stays, so a MUST beside it still counts,
+//                      and a tail after the reference that names a keyword
+//                      itself ends the removal there.
 //   anything else      emphasis, links and lists are kept as written, so a
 //                      quote copies them verbatim (`**MUST**` stays starred).
 
@@ -38,26 +45,38 @@ export type SpecFormat = "rfc" | "markdown";
 const MD_HEADING_RE = /^ {0,3}(#{1,6})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/;
 const NUMBERED_RE = /^(\d+(?:\.\d+)*|[A-Z](?:\.\d+)*)\.[ \t]+(\S.*)$/;
 const MD_APPENDIX_RE = /^Appendix ([A-Z])\.[ \t]+(\S.*)$/;
-const FENCE_RE = /^ {0,3}(`{3,}|~{3,})/;
+const FENCE_RE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 const TABLE_DELIM_RE = /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)*\|?\s*$/;
 const BYTE_LIST_RE = /\[((?:[0-9a-fA-F]{2})(?:[ ,]+[0-9a-fA-F]{2})*)\]/g;
-const BCP14_RE = /are to be interpreted as described in[^.]*BCP\s*14/i;
+const KEYWORD = "(?:MUST|SHALL|SHOULD|REQUIRED|RECOMMENDED|MAY|OPTIONAL)";
+/**
+ * The BCP 14 key-words sentence, whatever its verb phrase ("interpreted as
+ * described in", "as in"): "key words", then a BCP 14 / RFC 2119 reference,
+ * then up to its full stop, stopping early at a keyword after the reference.
+ */
+const BCP14_RE = new RegExp(
+  `\\b(?:[Tt]he\\s+)?[Kk]ey\\s+words\\b[^.]*?\\b(?:BCP\\s*14|RFC\\s*2119)\\b(?:(?!\\b${KEYWORD}\\b)[^.])*\\.?`,
+  "g",
+);
+const NUMBERED_HEADING_RE =
+  /^ {0,3}#{1,6}[ \t]+`*(?:\d+(?:\.\d+)*|[A-Z](?:\.\d+)*|Appendix [A-Z])\.[ \t]+\S/m;
 
 /** The id of the pseudo-section holding text outside every numbered section. */
 export const LOOSE_SECTION = "(unnumbered)";
 
 /**
  * Which reader a text needs. An RFC has its "Request for Comments: N" header
- * and the form feeds of its page breaks; a markdown spec has `#` headings.
+ * and the form feeds of its page breaks; a markdown spec has numbered `#`
+ * headings (`## 1. Introduction`), so a script's `# comment` is not one.
  * Anything else is refused rather than read as a document with no sections.
  */
 export function detectFormat(text: string): SpecFormat {
   if (/Request for Comments:\s*\d+/.test(text) && text.includes("\f")) {
     return "rfc";
   }
-  if (/^ {0,3}#{1,6}[ \t]+\S/m.test(text)) return "markdown";
+  if (NUMBERED_HEADING_RE.test(text)) return "markdown";
   throw new Error(
-    'not a specification: neither an RFC (a "Request for Comments: N" header and form feeds) nor a markdown spec (# headings)',
+    'not a specification: neither an RFC (a "Request for Comments: N" header and form feeds) nor a markdown spec (numbered # headings such as "## 1. Introduction")',
   );
 }
 
@@ -89,16 +108,25 @@ function readLines(text: string): MdLine[] {
   const raw = text.replace(/\r\n?/g, "\n").split("\n");
   const out: MdLine[] = [];
   let fence: string | null = null;
-  for (const line of raw) {
-    const f = line.match(FENCE_RE);
+  let comment = false;
+  for (const rawLine of raw) {
     if (fence !== null) {
-      if (f && f[1][0] === fence[0] && f[1].length >= fence.length) {
+      const f = rawLine.match(FENCE_RE);
+      if (
+        f &&
+        f[1][0] === fence[0] &&
+        f[1].length >= fence.length &&
+        f[2].trim() === ""
+      ) {
         fence = null;
         out.push({ text: "", hex: [] });
-      } else out.push({ text: line, hex: [] });
+      } else out.push({ text: rawLine, hex: [] });
       continue;
     }
-    if (f) {
+    const [line, open] = stripComments(rawLine, comment);
+    comment = open;
+    const f = line.match(FENCE_RE);
+    if (f && !(f[1][0] === "`" && f[2].includes("`"))) {
       fence = f[1];
       out.push({ text: "", hex: [] });
       continue;
@@ -120,12 +148,38 @@ function readLines(text: string): MdLine[] {
     }
     if (/^\s*\|/.test(inline)) {
       if (TABLE_DELIM_RE.test(inline)) continue;
-      for (const cell of cells(inline)) out.push(withBytes(cell));
+      // Every cell ends a hex run ("--" is never hex), so two cells or two
+      // rows are never read as one value.
+      for (const cell of cells(inline)) {
+        const l = withBytes(cell);
+        l.hex.push("--");
+        out.push(l);
+      }
       continue;
     }
     out.push(withBytes(inline));
   }
   return dropBoilerplate(out);
+}
+
+/** The line without its HTML comments; whether a comment is still open after it. */
+function stripComments(line: string, open: boolean): [string, boolean] {
+  let kept = "";
+  let rest = line;
+  let inside = open;
+  for (;;) {
+    if (inside) {
+      const end = rest.indexOf("-->");
+      if (end < 0) return [kept, true];
+      rest = rest.slice(end + 3);
+      inside = false;
+    }
+    const start = rest.indexOf("<!--");
+    if (start < 0) return [kept + rest, false];
+    kept += rest.slice(0, start);
+    rest = rest.slice(start + 4);
+    inside = true;
+  }
 }
 
 /** A line, plus each "[00 0f …]" in it as a hex-run line fenced by breaks. */
@@ -137,25 +191,26 @@ function withBytes(text: string): MdLine {
   return { text, hex };
 }
 
-/** Blank out the paragraph that is the BCP 14 boilerplate. */
+/**
+ * Remove the BCP 14 key-words sentence from each paragraph it is in, and
+ * nothing else of that paragraph: the lines stay, minus the sentence's text.
+ */
 function dropBoilerplate(lines: MdLine[]): MdLine[] {
   let start = 0;
   for (let i = 0; i <= lines.length; i++) {
     const end =
       i === lines.length || lines[i].text.trim() === "" || lines[i].heading;
     if (!end) continue;
-    const para = lines.slice(start, i);
-    if (
-      BCP14_RE.test(
-        para
-          .map((l) => l.text)
-          .join(" ")
-          .replace(/\s+/g, " "),
-      )
-    ) {
-      for (let j = start; j < i; j++) lines[j] = { text: "", hex: [] };
-    }
+    const para = lines.slice(start, i).map((l) => l.text);
     start = i + 1;
+    if (para.length === 0) continue;
+    const kept = para
+      .join("\n")
+      .replace(BCP14_RE, (m) => m.replace(/[^\n]/g, ""))
+      .split("\n");
+    kept.forEach((text, j) => {
+      if (text !== para[j]) lines[i - para.length + j] = withBytes(text);
+    });
   }
   return lines;
 }

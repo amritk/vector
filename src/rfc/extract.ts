@@ -186,7 +186,7 @@ export async function runExtract(opts: {
   }
   writeFileSync(opts.out, `${JSON.stringify(outcome.contract, null, 2)}\n`);
   console.log(
-    `\n(contract written to ${opts.out} after ${outcome.attempts} attempt(s); review it, then \`vector spec run\`)`,
+    `\n(contract written to ${opts.out} after ${outcome.attempts} attempt(s); review it, then \`vector spec check --run-sources\` before relying on its command sources, then \`vector spec run\`)`,
   );
   return 0;
 }

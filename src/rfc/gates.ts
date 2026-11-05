@@ -395,8 +395,16 @@ function resultWord(lit: Literal): string | null {
   return "bool" in lit ? String(lit.bool) : null;
 }
 
+/**
+ * Does the section state `word` as a result: right after a verb that gives
+ * one ("returns null", "is false", "decodes to true")? A bare mention ("true
+ * never", "not null") does not count, so the polarity is the spec's own.
+ */
 const statesResult = (sec: RfcSection, word: string): boolean =>
-  new RegExp(`\\b${word}\\b`, "i").test(sectionText(sec));
+  new RegExp(
+    `\\b(?:returns?|returned|returning|is|are|be|was|to|yields?|gives?|equals?|outputs?)\\s+${word}\\b`,
+    "i",
+  ).test(sectionText(sec));
 
 /** Checks literals against one section's text. */
 function literalCheck(

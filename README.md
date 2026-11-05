@@ -122,7 +122,8 @@ A contract may cite several documents:
 A citation (`requirement`, `exclusion`, a vector's `cite`) names its document
 with `"source": "<id>"`, the main one by default. Fidelity reads the cited
 document; completeness reads the main one only. An undeclared id, or a declared
-source whose text cannot be found, fails the contract. `"source": {"rfc": N,
+source whose text cannot be found, fails `check` (a missing RFC file used to be
+a warning; it is now a failure). `"source": {"rfc": N,
 "title": …}` alone is the one-RFC form and still works.
 
 Every vector says where its expected value comes from (`source`):
@@ -131,9 +132,15 @@ Every vector says where its expected value comes from (`source`):
 |---|---|---|
 | `{"cite": {"section": "A.1"}}` (`"source"` optional) | printed in that section, with the args | fidelity |
 | `{"command": "…"}`, with `"section"` for the args | the command's trimmed stdout (lowercase hex for bytes) | `--run-sources` only (`sh -c` from the contract's directory, 30 s); otherwise reported as not run, never as passed. A timeout, non-zero exit or other output fails |
-| `{"spec": "4.2"}`, with `"section"` for the args | `null` or a `bool` that section states | provenance: the section must say `null` / `true` / `false` |
+| `{"spec": "4.2"}`, with `"section"` for the args | `null` or a `bool` that section states | provenance: the section must state `null` / `true` / `false` as the result, right after a verb (`returns null`, `is false`, `decodes to true`); a bare mention (`not null`, `true never`) does not count |
 
-A vector without a source fails the shape gate.
+A vector without a source fails the shape gate. A `cite` source for a `null` or
+`bool` is held to the same rule by fidelity.
+
+In a markdown spec, a section is a numbered heading (`## 3.1. Length`); fenced
+code is kept verbatim, HTML comments are dropped, each table cell is its own
+line and ends any hex run, and only the BCP 14 key-words sentence is removed
+from its paragraph.
 
 ### The gates (no model involved)
 

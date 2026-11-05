@@ -225,6 +225,154 @@ describe("reading a spec", () => {
     expect(sectionText(section("1"))).not.toContain("BCP 14");
   });
 
+  test("only the BCP 14 sentence is dropped; a MUST in its paragraph stays", () => {
+    const d = parseMarkdownSpec(
+      "## 1. Rules\nKeys MUST be 32 bytes.\nThe key words in this document are to be interpreted as described in BCP 14.\n",
+    );
+    expect(normativeSentences(d)).toEqual([
+      {
+        section: "1",
+        keyword: "MUST",
+        at: 14,
+        sentence: "Rules Keys MUST be 32 bytes.",
+      },
+    ]);
+    expect(sectionText(d.sections.get("1") as never)).not.toContain("BCP 14");
+    // Any wording of the boilerplate, and a keyword after the reference in
+    // the same sentence is not swallowed with it.
+    const as = parseMarkdownSpec(
+      "## 1. Rules\nThe key words MUST and MAY are to be interpreted as in\nBCP 14 (RFC 2119) when in capitals, and a key MUST be 32 bytes.\n",
+    );
+    expect(normativeSentences(as).map((n) => n.keyword)).toEqual(["MUST"]);
+    expect(sectionText(as.sections.get("1") as never)).toContain(
+      "MUST be 32 bytes",
+    );
+  });
+
+  test("two cells or two rows of a table are never one hex run", () => {
+    const d = parseMarkdownSpec(
+      "## 1. Vectors\n\n| in |\n|----|\n| 01 |\n| 02 |\n\n| ab | cd |\n",
+    );
+    const runs = hexRuns(d.sections.get("1") as never);
+    expect(runs).toEqual(["01", "02", "ab", "cd"]);
+    // So a cite vector whose bytes are split across cells or rows is refused.
+    const split = parseMarkdownSpec(
+      SPEC.replace(
+        "| [de ad be ef] | `deadbeef` |",
+        "| de | ad |\n| be | ef |",
+      ),
+    );
+    const r = runGates(hexContract(), {
+      docs: docs(split),
+      commands: passed("V-CMD"),
+    });
+    expect(
+      messages(r).filter((m) => m.startsWith("[fidelity] V-CITE.args")),
+    ).toEqual([
+      '[fidelity] V-CITE.args[0]: 4-byte value is not printed in §3 ("Test Vectors")',
+    ]);
+    // A hex dump in an RFC still reads across its lines.
+    expect(hexRuns(rfc5869.sections.get("A.1") as never).join(" ")).toContain(
+      "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+    );
+  });
+
+  test("a fence opens only without a backtick in its info string, and closes bare", () => {
+    const d = parseMarkdownSpec(
+      "## 1. T\n\n```a ` b\n\n## 2. U\n\n```text\n## 9. X\n``` not a close\n## 8. Y\n````\n\n## 3. V\n",
+    );
+    expect([...d.sections.keys()]).toEqual(["1", "2", "3"]);
+    expect(d.sections.get("2")?.lines).toContain("## 9. X");
+    expect(d.sections.get("2")?.lines).toContain("``` not a close");
+  });
+
+  test("an HTML comment is dropped, a heading inside it included", () => {
+    const d = parseMarkdownSpec(
+      "## 1. T\n\nKeep <!-- drop --> this.\n<!--\n## 2. Hidden\nKeys MUST be hidden.\n-->\n## 3. V\n",
+    );
+    expect([...d.sections.keys()]).toEqual(["1", "3"]);
+    expect(sectionText(d.sections.get("1") as never)).toContain("Keep this.");
+    expect(sectionText(d.sections.get("1") as never)).not.toContain("drop");
+    expect(normativeSentences(d)).toEqual([]);
+  });
+
+  test("a shell script's # comment is not a markdown spec", () => {
+    expect(() =>
+      detectFormat("#!/bin/sh\n# build the thing\necho hi\n"),
+    ).toThrow("numbered # headings");
+    expect(detectFormat("# Title\n\n## 1. Intro\n")).toBe("markdown");
+  });
+
+  test("reads the real hex spec: its sections, every MUST, nothing in the preamble", () => {
+    const hex = parseDocument(readFileSync("specs/example-hex.md", "utf8"));
+    expect([...hex.sections.keys()]).toEqual([
+      "1",
+      "2",
+      "3",
+      "3.1",
+      "3.2",
+      "4",
+      "4.1",
+      "4.2",
+      "4.3",
+      "4.4",
+      "5",
+      "6",
+    ]);
+    const found = normativeSentences(hex).map((n) => [
+      n.section,
+      n.keyword,
+      n.sentence,
+    ]);
+    const musts: [string, string, string][] = [
+      [
+        "3.1",
+        "MUST",
+        "hexEncode MUST return exactly two characters per input byte.",
+      ],
+      [
+        "3.2",
+        "MUST",
+        "Each byte MUST be written high nibble first, using the digits 0-9 and a-f.",
+      ],
+      [
+        "3.2",
+        "MUST NOT",
+        "hexEncode MUST NOT emit uppercase digits, separators or a prefix.",
+      ],
+      [
+        "4.1",
+        "MUST",
+        "hexDecode MUST accept the digits 0-9, a-f and A-F, in any mix of case.",
+      ],
+      [
+        "4.2",
+        "MUST",
+        'hexDecode MUST return null when the text has an odd length or contains any other character, including whitespace and a "0x" prefix.',
+      ],
+      [
+        "4.3",
+        "MUST",
+        "hexDecode of the empty string MUST return an empty array, not null.",
+      ],
+      ["4.4", "MUST", "For all bytes b, hexDecode(hexEncode(b)) MUST equal b."],
+      [
+        "5",
+        "MUST NOT",
+        "hexDecode MUST NOT index a table by the value of a digit, so that its running time depends only on the length of its input.",
+      ],
+    ];
+    expect(found).toHaveLength(musts.length);
+    musts.forEach(([sec, kw, sentence], i) => {
+      expect(found[i][0]).toBe(sec);
+      expect(found[i][1]).toBe(kw);
+      // The first sentence of a section carries its heading's title.
+      expect(found[i][2].endsWith(sentence)).toBe(true);
+    });
+    expect(found.some(([sec]) => sec === LOOSE_SECTION)).toBe(false);
+    expect(hex.loose?.lines.join(" ")).not.toContain("BCP 14");
+  });
+
   test("a labelled int in a markdown section", () => {
     const a = section("A");
     expect(intLabelled(sectionLines(a), "Block Count", 4)).toBe(true);
@@ -287,6 +435,17 @@ describe("a markdown contract", () => {
       '[fidelity] V-CITE.expect: the string "cafe" is not printed in §3 ("Test Vectors")',
       // The completeness gate now finds §2's MUST unquoted.
       '[completeness] §2: MUST sentence is neither a requirement nor an exclusion: "Encoding An encoder MUST emit two lowercase digits per byte."',
+    ]);
+  });
+
+  test("refuses a command or spec vector whose args its section does not print", () => {
+    const c = hexContract();
+    vec(c, "V-CMD").args = [{ hex: "cafe" }];
+    vec(c, "V-SPEC").args = [{ str: "xyz" }];
+    const r = runGates(c, { docs: docs(), commands: passed("V-CMD") });
+    expect(messages(r)).toEqual([
+      '[fidelity] V-SPEC.args[0]: the string "xyz" is not printed in §2.1 ("Decoding")',
+      '[fidelity] V-CMD.args[0]: 2-byte value is not printed in §3 ("Test Vectors")',
     ]);
   });
 
@@ -589,8 +748,23 @@ describe("vector provenance", () => {
       '[fidelity] V-BOOL-CITE.expect: §2.1 ("Decoding") never says "true", so it does not state the expected result',
       '[provenance] V-BOOL-SPEC.source: §2.1 ("Decoding") never says "false", so it does not state the expected result',
     ]);
-    const stated = parseMarkdownSpec(
+    // "True never" names the word but does not state it as the result: the
+    // polarity is the spec's, so only "is False" counts.
+    const onePolarity = parseMarkdownSpec(
       SPEC.replace("to null.", "to null. isHex is False for it, True never."),
+    );
+    expect(
+      messages(
+        runGates(c, { docs: docs(onePolarity), commands: passed("V-CMD") }),
+      ),
+    ).toEqual([
+      '[fidelity] V-BOOL-CITE.expect: §2.1 ("Decoding") never says "true", so it does not state the expected result',
+    ]);
+    const stated = parseMarkdownSpec(
+      SPEC.replace(
+        "to null.",
+        "to null. isHex is False for it and returns true for abcd.",
+      ),
     );
     expect(
       messages(runGates(c, { docs: docs(stated), commands: passed("V-CMD") })),
