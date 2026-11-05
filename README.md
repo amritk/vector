@@ -165,9 +165,14 @@ expect `null` or a `bool`.
    same section). Otherwise: "covers no requirement cited to it".
 2. That requirement's quote is in the section's prose — not only in a code
    block, a blockquote or a table cell.
-3. The quote is split into sentences: each paragraph cut at `.` `;` `!` or `?`
-   followed by whitespace and a capital letter, an opening quote or bracket,
-   or the end. Commas and colons never end a sentence.
+3. The section's prose is split into sentences: the heading on its own, then
+   each paragraph cut at `.` `;` `!` or `?` followed by whitespace and a
+   capital letter, an opening quote or bracket, or the end. Commas and colons
+   never end a sentence. The match below must lie inside the quote, but the
+   guards in steps 6 to 8 read the whole prose sentence around it, so a quote
+   cut out of "For example, a Python decoder MUST return null." is judged
+   with its "For example". Otherwise: "is cut from a sentence that qualifies
+   it before the quote". Every place the quote occurs in the prose must pass.
 4. Within one sentence, an affirmative keyword governs the result: `MUST`,
    `SHALL` or `REQUIRED to` (so also `is REQUIRED to`), in capitals and not
    followed by `NOT`. Nothing comes between the keyword and the verb except,
@@ -191,7 +196,7 @@ expect `null` or a `bool`.
 7. The value is the whole result: it is not followed by `or` / `and`
    (optionally after a comma), `/`, or any hyphen or dash (`null-terminated`
    is not `null`). Otherwise: "offers an alternative right after …".
-8. Nothing later in the quote retracts it: `not`, `never`, `no`, `none`,
+8. Nothing later in any sentence the quote touches retracts it: `not`, `never`, `no`, `none`,
    `nor`, `neither`, `cannot`, `…n't`, `avoid…`, `forb…`, `prohibit…`,
    `prevent…`, `disallow…`, `instead`, `rather`, `wrong…`, `incorrect…`,
    `bug…`, `an error`, `but`, `remov…`, `deprecat…`, `obsolete…`,

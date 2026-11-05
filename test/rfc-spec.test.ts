@@ -1399,6 +1399,42 @@ describe("vector provenance", () => {
       expect(probe(sentence, bool, sentence)).toEqual([]);
       expect(probe(sentence, bool)).toEqual(uncovered(String(bool)));
     }
+    // Round 7: a fragment quote is judged with the prose sentence around it.
+    for (const [quote, sentence, why] of [
+      [
+        "MUST return null",
+        "Earlier drafts said that f MUST return null, but this was removed in draft 04.",
+        'is cut from a sentence that qualifies it before the quote ("Earlier"), so the sentence does not require "null"',
+      ],
+      [
+        "a Python decoder MUST return null",
+        "For example, a Python decoder MUST return null.",
+        'is cut from a sentence that qualifies it before the quote ("example"), so the sentence does not require "null"',
+      ],
+      [
+        "f MUST return null",
+        "If the input is odd, f MUST return null.",
+        'is cut from a sentence that qualifies it before the quote ("If"), so the sentence does not require "null"',
+      ],
+      [
+        "f MUST return null",
+        "f MUST return null, but this was removed in draft 04.",
+        'retracts "null" after stating it ("but")',
+      ],
+      [
+        "f MUST return null",
+        "f MUST return null or throw.",
+        'offers an alternative right after "null" ("or"), so "null" is not the whole result',
+      ],
+    ] as const) {
+      expect([quote, sentence, probe(sentence, undefined, quote)]).toEqual([
+        quote,
+        sentence,
+        because(why),
+      ]);
+      // The full sentence as the quote is refused too.
+      expect(probe(sentence, undefined, sentence).length).toBe(1);
+    }
   });
 
   test("the hex spec's §4.2 still states null for V7 to V9", () => {
@@ -1430,6 +1466,13 @@ describe("vector provenance", () => {
       messages(runGates(c, { docs: docs(hex) })).filter(
         (m) => m.startsWith("[provenance]") || m.startsWith("[fidelity]"),
       );
+    expect(provenance()).toEqual([]);
+    // A fragment of the same sentence states it too.
+    const [reject] = c.requirements;
+    if (reject) {
+      reject.quote =
+        "hexDecode MUST return null when the text has an odd length";
+    }
     expect(provenance()).toEqual([]);
     vec(c, "V7").source = { spec: "4.3" };
     expect(provenance()).toEqual([

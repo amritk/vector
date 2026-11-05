@@ -509,49 +509,108 @@ const RETRACT_RE = new RegExp(
 );
 
 /**
- * The section's prose, whitespace-collapsed: its lines without code, table
- * cells or blockquotes (as the markdown reader marks them; in an RFC, lines
- * starting with ">"). A requirement stated only there is an example, a
- * quotation or a cell, not the section's own statement.
+ * The section's prose, whitespace-collapsed, and the spans of its sentences
+ * in that text. Prose is its lines without code, table cells or blockquotes
+ * (as the markdown reader marks them; in an RFC, lines starting with ">"):
+ * a requirement stated only there is an example, a quotation or a cell, not
+ * the section's own statement. Sentences are the heading line on its own,
+ * then each paragraph (up to a blank line) cut at SENTENCE_END.
  */
-const proseText = (sec: RfcSection): string =>
-  normalizeText(
-    (sec.proseLines ?? sec.lines)
-      .map((l) => (/^\s*>/.test(l) ? "" : l))
-      .join("\n"),
+const proseSentences = (
+  sec: RfcSection,
+): { text: string; spans: [number, number][] } => {
+  const lines = (sec.proseLines ?? sec.lines).map((l) =>
+    /^\s*>/.test(l) ? "" : l,
   );
+  const paras: string[][] = [[lines[0] ?? ""], []];
+  for (const l of lines.slice(1)) {
+    if (l.trim() === "") paras.push([]);
+    else paras[paras.length - 1]?.push(l);
+  }
+  const sentences: string[] = [];
+  const end = new RegExp(SENTENCE_END.source, "g");
+  for (const para of paras) {
+    const t = normalizeText(para.join("\n"));
+    let from = 0;
+    for (const m of t.matchAll(end)) {
+      sentences.push(t.slice(from, m.index + 1).trim());
+      from = m.index + 1;
+    }
+    sentences.push(t.slice(from).trim());
+  }
+  const spans: [number, number][] = [];
+  let at = 0;
+  for (const sentence of sentences.filter((x) => x !== "")) {
+    spans.push([at, at + sentence.length]);
+    at += sentence.length + 1;
+  }
+  return {
+    text: sentences.filter((x) => x !== "").join(" "),
+    spans,
+  };
+};
 
-/** Why one quote does not state `word`, or null when it does. */
-const quoteStates = (quote: string, word: string): string | null => {
+/**
+ * Why one quote, found in the section's prose, does not state `word`, or
+ * null when it does. The allow-list match must lie inside the quote, but
+ * the guards read the whole prose sentence around it, so a quote cut out of
+ * a qualified sentence ("Earlier drafts said that f MUST return null, but
+ * …") is judged with what it left out: DENY_RE over the sentence before the
+ * keyword, ALTERNATIVE_RE right after the value, and RETRACT_RE over the
+ * rest of every sentence the quote touches. Every occurrence of the quote
+ * in the prose must pass.
+ */
+const quoteStates = (
+  quote: string,
+  word: string,
+  prose: { text: string; spans: [number, number][] },
+): string | null => {
   // The value in any case ("False", "TRUE"), optionally in code or emphasis.
   const value = [...word].map((ch) => `[${ch}${ch.toUpperCase()}]`).join("");
   const re = new RegExp(
     `(?<![A-Za-z0-9])${RESULT_KEYWORD}\\s+(?:always\\s+)?${RESULT_VERB}\\s+[\`*_]*${value}[\`*_]*(?![A-Za-z0-9_\`*])`,
     "g",
   );
-  const text = normalizeText(quote);
-  let why = `does not require "${word}" as the result (an affirmative MUST, SHALL or REQUIRED to, a result verb, then "${word}")`;
-  let start = 0;
-  for (const sentence of text.split(SENTENCE_END)) {
-    const at = text.indexOf(sentence, start);
-    start = at + sentence.length;
-    for (const m of sentence.matchAll(re)) {
-      if (DENY_RE.test(sentence.slice(0, m.index))) continue;
-      const rest = text.slice(at + (m.index ?? 0) + m[0].length);
+  const q = normalizeText(quote);
+  const { text, spans } = prose;
+  const spanAt = (i: number): [number, number] =>
+    spans.find(([s, e]) => i >= s && i < e) ?? [i, i];
+  const generic = `does not require "${word}" as the result (an affirmative MUST, SHALL or REQUIRED to, a result verb, then "${word}")`;
+  const occurrence = (p: number): string | null => {
+    let why = generic;
+    const last = spanAt(p + q.length - 1)[1];
+    for (const m of q.matchAll(re)) {
+      const from = p + m.index;
+      const to = from + m[0].length;
+      const start = spanAt(from)[0];
+      const deny = DENY_RE.exec(text.slice(start, from));
+      if (deny) {
+        if (start + deny.index + deny[0].length <= p)
+          why = `is cut from a sentence that qualifies it before the quote ("${deny[0]}"), so the sentence does not require "${word}"`;
+        continue;
+      }
+      const rest = text.slice(to);
       const alt = ALTERNATIVE_RE.exec(rest);
       if (alt) {
         why = `offers an alternative right after "${word}" ("${alt[0].trim()}"), so "${word}" is not the whole result`;
         continue;
       }
-      const retract = RETRACT_RE.exec(rest);
+      const retract = RETRACT_RE.exec(
+        text.slice(to, Math.max(last, spanAt(to - 1)[1])),
+      );
       if (retract) {
         why = `retracts "${word}" after stating it ("${retract[0]}")`;
         continue;
       }
       return null;
     }
+    return why;
+  };
+  for (let p = text.indexOf(q); p >= 0; p = text.indexOf(q, p + 1)) {
+    const why = occurrence(p);
+    if (why !== null) return why;
   }
-  return why;
+  return null;
 };
 
 /**
@@ -560,8 +619,9 @@ const quoteStates = (quote: string, word: string): string | null => {
  * quote (in the section's prose, not a code block, blockquote or table) says
  * MUST, SHALL or REQUIRED to (never followed by NOT), optionally "always",
  * a result verb, then `word` as a whole word; with nothing before the keyword
- * in its sentence matching DENY_RE, no alternative or hyphen right after the
- * value, and no retraction anywhere after it. Returns why it does not, or
+ * in its prose sentence (inside the quote or not) matching DENY_RE, no
+ * alternative or hyphen right after the value, and no retraction in the rest
+ * of any sentence the quote touches. Returns why it does not, or
  * null when it does. Everything this does not recognise is refused.
  */
 function statesResult(
@@ -583,16 +643,16 @@ function statesResult(
   );
   if (covered.length === 0)
     return `${k.id} covers no requirement cited to it, so nothing there requires the result "${word}"`;
-  const prose = proseText(sec);
+  const prose = proseSentences(sec);
   const reasons: string[] = [];
   for (const r of covered) {
-    if (!prose.includes(normalizeText(r.quote))) {
+    if (!prose.text.includes(normalizeText(r.quote))) {
       reasons.push(
         `${r.id} is not in its prose (only in code, a blockquote or a table)`,
       );
       continue;
     }
-    const why = quoteStates(r.quote, word);
+    const why = quoteStates(r.quote, word, prose);
     if (why === null) return null;
     reasons.push(`${r.id} ${why}`);
   }
