@@ -691,6 +691,13 @@ describe("the operators", () => {
     expect(del("/* a\nf(x)\n*/ g(y)\nh(z)\n", 2)).toEqual([]);
     expect(del("/* a\nf(x)\n*/ g(y)\nh(z)\n", 3)).toEqual([]);
     expect(del("/* a\nf(x)\n*/ g(y)\nh(z)\n", 4)).toHaveLength(1);
+    // A line of a multi-line `for (…)` header or call is no statement (nish
+    // std/crypto/hmac.ts:468: deleting the condition broke the parse).
+    const loop =
+      "for (\n  let i = 0;\n  i < n && i < m;\n  i++\n) {\n  f(i)\n}\n";
+    for (const line of [3, 4]) expect(del(loop, line)).toEqual([]);
+    expect(del(loop, 6)).toHaveLength(1);
+    expect(del("g(\n  a,\n  [\n    b\n  ],\n)\n", 4)).toEqual([]);
     // The body of a braceless head: deleting it would re-parent the next line.
     for (const head of [
       "if (bad)",

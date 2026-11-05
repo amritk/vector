@@ -282,11 +282,17 @@ function nextContinues(lines: Line[], k: number): boolean {
   return next !== undefined && CONTINUES.test(next) && !next.startsWith("}");
 }
 
-function deleteStatement(lines: Line[], k: number, push: Push): void {
+function deleteStatement(
+  lines: Line[],
+  k: number,
+  bracketed: boolean[],
+  push: Push,
+): void {
   const l = lines[k];
   // A line that starts or ends inside a template, string or comment is part
-  // of a literal, not a statement.
-  if (!l.plain) return;
+  // of a literal, not a statement; one inside `(…)` or `[…]` is a piece of
+  // an expression or a `for` header.
+  if (!l.plain || bracketed[k]) return;
   const code = l.expr.trim();
   if (code === "" || NOT_STATEMENT.test(code) || CONTINUES.test(code)) return;
   if (OPEN_END.test(code) || !balanced(code)) return;
@@ -301,6 +307,24 @@ function deleteStatement(lines: Line[], k: number, push: Push): void {
   if (BRACELESS_HEAD.test(p)) return;
   if (nextContinues(lines, k)) return;
   push("delete-statement", l.code.search(/\S/), "");
+}
+
+/**
+ * Whether each line starts inside an open `(` or `[` (the innermost open
+ * bracket is not a `{`): a piece of a multi-line call, array or `for (…)`
+ * header, never a statement of its own.
+ */
+function inBrackets(lines: Line[]): boolean[] {
+  const stack: string[] = [];
+  return lines.map((l) => {
+    const top = stack.at(-1);
+    const here = top !== undefined && top !== "{";
+    for (const c of l.code) {
+      if ("([{".includes(c)) stack.push(c);
+      else if (")]}".includes(c)) stack.pop();
+    }
+    return here;
+  });
 }
 
 /** Lines whose `{` is still open at each line, innermost last. */
@@ -372,6 +396,7 @@ const within = (n: number, ranges: LineRange[]): boolean =>
 export function generateMutants(src: string, ranges: LineRange[]): Mutant[] {
   const lines = splitLines(src);
   const open = openers(lines);
+  const bracketed = inBrackets(lines);
   const out: Mutant[] = [];
   for (const [k, l] of lines.entries()) {
     if (!within(l.n, ranges)) continue;
@@ -388,7 +413,7 @@ export function generateMutants(src: string, ranges: LineRange[]): Mutant[] {
     };
     relationalAndLogical(l, push);
     intLiterals(l, push);
-    deleteStatement(lines, k, push);
+    deleteStatement(lines, k, bracketed, push);
     returnNull(lines, k, open, push);
   }
   return out.sort((a, b) => a.line - b.line || a.column - b.column);
