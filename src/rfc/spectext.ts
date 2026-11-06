@@ -383,44 +383,77 @@ export interface SpecInterface {
 }
 
 const INTERFACE_TITLE_RE = /^interfaces?$/i;
+// Exactly one signature, and nothing after it but a body or a `;`:
 // `export const f = (a: T, b: U): R` with an optional `=> …` or `;`, or
-// `export function f(a: T): R` with an optional `{ …` or `;`. A parameter
-// list with parentheses inside it (a function type) does not match, and is
-// refused rather than split wrongly.
+// `export function f(a: T): R` with an optional `{ …` or `;`. The types are
+// checked against INTERFACE_TYPES after the match, so a note, a brace or a
+// comma can never be read as part of one. The body (group 4) is checked
+// after the match too: it may not hold a second declaration.
 const CONST_SIG_RE =
-  /^export\s+const\s+([A-Za-z_]\w*)\s*=\s*\(([^()]*)\)\s*:\s*([^=;{}()]+?)\s*(?:=>.*|;)?$/;
+  /^export\s+const\s+([A-Za-z_]\w*)\s*=\s*\(([^()]*)\)\s*:\s*([^=;{}()]+?)\s*(;|=>.*)?$/;
 const FUNCTION_SIG_RE =
-  /^export\s+function\s+([A-Za-z_]\w*)\s*\(([^()]*)\)\s*:\s*([^=;{}()]+?)\s*(?:\{.*|;)?$/;
-const PARAM_RE = /^([A-Za-z_]\w*)\s*:\s*([^=]+?)$/;
-// An `export` declaration of any kind, wherever it is on a line.
+  /^export\s+function\s+([A-Za-z_]\w*)\s*\(([^()]*)\)\s*:\s*([^=;{}()]+?)\s*(;|\{.*)?$/;
+const PARAM_RE = /^([A-Za-z_]\w*)\s*:\s*(.+)$/;
+/**
+ * The types a signature may use: the ones a contract can declare. The same
+ * list as NISH_TYPES in gates.ts, which the signature gate reads a module by.
+ */
+export const INTERFACE_TYPES: readonly string[] = [
+  "u8[]",
+  "u8[] | null",
+  "null | u8[]",
+  "string",
+  "string | null",
+  "null | string",
+  "i32",
+  "u32",
+  "boolean",
+];
+// An `export` declaration of any kind, anywhere on a line, in any letter case.
 const EXPORT_DECL_RE =
-  /\bexport\s+(?:default\b|const\b|let\b|var\b|function\b|async\b|class\b|type\b|interface\b|enum\b|declare\b|[{*])/;
+  /\bexport\s+(?:default\b|const\b|let\b|var\b|function\b|async\b|class\b|type\b|interface\b|enum\b|declare\b|namespace\b|[{*])/gi;
+// A declaration keyword inside a signature's body.
+const BODY_DECL_RE =
+  /\b(?:function|const|let|var|class|type|interface|enum|import|export|namespace)\b/i;
 // The markdown a signature may sit behind: blockquote `>`, a bullet (`-`,
 // `*`, `+`) or a numbered item (`1.`, `1)`), in any nesting.
 const LINE_MARKER_RE = /^(?:>\s?|[-*+]\s+|\d{1,9}[.)]\s+)/;
 
-/**
- * The line as a signature would read: without the markdown markers in front
- * of it, a trailing `// comment`, and a trailing `;`-free whitespace.
- */
-function signatureLine(raw: string): string {
+/** The line without the markdown markers in front of it. */
+function unmarked(raw: string): string {
   let line = raw.trim();
   for (let m = LINE_MARKER_RE.exec(line); m; m = LINE_MARKER_RE.exec(line)) {
     line = line.slice(m[0].length).trimStart();
   }
-  // A line comment after the signature is the spec's note, not its type.
-  return line.replace(/\s*\/\/.*$/, "").trimEnd();
+  return line;
+}
+
+/** A type as the spec prints it, spaced the way INTERFACE_TYPES is. */
+function canonicalType(t: string): string {
+  return t
+    .trim()
+    .replace(/\s*\[\s*\]/g, "[]")
+    .replace(/\s*\|\s*/g, " | ")
+    .replace(/\s+/g, " ");
 }
 
 /**
  * The signatures the spec's Interface section declares (a numbered section
  * titled "Interface"), so a contract can be extracted from the spec alone.
- * Every line of it that holds an `export` declaration must be a signature
- * this reads, on its own or behind a bullet, numbered item, blockquote or in a
- * table cell; a trailing `// comment` is dropped. Prose around them is
- * allowed, but a declaration after prose on the same line is refused. Throws, so the caller refuses the spec, when
- * there is no Interface section or more than one, when an `export` line
- * cannot be read, when a name is declared twice, and when it declares none.
+ *
+ * A line of the section that holds no `export` declaration is prose and is
+ * skipped. A line that holds one must be exactly one signature, read
+ * strictly: after any bullet, numbered-item or blockquote markers (a table
+ * cell is a line of its own), `export const f = (a: T): R` with an optional
+ * `=> …` or `;`, or `export function f(a: T): R` with an optional `{ …` or
+ * `;`, and an optional trailing `// comment`. A body holds no
+ * declaration keyword and no statement after a `;`. Every parameter is `name: T`,
+ * and every T is one of INTERFACE_TYPES. Anything else on such a line — a
+ * second declaration, a note after the signature, another type, a
+ * declaration after prose, `Export` in another letter case, `export type`
+ * or `export interface`, a `/* … *\/` comment — refuses the spec, as do no
+ * Interface section, more than one, a name declared twice, and none
+ * declared. Throws, naming the line, so the caller refuses the spec.
  */
 export function interfaceSignatures(doc: RfcDocument): SpecInterface {
   const found = [...doc.sections.values()].filter((s) =>
@@ -440,43 +473,73 @@ export function interfaceSignatures(doc: RfcDocument): SpecInterface {
   const signatures: InterfaceSignature[] = [];
   // The section's first line is its heading.
   for (const raw of sec.lines.slice(1)) {
-    const line = signatureLine(raw);
+    const quoted = JSON.stringify(raw.trim());
+    const refuse = (why: string): Error =>
+      new Error(`Interface §${sec.id}: ${why}: ${quoted}`);
+    const decls = raw.match(EXPORT_DECL_RE)?.length ?? 0;
+    let line = unmarked(raw);
+    // Prose: no declaration anywhere, and the line does not start with one.
+    if (decls === 0 && !/^export\b/.test(line)) continue;
     if (!/^export\b/.test(line)) {
-      // A declaration anywhere else on the line (after prose, say) is never
-      // skipped: the Interface would be accepted without that function.
-      if (EXPORT_DECL_RE.test(line)) {
-        throw new Error(
-          `Interface §${sec.id}: a signature must be on a line of its own (a bullet, numbered item, blockquote or table cell may hold it), not after other text: ${JSON.stringify(raw.trim())}`,
-        );
-      }
-      continue;
-    }
-    if (/\/\*|\/\//.test(line)) {
-      throw new Error(
-        `Interface §${sec.id}: cannot read this signature, a comment is inside it: ${JSON.stringify(raw.trim())}`,
+      throw refuse(
+        /^export\b/i.test(line)
+          ? "`export` must be written in lowercase"
+          : "a signature must be on a line of its own (a bullet, numbered item, blockquote or table cell may hold it), not after other text",
       );
     }
+    if (decls > 1)
+      throw refuse("one signature per line; this line declares more");
+    if (line.includes("/*")) {
+      throw refuse("cannot read this signature, a comment is inside it");
+    }
+    // A line comment after the signature is the spec's note, not its type.
+    line = line.replace(/\s*\/\/.*$/, "").trimEnd();
     const m = line.match(CONST_SIG_RE) ?? line.match(FUNCTION_SIG_RE);
     if (!m) {
-      throw new Error(
-        `Interface §${sec.id}: cannot read this signature: ${JSON.stringify(line)}`,
+      throw refuse(
+        /^export\s+(?:const|function)\b/.test(line)
+          ? "cannot read this signature (exactly one `export const f = (a: T): R` or `export function f(a: T): R`, with nothing after it but `;`, `=> …` or `{ …`)"
+          : "cannot read this signature, the Interface section declares only functions (`export const` or `export function`)",
       );
     }
-    const params: InterfaceParam[] = [];
-    for (const p of m[2].split(",").map((x) => x.trim())) {
-      if (p === "" && m[2].trim() === "") break;
-      const pm = p.match(PARAM_RE);
-      if (!pm) {
-        throw new Error(
-          `Interface §${sec.id}: cannot read parameter ${JSON.stringify(p)} of ${m[1]}`,
+    // A body is the spec's sketch of the function, never a place for a
+    // second one: `{ return x } function g(…)` or `=> x; const g = …`.
+    const body = m[4] ?? "";
+    if (BODY_DECL_RE.test(body) || /;\s*\S/.test(body)) {
+      throw refuse(
+        "one signature per line; the body after this one holds another statement or declaration",
+      );
+    }
+    const typeOf = (t: string, what: string): string => {
+      const c = canonicalType(t);
+      if (!INTERFACE_TYPES.includes(c)) {
+        throw refuse(
+          `${what} has type ${JSON.stringify(t.trim())}, not one a contract can declare (${INTERFACE_TYPES.join(", ")})`,
         );
       }
-      params.push({ name: pm[1], type: pm[2].trim() });
+      return c;
+    };
+    const name = m[1];
+    const params: InterfaceParam[] = [];
+    if (m[2].trim() !== "") {
+      for (const p of m[2].split(",")) {
+        const pm = p.trim().match(PARAM_RE);
+        if (!pm)
+          throw refuse(
+            `cannot read parameter ${JSON.stringify(p.trim())} of ${name}`,
+          );
+        const [, pname, ptype] = pm;
+        params.push({
+          name: pname,
+          type: typeOf(ptype, `parameter ${pname} of ${name}`),
+        });
+      }
     }
-    if (signatures.some((s) => s.name === m[1])) {
-      throw new Error(`Interface §${sec.id}: ${m[1]} is declared twice`);
+    const returns = typeOf(m[3], `the return of ${name}`);
+    if (signatures.some((s) => s.name === name)) {
+      throw refuse(`${name} is declared twice`);
     }
-    signatures.push({ name: m[1], params, returns: m[3].trim() });
+    signatures.push({ name, params, returns });
   }
   if (signatures.length === 0) {
     throw new Error(
