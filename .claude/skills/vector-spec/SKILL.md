@@ -52,6 +52,17 @@ line:
     export const hexDecode = (text: string): u8[] | null
 ```
 
+Each signature on a line of its own (a bullet, numbered item, blockquote or
+table cell may hold it): `export const f = (a: T): R` or
+`export function f(a: T): R`, then nothing, `;`, `=> …` or `{ …`, and an
+optional `// comment`. Types only from `u8[]`, `u8[] | null`, `null | u8[]`,
+`string`, `string | null`, `null | string`, `i32`, `u32`, `boolean`. Nothing
+after the signature: `… : string — encodes x` and `… : string.` are refused.
+The section fails closed, so keep it to signatures and prose: `export type`,
+`export interface`, other `export` forms, prose with an export keyword in it
+("export default values") and usage examples starting with `export` refuse
+the spec there; put them in another section.
+
 For an RFC: `rfcs/rfc<N>.txt` if it is there, otherwise
 `curl -sSfL -o rfcs/rfc<N>.txt https://www.rfc-editor.org/rfc/rfc<N>.txt`
 (unmodified; the IETF Trust allows copying an RFC whole). A human approves the
@@ -75,7 +86,8 @@ bun run vector spec extract --spec-only --twice --spec specs/<name>.md \
 Interface section (a spec without one, or with an export line it cannot read,
 exits 2 before any model call). `--twice` runs two independent extractions and
 lists where they disagree as warnings — a requirement one states and the other
-does not, a requirement stated at different levels, one tested in one run and
+does not, a requirement stated at different levels, a partial match (one
+run's quote holds a sentence the other's does not), one tested in one run and
 untested in the other, or a binding sentence the runs handle differently
 (tested, untested, excluded, not covered); read every one before you accept
 run 1's contract. Exit 0 writes the contract, 1
@@ -92,7 +104,11 @@ Without a key, write `contracts/<name>.json` yourself against
   source; any citation may name another with `"source": "<id>"`.
 - **functions**: exactly the Interface section's signatures, as `bytes`
   (`u8[]`), `bytes?` (`u8[] | null`), `string`, `string?`, `i32`, `u32`,
-  `bool`. A reference function from another module names its module.
+  `bool`. A reference function from another module names its module;
+  `extract --spec-only` refuses one (the Interface declares only the
+  target's functions), so add it by hand. Its signature is never checked,
+  not even by `run --nish-root`: the signature gate reads only the target
+  module's functions, so get the reference function's types right yourself.
 - **requirements**: verbatim quotes, cited to the most specific section.
   Level = the BCP 14 keyword, or `DEFINITION` for what the algorithm is.
 - **exclusions**: each MUST/SHALL sentence a functional test cannot observe
