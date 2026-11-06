@@ -392,12 +392,33 @@ const CONST_SIG_RE =
 const FUNCTION_SIG_RE =
   /^export\s+function\s+([A-Za-z_]\w*)\s*\(([^()]*)\)\s*:\s*([^=;{}()]+?)\s*(?:\{.*|;)?$/;
 const PARAM_RE = /^([A-Za-z_]\w*)\s*:\s*([^=]+?)$/;
+// An `export` declaration of any kind, wherever it is on a line.
+const EXPORT_DECL_RE =
+  /\bexport\s+(?:default\b|const\b|let\b|var\b|function\b|async\b|class\b|type\b|interface\b|enum\b|declare\b|[{*])/;
+// The markdown a signature may sit behind: blockquote `>`, a bullet (`-`,
+// `*`, `+`) or a numbered item (`1.`, `1)`), in any nesting.
+const LINE_MARKER_RE = /^(?:>\s?|[-*+]\s+|\d{1,9}[.)]\s+)/;
+
+/**
+ * The line as a signature would read: without the markdown markers in front
+ * of it, a trailing `// comment`, and a trailing `;`-free whitespace.
+ */
+function signatureLine(raw: string): string {
+  let line = raw.trim();
+  for (let m = LINE_MARKER_RE.exec(line); m; m = LINE_MARKER_RE.exec(line)) {
+    line = line.slice(m[0].length).trimStart();
+  }
+  // A line comment after the signature is the spec's note, not its type.
+  return line.replace(/\s*\/\/.*$/, "").trimEnd();
+}
 
 /**
  * The signatures the spec's Interface section declares (a numbered section
  * titled "Interface"), so a contract can be extracted from the spec alone.
- * Every line of it that starts with `export` must be a signature this reads;
- * prose around them is allowed. Throws, so the caller refuses the spec, when
+ * Every line of it that holds an `export` declaration must be a signature
+ * this reads, on its own or behind a bullet, numbered item, blockquote or in a
+ * table cell; a trailing `// comment` is dropped. Prose around them is
+ * allowed, but a declaration after prose on the same line is refused. Throws, so the caller refuses the spec, when
  * there is no Interface section or more than one, when an `export` line
  * cannot be read, when a name is declared twice, and when it declares none.
  */
@@ -419,8 +440,22 @@ export function interfaceSignatures(doc: RfcDocument): SpecInterface {
   const signatures: InterfaceSignature[] = [];
   // The section's first line is its heading.
   for (const raw of sec.lines.slice(1)) {
-    const line = raw.trim();
-    if (!/^export\b/.test(line)) continue;
+    const line = signatureLine(raw);
+    if (!/^export\b/.test(line)) {
+      // A declaration anywhere else on the line (after prose, say) is never
+      // skipped: the Interface would be accepted without that function.
+      if (EXPORT_DECL_RE.test(line)) {
+        throw new Error(
+          `Interface §${sec.id}: a signature must be on a line of its own (a bullet, numbered item, blockquote or table cell may hold it), not after other text: ${JSON.stringify(raw.trim())}`,
+        );
+      }
+      continue;
+    }
+    if (/\/\*|\/\//.test(line)) {
+      throw new Error(
+        `Interface §${sec.id}: cannot read this signature, a comment is inside it: ${JSON.stringify(raw.trim())}`,
+      );
+    }
     const m = line.match(CONST_SIG_RE) ?? line.match(FUNCTION_SIG_RE);
     if (!m) {
       throw new Error(

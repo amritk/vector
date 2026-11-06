@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import * as fs from "node:fs";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as client from "../src/agents/client.ts";
 import { MalformedOutputError } from "../src/agents/client.ts";
 import { main } from "../src/cli.ts";
 import { rfcMain } from "../src/rfc/cli.ts";
@@ -125,7 +127,7 @@ function contractA(): RfcContract {
 
 /**
  * Also valid, but read differently: it excludes the odd-length MUST instead of
- * testing it, and states a DEFINITION run 1 does not.
+ * testing it, and states part of the encoder's MUST again as a DEFINITION.
  */
 function contractB(): RfcContract {
   const c = contractA();
@@ -268,6 +270,81 @@ export function len(x: u8[]): i32 {
     );
   });
 
+  // Every markdown form a signature line can take: each is read, and a
+  // declaration in it that cannot be read refuses the spec, never skips.
+  const SIG = "export const f = (x: u8[]): string";
+  const BAD = "export const f = (g: (x: i32) => i32): i32";
+  const FORMS: [string, (sig: string) => string][] = [
+    ["a - bullet", (x) => `- \`${x}\``],
+    ["a * bullet", (x) => `* ${x}`],
+    ["a + bullet", (x) => `+ ${x}`],
+    ["a > blockquote", (x) => `> ${x}`],
+    ["a 1. item", (x) => `1. ${x}`],
+    ["a 1) item", (x) => `1) \`${x}\``],
+    ["a quoted bullet", (x) => `> - \`${x}\``],
+    ["a nested item", (x) => `   2. - ${x}`],
+    [
+      "a table cell",
+      (x) => `| name | signature |\n|---|---|\n| f | \`${x}\` |`,
+    ],
+    ["inline code", (x) => `\`${x}\``],
+  ];
+  const withForm = (line: string) =>
+    `## 1. Interface\n\n    export const g = (x: u8[]): string\n\n${line}\n`;
+
+  for (const [name, form] of FORMS) {
+    test(`reads a signature in ${name}`, () => {
+      const iface = interfaceSignatures(parseMarkdownSpec(withForm(form(SIG))));
+      expect(iface.signatures.map((s) => s.name)).toEqual(["g", "f"]);
+      expect(iface.signatures[1]).toEqual({
+        name: "f",
+        params: [{ name: "x", type: "u8[]" }],
+        returns: "string",
+      });
+    });
+    test(`refuses a signature it cannot read in ${name}, never skips it`, () => {
+      refuses(withForm(form(BAD)), "cannot read this signature");
+    });
+  }
+
+  test("refuses a declaration after other text on its line", () => {
+    for (const line of [
+      `Use ${SIG} here.`,
+      `- The encoder: ${SIG}`,
+      `> Note that ${SIG}`,
+      `| f | see ${SIG} |`,
+      `**${SIG}**`,
+      "The module has export function f(x: u8[]): string too.",
+      "Also export default f.",
+    ]) {
+      refuses(withForm(line), "a signature must be on a line of its own");
+    }
+  });
+
+  test("prose that only mentions exports is not a declaration", () => {
+    const iface = interfaceSignatures(
+      parseMarkdownSpec(
+        withForm("- Both functions are exported, and nothing else is."),
+      ),
+    );
+    expect(iface.signatures.map((s) => s.name)).toEqual(["g"]);
+  });
+
+  test("drops a trailing // comment; refuses a /* */ comment inside", () => {
+    const iface = interfaceSignatures(
+      parseMarkdownSpec(withForm(`- \`${SIG} // lowercase hex\``)),
+    );
+    expect(iface.signatures[1].returns).toBe("string");
+    refuses(
+      withForm("export const f = (x: u8[]): string /* hex */"),
+      "a comment is inside it",
+    );
+    refuses(
+      withForm("export const f = (x /* bytes */: u8[]): string"),
+      "a comment is inside it",
+    );
+  });
+
   test("refuses a name declared twice", () => {
     refuses(
       "## 1. Interface\n\n    export const f = (x: i32): i32\n    export function f(x: u32): u32\n",
@@ -279,7 +356,7 @@ export function len(x: u8[]): i32 {
 describe("spec-only extraction", () => {
   const inputs = { rfcText: SPEC, target: "nish/encoding/hex", specOnly: true };
 
-  test("the prompt holds the spec and its Interface, and nothing of the module", async () => {
+  test("the prompt is exactly the target, the Interface and the spec", async () => {
     const { deps, calls } = fake([contractA()]);
     const outcome = await extractContract(inputs, deps);
     expect(outcome.contract?.contract).toBe("hex-md");
@@ -292,7 +369,6 @@ describe("spec-only extraction", () => {
         `The spec:\n\n${SPEC}`,
       ].join("\n\n"),
     );
-    expect(calls[0].turn).not.toContain("IMPLEMENTATION-SOURCE-MARKER");
     expect(calls[0].turn).not.toContain("exported functions");
   });
 
@@ -317,8 +393,56 @@ describe("spec-only extraction", () => {
     expect(calls[1].turn).toContain(
       "[signatures] toHex: declared (bytes) -> bytes, but nish/encoding/hex has (u8[]): string",
     );
-    // The repair turn adds the model's own contract and the gate's feedback, never the module.
-    expect(calls[1].turn).not.toContain("IMPLEMENTATION-SOURCE-MARKER");
+    // The repair turn adds only the model's own contract and the gate's feedback.
+    expect(
+      calls[1].turn.startsWith(
+        [
+          calls[0].turn,
+          `Your previous contract:\n${JSON.stringify(wrong)}`,
+          "It failed these checks. Fix exactly these, keep everything that passed:\n- ",
+        ].join("\n\n"),
+      ),
+    ).toBe(true);
+  });
+
+  test("refuses a contract that leaves out an Interface signature", async () => {
+    const partial = contractA();
+    partial.functions = [partial.functions[0]];
+    partial.clauses = [partial.clauses[0]];
+    partial.requirements = [partial.requirements[0]];
+    partial.exclusions = [
+      ...(partial.exclusions ?? []),
+      { section: "3.1", quote: ODD, reason: "x" },
+    ];
+    const { deps, calls } = fake([partial, contractA()]);
+    const outcome = await extractContract(inputs, deps);
+    expect(outcome.attempts).toBe(2);
+    expect(calls[1].turn).toContain(
+      "[signatures] fromHex: the spec's Interface section (§2) declares fromHex, but the contract's functions[] leave it out",
+    );
+  });
+
+  test("refuses a function from another module, which the Interface cannot check", async () => {
+    const ref = contractA();
+    ref.functions.push({
+      name: "hmac",
+      module: "nish/crypto/hmac",
+      params: [{ name: "k", type: "bytes" }],
+      returns: "bytes",
+    });
+    const { deps, calls } = fake([ref, ref]);
+    const outcome = await extractContract(inputs, deps, 1);
+    expect(outcome.contract).toBeNull();
+    expect(calls[1].turn).toContain(
+      "[signatures] hmac: names module nish/crypto/hmac, but spec-only extraction takes every function from the spec's Interface section (§2)",
+    );
+    // The module mode leaves a reference function to the signature gate.
+    const { deps: d2 } = fake([ref]);
+    const viaModule = await extractContract(
+      { rfcText: SPEC, target: "nish/encoding/hex", moduleSource: MODULE },
+      d2,
+    );
+    expect(viaModule.contract).not.toBeNull();
   });
 
   test("refuses a module source, before any model call", async () => {
@@ -382,7 +506,7 @@ describe("twice-run extraction", () => {
         kind: "requirement",
         at: "§3",
         message:
-          'run 2 states requirement R-DIGITS (DEFINITION) "two lowercase digits per byte"; run 1 does not state it',
+          'run 2 states R-DIGITS as DEFINITION, run 1 as MUST (R-LOWER): "two lowercase digits per byte"',
       },
       {
         kind: "coverage",
@@ -412,6 +536,145 @@ describe("twice-run extraction", () => {
     expect(ds[0].message).toContain(
       'is excluded: "timing is not observable" in run 1, not covered in run 2',
     );
+  });
+
+  test("two spans of one sentence are the same requirement", () => {
+    const b = contractA();
+    b.requirements[1].quote = `${ODD}: abc decodes to null.`;
+    expect(compareContracts(contractA(), b, doc)).toEqual([]);
+    // Spans that overlap without either holding the other agree too.
+    const a = contractA();
+    a.requirements[1].quote = "A decoder MUST return null for a string";
+    b.requirements[1].quote = "MUST return null for a string of odd length";
+    expect(compareContracts(a, b, doc)).toEqual([]);
+  });
+
+  test("spans of one section that do not overlap are different requirements", () => {
+    const b = contractA();
+    b.requirements[1].quote = TIMING;
+    b.exclusions = [
+      { section: "3.1", quote: ODD, reason: "left to the decoder's own tests" },
+    ];
+    expect(
+      compareContracts(contractA(), b, doc).filter(
+        (d) => d.kind === "requirement",
+      ),
+    ).toEqual([
+      {
+        kind: "requirement",
+        at: "§3.1",
+        message: `run 1 states requirement R-ODD (MUST) "${ODD}"; run 2 excludes it: "left to the decoder's own tests"`,
+      },
+      {
+        kind: "requirement",
+        at: "§3.1",
+        message: `run 2 states requirement R-ODD (MUST) "${TIMING}"; run 1 excludes it: "timing is not observable"`,
+      },
+    ]);
+  });
+
+  test("the same quote at a different level is listed", () => {
+    const b = contractA();
+    b.requirements[0].level = "SHOULD";
+    expect(compareContracts(contractA(), b, doc)).toEqual([
+      {
+        kind: "requirement",
+        at: "§3",
+        message:
+          'run 1 states R-LOWER as MUST, run 2 as SHOULD (R-LOWER): "An encoder MUST emit two lowercase digits per byte."',
+      },
+    ]);
+  });
+
+  test("a non-binding requirement tested in one run only is listed", () => {
+    const digits = {
+      id: "R-DIGITS",
+      section: "3",
+      level: "DEFINITION" as const,
+      quote: "two lowercase digits per byte",
+    };
+    const a = contractA();
+    a.requirements.push(digits);
+    a.clauses[0].covers = ["R-LOWER", "R-DIGITS"];
+    const b = contractA();
+    b.requirements.push({ ...digits });
+    expect(compareContracts(a, b, doc)).toEqual([
+      {
+        kind: "coverage",
+        at: "§3",
+        message:
+          'requirement "two lowercase digits per byte" is tested (R-DIGITS) in run 1, stated but untested (R-DIGITS) in run 2',
+      },
+    ]);
+    // Both tested, or both untested: no disagreement.
+    b.clauses[0].covers = ["R-LOWER", "R-DIGITS"];
+    expect(compareContracts(a, b, doc)).toEqual([]);
+  });
+
+  test("a requirement from another source is compared for coverage too", () => {
+    const ref = {
+      id: "R-REF",
+      source: "ref",
+      section: "2",
+      level: "MUST" as const,
+      quote: "The reference MUST be used.",
+    };
+    const withRef = (tested: boolean) => {
+      const c = contractA();
+      c.sources = [...(c.sources ?? []), { id: "ref", path: "ref.md" }];
+      c.requirements.push({ ...ref });
+      if (tested) c.clauses[0].covers = ["R-LOWER", "R-REF"];
+      return c;
+    };
+    expect(compareContracts(withRef(true), withRef(false), doc)).toEqual([
+      {
+        kind: "coverage",
+        at: "ref §2",
+        message:
+          'requirement "The reference MUST be used." is tested (R-REF) in run 1, stated but untested (R-REF) in run 2',
+      },
+    ]);
+    expect(compareContracts(withRef(true), withRef(true), doc)).toEqual([]);
+    // One run citing it and the other not is a different requirement set.
+    expect(compareContracts(withRef(true), contractA(), doc)).toEqual([
+      {
+        kind: "requirement",
+        at: "ref §2",
+        message:
+          'run 1 states requirement R-REF (MUST) "The reference MUST be used."; run 2 does not state it',
+      },
+    ]);
+  });
+
+  test("two requirements with one quote in a run are each compared", () => {
+    const a = contractA();
+    a.requirements.push({ ...a.requirements[1], id: "R-ODD-2" });
+    a.clauses[1].covers = ["R-ODD", "R-ODD-2"];
+    const b = contractA();
+    b.requirements = [b.requirements[0]];
+    b.clauses = [b.clauses[0]];
+    b.exclusions = [
+      ...(b.exclusions ?? []),
+      { section: "3.1", quote: ODD, reason: "left to the decoder's own tests" },
+    ];
+    const ids = compareContracts(a, b, doc)
+      .filter((d) => d.kind === "requirement")
+      .map((d) => d.message.split(" ")[4]);
+    expect(ids).toEqual(["R-ODD", "R-ODD-2"]);
+  });
+
+  test("the second run starts fresh even when the first needed a repair", async () => {
+    const wrong = contractA();
+    wrong.functions[0].returns = "bytes";
+    const { deps, calls } = fake([wrong, contractA(), contractA()]);
+    const t = await extractTwice(inputs, deps);
+    expect(t.first.attempts).toBe(2);
+    expect(t.second.attempts).toBe(1);
+    expect(calls).toHaveLength(3);
+    expect(calls[1].turn).toContain("Your previous contract");
+    expect(calls[2].turn).toBe(calls[0].turn);
+    expect(calls[2].turn).not.toContain("Your previous contract");
+    expect(calls[2].turn).not.toContain("[signatures]");
   });
 
   test("a run with no valid contract leaves nothing to compare", async () => {
@@ -460,9 +723,19 @@ describe("vector spec extract (the command)", () => {
     ...more,
   ];
 
-  test("--spec-only writes the contract; the model saw no module source", async () => {
+  test("--spec-only writes the contract; it reads only the spec, though the module sits next to it", async () => {
     const { deps, calls } = fake([contractA()]);
-    expect(await rfcMain(specOnly(), deps)).toBe(0);
+    const reads = spyOn(fs, "readFileSync");
+    try {
+      expect(await rfcMain(specOnly(), deps)).toBe(0);
+      // hex.ts, with its marker, is in the same directory and never opened.
+      expect(reads.mock.calls.map((c) => String(c[0]))).not.toContain(
+        join(dir, "hex.ts"),
+      );
+      expect(reads.mock.calls.map((c) => String(c[0]))).toContain(spec());
+    } finally {
+      reads.mockRestore();
+    }
     expect(JSON.parse(readFileSync(written(), "utf8")).contract).toBe("hex-md");
     expect(calls).toHaveLength(1);
     for (const c of calls) {
@@ -550,6 +823,32 @@ describe("vector spec extract (the command)", () => {
     expect(existsSync(written())).toBe(false);
   });
 
+  test("--twice runs in the module mode too", async () => {
+    const { deps, calls } = fake([contractA(), contractB()]);
+    const argv = [
+      "extract",
+      "--twice",
+      "--spec",
+      spec(),
+      "--module",
+      join(dir, "hex.ts"),
+      "--target",
+      "nish/encoding/hex",
+      "-o",
+      written(),
+    ];
+    expect(await rfcMain(argv, deps)).toBe(0);
+    expect(calls).toHaveLength(2);
+    for (const c of calls) {
+      expect(c.system).toBe(EXTRACTOR_SYSTEM_PROMPT);
+      expect(c.turn).toContain(
+        "Its exported functions:\n  toHex(u8[]): string",
+      );
+    }
+    expect(out.join("\n")).toContain("disagree in 3 place(s)");
+    expect(existsSync(written())).toBe(true);
+  });
+
   test("--twice, agreeing: no warnings, and it says so", async () => {
     const { deps } = fake([contractA(), contractA()]);
     expect(await rfcMain(specOnly("--twice"), deps)).toBe(0);
@@ -584,7 +883,7 @@ describe("vector spec extract (the command)", () => {
     const md = out.join("\n");
     expect(md).toContain("### Warnings");
     expect(md).toContain(
-      "- twice requirement §3: run 2 states requirement R-DIGITS (DEFINITION)",
+      "- twice requirement §3: run 2 states R-DIGITS as DEFINITION, run 1 as MUST",
     );
     expect(md).toContain("### Two extractions");
     expect(md).toContain("disagree in 3 place(s)");
@@ -661,5 +960,37 @@ describe("vector spec extract (the command)", () => {
     expect(err).toEqual(viaSpec);
     expect(await main(["rfc", ...specOnly().slice(0, 2)])).toBe(2);
     expect(err.join("\n")).toContain("extract --spec-only needs --spec");
+  });
+
+  test("vector rfc extract and vector spec extract run the same extraction", async () => {
+    // The model behind src/cli.ts, with no seam: its one API call is faked.
+    const turns: string[] = [];
+    const call = spyOn(client, "structuredCall").mockImplementation((async (o: {
+      userContent: string;
+      parse: (x: unknown) => unknown;
+    }) => {
+      turns.push(o.userContent);
+      return o.parse(contractA());
+    }) as typeof client.structuredCall);
+    try {
+      expect(await main(["spec", ...specOnly()])).toBe(0);
+      const viaSpec = {
+        out: out.splice(0),
+        err: err.splice(0),
+        file: readFileSync(written(), "utf8"),
+      };
+      fs.rmSync(written());
+      expect(await main(["rfc", ...specOnly()])).toBe(0);
+      expect({
+        out: out.splice(0),
+        err: err.splice(0),
+        file: readFileSync(written(), "utf8"),
+      }).toEqual(viaSpec);
+      expect(turns).toHaveLength(2);
+      expect(turns[1]).toBe(turns[0]);
+      expect(JSON.parse(viaSpec.file).contract).toBe("hex-md");
+    } finally {
+      call.mockRestore();
+    }
   });
 });

@@ -14,7 +14,7 @@ import {
   sourceOf,
   validateContractShape,
 } from "./contract.ts";
-import { exportedSignatures, runGates } from "./gates.ts";
+import { type GateIssue, exportedSignatures, runGates } from "./gates.ts";
 import {
   type ContractReport,
   renderMarkdown,
@@ -141,6 +141,35 @@ function userTurn(
   return parts.join("\n\n");
 }
 
+/**
+ * Spec-only: the contract's functions are exactly the Interface's. The
+ * signature gate checks only functions of the target module, so a function
+ * naming another module would go unchecked, and nothing there asks that every
+ * declared signature is in the contract; both are refused here.
+ */
+function interfaceIssues(c: RfcContract, iface: SpecInterface): GateIssue[] {
+  const issues: GateIssue[] = [];
+  for (const f of c.functions) {
+    if (f.module && f.module !== c.target.module) {
+      issues.push({
+        gate: "signatures",
+        at: f.name,
+        message: `names module ${f.module}, but spec-only extraction takes every function from the spec's Interface section (§${iface.section}), which declares only ${c.target.module}'s`,
+      });
+    }
+  }
+  for (const s of iface.signatures) {
+    if (!c.functions.some((f) => f.name === s.name)) {
+      issues.push({
+        gate: "signatures",
+        at: s.name,
+        message: `the spec's Interface section (§${iface.section}) declares ${s.name}, but the contract's functions[] leave it out`,
+      });
+    }
+  }
+  return issues;
+}
+
 export async function extractContract(
   inputs: ExtractInputs,
   deps: ExtractDeps,
@@ -188,6 +217,11 @@ export async function extractContract(
     }
     previous = proposed;
     const gates = runGates(proposed, { rfc, moduleSource: signatureSource });
+    if (iface && !gates.issues.some((i) => i.gate === "shape")) {
+      const more = interfaceIssues(proposed as RfcContract, iface);
+      gates.issues.push(...more);
+      if (more.length > 0) gates.ok = false;
+    }
     report = {
       contract: gates.issues.some((i) => i.gate === "shape")
         ? null
@@ -233,20 +267,48 @@ const shortQuote = (q: string, n = 72) => {
   return JSON.stringify(t.length > n ? `${t.slice(0, n - 1)}…` : t);
 };
 
-/** A citation the two runs can share: main-source ids are named differently. */
-function quoteKey(
-  c: RfcContract,
-  x: { source?: string; section: string; quote: string },
-): string {
-  const src = sourceOf(c, x.source);
-  const doc = src === declaredSources(c).main ? "" : src;
-  return `${doc}\u0000${x.section}\u0000${normalizeText(x.quote)}`;
+/** Which document a citation is in, named so the two runs can share it. */
+function docKey(c: RfcContract, source: string | undefined): string {
+  const src = sourceOf(c, source);
+  return src === declaredSources(c).main ? "" : src;
 }
 
-const keyLabel = (key: string) => {
-  const [doc, section] = key.split("\u0000");
-  return doc ? `${doc} §${section}` : `§${section}`;
-};
+const atLabel = (doc: string, section: string) =>
+  doc ? `${doc} §${section}` : `§${section}`;
+
+type Cited = { source?: string; section: string; quote: string };
+
+/**
+ * Whether two citations, one from each run, quote the same text: the same
+ * document and section, and spans that overlap. Two runs rarely quote
+ * byte-identical spans of one sentence, so "A MUST do X" and "A MUST do X,
+ * and Y" are the same requirement. Outside the main spec there is no section
+ * text to place a span in, so one quote containing the other counts.
+ */
+function sameText(
+  doc: RfcDocument,
+  a: { c: RfcContract; x: Cited },
+  b: { c: RfcContract; x: Cited },
+): boolean {
+  const d = docKey(a.c, a.x.source);
+  if (d !== docKey(b.c, b.x.source) || a.x.section !== b.x.section)
+    return false;
+  const qa = normalizeText(a.x.quote);
+  const qb = normalizeText(b.x.quote);
+  if (qa === "" || qb === "") return false;
+  if (qa.includes(qb) || qb.includes(qa)) return true;
+  const sec = d === "" ? findSection(doc, a.x.section) : null;
+  if (!sec) return false;
+  const sb = ownSpans(sec, b.x.quote);
+  return ownSpans(sec, a.x.quote).some(([s1, e1]) =>
+    sb.some(([s2, e2]) => s1 < e2 && s2 < e1),
+  );
+}
+
+// A binding BCP 14 keyword: a requirement quoting one is compared sentence by
+// sentence in the coverage pass, so the requirement pass leaves it to that.
+const BINDING_KEYWORD_RE =
+  /(?<![A-Za-z0-9])(?:MUST|SHALL|REQUIRED)(?![A-Za-z0-9])/;
 
 /** What a contract does with one normative sentence of the main spec. */
 function disposition(
@@ -285,9 +347,12 @@ const dispositionText = (d: ReturnType<typeof disposition>) =>
 
 /**
  * Where two contracts extracted from the same spec disagree: a requirement
- * one states and the other does not, and a binding sentence of the main spec
- * that one tests and the other excludes or leaves out. Deterministic: the
- * order is the spec's, then the first run's.
+ * one states and the other does not (matched on overlapping quotes, so two
+ * spans of one sentence agree), one stated at a different level, one tested
+ * in one run and stated but untested in the other, and a binding sentence of
+ * the main spec that the runs handle differently (tested, untested, excluded
+ * or not covered). Deterministic: the order is the first run's, then the
+ * second's, then the spec's.
  */
 export function compareContracts(
   a: RfcContract,
@@ -299,21 +364,64 @@ export function compareContracts(
     { c: a, name: "run 1", other: "run 2" },
     { c: b, name: "run 2", other: "run 1" },
   ];
-  const keys = runs.map(
-    (r) => new Map(r.c.requirements.map((q) => [quoteKey(r.c, q), q])),
-  );
+  const tested = (c: RfcContract, id: string) =>
+    c.clauses.some((k) => k.covers.includes(id));
+  // Each pair of matched requirements is compared once, whichever side finds it.
+  const seen = new Set<string>();
   runs.forEach((r, i) => {
-    const theirs = keys[1 - i];
-    const otherC = runs[1 - i].c;
-    for (const [key, req] of keys[i]) {
-      if (theirs.has(key)) continue;
-      const ex = (otherC.exclusions ?? []).find(
-        (x) => quoteKey(otherC, x) === key,
+    const o = runs[1 - i];
+    for (const req of r.c.requirements) {
+      const at = atLabel(docKey(r.c, req.source), req.section);
+      const mine = { c: r.c, x: req };
+      const overlapping = o.c.requirements.filter((q) =>
+        sameText(doc, mine, { c: o.c, x: q }),
       );
+      // The same quote, when the other run has it, is the match; a longer or
+      // shorter span of the same sentence only when it does not.
+      const exact = overlapping.filter(
+        (q) => normalizeText(q.quote) === normalizeText(req.quote),
+      );
+      const matches = exact.length > 0 ? exact : overlapping;
+      if (matches.length === 0) {
+        const ex = (o.c.exclusions ?? []).find((x) =>
+          sameText(doc, mine, { c: o.c, x }),
+        );
+        out.push({
+          kind: "requirement",
+          at,
+          message: `${r.name} states requirement ${req.id} (${req.level}) ${shortQuote(req.quote)}; ${r.other} ${ex ? `excludes it: ${JSON.stringify(ex.reason)}` : "does not state it"}`,
+        });
+        continue;
+      }
+      // A pair's key is (run 1's id, run 2's id), whichever side finds it.
+      const pairs = matches.map((q) =>
+        i === 0 ? `${req.id}\u0000${q.id}` : `${q.id}\u0000${req.id}`,
+      );
+      if (pairs.every((k) => seen.has(k))) continue;
+      for (const k of pairs) seen.add(k);
+      const ids = matches.map((q) => q.id).join(", ");
+      const levels = [...new Set(matches.map((q) => q.level))];
+      if (levels.some((l) => l !== req.level)) {
+        out.push({
+          kind: "requirement",
+          at,
+          message: `${r.name} states ${req.id} as ${req.level}, ${r.other} as ${levels.join(" / ")} (${ids}): ${shortQuote(req.quote)}`,
+        });
+      }
+      // Main-spec text with a binding keyword is compared sentence by
+      // sentence below; everything else (SHOULD, MAY, DEFINITION, a quote
+      // from another source) is compared here, requirement by requirement.
+      const main = docKey(r.c, req.source) === "";
+      if (main && BINDING_KEYWORD_RE.test(normalizeText(req.quote))) continue;
+      const t1 = tested(r.c, req.id);
+      const t2 = matches.some((q) => tested(o.c, q.id));
+      if (t1 === t2) continue;
+      const how = (t: boolean, by: string) =>
+        t ? `tested (${by})` : `stated but untested (${by})`;
       out.push({
-        kind: "requirement",
-        at: keyLabel(key),
-        message: `${r.name} states requirement ${req.id} (${req.level}) ${shortQuote(req.quote)}; ${r.other} ${ex ? `excludes it: ${JSON.stringify(ex.reason)}` : "does not state it"}`,
+        kind: "coverage",
+        at,
+        message: `requirement ${shortQuote(req.quote)} is ${how(t1, req.id)} in ${r.name}, ${how(t2, ids)} in ${r.other}`,
       });
     }
   });
