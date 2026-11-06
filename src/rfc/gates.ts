@@ -659,6 +659,20 @@ function statesResult(
   return reasons.join("; ");
 }
 
+/**
+ * How a section prints an empty value: an empty quoted string (RFC 4648 §10's
+ * `BASE16("") = ""`) or a zero length (RFC 5869 A.3's `salt = (0 octets)`).
+ */
+const EMPTY_PRINTED_RE = /""|\(0 octets\)/;
+
+/** A literal whose value is empty: the empty string or no bytes. */
+function isEmptyValue(lit: Literal): boolean {
+  if ("str" in lit) return lit.str === "";
+  if ("ascii" in lit) return lit.ascii === "";
+  if ("hex" in lit) return lit.hex === "";
+  return false;
+}
+
 /** Checks literals against one section's text. */
 function literalCheck(
   sec: NonNullable<ReturnType<typeof findSection>>,
@@ -682,6 +696,17 @@ function literalCheck(
       });
       return;
     }
+    if (isEmptyValue(lit)) {
+      // "" is in every text and the empty hex run in every section, so an
+      // empty value is found only where the section prints one.
+      if (!EMPTY_PRINTED_RE.test(text))
+        issues.push({
+          gate: "fidelity",
+          at: `${id}.${at}`,
+          message: `the empty value is not printed in ${where} ("${sec.title}"): it needs "" or "(0 octets)" there`,
+        });
+      return;
+    }
     if ("hex" in lit || "ascii" in lit) {
       const bytes = literalBytes(lit) as Uint8Array;
       const printedAsText =
@@ -695,12 +720,12 @@ function literalCheck(
       }
     } else if ("str" in lit) {
       // The section text is whitespace-collapsed, so only a string already
-      // in that form is compared as the test uses it; "" is in every text.
-      if (lit.str === "" || lit.str !== normalizeText(lit.str)) {
+      // in that form is compared as the test uses it.
+      if (lit.str !== normalizeText(lit.str)) {
         issues.push({
           gate: "fidelity",
           at: `${id}.${at}`,
-          message: `the string ${JSON.stringify(lit.str)} is empty or has leading, trailing or repeated whitespace, so it cannot be matched against the RFC text`,
+          message: `the string ${JSON.stringify(lit.str)} has leading, trailing or repeated whitespace, so it cannot be matched against the RFC text`,
         });
       } else if (!text.includes(lit.str)) {
         issues.push({
