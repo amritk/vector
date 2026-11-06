@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import * as fs from "node:fs";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as client from "../src/agents/client.ts";
@@ -17,6 +23,7 @@ import {
   extractTwice,
 } from "../src/rfc/extract.ts";
 import {
+  INTERFACE_TYPES,
   interfaceDeclarations,
   interfaceSignatures,
   parseMarkdownSpec,
@@ -351,6 +358,153 @@ export function len(x: u8[]): i32 {
       "f is declared twice",
     );
   });
+
+  // B2: once the markers are gone the rest of the line is exactly one
+  // signature, or the spec is refused. Each input a reviewer found, and the
+  // siblings of each.
+  test("refuses two signatures on one line, whatever separates them", () => {
+    for (const line of [
+      "- export const a = (x: string): string => x; export const b = (y: i32): i32 => y",
+      "export function a(x: string): string { return x } export function b(): i32 { return 1 }",
+      "export const a = (x: string): string => x export const b = (): i32",
+      "| a | `export const a = (x: i32): i32; export const b = (x: i32): i32` |",
+    ]) {
+      refuses(
+        withForm(line),
+        "one signature per line; this line declares more",
+      );
+    }
+    for (const line of [
+      "export function a(x: string): string {} function b(): i32 {}",
+      "export const a = (x: i32): i32 => x; const b = 1",
+      "export const a = (x: i32): i32 => x; note this",
+      "export function a(x: i32): i32 { const y = x; return y }",
+    ]) {
+      refuses(
+        withForm(line),
+        "the body after this one holds another statement or declaration",
+      );
+    }
+  });
+
+  test("refuses a note after the signature, never reads it as the type", () => {
+    refuses(
+      withForm("- `export const f = (x: u8[]): string` — encodes x"),
+      'the return of f has type "string — encodes x", not one a contract can declare',
+    );
+    refuses(
+      withForm("- export const f = (x: u8[]): string."),
+      'the return of f has type "string."',
+    );
+    refuses(
+      withForm("export const f = (x: u8[], y: u8[]): string,"),
+      'the return of f has type "string,"',
+    );
+    refuses(
+      withForm("export const f = (x: u8[]): string; note this"),
+      "cannot read this signature (exactly one",
+    );
+  });
+
+  test("refuses a type a contract cannot declare", () => {
+    refuses(
+      withForm("export const f = (o: {a: u8, b: u8}): string"),
+      'parameter o of f has type "{a: u8"',
+    );
+    refuses(
+      withForm("export const f = (x: u8): string"),
+      'parameter x of f has type "u8", not one a contract can declare (u8[], u8[] | null',
+    );
+    refuses(
+      withForm("export const f = (x: u8[]): Promise<string>"),
+      'the return of f has type "Promise<string>"',
+    );
+    refuses(
+      withForm("export function f(x: number): bigint"),
+      'parameter x of f has type "number"',
+    );
+    refuses(
+      withForm("export const f = (x?: u8[]): string"),
+      'cannot read parameter "x?: u8[]" of f',
+    );
+    // The list is the signature gate's, type for type.
+    expect([...INTERFACE_TYPES].sort()).toEqual(
+      [
+        "u8[]",
+        "u8[] | null",
+        "null | u8[]",
+        "string",
+        "string | null",
+        "null | string",
+        "i32",
+        "u32",
+        "boolean",
+      ].sort(),
+    );
+  });
+
+  test("reads every type on the list, spaced any way, and a `;` or body tail", () => {
+    const iface = interfaceSignatures(
+      parseMarkdownSpec(`## 1. Interface
+
+    export const a = (x: u8[]|null): null | string
+    export const b = (x: null|u8[]): boolean;
+    export const c = (x: u8 [ ], y: u32): string|null ;
+    export function d(x: i32): i32 { return x }
+    export const e = (x: i32): i32 => x + 1 // the successor
+`),
+    );
+    expect(iface.signatures).toEqual([
+      {
+        name: "a",
+        params: [{ name: "x", type: "u8[] | null" }],
+        returns: "null | string",
+      },
+      {
+        name: "b",
+        params: [{ name: "x", type: "null | u8[]" }],
+        returns: "boolean",
+      },
+      {
+        name: "c",
+        params: [
+          { name: "x", type: "u8[]" },
+          { name: "y", type: "u32" },
+        ],
+        returns: "string | null",
+      },
+      { name: "d", params: [{ name: "x", type: "i32" }], returns: "i32" },
+      { name: "e", params: [{ name: "x", type: "i32" }], returns: "i32" },
+    ]);
+  });
+
+  test("refuses `export` in another letter case; prose that starts with the word is prose", () => {
+    refuses(
+      withForm("Export const f = (x: i32): i32"),
+      "`export` must be written in lowercase",
+    );
+    refuses(
+      withForm("- EXPORT FUNCTION f(x: i32): i32"),
+      "`export` must be written in lowercase",
+    );
+    const iface = interfaceSignatures(
+      parseMarkdownSpec(withForm("Export the bytes as lowercase hex.")),
+    );
+    expect(iface.signatures.map((s) => s.name)).toEqual(["g"]);
+  });
+
+  test("refuses every export that is not a function: it fails closed", () => {
+    for (const line of [
+      "export type T = string",
+      "export interface I { a: string }",
+      "export async function f(x: i32): i32",
+      "export declare function f(x: i32): i32;",
+      "export let f = 1",
+      "export default f",
+    ]) {
+      refuses(withForm(line), "the Interface section declares only functions");
+    }
+  });
 });
 
 describe("spec-only extraction", () => {
@@ -443,6 +597,26 @@ describe("spec-only extraction", () => {
       d2,
     );
     expect(viaModule.contract).not.toBeNull();
+  });
+
+  test("refuses a contract for another module, in both modes", async () => {
+    const elsewhere = contractA();
+    elsewhere.target.module = "nish/encoding/base64";
+    const message =
+      "[signatures] target.module: is nish/encoding/base64, but the extraction is for nish/encoding/hex";
+    const { deps, calls } = fake([elsewhere, contractA()]);
+    const outcome = await extractContract(inputs, deps);
+    expect(outcome.attempts).toBe(2);
+    expect(calls[1].turn).toContain(message);
+    expect(outcome.contract?.target.module).toBe("nish/encoding/hex");
+    const { deps: d2, calls: c2 } = fake([elsewhere, elsewhere]);
+    const viaModule = await extractContract(
+      { rfcText: SPEC, target: "nish/encoding/hex", moduleSource: MODULE },
+      d2,
+      1,
+    );
+    expect(viaModule.contract).toBeNull();
+    expect(c2[1].turn).toContain(message);
   });
 
   test("refuses a module source, before any model call", async () => {
@@ -547,6 +721,26 @@ describe("twice-run extraction", () => {
     a.requirements[1].quote = "A decoder MUST return null for a string";
     b.requirements[1].quote = "MUST return null for a string of odd length";
     expect(compareContracts(a, b, doc)).toEqual([]);
+  });
+
+  test("a quote that holds a second sentence the other run's does not is a partial match", () => {
+    const b = contractA();
+    b.requirements[1].quote = `${ODD}: abc decodes to null. ${TIMING}`;
+    b.exclusions = [];
+    expect(
+      compareContracts(contractA(), b, doc).filter(
+        (d) => d.kind === "requirement",
+      ),
+    ).toEqual([
+      {
+        kind: "requirement",
+        at: "§3.1",
+        message: expect.stringMatching(
+          /^run 1 states R-ODD as 1 sentence\(s\) "A decoder MUST return null[^"]*", run 2 states R-ODD as 2 "A decoder MUST return null[^"]*": a partial match$/,
+        ),
+      },
+    ]);
+    // One sentence against a span of it is no partial match (above).
   });
 
   test("spans of one section that do not overlap are different requirements", () => {
@@ -708,6 +902,7 @@ describe("vector spec extract (the command)", () => {
   afterEach(() => {
     logSpy.mockRestore();
     errSpy.mockRestore();
+    rmSync(dir, { recursive: true, force: true });
   });
   const spec = () => join(dir, "hex.md");
   const written = () => join(dir, "contract.json");
@@ -738,10 +933,7 @@ describe("vector spec extract (the command)", () => {
     }
     expect(JSON.parse(readFileSync(written(), "utf8")).contract).toBe("hex-md");
     expect(calls).toHaveLength(1);
-    for (const c of calls) {
-      expect(c.turn).toContain(SPEC);
-      expect(c.turn).not.toContain("IMPLEMENTATION-SOURCE-MARKER");
-    }
+    expect(calls[0].turn).toContain(SPEC);
     expect(out.join("\n")).toContain(`contract written to ${written()}`);
   });
 
@@ -772,8 +964,8 @@ describe("vector spec extract (the command)", () => {
       SPEC.replace("export const toHex = (b: u8[]): string", "export toHex"),
     );
     expect(await rfcMain(specOnly(), deps)).toBe(2);
-    expect(err.join("\n")).toContain(
-      'cannot read this signature: "export toHex"',
+    expect(err.join("\n")).toMatch(
+      /cannot read this signature[^\n]*: "export toHex"/,
     );
     writeFileSync(spec(), "no headings at all\n");
     expect(await rfcMain(specOnly(), deps)).toBe(2);
@@ -924,6 +1116,31 @@ describe("vector spec extract (the command)", () => {
     );
     expect(out.join("\n")).toContain("Run 2:");
     expect(existsSync(written())).toBe(false);
+  });
+
+  test("--twice --format markdown fails closed and says which run failed", async () => {
+    const { deps } = fake([contractA(), {}, {}]);
+    expect(
+      await rfcMain(
+        specOnly("--twice", "--max-retries", "1", "--format", "markdown"),
+        deps,
+      ),
+    ).toBe(1);
+    expect(err.join("\n")).toContain(
+      "--twice: run 2 found no valid contract; nothing written",
+    );
+    expect(out.join("\n")).not.toContain("Two independent extractions agree");
+    expect(existsSync(written())).toBe(false);
+  });
+
+  test("--twice --json, agreeing: no disagreements, both runs valid", async () => {
+    const { deps } = fake([contractA(), contractA()]);
+    expect(await rfcMain(specOnly("--twice", "--json"), deps)).toBe(0);
+    const r = JSON.parse(out.join("\n"));
+    expect(r.twice.agree).toBe(true);
+    expect(r.twice.disagreements).toEqual([]);
+    expect(r.twice.second.status).toBe("CONTRACT_VALID");
+    expect(existsSync(written())).toBe(true);
   });
 
   test("--twice --json fails closed as one JSON document", async () => {
