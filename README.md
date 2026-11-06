@@ -268,22 +268,36 @@ declare the exports:
 ```
 
 `export const f = (a: T): R` (with or without `=> …`) and
-`export function f(a: T): R` are read, in prose, indented or fenced code; the
-signature gate then checks the contract's functions against them. Refused, with
-exit 2 and no model call: a spec with no Interface section or more than one,
-one that declares nothing, an `export` line it cannot read (a function-typed
-parameter, a default value, `export { … }`), a name declared twice, and
-`--module` or `--nish-root` alongside `--spec-only`.
+`export function f(a: T): R` are read, in prose, indented or fenced code, and
+also after a list marker (`-`, `*`, `+`, `1.`, `1)`), a `>` blockquote, or in a
+table cell; a trailing `// comment` is dropped. The signature gate then checks
+the contract's functions against them: the contract must declare every
+Interface signature, and may not name a function from another module (the
+spec declares only the target's). Refused, with exit 2 and no model call: a
+spec with no Interface section or more than one, one that declares nothing, an
+`export` line it cannot read (a function-typed parameter, a default value,
+`export { … }`, a `/* … */` comment inside it), an `export` declaration that
+follows other text on its line, a name declared twice, and `--module` or
+`--nish-root` alongside `--spec-only`.
 
 `extract --twice` runs two independent extractions (neither sees the other's
-contract or feedback) and compares them. A **requirement** that one states and
-the other does not (by section and quote; ids and line breaks don't count), and
-a binding sentence of the main spec that one **tests** and the other excludes,
-states without testing or leaves out, is a disagreement. Disagreements are
-warnings for the human reviewer, not a gate: they are listed under Warnings in
-the text and `--format markdown` reports, with a line saying whether the runs
-agree, and under `twice.disagreements` in `--json`. The contract written is
-run 1's. Either run finding no valid contract exits 1 and writes nothing.
+contract or feedback) and compares them. Ids and line breaks don't count;
+requirements are matched by section and quote, where two quotes match when one
+contains the other or their spans of the main spec overlap. Each of these is a
+disagreement:
+
+- a requirement one run states and the other does not (or excludes);
+- a matched requirement stated at different levels (`MUST` in one,
+  `DEFINITION` in the other);
+- a matched requirement one run tests and the other states without testing,
+  for requirements from any source, binding or not;
+- a binding (MUST/SHALL/REQUIRED) sentence of the main spec that the runs
+  handle differently: tested, stated but untested, excluded, or not covered.
+
+Disagreements are warnings for the human reviewer, not a gate: they are listed
+under Warnings in the text and `--format markdown` reports, with a line saying
+whether the runs agree, and under `twice.disagreements` in `--json`. The
+contract written is run 1's. Either run finding no valid contract exits 1 and writes nothing.
 
 ### What it catches
 
@@ -413,7 +427,7 @@ A module lands spec-first, in two PRs: the **spec side** (`specs/`,
 |---|---|---|---|
 | 1. write the spec | `specs/<name>.md`, numbered headings and an Interface section | — | — |
 | 2. contract, `check` | `vector spec extract --spec-only --twice …` (or by hand), then `vector spec check contracts/<name>.json --spec specs/<name>.md --run-sources` | `CONTRACT_VALID` | `INVALID` |
-| 3. freeze | `"source": {…, "sha256": "<sha256sum of the spec>"}`, then `vector spec frozen --base origin/main contracts/<name>.json` | spec side only, hashes match | both sides touched, the spec changed, no `sha256`, no contract |
+| 3. freeze | `"source": {…, "sha256": "<sha256sum of the spec>"}`, then `vector spec frozen --base origin/main contracts/<name>.json` | spec side only, hashes match | both sides touched, the spec changed, no `sha256`, a contract source outside `specs/` or `rfcs/`, no contract |
 | 4. `emit` / `stale` | `vector spec emit contracts/<name>.json -o test/spec/<name>.ts`, then `vector spec stale test/spec/<name>.ts contracts/<name>.json` | the test is the contract's | stale, missing or doubled marker line |
 | 5. implement, `run` | `vector spec run contracts/<name>.json --nish-root ../nish` | `SATISFIED` | `VIOLATED` / `ERROR` / `INVALID` |
 | 6. `exports` | `vector spec exports contracts/<name>.json --nish-root ../nish --base origin/main` | every changed export tested or `outOfScope` | an unlisted export |

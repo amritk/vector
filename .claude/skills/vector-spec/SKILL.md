@@ -74,9 +74,11 @@ bun run vector spec extract --spec-only --twice --spec specs/<name>.md \
 `--spec-only` gives the model only the spec and checks signatures against the
 Interface section (a spec without one, or with an export line it cannot read,
 exits 2 before any model call). `--twice` runs two independent extractions and
-lists where they disagree — a requirement one states and the other does not,
-or a binding sentence one tests and the other excludes — as warnings; read
-every one before you accept run 1's contract. Exit 0 writes the contract, 1
+lists where they disagree as warnings — a requirement one states and the other
+does not, a requirement stated at different levels, one tested in one run and
+untested in the other, or a binding sentence the runs handle differently
+(tested, untested, excluded, not covered); read every one before you accept
+run 1's contract. Exit 0 writes the contract, 1
 means no valid contract (either run, with `--twice`).
 
 Without a key, write `contracts/<name>.json` yourself against
@@ -125,7 +127,8 @@ Then:
 bun run vector spec check contracts/<name>.json --spec specs/<name>.md --run-sources
 ```
 
-Repair every gate failure it lists (fidelity, completeness, coverage,
+Read every `command` source the model proposed before you pass
+`--run-sources`: it runs on your machine. Then repair every gate failure it lists (fidelity, completeness, coverage,
 provenance, typing, domain) and re-run until it prints `CONTRACT_VALID` and
 exits 0. With no module yet it warns that signatures were not checked; that
 is expected here — `run --nish-root` (step 5) checks them against the
@@ -133,10 +136,12 @@ implementation, and fails on a mismatch.
 
 ### 3. Freeze the contract
 
-Record the sha256 of the main spec file's bytes in the contract:
+Record the sha256 of the main spec file's bytes in the contract — the first
+field of the output, not the file name after it:
 
 ```bash
-sha256sum specs/<name>.md      # → "source": { …, "sha256": "<hex>" }
+sha256sum specs/<name>.md | cut -d' ' -f1      # macOS: shasum -a 256 specs/<name>.md | cut -d' ' -f1
+# → "source": { …, "sha256": "<hex>" }
 ```
 
 Commit the spec, the contract and (step 4's) generated test together, in the
@@ -145,6 +150,8 @@ spec-side PR, and gate it:
 ```bash
 bun run vector spec frozen --base origin/main contracts/<name>.json
 ```
+
+Run it last, after step 4's `emit` and `stale`, so it sees the whole PR.
 
 Exit 0: the PR is all spec side, and every contract's main source still
 hashes to its `source.sha256`. Exit 1: the PR also touches implementation
@@ -196,7 +203,9 @@ function the contract tests, or be listed with a reason:
 
 Exit 1 names each unlisted export. An `outOfScope` entry belongs in the
 spec-side PR, approved with the contract, never added in the implementation
-PR to get it green.
+PR to get it green. Such entries usually become known only when the
+implementation PR fails `exports`; adding one changes the contract's bytes,
+so in that spec-side PR re-run `emit` and `stale` (step 4) and `frozen`.
 
 ### 7. Mutate the diff
 
@@ -213,6 +222,10 @@ or vector the spec supports, or — in a spec-side PR — allow it with the reas
 ```json
 "allowSurvivors": [{ "file": "std/hex.ts", "line": 42, "reason": "…" }]
 ```
+
+Like `outOfScope`, an `allowSurvivors` entry is usually found by the
+implementation PR's `mutate` run, and changes the contract's bytes: add it in
+a spec-side PR, then re-run `emit`, `stale` and `frozen` there.
 
 Zero mutants, every mutant stillborn, or a test that fails on the unmutated
 module all exit 1 too.
