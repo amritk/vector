@@ -147,6 +147,19 @@ function userTurn(
  * naming another module would go unchecked, and nothing there asks that every
  * declared signature is in the contract; both are refused here.
  */
+/** A contract for another module than the one asked for is not this one. */
+function targetIssues(c: RfcContract, target: string): GateIssue[] {
+  return c.target.module === target
+    ? []
+    : [
+        {
+          gate: "signatures",
+          at: "target.module",
+          message: `is ${c.target.module}, but the extraction is for ${target}`,
+        },
+      ];
+}
+
 function interfaceIssues(c: RfcContract, iface: SpecInterface): GateIssue[] {
   const issues: GateIssue[] = [];
   for (const f of c.functions) {
@@ -217,8 +230,12 @@ export async function extractContract(
     }
     previous = proposed;
     const gates = runGates(proposed, { rfc, moduleSource: signatureSource });
-    if (iface && !gates.issues.some((i) => i.gate === "shape")) {
-      const more = interfaceIssues(proposed as RfcContract, iface);
+    if (!gates.issues.some((i) => i.gate === "shape")) {
+      const c = proposed as RfcContract;
+      const more = [
+        ...targetIssues(c, inputs.target),
+        ...(iface ? interfaceIssues(c, iface) : []),
+      ];
       gates.issues.push(...more);
       if (more.length > 0) gates.ok = false;
     }
@@ -345,6 +362,14 @@ const dispositionText = (d: ReturnType<typeof disposition>) =>
         ? `excluded: ${d.by}`
         : "not covered";
 
+/** How many sentences a quote holds: each ends at `.`, `!` or `?` and a space. */
+function sentenceCount(quote: string): number {
+  return normalizeText(quote)
+    .trim()
+    .split(/(?<=[.!?])\s+(?=\S)/)
+    .filter((x) => x !== "").length;
+}
+
 /**
  * Where two contracts extracted from the same spec disagree: a requirement
  * one states and the other does not (matched on overlapping quotes, so two
@@ -407,6 +432,22 @@ export function compareContracts(
           at,
           message: `${r.name} states ${req.id} as ${req.level}, ${r.other} as ${levels.join(" / ")} (${ids}): ${shortQuote(req.quote)}`,
         });
+      }
+      // A shorter quote held in a longer one is the same requirement only
+      // when both are one sentence's worth: "A SHOULD x." against "A SHOULD
+      // x. B SHOULD y." is a partial match, and the second sentence would
+      // otherwise go unremarked.
+      if (exact.length === 0) {
+        const n = sentenceCount(req.quote);
+        for (const q of matches) {
+          const nq = sentenceCount(q.quote);
+          if (n === nq) continue;
+          out.push({
+            kind: "requirement",
+            at,
+            message: `${r.name} states ${req.id} as ${n} sentence(s) ${shortQuote(req.quote)}, ${r.other} states ${q.id} as ${nq} ${shortQuote(q.quote)}: a partial match`,
+          });
+        }
       }
       // Main-spec text with a binding keyword is compared sentence by
       // sentence below; everything else (SHOULD, MAY, DEFINITION, a quote
