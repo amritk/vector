@@ -8,18 +8,36 @@ import contractJsonSchema from "../../schemas/rfc-contract.json" with {
   type: "json",
 };
 import { MalformedOutputError } from "../agents/client.ts";
-import { type RfcContract, validateContractShape } from "./contract.ts";
+import {
+  type RfcContract,
+  declaredSources,
+  sourceOf,
+  validateContractShape,
+} from "./contract.ts";
 import { exportedSignatures, runGates } from "./gates.ts";
 import {
   type ContractReport,
+  renderMarkdown,
   renderReport,
   reportJson,
   reportStatus,
 } from "./report.ts";
+import {
+  type RfcDocument,
+  findSection,
+  normalizeText,
+  normativeSentences,
+  ownSpans,
+} from "./rfctext.ts";
 import { sampleContract } from "./sample.ts";
-import { parseDocument } from "./spectext.ts";
+import {
+  type SpecInterface,
+  interfaceDeclarations,
+  interfaceSignatures,
+  parseDocument,
+} from "./spectext.ts";
 
-export const EXTRACTOR_SYSTEM_PROMPT = `You turn an RFC into a test contract for an implementation \
+const PROMPT_HEAD = `You turn an RFC into a test contract for an implementation \
 of it. The contract is JSON (the schema is enforced). It is checked mechanically against the RFC \
 text before anything runs, so:
 
@@ -39,22 +57,45 @@ part then an IV). Never compute or invent a value.
 in an integer comparison so the solver samples both sides of it), round trips, tamper rejection, \
 and the RFC's own construction rebuilt from other functions under test (e.g. a block of output \
 equals the formula that defines it). Keep 'where' free of calls.
-- functions[] are the implementation's real exported signatures, mapped to bytes (u8[]), \
-bytes? (u8[] | null), i32, u32, bool. A function from another module (a reference such as HMAC) \
-names its module.
-- The spec may be an RFC or a markdown document whose sections are numbered headings. For an RFC \
+`;
+
+const PROMPT_TAIL = `- The spec may be an RFC or a markdown document whose sections are numbered headings. For an RFC \
 set source.rfc to its number; for anything else declare sources: [{"id": "<short name>", "path": \
 "<file>"}] and source.main: "<that id>".`;
 
+const TYPE_MAP = `mapped to bytes (u8[]), bytes? (u8[] | null), string, string? (string | null), \
+i32, u32, bool`;
+
+export const EXTRACTOR_SYSTEM_PROMPT = `${PROMPT_HEAD}
+- functions[] are the implementation's real exported signatures, ${TYPE_MAP}. A function from \
+another module (a reference such as HMAC) names its module.
+${PROMPT_TAIL}`;
+
+/**
+ * Spec-only extraction: the model sees the spec and nothing of the
+ * implementation, so the contract states what the spec asks for, not what the
+ * code happens to do. Its signatures are the spec's Interface section.
+ */
+export const SPEC_ONLY_SYSTEM_PROMPT = `${PROMPT_HEAD}
+- functions[] are exactly the signatures the spec's Interface section declares, ${TYPE_MAP}. \
+There is no implementation to read: the contract must follow from the spec alone.
+${PROMPT_TAIL}`;
+
 export interface ExtractInputs {
   rfcText: string;
-  moduleSource: string;
+  /**
+   * The target module's source, for its signatures. Absent in spec-only
+   * extraction, which refuses one: the signatures come from the spec.
+   */
+  moduleSource?: string;
   target: string;
+  /** Give the model only the spec; take signatures from its Interface. */
+  specOnly?: boolean;
 }
 
 export interface ExtractDeps {
-  /** One model call: the user turn in, a contract-shaped object out. */
-  propose: (userContent: string) => Promise<unknown>;
+  /** One model call: the user turn and system prompt in, a contract-shaped object out. */
+  propose: (userContent: string, systemPrompt: string) => Promise<unknown>;
 }
 
 export interface ExtractOutcome {
@@ -65,17 +106,32 @@ export interface ExtractOutcome {
 
 function userTurn(
   inputs: ExtractInputs,
+  iface: SpecInterface | null,
   previous: unknown,
   feedback: string[],
 ): string {
-  const sigs = [...exportedSignatures(inputs.moduleSource)]
-    .map(([name, s]) => `  ${name}(${s.params.join(", ")}): ${s.returns}`)
-    .join("\n");
-  const parts = [
-    `Target module: ${inputs.target}`,
-    `Its exported functions:\n${sigs || "  (none found)"}`,
-    `The RFC:\n\n${inputs.rfcText}`,
-  ];
+  const parts = iface
+    ? [
+        `Target module: ${inputs.target}`,
+        `Its interface, as the spec's Interface section (§${iface.section}) declares it:\n${iface.signatures
+          .map(
+            (s) =>
+              `  ${s.name}(${s.params.map((p) => `${p.name}: ${p.type}`).join(", ")}): ${s.returns}`,
+          )
+          .join("\n")}`,
+        `The spec:\n\n${inputs.rfcText}`,
+      ]
+    : [
+        `Target module: ${inputs.target}`,
+        `Its exported functions:\n${
+          [...exportedSignatures(inputs.moduleSource ?? "")]
+            .map(
+              ([name, s]) => `  ${name}(${s.params.join(", ")}): ${s.returns}`,
+            )
+            .join("\n") || "  (none found)"
+        }`,
+        `The RFC:\n\n${inputs.rfcText}`,
+      ];
   if (previous !== undefined) {
     parts.push(
       `Your previous contract:\n${JSON.stringify(previous)}`,
@@ -91,6 +147,27 @@ export async function extractContract(
   maxRetries = 3,
 ): Promise<ExtractOutcome> {
   const rfc = parseDocument(inputs.rfcText);
+  // Both refusals come before any model call: a spec-only run that could see
+  // the module, or a module run with no module, is not the run asked for.
+  let iface: SpecInterface | null = null;
+  let signatureSource: string;
+  if (inputs.specOnly) {
+    if (inputs.moduleSource !== undefined) {
+      throw new Error(
+        "spec-only extraction takes no module source: its signatures come from the spec's Interface section",
+      );
+    }
+    iface = interfaceSignatures(rfc);
+    signatureSource = interfaceDeclarations(iface);
+  } else {
+    if (inputs.moduleSource === undefined) {
+      throw new Error(
+        "extraction needs the module source, or spec-only mode to take signatures from the spec",
+      );
+    }
+    signatureSource = inputs.moduleSource;
+  }
+  const system = iface ? SPEC_ONLY_SYSTEM_PROMPT : EXTRACTOR_SYSTEM_PROMPT;
   let previous: unknown;
   let feedback: string[] = [];
   let report: ContractReport = {
@@ -100,17 +177,17 @@ export async function extractContract(
   for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
     let proposed: unknown;
     try {
-      proposed = await deps.propose(userTurn(inputs, previous, feedback));
+      proposed = await deps.propose(
+        userTurn(inputs, iface, previous, feedback),
+        system,
+      );
     } catch (err) {
       if (!(err instanceof MalformedOutputError)) throw err;
       feedback = [err.message];
       continue;
     }
     previous = proposed;
-    const gates = runGates(proposed, {
-      rfc,
-      moduleSource: inputs.moduleSource,
-    });
+    const gates = runGates(proposed, { rfc, moduleSource: signatureSource });
     report = {
       contract: gates.issues.some((i) => i.gate === "shape")
         ? null
@@ -132,10 +209,157 @@ export async function extractContract(
   return { contract: null, report, attempts: maxRetries + 1 };
 }
 
-async function anthropicPropose(userContent: string): Promise<unknown> {
+// ── Twice: two independent extractions, and where they disagree ───────────
+
+/**
+ * One place the two extractions read the spec differently. A warning for the
+ * human reviewer, never a gate: either contract passed every gate on its own.
+ */
+export interface Disagreement {
+  kind: "requirement" | "coverage";
+  at: string;
+  message: string;
+}
+
+export interface TwiceOutcome {
+  first: ExtractOutcome;
+  second: ExtractOutcome;
+  /** Empty when the two contracts agree; null when either run failed. */
+  disagreements: Disagreement[] | null;
+}
+
+const shortQuote = (q: string, n = 72) => {
+  const t = q.replace(/\s+/g, " ").trim();
+  return JSON.stringify(t.length > n ? `${t.slice(0, n - 1)}…` : t);
+};
+
+/** A citation the two runs can share: main-source ids are named differently. */
+function quoteKey(
+  c: RfcContract,
+  x: { source?: string; section: string; quote: string },
+): string {
+  const src = sourceOf(c, x.source);
+  const doc = src === declaredSources(c).main ? "" : src;
+  return `${doc}\u0000${x.section}\u0000${normalizeText(x.quote)}`;
+}
+
+const keyLabel = (key: string) => {
+  const [doc, section] = key.split("\u0000");
+  return doc ? `${doc} §${section}` : `§${section}`;
+};
+
+/** What a contract does with one normative sentence of the main spec. */
+function disposition(
+  c: RfcContract,
+  doc: RfcDocument,
+  n: { section: string; at: number },
+): { kind: "tested" | "untested" | "excluded" | "not covered"; by: string } {
+  const sec = findSection(doc, n.section);
+  const main = declaredSources(c).main;
+  const holds = (x: { source?: string; section: string; quote: string }) =>
+    sourceOf(c, x.source) === main &&
+    x.section === n.section &&
+    sec !== null &&
+    ownSpans(sec, x.quote).some(([a, b]) => a <= n.at && n.at < b);
+  const reqs = c.requirements.filter(holds);
+  const tested = reqs.filter((r) =>
+    c.clauses.some((k) => k.covers.includes(r.id)),
+  );
+  if (tested.length > 0)
+    return { kind: "tested", by: tested.map((r) => r.id).join(", ") };
+  if (reqs.length > 0)
+    return { kind: "untested", by: reqs.map((r) => r.id).join(", ") };
+  const ex = (c.exclusions ?? []).find(holds);
+  if (ex) return { kind: "excluded", by: JSON.stringify(ex.reason) };
+  return { kind: "not covered", by: "" };
+}
+
+const dispositionText = (d: ReturnType<typeof disposition>) =>
+  d.kind === "tested"
+    ? `tested (${d.by})`
+    : d.kind === "untested"
+      ? `stated but untested (${d.by})`
+      : d.kind === "excluded"
+        ? `excluded: ${d.by}`
+        : "not covered";
+
+/**
+ * Where two contracts extracted from the same spec disagree: a requirement
+ * one states and the other does not, and a binding sentence of the main spec
+ * that one tests and the other excludes or leaves out. Deterministic: the
+ * order is the spec's, then the first run's.
+ */
+export function compareContracts(
+  a: RfcContract,
+  b: RfcContract,
+  doc: RfcDocument,
+): Disagreement[] {
+  const out: Disagreement[] = [];
+  const runs = [
+    { c: a, name: "run 1", other: "run 2" },
+    { c: b, name: "run 2", other: "run 1" },
+  ];
+  const keys = runs.map(
+    (r) => new Map(r.c.requirements.map((q) => [quoteKey(r.c, q), q])),
+  );
+  runs.forEach((r, i) => {
+    const theirs = keys[1 - i];
+    const otherC = runs[1 - i].c;
+    for (const [key, req] of keys[i]) {
+      if (theirs.has(key)) continue;
+      const ex = (otherC.exclusions ?? []).find(
+        (x) => quoteKey(otherC, x) === key,
+      );
+      out.push({
+        kind: "requirement",
+        at: keyLabel(key),
+        message: `${r.name} states requirement ${req.id} (${req.level}) ${shortQuote(req.quote)}; ${r.other} ${ex ? `excludes it: ${JSON.stringify(ex.reason)}` : "does not state it"}`,
+      });
+    }
+  });
+  for (const n of normativeSentences(doc)) {
+    if (!findSection(doc, n.section)) continue;
+    const da = disposition(a, doc, n);
+    const db = disposition(b, doc, n);
+    if (da.kind === db.kind) continue;
+    out.push({
+      kind: "coverage",
+      at: `§${n.section}`,
+      message: `${n.keyword} sentence ${shortQuote(n.sentence, 160)} is ${dispositionText(da)} in run 1, ${dispositionText(db)} in run 2`,
+    });
+  }
+  return out;
+}
+
+/**
+ * Two extractions with no state shared between them: each starts from the
+ * spec with no previous contract and no feedback from the other.
+ */
+export async function extractTwice(
+  inputs: ExtractInputs,
+  deps: ExtractDeps,
+  maxRetries = 3,
+): Promise<TwiceOutcome> {
+  const first = await extractContract(inputs, deps, maxRetries);
+  const second = await extractContract(inputs, deps, maxRetries);
+  const disagreements =
+    first.contract && second.contract
+      ? compareContracts(
+          first.contract,
+          second.contract,
+          parseDocument(inputs.rfcText),
+        )
+      : null;
+  return { first, second, disagreements };
+}
+
+async function anthropicPropose(
+  userContent: string,
+  systemPrompt: string,
+): Promise<unknown> {
   const { structuredCall } = await import("../agents/client.ts");
   return structuredCall({
-    systemPrompt: EXTRACTOR_SYSTEM_PROMPT,
+    systemPrompt,
     userContent,
     jsonSchema: contractJsonSchema as Record<string, unknown>,
     parse: (input: unknown) => {
@@ -150,43 +374,151 @@ async function anthropicPropose(userContent: string): Promise<unknown> {
   });
 }
 
-export async function runExtract(opts: {
+export interface ExtractOptions {
   rfcPath?: string;
   modulePath?: string;
+  /** --nish-root was given: refused with --spec-only, ignored otherwise. */
+  nishRoot?: string;
   target?: string;
   out?: string;
   maxRetries: number;
-  json: boolean;
-}): Promise<number> {
-  if (!opts.rfcPath || !opts.modulePath || !opts.target || !opts.out) {
+  format: "text" | "markdown" | "json";
+  specOnly?: boolean;
+  twice?: boolean;
+}
+
+function render(format: ExtractOptions["format"], r: ContractReport): string {
+  return format === "json"
+    ? JSON.stringify(reportJson(r), null, 2)
+    : format === "markdown"
+      ? renderMarkdown(r)
+      : renderReport(r);
+}
+
+const twiceSummary = (n: number) =>
+  n === 0
+    ? "Two independent extractions agree: the same requirements, and every binding sentence handled the same way."
+    : `Two independent extractions disagree in ${n} place(s), listed under Warnings for the reviewer. The contract written is run 1's.`;
+
+/**
+ * `vector spec extract`. Exit 0: a contract passed every gate and was
+ * written. 1: no valid contract (with --twice, either run had none). 2: a
+ * usage error or a spec that cannot be read, before any model call.
+ */
+export async function runExtract(
+  opts: ExtractOptions,
+  deps: ExtractDeps = { propose: anthropicPropose },
+): Promise<number> {
+  const needs = opts.specOnly
+    ? "extract --spec-only needs --spec <file> --target <module> -o <contract.json>"
+    : "extract needs --spec <file> --module <src.ts> --target <module> -o <contract.json>";
+  if (
+    !opts.rfcPath ||
+    (!opts.specOnly && !opts.modulePath) ||
+    !opts.target ||
+    !opts.out
+  ) {
+    console.error(`error: ${needs}`);
+    return 2;
+  }
+  if (opts.specOnly && (opts.modulePath || opts.nishRoot)) {
     console.error(
-      "error: extract needs --spec <file> --module <src.ts> --target <module> -o <contract.json>",
+      `error: --spec-only takes signatures from the spec's Interface section and gives the model nothing else; drop ${opts.modulePath ? "--module" : "--nish-root"}`,
     );
     return 2;
   }
-  const outcome = await extractContract(
-    {
-      rfcText: readFileSync(opts.rfcPath, "utf8"),
-      moduleSource: readFileSync(opts.modulePath, "utf8"),
-      target: opts.target,
-    },
-    { propose: anthropicPropose },
-    opts.maxRetries,
-  );
-  console.log(
-    opts.json
-      ? JSON.stringify(reportJson(outcome.report), null, 2)
-      : renderReport(outcome.report),
-  );
-  if (!outcome.contract) {
-    console.error(
-      `no valid contract after ${outcome.attempts} attempt(s); status ${reportStatus(outcome.report)}`,
-    );
-    return 1;
+  let rfcText: string;
+  let moduleSource: string | undefined;
+  try {
+    rfcText = readFileSync(opts.rfcPath, "utf8");
+    if (!opts.specOnly)
+      moduleSource = readFileSync(opts.modulePath as string, "utf8");
+  } catch (err) {
+    console.error(`error: ${(err as Error).message}`);
+    return 2;
   }
-  writeFileSync(opts.out, `${JSON.stringify(outcome.contract, null, 2)}\n`);
-  console.log(
-    `\n(contract written to ${opts.out} after ${outcome.attempts} attempt(s); review it, then \`vector spec check --run-sources\` before relying on its command sources, then \`vector spec run\`)`,
-  );
+  // The spec is read, and its Interface parsed, before any model call.
+  try {
+    const doc = parseDocument(rfcText);
+    if (opts.specOnly) interfaceSignatures(doc);
+  } catch (err) {
+    console.error(`error: ${opts.rfcPath}: ${(err as Error).message}`);
+    return 2;
+  }
+  const inputs: ExtractInputs = {
+    rfcText,
+    moduleSource,
+    target: opts.target,
+    specOnly: opts.specOnly,
+  };
+  let outcome: ExtractOutcome;
+  if (opts.twice) {
+    const t = await extractTwice(inputs, deps, opts.maxRetries);
+    const failed = [t.first, t.second]
+      .map((o, i) => (o.contract ? null : `run ${i + 1}`))
+      .filter((x) => x !== null);
+    if (t.disagreements === null) {
+      if (opts.format === "json")
+        console.log(
+          JSON.stringify(
+            { runs: [t.first, t.second].map((o) => reportJson(o.report)) },
+            null,
+            2,
+          ),
+        );
+      else
+        for (const [i, o] of [t.first, t.second].entries())
+          console.log(
+            `${i > 0 ? "\n" : ""}Run ${i + 1}:\n${render(opts.format, o.report)}`,
+          );
+      console.error(
+        `--twice: ${failed.join(" and ")} found no valid contract; nothing written`,
+      );
+      return 1;
+    }
+    outcome = t.first;
+    for (const d of t.disagreements)
+      outcome.report.gates.warnings.push({
+        at: `twice ${d.kind} ${d.at}`,
+        message: d.message,
+      });
+    if (opts.format === "json") {
+      console.log(
+        JSON.stringify(
+          {
+            ...(reportJson(outcome.report) as Record<string, unknown>),
+            twice: {
+              agree: t.disagreements.length === 0,
+              disagreements: t.disagreements,
+              second: reportJson(t.second.report),
+            },
+          },
+          null,
+          2,
+        ),
+      );
+    } else {
+      console.log(render(opts.format, outcome.report));
+      console.log(
+        opts.format === "markdown"
+          ? `\n### Two extractions\n\n${twiceSummary(t.disagreements.length)}`
+          : `\n${twiceSummary(t.disagreements.length)}`,
+      );
+    }
+  } else {
+    outcome = await extractContract(inputs, deps, opts.maxRetries);
+    console.log(render(opts.format, outcome.report));
+    if (!outcome.contract) {
+      console.error(
+        `no valid contract after ${outcome.attempts} attempt(s); status ${reportStatus(outcome.report)}`,
+      );
+      return 1;
+    }
+  }
+  const contract = outcome.contract as RfcContract;
+  writeFileSync(opts.out, `${JSON.stringify(contract, null, 2)}\n`);
+  const note = `(contract written to ${opts.out} after ${outcome.attempts} attempt(s); review it, then \`vector spec check --run-sources\` before relying on its command sources, then \`vector spec run\`)`;
+  if (opts.format === "json") console.error(note);
+  else console.log(`\n${note}`);
   return 0;
 }

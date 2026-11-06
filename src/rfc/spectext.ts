@@ -360,3 +360,107 @@ export function parseMarkdownSpec(text: string): RfcDocument {
     },
   };
 }
+
+// ── The Interface section: a spec's own signatures ─────────────────────────
+
+/** One parameter of a signature, as the spec prints it. */
+export interface InterfaceParam {
+  name: string;
+  type: string;
+}
+
+/** A function the spec's Interface section declares. */
+export interface InterfaceSignature {
+  name: string;
+  params: InterfaceParam[];
+  returns: string;
+}
+
+/** The spec's Interface section and the signatures it declares. */
+export interface SpecInterface {
+  section: string;
+  signatures: InterfaceSignature[];
+}
+
+const INTERFACE_TITLE_RE = /^interfaces?$/i;
+// `export const f = (a: T, b: U): R` with an optional `=> …` or `;`, or
+// `export function f(a: T): R` with an optional `{ …` or `;`. A parameter
+// list with parentheses inside it (a function type) does not match, and is
+// refused rather than split wrongly.
+const CONST_SIG_RE =
+  /^export\s+const\s+([A-Za-z_]\w*)\s*=\s*\(([^()]*)\)\s*:\s*([^=;{}()]+?)\s*(?:=>.*|;)?$/;
+const FUNCTION_SIG_RE =
+  /^export\s+function\s+([A-Za-z_]\w*)\s*\(([^()]*)\)\s*:\s*([^=;{}()]+?)\s*(?:\{.*|;)?$/;
+const PARAM_RE = /^([A-Za-z_]\w*)\s*:\s*([^=]+?)$/;
+
+/**
+ * The signatures the spec's Interface section declares (a numbered section
+ * titled "Interface"), so a contract can be extracted from the spec alone.
+ * Every line of it that starts with `export` must be a signature this reads;
+ * prose around them is allowed. Throws, so the caller refuses the spec, when
+ * there is no Interface section or more than one, when an `export` line
+ * cannot be read, when a name is declared twice, and when it declares none.
+ */
+export function interfaceSignatures(doc: RfcDocument): SpecInterface {
+  const found = [...doc.sections.values()].filter((s) =>
+    INTERFACE_TITLE_RE.test(s.title.trim()),
+  );
+  if (found.length === 0) {
+    throw new Error(
+      'the spec has no Interface section (a numbered heading such as "## 2. Interface") to take signatures from',
+    );
+  }
+  if (found.length > 1) {
+    throw new Error(
+      `the spec has ${found.length} Interface sections (§${found.map((s) => s.id).join(", §")}); signatures must come from exactly one`,
+    );
+  }
+  const sec = found[0];
+  const signatures: InterfaceSignature[] = [];
+  // The section's first line is its heading.
+  for (const raw of sec.lines.slice(1)) {
+    const line = raw.trim();
+    if (!/^export\b/.test(line)) continue;
+    const m = line.match(CONST_SIG_RE) ?? line.match(FUNCTION_SIG_RE);
+    if (!m) {
+      throw new Error(
+        `Interface §${sec.id}: cannot read this signature: ${JSON.stringify(line)}`,
+      );
+    }
+    const params: InterfaceParam[] = [];
+    for (const p of m[2].split(",").map((x) => x.trim())) {
+      if (p === "" && m[2].trim() === "") break;
+      const pm = p.match(PARAM_RE);
+      if (!pm) {
+        throw new Error(
+          `Interface §${sec.id}: cannot read parameter ${JSON.stringify(p)} of ${m[1]}`,
+        );
+      }
+      params.push({ name: pm[1], type: pm[2].trim() });
+    }
+    if (signatures.some((s) => s.name === m[1])) {
+      throw new Error(`Interface §${sec.id}: ${m[1]} is declared twice`);
+    }
+    signatures.push({ name: m[1], params, returns: m[3].trim() });
+  }
+  if (signatures.length === 0) {
+    throw new Error(
+      `Interface §${sec.id} declares no signature (a line such as "export const f = (x: u8[]): string")`,
+    );
+  }
+  return { section: sec.id, signatures };
+}
+
+/**
+ * The signatures as `export const` declarations, the form the signature gate
+ * reads from a module: in spec-only extraction the spec stands in for the
+ * module, so the contract's functions are checked against what it declares.
+ */
+export function interfaceDeclarations(iface: SpecInterface): string {
+  return iface.signatures
+    .map(
+      (s) =>
+        `export const ${s.name} = (${s.params.map((p) => `${p.name}: ${p.type}`).join(", ")}): ${s.returns} => _`,
+    )
+    .join("\n");
+}
