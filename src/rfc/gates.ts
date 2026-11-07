@@ -709,8 +709,12 @@ function literalCheck(
     }
     if ("hex" in lit || "ascii" in lit) {
       const bytes = literalBytes(lit) as Uint8Array;
+      // Whitespace alone normalizes to "", which every text holds: such a
+      // value is matched only as hex.
       const printedAsText =
-        "ascii" in lit && text.includes(normalizeText(lit.ascii));
+        "ascii" in lit &&
+        normalizeText(lit.ascii) !== "" &&
+        text.includes(normalizeText(lit.ascii));
       if (!printedAsText && !hexPrinted(runs, bytesToHex(bytes))) {
         issues.push({
           gate: "fidelity",

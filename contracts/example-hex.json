@@ -160,7 +160,7 @@
     {
       "kind": "vector",
       "id": "V4",
-      "title": "RFC 4648 §10: uppercase \"666F626172\" decodes to \"foobar\"",
+      "title": "RFC 4648 §10: uppercase \"666F6F626172\" decodes to \"foobar\"",
       "covers": ["R-DEC-ACCEPT"],
       "source": {
         "cite": {
@@ -1030,7 +1030,7 @@
     {
       "file": "std/hex.ts",
       "line": 87,
-      "reason": "Equivalent: `>= 2147483647` and `> 2147483646` differ from the original only at a length of exactly 2^31 - 1, which is odd, so hexDecode returns null on both paths."
+      "reason": "Equivalent: `>= 2147483647` and `> 2147483646` differ from the original only at a length of exactly 2^31 - 1, which is odd, so hexDecode returns null on both paths. Unreachable: `> 2147483648` differs only at a length of exactly 2^31, a string no test can build."
     },
     {
       "file": "std/hex.ts",

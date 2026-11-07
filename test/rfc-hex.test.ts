@@ -202,7 +202,7 @@ describe("contracts/example-hex.json as committed", () => {
     );
   });
 
-  test("no int in it lacks a label (the spec prints none)", () => {
+  test("it holds no labelled int, and no int in a vector (the spec prints none)", () => {
     expect(JSON.stringify(hex.clauses)).not.toMatch(/"int":-?\d+,"label"/);
     for (const k of hex.clauses)
       if (k.kind === "vector")
@@ -374,6 +374,18 @@ describe("fidelity of an empty value", () => {
     expect(fidelity(c)).toContain(
       'A.3-PRK.args[0]: the empty value is not printed in RFC §2.2 ("Step 1: Extract"): it needs "" or "(0 octets)" there',
     );
+  });
+
+  test("whitespace-only ascii is matched as hex, never as the empty text", () => {
+    for (const ascii of [" ", "\n", " \t "]) {
+      const c = clone(hkdf);
+      const k = vec(c, "A.3-PRK");
+      k.source = { cite: { section: "2.2" } };
+      k.args = [{ ascii }, { hex: "0b" }];
+      expect(fidelity(c)).toContain(
+        `A.3-PRK.args[0]: ${ascii.length}-byte value is not printed in RFC §2.2 ("Step 1: Extract")`,
+      );
+    }
   });
 });
 
