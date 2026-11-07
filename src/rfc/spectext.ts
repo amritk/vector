@@ -166,7 +166,7 @@ function readLines(text: string): MdLine[] {
         f &&
         f[1][0] === fence.mark[0] &&
         f[1].length >= fence.mark.length &&
-        f[2].trim() === ""
+        /^[ \t]*$/.test(f[2])
       ) {
         fence = null;
         codeMayStart = true;
@@ -380,6 +380,7 @@ export function parseMarkdownSpec(text: string): RfcDocument {
       lines: looseLines,
       ownLines: looseLines,
     },
+    source: text.replace(/\r\n?/g, "\n").split("\n"),
   };
 }
 
@@ -411,10 +412,10 @@ const INTERFACE_TITLE_RE = /^interfaces?$/i;
 // declaration hides. The types are checked against INTERFACE_TYPES after
 // the match, so a note, a brace or a comma is never read as part of one.
 const CONST_SIG_RE =
-  /^export\s+const\s+([A-Za-z_]\w*)\s*=\s*\(([^()]*)\)\s*:\s*([^=;{}()]+?)\s*;?$/;
+  /^export\s+const\s+([A-Za-z][A-Za-z0-9]*)\s*=\s*\(([^()]*)\)\s*:\s*([^=;{}()]+?)\s*;?$/;
 const FUNCTION_SIG_RE =
-  /^export\s+function\s+([A-Za-z_]\w*)\s*\(([^()]*)\)\s*:\s*([^=;{}()]+?)\s*;?$/;
-const PARAM_RE = /^([A-Za-z_]\w*)\s*:\s*(.+)$/;
+  /^export\s+function\s+([A-Za-z][A-Za-z0-9]*)\s*\(([^()]*)\)\s*:\s*([^=;{}()]+?)\s*;?$/;
+const PARAM_RE = /^([A-Za-z][A-Za-z0-9]*)\s*:\s*(.+)$/;
 /**
  * The types a signature may use: the ones a contract can declare. The same
  * list as NISH_TYPES in gates.ts, which the signature gate reads a module by.
@@ -431,6 +432,42 @@ export const INTERFACE_TYPES: readonly string[] = [
   "boolean",
 ];
 // The word `export`, in any letter case.
+/**
+ * How many times a line of a spec says `export` as a reader of the rendered
+ * page would see it: after numeric entities are decoded, HTML tags, link
+ * syntax, markup and invisible characters dropped, and with any non-ASCII
+ * letter standing for whatever ASCII letter it looks like.
+ */
+export function exportWordCount(raw: string): number {
+  const text = raw
+    .replace(/&#(\d+);?/g, (_, d) => String.fromCodePoint(Number(d) % 0x110000))
+    .replace(/&#x([0-9a-f]+);?/gi, (_, h) =>
+      String.fromCodePoint(Number.parseInt(h, 16) % 0x110000),
+    )
+    .replace(/<[^>]*>?/g, "")
+    .replace(/\]\([^)]*\)?/g, "")
+    .replace(/[[\]*_~\\`]/g, "")
+    .replace(/[\p{Cf}\p{M}]/gu, "");
+  let n = 0;
+  for (const word of text.match(/\p{L}+/gu) ?? []) {
+    if (word.length !== 6) continue;
+    const ascii = /^[A-Za-z]+$/.test(word);
+    if (ascii ? /^export$/i.test(word) : lookalike(word, "export")) n++;
+  }
+  return n;
+}
+
+/** Whether `word` reads as `target` when each non-ASCII letter may be any letter. */
+function lookalike(word: string, target: string): boolean {
+  const chars = [...word];
+  return (
+    chars.length === target.length &&
+    chars.every(
+      (c, i) => !/^[A-Za-z]$/.test(c) || c.toLowerCase() === target[i],
+    )
+  );
+}
+
 const EXPORT_WORD_RE = /\bexport\b/gi;
 // What markdown can wrap a word in (emphasis, strike-through, an escape), so
 // `_export_` or `ex**port**` outside code is still seen as the word.
@@ -502,9 +539,19 @@ export function interfaceSignatures(doc: RfcDocument): SpecInterface {
       continue;
     }
     const words = code.match(EXPORT_WORD_RE)?.length ?? 0;
-    // Code that declares nothing: a usage example, a comment.
-    if (words === 0) continue;
     let line = code.trim();
+    // Code holds signatures and comments only: any other line could carry
+    // on a signature's type (`| null` on the next line) or hide one.
+    if (words === 0) {
+      if (line === "" || line.startsWith("//")) continue;
+      throw refuse(
+        "the Interface section's code holds only signatures and `//` comments (put a usage example in another section)",
+      );
+    }
+    const beforeComment = line.replace(/\/\/.*$/, "");
+    if (/[^\x20-\x7e\t]/.test(beforeComment)) {
+      throw refuse("a signature is written in ASCII only");
+    }
     if (!/^export\b/i.test(line)) {
       throw refuse(
         "in the Interface section's code, `export` may only begin a signature",
@@ -568,6 +615,27 @@ export function interfaceSignatures(doc: RfcDocument): SpecInterface {
       `Interface §${sec.id} declares no signature (a code line such as "export const f = (x: u8[]): string")`,
     );
   }
+  // Anywhere in the spec, the word `export` is a signature that was read, or
+  // the spec is refused: a line the reader took for a comment, a heading's
+  // end, boilerplate or prose may render as code a person reads as an export.
+  const read = new Map<string, number>();
+  for (const code of sec.codeLines) {
+    if (code !== null && /\bexport\b/i.test(code)) {
+      read.set(code, (read.get(code) ?? 0) + 1);
+    }
+  }
+  doc.source?.forEach((raw, n) => {
+    const words = exportWordCount(raw);
+    if (words === 0) return;
+    const left = read.get(raw) ?? 0;
+    if (words === 1 && left > 0) {
+      read.set(raw, left - 1);
+      return;
+    }
+    throw new Error(
+      `line ${n + 1}: the word \`export\` may appear in a spec only to begin a signature in the Interface section's code, one per line, and this line was not read as one: ${JSON.stringify(raw.trim())}`,
+    );
+  });
   return { section: sec.id, signatures };
 }
 

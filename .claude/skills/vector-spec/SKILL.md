@@ -60,8 +60,11 @@ heading) or a ` ``` ` / `~~~` fence. Each is `export const f = (a: T): R` or
 `boolean`. The section fails closed: the word `export` (any case) outside code
 there — a bullet, table, inline code, or prose like "Export the bytes…" —
 refuses the spec, as do `export type`/`interface`/other forms and `export`
-anywhere but the start of a code line. Code lines without `export` (usage
-examples) are skipped. Put prose that needs the word in another section.
+anywhere but the start of a code line. The section's code holds only
+signatures and `//` comments; names are ASCII letters and digits (no `_`).
+Anywhere else in the spec the bare word `export` refuses too (entities, HTML,
+invisible or look-alike letters do not hide it): write "exported" or
+"exports".
 
 For an RFC: `rfcs/rfc<N>.txt` if it is there, otherwise
 `curl -sSfL -o rfcs/rfc<N>.txt https://www.rfc-editor.org/rfc/rfc<N>.txt`

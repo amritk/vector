@@ -269,15 +269,18 @@ declares the exports:
 
 Signatures are read only from code: an indented block (four spaces or a tab,
 after a blank line or the heading) or a block fenced with ` ``` ` or `~~~`.
-Code is read as written, so markdown never rewrites a signature. Code lines
-without `export` are skipped (comments, usage examples). Every code line with
-`export` is one signature, read strictly:
+Code is read as written, so markdown never rewrites a signature. The
+section's code holds only signatures, blank lines and `//` comments (a usage
+example goes in another section). Every code line with `export` is one
+signature, read strictly:
 
 - `export const f = (a: T, b: U): R`
 - `export function f(a: T): R`
 
 followed by nothing but an optional `;` and an optional `// comment`: no body,
-no `=>`, no `{`. Every parameter is `name: T`, named once, and every type is
+no `=>`, no `{`. A signature is ASCII, its names are letters and digits (no
+`_`, which markdown could turn into emphasis), every parameter is `name: T`,
+named once, and every type is
 one the contract can declare: `u8[]`, `u8[] | null`, `null | u8[]`, `string`,
 `string | null`, `null | string`, `i32`, `u32`, `boolean` (the signature
 gate's own list; spacing does not matter). The signature gate then checks the
@@ -292,10 +295,10 @@ has no code blocks to read), and, anywhere in the Interface section:
 
 - the word `export`, in any letter case, outside code: in a bullet, table
   cell, blockquote, inline code, emphasis or plain prose ("Export the bytes as
-  lowercase hex." too; "exported" and "exports" are fine). A paragraph's
-  indented continuation line is not code, so it is refused too;
+  lowercase hex." too; "exported" and "exports" are fine);
 - in code, `export` anywhere but the start of a line (`// export …` too), not
-  in lowercase, or twice on one line;
+  in lowercase, or twice on one line; any other code line (a type carried on
+  to the next line, `| null`, refuses rather than being dropped);
 - a body (`=> x`, `{ … }`), a note after the signature (`… : string — encodes
   x`, `… : string.`), a `/* … */` comment inside it;
 - a type not on the list (`u8`, `{a: u8}`, `Promise<string>`), an optional,
@@ -305,8 +308,17 @@ has no code blocks to read), and, anywhere in the Interface section:
   `export default`, `export async function`, `export { … }`): the section
   declares only functions;
 
-and `--module` or `--nish-root` alongside `--spec-only`. The reading fails
-closed: put prose that needs the word `export` in another section.
+and `--module` or `--nish-root` alongside `--spec-only`.
+
+Outside the Interface section too, the word `export` may appear **nowhere**
+in the spec except as a signature that was read: in another section, in a
+comment, in boilerplate, in text before the first heading. It is counted as a
+rendered page shows it: numeric entities (`ex&#112;ort`), inline HTML,
+link syntax, markup, invisible characters and look-alike letters (a Cyrillic
+`е`) do not hide it. So wherever this reader and a markdown renderer disagree
+(an HTML comment a renderer shows as text, a heading inside an HTML block),
+an export the page shows is refused, never skipped. The reading fails closed:
+write "exported" or "exports" in prose, never the bare word.
 
 A hand-written contract is not checked this way: when a contract names a
 reference function from another module (`"module": "nish/crypto/hmac"`), the

@@ -25,6 +25,7 @@ import {
 } from "../src/rfc/extract.ts";
 import {
   INTERFACE_TYPES,
+  exportWordCount,
   interfaceDeclarations,
   interfaceSignatures,
   parseMarkdownSpec,
@@ -236,15 +237,13 @@ export function len(x: u8[]): i32
     ]);
   });
 
-  test("reads an indented block right after the heading, and skips code that declares nothing", () => {
+  test("reads an indented block right after the heading, with // comments", () => {
     const iface = interfaceSignatures(
       parseMarkdownSpec(`## 1. Interface
     // The encoder.
     export const f = (x: u8[]): string
 
-\`\`\`ts
-const s = f([1, 2]); // a usage example: f is declared once
-\`\`\`
+    // Usage examples go in another section.
 `),
     );
     expect(iface.signatures.map((s) => s.name)).toEqual(["f"]);
@@ -274,10 +273,7 @@ const s = f([1, 2]); // a usage example: f is declared once
 
   test("refuses an Interface section that declares nothing", () => {
     refuses("## 1. Interface\n\nSee the module.\n", "declares no signature");
-    refuses(
-      "## 1. Interface\n\n    const f = (x: i32): i32\n",
-      "declares no signature",
-    );
+    refuses("## 1. Interface\n\n    // nothing yet\n", "declares no signature");
   });
 
   test("refuses an RFC, which has no code blocks to read", () => {
@@ -429,8 +425,12 @@ const s = f([1, 2]); // a usage example: f is declared once
 
   test("refuses a note after the signature, never reads it as the type", () => {
     refuses(
+      inCode("export const f = (x: u8[]): string - encodes x"),
+      'the return of f has type "string - encodes x", not one a contract can declare',
+    );
+    refuses(
       inCode("export const f = (x: u8[]): string — encodes x"),
-      'the return of f has type "string — encodes x", not one a contract can declare',
+      "a signature is written in ASCII only",
     );
     refuses(
       inCode("export const f = (x: u8[]): string."),
@@ -538,6 +538,125 @@ const s = f([1, 2]); // a usage example: f is declared once
     ]) {
       refuses(inCode(line), "`export` may only begin a signature");
     }
+  });
+
+  test("code there holds only signatures and comments: a type carried onto the next line refuses", () => {
+    for (const next of [
+      "  | null;",
+      "| null",
+      "const s = f([1]);",
+      "\u0435xport const g = (a: u8[]): string",
+    ]) {
+      refuses(
+        `## 1. Interface\n\n\`\`\`ts\nexport function f(a: u8[]): string\n${next}\n\`\`\`\n`,
+        "holds only signatures and `//` comments",
+      );
+    }
+  });
+
+  test("names and parameters are ASCII letters and digits: no `_` markdown could rewrite", () => {
+    refuses(
+      inCode("export const _g = (a_: u8[]): string"),
+      "cannot read this signature",
+    );
+    refuses(
+      inCode("export const g = (a_: u8[]): string"),
+      'cannot read parameter "a_: u8[]" of g',
+    );
+    // An indented line in a list item is the item's paragraph, not code.
+    refuses(
+      "## 1. Interface\n\n    export const f = (a: u8[]): string\n\n- item\n\n    export const _g = (a_: u8[]): string\n",
+      "cannot read this signature",
+    );
+  });
+
+  test("exportWordCount reads `export` as the rendered page shows it", () => {
+    for (const line of [
+      "export const g",
+      "EXPORT",
+      "ex&#112;ort",
+      "ex&#x70;ort",
+      "ex<b></b>port",
+      "[ex]()port",
+      "ex**port**",
+      "e\\xport",
+      "\u0435xport", // Cyrillic е
+      "ex\u00adport", // soft hyphen
+      "ex\u200bport", // zero-width space
+      "e\u0301xport",
+    ]) {
+      expect([line, exportWordCount(line)]).toEqual([line, 1]);
+    }
+    for (const line of [
+      "exported",
+      "exports",
+      "next portion",
+      "expert",
+      "report",
+    ]) {
+      expect([line, exportWordCount(line)]).toEqual([line, 0]);
+    }
+    expect(exportWordCount("export a; export b")).toBe(2);
+  });
+
+  // Anywhere the reader and a markdown renderer disagree, a signature the
+  // page shows is refused, never skipped.
+  const FENCE_F =
+    "## 2. Interface\n\n```ts\nexport const f = (a: u8[]): string\n```\n";
+  const G = "export const g = (a: u8[]): string";
+  const ANYWHERE =
+    "the word `export` may appear in a spec only to begin a signature";
+  const HIDDEN: [string, string][] = [
+    [
+      "a lookalike letter in code",
+      `${FENCE_F}\n## 3. Usage\n\n    \u0435xport const g = (a: u8[]): string\n`,
+    ],
+    [
+      "a zero-width space in code",
+      `${FENCE_F}\n## 3. Usage\n\n    ex\u200bport const g = (a: u8[]): string\n`,
+    ],
+    [
+      "an entity in a bullet",
+      `${FENCE_F}\n- ex&#112;ort const g = (a: u8[]): string\n`,
+    ],
+    [
+      "inline HTML in a bullet",
+      `${FENCE_F}\n- ex<b></b>port const g = (a: u8[]): string\n`,
+    ],
+    [
+      "an empty link in a bullet",
+      `${FENCE_F}\n- [ex]()port const g = (a: u8[]): string\n`,
+    ],
+    [
+      "a <!-- that a renderer shows as text",
+      `${FENCE_F}\nNote: see below <!-- for details.\n\n\`\`\`ts\n${G}\n\`\`\`\n\nThe mapping is input --> output.\n`,
+    ],
+    [
+      "a heading a renderer shows as code",
+      `${FENCE_F}\n<pre>\n## Notes\n</pre>\n\n\`\`\`ts\n${G}\n\`\`\`\n`,
+    ],
+    [
+      "a line the boilerplate filter blanks",
+      `${FENCE_F}\n\`\`\`ts\n// The key words "MUST" are to be interpreted as described in\n${G}\n// BCP 14.\n\`\`\`\n`,
+    ],
+    ["another section's code", `${FENCE_F}\n## 3. Usage\n\n    ${G}\n`],
+    [
+      "prose in another section",
+      `${FENCE_F}\n## 3. Notes\n\nExport nothing else.\n`,
+    ],
+    ["text before every section", `Export it.\n\n${FENCE_F}`],
+  ];
+  for (const [name, text] of HIDDEN) {
+    test(`refuses an export in ${name}`, () => refuses(text, ANYWHERE));
+  }
+
+  test("a closing fence takes only spaces and tabs after it", () => {
+    // A no-break space after ``` does not close the block, so what follows
+    // is code, read as the page shows it.
+    refuses(
+      `${FENCE_F}\n\`\`\`ts\nexport const g = (a: u8[]): string\n\`\`\`\u00a0\n<!--\n${G}\n-->\n\`\`\`\n`,
+      "holds only signatures and `//` comments",
+    );
   });
 
   test("refuses every export that is not a function: it fails closed", () => {

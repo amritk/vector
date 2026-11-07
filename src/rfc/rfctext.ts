@@ -42,6 +42,8 @@ export interface RfcDocument {
    * completeness gate refuses any it holds.
    */
   loose?: RfcSection;
+  /** A markdown spec's lines exactly as written (line ends normalized). */
+  source?: string[];
 }
 
 // A page break in the .txt rendering: a footer line ending "[Page N]", a form
