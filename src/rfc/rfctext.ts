@@ -26,6 +26,11 @@ export interface RfcSection {
    * reader knows them (markdown); only prose states a vector's result.
    */
   proseLines?: string[];
+  /**
+   * Per line of `lines`, the line exactly as written when it is code (a
+   * fenced block or an indented code line), else null. Markdown only.
+   */
+  codeLines?: (string | null)[];
 }
 
 export interface RfcDocument {

@@ -362,11 +362,14 @@ const dispositionText = (d: ReturnType<typeof disposition>) =>
         ? `excluded: ${d.by}`
         : "not covered";
 
-/** How many sentences a quote holds: each ends at `.`, `!` or `?` and a space. */
-function sentenceCount(quote: string): number {
+/**
+ * How many sentences a quote holds: each ends at `.`, `!` or `?` and a space,
+ * except the stops of "e.g." and "i.e.", which end no sentence.
+ */
+export function sentenceCount(quote: string): number {
   return normalizeText(quote)
     .trim()
-    .split(/(?<=[.!?])\s+(?=\S)/)
+    .split(/(?<!\b(?:e\.g|i\.e)\.)(?<=[.!?])\s+(?=\S)/i)
     .filter((x) => x !== "").length;
 }
 

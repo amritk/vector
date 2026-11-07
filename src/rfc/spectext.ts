@@ -119,6 +119,12 @@ interface MdLine {
   heading?: { level: number; id: string | null; title: string };
   /** Code, a table cell or a blockquote: text, but not the spec's prose. */
   quoted?: true;
+  /**
+   * The line exactly as written, when it is code: inside a fenced block, or
+   * an indented code line (four spaces or a tab after a blank line, a
+   * heading or another code line). The Interface reads signatures only here.
+   */
+  code?: string;
 }
 
 /** The line, marked as not prose. */
@@ -142,8 +148,18 @@ function readLines(text: string): MdLine[] {
   const out: MdLine[] = [];
   let fence: { mark: string; at: number } | null = null;
   let comment: number | null = null;
+  // Whether an indented line here starts or continues an indented code block:
+  // after a blank line, a heading or another code line, never inside a
+  // paragraph (where it is the paragraph's lazy continuation).
+  let codeMayStart = true;
   for (let n = 0; n < raw.length; n++) {
     const rawLine = raw[n];
+    const indentedCode: boolean =
+      fence === null &&
+      comment === null &&
+      codeMayStart &&
+      /^(?: {4}|\t)/.test(rawLine) &&
+      rawLine.trim() !== "";
     if (fence !== null) {
       const f = rawLine.match(FENCE_RE);
       if (
@@ -153,8 +169,9 @@ function readLines(text: string): MdLine[] {
         f[2].trim() === ""
       ) {
         fence = null;
+        codeMayStart = true;
         out.push(BREAK());
-      } else out.push(quoted(withBytes(rawLine)));
+      } else out.push({ ...quoted(withBytes(rawLine)), code: rawLine });
       continue;
     }
     const [line, open] = stripComments(rawLine, comment !== null);
@@ -184,9 +201,11 @@ function readLines(text: string): MdLine[] {
           title: (id ? id[2] : h[2]).trim(),
         },
       });
+      codeMayStart = true;
       continue;
     }
     if (/^\s*\|/.test(inline)) {
+      codeMayStart = false;
       if (TABLE_DELIM_RE.test(inline)) continue;
       // Every cell ends a hex run ("--" is never hex), and so does the start
       // of a row, so two cells, two rows, or a row and the line above it are
@@ -200,6 +219,8 @@ function readLines(text: string): MdLine[] {
       continue;
     }
     const l = withBytes(inline);
+    codeMayStart = l.text === "" || indentedCode;
+    if (indentedCode) l.code = rawLine;
     out.push(/^ {0,3}>/.test(inline) ? quoted(l) : l);
   }
   // An unterminated form would swallow the rest of the document (its
@@ -346,6 +367,7 @@ export function parseMarkdownSpec(text: string): RfcDocument {
       ownLines: take(at, ownEnd).map((x) => x.text),
       hexLines: all.flatMap((x) => [x.text, ...x.hex]),
       proseLines: all.map((x) => (x.quoted ? "" : x.text)),
+      codeLines: all.map((x) => x.code ?? null),
     });
   });
   const looseLines = lines.filter((_, i) => !owned[i]).map((x) => x.text);
@@ -383,16 +405,15 @@ export interface SpecInterface {
 }
 
 const INTERFACE_TITLE_RE = /^interfaces?$/i;
-// Exactly one signature, and nothing after it but a body or a `;`:
-// `export const f = (a: T, b: U): R` with an optional `=> …` or `;`, or
-// `export function f(a: T): R` with an optional `{ …` or `;`. The types are
-// checked against INTERFACE_TYPES after the match, so a note, a brace or a
-// comma can never be read as part of one. The body (group 4) is checked
-// after the match too: it may not hold a second declaration.
+// Exactly one signature and nothing after it but a `;`: `export const f =
+// (a: T): R` or `export function f(a: T): R`. No body: a sketch of the
+// function is no part of its signature, and a body is where a second
+// declaration hides. The types are checked against INTERFACE_TYPES after
+// the match, so a note, a brace or a comma is never read as part of one.
 const CONST_SIG_RE =
-  /^export\s+const\s+([A-Za-z_]\w*)\s*=\s*\(([^()]*)\)\s*:\s*([^=;{}()]+?)\s*(;|=>.*)?$/;
+  /^export\s+const\s+([A-Za-z_]\w*)\s*=\s*\(([^()]*)\)\s*:\s*([^=;{}()]+?)\s*;?$/;
 const FUNCTION_SIG_RE =
-  /^export\s+function\s+([A-Za-z_]\w*)\s*\(([^()]*)\)\s*:\s*([^=;{}()]+?)\s*(;|\{.*)?$/;
+  /^export\s+function\s+([A-Za-z_]\w*)\s*\(([^()]*)\)\s*:\s*([^=;{}()]+?)\s*;?$/;
 const PARAM_RE = /^([A-Za-z_]\w*)\s*:\s*(.+)$/;
 /**
  * The types a signature may use: the ones a contract can declare. The same
@@ -409,24 +430,11 @@ export const INTERFACE_TYPES: readonly string[] = [
   "u32",
   "boolean",
 ];
-// An `export` declaration of any kind, anywhere on a line, in any letter case.
-const EXPORT_DECL_RE =
-  /\bexport\s+(?:default\b|const\b|let\b|var\b|function\b|async\b|class\b|type\b|interface\b|enum\b|declare\b|namespace\b|[{*])/gi;
-// A declaration keyword inside a signature's body.
-const BODY_DECL_RE =
-  /\b(?:function|const|let|var|class|type|interface|enum|import|export|namespace)\b/i;
-// The markdown a signature may sit behind: blockquote `>`, a bullet (`-`,
-// `*`, `+`) or a numbered item (`1.`, `1)`), in any nesting.
-const LINE_MARKER_RE = /^(?:>\s?|[-*+]\s+|\d{1,9}[.)]\s+)/;
-
-/** The line without the markdown markers in front of it. */
-function unmarked(raw: string): string {
-  let line = raw.trim();
-  for (let m = LINE_MARKER_RE.exec(line); m; m = LINE_MARKER_RE.exec(line)) {
-    line = line.slice(m[0].length).trimStart();
-  }
-  return line;
-}
+// The word `export`, in any letter case.
+const EXPORT_WORD_RE = /\bexport\b/gi;
+// What markdown can wrap a word in (emphasis, strike-through, an escape), so
+// `_export_` or `ex**port**` outside code is still seen as the word.
+const MARKUP_RE = /[*_~\\]/g;
 
 /** A type as the spec prints it, spaced the way INTERFACE_TYPES is. */
 function canonicalType(t: string): string {
@@ -441,17 +449,20 @@ function canonicalType(t: string): string {
  * The signatures the spec's Interface section declares (a numbered section
  * titled "Interface"), so a contract can be extracted from the spec alone.
  *
- * A line of the section that holds no `export` declaration is prose and is
- * skipped. A line that holds one must be exactly one signature, read
- * strictly: after any bullet, numbered-item or blockquote markers (a table
- * cell is a line of its own), `export const f = (a: T): R` with an optional
- * `=> …` or `;`, or `export function f(a: T): R` with an optional `{ …` or
- * `;`, and an optional trailing `// comment`. A body holds no
- * declaration keyword and no statement after a `;`. Every parameter is `name: T`,
- * and every T is one of INTERFACE_TYPES. Anything else on such a line — a
- * second declaration, a note after the signature, another type, a
- * declaration after prose, `Export` in another letter case, `export type`
- * or `export interface`, a `/* … *\/` comment — refuses the spec, as do no
+ * Signatures are read only from code — a fenced block, or an indented code
+ * block — where the text is exactly as written: markdown never rewrites it
+ * (no table cells, emphasis or inline code to split or strip). A code line
+ * without the word `export` is skipped (a usage example, a comment). A code
+ * line with it must be exactly one signature: `export const f = (a: T): R`
+ * or `export function f(a: T): R`, then nothing but an optional `;` and an
+ * optional trailing `// comment`. Every parameter is `name: T`, named once,
+ * and every T is one of INTERFACE_TYPES.
+ *
+ * Anything else fails closed and refuses the spec: the word `export` in any
+ * letter case anywhere outside code in the section (prose, a list, a table, a
+ * blockquote, inline code, emphasis), `export` that does not start its code
+ * line or is not lowercase, a second `export` on the line, a body (`=> …` or
+ * `{ …`), a `/* … *\/` comment, another kind of export, an unknown type, no
  * Interface section, more than one, a name declared twice, and none
  * declared. Throws, naming the line, so the caller refuses the spec.
  */
@@ -470,44 +481,52 @@ export function interfaceSignatures(doc: RfcDocument): SpecInterface {
     );
   }
   const sec = found[0];
+  if (!sec.codeLines) {
+    throw new Error(
+      `Interface §${sec.id}: signatures are read from a markdown spec's code blocks, and this spec is not markdown`,
+    );
+  }
   const signatures: InterfaceSignature[] = [];
   // The section's first line is its heading.
-  for (const raw of sec.lines.slice(1)) {
-    const quoted = JSON.stringify(raw.trim());
+  for (let i = 1; i < sec.lines.length; i++) {
+    const code = sec.codeLines[i];
+    const shown = JSON.stringify((code ?? sec.lines[i]).trim());
     const refuse = (why: string): Error =>
-      new Error(`Interface §${sec.id}: ${why}: ${quoted}`);
-    const decls = raw.match(EXPORT_DECL_RE)?.length ?? 0;
-    let line = unmarked(raw);
-    // Prose: no declaration anywhere, and the line does not start with one.
-    if (decls === 0 && !/^export\b/.test(line)) continue;
-    if (!/^export\b/.test(line)) {
+      new Error(`Interface §${sec.id}: ${why}: ${shown}`);
+    if (code === null) {
+      if (sec.lines[i].replace(MARKUP_RE, "").match(EXPORT_WORD_RE)) {
+        throw refuse(
+          "a signature must be in a code block (indented, or fenced with ``` or ~~~), and `export` may not appear outside one in the Interface section, not even in prose",
+        );
+      }
+      continue;
+    }
+    const words = code.match(EXPORT_WORD_RE)?.length ?? 0;
+    // Code that declares nothing: a usage example, a comment.
+    if (words === 0) continue;
+    let line = code.trim();
+    if (!/^export\b/i.test(line)) {
       throw refuse(
-        /^export\b/i.test(line)
-          ? "`export` must be written in lowercase"
-          : "a signature must be on a line of its own (a bullet, numbered item, blockquote or table cell may hold it), not after other text",
+        "in the Interface section's code, `export` may only begin a signature",
       );
     }
-    if (decls > 1)
-      throw refuse("one signature per line; this line declares more");
+    if (!/^export\b/.test(line)) {
+      throw refuse("`export` must be written in lowercase");
+    }
+    if (words > 1) {
+      throw refuse("one signature per line; this line says `export` twice");
+    }
     if (line.includes("/*")) {
       throw refuse("cannot read this signature, a comment is inside it");
     }
     // A line comment after the signature is the spec's note, not its type.
-    line = line.replace(/\s*\/\/.*$/, "").trimEnd();
+    line = line.replace(/\s*\/\/.*$/, "");
     const m = line.match(CONST_SIG_RE) ?? line.match(FUNCTION_SIG_RE);
     if (!m) {
       throw refuse(
         /^export\s+(?:const|function)\b/.test(line)
-          ? "cannot read this signature (exactly one `export const f = (a: T): R` or `export function f(a: T): R`, with nothing after it but `;`, `=> …` or `{ …`)"
+          ? "cannot read this signature (exactly `export const f = (a: T): R` or `export function f(a: T): R`, followed by nothing but `;` and a `// comment`: no body)"
           : "cannot read this signature, the Interface section declares only functions (`export const` or `export function`)",
-      );
-    }
-    // A body is the spec's sketch of the function, never a place for a
-    // second one: `{ return x } function g(…)` or `=> x; const g = …`.
-    const body = m[4] ?? "";
-    if (BODY_DECL_RE.test(body) || /;\s*\S/.test(body)) {
-      throw refuse(
-        "one signature per line; the body after this one holds another statement or declaration",
       );
     }
     const typeOf = (t: string, what: string): string => {
@@ -529,6 +548,9 @@ export function interfaceSignatures(doc: RfcDocument): SpecInterface {
             `cannot read parameter ${JSON.stringify(p.trim())} of ${name}`,
           );
         const [, pname, ptype] = pm;
+        if (params.some((q) => q.name === pname)) {
+          throw refuse(`${name} names parameter ${pname} twice`);
+        }
         params.push({
           name: pname,
           type: typeOf(ptype, `parameter ${pname} of ${name}`),
@@ -543,7 +565,7 @@ export function interfaceSignatures(doc: RfcDocument): SpecInterface {
   }
   if (signatures.length === 0) {
     throw new Error(
-      `Interface §${sec.id} declares no signature (a line such as "export const f = (x: u8[]): string")`,
+      `Interface §${sec.id} declares no signature (a code line such as "export const f = (x: u8[]): string")`,
     );
   }
   return { section: sec.id, signatures };

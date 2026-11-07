@@ -42,8 +42,8 @@ this order; each one's command is the gate CI runs.
 `specs/<name>.md` (`specs/example-hex.md` is the worked example). Its sections
 must be numbered headings (`## 3. Encoding`, `### 3.1. Length`,
 `## Appendix A. Vectors`); a MUST outside every numbered section is refused.
-Give it an **Interface** section that declares the module's exports, one per
-line:
+Give it an **Interface** section whose code declares the module's exports,
+one per line:
 
 ```
 ## 2. Interface
@@ -52,16 +52,16 @@ line:
     export const hexDecode = (text: string): u8[] | null
 ```
 
-Each signature on a line of its own (a bullet, numbered item, blockquote or
-table cell may hold it): `export const f = (a: T): R` or
-`export function f(a: T): R`, then nothing, `;`, `=> …` or `{ …`, and an
-optional `// comment`. Types only from `u8[]`, `u8[] | null`, `null | u8[]`,
-`string`, `string | null`, `null | string`, `i32`, `u32`, `boolean`. Nothing
-after the signature: `… : string — encodes x` and `… : string.` are refused.
-The section fails closed, so keep it to signatures and prose: `export type`,
-`export interface`, other `export` forms, prose with an export keyword in it
-("export default values") and usage examples starting with `export` refuse
-the spec there; put them in another section.
+Signatures go only in code: an indented block (after a blank line or the
+heading) or a ` ``` ` / `~~~` fence. Each is `export const f = (a: T): R` or
+`export function f(a: T): R`, followed by nothing but an optional `;` and
+`// comment`: no body, no `=>`, no `{`. Types only from `u8[]`, `u8[] | null`,
+`null | u8[]`, `string`, `string | null`, `null | string`, `i32`, `u32`,
+`boolean`. The section fails closed: the word `export` (any case) outside code
+there — a bullet, table, inline code, or prose like "Export the bytes…" —
+refuses the spec, as do `export type`/`interface`/other forms and `export`
+anywhere but the start of a code line. Code lines without `export` (usage
+examples) are skipped. Put prose that needs the word in another section.
 
 For an RFC: `rfcs/rfc<N>.txt` if it is there, otherwise
 `curl -sSfL -o rfcs/rfc<N>.txt https://www.rfc-editor.org/rfc/rfc<N>.txt`
@@ -83,8 +83,8 @@ bun run vector spec extract --spec-only --twice --spec specs/<name>.md \
 ```
 
 `--spec-only` gives the model only the spec and checks signatures against the
-Interface section (a spec without one, or with an export line it cannot read,
-exits 2 before any model call). `--twice` runs two independent extractions and
+Interface section (a spec without one, with an export line it cannot read,
+or with `export` outside code there, exits 2 before any model call). `--twice` runs two independent extractions and
 lists where they disagree as warnings — a requirement one states and the other
 does not, a requirement stated at different levels, a partial match (one
 run's quote holds a sentence the other's does not), one tested in one run and

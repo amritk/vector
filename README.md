@@ -257,8 +257,8 @@ Code the `vector-spec` skill plays the extractor with no API key.
 
 `extract --spec-only` gives the model the spec and nothing else: no module
 source, no module signatures. The contract's `functions` come from the spec's
-**Interface** section, a numbered section titled `Interface` whose lines
-declare the exports:
+**Interface** section, a numbered section titled `Interface` whose code
+declares the exports:
 
 ```
 ## 2. Interface
@@ -267,45 +267,46 @@ declare the exports:
     export const hexDecode = (text: string): u8[] | null
 ```
 
-Each line of the section is either prose or exactly one signature, read
-strictly. A line that holds an `export` declaration (any letter case,
-anywhere on the line) must be, once a list marker (`-`, `*`, `+`, `1.`, `1)`)
-or `>` blockquote is set aside (a table cell is a line of its own), one of:
+Signatures are read only from code: an indented block (four spaces or a tab,
+after a blank line or the heading) or a block fenced with ` ``` ` or `~~~`.
+Code is read as written, so markdown never rewrites a signature. Code lines
+without `export` are skipped (comments, usage examples). Every code line with
+`export` is one signature, read strictly:
 
-- `export const f = (a: T, b: U): R`, then nothing, `;`, or `=> …`;
-- `export function f(a: T): R`, then nothing, `;`, or `{ …`;
+- `export const f = (a: T, b: U): R`
+- `export function f(a: T): R`
 
-with an optional trailing `// comment`. Every parameter is `name: T`, and
-every type is one the contract can declare: `u8[]`, `u8[] | null`,
-`null | u8[]`, `string`, `string | null`, `null | string`, `i32`, `u32`,
-`boolean` (the signature gate's own list; spacing does not matter). A body
-after `=>` or `{` may not hold a declaration keyword or a statement after a
-`;`. The signature gate then checks the contract's functions against them:
-the contract must declare every Interface signature, its `target.module` must
-be the `--target` (in the module mode too), and it may not name a function
-from another module (the spec declares only the target's, so `--spec-only`
-refuses a reference function).
+followed by nothing but an optional `;` and an optional `// comment`: no body,
+no `=>`, no `{`. Every parameter is `name: T`, named once, and every type is
+one the contract can declare: `u8[]`, `u8[] | null`, `null | u8[]`, `string`,
+`string | null`, `null | string`, `i32`, `u32`, `boolean` (the signature
+gate's own list; spacing does not matter). The signature gate then checks the
+contract's functions against them: the contract must declare every Interface
+signature, its `target.module` must be the `--target` (in the module mode
+too), and it may not name a function from another module (the spec declares
+only the target's, so `--spec-only` refuses a reference function).
 
 Refused, with exit 2 and no model call: a spec with no Interface section or
-more than one, one that declares nothing, two signatures on one line (or a
-second declaration in a body), a note after the signature (`… : string —
-encodes x`, `… : string.`), a type not on the list (`u8`, `{a: u8}`,
-`Promise<string>`), an optional or defaulted parameter, a function-typed
-parameter, a `/* … */` comment inside it, an `export` declaration that
-follows other text on its line, `Export` or `EXPORT`, a name declared twice,
-and `--module` or `--nish-root` alongside `--spec-only`.
+more than one, one that declares nothing, a spec that is not markdown (an RFC
+has no code blocks to read), and, anywhere in the Interface section:
 
-The reading fails closed, so it refuses some specs a person would read
-fine. Keep the Interface section to signatures and prose: these are refused
-there, and belong in another section:
+- the word `export`, in any letter case, outside code: in a bullet, table
+  cell, blockquote, inline code, emphasis or plain prose ("Export the bytes as
+  lowercase hex." too; "exported" and "exports" are fine). A paragraph's
+  indented continuation line is not code, so it is refused too;
+- in code, `export` anywhere but the start of a line (`// export …` too), not
+  in lowercase, or twice on one line;
+- a body (`=> x`, `{ … }`), a note after the signature (`… : string — encodes
+  x`, `… : string.`), a `/* … */` comment inside it;
+- a type not on the list (`u8`, `{a: u8}`, `Promise<string>`), an optional,
+  defaulted or function-typed parameter, a parameter named twice, a name
+  declared twice;
+- any other export (`export type`, `export interface`, `export let`,
+  `export default`, `export async function`, `export { … }`): the section
+  declares only functions;
 
-- `export type`, `export interface`, `export let`, `export default`,
-  `export async function` and `export { … }`: the section declares only
-  functions;
-- prose with an export keyword after the word, such as "export default
-  values" or "the module's export function list" (prose such as "Export the
-  bytes…" or "both functions are exported" is fine);
-- usage examples whose lines start with `export`.
+and `--module` or `--nish-root` alongside `--spec-only`. The reading fails
+closed: put prose that needs the word `export` in another section.
 
 A hand-written contract is not checked this way: when a contract names a
 reference function from another module (`"module": "nish/crypto/hmac"`), the

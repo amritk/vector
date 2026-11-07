@@ -21,6 +21,7 @@ import {
   compareContracts,
   extractContract,
   extractTwice,
+  sentenceCount,
 } from "../src/rfc/extract.ts";
 import {
   INTERFACE_TYPES,
@@ -207,15 +208,18 @@ describe("the spec's Interface section", () => {
     expect(iface.signatures[1].returns).toBe("u8[] | null");
   });
 
-  test("reads export function, fenced code, arrows and no parameters", () => {
+  test("reads fenced code (``` or ~~~, with an info string) and no parameters", () => {
     const iface = interfaceSignatures(
       parseMarkdownSpec(`## 1. Interfaces
 
 \`\`\`ts
 export function now(): i32;
-export const add = (a: i32, b: i32): i32 => a + b
-export function len(x: u8[]): i32 {
+export const add = (a: i32, b: i32): i32
 \`\`\`
+
+~~~
+export function len(x: u8[]): i32
+~~~
 `),
     );
     expect(iface.signatures).toEqual([
@@ -230,6 +234,20 @@ export function len(x: u8[]): i32 {
       },
       { name: "len", params: [{ name: "x", type: "u8[]" }], returns: "i32" },
     ]);
+  });
+
+  test("reads an indented block right after the heading, and skips code that declares nothing", () => {
+    const iface = interfaceSignatures(
+      parseMarkdownSpec(`## 1. Interface
+    // The encoder.
+    export const f = (x: u8[]): string
+
+\`\`\`ts
+const s = f([1, 2]); // a usage example: f is declared once
+\`\`\`
+`),
+    );
+    expect(iface.signatures.map((s) => s.name)).toEqual(["f"]);
   });
 
   const refuses = (text: string, message: string) =>
@@ -256,6 +274,19 @@ export function len(x: u8[]): i32 {
 
   test("refuses an Interface section that declares nothing", () => {
     refuses("## 1. Interface\n\nSee the module.\n", "declares no signature");
+    refuses(
+      "## 1. Interface\n\n    const f = (x: i32): i32\n",
+      "declares no signature",
+    );
+  });
+
+  test("refuses an RFC, which has no code blocks to read", () => {
+    const rfc = parseMarkdownSpec(
+      "## 1. Interface\n\n    export const f = (x: i32): i32\n",
+    );
+    const sec = rfc.sections.get("1");
+    if (sec) sec.codeLines = undefined;
+    expect(() => interfaceSignatures(rfc)).toThrow("this spec is not markdown");
   });
 
   test("refuses an export line it cannot read", () => {
@@ -277,10 +308,12 @@ export function len(x: u8[]): i32 {
     );
   });
 
-  // Every markdown form a signature line can take: each is read, and a
-  // declaration in it that cannot be read refuses the spec, never skips.
+  // Signatures are read from code only. Every other markdown form a
+  // signature could take refuses the spec: it is never read (markdown would
+  // rewrite it) and never skipped.
   const SIG = "export const f = (x: u8[]): string";
   const BAD = "export const f = (g: (x: i32) => i32): i32";
+  const OUTSIDE = "a signature must be in a code block";
   const FORMS: [string, (sig: string) => string][] = [
     ["a - bullet", (x) => `- \`${x}\``],
     ["a * bullet", (x) => `* ${x}`],
@@ -295,136 +328,147 @@ export function len(x: u8[]): i32 {
       (x) => `| name | signature |\n|---|---|\n| f | \`${x}\` |`,
     ],
     ["inline code", (x) => `\`${x}\``],
+    ["_emphasis_", (x) => `_${x}_`],
+    ["__strong__", (x) => `__${x}__`],
+    ["**strong**", (x) => `**${x}**`],
+    ["a split word", (x) => x.replace("export", "ex**port**")],
+    ["a line after prose", (x) => `Use ${x} here.`],
+    ["a paragraph's indented continuation", (x) => `The encoder:\n    ${x}`],
+    ["a plain paragraph", (x) => x],
   ];
   const withForm = (line: string) =>
     `## 1. Interface\n\n    export const g = (x: u8[]): string\n\n${line}\n`;
 
   for (const [name, form] of FORMS) {
-    test(`reads a signature in ${name}`, () => {
-      const iface = interfaceSignatures(parseMarkdownSpec(withForm(form(SIG))));
-      expect(iface.signatures.map((s) => s.name)).toEqual(["g", "f"]);
-      expect(iface.signatures[1]).toEqual({
-        name: "f",
-        params: [{ name: "x", type: "u8[]" }],
-        returns: "string",
-      });
-    });
-    test(`refuses a signature it cannot read in ${name}, never skips it`, () => {
-      refuses(withForm(form(BAD)), "cannot read this signature");
+    test(`refuses a signature in ${name}, never reads or skips it`, () => {
+      refuses(withForm(form(SIG)), OUTSIDE);
+      refuses(withForm(form(BAD)), OUTSIDE);
     });
   }
 
-  test("refuses a declaration after other text on its line", () => {
-    for (const line of [
-      `Use ${SIG} here.`,
-      `- The encoder: ${SIG}`,
-      `> Note that ${SIG}`,
-      `| f | see ${SIG} |`,
-      `**${SIG}**`,
-      "The module has export function f(x: u8[]): string too.",
-      "Also export default f.",
-    ]) {
-      refuses(withForm(line), "a signature must be on a line of its own");
-    }
+  test("B3b: a table cell never splits `u8[] | null` into a misread", () => {
+    refuses(
+      withForm(
+        "| name | signature |\n|---|---|\n| d | `export const d = (s: string): u8[] \\| null` |",
+      ),
+      OUTSIDE,
+    );
   });
 
-  test("prose that only mentions exports is not a declaration", () => {
+  test("the word export outside code refuses the spec, prose included", () => {
+    for (const line of [
+      "Export the bytes as lowercase hex.",
+      "Callers must not export default values.",
+      "- EXPORT nothing else.",
+    ]) {
+      refuses(withForm(line), OUTSIDE);
+    }
+    // Other words are prose.
     const iface = interfaceSignatures(
       parseMarkdownSpec(
-        withForm("- Both functions are exported, and nothing else is."),
+        withForm(
+          "- Both functions are exported; the module exports nothing else.",
+        ),
       ),
     );
     expect(iface.signatures.map((s) => s.name)).toEqual(["g"]);
   });
 
+  const inCode = (line: string) =>
+    `## 1. Interface\n\n    export const g = (x: u8[]): string\n    ${line}\n`;
+
   test("drops a trailing // comment; refuses a /* */ comment inside", () => {
     const iface = interfaceSignatures(
-      parseMarkdownSpec(withForm(`- \`${SIG} // lowercase hex\``)),
+      parseMarkdownSpec(inCode(`${SIG}; // lowercase hex`)),
     );
     expect(iface.signatures[1].returns).toBe("string");
     refuses(
-      withForm("export const f = (x: u8[]): string /* hex */"),
+      inCode("export const f = (x: u8[]): string /* hex */"),
       "a comment is inside it",
     );
     refuses(
-      withForm("export const f = (x /* bytes */: u8[]): string"),
+      inCode("export const f = (x /* bytes */: u8[]): string"),
       "a comment is inside it",
     );
   });
 
-  test("refuses a name declared twice", () => {
+  test("refuses a name declared twice, and a parameter named twice", () => {
     refuses(
       "## 1. Interface\n\n    export const f = (x: i32): i32\n    export function f(x: u32): u32\n",
       "f is declared twice",
     );
+    refuses(
+      inCode("export const f = (x: i32, x: u32): i32"),
+      "f names parameter x twice",
+    );
   });
 
-  // B2: once the markers are gone the rest of the line is exactly one
-  // signature, or the spec is refused. Each input a reviewer found, and the
-  // siblings of each.
   test("refuses two signatures on one line, whatever separates them", () => {
     for (const line of [
-      "- export const a = (x: string): string => x; export const b = (y: i32): i32 => y",
+      "export const a = (x: string): string => x; export const b = (y: i32): i32 => y",
       "export function a(x: string): string { return x } export function b(): i32 { return 1 }",
-      "export const a = (x: string): string => x export const b = (): i32",
-      "| a | `export const a = (x: i32): i32; export const b = (x: i32): i32` |",
+      "export const a = (x: string): string; export const b = (): i32",
+      "export const a = (x: i32): i32 // export const b = (x: i32): i32",
     ]) {
-      refuses(
-        withForm(line),
-        "one signature per line; this line declares more",
-      );
+      refuses(inCode(line), "this line says `export` twice");
     }
+  });
+
+  test("B3a: refuses any body, so nothing hides after one", () => {
     for (const line of [
-      "export function a(x: string): string {} function b(): i32 {}",
+      "export const a = (x: u8[]): string => x, hexDecode = (t: string): u8[] | null => null",
+      "export const a = (x: i32): i32 => x",
       "export const a = (x: i32): i32 => x; const b = 1",
-      "export const a = (x: i32): i32 => x; note this",
-      "export function a(x: i32): i32 { const y = x; return y }",
+      "export function a(x: i32): i32 {",
+      "export function a(x: i32): i32 { return x }",
+      "export function a(x: string): string {} function b(): i32 {}",
     ]) {
-      refuses(
-        withForm(line),
-        "the body after this one holds another statement or declaration",
-      );
+      refuses(inCode(line), "no body");
     }
   });
 
   test("refuses a note after the signature, never reads it as the type", () => {
     refuses(
-      withForm("- `export const f = (x: u8[]): string` — encodes x"),
+      inCode("export const f = (x: u8[]): string — encodes x"),
       'the return of f has type "string — encodes x", not one a contract can declare',
     );
     refuses(
-      withForm("- export const f = (x: u8[]): string."),
+      inCode("export const f = (x: u8[]): string."),
       'the return of f has type "string."',
     );
     refuses(
-      withForm("export const f = (x: u8[], y: u8[]): string,"),
+      inCode("export const f = (x: u8[], y: u8[]): string,"),
       'the return of f has type "string,"',
     );
     refuses(
-      withForm("export const f = (x: u8[]): string; note this"),
-      "cannot read this signature (exactly one",
+      inCode("export const f = (x: u8[]): string; note this"),
+      "cannot read this signature (exactly",
     );
   });
 
   test("refuses a type a contract cannot declare", () => {
     refuses(
-      withForm("export const f = (o: {a: u8, b: u8}): string"),
+      inCode("export const f = (o: {a: u8, b: u8}): string"),
       'parameter o of f has type "{a: u8"',
     );
     refuses(
-      withForm("export const f = (x: u8): string"),
+      inCode("export const f = (o: [u8, u8]): string"),
+      'parameter o of f has type "[u8"',
+    );
+    refuses(
+      inCode("export const f = (x: u8): string"),
       'parameter x of f has type "u8", not one a contract can declare (u8[], u8[] | null',
     );
     refuses(
-      withForm("export const f = (x: u8[]): Promise<string>"),
+      inCode("export const f = (x: u8[]): Promise<string>"),
       'the return of f has type "Promise<string>"',
     );
     refuses(
-      withForm("export function f(x: number): bigint"),
+      inCode("export function f(x: number): bigint"),
       'parameter x of f has type "number"',
     );
     refuses(
-      withForm("export const f = (x?: u8[]): string"),
+      inCode("export const f = (x?: u8[]): string"),
       'cannot read parameter "x?: u8[]" of f',
     );
     // The list is the signature gate's, type for type.
@@ -443,15 +487,15 @@ export function len(x: u8[]): i32 {
     );
   });
 
-  test("reads every type on the list, spaced any way, and a `;` or body tail", () => {
+  test("reads every type on the list, spaced any way, with a `;` or a // comment", () => {
     const iface = interfaceSignatures(
       parseMarkdownSpec(`## 1. Interface
 
     export const a = (x: u8[]|null): null | string
     export const b = (x: null|u8[]): boolean;
     export const c = (x: u8 [ ], y: u32): string|null ;
-    export function d(x: i32): i32 { return x }
-    export const e = (x: i32): i32 => x + 1 // the successor
+    export function d(x: i32): i32 // the identity
+    export function e(x: i32): i32; // the successor
 `),
     );
     expect(iface.signatures).toEqual([
@@ -478,19 +522,22 @@ export function len(x: u8[]): i32 {
     ]);
   });
 
-  test("refuses `export` in another letter case; prose that starts with the word is prose", () => {
+  test("in code, `export` is lowercase and only ever begins a signature", () => {
     refuses(
-      withForm("Export const f = (x: i32): i32"),
+      inCode("Export const f = (x: i32): i32"),
       "`export` must be written in lowercase",
     );
     refuses(
-      withForm("- EXPORT FUNCTION f(x: i32): i32"),
+      inCode("EXPORT FUNCTION f(x: i32): i32"),
       "`export` must be written in lowercase",
     );
-    const iface = interfaceSignatures(
-      parseMarkdownSpec(withForm("Export the bytes as lowercase hex.")),
-    );
-    expect(iface.signatures.map((s) => s.name)).toEqual(["g"]);
+    for (const line of [
+      "// export const f = (x: i32): i32",
+      "const y = 1; export const f = (x: i32): i32",
+      "/* export */",
+    ]) {
+      refuses(inCode(line), "`export` may only begin a signature");
+    }
   });
 
   test("refuses every export that is not a function: it fails closed", () => {
@@ -502,7 +549,7 @@ export function len(x: u8[]): i32 {
       "export let f = 1",
       "export default f",
     ]) {
-      refuses(withForm(line), "the Interface section declares only functions");
+      refuses(inCode(line), "the Interface section declares only functions");
     }
   });
 });
@@ -741,6 +788,12 @@ describe("twice-run extraction", () => {
       },
     ]);
     // One sentence against a span of it is no partial match (above).
+  });
+
+  test("e.g. and i.e. end no sentence", () => {
+    expect(sentenceCount("A MUST x, e.g. y. B MUST z.")).toBe(2);
+    expect(sentenceCount("A MUST x (i.e. y) and E.g. z!")).toBe(1);
+    expect(sentenceCount("A MUST x. B? C!")).toBe(3);
   });
 
   test("spans of one section that do not overlap are different requirements", () => {
