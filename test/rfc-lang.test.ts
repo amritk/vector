@@ -703,11 +703,15 @@ describe("str fidelity", () => {
   });
 
   test("an empty or unnormalised str is refused, not matched", () => {
-    for (const s of ["", " ", "HKDF-Extract(salt,   IKM)", " HKDF", "HKDF\n"]) {
+    for (const s of [" ", "HKDF-Extract(salt,   IKM)", " HKDF", "HKDF\n"]) {
       expect(withStr(s).map((i) => i.message)).toEqual([
-        `the string ${JSON.stringify(s)} is empty or has leading, trailing or repeated whitespace, so it cannot be matched against the RFC text`,
+        `the string ${JSON.stringify(s)} has leading, trailing or repeated whitespace, so it cannot be matched against the RFC text`,
       ]);
     }
+    // "" is in every text: the section must print an empty value itself.
+    expect(withStr("").map((i) => i.message)).toEqual([
+      `the empty value is not printed in RFC §2.2 ("Step 1: Extract"): it needs "" or "(0 octets)" there`,
+    ]);
   });
 });
 
