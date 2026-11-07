@@ -26,6 +26,11 @@ export interface RfcSection {
    * reader knows them (markdown); only prose states a vector's result.
    */
   proseLines?: string[];
+  /**
+   * Per line of `lines`, the line exactly as written when it is code (a
+   * fenced block or an indented code line), else null. Markdown only.
+   */
+  codeLines?: (string | null)[];
 }
 
 export interface RfcDocument {
@@ -37,6 +42,8 @@ export interface RfcDocument {
    * completeness gate refuses any it holds.
    */
   loose?: RfcSection;
+  /** A markdown spec's lines exactly as written (line ends normalized). */
+  source?: string[];
 }
 
 // A page break in the .txt rendering: a footer line ending "[Page N]", a form

@@ -241,13 +241,111 @@ bun run vector spec run   contracts/rfc8439-chacha20-poly1305.json --nish-root .
 bun run vector spec check contracts/<name>.json --spec specs/<name>.md --run-sources
 bun run vector spec extract --spec rfcs/rfc5869.txt --module ../nish/std/crypto/hkdf.ts \
   --target nish/crypto/hkdf -o contracts/new.json      # model proposes, gates repair (needs a key)
+bun run vector spec extract --spec-only --twice --spec specs/example-hex.md \
+  --target nish/hex -o contracts/example-hex.json      # from the spec alone, two runs compared
 ```
 
 `check` exits 0 when the contract is valid, `run` when every clause passed
 (`SATISFIED`); `VIOLATED` / `ERROR` / `INVALID` exit 1, usage errors 2.
-`--nish-root` uses `build/nish` (the working tree's std); without it, the seed
-— whose `nish/…` is the last release — and it warns. Inside Claude Code the
-`vector-spec` skill plays the extractor with no API key.
+`extract` exits 0 when it wrote a contract that passed every gate, 1 when it
+found none, 2 for a usage error or a spec it cannot read (before any model
+call). `--nish-root` uses `build/nish` (the working tree's std); without it,
+the seed — whose `nish/…` is the last release — and it warns. Inside Claude
+Code the `vector-spec` skill plays the extractor with no API key.
+
+### Extracting from the spec alone
+
+`extract --spec-only` gives the model the spec and nothing else: no module
+source, no module signatures. The contract's `functions` come from the spec's
+**Interface** section, a numbered section titled `Interface` whose code
+declares the exports:
+
+```
+## 2. Interface
+
+    export const hexEncode = (bytes: u8[]): string
+    export const hexDecode = (text: string): u8[] | null
+```
+
+Signatures are read only from code: an indented block (four spaces or a tab,
+after a blank line or the heading) or a block fenced with ` ``` ` or `~~~`.
+Code is read as written, so markdown never rewrites a signature. The
+section's code holds only signatures, blank lines and `//` comments (a usage
+example goes in another section). Every code line with `export` is one
+signature, read strictly:
+
+- `export const f = (a: T, b: U): R`
+- `export function f(a: T): R`
+
+followed by nothing but an optional `;` and an optional `// comment`: no body,
+no `=>`, no `{`. A signature is ASCII, its names are letters and digits (no
+`_`, which markdown could turn into emphasis), every parameter is `name: T`,
+named once, and every type is
+one the contract can declare: `u8[]`, `u8[] | null`, `null | u8[]`, `string`,
+`string | null`, `null | string`, `i32`, `u32`, `boolean` (the signature
+gate's own list; spacing does not matter). The signature gate then checks the
+contract's functions against them: the contract must declare every Interface
+signature, its `target.module` must be the `--target` (in the module mode
+too), and it may not name a function from another module (the spec declares
+only the target's, so `--spec-only` refuses a reference function).
+
+Refused, with exit 2 and no model call: a spec with no Interface section or
+more than one, one that declares nothing, a spec that is not markdown (an RFC
+has no code blocks to read), and, anywhere in the Interface section:
+
+- the word `export`, in any letter case, outside code: in a bullet, table
+  cell, blockquote, inline code, emphasis or plain prose ("Export the bytes as
+  lowercase hex." too; "exported" and "exports" are fine);
+- in code, `export` anywhere but the start of a line (`// export …` too), not
+  in lowercase, or twice on one line; any other code line (a type carried on
+  to the next line, `| null`, refuses rather than being dropped);
+- a body (`=> x`, `{ … }`), a note after the signature (`… : string — encodes
+  x`, `… : string.`), a `/* … */` comment inside it;
+- a type not on the list (`u8`, `{a: u8}`, `Promise<string>`), an optional,
+  defaulted or function-typed parameter, a parameter named twice, a name
+  declared twice;
+- any other export (`export type`, `export interface`, `export let`,
+  `export default`, `export async function`, `export { … }`): the section
+  declares only functions;
+
+and `--module` or `--nish-root` alongside `--spec-only`.
+
+Outside the Interface section too, the word `export` may appear **nowhere**
+in the spec except as a signature that was read: in another section, in a
+comment, in boilerplate, in text before the first heading. It is counted as a
+rendered page shows it: numeric entities (`ex&#112;ort`), inline HTML,
+link syntax, markup, invisible characters and look-alike letters (a Cyrillic
+`е`) do not hide it. So wherever this reader and a markdown renderer disagree
+(an HTML comment a renderer shows as text, a heading inside an HTML block),
+an export the page shows is refused, never skipped. The reading fails closed:
+write "exported" or "exports" in prose, never the bare word.
+
+A hand-written contract is not checked this way: when a contract names a
+reference function from another module (`"module": "nish/crypto/hmac"`), the
+signature gate never checks that function's signature, under `run
+--nish-root` or otherwise; only the target module's functions are read
+against its exports.
+
+`extract --twice` runs two independent extractions (neither sees the other's
+contract or feedback) and compares them. Ids and line breaks don't count;
+requirements are matched by section and quote, where two quotes match when one
+contains the other or their spans of the main spec overlap. Each of these is a
+disagreement:
+
+- a requirement one run states and the other does not (or excludes);
+- a matched requirement stated at different levels (`MUST` in one,
+  `DEFINITION` in the other);
+- a matched requirement one run tests and the other states without testing,
+  for requirements from any source, binding or not;
+- a matched pair where one quote holds more sentences than the other ("A
+  SHOULD x." against "A SHOULD x. B SHOULD y."): a partial match;
+- a binding (MUST/SHALL/REQUIRED) sentence of the main spec that the runs
+  handle differently: tested, stated but untested, excluded, or not covered.
+
+Disagreements are warnings for the human reviewer, not a gate: they are listed
+under Warnings in the text and `--format markdown` reports, with a line saying
+whether the runs agree, and under `twice.disagreements` in `--json`. The
+contract written is run 1's. Either run finding no valid contract exits 1 and writes nothing.
 
 ### What it catches
 
@@ -354,7 +452,7 @@ that does not build is *stillborn*: reported, not counted; when every mutant
 is stillborn, none was judged, and that is a failure. `--max N` runs N
 mutants spread across the diff; `--jobs N` runs them in parallel.
 
-**`--format markdown`** (`check`, `emit`, `run`, `mutate`) prints the dashboard
+**`--format markdown`** (`check`, `emit`, `run`, `mutate`, `extract`) prints the dashboard
 for a PR comment: each requirement's quote, then a table of its clauses with
 their outcome and evidence, the vector sources run, the exclusions, and the
 mutation survivors. Text is the
@@ -366,6 +464,28 @@ the diff; a generic type argument split across lines reads as a second
 declarator and is refused; a test or contract with CRLF line endings reads as
 stale; a mutation run that cannot start (bad contract, unbuildable scratch
 install) prints to stderr and exits 1 with no markdown.
+
+### The PR workflow, in order
+
+A module lands spec-first, in two PRs: the **spec side** (`specs/`,
+`contracts/`, `rfcs/`, generated tests in `test/spec/`), then the
+**implementation**. The `vector-spec` skill walks it step by step.
+
+| Step | Command | Exit 0 | Exit 1 |
+|---|---|---|---|
+| 1. write the spec | `specs/<name>.md`, numbered headings and an Interface section | — | — |
+| 2. contract, `check` | `vector spec extract --spec-only --twice …` (or by hand), then `vector spec check contracts/<name>.json --spec specs/<name>.md --run-sources` | `CONTRACT_VALID` | `INVALID` |
+| 3. freeze | `"source": {…, "sha256": "<sha256sum of the spec>"}`, then `vector spec frozen --base origin/main contracts/<name>.json` | spec side only, hashes match | both sides touched, the spec changed, no `sha256`, a contract source outside `specs/` or `rfcs/`, no contract |
+| 4. `emit` / `stale` | `vector spec emit contracts/<name>.json -o test/spec/<name>.ts`, then `vector spec stale test/spec/<name>.ts contracts/<name>.json` | the test is the contract's | stale, missing or doubled marker line |
+| 5. implement, `run` | `vector spec run contracts/<name>.json --nish-root ../nish` | `SATISFIED` | `VIOLATED` / `ERROR` / `INVALID` |
+| 6. `exports` | `vector spec exports contracts/<name>.json --nish-root ../nish --base origin/main` | every changed export tested or `outOfScope` | an unlisted export |
+| 7. `mutate` | `vector spec mutate contracts/<name>.json --nish-root ../nish --base origin/main` | no survivor outside `allowSurvivors` | a survivor, zero mutants, all stillborn |
+
+Every step exits 2 on a usage error (and `frozen`, `exports` and `mutate` on a
+git error). Steps 1–4 are the spec-side PR, which a human approves; the
+implementation PR then passes 3 and 5–7 without touching anything on the spec
+side. `outOfScope` and `allowSurvivors` entries are contract changes, so they
+belong in a spec-side PR too.
 
 ### What a pass means — and why not Lean
 
