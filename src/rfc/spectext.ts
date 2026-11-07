@@ -433,24 +433,37 @@ export const INTERFACE_TYPES: readonly string[] = [
 ];
 // The word `export`, in any letter case.
 /**
- * How many times a line of a spec says `export` as a reader of the rendered
- * page would see it: after numeric entities are decoded, HTML tags, link
- * syntax, markup and invisible characters dropped, and with any non-ASCII
- * letter standing for whatever ASCII letter it looks like.
+ * How many times a spec says `export` as a reader of the rendered page could
+ * see it, read several ways and the largest count kept: once with only entities
+ * decoded and markup and invisible characters dropped, once with HTML
+ * comments, tags and link targets dropped too (a renderer shows text such as
+ * `a < b` that only looks like a tag). Any non-ASCII letter stands for
+ * whatever ASCII letter it looks like.
  */
 export function exportWordCount(raw: string): number {
-  const text = raw
+  const decoded = raw
     .replace(/&#(\d+);?/g, (_, d) => String.fromCodePoint(Number(d) % 0x110000))
     .replace(/&#x([0-9a-f]+);?/gi, (_, h) =>
       String.fromCodePoint(Number.parseInt(h, 16) % 0x110000),
     )
-    .replace(/<[^>]*>?/g, "")
-    .replace(/\]\([^)]*\)?/g, "")
-    .replace(/[[\]*_~\\`]/g, "")
     .replace(/[\p{Cf}\p{M}]/gu, "");
+  const stripped = decoded
+    .replace(/<!--[\s\S]*?(?:-->|$)/g, "")
+    .replace(/<[^>]*>?/g, "")
+    .replace(/\]\([^)]*\)?/g, "");
+  // And once more each way with every non-letter but whitespace dropped, so
+  // no reference link (`[ex][1]port`) or other syntax splits the word.
+  const lettersOnly = (t: string) => t.replace(/[^\p{L}\s]/gu, "");
+  return Math.max(
+    ...[decoded, stripped, lettersOnly(decoded), lettersOnly(stripped)].map(
+      exportWords,
+    ),
+  );
+}
+
+function exportWords(text: string): number {
   let n = 0;
-  for (const word of text.match(/\p{L}+/gu) ?? []) {
-    if (word.length !== 6) continue;
+  for (const word of text.replace(/[[\]*_~\\`]/g, "").match(/\p{L}+/gu) ?? []) {
     const ascii = /^[A-Za-z]+$/.test(word);
     if (ascii ? /^export$/i.test(word) : lookalike(word, "export")) n++;
   }
@@ -636,6 +649,14 @@ export function interfaceSignatures(doc: RfcDocument): SpecInterface {
       `line ${n + 1}: the word \`export\` may appear in a spec only to begin a signature in the Interface section's code, one per line, and this line was not read as one: ${JSON.stringify(raw.trim())}`,
     );
   });
+  // An HTML comment or tag may span lines (`ex<!--⏎-->port`), so the spec
+  // is also counted whole.
+  const whole = doc.source ? exportWordCount(doc.source.join("\n")) : 0;
+  if (whole > signatures.length) {
+    throw new Error(
+      `the spec says \`export\` ${whole} times as a rendered page could show it, but declares ${signatures.length} signature(s): the word may appear in a spec only to begin a signature in the Interface section's code`,
+    );
+  }
   return { section: sec.id, signatures };
 }
 

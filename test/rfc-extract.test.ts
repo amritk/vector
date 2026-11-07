@@ -597,6 +597,17 @@ export function len(x: u8[]): i32
       expect([line, exportWordCount(line)]).toEqual([line, 0]);
     }
     expect(exportWordCount("export a; export b")).toBe(2);
+    // Text that only looks like a tag or a link target is shown, so counted.
+    for (const line of [
+      "ex<!-- a > b -->port",
+      "a < export const g >",
+      "a ](export const g) b",
+      "[ex][1]port",
+      "ex<b class=x>port",
+      "ex-port",
+    ]) {
+      expect([line, exportWordCount(line)]).toEqual([line, 1]);
+    }
   });
 
   // Anywhere the reader and a markdown renderer disagree, a signature the
@@ -645,10 +656,21 @@ export function len(x: u8[]): i32
       `${FENCE_F}\n## 3. Notes\n\nExport nothing else.\n`,
     ],
     ["text before every section", `Export it.\n\n${FENCE_F}`],
+    [
+      "a tag-like `<` in prose elsewhere",
+      `${FENCE_F}\n## 3. Notes\n\nIf a < ${G} > b.\n`,
+    ],
   ];
   for (const [name, text] of HIDDEN) {
     test(`refuses an export in ${name}`, () => refuses(text, ANYWHERE));
   }
+
+  test("an HTML comment across lines does not hide the word", () => {
+    refuses(
+      `${FENCE_F}\nex<!--\n-->port const g = (a: u8[]): string\n`,
+      "but declares 1 signature(s)",
+    );
+  });
 
   test("a closing fence takes only spaces and tabs after it", () => {
     // A no-break space after ``` does not close the block, so what follows
