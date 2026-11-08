@@ -246,6 +246,7 @@ section, and — by design — any descriptive sentence without a keyword, such 
 
 | Gate | Refuses |
 |---|---|
+| shape | a contract that is not well formed, including free text (titles, quotes, reasons) with a line break or other control character: it is copied into comments of the generated test, and the emitter also keeps `*/` from closing them |
 | fidelity | a quote not in its cited section; a test-vector byte string not printed in its section as a whole value (hexdumps, `0x…`, `Key = …` lines, colon-hex split mid-byte across lines are all read), only part of one, without the `label` it is printed under, or under another label; a `str` not printed whole there; values from two test cases (strings never on one line, labelled values from different rounds) or an expected value bound to an argument's label; an empty value (`hex ""`, `ascii ""`, `str ""`) where the section prints no `""` or `(0 octets)`, and a whitespace-only `ascii` not printed as hex; a labelled int not printed after its label |
 | completeness | any MUST / MUST NOT / SHALL / SHALL NOT / REQUIRED sentence of the main source that is neither inside a requirement's quote nor an exclusion's (or sits outside every numbered section) |
 | provenance | a `spec` source whose section never states the expected `null`/`bool`; a `command` source that failed under `--run-sources` |

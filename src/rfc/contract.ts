@@ -610,9 +610,41 @@ function shapeAlphabet(a: unknown, at: string, errors: string[]): void {
   });
 }
 
+/*
+ * Free text in a contract is copied into comments in the generated test,
+ * where a line break would end the comment and let the rest of the field run
+ * as code; so it must be one line, without control characters.
+ */
+const isControl = (cp: number) =>
+  cp < 0x20 || (cp >= 0x7f && cp <= 0x9f) || cp === 0x2028 || cp === 0x2029;
+
+/**
+ * The first control character in `s` (C0, DEL, C1, or a Unicode line or
+ * paragraph separator), as "U+000A"; undefined when there is none.
+ */
+export function controlChar(s: string): string | undefined {
+  for (const ch of s) {
+    const cp = ch.codePointAt(0) ?? 0;
+    if (isControl(cp))
+      return `U+${cp.toString(16).toUpperCase().padStart(4, "0")}`;
+  }
+  return undefined;
+}
+
+/** `s` with each control character replaced by a space. */
+export const withoutControlChars = (s: string) =>
+  [...s].map((ch) => (isControl(ch.codePointAt(0) ?? 0) ? " " : ch)).join("");
+
 const strField = (o: Obj, k: string, at: string, errors: string[]) => {
-  if (typeof o[k] !== "string" || (o[k] as string).trim() === "") {
+  const v = o[k];
+  if (typeof v !== "string" || v.trim() === "") {
     errors.push(`${at}.${k}: a non-empty string`);
+  } else {
+    const ch = controlChar(v);
+    if (ch)
+      errors.push(
+        `${at}.${k}: one line of text, without control characters (found ${ch}); it is copied into comments in the generated test`,
+      );
   }
 };
 
