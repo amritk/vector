@@ -30,6 +30,7 @@ import {
   type FnSig,
   type Literal,
   type RfcContract,
+  type SigTy,
   type TypeEnv,
   type ValueTy,
   type VectorClause,
@@ -42,6 +43,7 @@ import {
   typeOf,
   typeOfLiteral,
   validateContractShape,
+  valueTy,
   vectorArgsAt,
 } from "./contract.ts";
 import {
@@ -229,15 +231,15 @@ function checkTyping(c: RfcContract, issues: GateIssue[]): void {
         }
         k.args.forEach((a, i) => {
           const p = sig.params[i];
-          if (p && !literalFits(a, p.type)) {
+          if (p && !literalFits(a, valueTy(p.type))) {
             errors.push(
-              `args[${i}]: ${k.call}(${p.name}) wants ${p.type}, got ${typeOfLiteral(a)}`,
+              `args[${i}]: ${k.call}(${p.name}) wants ${valueTy(p.type)}, got ${typeOfLiteral(a)}`,
             );
           }
         });
-        if (!literalFits(k.expect, sig.returns)) {
+        if (!literalFits(k.expect, valueTy(sig.returns))) {
           errors.push(
-            `expect: ${k.call} returns ${sig.returns}, got ${typeOfLiteral(k.expect)}`,
+            `expect: ${k.call} returns ${valueTy(sig.returns)}, got ${typeOfLiteral(k.expect)}`,
           );
         }
       }
@@ -1104,10 +1106,13 @@ function checkCompleteness(
 
 // ── Signatures against the implementation's source ───────────────────────
 
-const NISH_TYPES: Record<string, ValueTy> = {
+const NISH_TYPES: Record<string, SigTy> = {
   "u8[]": "bytes",
   "u8[] | null": "bytes?",
   "null | u8[]": "bytes?",
+  "Secret<u8[]>": "secret-bytes",
+  "Secret<u8[]> | null": "secret-bytes?",
+  "null | Secret<u8[]>": "secret-bytes?",
   string: "string",
   "string | null": "string?",
   "null | string": "string?",

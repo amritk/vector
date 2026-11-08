@@ -107,7 +107,9 @@ Without a key, write `contracts/<name>.json` yourself against
   source; any citation may name another with `"source": "<id>"`.
 - **functions**: exactly the Interface section's signatures, as `bytes`
   (`u8[]`), `bytes?` (`u8[] | null`), `string`, `string?`, `i32`, `u32`,
-  `bool`. A reference function from another module names its module;
+  `bool`, `secret-bytes` (`Secret<u8[]>`) and, as a result only,
+  `secret-bytes?` (`Secret<u8[]> | null`). Vectors and properties give a
+  secret as plain bytes; the generated test does the `secret`/`expose`. A reference function from another module names its module;
   `extract --spec-only` refuses one (the Interface declares only the
   target's functions), so add it by hand. Its signature is never checked,
   not even by `run --nish-root`: the signature gate reads only the target

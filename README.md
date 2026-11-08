@@ -74,8 +74,11 @@ A contract (`schemas/rfc-contract.json`) has:
 - **exclusions**: the MUST/SHALL sentences a functional test cannot observe
   (nonce uniqueness, constant-time comparison), each with its reason;
 - **functions**: the implementation's signatures (`bytes`, `bytes?`,
-  `string`, `string?`, `i32`, `u32`, `bool`), plus any reference function
-  from another module;
+  `string`, `string?`, `i32`, `u32`, `bool`, and `secret-bytes` for a nish
+  `Secret<u8[]>`, with `secret-bytes?` as a result only), plus any
+  reference function from another module. In the contract a secret is its
+  bytes: the generated test copies an argument into a `Secret`, wipes it
+  after the call, and reads a secret result with `expose`;
 - **clauses**: **vectors** (the RFC's own known answers) and **properties**
   (`forall` a typed domain, `where` restricts it, `assert` must hold).
 
@@ -546,6 +549,16 @@ that *does* reach the code is to verify the LLVM IR nish emits against an
 executable spec (SAW/Cryptol style, or Z3 over bit-vectors for the fixed-size
 primitives); the contract's requirements and properties are the statement such
 a proof would discharge.
+
+So `SATISFIED` means exactly this: the implementation returns the spec's
+printed vectors, and the contract's properties hold at every sample. It does
+not mean the implementation conforms where neither reaches. RFC 4231 prints no
+HMAC key between 64 and 128 bytes long, so an off-by-one in the SHA-512
+block-size test (`<=` for `<`) passes every RFC vector; a contract catches it
+only with a vector of its own at that length (a `command` source) or a
+property that pins the boundary. Run `vector spec mutate` to see which
+plausible bugs the contract cannot tell apart from the real code; each
+survivor is a gap of this kind.
 
 The module under test also runs in the test's own process, and could print
 `PASS` lines itself. So `run` only trusts a transcript that ends with the line

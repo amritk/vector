@@ -20,6 +20,7 @@ import {
   type Literal,
   type PropertyClause,
   type RfcContract,
+  type SigTy,
   type ValueTy,
   type VectorClause,
   bytesToHex,
@@ -30,6 +31,7 @@ import {
   literalBytes,
   sourceOf,
   typeOf,
+  valueTy,
   withoutControlChars,
 } from "./contract.ts";
 import type { PropertySamples } from "./sample.ts";
@@ -223,6 +225,14 @@ const charAtStr = (s: string, i: i32): string => {
   }
   return s.slice(i, i + 1);
 };`,
+  copyBytes: `/** A fresh copy of \`b\`. */
+const copyBytes = (b: u8[]): u8[] => {
+  const out: u8[] = [];
+  for (const x of b) {
+    out.push(x);
+  }
+  return out;
+};`,
   Unwrap: `/**
  * \`unwrap\` without exceptions: a null is recorded and stands in as no bytes,
  * and the sample that saw it fails.
@@ -278,6 +288,78 @@ class Emitter {
     return h;
   }
 
+  /** What the test imports from nish:secret. */
+  readonly secretNames = new Set<string>();
+  /** Plain-bytes wrappers of the functions that take or return a Secret. */
+  readonly plainWrappers = new Map<string, string>();
+
+  /**
+   * A call of a contract function on emitted arguments. One that takes or
+   * returns a `Secret<u8[]>` goes through a wrapper (plainWrapper), so the
+   * rest of the test sees plain bytes.
+   */
+  call(sig: FnSig, args: string[]): string {
+    const secret = (t: SigTy) => t !== valueTy(t);
+    if (!secret(sig.returns) && !sig.params.some((p) => secret(p.type)))
+      return `${sig.name}(${args.join(", ")})`;
+    const name = `plain_${sig.name}`;
+    if (!this.plainWrappers.has(name))
+      this.plainWrappers.set(name, this.plainWrapper(sig, name));
+    return `${name}(${args.join(", ")})`;
+  }
+
+  /**
+   * `sig.name` on plain bytes, under nish's rules for a Secret: each secret
+   * argument is a fresh copy wrapped with \`secret\` and wiped after the call;
+   * a secret result is copied out with \`expose\`, then wiped.
+   */
+  plainWrapper(sig: FnSig, name: string): string {
+    this.use("copyBytes");
+    this.secretNames.add("Secret").add("wipe");
+    const params = sig.params.map(
+      (p) => `a_${p.name}: ${NISH_TY[valueTy(p.type)]}`,
+    );
+    const body: string[] = [];
+    const args = sig.params.map((p) => {
+      if (p.type !== "secret-bytes") return `a_${p.name}`;
+      this.secretNames.add("secret");
+      body.push(
+        `  const s_${p.name}: Secret<u8[]> = secret(copyBytes(a_${p.name}));`,
+      );
+      return `s_${p.name}`;
+    });
+    const wipes = sig.params
+      .filter((p) => p.type === "secret-bytes")
+      .map((p) => `  wipe(s_${p.name});`);
+    const call = `${sig.name}(${args.join(", ")})`;
+    const ret = valueTy(sig.returns);
+    if (sig.returns === "secret-bytes" || sig.returns === "secret-bytes?") {
+      this.secretNames.add("expose");
+      body.push(
+        `  const r: Secret<u8[]>${ret === "bytes?" ? " | null" : ""} = ${call};`,
+        ...wipes,
+      );
+      if (ret === "bytes?")
+        body.push("  if (r === null) {", "    return null;", "  }");
+      body.push(
+        "  const out: u8[] = expose(r, copyBytes);",
+        "  wipe(r);",
+        "  return out;",
+      );
+    } else
+      body.push(
+        `  const r: ${NISH_TY[ret]} = ${call};`,
+        ...wipes,
+        "  return r;",
+      );
+    return [
+      `/** ${sig.name} on plain bytes: secrets are copied in, wiped after. */`,
+      `const ${name} = (${params.join(", ")}): ${NISH_TY[ret]} => {`,
+      ...body,
+      "};",
+    ].join("\n");
+  }
+
   bytesLit(b: Uint8Array): string {
     return `${this.use("unhex")}("${bytesToHex(b)}")`;
   }
@@ -327,8 +409,10 @@ class Emitter {
         : `v_${e.var}`;
     if ("call" in e) {
       const sig = this.fns.get(e.call) as FnSig;
-      const args = e.args.map((a, i) => this.expr(a, sig.params[i].type));
-      return `${e.call}(${args.join(", ")})`;
+      return this.call(
+        sig,
+        e.args.map((a, i) => this.expr(a, valueTy(sig.params[i].type))),
+      );
     }
     if ("let" in e) throw new Error("a let may only open the assert");
     if (!("op" in e)) {
@@ -471,11 +555,13 @@ function wrap(text: string, width: number): string[] {
 
 function emitVector(em: Emitter, k: VectorClause): string {
   const sig = em.fns.get(k.call) as FnSig;
-  const args = k.args.map((a, i) => em.literal(a, sig.params[i].type));
-  const call = `${k.call}(${args.join(", ")})`;
+  const call = em.call(
+    sig,
+    k.args.map((a, i) => em.literal(a, valueTy(sig.params[i].type))),
+  );
   const name = jsString(testName(k));
   let body: string;
-  switch (sig.returns) {
+  switch (valueTy(sig.returns)) {
     case "bytes":
       body = `t.eqStr(${name}, ${em.use("hexOf")}(${call}), ${jsString(bytesToHex(literalBytes(k.expect) as Uint8Array))})`;
       break;
@@ -665,12 +751,22 @@ export function emitNishTest(
     ...[...byModule.entries()].map(
       ([mod, names]) => `import { ${names.join(", ")} } from ${jsString(mod)};`,
     ),
+    ...(em.secretNames.size > 0
+      ? [
+          `import { ${["Secret", "expose", "secret", "wipe"].filter((n) => em.secretNames.has(n)).join(", ")} } from "nish:secret";`,
+        ]
+      : []),
   ];
-  const helpers = HELPER_ORDER.filter((h) => em.used.has(h)).map((h) =>
-    h === "Unwrap" && em.used.has("unwrapStr")
-      ? HELPERS.Unwrap.replace(/\n\}$/, `\n${UNWRAP_STR}\n}`)
-      : HELPERS[h],
-  );
+  const helpers = [
+    ...HELPER_ORDER.filter((h) => em.used.has(h)).map((h) =>
+      h === "Unwrap" && em.used.has("unwrapStr")
+        ? HELPERS.Unwrap.replace(/\n\}$/, `\n${UNWRAP_STR}\n}`)
+        : HELPERS[h],
+    ),
+    ...[...em.plainWrappers.keys()]
+      .sort()
+      .map((k) => em.plainWrappers.get(k) as string),
+  ];
   // `main` records what each clause returned and, once the suite is done,
   // prints it after the nonce `spec run` passes as the first argument. A
   // module that exits early or prints its own PASS lines can't produce a

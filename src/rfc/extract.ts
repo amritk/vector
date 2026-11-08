@@ -64,7 +64,7 @@ set source.rfc to its number; for anything else declare sources: [{"id": "<short
 "<file>"}] and source.main: "<that id>".`;
 
 const TYPE_MAP = `mapped to bytes (u8[]), bytes? (u8[] | null), string, string? (string | null), \
-i32, u32, bool`;
+i32, u32, bool, secret-bytes (Secret<u8[]>) or, as a result only, secret-bytes? (Secret<u8[]> | null)`;
 
 export const EXTRACTOR_SYSTEM_PROMPT = `${PROMPT_HEAD}
 - functions[] are the implementation's real exported signatures, ${TYPE_MAP}. A function from \

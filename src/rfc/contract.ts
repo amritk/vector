@@ -25,6 +25,23 @@ export const VALUE_TYPES = [
 ] as const;
 export type ValueTy = (typeof VALUE_TYPES)[number];
 
+/**
+ * The types a function's parameters and result may have: the value types, and
+ * `secret-bytes` for a nish `Secret<u8[]>`, plus `secret-bytes?` (`| null`) as
+ * a result. In the contract a secret is its bytes; the generated test wraps an
+ * argument with `secret` and reads a result with `expose`.
+ */
+export const SIG_TYPES = [
+  ...VALUE_TYPES,
+  "secret-bytes",
+  "secret-bytes?",
+] as const;
+export type SigTy = (typeof SIG_TYPES)[number];
+
+/** What a parameter or result of type `t` is in the contract. */
+export const valueTy = (t: SigTy): ValueTy =>
+  t === "secret-bytes" ? "bytes" : t === "secret-bytes?" ? "bytes?" : t;
+
 export const LEVELS = [
   "MUST",
   "MUST NOT",
@@ -63,13 +80,13 @@ export interface Requirement {
 
 export interface Param {
   name: string;
-  type: ValueTy;
+  type: SigTy;
 }
 
 export interface FnSig {
   name: string;
   params: Param[];
-  returns: ValueTy;
+  returns: SigTy;
   /** The module that exports it, when not the contract's target (a reference function). */
   module?: string;
 }
@@ -733,8 +750,8 @@ export function validateContractShape(input: unknown): string[] {
       if (typeof f.name !== "string" || !IDENT_RE.test(f.name)) {
         errors.push(`${at}.name: an identifier`);
       }
-      if (!(VALUE_TYPES as readonly unknown[]).includes(f.returns)) {
-        errors.push(`${at}.returns: one of ${VALUE_TYPES.join(" ")}`);
+      if (!(SIG_TYPES as readonly unknown[]).includes(f.returns)) {
+        errors.push(`${at}.returns: one of ${SIG_TYPES.join(" ")}`);
       }
       if (!Array.isArray(f.params)) errors.push(`${at}.params: an array`);
       else {
@@ -748,8 +765,12 @@ export function validateContractShape(input: unknown): string[] {
           if (typeof p.name !== "string" || !IDENT_RE.test(p.name)) {
             errors.push(`${pat}.name: an identifier`);
           }
-          if (!(VALUE_TYPES as readonly unknown[]).includes(p.type)) {
-            errors.push(`${pat}.type: one of ${VALUE_TYPES.join(" ")}`);
+          if (p.type === "secret-bytes?") {
+            errors.push(
+              `${pat}.type: secret-bytes? is a result type only; a parameter may be secret-bytes`,
+            );
+          } else if (!(SIG_TYPES as readonly unknown[]).includes(p.type)) {
+            errors.push(`${pat}.type: one of ${SIG_TYPES.join(" ")}`);
           }
         });
       }
@@ -1218,7 +1239,7 @@ export function typeOf(
     let ok = true;
     e.args.forEach((a, i) => {
       const t = typeOf(a, env, `${at}.args[${i}]`, errors);
-      const want = sig.params[i].type;
+      const want = valueTy(sig.params[i].type);
       if (t === null) ok = false;
       else if (!assignable(t, want)) {
         ok = false;
@@ -1227,7 +1248,7 @@ export function typeOf(
         );
       }
     });
-    return ok ? sig.returns : null;
+    return ok ? valueTy(sig.returns) : null;
   }
   const ts = e.args.map((a, i) => typeOf(a, env, `${at}.args[${i}]`, errors));
   if (ts.some((t) => t === null)) return null;
