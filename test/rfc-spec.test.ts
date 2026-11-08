@@ -1684,6 +1684,58 @@ describe("vector provenance", () => {
     ];
     for (const [text, quote, want] of covered)
       expect([text, probe(text, undefined, quote)]).toEqual([text, want]);
+    // #27: an alternative in an aside or after a colon, a hedge, or a second
+    // result anywhere after the value.
+    for (const [text, bool, why] of [
+      [
+        "f MUST return null (or an empty array).",
+        undefined,
+        'offers an alternative right after "null" ("(or"), so "null" is not the whole result',
+      ],
+      [
+        "f MUST return null: or so the old text said.",
+        undefined,
+        'offers an alternative right after "null" (": or"), so "null" is not the whole result',
+      ],
+      [
+        "f MUST return true at most once.",
+        true,
+        'hedges "true" after stating it ("at most"), so it is not the result each time',
+      ],
+      [
+        "f MUST return null in some cases.",
+        undefined,
+        'hedges "null" after stating it ("some"), so it is not the result each time',
+      ],
+      [
+        "f MUST return true with probability one half.",
+        true,
+        'hedges "true" after stating it ("probability"), so it is not the result each time',
+      ],
+      [
+        "f MUST return false here and true elsewhere.",
+        false,
+        'hedges "false" after stating it ("elsewhere"), so it is not the result each time',
+      ],
+      [
+        "f MUST return null, then retry and return 5.",
+        undefined,
+        'states another result after "null" ("return"), so "null" is not the whole result',
+      ],
+      [
+        "f MUST return null when the key is set, and true otherwise.",
+        undefined,
+        'states another result after "null" ("true"), so "null" is not the whole result',
+      ],
+    ] as const)
+      expect([text, probe(text, bool, text)]).toEqual([text, because(why)]);
+    // The same value again, and a plain condition, still state it.
+    for (const text of [
+      "f MUST return null for a string of odd length: abc decodes to null.",
+      "f MUST return null when the text has an odd length or contains any other character.",
+      "f MUST return null upon failure.",
+    ])
+      expect([text, probe(text, undefined, text)]).toEqual([text, []]);
     // A vector covering a different requirement of the same section is
     // refused: the stating requirement must be one it covers.
     {

@@ -479,15 +479,19 @@ const DENY_RE = new RegExp(
 const SENTENCE_END = /[.;!?](?=\s+["'“(\[A-Z]|\s*$)/;
 // Right after the value: an alternative ("null or throw", "null, and 5") or
 // a hyphen of any kind ("null-terminated", U+2010 to U+2015, U+2212).
+// After a comma, colon, semicolon or opening bracket too: "null (or an empty
+// array)", "null: or so the old text said".
 const ALTERNATIVE_RE =
-  /^\s*(?:,\s*)?(?:(?:or|and)(?![A-Za-z0-9])|[/\-\u2010-\u2015\u2212])/i;
+  /^\s*(?:[,:;([]\s*)?(?:(?:or|and|else|alternatively|either)(?![A-Za-z0-9])|[/\-\u2010-\u2015\u2212])/i;
 // Right after the value: what may follow it when the value is the whole
 // result. Punctuation or the end closes the clause; a connective starts a
 // condition or circumstance ("null when the input is odd", "null on
 // failure"). Anything else — "null checks", "true to RFC X" — makes the value
 // a word in a longer phrase, not the stated result. An opening bracket
 // starts an aside ("null (see below)"). `to` is left out on purpose:
-// "MUST be true to RFC X" is not the result true.
+// "MUST be true to RFC X" is not the result true, and so is `instead`, which
+// RETRACT_RE refuses wherever it is. A connective only opens the condition:
+// HEDGE_RE and another result in the rest of the sentence are refused too.
 const CLAUSE_END_RE = new RegExp(
   `^(?:\\s*(?:$|[.,;:!?()[\\]])|\\s+(?:${[
     "when",
@@ -506,7 +510,6 @@ const CLAUSE_END_RE = new RegExp(
     "because",
     "since",
     "as",
-    "instead",
     "until",
     "while",
     "with",
@@ -552,6 +555,46 @@ const RETRACT_RE = new RegExp(
   ].join("|")})(?![A-Za-z0-9])`,
   "i",
 );
+
+// Anywhere after the value in the rest of the quote: a word that makes it
+// the result only sometimes, or only by someone's account ("true at most
+// once", "null in some cases", "true with probability one half", "null, or
+// so the old text said").
+const HEDGE_RE = new RegExp(
+  `(?<![A-Za-z0-9])(?:${[
+    "at\\s+(?:most|least)",
+    "some(?:times)?",
+    "occasional[a-z]*",
+    "usual[a-z]*",
+    "often",
+    "typical[a-z]*",
+    "general[a-z]*",
+    "most[a-z]*",
+    "possib[a-z]*",
+    "probab[a-z]*",
+    "random[a-z]*",
+    "perhaps",
+    "maybe",
+    "once",
+    "twice",
+    "times",
+    "elsewhere",
+    "said",
+    "claim[a-z]*",
+  ].join("|")})(?![A-Za-z0-9])`,
+  "i",
+);
+// Anywhere after the value in the rest of the quote: another result ("null,
+// then retry and return 5", "false here and true elsewhere").
+const otherResultRe = (word: string): RegExp =>
+  new RegExp(
+    `(?<![A-Za-z0-9])(?:${[
+      ...["true", "false", "null"].filter((w) => w !== word.toLowerCase()),
+      "return[a-z]*",
+      "yield[a-z]*",
+    ].join("|")})(?![A-Za-z0-9])`,
+    "i",
+  );
 
 /**
  * The section's prose, whitespace-collapsed, and the spans of its sentences
@@ -601,9 +644,9 @@ const proseSentences = (
  * the guards read the whole prose sentence around it, so a quote cut out of
  * a qualified sentence ("Earlier drafts said that f MUST return null, but
  * …") is judged with what it left out: DENY_RE over the sentence before the
- * keyword, ALTERNATIVE_RE right after the value, and RETRACT_RE over the
- * rest of every sentence the quote touches. Every occurrence of the quote
- * in the prose must pass.
+ * keyword, ALTERNATIVE_RE right after the value, and RETRACT_RE, HEDGE_RE
+ * and another result over the rest of every sentence the quote touches.
+ * Every occurrence of the quote in the prose must pass.
  */
 const quoteStates = (
   quote: string,
@@ -645,11 +688,24 @@ const quoteStates = (
         why = `continues past "${word}" ("${word} ${next}"), so "${word}" is a word in a longer phrase, not the stated result (end the clause after it, or follow it with a condition such as "when …")`;
         continue;
       }
-      const retract = RETRACT_RE.exec(
-        text.slice(to, Math.max(last, spanAt(to - 1)[1])),
-      );
+      const tail = text.slice(to, Math.max(last, spanAt(to - 1)[1]));
+      const retract = RETRACT_RE.exec(tail);
       if (retract) {
         why = `retracts "${word}" after stating it ("${retract[0]}")`;
+        continue;
+      }
+      // A hedge or a second result belongs to this statement only up to its
+      // full stop, wherever SENTENCE_END would end the sentence: "to null.
+      // isHex MUST be False" states two results, not one.
+      const clause = tail.split(/[.!?](?:\s|$)/)[0] ?? "";
+      const hedge = HEDGE_RE.exec(clause);
+      if (hedge) {
+        why = `hedges "${word}" after stating it ("${hedge[0]}"), so it is not the result each time`;
+        continue;
+      }
+      const other = otherResultRe(word).exec(clause);
+      if (other) {
+        why = `states another result after "${word}" ("${other[0]}"), so "${word}" is not the whole result`;
         continue;
       }
       return null;
@@ -672,8 +728,8 @@ const quoteStates = (
  * in its prose sentence (inside the quote or not) matching DENY_RE, no
  * alternative or hyphen right after the value, the value ending its clause
  * (CLAUSE_END_RE: punctuation, the end, or a condition such as "when …"
- * next, never "null checks" or "true to"), and no retraction in the rest
- * of any sentence the quote touches. Returns why it does not, or
+ * next, never "null checks" or "true to"), and no retraction, hedge or
+ * other result in the rest of any sentence the quote touches. Returns why it does not, or
  * null when it does. Everything this does not recognise is refused.
  */
 function statesResult(
