@@ -106,9 +106,187 @@ export function detectFormat(text: string): SpecFormat {
 
 /** Read an RFC or a markdown spec, whichever the text is. */
 export function parseDocument(text: string): RfcDocument {
-  return detectFormat(text) === "rfc"
-    ? parseRfc(text)
-    : parseMarkdownSpec(text);
+  const format = detectFormat(text);
+  const hidden = hiddenText(text, format);
+  if (hidden.length > 0) {
+    const more = hidden.length > 5 ? ` (and ${hidden.length - 5} more)` : "";
+    throw new Error(
+      `text a reader cannot see as the gates read it: ${hidden.slice(0, 5).join("; ")}${more}`,
+    );
+  }
+  return format === "rfc" ? parseRfc(text) : parseMarkdownSpec(text);
+}
+
+// ---------------------------------------------------------------------------
+// Text that reads one way and gates another. The completeness gate looks for
+// MUST / SHALL / REQUIRED in the raw characters; a reviewer reads the
+// rendered page. A zero-width character inside a keyword, a character
+// reference that a markdown renderer turns into a letter, or a Cyrillic Т in
+// MUSТ shows a reviewer a requirement the gate never sees. Such a spec is
+// refused rather than guessed at.
+
+/** Blank code points that are not format characters (\p{Cf} is checked too). */
+const BLANK_RANGES: [number, number][] = [
+  [0x034f, 0x034f], // combining grapheme joiner
+  [0x115f, 0x1160], // Hangul fillers
+  [0x17b4, 0x17b5], // Khmer inherent vowels
+  [0x180b, 0x180f], // Mongolian variation selectors
+  [0x3164, 0x3164], // Hangul filler
+  [0xfe00, 0xfe0f], // variation selectors
+  [0xffa0, 0xffa0], // halfwidth Hangul filler
+  [0xe0100, 0xe01ef], // variation selectors supplement
+];
+
+/** Whether `ch` is invisible in a rendered page. */
+const invisible = (ch: string): boolean => {
+  if (/\p{Cf}/u.test(ch)) return true;
+  const cp = ch.codePointAt(0) ?? 0;
+  return BLANK_RANGES.some(([lo, hi]) => cp >= lo && cp <= hi);
+};
+
+/** The character references a markdown spec may use: markup escapes. */
+const NAMED_REFS: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: "\u00A0",
+};
+const CHAR_REF_RE =
+  /&(?:#(\d{1,7})|#[xX]([0-9A-Fa-f]{1,6})|([A-Za-z][A-Za-z0-9]{0,31}));/g;
+
+// Capitals in other scripts that render as the Latin letter.
+const LOOKALIKE: Record<string, string> = {
+  "\u0391": "A",
+  "\u0392": "B",
+  "\u0395": "E",
+  "\u0396": "Z",
+  "\u0397": "H",
+  "\u0399": "I",
+  "\u039A": "K",
+  "\u039C": "M",
+  "\u039D": "N",
+  "\u039F": "O",
+  "\u03A1": "P",
+  "\u03A4": "T",
+  "\u03A5": "Y",
+  "\u03A7": "X",
+  "\u0405": "S",
+  "\u0406": "I",
+  "\u0408": "J",
+  "\u0410": "A",
+  "\u0412": "B",
+  "\u0415": "E",
+  "\u041A": "K",
+  "\u041C": "M",
+  "\u041D": "H",
+  "\u041E": "O",
+  "\u0420": "P",
+  "\u0421": "C",
+  "\u0422": "T",
+  "\u0423": "Y",
+  "\u0425": "X",
+  "\u04AE": "Y",
+  "\u04C0": "I",
+  "\u051A": "Q",
+  "\u051C": "W",
+  "\u13A0": "D",
+  "\u13A1": "R",
+  "\u13A2": "T",
+  "\u13AA": "G",
+  "\u13B3": "W",
+  "\u13B7": "M",
+  "\u13BB": "H",
+  "\u13C0": "G",
+  "\u13C2": "h",
+  "\u13C3": "Z",
+  "\u13CF": "b",
+  "\u13D2": "R",
+  "\u13DA": "V",
+  "\u13DE": "L",
+  "\u13DF": "C",
+  "\u13E2": "P",
+  "\u13E6": "K",
+  "\u13F4": "B",
+  "\u13D5": "S",
+  "\u13A5": "i",
+  "\u2160": "I",
+  "\u216C": "L",
+  "\u216D": "C",
+  "\u216E": "D",
+  "\u216F": "M",
+};
+const KEYWORD_WORDS = new Set(["MUST", "SHALL", "REQUIRED"]);
+
+/** A word as a reader sees it: compatibility forms, marks and look-alikes folded. */
+const fold = (word: string): string =>
+  [...word.normalize("NFKD").replace(/\p{M}/gu, "")]
+    .filter((ch) => !invisible(ch))
+    .map((ch) => LOOKALIKE[ch] ?? ch)
+    .join("");
+
+const codePoint = (ch: string): string =>
+  `U+${(ch.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")}`;
+
+/**
+ * Why `text` would read differently to a reviewer than to the gates, one
+ * entry per spot (`line N: …`); empty when it reads the same. Markdown
+ * character references are checked only in a markdown spec — an RFC is
+ * plain text, where `&#85;` reads as itself.
+ */
+export function hiddenText(text: string, format: SpecFormat): string[] {
+  const out: string[] = [];
+  const lineIn = (t: string, i: number) => t.slice(0, i).split("\n").length;
+  const lineAt = (i: number) => lineIn(text, i);
+
+  let at = 0;
+  for (const ch of text) {
+    // A leading byte-order mark is an encoding marker, not text.
+    if (invisible(ch) && !(at === 0 && ch === "\uFEFF"))
+      out.push(
+        `line ${lineAt(at)}: invisible character ${codePoint(ch)}: remove it`,
+      );
+    at += ch.length;
+  }
+
+  // What a markdown renderer shows: references decoded.
+  let shown = text;
+  if (format === "markdown") {
+    shown = text.replace(CHAR_REF_RE, (ref, dec, hex, name, at: number) => {
+      if (name !== undefined) {
+        const known = NAMED_REFS[name];
+        if (known !== undefined) return known;
+        out.push(
+          `line ${lineAt(at)}: character reference ${ref}: write the character itself (only ${Object.keys(
+            NAMED_REFS,
+          )
+            .map((n) => `&${n};`)
+            .join(" ")} are read)`,
+        );
+        return ref;
+      }
+      const cp = dec !== undefined ? Number(dec) : Number.parseInt(hex, 16);
+      const ch = cp <= 0x10ffff ? String.fromCodePoint(cp) : "\uFFFD";
+      if (/[A-Za-z0-9]/.test(ch) || invisible(ch))
+        out.push(
+          `line ${lineAt(at)}: character reference ${ref} renders as ${/[A-Za-z0-9]/.test(ch) ? `"${ch}"` : `invisible ${codePoint(ch)}`}: write the character itself`,
+        );
+      return ch;
+    });
+  }
+
+  // A keyword spelled with look-alike letters or marks.
+  for (const m of shown.matchAll(/[\p{L}\p{N}\p{M}]+/gu)) {
+    const word = m[0];
+    if (!/[^A-Za-z0-9]/.test(word)) continue;
+    const folded = fold(word);
+    if (KEYWORD_WORDS.has(folded))
+      out.push(
+        `line ${lineIn(shown, m.index ?? 0)}: "${word}" reads as ${folded} but is not spelled in ASCII: write ${folded}`,
+      );
+  }
+  return out;
 }
 
 interface MdLine {

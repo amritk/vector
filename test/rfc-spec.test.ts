@@ -26,6 +26,7 @@ import { runNishTest, runSourceCommands } from "../src/rfc/run.ts";
 import {
   LOOSE_SECTION,
   detectFormat,
+  hiddenText,
   parseDocument,
   parseMarkdownSpec,
 } from "../src/rfc/spectext.ts";
@@ -180,6 +181,44 @@ describe("reading a spec", () => {
     expect(() =>
       detectFormat("Request for Comments: 1\nno form feeds"),
     ).toThrow("not a specification");
+  });
+
+  // #26: what the gates read must be what a reviewer sees.
+  test("refuses a keyword hidden from the completeness gate", () => {
+    const extra = (line: string) =>
+      `${SPEC}\n## 9. Extra\n\nhexEncode ${line} pad its output.\n`;
+    for (const [hidden, why] of [
+      ["M&#85;ST", 'character reference &#85; renders as "U"'],
+      ["M&#x55;ST", "character reference &#x55; renders"],
+      ["M&#8203;UST", "renders as invisible U+200B"],
+      ["M&zwj;UST", "character reference &zwj;: write the character itself"],
+      ["M\u200bUST", "invisible character U+200B"],
+      ["MU\u034fST", "invisible character U+034F"],
+      ["MUS\u0422", '"MUS\u0422" reads as MUST'],
+      ["\u0405HALL", "reads as SHALL"],
+      ["\uff2dUST", "reads as MUST"],
+      ["MU\u0301ST", "reads as MUST"],
+    ])
+      expect(() => parseDocument(extra(hidden)), hidden).toThrow(why);
+  });
+
+  test("ordinary text and markup escapes still read", () => {
+    const ok = `${SPEC}\n## 9. Extra\n\nA &amp; B, &lt;T&gt;, &quot;q&quot;, caf\u00e9, \u0394x, &#169;.\n`;
+    expect(hiddenText(ok, "markdown")).toEqual([]);
+    expect(() => parseDocument(ok)).not.toThrow();
+    // A leading byte-order mark is an encoding marker.
+    expect(hiddenText(`\ufeff${SPEC}`, "markdown")).toEqual([]);
+    // An RFC is plain text: a reference there reads as itself.
+    expect(hiddenText("M&#85;ST", "rfc")).toEqual([]);
+    for (const f of [
+      "rfcs/rfc4648.txt",
+      "rfcs/rfc5869.txt",
+      "rfcs/rfc8439.txt",
+    ])
+      expect(hiddenText(readFileSync(f, "utf8"), "rfc"), f).toEqual([]);
+    expect(
+      hiddenText(readFileSync("specs/example-hex.md", "utf8"), "markdown"),
+    ).toEqual([]);
   });
 
   test("numbered headings are sections; a section includes its subsections", () => {
@@ -1669,6 +1708,13 @@ describe("vector spec (the command)", () => {
     errSpy.mockRestore();
   });
   const contract = () => join(dir, "hex.json");
+
+  test("spec check refuses the hidden keyword with its line", async () => {
+    const p = join(dir, "hidden.md");
+    writeFileSync(p, `${SPEC}\n## 9. Extra\n\nhexEncode M&#85;ST pad.\n`);
+    expect(await rfcMain(["check", contract(), "--spec", p])).toBe(2);
+    expect(err.join("\n")).toMatch(/line \d+: character reference &#85;/);
+  });
 
   test("checks a markdown contract, running its commands with --run-sources", async () => {
     expect(
