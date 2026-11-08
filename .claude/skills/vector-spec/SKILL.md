@@ -154,7 +154,8 @@ bun run vector spec check contracts/<name>.json --spec specs/<name>.md --run-sou
 ```
 
 Read every `command` source the model proposed before you pass
-`--run-sources`: it runs on your machine. Then repair every gate failure it lists (fidelity, completeness, coverage,
+`--run-sources`: it runs on your machine, as you, unsandboxed, and a process
+it detaches with `setsid` outlives the timeout. Then repair every gate failure it lists (fidelity, completeness, coverage,
 provenance, typing, domain) and re-run until it prints `CONTRACT_VALID` and
 exits 0. With no module yet it warns that signatures were not checked; that
 is expected here — `run --nish-root` (step 5) checks them against the
