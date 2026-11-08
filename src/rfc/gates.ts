@@ -956,7 +956,16 @@ function oneTestCase(
   const repeated = [...args, ...expect].flatMap((b) =>
     "rounds" in b && b.rounds ? [{ at: b.at, ...b.rounds }] : [],
   );
-  if (repeated.length > 1) {
+  // Rounds pair only when every label is printed once per test case: a case
+  // that prints one of them as "(0 octets)", or not at all, shifts its later
+  // printings into the next case (RFC 5869 §A).
+  if (repeated.length > 1 && new Set(repeated.map((b) => b.of)).size > 1)
+    issues.push({
+      gate: "fidelity",
+      at: id,
+      message: `${repeated.map((b) => `"${b.label}" is printed ${b.of} times`).join(", ")} in ${where} ("${sec.title}"), so which printings belong to one test case is unclear: cite the subsection that holds one test case`,
+    });
+  else if (repeated.length > 1) {
     const shared = [...repeated[0].has].filter((r) =>
       repeated.every((b) => b.has.has(r)),
     );

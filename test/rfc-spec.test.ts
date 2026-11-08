@@ -1008,6 +1008,32 @@ MAC  = 5bdcc146bf60754e6a042426089575c7
 BASE64("f") = "Zg=="
 
 BASE64("fo") = "Zm8="
+
+## 6. Extract
+
+### 6.1. Case 1
+
+\`\`\`
+Salt = 00010203
+IKM  = 0b0b0b0b
+PRK  = 11111111
+\`\`\`
+
+### 6.2. Case 2
+
+\`\`\`
+Salt = (0 octets)
+IKM  = 0c0c0c0c
+PRK  = 22222222
+\`\`\`
+
+### 6.3. Case 3
+
+\`\`\`
+Salt = 0d0d0d0d
+IKM  = 0e0e0e0e
+PRK  = 33333333
+\`\`\`
 `;
   const KEY1 = "0b0b0b0b0b0b0b0b0b0b0b0b";
   const DATA1 = "4869205468657265";
@@ -1113,6 +1139,39 @@ BASE64("fo") = "Zm8="
     expect(mac("4", h(KEY1, "Key"), h(DATA2, "Data"), h(MAC1, "MAC"))).toEqual([
       '[fidelity] V: args[0] is the 1st of 2 "Key", args[1] is the 2nd of 2 "Data", expect is the 1st of 2 "MAC" in §4 ("MAC Vectors"), so they are from different test cases: use the values printed together (or cite the subsection that holds one test case)',
     ]);
+  });
+
+  test("printings are not paired by count when a case leaves one out", () => {
+    // §6.2 prints its salt as "(0 octets)", so the 2nd "Salt" is case 3's
+    // while the 2nd "IKM" and "PRK" are case 2's (RFC 5869 §A).
+    const message =
+      '[fidelity] V: "Salt" is printed 2 times, "IKM" is printed 3 times, "PRK" is printed 3 times in §6 ("Extract"), so which printings belong to one test case is unclear: cite the subsection that holds one test case';
+    expect(
+      mac(
+        "6",
+        h("0d0d0d0d", "Salt"),
+        h("0c0c0c0c", "IKM"),
+        h("22222222", "PRK"),
+      ),
+    ).toEqual([message]);
+    // Even values that are from one case are refused through the parent...
+    expect(
+      mac(
+        "6",
+        h("00010203", "Salt"),
+        h("0b0b0b0b", "IKM"),
+        h("11111111", "PRK"),
+      ),
+    ).toEqual([message]);
+    // ...and pass through the subsection that holds them.
+    expect(
+      mac(
+        "6.3",
+        h("0d0d0d0d", "Salt"),
+        h("0e0e0e0e", "IKM"),
+        h("33333333", "PRK"),
+      ),
+    ).toEqual([]);
   });
 
   test("a string is a whole printed value, paired on one line", () => {
