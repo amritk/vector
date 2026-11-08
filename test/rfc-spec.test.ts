@@ -1034,6 +1034,20 @@ Salt = 0d0d0d0d
 IKM  = 0e0e0e0e
 PRK  = 33333333
 \`\`\`
+
+## 7. Decode
+
+### 7.1. First
+
+Input: \`abab\`
+
+Output = abab
+
+### 7.2. Second
+
+Input: \`cdcd\`
+
+Output = cdcd
 `;
   const KEY1 = "0b0b0b0b0b0b0b0b0b0b0b0b";
   const DATA1 = "4869205468657265";
@@ -1171,6 +1185,19 @@ PRK  = 33333333
         h("0e0e0e0e", "IKM"),
         h("33333333", "PRK"),
       ),
+    ).toEqual([]);
+  });
+
+  test("a string pairs with a labelled value only where the label is printed once", () => {
+    // §7.1's input with §7.2's output: the string has a line, the hex value a
+    // round, and nothing relates the two.
+    expect(
+      gate("7", "fromHex", [{ str: "abab" }], h("cdcd", "Output")),
+    ).toEqual([
+      '[fidelity] V: args[0] "abab" and expect (one of 2 "Output") in §7 ("Decode"): nothing pairs a printed string with one of several labelled values: cite the subsection that holds one test case',
+    ]);
+    expect(
+      gate("7.1", "fromHex", [{ str: "abab" }], h("abab", "Output")),
     ).toEqual([]);
   });
 

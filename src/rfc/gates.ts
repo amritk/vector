@@ -956,10 +956,18 @@ function oneTestCase(
   const repeated = [...args, ...expect].flatMap((b) =>
     "rounds" in b && b.rounds ? [{ at: b.at, ...b.rounds }] : [],
   );
+  // A string is placed by its line and a labelled value by its round; nothing
+  // relates the two, so they pair only where the label is printed once.
+  if (texts.length > 0 && repeated.length > 0)
+    issues.push({
+      gate: "fidelity",
+      at: id,
+      message: `${texts.map((t) => `${t.at} ${JSON.stringify(t.text)}`).join(", ")} and ${repeated.map((b) => `${b.at} (one of ${b.of} "${b.label}")`).join(", ")} in ${where} ("${sec.title}"): nothing pairs a printed string with one of several labelled values: cite the subsection that holds one test case`,
+    });
   // Rounds pair only when every label is printed once per test case: a case
   // that prints one of them as "(0 octets)", or not at all, shifts its later
   // printings into the next case (RFC 5869 §A).
-  if (repeated.length > 1 && new Set(repeated.map((b) => b.of)).size > 1)
+  else if (repeated.length > 1 && new Set(repeated.map((b) => b.of)).size > 1)
     issues.push({
       gate: "fidelity",
       at: id,
