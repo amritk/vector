@@ -102,6 +102,53 @@ describe("diffPrograms", () => {
     expect(outcome.summary).toContain("float64");
   }, 60_000);
 
+  test("DIFFERENT: a requires equal over the reals but not in float64 (#18)", async () => {
+    type Expr = Program["functions"][number]["body"];
+    const x = { kind: "var", name: "x" } as const;
+    const num = (value: string) => ({ kind: "num", value }) as const;
+    const op = (o: string, left: Expr, right: Expr) =>
+      ({ kind: "binop", op: o, left, right }) as Expr;
+    const make = (guard: Expr): Program => ({
+      programName: "f",
+      functions: [
+        {
+          name: "f",
+          layer: 1,
+          purpose: "p",
+          params: [{ name: "x", type: "Real" }],
+          returnType: "Real",
+          requires: [
+            { axiomId: "R0", expr: op(">=", x, num("0")) },
+            { axiomId: "R", expr: guard },
+          ],
+          ensures: [
+            {
+              axiomId: "E",
+              expr: op(">=", { kind: "var", name: "result" }, num("0")),
+            },
+          ],
+          body: x,
+        },
+      ],
+    });
+    // Over the reals both guards are x <= 0.3; in float64 (0.3 + 0.1) + 0.2
+    // is 0.6000000000000001, so the old code throws at 0.3 and the new does not.
+    const before = make(
+      op("<=", op("+", op("+", x, num("0.1")), num("0.2")), num("0.6")),
+    );
+    const after = make(op("<=", x, num("0.3")));
+    const outcome = await diffPrograms(before, after);
+    expect(outcome.status).toBe("DIFFERENT");
+    if (outcome.status !== "DIFFERENT") return;
+    expect(outcome.report.matched[0]?.equivalent).toBe(true);
+    expect(outcome.report.float64Deltas[0]).toEqual({
+      name: "f",
+      inputs: { x: "0.3" },
+      oldResult: "(throws — requires violated [R])",
+      newResult: "0.3",
+    });
+  }, 60_000);
+
   test("EQUIVALENT: a contract rewording alone is not a behavioral change", async () => {
     const next = clone();
     const usdToEur = next.functions[1];

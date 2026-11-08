@@ -589,9 +589,9 @@ export interface Float64Delta {
 
 /**
  * Run two versions of a function side by side in float64, the way their
- * emitted TypeScript would, and return the first sampled input (valid for
- * both versions' preconditions) where the outputs are not bit-identical — or
- * where one throws and the other does not. Equivalence over the rationals
+ * emitted TypeScript would, and return the first sampled input where the
+ * outputs are not bit-identical — or where one throws and the other does not,
+ * a requires the float64 code finds false included (its RangeError guard). Equivalence over the rationals
  * says nothing about this: `x * 1.1 + 0.2` and `x * 1.1 + 0.1 + 0.1` are the
  * same real function and different float64 functions. Parameters are paired
  * by position (calls are positional).
@@ -612,10 +612,17 @@ export function findFloat64Delta(
     env: Map<string, Value>,
   ): { ok: true; value: Value } | { ok: false; why: string } | null => {
     if (domainViolation(fn, env) !== null) return null;
+    // The emitted code throws a RangeError where a requires is false, so a
+    // guard that differs in float64 is a difference in behaviour.
     try {
-      if (!fn.requires.every((c) => evalExpr(c.expr, env, byName) === true)) {
-        return null;
-      }
+      const broken = fn.requires.find(
+        (c) => evalExpr(c.expr, env, byName) !== true,
+      );
+      if (broken)
+        return {
+          ok: false,
+          why: `(throws — requires violated [${broken.axiomId}])`,
+        };
     } catch {
       return null;
     }
@@ -644,6 +651,7 @@ export function findFloat64Delta(
     const b = run(newFn, newByName, newEnv);
     // Only inputs both versions accept; domain changes are the solver's job.
     if (a === null || b === null) return null;
+    if (!a.ok && !b.ok) return null;
     if (bases.length < 3) bases.push(env);
     const same = a.ok && b.ok ? Object.is(a.value, b.value) : a.ok === b.ok;
     if (same) return null;
@@ -656,7 +664,18 @@ export function findFloat64Delta(
     const d = compare(env);
     if (d) return d;
   }
-  for (const env of denseSamples(oldFn, bases, undefined, rand)) {
+  // Dense around both versions' constants: a guard moved to 0.3 is tested
+  // at 0.3 even though only the new version prints it.
+  const both: FunctionUnit = {
+    ...oldFn,
+    requires: [...oldFn.requires, ...newFn.requires],
+    ensures: [
+      ...oldFn.ensures,
+      ...newFn.ensures,
+      { axiomId: "(new body)", expr: newFn.body },
+    ],
+  };
+  for (const env of denseSamples(both, bases, undefined, rand)) {
     const d = compare(env);
     if (d) return d;
   }
