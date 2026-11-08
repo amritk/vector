@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -108,6 +109,15 @@ describe("the per-user z3 directory", () => {
     rmSync(join(dest, "z3"));
     extractZ3Tar(bytes, root);
     expect(readFileSync(join(dest, "z3"), "utf8")).toBe(z3);
+  });
+
+  test("a file dropped beside z3 causes a fresh unpack", () => {
+    const root = join(scratch(), "z3");
+    const bytes = tarball({ z3, "libz3.so.4.16": lib });
+    const dest = extractZ3Tar(bytes, root);
+    writeFileSync(join(dest, "libc.so.6"), "planted");
+    expect(extractZ3Tar(bytes, root)).toBe(dest);
+    expect(readdirSync(dest).sort()).toEqual(["libz3.so.4.16", "z3"]);
   });
 
   test("a directory others can write is refused", () => {

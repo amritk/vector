@@ -13,6 +13,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -122,9 +123,16 @@ export function privateDir(dir: string): void {
   }
 }
 
-/** Every file of the tarball is in `dir` with exactly the tarball's bytes. */
+/**
+ * `dir` holds the tarball's files with exactly its bytes, and nothing else:
+ * a library dropped beside z3 could be loaded by it.
+ */
 function intact(dir: string, files: TarFile[]): boolean {
   try {
+    const names = new Set(files.map((f) => f.name));
+    const present = readdirSync(dir);
+    if (present.length !== names.size || present.some((n) => !names.has(n)))
+      return false;
     return files.every((f) => {
       const p = join(dir, f.name);
       const st = lstatSync(p);
