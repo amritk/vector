@@ -1038,6 +1038,7 @@ describe("reports", () => {
         stdout: "",
         stderr: "",
         nish: "nish",
+        integrity: [],
       },
     } as ContractReport);
     expect(md).toMatch(new RegExp(`#### ${hkdf.requirements[0].id} .*❌ fail`));
