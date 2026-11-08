@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import type { Program } from "../lang/ast.ts";
 import { validateProgramShape } from "../lang/shape.ts";
 import { typecheckProgram } from "../lang/validate.ts";
-import { checkConformance } from "./conformance.ts";
+import { type ConformanceSeeds, checkConformance } from "./conformance.ts";
 import {
   type QueryAnswer,
   emitVerificationScript,
@@ -250,7 +250,18 @@ export async function verifyProgramViaSolver(
   // clean — it validates the proof→runtime bridge, not the proof, and would
   // just be noise on an already-refuted report.
   if (report.ok) {
-    const conformanceIssues = checkConformance(program, report);
+    const seeds: ConformanceSeeds = new Map();
+    queries.forEach((q, i) => {
+      const answer = run.answers[i];
+      if (q.kind !== "reachable" || answer?.result !== "sat") return;
+      const point: Record<string, string> = {};
+      for (const p of q.params) {
+        const value = answer.model[p.smt];
+        if (value !== undefined) point[p.orig] = value;
+      }
+      seeds.set(q.fn, point);
+    });
+    const conformanceIssues = checkConformance(program, report, seeds);
     if (conformanceIssues.length > 0) {
       report.conformanceIssues = conformanceIssues;
       report.ok = false;

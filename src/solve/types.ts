@@ -38,8 +38,10 @@ export interface ConformanceIssue {
    * callee-guard — a callee's requires, proven to hold at this call site over
    * exact reals, is violated by the float64-computed arguments, so the emitted
    * code throws on an input this function's own contract accepts.
+   * unsampled — no float64 input satisfied the preconditions, so the gate
+   * could not check the emitted code at all (fails closed).
    */
-  kind: "postcondition" | "callee-guard";
+  kind: "postcondition" | "callee-guard" | "unsampled";
   axiomId: string;
   pretty: string;
   inputs: Record<string, string>;

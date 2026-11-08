@@ -67,7 +67,11 @@ export function renderDashboard(input: DashboardInput): string {
         .map(([k, v]) => `${k} = ${v}`)
         .join(", ");
       for (const line of wrapText(
-        `✘ ${issue.function} ${issue.axiomId} (${issue.pretty}) proven over reals but FALSE at ${inputs} → result = ${issue.result}`,
+        issue.kind === "unsampled"
+          ? `✘ ${issue.function} no float64 input satisfies requires (${issue.pretty}) — emitted code unchecked`
+          : issue.kind === "callee-guard"
+            ? `✘ ${issue.function} ${issue.axiomId} throws in float64 at ${inputs}: guard ${issue.pretty}`
+            : `✘ ${issue.function} ${issue.axiomId} (${issue.pretty}) proven over reals but FALSE at ${inputs} → result = ${issue.result}`,
         WIDTH - 4,
       )) {
         lines.push(row(`  ${line}`));
