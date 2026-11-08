@@ -433,6 +433,15 @@ followed, under `specs/` or `rfcs/`; frozen refuses one anywhere else
 refuses an absolute path. So a contract can't name code as its spec to move it
 to the spec side.
 
+Every command that reads a contract (`check`, `emit`, `run`, `mutate`) also
+treats it as input from anyone: a `sources[].path` must lead, symlinks
+followed, to a file beside the contract or under a `specs/` or `rfcs/` beside
+the contract's directory or its parent (or vector's own), with no hidden
+directory (`.git`, `.ssh`, `.env`) on the way. Anything else is a usage error
+before the file is read, so a contract can't pull a private file's text into
+gate messages. `--spec` names the main source's file directly and is not
+limited: that path comes from you.
+
 It also refuses a contract whose **main** source no longer hashes to its
 `source.sha256` (or that has none). Other `sources` are not hashed: their
 quotes are still checked by the fidelity gate. Finding no contract is a

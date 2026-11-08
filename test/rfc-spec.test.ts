@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import hkdfContract from "../contracts/rfc5869-hkdf-sha256.json";
 import { main } from "../src/cli.ts";
 import { rfcMain } from "../src/rfc/cli.ts";
@@ -2043,6 +2049,78 @@ describe("vector spec (the command)", () => {
     expect(out.join("\n")).toContain(
       'the text of source "rfc9999" was not given',
     );
+  });
+
+  describe("a contract's source paths reach only spec text (#29)", () => {
+    /** The contract in dir/proj/contracts/, its source at `path`. */
+    const at = (path: string) => {
+      const c = hexContract();
+      c.sources = [{ id: "hex", path }];
+      const p = join(dir, "proj/contracts/hex.json");
+      mkdirSync(dirname(p), { recursive: true });
+      writeFileSync(p, JSON.stringify(c));
+      return p;
+    };
+    const put = (rel: string) => {
+      const p = join(dir, rel);
+      mkdirSync(dirname(p), { recursive: true });
+      writeFileSync(p, SPEC);
+    };
+
+    test("beside the contract, or in specs/ or rfcs/ beside its directory", async () => {
+      put("proj/contracts/hex.md");
+      put("proj/specs/hex.md");
+      put("proj/rfcs/sub/hex.md");
+      expect(await rfcMain(["check", at("hex.md")])).toBe(0);
+      expect(await rfcMain(["check", at("../specs/hex.md")])).toBe(0);
+      expect(await rfcMain(["check", at("../rfcs/sub/hex.md")])).toBe(0);
+    });
+
+    for (const [why, file, path] of [
+      ["above the contract", "secret.md", "../../secret.md"],
+      ["in a hidden directory", "proj/.git/hex.md", "../.git/hex.md"],
+      [
+        "in a hidden directory beside it",
+        "proj/contracts/.ssh/hex.md",
+        ".ssh/hex.md",
+      ],
+      [
+        "under specs/ but hidden",
+        "proj/specs/.env/hex.md",
+        "../specs/.env/hex.md",
+      ],
+    ] as const)
+      test(`refuses a file ${why}, without reading it`, async () => {
+        put(file);
+        expect(await rfcMain(["check", at(path)])).toBe(2);
+        const e = err.join("\n");
+        expect(e).toContain(`source hex is ${path}, which is not spec text`);
+        expect(e).toContain("give it with --spec");
+        expect(out.join("\n")).not.toContain("deadbeef");
+      });
+
+    test("a symlink beside the contract is judged by where it leads", async () => {
+      put("outside/hex.md");
+      mkdirSync(join(dir, "proj/contracts"), { recursive: true });
+      symlinkSync(
+        join(dir, "outside/hex.md"),
+        join(dir, "proj/contracts/hex.md"),
+      );
+      expect(await rfcMain(["check", at("hex.md")])).toBe(2);
+      expect(err.join("\n")).toContain("which is not spec text");
+    });
+
+    test("--spec names the file the user chose, wherever it is", async () => {
+      put("outside/hex.md");
+      expect(
+        await rfcMain([
+          "check",
+          at("../../outside/hex.md"),
+          "--spec",
+          join(dir, "outside/hex.md"),
+        ]),
+      ).toBe(0);
+    });
   });
 
   test("a contract of the wrong shape is refused without reading sources", async () => {

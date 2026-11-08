@@ -9,7 +9,7 @@
 // is a failure.
 
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import {
   type RfcContract,
   type SourceDecl,
@@ -40,6 +40,37 @@ export function sourceFile(
     join(here, "../rfcs", `rfc${src.rfc}.txt`),
     join(VECTOR_ROOT, "rfcs", `rfc${src.rfc}.txt`),
   ].find(existsSync);
+}
+
+/**
+ * Why a contract may not read `file` as the source it declares by `path`, or
+ * undefined when it may. A contract can come from anyone, so its paths may
+ * reach only spec text: the contract's own directory, the specs/ and rfcs/
+ * beside it or beside its parent, or vector's own. Symlinks are resolved first,
+ * and no part of the path below those may start with "." (.git, .ssh, .env).
+ */
+export function sourcePathProblem(
+  src: SourceDecl,
+  contractPath: string,
+  file: string,
+): string | undefined {
+  const here = real(dirname(resolve(contractPath)));
+  const roots = [
+    here,
+    ...[join(here, ".."), join(here, "../.."), VECTOR_ROOT].flatMap((r) =>
+      SOURCE_DIRS.map((d) => real(join(r, d))),
+    ),
+  ];
+  const f = real(file);
+  const under = roots.find((r) => f.startsWith(`${r}/`));
+  if (
+    under !== undefined &&
+    !relative(under, f)
+      .split("/")
+      .some((part) => part.startsWith("."))
+  )
+    return undefined;
+  return `source ${src.id} is ${src.path}, which is not spec text: a contract may read sources only beside it or under specs/ or rfcs/, and not in a hidden directory`;
 }
 
 /**

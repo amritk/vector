@@ -26,7 +26,12 @@ import {
 import { emitNishTest, sha256, staleReason } from "./emit-nish.ts";
 import { exportsCheck, moduleDiff, renderExports } from "./exports.ts";
 import type { ExtractDeps } from "./extract.ts";
-import { frozenCheck, renderFrozen, sourceFile } from "./frozen.ts";
+import {
+  frozenCheck,
+  renderFrozen,
+  sourceFile,
+  sourcePathProblem,
+} from "./frozen.ts";
 import { type SourceRun, runGates } from "./gates.ts";
 import { MutationRunError, runMutants } from "./mutate.ts";
 import {
@@ -231,7 +236,9 @@ function readSpec(path: string): RfcDocument {
 /**
  * The text of every source the contract declares, by id. `--spec` gives the
  * main one; the rest are where sourceFile finds them. A source found nowhere
- * is left out, and the fidelity gate refuses the contract for it.
+ * is left out, and the fidelity gate refuses the contract for it. A path the
+ * contract gives must lead to spec text (sourcePathProblem): the contract is
+ * input, and its sources' text reaches gate messages.
  */
 function loadSources(
   a: RfcArgs,
@@ -241,9 +248,21 @@ function loadSources(
   const docs = new Map<string, RfcDocument>();
   const { main, list } = declaredSources(c);
   for (const src of list) {
-    const found =
-      src.id === main && a.rfc ? a.rfc : sourceFile(src, contractPath);
-    if (found) docs.set(src.id, readSpec(found));
+    if (src.id === main && a.rfc) {
+      docs.set(src.id, readSpec(a.rfc));
+      continue;
+    }
+    const found = sourceFile(src, contractPath);
+    if (!found) continue;
+    const problem =
+      src.path === undefined
+        ? undefined
+        : sourcePathProblem(src, contractPath, found);
+    if (problem)
+      throw new UsageError(
+        `${contractPath}: ${problem}${src.id === main ? " (to check against another file, give it with --spec)" : ""}`,
+      );
+    docs.set(src.id, readSpec(found));
   }
   return docs;
 }
