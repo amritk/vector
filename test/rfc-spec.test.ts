@@ -207,12 +207,23 @@ describe("reading a spec", () => {
       ["\u0405HALL", "reads as SHALL"],
       ["\uff2dUST", "reads as MUST"],
       ["MU\u0301ST", "reads as MUST"],
+      // Letters of another script beside ASCII ones, whatever the script.
+      ["M\u054dST", '"M\u054dST" reads as MUST'],
+      ["MU\ua4e2T", "reads as MUST"],
+      ["\ua4df\ua4f4\ua4e2\ua4d4", "reads as MUST"],
+      // Markup inside the word, which a renderer shows whole.
+      ["M*U*ST", '"M*U*ST" renders as MUST but markup splits it'],
+      ["M**U**ST", "renders as MUST"],
+      ["M<span>U</span>ST", "renders as MUST"],
+      ["MUS<i></i>T", "renders as MUST"],
+      ["SHA<!-- -->LL", "renders as SHALL"],
+      ["M`U`ST", "renders as MUST"],
     ])
       expect(() => parseDocument(extra(hidden)), hidden).toThrow(why);
   });
 
   test("ordinary text and markup escapes still read", () => {
-    const ok = `${SPEC}\n## 9. Extra\n\nA &amp; B, &lt;T&gt;, &quot;q&quot;, caf\u00e9, \u0394x, &#169;.\n`;
+    const ok = `${SPEC}\n## 9. Extra\n\nA &amp; B, &lt;T&gt;, &quot;q&quot;, caf\u00e9, \u0394x, &#169;, \u0414\u041e\u041c\u0410, **MUST**, <b>SHALL</b>, \`MUST\`, S_HALL, x*y*z.\n`;
     expect(hiddenText(ok, "markdown")).toEqual([]);
     expect(() => parseDocument(ok)).not.toThrow();
     // A leading byte-order mark is an encoding marker.

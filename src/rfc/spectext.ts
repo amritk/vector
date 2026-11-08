@@ -216,6 +216,37 @@ const LOOKALIKE: Record<string, string> = {
   "\u216D": "C",
   "\u216E": "D",
   "\u216F": "M",
+  // Armenian capitals
+  "\u053C": "L",
+  "\u054D": "U",
+  "\u054F": "S",
+  "\u0555": "O",
+  // Lisu (Fraser) letters
+  "\uA4D0": "B",
+  "\uA4D1": "P",
+  "\uA4D3": "D",
+  "\uA4D4": "T",
+  "\uA4D6": "G",
+  "\uA4D7": "K",
+  "\uA4D9": "J",
+  "\uA4DA": "C",
+  "\uA4DC": "Z",
+  "\uA4DD": "F",
+  "\uA4DF": "M",
+  "\uA4E0": "N",
+  "\uA4E1": "L",
+  "\uA4E2": "S",
+  "\uA4E3": "R",
+  "\uA4E6": "V",
+  "\uA4E7": "H",
+  "\uA4EA": "W",
+  "\uA4EB": "X",
+  "\uA4EC": "Y",
+  "\uA4EE": "A",
+  "\uA4F0": "E",
+  "\uA4F2": "I",
+  "\uA4F3": "O",
+  "\uA4F4": "U",
 };
 const KEYWORD_WORDS = new Set(["MUST", "SHALL", "REQUIRED"]);
 
@@ -276,18 +307,62 @@ export function hiddenText(text: string, format: SpecFormat): string[] {
     });
   }
 
-  // A keyword spelled with look-alike letters or marks.
+  // A keyword spelled with look-alike letters or marks, or with ASCII letters
+  // around letters of another script (MՍST): no table lists every look-alike.
   for (const m of shown.matchAll(/[\p{L}\p{N}\p{M}]+/gu)) {
     const word = m[0];
     if (!/[^A-Za-z0-9]/.test(word)) continue;
     const folded = fold(word);
-    if (KEYWORD_WORDS.has(folded))
+    const keyword = KEYWORD_WORDS.has(folded) ? folded : spoofs(folded);
+    if (keyword !== undefined)
       out.push(
-        `line ${lineIn(shown, m.index ?? 0)}: "${word}" reads as ${folded} but is not spelled in ASCII: write ${folded}`,
+        `line ${lineIn(shown, m.index ?? 0)}: "${word}" reads as ${keyword} but is not spelled in ASCII: write ${keyword}`,
       );
   }
+
+  // A keyword split by markdown emphasis, a code span or an inline tag
+  // (M*U*ST, MUS<i></i>T) renders whole; markup around it (**MUST**) is fine.
+  if (format === "markdown")
+    for (const m of shown.matchAll(MARKED_WORD_RE)) {
+      const word = m[0].replace(EDGE_MARKUP_RE, "");
+      if (!INLINE_MARKUP_RE.test(word)) continue;
+      const plain = fold(word.replace(INLINE_MARKUP_G, ""));
+      const keyword = KEYWORD_WORDS.has(plain) ? plain : spoofs(plain);
+      if (keyword !== undefined)
+        out.push(
+          `line ${lineIn(shown, m.index ?? 0)}: "${word}" renders as ${keyword} but markup splits it for the gates: write ${keyword}`,
+        );
+    }
   return out;
 }
+
+/** Emphasis (not "_", which inside a word is a letter to CommonMark), code-span and strike markers, inline tags and comments. */
+const INLINE_MARKUP = String.raw`[*~\x60]|<\/?[A-Za-z][^<>\n]*>|<!--.*?-->`;
+const INLINE_MARKUP_RE = new RegExp(INLINE_MARKUP);
+const INLINE_MARKUP_G = new RegExp(INLINE_MARKUP, "g");
+const EDGE_MARKUP_RE = new RegExp(
+  `^(?:${INLINE_MARKUP})+|(?:${INLINE_MARKUP})+$`,
+  "g",
+);
+const MARKED_WORD_RE = new RegExp(
+  `(?:[\\p{L}\\p{N}\\p{M}]|${INLINE_MARKUP})+`,
+  "gu",
+);
+
+/**
+ * The keyword a word copies letter for letter, with letters of another
+ * script in some places (MՍST, MUꓢT): undefined for a plain word.
+ */
+const spoofs = (word: string): string | undefined => {
+  const cs = [...word];
+  if (!cs.some((c) => /[A-Z]/.test(c)) || !cs.some((c) => c > "\x7f"))
+    return undefined;
+  return [...KEYWORD_WORDS].find(
+    (k) =>
+      cs.length === k.length &&
+      cs.every((c, i) => c === k[i] || (c > "\x7f" && /\p{L}/u.test(c))),
+  );
+};
 
 interface MdLine {
   /** The text the gates read: inline backticks dropped, a table cell. */
