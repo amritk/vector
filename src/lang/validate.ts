@@ -3,6 +3,7 @@ import {
   type FunctionUnit,
   type NumericTy,
   type Program,
+  RESERVED_IDENTS,
   RESULT_NAME,
   type Ty,
 } from "./ast.ts";
@@ -60,6 +61,11 @@ export function typecheckProgram(program: Program): TypecheckResult {
     if (byName.has(fn.name)) {
       errors.push(`duplicate function name "${fn.name}"`);
     }
+    if (RESERVED_IDENTS.has(fn.name) || fn.name === RESULT_NAME) {
+      errors.push(
+        `function name "${fn.name}" is reserved (a JS/TS keyword or a global the emitted code uses)`,
+      );
+    }
     byName.set(fn.name, fn);
   }
 
@@ -69,6 +75,16 @@ export function typecheckProgram(program: Program): TypecheckResult {
     for (const p of fn.params) {
       if (p.name === RESULT_NAME) {
         errors.push(`${where("params")}: "${RESULT_NAME}" is reserved`);
+      }
+      if (RESERVED_IDENTS.has(p.name)) {
+        errors.push(
+          `${where("params")}: "${p.name}" is reserved (a JS/TS keyword or a global the emitted code uses)`,
+        );
+      }
+      if (byName.has(p.name)) {
+        errors.push(
+          `${where("params")}: parameter "${p.name}" shadows the function of the same name, so a call to it in the emitted code would call the number`,
+        );
       }
       if (paramTypes.has(p.name)) {
         errors.push(`${where("params")}: duplicate parameter "${p.name}"`);

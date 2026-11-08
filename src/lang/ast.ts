@@ -60,3 +60,23 @@ export const AXIOM_ID_RE = /^[A-Za-z][A-Za-z0-9_-]*$/;
 
 // The name postconditions use to refer to a function's return value.
 export const RESULT_NAME = "result";
+
+// Names a program may not use for a function or parameter: they match
+// IDENT_RE but break the emitted TypeScript — a reserved word does not
+// compile, and a parameter named `Math` or `Number` shadows the global the
+// emitted body or domain guard calls (`Math.floor`, `Number.isFinite`), so
+// code the solver PROVED would crash or skip its guard at runtime.
+export const RESERVED_IDENTS: ReadonlySet<string> = new Set([
+  // ECMAScript reserved words, strict-mode reserved words, and literals.
+  ..."break case catch class const continue debugger default delete do else enum export extends false finally for function if import in instanceof new null return super switch this throw true try typeof var void while with yield let static implements interface package private protected public await async of".split(
+    " ",
+  ),
+  // TypeScript keywords that are not valid binding names in emitted code.
+  ..."any as asserts declare get is keyof module namespace never readonly require set type unique unknown infer satisfies accessor abstract override".split(
+    " ",
+  ),
+  // Globals the emitted code relies on, plus values that read as literals.
+  ..."Math Number RangeError Error Infinity NaN undefined globalThis arguments eval Object Array String Boolean Symbol BigInt JSON".split(
+    " ",
+  ),
+]);
