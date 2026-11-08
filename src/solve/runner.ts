@@ -1,14 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Program } from "../lang/ast.ts";
@@ -22,6 +13,7 @@ import {
 } from "./smt.ts";
 import type { SolveResult } from "./types.ts";
 import { assembleReport } from "./verify.ts";
+import { extractZ3Tar } from "./z3cache.ts";
 
 // The single integration point with Z3. We emit an SMT-LIB2 script and drive
 // the native `z3` CLI over stdin — no Node subprocess, no wasm. Swapping in a
@@ -82,37 +74,13 @@ function resolveDevZ3(): Z3Location {
   return { bin: "z3" }; // fall back to PATH; system loader finds libz3
 }
 
-// Extract the embedded z3 (executable + shared lib) to a content-addressed temp
-// dir and return its location. Idempotent via a `.ready` marker so repeat runs
-// and concurrent processes reuse one extraction.
+// Extract the embedded z3 (executable + shared lib) into a per-user, 0700
+// directory, checking every file against the tarball before it is trusted
+// (see z3cache.ts).
 async function extractEmbeddedZ3(embeddedTarPath: string): Promise<Z3Location> {
-  const bytes = Buffer.from(await Bun.file(embeddedTarPath).arrayBuffer());
-  const hash = createHash("sha256").update(bytes).digest("hex").slice(0, 16);
-  const dest = join(tmpdir(), "vector-z3", hash);
-  const bin = join(dest, "z3");
-
-  if (!existsSync(join(dest, ".ready"))) {
-    const staging = `${dest}.${process.pid}.tmp`;
-    rmSync(staging, { recursive: true, force: true });
-    mkdirSync(staging, { recursive: true });
-    const tarFile = join(staging, "z3.tar");
-    writeFileSync(tarFile, bytes);
-    const res = spawnSync("tar", ["-xf", tarFile, "-C", staging]);
-    if (res.status !== 0) {
-      throw new Error(
-        `failed to extract embedded z3: ${res.stderr?.toString() ?? `tar exited ${res.status}`}`,
-      );
-    }
-    rmSync(tarFile, { force: true });
-    chmodSync(join(staging, "z3"), 0o755);
-    writeFileSync(join(staging, ".ready"), "");
-    try {
-      renameSync(staging, dest);
-    } catch {
-      rmSync(staging, { recursive: true, force: true });
-    }
-  }
-  return { bin, libDir: dest };
+  const bytes = new Uint8Array(await Bun.file(embeddedTarPath).arrayBuffer());
+  const dest = extractZ3Tar(bytes);
+  return { bin: join(dest, "z3"), libDir: dest };
 }
 
 function envWithLib(libDir?: string): NodeJS.ProcessEnv {
