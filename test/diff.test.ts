@@ -37,6 +37,71 @@ describe("diffPrograms", () => {
     expect(outcome.status).toBe("EQUIVALENT");
   }, 60_000);
 
+  test("DIFFERENT: equal over the reals but not in float64 (#18)", async () => {
+    const make = (body: Program["functions"][number]["body"]): Program => ({
+      programName: "total",
+      functions: [
+        {
+          name: "total",
+          layer: 1,
+          purpose: "price with fee",
+          params: [{ name: "price", type: "Real" }],
+          returnType: "Real",
+          requires: [
+            {
+              axiomId: "R",
+              expr: {
+                kind: "binop",
+                op: ">=",
+                left: { kind: "var", name: "price" },
+                right: { kind: "num", value: "0" },
+              },
+            },
+          ],
+          ensures: [
+            {
+              axiomId: "E",
+              expr: {
+                kind: "binop",
+                op: ">=",
+                left: { kind: "var", name: "result" },
+                right: { kind: "var", name: "price" },
+              },
+            },
+          ],
+          body,
+        },
+      ],
+    });
+    const scaled = {
+      kind: "binop",
+      op: "*",
+      left: { kind: "var", name: "price" },
+      right: { kind: "num", value: "1.1" },
+    } as const;
+    const tenth = { kind: "num", value: "0.1" } as const;
+    const before = make({
+      kind: "binop",
+      op: "+",
+      left: scaled,
+      right: { kind: "num", value: "0.2" },
+    });
+    const after = make({
+      kind: "binop",
+      op: "+",
+      left: { kind: "binop", op: "+", left: scaled, right: tenth },
+      right: tenth,
+    });
+    const outcome = await diffPrograms(before, after);
+    expect(outcome.status).toBe("DIFFERENT");
+    if (outcome.status !== "DIFFERENT") return;
+    expect(outcome.report.matched[0]?.equivalent).toBe(true);
+    const delta = outcome.report.float64Deltas[0];
+    expect(delta?.name).toBe("total");
+    expect(delta?.oldResult).not.toBe(delta?.newResult);
+    expect(outcome.summary).toContain("float64");
+  }, 60_000);
+
   test("EQUIVALENT: a contract rewording alone is not a behavioral change", async () => {
     const next = clone();
     const usdToEur = next.functions[1];

@@ -579,3 +579,86 @@ export function checkConformance(
   }
   return issues;
 }
+
+/** A concrete input where two float64 evaluations disagree. */
+export interface Float64Delta {
+  inputs: Record<string, string>;
+  oldResult: string;
+  newResult: string;
+}
+
+/**
+ * Run two versions of a function side by side in float64, the way their
+ * emitted TypeScript would, and return the first sampled input (valid for
+ * both versions' preconditions) where the outputs are not bit-identical — or
+ * where one throws and the other does not. Equivalence over the rationals
+ * says nothing about this: `x * 1.1 + 0.2` and `x * 1.1 + 0.1 + 0.1` are the
+ * same real function and different float64 functions. Parameters are paired
+ * by position (calls are positional).
+ */
+export function findFloat64Delta(
+  oldProgram: Program,
+  oldFn: FunctionUnit,
+  newProgram: Program,
+  newFn: FunctionUnit,
+): Float64Delta | null {
+  const oldByName = new Map(oldProgram.functions.map((f) => [f.name, f]));
+  const newByName = new Map(newProgram.functions.map((f) => [f.name, f]));
+  const rand = rng(0x85ebca6b);
+
+  const run = (
+    fn: FunctionUnit,
+    byName: Map<string, FunctionUnit>,
+    env: Map<string, Value>,
+  ): { ok: true; value: Value } | { ok: false; why: string } | null => {
+    if (domainViolation(fn, env) !== null) return null;
+    try {
+      if (!fn.requires.every((c) => evalExpr(c.expr, env, byName) === true)) {
+        return null;
+      }
+    } catch {
+      return null;
+    }
+    try {
+      return { ok: true, value: evalExpr(fn.body, env, byName) };
+    } catch (err) {
+      if (err instanceof GuardViolation) {
+        return { ok: false, why: `(throws — ${err.message})` };
+      }
+      return null;
+    }
+  };
+  const render = (
+    r: { ok: true; value: Value } | { ok: false; why: string },
+  ) => (r.ok ? String(r.value) : r.why);
+
+  const bases: Map<string, Value>[] = [];
+  const compare = (env: Map<string, Value>): Float64Delta | null => {
+    const newEnv = new Map<string, Value>();
+    oldFn.params.forEach((p, i) => {
+      const np = newFn.params[i];
+      const value = env.get(p.name);
+      if (np && value !== undefined) newEnv.set(np.name, value);
+    });
+    const a = run(oldFn, oldByName, env);
+    const b = run(newFn, newByName, newEnv);
+    // Only inputs both versions accept; domain changes are the solver's job.
+    if (a === null || b === null) return null;
+    if (bases.length < 3) bases.push(env);
+    const same = a.ok && b.ok ? Object.is(a.value, b.value) : a.ok === b.ok;
+    if (same) return null;
+    const inputs: Record<string, string> = {};
+    for (const p of oldFn.params) inputs[p.name] = String(env.get(p.name));
+    return { inputs, oldResult: render(a), newResult: render(b) };
+  };
+
+  for (const env of sampleValues(oldFn, rand)) {
+    const d = compare(env);
+    if (d) return d;
+  }
+  for (const env of denseSamples(oldFn, bases, undefined, rand)) {
+    const d = compare(env);
+    if (d) return d;
+  }
+  return null;
+}
