@@ -3,6 +3,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -2108,6 +2109,39 @@ describe("vector spec (the command)", () => {
       );
       expect(await rfcMain(["check", at("hex.md")])).toBe(2);
       expect(err.join("\n")).toContain("which is not spec text");
+    });
+
+    test("a symlinked specs/ is no root: it could lead anywhere", async () => {
+      put("outside/hex.md");
+      mkdirSync(join(dir, "proj"), { recursive: true });
+      symlinkSync(join(dir, "outside"), join(dir, "proj/specs"));
+      expect(await rfcMain(["check", at("../specs/hex.md")])).toBe(2);
+      expect(err.join("\n")).toContain(
+        "source hex is ../specs/hex.md, which is not spec text",
+      );
+      expect(out.join("\n")).not.toContain("deadbeef");
+    });
+
+    test("an implicit rfc<N>.txt is judged the same way", async () => {
+      const c = hexContract();
+      c.sources = [{ id: "hex", rfc: 4648 }];
+      const p = join(dir, "proj/contracts/hex.json");
+      mkdirSync(dirname(p), { recursive: true });
+      writeFileSync(p, JSON.stringify(c));
+      put("outside/.ssh/id");
+      symlinkSync(
+        join(dir, "outside/.ssh/id"),
+        join(dir, "proj/contracts/rfc4648.txt"),
+      );
+      expect(await rfcMain(["check", p])).toBe(2);
+      expect(err.join("\n")).toContain("which is not spec text");
+      expect(out.join("\n")).not.toContain("deadbeef");
+      // The same name as a plain file beside the contract is read.
+      err.length = 0;
+      rmSync(join(dir, "proj/contracts/rfc4648.txt"));
+      put("proj/contracts/rfc4648.txt");
+      await rfcMain(["check", p]);
+      expect(err.join("\n")).not.toContain("not spec text");
     });
 
     test("--spec names the file the user chose, wherever it is", async () => {

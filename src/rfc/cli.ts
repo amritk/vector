@@ -237,9 +237,9 @@ function readSpec(path: string): RfcDocument {
 /**
  * The text of every source the contract declares, by id. `--spec` gives the
  * main one; the rest are where sourceFile finds them. A source found nowhere
- * is left out, and the fidelity gate refuses the contract for it. A path the
- * contract gives must lead to spec text (sourcePathProblem): the contract is
- * input, and its sources' text reaches gate messages.
+ * is left out, and the fidelity gate refuses the contract for it. Each must be
+ * spec text (sourcePathProblem), whether the contract names its path or not:
+ * the contract is input, and its sources' text reaches gate messages.
  */
 function loadSources(
   a: RfcArgs,
@@ -255,10 +255,7 @@ function loadSources(
     }
     const found = sourceFile(src, contractPath);
     if (!found) continue;
-    const problem =
-      src.path === undefined
-        ? undefined
-        : sourcePathProblem(src, contractPath, found);
+    const problem = sourcePathProblem(src, contractPath, found);
     if (problem)
       throw new UsageError(
         `${contractPath}: ${problem}${src.id === main ? " (to check against another file, give it with --spec)" : ""}`,
