@@ -271,6 +271,8 @@ const HELPER_DEPS: Record<string, string[]> = {
   unwrapStr: ["Unwrap"],
 };
 const HELPER_ORDER = Object.keys(HELPERS);
+/** Every helper the test can define, for the contract's TEST_NAMES. */
+export const HELPER_NAMES = [...HELPER_ORDER, "unwrapStr"];
 
 class Emitter {
   readonly used = new Set<string>();

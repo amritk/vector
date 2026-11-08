@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { RfcContract } from "../src/rfc/contract.ts";
-import { validateContractShape } from "../src/rfc/contract.ts";
-import { emitNishTest } from "../src/rfc/emit-nish.ts";
+import { TEST_NAMES, validateContractShape } from "../src/rfc/contract.ts";
+import { HELPER_NAMES, emitNishTest } from "../src/rfc/emit-nish.ts";
 import { runGates } from "../src/rfc/gates.ts";
 import {
   type ContractReport,
@@ -100,6 +100,25 @@ describe("secret-bytes in a contract", () => {
     expect(validateContractShape(c)).toEqual([
       "functions[0].params[1].type: secret-bytes? is a result type only; a parameter may be secret-bytes",
     ]);
+  });
+
+  test("a function may not take a name the test uses itself", () => {
+    for (const name of [
+      "plain_x",
+      "copyBytes",
+      "unhex",
+      "secret",
+      "t",
+      "v_x",
+    ]) {
+      const c = contract();
+      c.functions[1].name = name;
+      expect(validateContractShape(c)).toContainEqual(
+        `functions[1].name: "${name}" is a name the generated test uses itself (its helpers and locals, and names starting plain_ clause_ table_ v_ a_ s_), so the test cannot call such a function`,
+      );
+    }
+    // The list covers every helper the emitter can define.
+    for (const h of HELPER_NAMES) expect(TEST_NAMES.has(h)).toBe(true);
   });
 
   test("vectors and calls type a secret as its bytes", () => {

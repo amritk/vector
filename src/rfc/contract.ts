@@ -347,6 +347,57 @@ export function nishModuleFile(module: string): string | undefined {
 
 export const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 export const IDENT_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
+/**
+ * Names the generated nish test defines, imports or binds around a call (its
+ * helpers, `main`, the Suite, nish:secret, the locals of a clause and of a
+ * secret wrapper), and the prefixes it puts on names: a contract function
+ * named one of these would be shadowed by it, or clash with it, and the test
+ * would not compile. emit-nish.test pins this against the helpers it emits.
+ */
+export const TEST_NAMES = new Set([
+  "hexOf",
+  "hexOrNull",
+  "unhex",
+  "nibble",
+  "bytesEq",
+  "isNullBytes",
+  "concatBytes",
+  "sliceBytes",
+  "fillBytes",
+  "flipBit",
+  "le64",
+  "strEq",
+  "isNullStr",
+  "strOrNull",
+  "shiftCase",
+  "utf8Bytes",
+  "asciiOrNull",
+  "charAtStr",
+  "copyBytes",
+  "Unwrap",
+  "unwrapStr",
+  "main",
+  "Suite",
+  "Secret",
+  "expose",
+  "secret",
+  "wipe",
+  "t",
+  "i",
+  "u",
+  "r",
+  "out",
+  "holds",
+  "why",
+  "ran",
+  "code",
+  "nonce",
+  "process",
+  "console",
+  "toI32",
+]);
+export const TEST_PREFIXES = ["plain_", "clause_", "table_", "v_", "a_", "s_"];
 export const SECTION_RE = /^(?:\d+(?:\.\d+)*|[A-Z](?:\.\d+)*)$/;
 export const MAX_BYTES_LEN = 4096;
 
@@ -749,6 +800,15 @@ export function validateContractShape(input: unknown): string[] {
       }
       if (typeof f.name !== "string" || !IDENT_RE.test(f.name)) {
         errors.push(`${at}.name: an identifier`);
+      } else {
+        const name = f.name;
+        if (
+          TEST_NAMES.has(name) ||
+          TEST_PREFIXES.some((x) => name.startsWith(x))
+        )
+          errors.push(
+            `${at}.name: "${name}" is a name the generated test uses itself (its helpers and locals, and names starting ${TEST_PREFIXES.join(" ")}), so the test cannot call such a function`,
+          );
       }
       if (!(SIG_TYPES as readonly unknown[]).includes(f.returns)) {
         errors.push(`${at}.returns: one of ${SIG_TYPES.join(" ")}`);
