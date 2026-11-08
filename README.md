@@ -147,12 +147,40 @@ Every vector says where its expected value comes from (`source`):
 
 | `source` | The expected value is | Checked by |
 |---|---|---|
-| `{"cite": {"section": "A.1"}}` (`"source"` optional) | printed in that section, with the args | fidelity |
+| `{"cite": {"section": "A.1"}}` (`"source"` optional) | printed in that section, with the args, as one test case (see *What a printed value is*) | fidelity |
 | `{"command": "…"}`, with `"section"` for the args | the command's trimmed stdout (lowercase hex for bytes) | `--run-sources` only (`sh -c` from the contract's directory, 30 s); otherwise reported as not run, never as passed. A timeout, non-zero exit or other output fails |
 | `{"spec": "4.2"}`, with `"section"` for the args | `null` or a `bool` that section states | provenance: a requirement the vector covers, cited to that section, must state `null` / `true` / `false` as the result, by the rule below |
 
 A vector without a source fails the shape gate. A `cite` source for a `null` or
 `bool` is held to the same rule by fidelity.
+
+**What a printed value is.** Fidelity binds each literal of a vector to one
+printed value, not to any run of matching bytes:
+
+- **Whole values.** A `hex` (or `ascii` read as bytes) must equal a whole
+  printed value — a run of hex lines, a hexdump, a `0x…` or colon-hex value,
+  or a `Key = 0b0b…` line and the lines that continue it. Part of one (a
+  prefix of a key, the tail of a tag) is refused; `concat` joins whole
+  values. A `str` must be printed whole: in quotes, in a markdown code span,
+  on a line of its own, or ending a line after `=` or `:` (`"Zg"` is not
+  printed by `"Zg=="`).
+- **Labels.** A value printed under a name (`Key =`, `Input scalar:`, a
+  short line such as `Plaintext:` above a dump) must give that name:
+  `{"hex": "0b0b…", "label": "Key"}`. A label the section does not print the
+  value under is refused.
+- **One test case.** The expected value may not be bound to the same label
+  as an argument (a key used as the expected MAC). Strings must share a
+  printed line (`BASE64("f") = "Zg=="`). A label printed several times in
+  the cited section is read in rounds — the k-th `Key` goes with the k-th
+  `Data` and the k-th `HMAC-SHA-256` — so citing a parent section cannot mix
+  values from two test cases.
+- **Decimals.** In an RFC, an unnamed run of digit-only lines, or one under
+  a name that calls it a number (`Input scalar as a number (base 10):`), is
+  a decimal number, not bytes, and is not a value.
+
+What a label cannot do: say which algorithm a row is for. A contract that
+uses the `HMAC-SHA-384` row as `hmacSha512`'s expected value passes
+fidelity, with `"label": "HMAC-SHA-384"` in plain view for the reviewer.
 
 **When a section states `null`, `true` or `false`.** Only a requirement the
 vector covers states a result, and only through its own quote. The rule is an
@@ -218,7 +246,7 @@ section, and — by design — any descriptive sentence without a keyword, such 
 
 | Gate | Refuses |
 |---|---|
-| fidelity | a quote not in its cited section; a test-vector byte string not printed in its section (hexdumps, `0x…`, colon-hex split mid-byte across lines are all read); a `str` not printed there; an empty value (`hex ""`, `ascii ""`, `str ""`) where the section prints no `""` or `(0 octets)`, and a whitespace-only `ascii` not printed as hex; a labelled int not printed after its label |
+| fidelity | a quote not in its cited section; a test-vector byte string not printed in its section as a whole value (hexdumps, `0x…`, `Key = …` lines, colon-hex split mid-byte across lines are all read), only part of one, without the `label` it is printed under, or under another label; a `str` not printed whole there; values from two test cases (strings never on one line, labelled values from different rounds) or an expected value bound to an argument's label; an empty value (`hex ""`, `ascii ""`, `str ""`) where the section prints no `""` or `(0 octets)`, and a whitespace-only `ascii` not printed as hex; a labelled int not printed after its label |
 | completeness | any MUST / MUST NOT / SHALL / SHALL NOT / REQUIRED sentence of the main source that is neither inside a requirement's quote nor an exclusion's (or sits outside every numbered section) |
 | provenance | a `spec` source whose section never states the expected `null`/`bool`; a `command` source that failed under `--run-sources` |
 | coverage | a binding requirement no clause checks; a clause citing a requirement the contract does not state |

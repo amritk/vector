@@ -16,7 +16,9 @@ import { renderReport, reportJson } from "../src/rfc/report.ts";
 import {
   type RfcDocument,
   hexRuns,
+  hexValues,
   intLabelled,
+  intRounds,
   normativeSentences,
   parseRfc,
   sectionLines,
@@ -971,6 +973,211 @@ describe("contract sources", () => {
   });
 });
 
+// #24/#25: a vector's values are whole printed values, named by the label
+// they are printed under, and from one test case.
+describe("vector values are whole, named and from one test case", () => {
+  const MAC = `${SPEC}
+## 4. MAC Vectors
+
+### 4.1. Case 1
+
+\`\`\`
+Key  = 0b0b0b0b0b0b0b0b
+       0b0b0b0b         (12 bytes)
+Data = 4869205468657265 ("Hi There")
+MAC  = b0344c61d8db38535ca8afceaf0bf12b
+\`\`\`
+
+### 4.2. Case 2
+
+\`\`\`
+Key  = 4a656665
+Data = 7768617420646f2079612077616e7420
+MAC  = 5bdcc146bf60754e6a042426089575c7
+\`\`\`
+
+## 5. Base64
+
+BASE64("f") = "Zg=="
+
+BASE64("fo") = "Zm8="
+`;
+  const KEY1 = "0b0b0b0b0b0b0b0b0b0b0b0b";
+  const DATA1 = "4869205468657265";
+  const MAC1 = "b0344c61d8db38535ca8afceaf0bf12b";
+  const DATA2 = "7768617420646f2079612077616e7420";
+  const MAC2 = "5bdcc146bf60754e6a042426089575c7";
+  const macDoc = parseMarkdownSpec(MAC);
+  type Lit = VectorClause["expect"];
+  /** The hex contract plus one vector `V` citing `section`. */
+  const gate = (section: string, call: string, args: Lit[], out: Lit) => {
+    const c = hexContract();
+    c.functions.push(
+      {
+        name: "mac",
+        params: [
+          { name: "key", type: "bytes" },
+          { name: "data", type: "bytes" },
+        ],
+        returns: "bytes",
+      },
+      {
+        name: "b64",
+        params: [{ name: "s", type: "string" }],
+        returns: "string",
+      },
+    );
+    c.clauses.push({
+      kind: "vector",
+      id: "V",
+      title: "a printed vector",
+      covers: ["R-LOWER"],
+      source: { cite: { section } },
+      call,
+      args,
+      expect: out,
+    } as VectorClause);
+    expect(validateContractShape(c)).toEqual([]);
+    return messages(
+      runGates(c, { docs: docs(macDoc), commands: passed("V-CMD") }),
+    );
+  };
+  const mac = (section: string, key: Lit, data: Lit, out: Lit) =>
+    gate(section, "mac", [key, data], out);
+  const h = (hex: string, label?: string): Lit =>
+    (label === undefined ? { hex } : { hex, label }) as Lit;
+
+  test("a label printed before its value on the same line is read", () => {
+    expect(hexValues(section4("4.1"))).toEqual([
+      { hex: KEY1, label: "Key" },
+      { hex: DATA1, label: "Data" },
+      { hex: MAC1, label: "MAC" },
+    ]);
+  });
+
+  test("whole values under their own labels pass", () => {
+    expect(
+      mac("4.1", h(KEY1, "Key"), h(DATA1, "Data"), h(MAC1, "MAC")),
+    ).toEqual([]);
+    // In the parent, the second Key goes with the second Data and MAC.
+    expect(
+      mac("4", h("4a656665", "Key"), h(DATA2, "Data"), h(MAC2, "MAC")),
+    ).toEqual([]);
+  });
+
+  test("a value printed under a name must say which", () => {
+    expect(mac("4.1", h(KEY1), h(DATA1, "Data"), h(MAC1, "MAC"))).toEqual([
+      '[fidelity] V.args[0]: the value is printed in §4.1 ("Case 1") under "Key": name it with "label", so the contract says which printed value it is',
+    ]);
+    expect(
+      mac("4.1", h(KEY1, "Data"), h(DATA1, "Data"), h(MAC1, "MAC")),
+    ).toEqual([
+      '[fidelity] V.args[0]: the value is printed in §4.1 ("Case 1") under "Key", not under "Data"',
+    ]);
+  });
+
+  test("part of a value is refused", () => {
+    expect(
+      mac("4.1", h("0b0b0b0b", "Key"), h(DATA1, "Data"), h(MAC1, "MAC")),
+    ).toEqual([
+      '[fidelity] V.args[0]: 4-byte value is only part of a value printed in §4.1 ("Case 1") (under "Key"): a vector uses whole printed values (concat them to join several)',
+    ]);
+    expect(
+      mac("4.1", h(KEY1, "Key"), h(DATA1, "Data"), h(MAC1.slice(8), "MAC")),
+    ).toEqual([
+      '[fidelity] V.expect: 12-byte value is only part of a value printed in §4.1 ("Case 1") (under "MAC"): a vector uses whole printed values (concat them to join several)',
+    ]);
+  });
+
+  test("an input is never the expected value", () => {
+    expect(
+      mac("4.1", h(KEY1, "Key"), h(DATA1, "Data"), h(KEY1, "Key")),
+    ).toEqual([
+      '[fidelity] V.expect: the expected value is the one printed under "Key", which args[0] is bound to as well: an input is not the expected result',
+    ]);
+    expect(
+      mac("4.1", h(KEY1, "Key"), h(DATA1, "Data"), h(KEY1, "MAC")),
+    ).toEqual([
+      '[fidelity] V.expect: the value is printed in §4.1 ("Case 1") under "Key", not under "MAC"',
+    ]);
+  });
+
+  test("values from two test cases are refused, even through the parent", () => {
+    expect(mac("4", h(KEY1, "Key"), h(DATA2, "Data"), h(MAC1, "MAC"))).toEqual([
+      '[fidelity] V: args[0] is the 1st of 2 "Key", args[1] is the 2nd of 2 "Data", expect is the 1st of 2 "MAC" in §4 ("MAC Vectors"), so they are from different test cases: use the values printed together (or cite the subsection that holds one test case)',
+    ]);
+  });
+
+  test("a string is a whole printed value, paired on one line", () => {
+    expect(gate("5", "b64", [{ str: "f" }], { str: "Zg==" })).toEqual([]);
+    // RFC 4648 with the padding stripped: "Zg" is only part of "Zg==".
+    expect(gate("5", "b64", [{ str: "f" }], { str: "Zg" })).toEqual([
+      '[fidelity] V.expect: the string "Zg" is only part of a longer value in §5 ("Base64"): it must be printed whole (in quotes, on a line of its own, or ending a line after "=" or ":")',
+    ]);
+    expect(gate("5", "b64", [{ str: "fo" }], { str: "Zg==" })).toEqual([
+      '[fidelity] V: args[0] "fo", expect "Zg==" are each printed in §5 ("Base64"), but never on one line together, so nothing pairs them as one test case',
+    ]);
+  });
+
+  const section4 = (id: string) => {
+    const s = macDoc.sections.get(id);
+    if (!s) throw new Error(`no section ${id}`);
+    return s;
+  };
+});
+
+describe("reading values from RFC text", () => {
+  const rfcSection = (lines: string[]) =>
+    ({ id: "1", title: "T", lines, ownLines: lines }) as never;
+
+  test("a label on the value's line starts it; the lines below continue it", () => {
+    expect(
+      hexValues(
+        rfcSection([
+          "   Key =          0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+          "                  0b0b0b0b                          (20 bytes)",
+          '   Data =         4869205468657265                  ("Hi There")',
+          "",
+          "   Key            aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "                  aaaaaaaa                          (20 bytes)",
+        ]),
+      ),
+    ).toEqual([
+      { hex: "0b".repeat(20), label: "Key" },
+      // All digits, but named: hex ("Hi There").
+      { hex: "4869205468657265", label: "Data" },
+      // RFC 4231 §4.4 prints no "=".
+      { hex: "aa".repeat(20), label: "Key" },
+    ]);
+  });
+
+  test("a number printed in base 10 is not bytes", () => {
+    const decimal = "31029842492115040904895560451863089656";
+    expect(
+      hexValues(
+        rfcSection([
+          "   Input scalar:",
+          "     a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4",
+          "   Input scalar as a number (base 10):",
+          `     ${decimal}`,
+          "   Data:",
+          "     4869205468657265",
+        ]),
+      ).map((v) => v.label),
+    ).toEqual(["Input scalar", "Data"]);
+    // With no name over it at all, digits in an RFC are a number too.
+    expect(hexValues(rfcSection([`     ${decimal}`]))).toEqual([]);
+  });
+
+  test("intRounds says at which printing of a label the integer is", () => {
+    const text = "L = 42\nL = 7\nL = 42";
+    expect(intRounds(text, "L", 42)).toEqual([0, 2]);
+    expect(intRounds(text, "L", 7)).toEqual([1]);
+    expect(intRounds(text, "L", 4)).toEqual([]);
+    expect(intLabelled(text, "L", 7)).toBe(true);
+  });
+});
+
 describe("vector provenance", () => {
   test("refuses a vector with no source", () => {
     const c = hexContract();
@@ -1552,9 +1759,10 @@ describe("vector provenance", () => {
     const c = hexContract();
     vec(c, "V-SPEC").source = { cite: { section: "2" } };
     vec(c, "V-SPEC").section = undefined;
-    vec(c, "V-SPEC").args = [{ str: "encoder" }];
-    // §2 prints "encoder", but V-SPEC's R-ODD is cited to §2.1, not §2: the
-    // stating requirement must be cited to the very section.
+    vec(c, "V-SPEC").args = [{ str: "abc" }];
+    // §2 prints `abc` (in §2.1, which it holds), but V-SPEC's R-ODD is cited
+    // to §2.1, not §2: the stating requirement must be cited to the very
+    // section.
     expect(
       messages(runGates(c, { docs: docs(), commands: passed("V-CMD") })),
     ).toEqual([

@@ -294,6 +294,8 @@ interface MdLine {
   text: string;
   /** Extra hex-run lines this line contributes (its bracketed byte lists). */
   hex: string[];
+  /** Its inline code spans, without their backticks. */
+  spans?: string[];
   heading?: { level: number; id: string | null; title: string };
   /** Code, a table cell or a blockquote: text, but not the spec's prose. */
   quoted?: true;
@@ -367,6 +369,7 @@ function readLines(text: string): MdLine[] {
       continue;
     }
     const inline = line.replace(/`/g, "");
+    const spans = codeSpans(line);
     const h = inline.match(MD_HEADING_RE);
     if (h) {
       const id = h[2].match(NUMBERED_RE) ?? h[2].match(MD_APPENDIX_RE);
@@ -389,14 +392,17 @@ function readLines(text: string): MdLine[] {
       // of a row, so two cells, two rows, or a row and the line above it are
       // never read as one value.
       out.push(BREAK());
-      for (const cell of cells(inline)) {
+      const raw = cells(line);
+      cells(inline).forEach((cell, i) => {
         const l = withBytes(cell);
         l.hex.push("--");
+        if (raw.length === cells(inline).length) l.spans = codeSpans(raw[i]);
         out.push(quoted(l));
-      }
+      });
       continue;
     }
     const l = withBytes(inline);
+    if (spans.length > 0) l.spans = spans;
     codeMayStart = l.text === "" || indentedCode;
     if (indentedCode) l.code = rawLine;
     out.push(/^ {0,3}>/.test(inline) ? quoted(l) : l);
@@ -466,6 +472,13 @@ function stripComments(line: string, open: boolean): [string, boolean] {
   return [kept, inside];
 }
 
+/** The contents of a line's inline code spans: "`abc` or ``a`b``" → abc, a`b. */
+function codeSpans(line: string): string[] {
+  return [...line.matchAll(/(`+)(?!`)(.+?)(?<!`)\1(?!`)/g)].map((m) =>
+    m[2].trim() === "" ? m[2] : m[2].replace(/^ (.*) $/, "$1"),
+  );
+}
+
 /**
  * A line, plus each "[00 0f …]" in it as a hex-run line fenced by breaks. A
  * blank line is a paragraph break, so it ends a hex run too: in markdown a
@@ -501,7 +514,7 @@ function dropBoilerplate(lines: MdLine[]): MdLine[] {
       const at = i - para.length + j;
       if (text === para[j]) return;
       // A table cell's own hex break stays, so the cell still ends its run.
-      const next = withBytes(text);
+      const next = { ...withBytes(text), spans: lines[at].spans };
       if (lines[at].hex.at(-1) === "--" && next.hex.at(-1) !== "--")
         next.hex.push("--");
       lines[at] = next;
@@ -546,6 +559,7 @@ export function parseMarkdownSpec(text: string): RfcDocument {
       hexLines: all.flatMap((x) => [x.text, ...x.hex]),
       proseLines: all.map((x) => (x.quoted ? "" : x.text)),
       codeLines: all.map((x) => x.code ?? null),
+      spanLines: all.map((x) => x.spans ?? []),
     });
   });
   const looseLines = lines.filter((_, i) => !owned[i]).map((x) => x.text);

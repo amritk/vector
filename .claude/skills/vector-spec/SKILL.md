@@ -119,6 +119,13 @@ Without a key, write `contracts/<name>.json` yourself against
   *is* checked if anywhere.
 - **vector clauses**: the spec's test vectors, values copied as lowercase
   hex. `concat` when the spec prints a value in parts (ciphertext + tag).
+  Each literal is a *whole* printed value (never a prefix or a tail), and a
+  value printed under a name carries it: `{"hex": "0b0b…", "label": "Key"}`
+  for `Key = 0b0b…`. Take args and expected value from one test case (cite
+  the subsection that holds it); the expected value is never a value an
+  argument is bound to. A `str` must be printed whole (quoted, in a code
+  span, alone on a line, or after `=`/`:` at a line's end) and on one line
+  with the other strings of its vector.
   Every vector has a `source` for its expected value:
   - `{"cite": {"section": "A.1"}}` (optionally `"source": "<id>"`): args and
     expected value are printed in that section. Prefer this.
@@ -265,7 +272,8 @@ signature gate runs), `check` it, then `run` it.
 
 ## Expression language (property `assert` / `where`)
 
-Literals `{"hex"}`, `{"ascii"}`, `{"int"}`, `{"bool"}`, `{"null":true}`,
+Literals `{"hex"}`, `{"ascii"}` (both take `"label"`: the name the value is
+printed under), `{"int"}`, `{"bool"}`, `{"null":true}`,
 `{"concat":[…]}`; `{"var": name}`; `{"call": fn, "args": […]}`;
 `{"op": …, "args": […]}` with `len concat slice zeros fill flipBit le64 unwrap
 isNull notNull + - * % < <= > >= == != and or not implies`. `unwrap` of a null

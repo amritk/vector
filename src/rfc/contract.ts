@@ -91,13 +91,18 @@ export interface Exclusion {
  * A literal value. `hex` and `ascii` are checked against the RFC text unless
  * `unchecked` says why they are not printed there; `concat` is checked part by
  * part. `repeat` writes `hex` that many times (RFC-printed runs like 22 × 0b).
- * `str` is a string value (`ascii` is bytes); both are checked as text. An
- * `int` is checked only next to its `label`, the name the RFC prints it under
- * ("L = 42"); without one it is unchecked, and the report says so.
+ * `str` is a string value (`ascii` is bytes); both are checked as text, as a
+ * whole printed value (quoted, a whole line, or ending a line after = or :).
+ * Bytes must be a whole printed value too, and one the RFC prints under a
+ * name ("Key = 00:01:…", a dump under "Ciphertext:") must give that name as
+ * `label`. An `int` is checked only next to its `label`, the name the RFC
+ * prints it under ("L = 42"); without one it is unchecked, and the report
+ * says so. A label printed more than once in the cited section is read in
+ * rounds: the k-th printing of each label belongs to one test case.
  */
 export type Literal =
-  | { hex: string; repeat?: number; unchecked?: string }
-  | { ascii: string; unchecked?: string }
+  | { hex: string; repeat?: number; label?: string; unchecked?: string }
+  | { ascii: string; label?: string; unchecked?: string }
   | { str: string; unchecked?: string }
   | { int: number; label?: string; unchecked?: string }
   | { bool: boolean }
@@ -422,13 +427,29 @@ function checkKeys(
   }
 }
 
+function checkLabel(
+  v: Record<string, unknown>,
+  at: string,
+  errors: string[],
+): void {
+  if (
+    v.label !== undefined &&
+    (typeof v.label !== "string" || !/[A-Za-z]/.test(v.label))
+  ) {
+    errors.push(
+      `${at}.label: the name the RFC prints the value under, with a letter`,
+    );
+  }
+}
+
 function shapeLiteral(v: unknown, at: string, errors: string[]): void {
   if (!isObj(v)) {
     errors.push(`${at}: expected a literal object`);
     return;
   }
   if ("hex" in v) {
-    checkKeys(v, ["hex", "repeat", "unchecked"], at, errors);
+    checkKeys(v, ["hex", "repeat", "label", "unchecked"], at, errors);
+    checkLabel(v, at, errors);
     if (typeof v.hex !== "string" || !/^(?:[0-9a-f]{2})*$/.test(v.hex)) {
       errors.push(`${at}.hex: lowercase hex with an even number of digits`);
     }
@@ -439,7 +460,8 @@ function shapeLiteral(v: unknown, at: string, errors: string[]): void {
       errors.push(`${at}.repeat: an integer >= 1`);
     }
   } else if ("ascii" in v) {
-    checkKeys(v, ["ascii", "unchecked"], at, errors);
+    checkKeys(v, ["ascii", "label", "unchecked"], at, errors);
+    checkLabel(v, at, errors);
     if (typeof v.ascii !== "string") errors.push(`${at}.ascii: a string`);
   } else if ("str" in v) {
     checkKeys(v, ["str", "unchecked"], at, errors);
@@ -448,14 +470,7 @@ function shapeLiteral(v: unknown, at: string, errors: string[]): void {
     }
   } else if ("int" in v) {
     checkKeys(v, ["int", "label", "unchecked"], at, errors);
-    if (
-      v.label !== undefined &&
-      (typeof v.label !== "string" || !/[A-Za-z]/.test(v.label))
-    ) {
-      errors.push(
-        `${at}.label: the name the RFC prints the value under, with a letter`,
-      );
-    }
+    checkLabel(v, at, errors);
     if (
       !Number.isInteger(v.int) ||
       (v.int as number) < I32_MIN ||
