@@ -1083,6 +1083,7 @@ describe("reports", () => {
         stdout: "",
         stderr: "error: ```boom```",
         nish: "nish",
+        integrity: [],
       },
     });
     expect(md2).toContain("vector, expected from openssl kdf");

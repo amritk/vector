@@ -11,7 +11,12 @@ import { emitNishTest } from "../src/rfc/emit-nish.ts";
 import { extractContract } from "../src/rfc/extract.ts";
 import { exportedSignatures, runGates } from "../src/rfc/gates.ts";
 import { hexRuns, normativeSentences, parseRfc } from "../src/rfc/rfctext.ts";
-import { judge, parseTestOutput, runNishTest } from "../src/rfc/run.ts";
+import {
+  checkTranscript,
+  judge,
+  parseTestOutput,
+  runNishTest,
+} from "../src/rfc/run.ts";
 import { evalPure, sampleContract } from "../src/rfc/sample.ts";
 
 // RFC → contract → Nish test. The RFC texts in rfcs/ are rfc-editor.org's
@@ -333,6 +338,80 @@ describe("reading the run back", () => {
       .map((k) => `PASS  [${k.id}] t`)
       .join("\n");
     expect(judge(hkdf, parseTestOutput(hkdf, out), 134).status).toBe("ERROR");
+  });
+});
+
+describe("the transcript must be the test's own (#22)", () => {
+  const N = "0123abcd";
+  const all = hkdf.clauses.map((k) => `PASS  [${k.id}] t`);
+  const bits = "1".repeat(hkdf.clauses.length);
+  const verdict = (out: string, exitCode = 0) => {
+    const clauses = parseTestOutput(hkdf, out);
+    const integrity = checkTranscript(hkdf, out, N, clauses);
+    return { integrity, ...judge(hkdf, clauses, exitCode, integrity) };
+  };
+
+  test("an honest run with its end line is SATISFIED", () => {
+    const v = verdict([...all, `vector-done ${N} ${bits}`].join("\n"));
+    expect(v.integrity).toEqual([]);
+    expect(v.status).toBe("SATISFIED");
+  });
+
+  test("every clause PASS but no end line (early exit) is an ERROR", () => {
+    const v = verdict(all.join("\n"));
+    expect(v.status).toBe("ERROR");
+    expect(v.integrity[0]).toContain("never reached the end of main");
+  });
+
+  test("an end line with another nonce does not count", () => {
+    const v = verdict([...all, `vector-done ffff ${bits}`].join("\n"));
+    expect(v.status).toBe("ERROR");
+    expect(v.integrity.join("\n")).toContain("wrong nonce");
+  });
+
+  test("a forged PASS ahead of the real FAIL is an ERROR, not last-wins", () => {
+    const id = hkdf.clauses[1].id;
+    const out = [
+      `PASS  [${id}] forged`,
+      ...all.map((l) =>
+        l.startsWith(`PASS  [${id}]`) ? `FAIL  [${id}] t` : l,
+      ),
+      `vector-done ${N} 1${"0"}${"1".repeat(hkdf.clauses.length - 2)}`,
+    ].join("\n");
+    const v = verdict(out, 1);
+    expect(v.status).toBe("ERROR");
+    expect(v.integrity.join("\n")).toContain(`[${id}] reported 2 times`);
+  });
+
+  test("a PASS line that contradicts what the clause returned is an ERROR", () => {
+    const id = hkdf.clauses[0].id;
+    const v = verdict(
+      [...all, `vector-done ${N} 0${"1".repeat(hkdf.clauses.length - 1)}`].join(
+        "\n",
+      ),
+    );
+    expect(v.status).toBe("ERROR");
+    expect(v.integrity.join("\n")).toContain(
+      `[${id}] returned false to main, but its line says pass`,
+    );
+  });
+
+  test("clause lines after the end line are an ERROR", () => {
+    const id = hkdf.clauses[0].id;
+    const v = verdict(
+      [...all.slice(1), `vector-done ${N} ${bits}`, `PASS  [${id}] late`].join(
+        "\n",
+      ),
+    );
+    expect(v.status).toBe("ERROR");
+    expect(v.integrity.join("\n")).toContain("after the test's main");
+  });
+
+  test("the emitted main prints the end line from its first argument", () => {
+    const src = emitNishTest(hkdf, new Map());
+    expect(src).toContain("process.argv[1]");
+    expect(src).toContain("console.log(`vector-done ${nonce} ${ran}`);");
+    expect(src).not.toContain("  return t.done();");
   });
 });
 

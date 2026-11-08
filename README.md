@@ -501,6 +501,15 @@ executable spec (SAW/Cryptol style, or Z3 over bit-vectors for the fixed-size
 primitives); the contract's requirements and properties are the statement such
 a proof would discharge.
 
+The module under test also runs in the test's own process, and could print
+`PASS` lines itself. So `run` only trusts a transcript that ends with the line
+the generated `main` prints after every clause has returned: a fresh per-run
+nonce (passed as the program's argument), then what each clause returned. An
+early exit, a clause reported twice, a line after that end, or a line that
+disagrees with its clause's return value makes the run `ERROR`. A module
+written to read the nonce from its own argv could still forge a run; `mutate`
+is the check against that (a gamed module's mutants all survive).
+
 ---
 
 ## The idea

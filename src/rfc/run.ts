@@ -2,6 +2,7 @@
 // back in the contract's terms: which requirement each PASS/FAIL line speaks to.
 
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -33,6 +34,12 @@ export interface RunResult {
   stderr: string;
   /** The compiler that ran it; `nish/…` imports resolve to the std beside it. */
   nish: string;
+  /**
+   * Why the transcript cannot be trusted, if it cannot: no end line carrying
+   * this run's nonce, a clause reported twice, a line that disagrees with
+   * what the clause returned. Any entry makes the run an ERROR.
+   */
+  integrity: string[];
 }
 
 const LINE_RE = /^(PASS|FAIL|SKIP) {2}\[([^\]]+)\]/;
@@ -64,10 +71,89 @@ export function parseTestOutput(
   return out;
 }
 
+/**
+ * The line the generated `main` prints after every clause has run and
+ * `t.done()` has returned: the nonce it was started with, then one bit per
+ * clause in contract order (1 = the clause returned true, 0 = false).
+ */
+export const END_LINE_RE = /^vector-done (\S+) ([01]*)$/;
+
+/**
+ * Check that a transcript is the one the generated test wrote. The module
+ * under test runs in the same process and can print anything, so a clause
+ * line alone proves nothing: the run must reach the end of `main` (an early
+ * `process.exit` leaves no end line), every clause must be reported exactly
+ * once and before that line, and each reported outcome must match what the
+ * clause itself returned to `main`.
+ *
+ * The nonce is passed on the command line rather than written into the
+ * source, so the build stays cacheable; a module that sets out to read it
+ * from argv can still forge a run. This closes the cheap forgeries; the
+ * mutation gate (`spec mutate`) is the check that a module isn't gaming it.
+ */
+export function checkTranscript(
+  c: RfcContract,
+  stdout: string,
+  nonce: string,
+  clauses: Map<string, ClauseResult>,
+): string[] {
+  const problems: string[] = [];
+  const lines = stdout.split("\n");
+  const ends = lines
+    .map((line, i) => ({ i, m: line.match(END_LINE_RE) }))
+    .filter((e) => e.m !== null);
+  const mine = ends.filter((e) => e.m?.[1] === nonce);
+  if (ends.length > mine.length)
+    problems.push(
+      `${ends.length - mine.length} vector-done line(s) with the wrong nonce: something other than the test's main printed them`,
+    );
+  if (mine.length === 0) {
+    problems.push(
+      "the test never reached the end of main (no vector-done line with this run's nonce): it stopped early, or the module exited the process",
+    );
+    return problems;
+  }
+  if (mine.length > 1)
+    problems.push(`${mine.length} vector-done lines carry this run's nonce`);
+  const end = mine[0].i;
+  const bits = mine[0].m?.[2] ?? "";
+
+  const ids = new Set(c.clauses.map((k) => k.id));
+  const seen = new Map<string, number>();
+  lines.forEach((line, i) => {
+    const m = line.match(LINE_RE);
+    if (!m || !ids.has(m[2])) return;
+    seen.set(m[2], (seen.get(m[2]) ?? 0) + 1);
+    if (i > end)
+      problems.push(`[${m[2]}] reported after the test's main had finished`);
+  });
+  for (const [id, n] of seen)
+    if (n > 1)
+      problems.push(`[${id}] reported ${n} times; a clause reports once`);
+
+  if (bits.length !== c.clauses.length) {
+    problems.push(
+      `the end line records ${bits.length} clause result(s), but the contract has ${c.clauses.length}`,
+    );
+    return problems;
+  }
+  c.clauses.forEach((k, i) => {
+    const o = clauses.get(k.id)?.outcome ?? "not-run";
+    const returned = bits[i] === "1";
+    const printed = o === "pass" || o === "skip";
+    if (o === "not-run" || returned !== printed)
+      problems.push(
+        `[${k.id}] returned ${returned} to main, but its line says ${o}`,
+      );
+  });
+  return problems;
+}
+
 export function judge(
   c: RfcContract,
   clauses: Map<string, ClauseResult>,
   exitCode: number | null,
+  integrity: string[] = [],
 ): Pick<RunResult, "status" | "requirements"> {
   const requirements = new Map<string, ClauseOutcome>();
   const rank: Record<ClauseOutcome, number> = {
@@ -89,7 +175,8 @@ export function judge(
   }
   const outcomes = [...clauses.values()].map((x) => x.outcome);
   let status: RunResult["status"] = "SATISFIED";
-  if (outcomes.includes("fail")) status = "VIOLATED";
+  if (integrity.length > 0) status = "ERROR";
+  else if (outcomes.includes("fail")) status = "VIOLATED";
   else if (outcomes.some((o) => o !== "pass") || exitCode !== 0)
     status = "ERROR";
   return { status, requirements };
@@ -206,20 +293,24 @@ export async function runNishTest(
   const dir = mkdtempSync(join(tmpdir(), "vector-rfc-"));
   const file = join(dir, "main.ts");
   writeFileSync(file, source);
+  // A fresh nonce per run, for the end line the test's main prints.
+  const nonce = randomBytes(16).toString("hex");
   try {
     const { code, stdout, stderr } = await spawnCollect(
       nishBin,
-      ["run", file],
+      ["run", file, nonce],
       timeoutMs,
     );
     const clauses = parseTestOutput(c, stdout);
+    const integrity = checkTranscript(c, stdout, nonce, clauses);
     return {
-      ...judge(c, clauses, code),
+      ...judge(c, clauses, code, integrity),
       exitCode: code,
       nish: nishBin,
       clauses,
       stdout,
       stderr,
+      integrity,
     };
   } finally {
     rmSync(dir, { recursive: true, force: true });

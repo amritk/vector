@@ -169,6 +169,10 @@ export function renderReport(r: ContractReport): string {
     for (const a of m.unusedAllowances)
       out.push(`  ! allowSurvivors ${a.file}:${a.line} matched no survivor`);
   }
+  if (r.run && r.run.integrity.length > 0) {
+    out.push("", " The transcript cannot be trusted:");
+    for (const p of r.run.integrity) out.push(`  ! ${p}`);
+  }
   if (r.run && r.run.status === "ERROR") {
     out.push("", " The test did not complete:");
     const tail = (r.run.stderr || r.run.stdout).trim().split("\n").slice(-15);
@@ -348,6 +352,11 @@ export function renderMarkdown(r: ContractReport): string {
     for (const w of warnings) out.push(`- ${cell(`${w.at}: ${w.message}`)}`);
     out.push("");
   }
+  if (r.run && r.run.integrity.length > 0) {
+    out.push("### The transcript cannot be trusted", "");
+    for (const p of r.run.integrity) out.push(`- ${cell(p)}`);
+    out.push("");
+  }
   if (r.run && r.run.status === "ERROR") {
     const tail = (r.run.stderr || r.run.stdout).trim().split("\n").slice(-15);
     out.push(
@@ -413,6 +422,7 @@ export function reportJson(r: ContractReport): unknown {
             ]),
           ),
           requirements: Object.fromEntries(r.run.requirements),
+          integrity: r.run.integrity,
         }
       : undefined,
     mutation: r.mutation

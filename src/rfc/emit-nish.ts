@@ -662,11 +662,21 @@ export function emitNishTest(
       ? HELPERS.Unwrap.replace(/\n\}$/, `\n${UNWRAP_STR}\n}`)
       : HELPERS[h],
   );
+  // `main` records what each clause returned and, once the suite is done,
+  // prints it after the nonce `spec run` passes as the first argument. A
+  // module that exits early or prints its own PASS lines can't produce a
+  // matching end line (see checkTranscript in run.ts).
   const main = [
     "export const main = (): i32 => {",
     `  const t: Suite = new Suite(${jsString(c.contract)});`,
-    ...c.clauses.map((k) => `  ${fnName(k)}(t);`),
-    "  return t.done();",
+    `  let ran: string = "";`,
+    ...c.clauses.map(
+      (k) => `  ran = \`\${ran}\${${fnName(k)}(t) ? "1" : "0"}\`;`,
+    ),
+    "  const code: i32 = t.done();",
+    `  const nonce: string = toI32(process.argv.length) > 1 ? process.argv[1] : "-";`,
+    "  console.log(`vector-done ${nonce} ${ran}`);",
+    "  return code;",
     "};",
   ];
   return `${[header.join("\n"), imports.join("\n"), ...helpers, ...bodies, main.join("\n")].join("\n\n")}\n`;
