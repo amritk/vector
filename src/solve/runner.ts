@@ -40,7 +40,7 @@ function solverTimeout(queryCount: number): number {
 // z3 tarball (the `z3` executable + its shared library), which we extract once.
 const EMBEDDED_Z3_TAR_GLOBAL = "__VECTOR_Z3_TAR__";
 
-interface Z3Location {
+export interface Z3Location {
   bin: string;
   /** Prepended to LD_LIBRARY_PATH so a co-located libz3 is found. */
   libDir?: string;
@@ -61,13 +61,17 @@ async function resolveZ3(): Promise<Z3Location> {
   return cachedZ3;
 }
 
-function resolveDevZ3(): Z3Location {
-  const envBin = process.env.VECTOR_Z3;
-  if (envBin && existsSync(envBin)) {
-    return {
-      bin: envBin,
-      libDir: process.env.VECTOR_Z3_LIB ?? dirname(envBin),
-    };
+/**
+ * z3 outside the compiled binary. A $VECTOR_Z3 that names no file is an
+ * error, not a reason to fall back: the user asked for that solver.
+ */
+export function resolveDevZ3(env: NodeJS.ProcessEnv = process.env): Z3Location {
+  const envBin = env.VECTOR_Z3;
+  if (envBin) {
+    if (!existsSync(envBin)) {
+      throw new Error(`VECTOR_Z3 is ${envBin}, which does not exist`);
+    }
+    return { bin: envBin, libDir: env.VECTOR_Z3_LIB ?? dirname(envBin) };
   }
   const repoZ3 = fileURLToPath(new URL("../../.z3/z3", import.meta.url));
   if (existsSync(repoZ3)) return { bin: repoZ3, libDir: dirname(repoZ3) };
@@ -188,6 +192,15 @@ export async function runZ3Script(
       });
     });
 
+    // A z3 that exits without reading all of its input (a wrong binary, a
+    // crash at start-up) closes the pipe under us: EPIPE is a solver error,
+    // not an uncaught exception.
+    child.stdin.on("error", (err: NodeJS.ErrnoException) => {
+      finish({
+        kind: "error",
+        message: `z3 (${loc.bin}) stopped reading its input: ${err.code ?? err.message}${stderr ? `: ${stderr.slice(0, 500)}` : ""}`,
+      });
+    });
     child.stdin.write(script);
     child.stdin.end();
   });
