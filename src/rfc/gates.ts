@@ -473,6 +473,43 @@ const SENTENCE_END = /[.;!?](?=\s+["'“(\[A-Z]|\s*$)/;
 // a hyphen of any kind ("null-terminated", U+2010 to U+2015, U+2212).
 const ALTERNATIVE_RE =
   /^\s*(?:,\s*)?(?:(?:or|and)(?![A-Za-z0-9])|[/\-\u2010-\u2015\u2212])/i;
+// Right after the value: what may follow it when the value is the whole
+// result. Punctuation or the end closes the clause; a connective starts a
+// condition or circumstance ("null when the input is odd", "null on
+// failure"). Anything else — "null checks", "true to RFC X" — makes the value
+// a word in a longer phrase, not the stated result. An opening bracket
+// starts an aside ("null (see below)"). `to` is left out on purpose:
+// "MUST be true to RFC X" is not the result true.
+const CLAUSE_END_RE = new RegExp(
+  `^(?:\\s*(?:$|[.,;:!?()[\\]])|\\s+(?:${[
+    "when",
+    "whenever",
+    "if",
+    "unless",
+    "for",
+    "on",
+    "upon",
+    "in",
+    "at",
+    "from",
+    "after",
+    "before",
+    "otherwise",
+    "because",
+    "since",
+    "as",
+    "instead",
+    "until",
+    "while",
+    "with",
+    "without",
+    "then",
+    "here",
+    "there",
+    "immediately",
+  ].join("|")})(?![A-Za-z0-9]))`,
+  "i",
+);
 // Anywhere after the value in the rest of the quote: a word that withdraws,
 // negates or condemns it ("…, but this was removed", "…, which is a bug").
 const RETRACT_RE = new RegExp(
@@ -595,6 +632,11 @@ const quoteStates = (
         why = `offers an alternative right after "${word}" ("${alt[0].trim()}"), so "${word}" is not the whole result`;
         continue;
       }
+      if (!CLAUSE_END_RE.test(rest)) {
+        const next = /^\s*([^\s.,;:!?)\]]+)/.exec(rest)?.[1] ?? "";
+        why = `continues past "${word}" ("${word} ${next}"), so "${word}" is a word in a longer phrase, not the stated result (end the clause after it, or follow it with a condition such as "when …")`;
+        continue;
+      }
       const retract = RETRACT_RE.exec(
         text.slice(to, Math.max(last, spanAt(to - 1)[1])),
       );
@@ -620,7 +662,9 @@ const quoteStates = (
  * MUST, SHALL or REQUIRED to (never followed by NOT), optionally "always",
  * a result verb, then `word` as a whole word; with nothing before the keyword
  * in its prose sentence (inside the quote or not) matching DENY_RE, no
- * alternative or hyphen right after the value, and no retraction in the rest
+ * alternative or hyphen right after the value, the value ending its clause
+ * (CLAUSE_END_RE: punctuation, the end, or a condition such as "when …"
+ * next, never "null checks" or "true to"), and no retraction in the rest
  * of any sentence the quote touches. Returns why it does not, or
  * null when it does. Everything this does not recognise is refused.
  */

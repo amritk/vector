@@ -1430,6 +1430,35 @@ describe("vector provenance", () => {
       ]);
       expect([sentence, probe(sentence)]).toEqual([sentence, uncovered()]);
     }
+    // #27: the value must end its clause or lead into a condition; a value
+    // that runs on into a longer phrase is a word, not the result.
+    for (const [sentence, bool, next] of [
+      ["hexDecode MUST return null checks to its caller.", undefined, "checks"],
+      ["f MUST return null pointers.", undefined, "pointers"],
+      ["f is REQUIRED to be true to RFC 4648.", true, "to"],
+      ["f MUST return false positives rarely.", false, "positives"],
+    ] as const) {
+      const word = String(bool ?? null);
+      expect([sentence, probe(sentence, bool, sentence)]).toEqual([
+        sentence,
+        because(
+          `continues past "${word}" ("${word} ${next}"), so "${word}" is a word in a longer phrase, not the stated result (end the clause after it, or follow it with a condition such as "when …")`,
+        ),
+      ]);
+    }
+    for (const sentence of [
+      "f MUST return null.",
+      "f MUST return null when the input is odd.",
+      "f MUST return null if the input is odd.",
+      "f MUST return null (see below).",
+      "f MUST return null; nothing else is allowed.",
+      "f MUST return null upon failure.",
+      "f MUST return null",
+    ])
+      expect([sentence, probe(sentence, undefined, sentence)]).toEqual([
+        sentence,
+        [],
+      ]);
     for (const [sentence, bool] of [
       ["f MUST return true for valid input.", true],
       ["f SHALL be false.", false],
