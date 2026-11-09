@@ -287,7 +287,11 @@ run on stderr. On Linux each command runs in its own PID namespace (or,
 where user namespaces are off, every process it starts carries a variable
 naming the run), so at its 30 s timeout or its exit everything it started is
 killed, a `setsid`'d process or daemon included; one that also clears its
-environment escapes the fallback. Elsewhere only its process group is killed.
+environment escapes the fallback. Neither reaches what a command asks a
+service already running to start (a tmux server, `systemd-run`, `at`,
+`docker`), and setuid tools such as `sudo` do not work in the namespace.
+Elsewhere only its process group is killed. If vector itself is interrupted
+(SIGINT, SIGTERM, SIGHUP), the command it is running is killed first.
 
 `check` exits 0 when the contract is valid, `run` when every clause passed
 (`SATISFIED`); `VIOLATED` / `ERROR` / `INVALID` exit 1, usage errors 2.

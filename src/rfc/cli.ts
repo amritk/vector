@@ -280,7 +280,7 @@ function loadSources(
 
 const CONTAINMENT_NOTE: Record<Containment, string> = {
   namespace:
-    "Each runs in its own PID namespace: at its timeout or its exit, everything it started is killed.",
+    "Each runs in its own PID namespace: at its timeout or its exit, everything it started inside it is killed. A service it asks to start something (a tmux server already running, systemd-run, at, docker) is outside it, and setuid tools such as sudo do not work in it.",
   marked:
     "At each one's timeout or exit, every process it started is killed, found by a variable they inherit; one that clears its environment escapes (no PID namespace here: user namespaces are off or restricted).",
   group:

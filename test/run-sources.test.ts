@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { foreignCommandsWarning } from "../src/rfc/cli.ts";
@@ -53,7 +54,7 @@ describe("--run-sources on a contract from elsewhere", () => {
       "namespace",
     );
     expect(held).toContain(
-      "Each runs in its own PID namespace: at its timeout or its exit, everything it started is killed.",
+      "Each runs in its own PID namespace: at its timeout or its exit, everything it started inside it is killed. A service it asks to start something (a tmux server already running, systemd-run, at, docker) is outside it, and setuid tools such as sudo do not work in it.",
     );
     expect(held).not.toContain("setsid");
   });
@@ -164,6 +165,56 @@ describe.skipIf(process.platform !== "linux")("--run-sources on Linux", () => {
       expect(id.get("V-CMD")?.outcome).toBe("pass");
     });
   }
+
+  // What none of the modes reach: setsid with a cleared environment in
+  // marked mode, or plain setsid in group mode. Holding stdout, it must not
+  // hold up the run past its timeout either.
+  for (const [containment, detach] of [
+    ["marked", "env -i setsid"],
+    ["group", "setsid"],
+  ] as const) {
+    test(`${containment}: an escapee holding stdout does not delay the timeout`, async () => {
+      const pidFile = join(mkdtempSync(join(tmpdir(), "run-sources-")), "pid");
+      const started = Date.now();
+      const r = await runSourceCommands(
+        contract(`${detach} sh -c 'echo $$ > ${pidFile}; exec sleep 30'`),
+        { timeoutMs: 300, containment },
+      );
+      const took = Date.now() - started;
+      try {
+        process.kill(Number(readFileSync(pidFile, "utf8")), "SIGKILL");
+      } catch {
+        // Already gone.
+      }
+      expect(r.get("V-CMD")?.detail).toBe("timed out after 300 ms");
+      expect(took).toBeLessThan(2_000);
+    });
+  }
+
+  test("vector interrupted: the command it was running dies with it", async () => {
+    const mark = join(mkdtempSync(join(tmpdir(), "run-sources-")), "leaked");
+    const run = join(repo, "src/rfc/run.ts");
+    const child = spawn(
+      process.execPath,
+      [
+        "-e",
+        `const { runSourceCommands } = await import(${JSON.stringify(run)});
+        await runSourceCommands(
+          { clauses: [{ id: "V-CMD", kind: "vector", source: {
+            command: "setsid sh -c 'sleep 1; touch ${mark}' & echo started; sleep 30",
+          } }] },
+          { timeoutMs: 60_000, containment: "marked" },
+        );`,
+      ],
+      { stdio: "ignore" },
+    );
+    await settle(500);
+    child.kill("SIGINT");
+    const signal = await new Promise((r) => child.on("exit", (_c, s) => r(s)));
+    expect(signal).toBe("SIGINT");
+    await settle(1_500);
+    expect(existsSync(mark)).toBe(false);
+  });
 
   test("group: a setsid'd child outlives it, as the warning says", async () => {
     const mark = join(mkdtempSync(join(tmpdir(), "run-sources-")), "leaked");

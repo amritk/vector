@@ -210,17 +210,22 @@ export function pidNamespacePrefix(): string[] {
   if (namespacePrefix) return namespacePrefix;
   namespacePrefix = [];
   if (process.platform !== "linux") return namespacePrefix;
-  for (const map of ["--map-current-user", "--map-root-user"]) {
-    const argv = ["unshare", "--user", map, "--pid", "--fork", "--kill-child"];
-    const r = spawnSync(argv[0], [...argv.slice(1), "true"], {
-      stdio: "ignore",
-      timeout: 5_000,
-    });
-    if (r.status === 0) {
-      namespacePrefix = argv;
-      break;
-    }
-  }
+  // Only --map-current-user (util-linux 2.38+): --map-root-user would run
+  // the command as uid 0 in its namespace, and a command that checks who it
+  // is would act differently. Without it, sourceContainment marks instead.
+  const argv = [
+    "unshare",
+    "--user",
+    "--map-current-user",
+    "--pid",
+    "--fork",
+    "--kill-child",
+  ];
+  const r = spawnSync(argv[0], [...argv.slice(1), "true"], {
+    stdio: "ignore",
+    timeout: 5_000,
+  });
+  if (r.status === 0) namespacePrefix = argv;
   return namespacePrefix;
 }
 
@@ -272,10 +277,47 @@ function killMarked(run: string): void {
   }
 }
 
+/** The commands running now: their process groups, and their marks. */
+const live = new Set<{ pid: number; mark?: string }>();
+
+/** SIGKILL every running command's group, and every process it marked. */
+function killLive(): void {
+  for (const l of live) {
+    try {
+      process.kill(-l.pid, "SIGKILL");
+    } catch {
+      // ESRCH: the group already exited.
+    }
+    if (l.mark) killMarked(l.mark);
+  }
+  live.clear();
+}
+
+/**
+ * vector interrupted or killed by a signal: its commands, in groups of their
+ * own, would not get the signal, and their timeouts die with it. So they are
+ * killed first, and then the signal is raised again, as if unhandled.
+ */
+const onSignal = (sig: NodeJS.Signals) => {
+  killLive();
+  unwatchSignals();
+  process.kill(process.pid, sig);
+};
+const SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
+function watchSignals(): void {
+  for (const s of SIGNALS) process.on(s, onSignal);
+  process.on("exit", killLive);
+}
+function unwatchSignals(): void {
+  for (const s of SIGNALS) process.off(s, onSignal);
+  process.off("exit", killLive);
+}
+
 /**
  * Run a program to completion (or until `timeoutMs`, then SIGKILL). With
  * `mark`, every process it starts carries `MARK=<mark>`, and those still
- * running at the timeout or when it ends are killed too.
+ * running at the timeout or when it ends are killed too. While it runs, a
+ * SIGINT, SIGTERM or SIGHUP to vector, or its exit, kills it first.
  */
 function spawnCollect(
   bin: string,
@@ -296,19 +338,38 @@ function spawnCollect(
     let stdout = "";
     let stderr = "";
     let timedOut = false;
-    const sweep = () => {
+    let exited: number | null | undefined;
+    const entry = { pid: child.pid as number, mark };
+    if (child.pid !== undefined) {
+      if (live.size === 0) watchSignals();
+      live.add(entry);
+    }
+    let done = false;
+    const finish = (r: Spawned) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
       if (mark) killMarked(mark);
+      live.delete(entry);
+      if (live.size === 0) unwatchSignals();
+      resolve(r);
     };
     const timer = setTimeout(() => {
       timedOut = true;
       try {
         process.kill(-(child.pid as number), "SIGKILL");
       } catch {
-        // ESRCH: the whole group already exited; "close" is on its way.
+        // ESRCH: the whole group already exited.
       }
-      // A process that left the group may hold stdout open, and "close"
-      // would wait for it.
-      sweep();
+      if (mark) killMarked(mark);
+      // A process that escaped both (setsid with a cleared environment) may
+      // hold stdout open, and "close" would wait for it: stop reading, and
+      // answer once the command itself has exited.
+      child.stdout.destroy();
+      child.stderr.destroy();
+      if (exited !== undefined) {
+        finish({ code: exited, stdout, stderr, timedOut });
+      }
     }, timeoutMs);
     child.stdout.on("data", (d) => {
       stdout += d;
@@ -317,19 +378,19 @@ function spawnCollect(
       stderr += d;
     });
     child.on("error", (err) => {
-      clearTimeout(timer);
-      sweep();
-      resolve({
+      finish({
         code: null,
         stdout,
         stderr: `${stderr}failed to start ${bin}: ${err.message}`,
         timedOut,
       });
     });
+    child.on("exit", (code) => {
+      exited = code;
+      if (timedOut) finish({ code, stdout, stderr, timedOut });
+    });
     child.on("close", (code) => {
-      clearTimeout(timer);
-      sweep();
-      resolve({ code, stdout, stderr, timedOut });
+      finish({ code, stdout, stderr, timedOut });
     });
   });
 }
