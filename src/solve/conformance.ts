@@ -1,3 +1,4 @@
+import { emitTypeScript } from "../emit/typescript.ts";
 import type { Expr, FunctionUnit, Program } from "../lang/ast.ts";
 import { prettyExpr } from "../report/pretty.ts";
 import type { ConformanceIssue, VerificationReport } from "./types.ts";
@@ -123,8 +124,9 @@ function evalExpr(
         if (arg) inner.set(p.name, evalExpr(arg, env, byName));
       });
       // The emitted callee first runs its domain guards (Number.isFinite for
-      // Real, Number.isInteger for Int) — a float64 overflow to ±Infinity in
-      // a computed argument throws there, before any requires is evaluated.
+      // Real, Number.isSafeInteger for Int) — a float64 overflow to ±Infinity
+      // or past 2^53 in a computed argument throws there, before any requires
+      // is evaluated.
       const domainFault = domainViolation(callee, inner);
       if (domainFault !== null) {
         throw new GuardViolation(callee.name, domainFault);
@@ -144,8 +146,9 @@ function evalExpr(
 
 /**
  * The emitted code's domain guard for a function's parameters: Real must be
- * finite, Int must be an integer. Returns a description of the first violated
- * guard, or null when every parameter is in-domain.
+ * finite, Int must be a safe integer, Bool must be a boolean. Returns a
+ * description of the first violated guard, or null when every parameter is
+ * in-domain.
  */
 function domainViolation(
   fn: FunctionUnit,
@@ -156,11 +159,73 @@ function domainViolation(
     if (p.type === "Real" && !Number.isFinite(v)) {
       return `${p.name} is a finite number`;
     }
-    if (p.type === "Int" && !Number.isInteger(v)) {
-      return `${p.name} is an integer`;
+    if (p.type === "Int" && !Number.isSafeInteger(v)) {
+      return `${p.name} is a safe integer`;
+    }
+    if (p.type === "Bool" && typeof v !== "boolean") {
+      return `${p.name} is a boolean`;
     }
   }
   return null;
+}
+
+type Outcome = { threw: true } | { threw: false; value: Value };
+
+/** What the emitted function must do on this input, per the interpreter. */
+function interpretCall(
+  fn: FunctionUnit,
+  env: Map<string, Value>,
+  byName: Map<string, FunctionUnit>,
+): Outcome {
+  try {
+    if (domainViolation(fn, env) !== null) return { threw: true };
+    for (const c of fn.requires) {
+      if (evalExpr(c.expr, env, byName) !== true) return { threw: true };
+    }
+    return { threw: false, value: evalExpr(fn.body, env, byName) };
+  } catch {
+    return { threw: true };
+  }
+}
+
+type Emitted = Map<string, (...args: Value[]) => Value>;
+
+/**
+ * Compile the emitted TypeScript — the exact text the user receives — into
+ * callable functions. Everything else in this gate interprets the AST, so a
+ * fault in the printer or emitter (a dropped parenthesis, a wrong operator
+ * token) is invisible to it; running the real output is what closes that gap.
+ * Returns the reason when the source does not compile.
+ */
+function compileEmitted(
+  program: Program,
+  emit: (program: Program) => string,
+): Emitted | string {
+  try {
+    const js = new Bun.Transpiler({ loader: "ts" })
+      .transformSync(emit(program))
+      .replace(/^export function /gm, "function ");
+    const names = program.functions.map((f) => f.name);
+    const table = new Function(
+      `"use strict";\n${js}\nreturn { ${names.join(", ")} };`,
+    )() as Record<string, (...args: Value[]) => Value>;
+    return new Map(names.map((n) => [n, table[n] as (...a: Value[]) => Value]));
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}
+
+/** Run the emitted function; a guard's RangeError is its only lawful throw. */
+function runEmitted(
+  emitted: (...args: Value[]) => Value,
+  args: Value[],
+): Outcome | { fault: string } {
+  try {
+    return { threw: false, value: emitted(...args) };
+  } catch (err) {
+    if (err instanceof RangeError) return { threw: true };
+    return { fault: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 /** Every numeric literal in the expressions, as the float64 JS would read it. */
@@ -232,9 +297,11 @@ const REAL_POOL = [
   0.25, 1.5, 0.01, 1e6, -1e6, 1e15, 9007199254740992, -9007199254740992, 1e300,
   -1e300, 1e308, -1e308, 5e-324, 1e-300, 1.7976931348623157e308,
 ];
+// Both sides of the safe-integer edge: ±(2^53 - 1) is the largest magnitude
+// the emitted Int guard admits, ±2^53 the smallest it must reject.
 const INT_POOL = [
-  0, 1, -1, 2, -2, 3, -3, 5, -5, 7, 10, -10, 100, 42, 9007199254740992,
-  -9007199254740992, 1e15,
+  0, 1, -1, 2, -2, 3, -3, 5, -5, 7, 10, -10, 100, 42, 9007199254740991,
+  -9007199254740991, 9007199254740992, -9007199254740992, 1e15,
 ];
 const MAX_SAMPLES = 2000;
 
@@ -412,17 +479,34 @@ export type ConformanceSeeds = Map<string, Record<string, string>>;
  * Fuzz every *proven* guarantee of every function against float64 execution:
  * each proven ensures clause must still evaluate true, and the body must run
  * to completion — a callee guard tripped by float64 rounding is a throw the
- * proof said could not happen. Returns the violations found. Only meaningful
+ * proof said could not happen. Every sample is also run through the emitted
+ * TypeScript itself (`emit`, overridable for tests), which must agree with the
+ * interpreter on both the value and whether the input is rejected. Returns the violations found. Only meaningful
  * to call on a report that already proved clean over the reals.
  */
 export function checkConformance(
   program: Program,
   report: VerificationReport,
   seeds: ConformanceSeeds = new Map(),
+  emit: (program: Program) => string = emitTypeScript,
 ): ConformanceIssue[] {
   const byName = new Map(program.functions.map((f) => [f.name, f]));
   const issues: ConformanceIssue[] = [];
   const rand = rng(0x9e3779b9);
+  const emitted = compileEmitted(program, emit);
+  if (typeof emitted === "string") {
+    // Fail closed: source that does not compile was never checked at all.
+    issues.push({
+      function: program.functions[0]?.name ?? program.programName,
+      kind: "emitted-code",
+      axiomId: "(emitted code)",
+      pretty: "the emitted TypeScript compiles",
+      inputs: {},
+      result: `(does not compile — ${emitted})`,
+      note: "the emitted TypeScript could not be compiled, so it was never run against the proven program.",
+    });
+    return issues;
+  }
 
   for (const fn of program.functions) {
     const fnReport = report.functions.find((f) => f.name === fn.name);
@@ -437,9 +521,82 @@ export function checkConformance(
     // A body with calls can still throw via a callee's guard even when there
     // is nothing left to check about the postconditions.
     const bodyHasCalls = containsCall([fn.body]);
-    if (clauses.length === 0 && !bodyHasCalls) continue;
     // One witness per callee guard is enough.
     const seenGuards = new Set<string>();
+    const emittedFn = emitted.get(fn.name);
+    let emittedFlagged = false;
+    const witnessInputs = (env: Map<string, Value>): Record<string, string> => {
+      const inputs: Record<string, string> = {};
+      for (const p of fn.params) inputs[p.name] = String(env.get(p.name));
+      return inputs;
+    };
+
+    // Differential check, on every sample (rejected inputs included): the
+    // emitted function must throw exactly where the proven program rejects
+    // the input and return exactly what it computes everywhere else.
+    const differ = (env: Map<string, Value>): void => {
+      if (!emittedFn || emittedFlagged) return;
+      const want = interpretCall(fn, env, byName);
+      const got = runEmitted(
+        emittedFn,
+        fn.params.map((p) => env.get(p.name) as Value),
+      );
+      const show = (o: Outcome | { fault: string }): string =>
+        "fault" in o
+          ? `fails with "${o.fault}"`
+          : o.threw
+            ? "throws"
+            : `returns ${String(o.value)}`;
+      const agree =
+        !("fault" in got) &&
+        got.threw === want.threw &&
+        (got.threw || want.threw || Object.is(got.value, want.value));
+      if (agree) return;
+      emittedFlagged = true;
+      issues.push({
+        function: fn.name,
+        kind: "emitted-code",
+        axiomId: "(emitted code)",
+        pretty: "the emitted TypeScript computes the proven program",
+        inputs: witnessInputs(env),
+        result: `(emitted code ${show(got)}; the proven program ${show(want)})`,
+        note: "the emitted TypeScript, executed, disagrees with the program the solver proved. This is a fault in vector's emitter, not in the program — the proof does not cover this output.",
+      });
+    };
+    // Guard probes. Every sample is well-typed, so on its own the sampling
+    // never exercises what the domain guards exist to reject: NaN, a
+    // fractional Int, a non-boolean Bool. Substitute each into an otherwise
+    // ordinary input; the emitted function must throw on every one.
+    const probeGuards = (base: Map<string, Value> | undefined): void => {
+      if (!base) return;
+      for (const p of fn.params) {
+        const bad: unknown[] =
+          p.type === "Bool"
+            ? [0, 1, "true", null]
+            : [
+                Number.NaN,
+                Number.POSITIVE_INFINITY,
+                Number.NEGATIVE_INFINITY,
+                "1",
+                true,
+                null,
+              ].concat(p.type === "Int" ? [0.5, 2 ** 53, -(2 ** 53)] : []);
+        for (const value of bad) {
+          const env = new Map(base);
+          env.set(p.name, value as Value);
+          differ(env);
+        }
+      }
+    };
+
+    if (clauses.length === 0 && !bodyHasCalls) {
+      // Nothing proven to re-check in float64, but the emitted function still
+      // ships, so it is still run against the program.
+      const samples = sampleValues(fn, rand);
+      probeGuards(samples[0]);
+      for (const env of samples) differ(env);
+      continue;
+    }
 
     // Seed: the solver's witness, rounded to float64. Only a starting point
     // — a witness on the boundary of an open region can round outside it.
@@ -471,14 +628,10 @@ export function checkConformance(
     // Returns false once every proven clause already has a witness and there
     // is nothing left to learn from further samples.
     const check = (env: Map<string, Value>): boolean => {
-      const witnessInputs = (): Record<string, string> => {
-        const inputs: Record<string, string> = {};
-        for (const p of fn.params) inputs[p.name] = String(env.get(p.name));
-        return inputs;
-      };
+      differ(env);
 
       // The emitted function's own domain guard rejects non-finite Real and
-      // non-integer Int arguments before anything else runs.
+      // non-safe-integer Int arguments before anything else runs.
       if (domainViolation(fn, env) !== null) return true;
       let requiresHold: boolean;
       try {
@@ -510,9 +663,9 @@ export function checkConformance(
               kind: "callee-guard",
               axiomId: `(calls ${err.callee})`,
               pretty: err.guardPretty,
-              inputs: witnessInputs(),
+              inputs: witnessInputs(env),
               result: `(throws — ${err.callee} requires ${err.guardPretty})`,
-              note: "the call-site precondition was proven over exact reals, but float64 rounding of the computed argument violates the callee's guard, so the emitted code throws on an input this function's contract accepts.",
+              note: "the call-site precondition was proven over exact reals, but the argument as float64 computes it (rounded, overflowed, or past the safe-integer range) violates the callee's guard, so the emitted code throws on an input this function's contract accepts.",
             });
           }
         }
@@ -535,7 +688,7 @@ export function checkConformance(
             kind: "postcondition",
             axiomId: clause.axiomId,
             pretty: prettyExpr(clause.expr, "math"),
-            inputs: witnessInputs(),
+            inputs: witnessInputs(env),
             result: String(result),
             note: "proven over exact reals but false in float64 execution — the postcondition uses exact arithmetic the emitted code cannot honor (rounding, non-finite, or exact equality).",
           });
@@ -549,6 +702,7 @@ export function checkConformance(
 
     const first = seedEnv();
     let going = first ? check(first) : true;
+    probeGuards(first ?? sampleValues(fn, rng(1))[0]);
     if (going) {
       for (const env of sampleValues(fn, rand)) {
         going = check(env);

@@ -49,8 +49,10 @@ export const BINOPS = [
 export type BinOp = (typeof BINOPS)[number];
 
 // Decimal strings only ("0.91", "-3") so literals reach Z3 as exact rationals,
-// never a float64 round-trip. Mirrors the `pattern` in schemas/program.json.
-export const NUM_LITERAL_RE = /^-?\d+(\.\d+)?$/;
+// never a float64 round-trip. No leading zeros: Z3 reads "010" as ten, but the
+// same text in the emitted source is a legacy octal literal (eight), or a
+// syntax error ("08"). Mirrors the `pattern` in schemas/program.json.
+export const NUM_LITERAL_RE = /^-?(0|[1-9]\d*)(\.\d+)?$/;
 export const IDENT_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
 // Axiom ids ("AX1", "AX-RATE") are embedded verbatim in emitted TypeScript

@@ -20,8 +20,8 @@ export function emitTypeScript(program: Program): string {
 // finite inputs satisfying the preconditions, then cross-checked against
 // float64 execution (postconditions and callee guards) on sampled boundary +
 // random inputs — a sampling check, not a proof. Domain guards reject
-// NaN/Infinity and non-integer Int args; preconditions are enforced at
-// runtime via throws.
+// NaN/Infinity, Int args that are not safe integers and non-boolean Bool
+// args; preconditions are enforced at runtime via throws.
 `;
   return `${header}\n${functions.map(emitFunction).join("\n\n")}\n`;
 }
@@ -53,12 +53,16 @@ function emitFunction(fn: FunctionUnit): string {
   // Domain guards: the proof is over finite reals / integers, so the emitted
   // code must reject NaN, ±Infinity, and non-integer Int args — otherwise a
   // caller could pass a value the proof never quantified over (NaN breaks every
-  // equality; a fractional "Int" breaks integer reasoning).
+  // equality; a fractional "Int" breaks integer reasoning). Int args must be
+  // *safe* integers: at 2^53 and beyond a double no longer holds every integer,
+  // so integer arithmetic on the argument is not the arithmetic that was proven.
+  // Bool args are checked too — an untyped caller passing 0 or "false" would
+  // otherwise take a branch the proof assigned to a different truth value.
   const domainGuards = fn.params.flatMap((p) => {
     if (p.type === "Int") {
       return [
-        `  if (!Number.isInteger(${p.name})) {`,
-        `    throw new RangeError("domain violated: ${p.name} must be an integer");`,
+        `  if (!Number.isSafeInteger(${p.name})) {`,
+        `    throw new RangeError("domain violated: ${p.name} must be a safe integer");`,
         "  }",
       ];
     }
@@ -69,7 +73,11 @@ function emitFunction(fn: FunctionUnit): string {
         "  }",
       ];
     }
-    return [];
+    return [
+      `  if (typeof ${p.name} !== "boolean") {`,
+      `    throw new RangeError("domain violated: ${p.name} must be a boolean");`,
+      "  }",
+    ];
   });
   const guards = fn.requires.map((c) =>
     [

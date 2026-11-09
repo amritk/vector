@@ -29,7 +29,7 @@
             },
             "value": {
               "type": "string",
-              "pattern": "^-?\\d+(\\.\\d+)?$",
+              "pattern": "^-?(0|[1-9]\\d*)(\\.\\d+)?$",
               "description": "Numeric literal as a plain decimal string, e.g. \"0.91\" or \"-3\". Never scientific notation, never a JSON number — the string reaches the solver as an exact rational."
             }
           },

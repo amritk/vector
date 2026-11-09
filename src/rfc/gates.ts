@@ -36,6 +36,7 @@ import {
   type VectorClause,
   assignable,
   bytesToHex,
+  callsIn,
   citeLabel,
   declaredSources,
   literalBytes,
@@ -309,6 +310,22 @@ function checkCoverage(
       warnings.push({
         at: r.id,
         message: `${r.level} requirement is not checked by any clause`,
+      });
+    }
+  }
+  // Covering a requirement is a claim, so the clause making it has to test
+  // something. A property whose assertion never calls a function under test
+  // holds (or fails) whatever the implementation does, so it would "cover" a
+  // requirement for free. This is a floor, not a measure of strength: a weak
+  // assertion that does call a function is `spec mutate`'s to find.
+  for (const k of c.clauses) {
+    if (k.kind !== "property") continue;
+    if (callsIn(k.assert).size === 0) {
+      issues.push({
+        gate: "coverage",
+        at: k.id,
+        message:
+          "the assertion calls none of the functions under test, so it holds whatever the implementation does and checks nothing",
       });
     }
   }

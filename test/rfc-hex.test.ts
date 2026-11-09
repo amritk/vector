@@ -253,6 +253,17 @@ describe("each gate refuses a broken copy of the contract", () => {
     expect(issuesOf(json, "fidelity")[0]).toStartWith("R-ENC-LEN");
   });
 
+  test("coverage: a property that calls no function under test", async () => {
+    const { code, json } = await check((c) => {
+      const p = c.clauses.find((k) => k.kind === "property") as PropertyClause;
+      p.assert = { op: "==", args: [{ int: 1 }, { int: 2 }] };
+    });
+    expect(code).toBe(1);
+    expect(issuesOf(json, "coverage").join("\n")).toContain(
+      "calls none of the functions under test",
+    );
+  });
+
   test("completeness: a MUST of the main spec neither required nor excluded", async () => {
     const { code, json } = await check((c) => {
       c.exclusions = [];

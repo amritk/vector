@@ -23,7 +23,10 @@ const PREC: Record<BinOp, number> = {
   min: 10,
   max: 10,
 };
-const PREC_NOT = 4;
+// `!` binds like any JS unary operator — tighter than every infix operator.
+// Anything lower prints `not(x < 0)` as `!x < 0`, which JS reads as
+// `(!x) < 0`: a different predicate from the one the solver proved.
+const PREC_NOT = 8;
 const PREC_NEG = 8;
 const PREC_ATOM = 10;
 
