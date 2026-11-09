@@ -9,11 +9,17 @@
 // is a failure.
 
 import {
+  constants,
+  closeSync,
   existsSync,
+  fstatSync,
   lstatSync,
+  openSync,
   readFileSync,
   readdirSync,
+  readlinkSync,
   realpathSync,
+  statSync,
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import {
@@ -80,6 +86,45 @@ export function sourcePathProblem(
   )
     return undefined;
   return `source ${src.id} is ${src.path ?? file}, which is not spec text: a contract may read sources only beside it or under specs/ or rfcs/, and not in a hidden directory or through a symlinked specs/ or rfcs/`;
+}
+
+/**
+ * The text of `file`, or why it may not be read. `problem` judges a resolved
+ * path; it is asked twice: before `file` is opened, and then of the file that
+ * was actually opened (its path from /proc/self/fd on Linux; elsewhere its
+ * realpath, which must still be the same inode). So a symlink or directory
+ * swapped between the check and the read cannot change what is read: the
+ * text comes from the descriptor that was judged, never from the path again.
+ * Throws if the file cannot be opened or read.
+ */
+export function readChecked(
+  file: string,
+  problem: (real: string) => string | undefined,
+): { text: string } | { problem: string } {
+  const before = problem(real(file));
+  if (before) return { problem: before };
+  // O_NONBLOCK: a FIFO opens at once instead of waiting for a writer.
+  const fd = openSync(file, constants.O_RDONLY | constants.O_NONBLOCK);
+  try {
+    const st = fstatSync(fd);
+    let opened: string | undefined;
+    try {
+      const link = readlinkSync(`/proc/self/fd/${fd}`);
+      if (link.startsWith("/") && !link.endsWith(" (deleted)")) opened = link;
+    } catch {}
+    if (opened === undefined) {
+      opened = realpathSync(file);
+      const now = statSync(opened);
+      if (now.dev !== st.dev || now.ino !== st.ino)
+        return { problem: `${file} changed while it was being read` };
+    }
+    const after = problem(opened);
+    if (after) return { problem: after };
+    if (!st.isFile()) return { problem: `${file} is not a regular file` };
+    return { text: readFileSync(fd, "utf8") };
+  } finally {
+    closeSync(fd);
+  }
 }
 
 const isSymlink = (p: string) => {

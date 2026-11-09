@@ -153,6 +153,38 @@ const flipBit = (b: u8[], bit: i32): u8[] => {
   out[byte] = toU8(toI32(out[byte]) ^ mask);
   return out;
 };`,
+  bitwiseBytes: `/**
+ * \`a\` and \`b\` combined byte by byte (k 0: xor, 1: and, 2: or), as long as
+ * the longer: the shorter reads as zeros past its end.
+ */
+const bitwiseBytes = (a: u8[], b: u8[], k: i32): u8[] => {
+  const na: i32 = toI32(a.length);
+  const nb: i32 = toI32(b.length);
+  let n: i32 = na;
+  if (nb > n) {
+    n = nb;
+  }
+  const out: u8[] = [];
+  for (let i: i32 = 0; i < n; i += 1) {
+    let x: i32 = 0;
+    if (i < na) {
+      x = toI32(a[i]);
+    }
+    let y: i32 = 0;
+    if (i < nb) {
+      y = toI32(b[i]);
+    }
+    let z: i32 = x ^ y;
+    if (k === 1) {
+      z = x & y;
+    }
+    if (k === 2) {
+      z = x | y;
+    }
+    out.push(toU8(z));
+  }
+  return out;
+};`,
   le64: `/** \`n\` as 8 little-endian bytes. */
 const le64 = (n: i32): u8[] => {
   const out: u8[] = [];
@@ -437,6 +469,10 @@ class Emitter {
         return `${this.use("fillBytes")}(${a(0)}, ${a(1)})`;
       case "flipBit":
         return `${this.use("flipBit")}(${a(0)}, ${a(1)})`;
+      case "xor":
+      case "bitAnd":
+      case "bitOr":
+        return `${this.use("bitwiseBytes")}(${a(0)}, ${a(1)}, ${["xor", "bitAnd", "bitOr"].indexOf(e.op)})`;
       case "unwrap":
         if (this.typeOf(e.args[0]) === "string?") {
           this.use("unwrapStr");

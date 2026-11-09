@@ -133,6 +133,9 @@ export const OPS = [
   "zeros",
   "fill",
   "flipBit",
+  "xor",
+  "bitAnd",
+  "bitOr",
   "unwrap",
   "isNull",
   "notNull",
@@ -366,6 +369,7 @@ export const TEST_NAMES = new Set([
   "sliceBytes",
   "fillBytes",
   "flipBit",
+  "bitwiseBytes",
   "le64",
   "strEq",
   "isNullStr",
@@ -1346,6 +1350,12 @@ export function typeOf(
       return want(2) && expect(0, "i32") && expect(1, "i32") ? "bytes" : null;
     case "flipBit":
       return want(2) && expect(0, "bytes") && expect(1, "i32") ? "bytes" : null;
+    case "xor":
+    case "bitAnd":
+    case "bitOr":
+      return want(2) && expect(0, "bytes") && expect(1, "bytes")
+        ? "bytes"
+        : null;
     case "unwrap":
     case "isNull":
     case "notNull":

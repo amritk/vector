@@ -180,10 +180,12 @@ printed value, not to any run of matching bytes:
 - **Decimals.** In an RFC, an unnamed run of digit-only lines, or one under
   a name that calls it a number (`Input scalar as a number (base 10):`), is
   a decimal number, not bytes, and is not a value.
-
-What a label cannot do: say which algorithm a row is for. A contract that
-uses the `HMAC-SHA-384` row as `hmacSha512`'s expected value passes
-fidelity, with `"label": "HMAC-SHA-384"` in plain view for the reviewer.
+- **Variants.** Where the section prints the same case for several variants,
+  under labels that differ only in a number (`HMAC-SHA-224` … `HMAC-SHA-512`),
+  the label's number must be in the called function's name: the
+  `HMAC-SHA-384` row as `hmacSha512`'s expected value is refused. A function
+  named for none of them (`hmac`) gets a warning, since nothing says which
+  variant it computes.
 
 **When a section states `null`, `true` or `false`.** Only a requirement the
 vector covers states a result, and only through its own quote. The rule is an
@@ -281,9 +283,15 @@ bun run vector spec extract --spec-only --twice --spec specs/example-hex.md \
 files and network: it is not a sandbox. Read every command before you pass it,
 above all in a contract you did not write; when the contract is not in the
 current repository's `contracts/`, `check` prints the commands it is about to
-run on stderr. A command that runs past its 30 s timeout is killed with its
-process group, but a process it moved out of the group (`setsid`, a daemon)
-keeps running.
+run on stderr. On Linux each command runs in its own PID namespace (or,
+where user namespaces are off, every process it starts carries a variable
+naming the run), so at its 30 s timeout or its exit everything it started is
+killed, a `setsid`'d process or daemon included; one that also clears its
+environment escapes the fallback. Neither reaches what a command asks a
+service already running to start (a tmux server, `systemd-run`, `at`,
+`docker`), and setuid tools such as `sudo` do not work in the namespace.
+Elsewhere only its process group is killed. If vector itself is interrupted
+(SIGINT, SIGTERM, SIGHUP), the command it is running is killed first.
 
 `check` exits 0 when the contract is valid, `run` when every clause passed
 (`SATISFIED`); `VIOLATED` / `ERROR` / `INVALID` exit 1, usage errors 2.
@@ -400,6 +408,14 @@ it, one at a time:
 
 The third passes every test vector RFC 8439 prints: only the property, which
 rebuilds §2.8's MAC input from the other functions, catches it.
+
+Byte `xor`, `bitAnd` and `bitOr` (the shorter operand reads as zeros past its
+end) let a property rebuild a keyed construction the same way. RFC 4231
+prints no key between 64 and 128 bytes, so its vectors pass an HMAC whose
+block-size test is `<` where RFC 2104 needs `<=`. A property over keys of 0 to
+64 bytes,
+`hmacSha256(k, m) == sha256(concat(xor(k, fill(0x5c, 64)), sha256(concat(xor(k, fill(0x36, 64)), m))))`,
+fails at `len(k) = 64`, a Z3 boundary (and its SHA-512 twin at 128).
 
 ### PR gates
 
@@ -753,8 +769,9 @@ file. It needs **nothing on `PATH`** — no Node, no separate z3 install, no `bu
 install`, no repo checkout, no `ANTHROPIC_API_KEY` for the verify/fixture paths.
 On first use it unpacks z3 into `$XDG_CACHE_HOME/vector/z3` (else
 `~/.cache/vector/z3`), a directory it creates with mode 0700 and refuses to use
-if it is a symlink, another user's, or writable by others; every run checks the
-unpacked files against the embedded copy before executing them.
+if it is a symlink, another user's, or writable by others, or if any directory
+above it is another user's or writable by others without the sticky bit; every
+run checks the unpacked files against the embedded copy before executing them.
 Drop it anywhere and run it:
 
 ```bash

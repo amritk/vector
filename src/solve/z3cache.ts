@@ -8,18 +8,20 @@
 
 import { createHash } from "node:crypto";
 import {
+  type Stats,
   existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
+  readlinkSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 
 /** One regular file of a tarball. */
 export interface TarFile {
@@ -102,7 +104,10 @@ export function z3CacheRoot(env: NodeJS.ProcessEnv = process.env): string {
 /**
  * Create `dir` (mode 0700) if needed and make sure only this user can change
  * what is in it: a real directory, not a symlink, owned by this uid and not
- * writable by group or others. Throws, naming the problem, otherwise.
+ * writable by group or others. So must every directory above it, as named and
+ * as resolved, be (owned by this uid or root, and writable by no one else
+ * unless sticky, like /tmp): whoever can rename an ancestor can put another
+ * tree in its place. Throws, naming the problem, otherwise.
  */
 export function privateDir(dir: string): void {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -121,6 +126,54 @@ export function privateDir(dir: string): void {
   if ((st.mode & 0o022) !== 0) {
     refuse(`it is writable by others (mode ${(st.mode & 0o777).toString(8)})`);
   }
+  if (uid === undefined) return;
+  // Every directory and symlink on the way to it, each link followed as the
+  // kernel would: a link someone else owns, or one in a directory they can
+  // rename in, could be pointed elsewhere after this check.
+  for (const [up, a] of pathTo(dirname(resolve(dir)))) {
+    const what = a.isSymbolicLink()
+      ? `${up}, a symlink above it,`
+      : `${up} above it`;
+    if (a.uid !== uid && a.uid !== 0) {
+      refuse(`${what} is owned by uid ${a.uid}, not ${uid} or root`);
+    }
+    if (a.isDirectory() && (a.mode & 0o022) !== 0 && (a.mode & 0o1000) === 0) {
+      refuse(
+        `${up} above it is writable by others (mode ${(a.mode & 0o777).toString(8)}) and not sticky`,
+      );
+    }
+  }
+}
+
+/**
+ * Each directory and symlink that resolving `p` passes through, lstat'd,
+ * from the root down; a symlink's target is walked in its place.
+ */
+function pathTo(p: string): [string, Stats][] {
+  const out: [string, Stats][] = [["/", lstatSync("/")]];
+  const rest = resolve(p).split(sep).filter(Boolean);
+  let at = "/";
+  let hops = 0;
+  while (rest.length > 0) {
+    const name = rest.shift() as string;
+    if (name === ".") continue;
+    if (name === "..") {
+      at = dirname(at);
+      continue;
+    }
+    const next = join(at, name);
+    const st = lstatSync(next);
+    out.push([next, st]);
+    if (st.isSymbolicLink()) {
+      if (++hops > 40) throw new Error(`too many symlinks resolving ${p}`);
+      const target = readlinkSync(next);
+      if (isAbsolute(target)) at = "/";
+      rest.unshift(...target.split(sep).filter(Boolean));
+    } else {
+      at = next;
+    }
+  }
+  return out;
 }
 
 /**

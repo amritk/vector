@@ -125,7 +125,9 @@ Without a key, write `contracts/<name>.json` yourself against
   value printed under a name carries it: `{"hex": "0b0b…", "label": "Key"}`
   for `Key = 0b0b…`. Take args and expected value from one test case (cite
   the subsection that holds it); the expected value is never a value an
-  argument is bound to. A `str` must be printed whole (quoted, in a code
+  argument is bound to. Where a case is printed for several variants
+  (`HMAC-SHA-256 =`, `HMAC-SHA-512 =`), use the row whose number is in the
+  function's name. A `str` must be printed whole (quoted, in a code
   span, alone on a line, or after `=`/`:` at a line's end) and on one line
   with the other strings of its vector.
   Every vector has a `source` for its expected value:
@@ -156,8 +158,9 @@ bun run vector spec check contracts/<name>.json --spec specs/<name>.md --run-sou
 ```
 
 Read every `command` source the model proposed before you pass
-`--run-sources`: it runs on your machine, as you, unsandboxed, and a process
-it detaches with `setsid` outlives the timeout. Then repair every gate failure it lists (fidelity, completeness, coverage,
+`--run-sources`: it runs on your machine, as you, with your files and
+network. On Linux nothing it starts outlives it; elsewhere a process it
+detaches with `setsid` outlives the timeout. Then repair every gate failure it lists (fidelity, completeness, coverage,
 provenance, typing, domain) and re-run until it prints `CONTRACT_VALID` and
 exits 0. With no module yet it warns that signatures were not checked; that
 is expected here — `run --nish-root` (step 5) checks them against the
@@ -278,9 +281,12 @@ signature gate runs), `check` it, then `run` it.
 Literals `{"hex"}`, `{"ascii"}` (both take `"label"`: the name the value is
 printed under), `{"int"}`, `{"bool"}`, `{"null":true}`,
 `{"concat":[…]}`; `{"var": name}`; `{"call": fn, "args": […]}`;
-`{"op": …, "args": […]}` with `len concat slice zeros fill flipBit le64 unwrap
-isNull notNull + - * % < <= > >= == != and or not implies`. `unwrap` of a null
-fails the sample. `where` may not call the functions under test.
+`{"op": …, "args": […]}` with `len concat slice zeros fill flipBit xor bitAnd
+bitOr le64 unwrap isNull notNull + - * % < <= > >= == != and or not implies`.
+`xor`/`bitAnd`/`bitOr` combine two byte strings byte by byte, as long as the
+longer (the shorter reads as zeros past its end), so `xor(key, fill(0x36,
+64))` is HMAC's inner padded key for a key of at most 64 bytes. `unwrap` of a
+null fails the sample. `where` may not call the functions under test.
 
 ## Limits — say them
 

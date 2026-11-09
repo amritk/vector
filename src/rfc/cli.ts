@@ -29,6 +29,7 @@ import { exportsCheck, moduleDiff, renderExports } from "./exports.ts";
 import type { ExtractDeps } from "./extract.ts";
 import {
   frozenCheck,
+  readChecked,
   renderFrozen,
   sourceFile,
   sourcePathProblem,
@@ -43,7 +44,12 @@ import {
   reportStatus,
 } from "./report.ts";
 import type { RfcDocument } from "./rfctext.ts";
-import { runNishTest, runSourceCommands } from "./run.ts";
+import {
+  type Containment,
+  runNishTest,
+  runSourceCommands,
+  sourceContainment,
+} from "./run.ts";
 import { sampleContract } from "./sample.ts";
 import { parseDocument } from "./spectext.ts";
 
@@ -220,12 +226,14 @@ function need<T>(v: T | undefined, what: string): T {
   return v;
 }
 
-function readSpec(path: string): RfcDocument {
-  let text: string;
-  try {
-    text = readFileSync(path, "utf8");
-  } catch {
-    throw new UsageError(`cannot read ${path}`);
+function readSpec(path: string, given?: string): RfcDocument {
+  let text = given;
+  if (text === undefined) {
+    try {
+      text = readFileSync(path, "utf8");
+    } catch {
+      throw new UsageError(`cannot read ${path}`);
+    }
   }
   try {
     return parseDocument(text);
@@ -255,26 +263,41 @@ function loadSources(
     }
     const found = sourceFile(src, contractPath);
     if (!found) continue;
-    const problem = sourcePathProblem(src, contractPath, found);
-    if (problem)
+    let got: ReturnType<typeof readChecked>;
+    try {
+      got = readChecked(found, (f) => sourcePathProblem(src, contractPath, f));
+    } catch {
+      throw new UsageError(`cannot read ${found}`);
+    }
+    if ("problem" in got)
       throw new UsageError(
-        `${contractPath}: ${problem}${src.id === main ? " (to check against another file, give it with --spec)" : ""}`,
+        `${contractPath}: ${got.problem}${src.id === main ? " (to check against another file, give it with --spec)" : ""}`,
       );
-    docs.set(src.id, readSpec(found));
+    docs.set(src.id, readSpec(found, got.text));
   }
   return docs;
 }
 
+const CONTAINMENT_NOTE: Record<Containment, string> = {
+  namespace:
+    "Each runs in its own PID namespace: at its timeout or its exit, everything it started inside it is killed. A service it asks to start something (a tmux server already running, systemd-run, at, docker) is outside it, and setuid tools such as sudo do not work in it.",
+  marked:
+    "At each one's timeout or exit, every process it started is killed, found by a variable they inherit; one that clears its environment escapes (no PID namespace here: user namespaces are off or restricted).",
+  group:
+    "A timeout kills each command's process group, but not a process it detached with setsid (no PID namespace here: not Linux).",
+};
+
 /**
  * A warning when `--run-sources` is about to run commands from a contract that
  * is not in the current repository's contracts/, or undefined. The commands
- * run with the user's privileges; a timeout kills each one's process group,
- * but not a process it moved out of it (setsid).
+ * run with the user's privileges, files and network; it says how far
+ * sourceContainment keeps what they start from outliving them.
  */
 export function foreignCommandsWarning(
   contractPath: string,
   c: RfcContract,
   cwd: string = process.cwd(),
+  containment: Containment = sourceContainment(),
 ): string | undefined {
   const cmds = c.clauses.flatMap((k) =>
     k.kind === "vector" && "command" in k.source
@@ -292,7 +315,7 @@ export function foreignCommandsWarning(
   if (home && real(contractPath).startsWith(`${home}/`)) return undefined;
   return [
     `warning: --run-sources runs ${cmds.length} shell command(s) from ${contractPath}, which is not in ${home ? `${home}/` : "a repository's contracts/"}.`,
-    "They run as you, with sh -c, from the contract's directory. A timeout kills each command's process group, but not a process it detached with setsid. Read them first:",
+    `They run as you, with sh -c, from the contract's directory, with your files and network. ${CONTAINMENT_NOTE[containment]} Read them first:`,
     ...cmds,
   ].join("\n");
 }
