@@ -159,6 +159,20 @@ export function evalPure(e: Expr, env: Record<string, Value>): Value {
       src[bit >> 3] ^= 1 << (bit & 7);
       return src;
     }
+    case "xor":
+    case "bitAnd":
+    case "bitOr": {
+      // The shorter reads as zeros past its end, as the emitted test does.
+      const x = b(0);
+      const y = b(1);
+      const out = new Uint8Array(Math.max(x.length, y.length));
+      for (let i = 0; i < out.length; i++) {
+        const p = x[i] ?? 0;
+        const q = y[i] ?? 0;
+        out[i] = e.op === "xor" ? p ^ q : e.op === "bitAnd" ? p & q : p | q;
+      }
+      return out;
+    }
     case "unwrap": {
       const v = a[0]();
       if (v === null) throw new Undefined();
@@ -311,6 +325,11 @@ function lenTerm(e: Expr, vars: Map<string, Var>): string | null {
     const l = lenTerm(e.args[0], vars);
     const r = lenTerm(e.args[1], vars);
     return l && r ? `(+ ${l} ${r})` : null;
+  }
+  if (e.op === "xor" || e.op === "bitAnd" || e.op === "bitOr") {
+    const l = lenTerm(e.args[0], vars);
+    const r = lenTerm(e.args[1], vars);
+    return l && r ? `(ite (>= ${l} ${r}) ${l} ${r})` : null;
   }
   if (e.op === "zeros") return nonNeg(intTerm(e.args[0], vars));
   if (e.op === "fill") return nonNeg(intTerm(e.args[1], vars));

@@ -405,6 +405,14 @@ it, one at a time:
 The third passes every test vector RFC 8439 prints: only the property, which
 rebuilds §2.8's MAC input from the other functions, catches it.
 
+Byte `xor`, `bitAnd` and `bitOr` (the shorter operand reads as zeros past its
+end) let a property rebuild a keyed construction the same way. RFC 4231
+prints no key between 64 and 128 bytes, so its vectors pass an HMAC whose
+block-size test is `<` where RFC 2104 needs `<=`. A property over keys of 0 to
+64 bytes,
+`hmacSha256(k, m) == sha256(concat(xor(k, fill(0x5c, 64)), sha256(concat(xor(k, fill(0x36, 64)), m))))`,
+fails at `len(k) = 64`, a Z3 boundary (and its SHA-512 twin at 128).
+
 ### PR gates
 
 Four checks for CI on a PR, each deterministic and failing closed: a git

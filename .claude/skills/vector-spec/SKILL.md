@@ -281,9 +281,12 @@ signature gate runs), `check` it, then `run` it.
 Literals `{"hex"}`, `{"ascii"}` (both take `"label"`: the name the value is
 printed under), `{"int"}`, `{"bool"}`, `{"null":true}`,
 `{"concat":[…]}`; `{"var": name}`; `{"call": fn, "args": […]}`;
-`{"op": …, "args": […]}` with `len concat slice zeros fill flipBit le64 unwrap
-isNull notNull + - * % < <= > >= == != and or not implies`. `unwrap` of a null
-fails the sample. `where` may not call the functions under test.
+`{"op": …, "args": […]}` with `len concat slice zeros fill flipBit xor bitAnd
+bitOr le64 unwrap isNull notNull + - * % < <= > >= == != and or not implies`.
+`xor`/`bitAnd`/`bitOr` combine two byte strings byte by byte, as long as the
+longer (the shorter reads as zeros past its end), so `xor(key, fill(0x36,
+64))` is HMAC's inner padded key for a key of at most 64 bytes. `unwrap` of a
+null fails the sample. `where` may not call the functions under test.
 
 ## Limits — say them
 
