@@ -1059,6 +1059,15 @@ Output = abab
 Input: \`cdcd\`
 
 Output = cdcd
+
+## 8. Variants
+
+\`\`\`
+Key          = 0b0b0b0b
+Data         = 4869205468657265
+HMAC-SHA-256 = b0344c61d8db38535ca8afceaf0bf12b
+HMAC-SHA-512 = 87aa7cdea5ef619d4ff0b4241a1d6cb0
+\`\`\`
 `;
   const KEY1 = "0b0b0b0b0b0b0b0b0b0b0b0b";
   const DATA1 = "4869205468657265";
@@ -1084,6 +1093,14 @@ Output = cdcd
         params: [{ name: "s", type: "string" }],
         returns: "string",
       },
+      ...["mac256", "mac512"].map((name) => ({
+        name,
+        params: [
+          { name: "key", type: "bytes" as const },
+          { name: "data", type: "bytes" as const },
+        ],
+        returns: "bytes" as const,
+      })),
     );
     c.clauses.push({
       kind: "vector",
@@ -1221,6 +1238,45 @@ Output = cdcd
     expect(gate("5", "b64", [{ str: "fo" }], { str: "Zg==" })).toEqual([
       '[fidelity] V: args[0] "fo", expect "Zg==" are each printed in §5 ("Base64"), but never on one line together, so nothing pairs them as one test case',
     ]);
+  });
+
+  test("a variant's value is used only for the function that names it", () => {
+    const SHA256 = "b0344c61d8db38535ca8afceaf0bf12b";
+    const SHA512 = "87aa7cdea5ef619d4ff0b4241a1d6cb0";
+    const args = [h("0b0b0b0b", "Key"), h(DATA1, "Data")];
+    expect(gate("8", "mac512", args, h(SHA512, "HMAC-SHA-512"))).toEqual([]);
+    expect(gate("8", "mac256", args, h(SHA256, "HMAC-SHA-256"))).toEqual([]);
+    // RFC 4231's other row, printed for the same test case: refused.
+    expect(gate("8", "mac512", args, h(SHA256, "HMAC-SHA-256"))).toEqual([
+      '[fidelity] V.expect: the value is printed under "HMAC-SHA-256" in §8 ("Variants"), but mac512 names 512, as in "HMAC-SHA-512": a vector uses the value printed for the variant its function computes',
+    ]);
+  });
+
+  test("a function named for no variant is warned about", () => {
+    const c = hexContract();
+    c.functions.push({
+      name: "mac",
+      params: [
+        { name: "key", type: "bytes" },
+        { name: "data", type: "bytes" },
+      ],
+      returns: "bytes",
+    });
+    c.clauses.push({
+      kind: "vector",
+      id: "V",
+      title: "a printed vector",
+      covers: ["R-LOWER"],
+      source: { cite: { section: "8" } },
+      call: "mac",
+      args: [h("0b0b0b0b", "Key"), h(DATA1, "Data")],
+      expect: h("87aa7cdea5ef619d4ff0b4241a1d6cb0", "HMAC-SHA-512"),
+    } as VectorClause);
+    const r = runGates(c, { docs: docs(macDoc), commands: passed("V-CMD") });
+    expect(messages(r)).toEqual([]);
+    expect(r.warnings.map((w) => `${w.at}: ${w.message}`)).toContain(
+      'V.expect: the value is printed under "HMAC-SHA-512", one of "HMAC-SHA-512" or "HMAC-SHA-256" in §8 ("Variants"), and nothing in the name mac says which variant it computes: not checked that this is its own',
+    );
   });
 
   const section4 = (id: string) => {

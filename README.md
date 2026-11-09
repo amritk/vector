@@ -180,10 +180,12 @@ printed value, not to any run of matching bytes:
 - **Decimals.** In an RFC, an unnamed run of digit-only lines, or one under
   a name that calls it a number (`Input scalar as a number (base 10):`), is
   a decimal number, not bytes, and is not a value.
-
-What a label cannot do: say which algorithm a row is for. A contract that
-uses the `HMAC-SHA-384` row as `hmacSha512`'s expected value passes
-fidelity, with `"label": "HMAC-SHA-384"` in plain view for the reviewer.
+- **Variants.** Where the section prints the same case for several variants,
+  under labels that differ only in a number (`HMAC-SHA-224` … `HMAC-SHA-512`),
+  the label's number must be in the called function's name: the
+  `HMAC-SHA-384` row as `hmacSha512`'s expected value is refused. A function
+  named for none of them (`hmac`) gets a warning, since nothing says which
+  variant it computes.
 
 **When a section states `null`, `true` or `false`.** Only a requirement the
 vector covers states a result, and only through its own quote. The rule is an

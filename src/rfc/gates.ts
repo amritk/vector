@@ -386,6 +386,7 @@ function checkFidelity(
     const word = resultWord(k.expect);
     const expect = cited && word === null ? check(k.expect, "expect") : [];
     oneTestCase(k.id, where, sec, args, expect, issues);
+    ownVariant(k, where, sec, [...args, ...expect], issues, warnings);
     if (!cited) continue;
     if (word !== null) {
       const why = statesResult(c, docs, k, at, sec, word);
@@ -978,6 +979,71 @@ function literalCheck(
     return [];
   };
   return check;
+}
+
+/**
+ * A section can print one test case's output for several variants, under
+ * labels that differ only in a number: "HMAC-SHA-224", "HMAC-SHA-256",
+ * "HMAC-SHA-384", "HMAC-SHA-512" (RFC 4231). Each is a real printed value of
+ * that case, so only the function can say which one is its own. A value bound
+ * to such a label must be the variant the called function names: the label's
+ * distinguishing number must be in the function's name. A name holding
+ * another variant's number instead is refused (the SHA-384 row as hmacSha512's
+ * result); a name holding none of them is a warning, since nothing ties the
+ * function to one variant.
+ */
+function ownVariant(
+  k: VectorClause,
+  where: string,
+  sec: RfcSection,
+  bounds: Bound[],
+  issues: GateIssue[],
+  warnings: GateWarning[],
+): void {
+  const skeleton = (l: string) =>
+    normalizeText(l).toLowerCase().replace(/\d+/g, "#");
+  const digits = (l: string) => normalizeText(l).match(/\d+/g) ?? [];
+  const printed = [
+    ...new Map(
+      hexValues(sec)
+        .flatMap((v) => (v.label === null ? [] : [v.label]))
+        .map((l) => [normalizeText(l).toLowerCase(), l]),
+    ).values(),
+  ];
+  const named = new Set(digits(k.call));
+  for (const b of bounds) {
+    if (!("label" in b) || b.label === null) continue;
+    const label = b.label;
+    const mine = digits(label);
+    const siblings = printed.filter(
+      (l) => skeleton(l) === skeleton(label) && !sameLabel(l, label),
+    );
+    if (siblings.length === 0) continue;
+    // The label's numbers where a sibling differs, and the siblings' there.
+    const own = new Set<string>();
+    const theirs = new Map<string, string>();
+    for (const sib of siblings) {
+      digits(sib).forEach((d, i) => {
+        if (d === mine[i]) return;
+        own.add(mine[i]);
+        if (!theirs.has(d)) theirs.set(d, sib);
+      });
+    }
+    if ([...own].every((d) => named.has(d))) continue;
+    const other = [...theirs].find(([d]) => named.has(d) && !own.has(d));
+    if (other) {
+      issues.push({
+        gate: "fidelity",
+        at: `${k.id}.${b.at}`,
+        message: `the value is printed under "${label}" in ${where} ("${sec.title}"), but ${k.call} names ${other[0]}, as in "${other[1]}": a vector uses the value printed for the variant its function computes`,
+      });
+      continue;
+    }
+    warnings.push({
+      at: `${k.id}.${b.at}`,
+      message: `the value is printed under "${label}", one of ${quoted([label, ...siblings])} in ${where} ("${sec.title}"), and nothing in the name ${k.call} says which variant it computes: not checked that this is its own`,
+    });
+  }
 }
 
 /**

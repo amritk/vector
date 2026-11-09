@@ -125,7 +125,9 @@ Without a key, write `contracts/<name>.json` yourself against
   value printed under a name carries it: `{"hex": "0b0b…", "label": "Key"}`
   for `Key = 0b0b…`. Take args and expected value from one test case (cite
   the subsection that holds it); the expected value is never a value an
-  argument is bound to. A `str` must be printed whole (quoted, in a code
+  argument is bound to. Where a case is printed for several variants
+  (`HMAC-SHA-256 =`, `HMAC-SHA-512 =`), use the row whose number is in the
+  function's name. A `str` must be printed whole (quoted, in a code
   span, alone on a line, or after `=`/`:` at a line's end) and on one line
   with the other strings of its vector.
   Every vector has a `source` for its expected value:
