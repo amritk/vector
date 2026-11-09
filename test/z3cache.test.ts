@@ -129,6 +129,29 @@ describe("the per-user z3 directory", () => {
     );
   });
 
+  test("a directory above it that others can write is refused, unless sticky", () => {
+    const shared = scratch();
+    chmodSync(shared, 0o777);
+    const root = join(shared, "cache", "z3");
+    expect(() => privateDir(root)).toThrow(
+      `${shared} above it is writable by others (mode 777) and not sticky`,
+    );
+    // A sticky one, like /tmp, is fine: others cannot rename what is in it.
+    chmodSync(shared, 0o1777);
+    expect(() => privateDir(root)).not.toThrow();
+  });
+
+  test("a directory above it reached through a symlink is checked as resolved", () => {
+    const shared = scratch();
+    chmodSync(shared, 0o777);
+    mkdirSync(join(shared, "real"), { mode: 0o700 });
+    const mine = scratch();
+    symlinkSync(join(shared, "real"), join(mine, "link"));
+    expect(() => privateDir(join(mine, "link", "z3"))).toThrow(
+      `${shared} above it is writable by others`,
+    );
+  });
+
   test("a symlink is refused", () => {
     const real = scratch();
     chmodSync(real, 0o700);
@@ -144,6 +167,12 @@ describe("the per-user z3 directory", () => {
       mkdirSync(root, { mode: 0o700 });
       chownSync(root, 65534, 65534);
       expect(() => privateDir(root)).toThrow("it is owned by uid 65534, not 0");
+      const theirs = join(scratch(), "theirs");
+      mkdirSync(theirs, { mode: 0o755 });
+      chownSync(theirs, 65534, 65534);
+      expect(() => privateDir(join(theirs, "z3"))).toThrow(
+        `${theirs} above it is owned by uid 65534, not 0 or root`,
+      );
     },
   );
 });

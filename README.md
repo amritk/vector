@@ -755,8 +755,9 @@ file. It needs **nothing on `PATH`** — no Node, no separate z3 install, no `bu
 install`, no repo checkout, no `ANTHROPIC_API_KEY` for the verify/fixture paths.
 On first use it unpacks z3 into `$XDG_CACHE_HOME/vector/z3` (else
 `~/.cache/vector/z3`), a directory it creates with mode 0700 and refuses to use
-if it is a symlink, another user's, or writable by others; every run checks the
-unpacked files against the embedded copy before executing them.
+if it is a symlink, another user's, or writable by others, or if any directory
+above it is another user's or writable by others without the sticky bit; every
+run checks the unpacked files against the embedded copy before executing them.
 Drop it anywhere and run it:
 
 ```bash
