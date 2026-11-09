@@ -2,16 +2,22 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import hkdfContract from "../contracts/rfc5869-hkdf-sha256.json";
 import aeadContract from "../contracts/rfc8439-chacha20-poly1305.json";
-import type {
-  PropertyClause,
-  RfcContract,
-  VectorClause,
+import {
+  type PropertyClause,
+  type RfcContract,
+  type VectorClause,
+  validateContractShape,
 } from "../src/rfc/contract.ts";
 import { emitNishTest } from "../src/rfc/emit-nish.ts";
 import { extractContract } from "../src/rfc/extract.ts";
 import { exportedSignatures, runGates } from "../src/rfc/gates.ts";
 import { hexRuns, normativeSentences, parseRfc } from "../src/rfc/rfctext.ts";
-import { judge, parseTestOutput, runNishTest } from "../src/rfc/run.ts";
+import {
+  checkTranscript,
+  judge,
+  parseTestOutput,
+  runNishTest,
+} from "../src/rfc/run.ts";
 import { evalPure, sampleContract } from "../src/rfc/sample.ts";
 
 // RFC → contract → Nish test. The RFC texts in rfcs/ are rfc-editor.org's
@@ -309,6 +315,60 @@ describe("the emitted Nish test", () => {
   });
 });
 
+describe("contract free text cannot become code (#23)", () => {
+  const titleInjection = "x */\nconst injectedByTitle = (): i32 => 7\n/** y";
+  const headerInjection = 'Spec 0001\nconsole.log("INJECTED")\n//';
+
+  test("the shape gate refuses control characters in free text", () => {
+    const c = clone(hkdf);
+    c.source.title = headerInjection;
+    c.clauses[0].title = titleInjection;
+    c.requirements[0].quote = `${c.requirements[0].quote}\u2028`;
+    const errors = validateContractShape(c).join("\n");
+    expect(errors).toContain(
+      "contract.source.title: one line of text, without control characters (found U+000A)",
+    );
+    expect(errors).toContain("clauses[0].title: one line of text");
+    expect(errors).toContain("(found U+2028)");
+    expect(validateContractShape(hkdf)).toEqual([]);
+  });
+
+  test("tab, LF and CR in a string alphabet are values, not free text", () => {
+    const hex = JSON.parse(readFileSync("contracts/example-hex.json", "utf8"));
+    expect(JSON.stringify(hex)).toContain('"\\n"');
+    expect(validateContractShape(hex)).toEqual([]);
+  });
+
+  test("the emitter keeps titles and the regenerate command in comments", () => {
+    const c = clone(hkdf);
+    c.source.title = headerInjection;
+    c.clauses[0].title = titleInjection;
+    const src = emitNishTest(c, new Map(), {
+      regenerate: 'vector spec emit a.json -o "x\nconsole.log(1)"',
+    });
+    const lines = src.split("\n");
+    expect(lines.some((l) => l.startsWith("const injectedByTitle"))).toBe(
+      false,
+    );
+    expect(lines.some((l) => l.startsWith("console.log"))).toBe(false);
+    expect(src).toContain(
+      " * x * / const injectedByTitle = (): i32 => 7 /** y",
+    );
+    expect(src).toContain('// Spec 0001 console.log("INJECTED") //).');
+    // Every comment opened before the first import is closed by a "*/" of its own.
+    const head = src.slice(0, src.indexOf("import "));
+    expect(head.split("\n").every((l) => l === "" || l.startsWith("//"))).toBe(
+      true,
+    );
+    // In the test name the title is a JSON string, its line break escaped.
+    for (const l of lines.filter((l) => l.includes("injectedByTitle")))
+      expect(
+        l.startsWith(" * x * / ") ||
+          l.includes("] x */\\nconst injectedByTitle"),
+      ).toBe(true);
+  });
+});
+
 describe("reading the run back", () => {
   test("maps PASS/FAIL lines to clauses and requirements", () => {
     const out = [
@@ -333,6 +393,80 @@ describe("reading the run back", () => {
       .map((k) => `PASS  [${k.id}] t`)
       .join("\n");
     expect(judge(hkdf, parseTestOutput(hkdf, out), 134).status).toBe("ERROR");
+  });
+});
+
+describe("the transcript must be the test's own (#22)", () => {
+  const N = "0123abcd";
+  const all = hkdf.clauses.map((k) => `PASS  [${k.id}] t`);
+  const bits = "1".repeat(hkdf.clauses.length);
+  const verdict = (out: string, exitCode = 0) => {
+    const clauses = parseTestOutput(hkdf, out);
+    const integrity = checkTranscript(hkdf, out, N, clauses);
+    return { integrity, ...judge(hkdf, clauses, exitCode, integrity) };
+  };
+
+  test("an honest run with its end line is SATISFIED", () => {
+    const v = verdict([...all, `vector-done ${N} ${bits}`].join("\n"));
+    expect(v.integrity).toEqual([]);
+    expect(v.status).toBe("SATISFIED");
+  });
+
+  test("every clause PASS but no end line (early exit) is an ERROR", () => {
+    const v = verdict(all.join("\n"));
+    expect(v.status).toBe("ERROR");
+    expect(v.integrity[0]).toContain("never reached the end of main");
+  });
+
+  test("an end line with another nonce does not count", () => {
+    const v = verdict([...all, `vector-done ffff ${bits}`].join("\n"));
+    expect(v.status).toBe("ERROR");
+    expect(v.integrity.join("\n")).toContain("wrong nonce");
+  });
+
+  test("a forged PASS ahead of the real FAIL is an ERROR, not last-wins", () => {
+    const id = hkdf.clauses[1].id;
+    const out = [
+      `PASS  [${id}] forged`,
+      ...all.map((l) =>
+        l.startsWith(`PASS  [${id}]`) ? `FAIL  [${id}] t` : l,
+      ),
+      `vector-done ${N} 1${"0"}${"1".repeat(hkdf.clauses.length - 2)}`,
+    ].join("\n");
+    const v = verdict(out, 1);
+    expect(v.status).toBe("ERROR");
+    expect(v.integrity.join("\n")).toContain(`[${id}] reported 2 times`);
+  });
+
+  test("a PASS line that contradicts what the clause returned is an ERROR", () => {
+    const id = hkdf.clauses[0].id;
+    const v = verdict(
+      [...all, `vector-done ${N} 0${"1".repeat(hkdf.clauses.length - 1)}`].join(
+        "\n",
+      ),
+    );
+    expect(v.status).toBe("ERROR");
+    expect(v.integrity.join("\n")).toContain(
+      `[${id}] returned false to main, but its line says pass`,
+    );
+  });
+
+  test("clause lines after the end line are an ERROR", () => {
+    const id = hkdf.clauses[0].id;
+    const v = verdict(
+      [...all.slice(1), `vector-done ${N} ${bits}`, `PASS  [${id}] late`].join(
+        "\n",
+      ),
+    );
+    expect(v.status).toBe("ERROR");
+    expect(v.integrity.join("\n")).toContain("after the test's main");
+  });
+
+  test("the emitted main prints the end line from its first argument", () => {
+    const src = emitNishTest(hkdf, new Map());
+    expect(src).toContain("process.argv[1]");
+    expect(src).toContain("console.log(`vector-done ${nonce} ${ran}`);");
+    expect(src).not.toContain("  return t.done();");
   });
 });
 

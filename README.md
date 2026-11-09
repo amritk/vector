@@ -74,8 +74,11 @@ A contract (`schemas/rfc-contract.json`) has:
 - **exclusions**: the MUST/SHALL sentences a functional test cannot observe
   (nonce uniqueness, constant-time comparison), each with its reason;
 - **functions**: the implementation's signatures (`bytes`, `bytes?`,
-  `string`, `string?`, `i32`, `u32`, `bool`), plus any reference function
-  from another module;
+  `string`, `string?`, `i32`, `u32`, `bool`, and `secret-bytes` for a nish
+  `Secret<u8[]>`, with `secret-bytes?` as a result only), plus any
+  reference function from another module. In the contract a secret is its
+  bytes: the generated test copies an argument into a `Secret`, wipes it
+  after the call, and reads a secret result with `expose`;
 - **clauses**: **vectors** (the RFC's own known answers) and **properties**
   (`forall` a typed domain, `where` restricts it, `assert` must hold).
 
@@ -147,12 +150,40 @@ Every vector says where its expected value comes from (`source`):
 
 | `source` | The expected value is | Checked by |
 |---|---|---|
-| `{"cite": {"section": "A.1"}}` (`"source"` optional) | printed in that section, with the args | fidelity |
+| `{"cite": {"section": "A.1"}}` (`"source"` optional) | printed in that section, with the args, as one test case (see *What a printed value is*) | fidelity |
 | `{"command": "…"}`, with `"section"` for the args | the command's trimmed stdout (lowercase hex for bytes) | `--run-sources` only (`sh -c` from the contract's directory, 30 s); otherwise reported as not run, never as passed. A timeout, non-zero exit or other output fails |
 | `{"spec": "4.2"}`, with `"section"` for the args | `null` or a `bool` that section states | provenance: a requirement the vector covers, cited to that section, must state `null` / `true` / `false` as the result, by the rule below |
 
 A vector without a source fails the shape gate. A `cite` source for a `null` or
 `bool` is held to the same rule by fidelity.
+
+**What a printed value is.** Fidelity binds each literal of a vector to one
+printed value, not to any run of matching bytes:
+
+- **Whole values.** A `hex` (or `ascii` read as bytes) must equal a whole
+  printed value — a run of hex lines, a hexdump, a `0x…` or colon-hex value,
+  or a `Key = 0b0b…` line and the lines that continue it. Part of one (a
+  prefix of a key, the tail of a tag) is refused; `concat` joins whole
+  values. A `str` must be printed whole: in quotes, in a markdown code span,
+  on a line of its own, or ending a line after `=` or `:` (`"Zg"` is not
+  printed by `"Zg=="`).
+- **Labels.** A value printed under a name (`Key =`, `Input scalar:`, a
+  short line such as `Plaintext:` above a dump) must give that name:
+  `{"hex": "0b0b…", "label": "Key"}`. A label the section does not print the
+  value under is refused.
+- **One test case.** The expected value may not be bound to the same label
+  as an argument (a key used as the expected MAC). Strings must share a
+  printed line (`BASE64("f") = "Zg=="`). A label printed several times in
+  the cited section is read in rounds — the k-th `Key` goes with the k-th
+  `Data` and the k-th `HMAC-SHA-256` — so citing a parent section cannot mix
+  values from two test cases.
+- **Decimals.** In an RFC, an unnamed run of digit-only lines, or one under
+  a name that calls it a number (`Input scalar as a number (base 10):`), is
+  a decimal number, not bytes, and is not a value.
+
+What a label cannot do: say which algorithm a row is for. A contract that
+uses the `HMAC-SHA-384` row as `hmacSha512`'s expected value passes
+fidelity, with `"label": "HMAC-SHA-384"` in plain view for the reviewer.
 
 **When a section states `null`, `true` or `false`.** Only a requirement the
 vector covers states a result, and only through its own quote. The rule is an
@@ -218,7 +249,8 @@ section, and — by design — any descriptive sentence without a keyword, such 
 
 | Gate | Refuses |
 |---|---|
-| fidelity | a quote not in its cited section; a test-vector byte string not printed in its section (hexdumps, `0x…`, colon-hex split mid-byte across lines are all read); a `str` not printed there; an empty value (`hex ""`, `ascii ""`, `str ""`) where the section prints no `""` or `(0 octets)`, and a whitespace-only `ascii` not printed as hex; a labelled int not printed after its label |
+| shape | a contract that is not well formed, including free text (titles, quotes, reasons) with a line break or other control character: it is copied into comments of the generated test, and the emitter also keeps `*/` from closing them |
+| fidelity | a quote not in its cited section; a test-vector byte string not printed in its section as a whole value (hexdumps, `0x…`, `Key = …` lines, colon-hex split mid-byte across lines are all read), only part of one, without the `label` it is printed under, or under another label; a `str` not printed whole there; values from two test cases (strings never on one line, labelled values from different rounds) or an expected value bound to an argument's label; an empty value (`hex ""`, `ascii ""`, `str ""`) where the section prints no `""` or `(0 octets)`, and a whitespace-only `ascii` not printed as hex; a labelled int not printed after its label |
 | completeness | any MUST / MUST NOT / SHALL / SHALL NOT / REQUIRED sentence of the main source that is neither inside a requirement's quote nor an exclusion's (or sits outside every numbered section) |
 | provenance | a `spec` source whose section never states the expected `null`/`bool`; a `command` source that failed under `--run-sources` |
 | coverage | a binding requirement no clause checks; a clause citing a requirement the contract does not state |
@@ -244,6 +276,14 @@ bun run vector spec extract --spec rfcs/rfc5869.txt --module ../nish/std/crypto/
 bun run vector spec extract --spec-only --twice --spec specs/example-hex.md \
   --target nish/hex -o contracts/example-hex.json      # from the spec alone, two runs compared
 ```
+
+`--run-sources` runs each `command` source with `sh -c`, as you, with your
+files and network: it is not a sandbox. Read every command before you pass it,
+above all in a contract you did not write; when the contract is not in the
+current repository's `contracts/`, `check` prints the commands it is about to
+run on stderr. A command that runs past its 30 s timeout is killed with its
+process group, but a process it moved out of the group (`setsid`, a daemon)
+keeps running.
 
 `check` exits 0 when the contract is valid, `run` when every clause passed
 (`SATISFIED`); `VIOLATED` / `ERROR` / `INVALID` exit 1, usage errors 2.
@@ -404,6 +444,15 @@ followed, under `specs/` or `rfcs/`; frozen refuses one anywhere else
 refuses an absolute path. So a contract can't name code as its spec to move it
 to the spec side.
 
+Every command that reads a contract (`check`, `emit`, `run`, `mutate`) also
+treats it as input from anyone: a `sources[].path` must lead, symlinks
+followed, to a file beside the contract or under a `specs/` or `rfcs/` beside
+the contract's directory or its parent (or vector's own), with no hidden
+directory (`.git`, `.ssh`, `.env`) on the way. Anything else is a usage error
+before the file is read, so a contract can't pull a private file's text into
+gate messages. `--spec` names the main source's file directly and is not
+limited: that path comes from you.
+
 It also refuses a contract whose **main** source no longer hashes to its
 `source.sha256` (or that has none). Other `sources` are not hashed: their
 quotes are still checked by the fidelity gate. Finding no contract is a
@@ -500,6 +549,25 @@ that *does* reach the code is to verify the LLVM IR nish emits against an
 executable spec (SAW/Cryptol style, or Z3 over bit-vectors for the fixed-size
 primitives); the contract's requirements and properties are the statement such
 a proof would discharge.
+
+So `SATISFIED` means exactly this: the implementation returns the spec's
+printed vectors, and the contract's properties hold at every sample. It does
+not mean the implementation conforms where neither reaches. RFC 4231 prints no
+HMAC key between 64 and 128 bytes long, so an off-by-one in the SHA-512
+block-size test (`<=` for `<`) passes every RFC vector; a contract catches it
+only with a vector of its own at that length (a `command` source) or a
+property that pins the boundary. Run `vector spec mutate` to see which
+plausible bugs the contract cannot tell apart from the real code; each
+survivor is a gap of this kind.
+
+The module under test also runs in the test's own process, and could print
+`PASS` lines itself. So `run` only trusts a transcript that ends with the line
+the generated `main` prints after every clause has returned: a fresh per-run
+nonce (passed as the program's argument), then what each clause returned. An
+early exit, a clause reported twice, a line after that end, or a line that
+disagrees with its clause's return value makes the run `ERROR`. A module
+written to read the nonce from its own argv could still forge a run; `mutate`
+is the check against that (a gamed module's mutants all survive).
 
 ---
 
@@ -683,6 +751,10 @@ bun run build      # → dist/vector
 `dist/vector` bundles the CLI, the engine, and a native `z3` solver into one
 file. It needs **nothing on `PATH`** — no Node, no separate z3 install, no `bun
 install`, no repo checkout, no `ANTHROPIC_API_KEY` for the verify/fixture paths.
+On first use it unpacks z3 into `$XDG_CACHE_HOME/vector/z3` (else
+`~/.cache/vector/z3`), a directory it creates with mode 0700 and refuses to use
+if it is a symlink, another user's, or writable by others; every run checks the
+unpacked files against the embedded copy before executing them.
 Drop it anywhere and run it:
 
 ```bash

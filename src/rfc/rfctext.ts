@@ -31,6 +31,11 @@ export interface RfcSection {
    * fenced block or an indented code line), else null. Markdown only.
    */
   codeLines?: (string | null)[];
+  /**
+   * Per line of `lines`, its inline code spans (`` `abc` ``), whose backticks
+   * the line itself drops: each is a value printed whole. Markdown only.
+   */
+  spanLines?: string[][];
 }
 
 export interface RfcDocument {
@@ -103,6 +108,18 @@ export function sectionText(sec: RfcSection): string {
 }
 
 /** The section's lines, each whitespace-collapsed, still one per line. */
+/**
+ * Per line of `sectionLines`, the inline code spans printed on it (markdown;
+ * none for an RFC), normalized like the line.
+ */
+export function sectionSpans(sec: RfcSection): string[][] {
+  return sec.lines.flatMap((l, i) =>
+    normalizeText(l) === ""
+      ? []
+      : [(sec.spanLines?.[i] ?? []).map((v) => normalizeText(v))],
+  );
+}
+
 export function sectionLines(sec: RfcSection): string {
   return sec.lines
     .map((l) => normalizeText(l))
@@ -122,26 +139,96 @@ const HEXDUMP_RE =
   /^\s*[0-9a-fA-F]{3,4}\s+((?:[0-9a-fA-F]{2} )*[0-9a-fA-F]{2})(?:\s{2,}.*)?$/;
 const PREFIXED_RE = /0x([0-9a-fA-F]+)/g;
 const BARE_TOKEN_RE = /^(?:[0-9a-fA-F]{2})+$/;
+// The name of a number printed in base 10 ("Input scalar as a number (base
+// 10)", RFC 7748 §5.2), whose digits are not bytes.
+const DECIMAL_LABEL_RE = /\b(?:decimal|base[ -]?10|number|integer)\b/i;
+// "Key =          0b0b0b0b…", "Data: 4869205468657265": a value printed after
+// its label on the same line (RFC 4231), whose run the next lines go on.
+// RFC 4231 §4.4 drops the "=" ("Key            aaaa…"), so a gap of two or
+// more spaces separates them too.
+const LABELLED_RE =
+  /^\s*(?:o\s+)?([A-Za-z][^:=]{0,79}?)(?:\s*[:=]\s*|\s{2,})((?:[0-9a-fA-F]{2})+(?:\s+(?:[0-9a-fA-F]{2})+)*)\s*$/;
 const COLON_RUN_RE =
   /(?<![0-9A-Za-z:])[0-9a-fA-F]{1,2}(?::[0-9a-fA-F]{1,2})+:?(?![0-9A-Za-z])/g;
 // An aside that is not itself a value: "(32 octets)", "(sender id=7)".
 const ASIDE_RE = /\s+\(([^()]*)\)\s*$/;
 
+/** One value printed in hex, and the name it is printed under, if any. */
+export interface HexValue {
+  hex: string;
+  /**
+   * "Key" for "Key = 00:01:…", "IKM" for "IKM = 0x0b…", "Ciphertext" for a
+   * dump under a "Ciphertext:" line; null when nothing names it.
+   */
+  label: string | null;
+}
+
+// A line that names the value printed below it: "Ciphertext:", "  AAD:",
+// "Plaintext::", or a short heading-like line with no colon ("The ChaCha20
+// Key", RFC 8439 A.5) that does not end a sentence.
+const LABEL_LINE_RE = /^\s*(?:o\s+)?([^\s:=][^:=]{0,79}?)\s*[:=]+\s*$/;
+// Never a line holding brackets or quotes: in a markdown spec that is the
+// line a byte list ("hexEncode([00 0f])") was read from, not its name.
+const SHORT_LABEL_RE = /^\s*([A-Za-z][^:=()[\]"'`]{0,39}?)\s*$/;
+const labelLine = (line: string): string | null => {
+  const named = LABEL_LINE_RE.exec(line);
+  if (named) return labelBefore(named[1]) || null;
+  const short = SHORT_LABEL_RE.exec(line);
+  return short && !/[.,;!?]$/.test(short[1]) ? normalizeText(short[1]) : null;
+};
+
+/** "o  Key = (" → "Key"; "" when nothing is left. */
+const labelBefore = (text: string): string =>
+  normalizeText(
+    text
+      .replace(/^\s*o\s+/, "")
+      .replace(/[\s(=:]+$/, "")
+      .replace(/^[\s:;,.)]+/, ""),
+  );
+
 /**
- * The runs of hex printed in a section. A run is consecutive hex-bearing lines
- * (blank lines do not end one, so a dump survives a page break); any other text
- * line ends it, and a labelled value ("0x…", "Key = 00:01:…") starts a new one,
- * so two labelled values are never glued together.
+ * The values printed in hex in a section, each with the label it is printed
+ * under. A value is consecutive hex-bearing lines (blank lines do not end
+ * one, so a dump survives a page break); any other text line ends it, and a
+ * labelled value ("0x…", "Key = 00:01:…") starts a new one, so two labelled
+ * values are never glued together; so does a label printed on the value's
+ * own first line ("Key =  0b0b…"), whose run the lines below continue.
+ * Lines of bare digit pairs with no hex letter and no 0x or colons are a
+ * decimal number, not bytes, and are left out, unless printed under a name
+ * that does not call them a number, or in a markdown spec, under no name ("Data:" over "4869205468657265" is hex;
+ * "Input scalar as a number (base 10):" over "31029842492115040904…" is not).
  */
-export function hexRuns(sec: RfcSection): string[] {
-  const runs: string[] = [];
+export function hexValues(sec: RfcSection): HexValue[] {
+  const values: HexValue[] = [];
+  // A markdown spec prints bytes on purpose (a byte list, a code block, a
+  // cell): there only a name calling them a number makes digits decimal.
+  const markdown = sec.hexLines !== undefined;
   let cur = "";
+  let label: string | null = null;
+  // Every line of the current value was bare digit pairs.
+  let bareOnly = true;
+  // The last text line, when it names what comes below it.
+  let pending: string | null = null;
   // The previous line ended inside a colon run, which this line may continue.
   let colonOpen = false;
   const flush = () => {
-    if (cur) runs.push(cur);
+    const decimal =
+      bareOnly &&
+      /^[0-9]+$/.test(cur) &&
+      ((label === null && !markdown) ||
+        (label !== null && DECIMAL_LABEL_RE.test(label)));
+    if (cur && !decimal) values.push({ hex: cur, label });
     cur = "";
+    label = null;
+    bareOnly = true;
     colonOpen = false;
+  };
+  const start = (name: string | null, bare: boolean) => {
+    if (cur === "") {
+      label = name !== null && name !== "" ? name : pending;
+      bareOnly = bare;
+      pending = null;
+    } else if (!bare) bareOnly = false;
   };
   for (const rawLine of sec.hexLines ?? sec.lines) {
     const aside = rawLine.match(ASIDE_RE);
@@ -153,26 +240,36 @@ export function hexRuns(sec: RfcSection): string[] {
     const dump = line.match(HEXDUMP_RE);
     if (dump) {
       if (colonOpen) flush();
+      start(null, false);
       cur += dump[1].replace(/ /g, "").toLowerCase();
       continue;
     }
     const prefixed = [...line.matchAll(PREFIXED_RE)];
     if (prefixed.length > 0) {
+      let from = 0;
       for (const m of prefixed) {
         flush();
+        const at = m.index ?? 0;
+        start(labelBefore(line.slice(from, at)), false);
         cur = m[1].toLowerCase();
+        from = at + m[0].length;
       }
       continue;
     }
     const colons = [...line.matchAll(COLON_RUN_RE)];
     if (colons.length > 0) {
+      let from = 0;
       colons.forEach((m, i) => {
         const at = m.index ?? 0;
-        const continues =
-          i === 0 && colonOpen && line.slice(0, at).trim() === "";
-        if (!continues) flush();
+        const before = line.slice(from, at);
+        const continues = i === 0 && colonOpen && before.trim() === "";
+        if (!continues) {
+          flush();
+          start(labelBefore(before), false);
+        }
         cur += m[0].replace(/:/g, "").toLowerCase();
-        const rest = line.slice(at + m[0].length).trim();
+        from = at + m[0].length;
+        const rest = line.slice(from).trim();
         // A run that reaches the end of the line may go on in the next one;
         // anything after it ("1f.  The key is…") ends the value.
         colonOpen = rest === "";
@@ -180,16 +277,32 @@ export function hexRuns(sec: RfcSection): string[] {
       });
       continue;
     }
+    const labelled = LABELLED_RE.exec(line);
+    if (labelled) {
+      flush();
+      // Named on its own line, all-digit hex ("Data = 4869205468657265",
+      // "Hi There") is still hex: only an unnamed run is taken as decimal.
+      start(labelBefore(labelled[1]), false);
+      cur = labelled[2].replace(/\s+/g, "").toLowerCase();
+      continue;
+    }
     const tokens = line.trim().split(/\s+/);
     if (tokens.every((t) => BARE_TOKEN_RE.test(t))) {
       if (colonOpen) flush();
+      start(null, true);
       cur += tokens.join("").toLowerCase();
       continue;
     }
     flush();
+    pending = labelLine(line);
   }
   flush();
-  return runs;
+  return values;
+}
+
+/** The hex of every value a section prints (see `hexValues`). */
+export function hexRuns(sec: RfcSection): string[] {
+  return hexValues(sec).map((v) => v.hex);
 }
 
 /** Does `hex` appear, byte-aligned, inside one of the section's hex runs? */
@@ -217,15 +330,40 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
  * section text, or "…the value of L" and a next line "5. Next" would match.
  */
 export function intLabelled(text: string, label: string, n: number): boolean {
+  return intRounds(text, label, n).length > 0;
+}
+
+// `label` then some integer; the value's own end is checked by `intValueRe`.
+const intLabelRe = (label: string) =>
+  new RegExp(
+    `(?<![0-9A-Za-z_.-])${escapeRe(normalizeText(label))}(?:[ \\t]*[=:][ \\t]*|[ \\t]+)(?=-?(?:0[xX])?[0-9a-fA-F]*[0-9])`,
+    "g",
+  );
+
+// `n` in decimal or 0x hex, not running into a longer identifier or number
+// (`1,000`, `4-5`, `12:30`, `255/256`, `1.5`, `1 000`).
+const intValueRe = (n: number) => {
   const hex = n
     .toString(16)
     .replace(/[a-f]/g, (d) => `[${d}${d.toUpperCase()}]`);
   const value = n < 0 ? `${n}` : `(?:${n}|0[xX]0*${hex})`;
-  // Neither end may run into a longer identifier (`MAX_L`, `T-L`, `x.L`) or
-  // a longer number (`1,000`, `4-5`, `12:30`, `255/256`, `1.5`, `1 000`).
-  return new RegExp(
-    `(?<![0-9A-Za-z_.-])${escapeRe(normalizeText(label))}(?:[ \\t]*[=:][ \\t]*|[ \\t]+)${value}(?![0-9A-Za-z_]|[.,:/-]\\d|[ \\t]\\d)`,
-  ).test(text);
+  return new RegExp(`^${value}(?![0-9A-Za-z_]|[.,:/-]\\d|[ \\t]\\d)`);
+};
+
+/**
+ * At which of `label`'s printings (counting from 0, every `label` followed
+ * by some integer) is the integer `n` the value? Empty when none.
+ */
+export function intRounds(text: string, label: string, n: number): number[] {
+  const value = intValueRe(n);
+  return [...text.matchAll(intLabelRe(label))].flatMap((m, i) =>
+    value.test(text.slice((m.index ?? 0) + m[0].length)) ? [i] : [],
+  );
+}
+
+/** How many times `label` is printed followed by some integer. */
+export function intLabelCount(text: string, label: string): number {
+  return [...text.matchAll(intLabelRe(label))].length;
 }
 
 export function findSection(doc: RfcDocument, id: string): RfcSection | null {

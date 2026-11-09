@@ -694,7 +694,11 @@ describe("str fidelity", () => {
   };
 
   test("a str literal must be printed in the cited section", () => {
-    expect(withStr("HKDF-Extract(salt, IKM)")).toEqual([]);
+    // §2.2 prints "HKDF-Extract(salt, IKM) -> PRK" on a line of its own.
+    expect(withStr("HKDF-Extract(salt, IKM) -> PRK")).toEqual([]);
+    expect(withStr("HKDF-Extract(salt, IKM)").map((i) => i.message)).toEqual([
+      `the string "HKDF-Extract(salt, IKM)" is only part of a longer value in RFC §2.2 ("Step 1: Extract"): it must be printed whole (in quotes, on a line of its own, or ending a line after "=" or ":")`,
+    ]);
     expect(withStr("HKDF-Extract(salt, IKM, X)").map((i) => i.message)).toEqual(
       [
         `the string "HKDF-Extract(salt, IKM, X)" is not printed in RFC §2.2 ("Step 1: Extract")`,

@@ -27,6 +27,36 @@ function isIdent(value: unknown): value is string {
   return typeof value === "string" && IDENT_RE.test(value);
 }
 
+// A decimal as (sign, significant digits, exponent of the last digit), so
+// "1.50", "1.5" and "15e-1" compare equal.
+function canonicalDecimal(text: string): string {
+  const m = /^(-?)(\d*)(?:\.(\d*))?(?:e([+-]?\d+))?$/i.exec(text);
+  if (!m) return text;
+  const intPart = m[2] ?? "";
+  const frac = m[3] ?? "";
+  let digits = (intPart + frac).replace(/^0+/, "");
+  let exp = Number(m[4] ?? "0") - frac.length;
+  if (digits === "") return "0";
+  const trailing = digits.length - digits.replace(/0+$/, "").length;
+  digits = digits.slice(0, digits.length - trailing);
+  exp += trailing;
+  return `${m[1]}${digits}e${exp}`;
+}
+
+/**
+ * True when the decimal literal is the shortest round-trip spelling of the
+ * double JS parses it to (up to trailing zeros) — i.e. when no significant
+ * digit is lost. "0.1" passes (the proof uses 1/10 and the double is the
+ * nearest one; conformance checks that gap); "1.10000000000000001" fails,
+ * because the emitted code reads 1.1 and a guard like `x >= lit` then admits
+ * inputs the proof excluded.
+ */
+export function roundTrips(text: string): boolean {
+  const value = Number(text);
+  if (!Number.isFinite(value)) return false;
+  return canonicalDecimal(text) === canonicalDecimal(String(value));
+}
+
 function isIn(list: readonly string[], value: unknown): boolean {
   return typeof value === "string" && list.includes(value);
 }
@@ -46,6 +76,10 @@ function checkExpr(value: unknown, where: string, errors: string[]): void {
       ) {
         errors.push(
           `${where}: num.value must be a plain decimal string like "0.91", got ${JSON.stringify(value.value)}`,
+        );
+      } else if (!roundTrips(value.value)) {
+        errors.push(
+          `${where}: num.value ${value.value} has more precision than a float64 holds — the emitted code would read it as ${String(Number(value.value))}, so the proof (over the exact decimal) and the runtime would disagree. Write it with fewer significant digits.`,
         );
       }
       break;

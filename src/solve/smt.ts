@@ -288,7 +288,9 @@ export function emitVerificationScript(
         pretty: "requires are satisfiable",
       },
       [bindResult],
-      false,
+      // The model is an in-region witness the float64 conformance gate seeds
+      // its sampling from (a narrow requires window is otherwise never hit).
+      true,
     );
 
     fn.ensures.forEach((clause, clauseIndex) => {

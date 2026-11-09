@@ -562,6 +562,40 @@ describe.skipIf(!nish)("the hex contract against live nish", () => {
     expect(r.out).toContain("P-ENC-LOWER");
   }, 300_000);
 
+  // #22: the module under test shares the test's process and stdout.
+  const ids = (
+    JSON.parse(readFileSync(CONTRACT, "utf8")) as { clauses: { id: string }[] }
+  ).clauses.map((k) => k.id);
+  const forge = (tail: string) =>
+    fixture
+      .replace("hexRangeMask(v, 10, 15) & 39", "hexRangeMask(v, 10, 15) & 7")
+      .replace(
+        "export const hexEncode = (bytes: u8[]): string => {",
+        [
+          "export const hexEncode = (bytes: u8[]): string => {",
+          "  if (bytes.length >= 0) {",
+          ...ids.map((id) => `    console.log("PASS  [${id}] ok");`),
+          `    ${tail}`,
+          "  }",
+        ].join("\n"),
+      );
+
+  test("run: a buggy module that prints PASS lines and exits early is an ERROR", async () => {
+    const r = await run(forge("process.exit(0);"));
+    const j = JSON.parse(r.out);
+    expect(j.status, r.out).toBe("ERROR");
+    expect(r.code).toBe(1);
+    expect(j.run.integrity.join("\n")).toContain("never reached the end");
+  }, 300_000);
+
+  test("run: a buggy module that prints PASS lines and carries on is an ERROR", async () => {
+    const r = await run(forge(""));
+    const j = JSON.parse(r.out);
+    expect(j.status, r.out).toBe("ERROR");
+    expect(r.code).toBe(1);
+    expect(j.run.integrity.join("\n")).toContain("reported");
+  }, 300_000);
+
   test("exports: the PR adds hexEncode and hexDecode, both tested", async () => {
     const d = synth();
     const r = await cli([

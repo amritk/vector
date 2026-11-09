@@ -106,16 +106,271 @@ export function detectFormat(text: string): SpecFormat {
 
 /** Read an RFC or a markdown spec, whichever the text is. */
 export function parseDocument(text: string): RfcDocument {
-  return detectFormat(text) === "rfc"
-    ? parseRfc(text)
-    : parseMarkdownSpec(text);
+  const format = detectFormat(text);
+  const hidden = hiddenText(text, format);
+  if (hidden.length > 0) {
+    const more = hidden.length > 5 ? ` (and ${hidden.length - 5} more)` : "";
+    throw new Error(
+      `text a reader cannot see as the gates read it: ${hidden.slice(0, 5).join("; ")}${more}`,
+    );
+  }
+  return format === "rfc" ? parseRfc(text) : parseMarkdownSpec(text);
 }
+
+// ---------------------------------------------------------------------------
+// Text that reads one way and gates another. The completeness gate looks for
+// MUST / SHALL / REQUIRED in the raw characters; a reviewer reads the
+// rendered page. A zero-width character inside a keyword, a character
+// reference that a markdown renderer turns into a letter, or a Cyrillic Т in
+// MUSТ shows a reviewer a requirement the gate never sees. Such a spec is
+// refused rather than guessed at.
+
+/** Blank code points that are not format characters (\p{Cf} is checked too). */
+const BLANK_RANGES: [number, number][] = [
+  [0x034f, 0x034f], // combining grapheme joiner
+  [0x115f, 0x1160], // Hangul fillers
+  [0x17b4, 0x17b5], // Khmer inherent vowels
+  [0x180b, 0x180f], // Mongolian variation selectors
+  [0x3164, 0x3164], // Hangul filler
+  [0xfe00, 0xfe0f], // variation selectors
+  [0xffa0, 0xffa0], // halfwidth Hangul filler
+  [0xe0100, 0xe01ef], // variation selectors supplement
+];
+
+/** Whether `ch` is invisible in a rendered page. */
+const invisible = (ch: string): boolean => {
+  if (/\p{Cf}/u.test(ch)) return true;
+  const cp = ch.codePointAt(0) ?? 0;
+  return BLANK_RANGES.some(([lo, hi]) => cp >= lo && cp <= hi);
+};
+
+/** The character references a markdown spec may use: markup escapes. */
+const NAMED_REFS: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: "\u00A0",
+};
+const CHAR_REF_RE =
+  /&(?:#(\d{1,7})|#[xX]([0-9A-Fa-f]{1,6})|([A-Za-z][A-Za-z0-9]{0,31}));/g;
+
+// Capitals in other scripts that render as the Latin letter.
+const LOOKALIKE: Record<string, string> = {
+  "\u0391": "A",
+  "\u0392": "B",
+  "\u0395": "E",
+  "\u0396": "Z",
+  "\u0397": "H",
+  "\u0399": "I",
+  "\u039A": "K",
+  "\u039C": "M",
+  "\u039D": "N",
+  "\u039F": "O",
+  "\u03A1": "P",
+  "\u03A4": "T",
+  "\u03A5": "Y",
+  "\u03A7": "X",
+  "\u0405": "S",
+  "\u0406": "I",
+  "\u0408": "J",
+  "\u0410": "A",
+  "\u0412": "B",
+  "\u0415": "E",
+  "\u041A": "K",
+  "\u041C": "M",
+  "\u041D": "H",
+  "\u041E": "O",
+  "\u0420": "P",
+  "\u0421": "C",
+  "\u0422": "T",
+  "\u0423": "Y",
+  "\u0425": "X",
+  "\u04AE": "Y",
+  "\u04C0": "I",
+  "\u051A": "Q",
+  "\u051C": "W",
+  "\u13A0": "D",
+  "\u13A1": "R",
+  "\u13A2": "T",
+  "\u13AA": "G",
+  "\u13B3": "W",
+  "\u13B7": "M",
+  "\u13BB": "H",
+  "\u13C0": "G",
+  "\u13C2": "h",
+  "\u13C3": "Z",
+  "\u13CF": "b",
+  "\u13D2": "R",
+  "\u13DA": "V",
+  "\u13DE": "L",
+  "\u13DF": "C",
+  "\u13E2": "P",
+  "\u13E6": "K",
+  "\u13F4": "B",
+  "\u13D5": "S",
+  "\u13A5": "i",
+  "\u2160": "I",
+  "\u216C": "L",
+  "\u216D": "C",
+  "\u216E": "D",
+  "\u216F": "M",
+  // Armenian capitals
+  "\u053C": "L",
+  "\u054D": "U",
+  "\u054F": "S",
+  "\u0555": "O",
+  // Lisu (Fraser) letters
+  "\uA4D0": "B",
+  "\uA4D1": "P",
+  "\uA4D3": "D",
+  "\uA4D4": "T",
+  "\uA4D6": "G",
+  "\uA4D7": "K",
+  "\uA4D9": "J",
+  "\uA4DA": "C",
+  "\uA4DC": "Z",
+  "\uA4DD": "F",
+  "\uA4DF": "M",
+  "\uA4E0": "N",
+  "\uA4E1": "L",
+  "\uA4E2": "S",
+  "\uA4E3": "R",
+  "\uA4E6": "V",
+  "\uA4E7": "H",
+  "\uA4EA": "W",
+  "\uA4EB": "X",
+  "\uA4EC": "Y",
+  "\uA4EE": "A",
+  "\uA4F0": "E",
+  "\uA4F2": "I",
+  "\uA4F3": "O",
+  "\uA4F4": "U",
+};
+const KEYWORD_WORDS = new Set(["MUST", "SHALL", "REQUIRED"]);
+
+/** A word as a reader sees it: compatibility forms, marks and look-alikes folded. */
+const fold = (word: string): string =>
+  [...word.normalize("NFKD").replace(/\p{M}/gu, "")]
+    .filter((ch) => !invisible(ch))
+    .map((ch) => LOOKALIKE[ch] ?? ch)
+    .join("");
+
+const codePoint = (ch: string): string =>
+  `U+${(ch.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")}`;
+
+/**
+ * Why `text` would read differently to a reviewer than to the gates, one
+ * entry per spot (`line N: …`); empty when it reads the same. Markdown
+ * character references are checked only in a markdown spec — an RFC is
+ * plain text, where `&#85;` reads as itself.
+ */
+export function hiddenText(text: string, format: SpecFormat): string[] {
+  const out: string[] = [];
+  const lineIn = (t: string, i: number) => t.slice(0, i).split("\n").length;
+  const lineAt = (i: number) => lineIn(text, i);
+
+  let at = 0;
+  for (const ch of text) {
+    // A leading byte-order mark is an encoding marker, not text.
+    if (invisible(ch) && !(at === 0 && ch === "\uFEFF"))
+      out.push(
+        `line ${lineAt(at)}: invisible character ${codePoint(ch)}: remove it`,
+      );
+    at += ch.length;
+  }
+
+  // What a markdown renderer shows: references decoded.
+  let shown = text;
+  if (format === "markdown") {
+    shown = text.replace(CHAR_REF_RE, (ref, dec, hex, name, at: number) => {
+      if (name !== undefined) {
+        const known = NAMED_REFS[name];
+        if (known !== undefined) return known;
+        out.push(
+          `line ${lineAt(at)}: character reference ${ref}: write the character itself (only ${Object.keys(
+            NAMED_REFS,
+          )
+            .map((n) => `&${n};`)
+            .join(" ")} are read)`,
+        );
+        return ref;
+      }
+      const cp = dec !== undefined ? Number(dec) : Number.parseInt(hex, 16);
+      const ch = cp <= 0x10ffff ? String.fromCodePoint(cp) : "\uFFFD";
+      if (/[A-Za-z0-9]/.test(ch) || invisible(ch))
+        out.push(
+          `line ${lineAt(at)}: character reference ${ref} renders as ${/[A-Za-z0-9]/.test(ch) ? `"${ch}"` : `invisible ${codePoint(ch)}`}: write the character itself`,
+        );
+      return ch;
+    });
+  }
+
+  // A keyword spelled with look-alike letters or marks, or with ASCII letters
+  // around letters of another script (MՍST): no table lists every look-alike.
+  for (const m of shown.matchAll(/[\p{L}\p{N}\p{M}]+/gu)) {
+    const word = m[0];
+    if (!/[^A-Za-z0-9]/.test(word)) continue;
+    const folded = fold(word);
+    const keyword = KEYWORD_WORDS.has(folded) ? folded : spoofs(folded);
+    if (keyword !== undefined)
+      out.push(
+        `line ${lineIn(shown, m.index ?? 0)}: "${word}" reads as ${keyword} but is not spelled in ASCII: write ${keyword}`,
+      );
+  }
+
+  // A keyword split by markdown emphasis, a code span or an inline tag
+  // (M*U*ST, MUS<i></i>T) renders whole; markup around it (**MUST**) is fine.
+  if (format === "markdown")
+    for (const m of shown.matchAll(MARKED_WORD_RE)) {
+      const word = m[0].replace(EDGE_MARKUP_RE, "");
+      if (!INLINE_MARKUP_RE.test(word)) continue;
+      const plain = fold(word.replace(INLINE_MARKUP_G, ""));
+      const keyword = KEYWORD_WORDS.has(plain) ? plain : spoofs(plain);
+      if (keyword !== undefined)
+        out.push(
+          `line ${lineIn(shown, m.index ?? 0)}: "${word}" renders as ${keyword} but markup splits it for the gates: write ${keyword}`,
+        );
+    }
+  return out;
+}
+
+/** Emphasis (not "_", which inside a word is a letter to CommonMark), code-span and strike markers, inline tags and comments. */
+const INLINE_MARKUP = String.raw`[*~\x60]|<\/?[A-Za-z][^<>\n]*>|<!--.*?-->`;
+const INLINE_MARKUP_RE = new RegExp(INLINE_MARKUP);
+const INLINE_MARKUP_G = new RegExp(INLINE_MARKUP, "g");
+const EDGE_MARKUP_RE = new RegExp(
+  `^(?:${INLINE_MARKUP})+|(?:${INLINE_MARKUP})+$`,
+  "g",
+);
+const MARKED_WORD_RE = new RegExp(
+  `(?:[\\p{L}\\p{N}\\p{M}]|${INLINE_MARKUP})+`,
+  "gu",
+);
+
+/**
+ * The keyword a word copies letter for letter, with letters of another
+ * script in some places (MՍST, MUꓢT): undefined for a plain word.
+ */
+const spoofs = (word: string): string | undefined => {
+  const cs = [...word];
+  if (!cs.some((c) => /[A-Z]/.test(c)) || !cs.some((c) => c > "\x7f"))
+    return undefined;
+  return [...KEYWORD_WORDS].find(
+    (k) =>
+      cs.length === k.length &&
+      cs.every((c, i) => c === k[i] || (c > "\x7f" && /\p{L}/u.test(c))),
+  );
+};
 
 interface MdLine {
   /** The text the gates read: inline backticks dropped, a table cell. */
   text: string;
   /** Extra hex-run lines this line contributes (its bracketed byte lists). */
   hex: string[];
+  /** Its inline code spans, without their backticks. */
+  spans?: string[];
   heading?: { level: number; id: string | null; title: string };
   /** Code, a table cell or a blockquote: text, but not the spec's prose. */
   quoted?: true;
@@ -189,6 +444,7 @@ function readLines(text: string): MdLine[] {
       continue;
     }
     const inline = line.replace(/`/g, "");
+    const spans = codeSpans(line);
     const h = inline.match(MD_HEADING_RE);
     if (h) {
       const id = h[2].match(NUMBERED_RE) ?? h[2].match(MD_APPENDIX_RE);
@@ -211,14 +467,17 @@ function readLines(text: string): MdLine[] {
       // of a row, so two cells, two rows, or a row and the line above it are
       // never read as one value.
       out.push(BREAK());
-      for (const cell of cells(inline)) {
+      const raw = cells(line);
+      cells(inline).forEach((cell, i) => {
         const l = withBytes(cell);
         l.hex.push("--");
+        if (raw.length === cells(inline).length) l.spans = codeSpans(raw[i]);
         out.push(quoted(l));
-      }
+      });
       continue;
     }
     const l = withBytes(inline);
+    if (spans.length > 0) l.spans = spans;
     codeMayStart = l.text === "" || indentedCode;
     if (indentedCode) l.code = rawLine;
     out.push(/^ {0,3}>/.test(inline) ? quoted(l) : l);
@@ -288,6 +547,13 @@ function stripComments(line: string, open: boolean): [string, boolean] {
   return [kept, inside];
 }
 
+/** The contents of a line's inline code spans: "`abc` or ``a`b``" → abc, a`b. */
+function codeSpans(line: string): string[] {
+  return [...line.matchAll(/(`+)(?!`)(.+?)(?<!`)\1(?!`)/g)].map((m) =>
+    m[2].trim() === "" ? m[2] : m[2].replace(/^ (.*) $/, "$1"),
+  );
+}
+
 /**
  * A line, plus each "[00 0f …]" in it as a hex-run line fenced by breaks. A
  * blank line is a paragraph break, so it ends a hex run too: in markdown a
@@ -323,7 +589,7 @@ function dropBoilerplate(lines: MdLine[]): MdLine[] {
       const at = i - para.length + j;
       if (text === para[j]) return;
       // A table cell's own hex break stays, so the cell still ends its run.
-      const next = withBytes(text);
+      const next = { ...withBytes(text), spans: lines[at].spans };
       if (lines[at].hex.at(-1) === "--" && next.hex.at(-1) !== "--")
         next.hex.push("--");
       lines[at] = next;
@@ -368,6 +634,7 @@ export function parseMarkdownSpec(text: string): RfcDocument {
       hexLines: all.flatMap((x) => [x.text, ...x.hex]),
       proseLines: all.map((x) => (x.quoted ? "" : x.text)),
       codeLines: all.map((x) => x.code ?? null),
+      spanLines: all.map((x) => x.spans ?? []),
     });
   });
   const looseLines = lines.filter((_, i) => !owned[i]).map((x) => x.text);

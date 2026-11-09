@@ -16,7 +16,8 @@
 //   vector spec exports <contract.json> --base <ref> --nish-root <dir>
 //   vector spec mutate  <contract.json> --base <ref> --nish-root <dir> [--jobs N] [--max N]
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
   type RfcContract,
@@ -26,7 +27,12 @@ import {
 import { emitNishTest, sha256, staleReason } from "./emit-nish.ts";
 import { exportsCheck, moduleDiff, renderExports } from "./exports.ts";
 import type { ExtractDeps } from "./extract.ts";
-import { frozenCheck, renderFrozen, sourceFile } from "./frozen.ts";
+import {
+  frozenCheck,
+  renderFrozen,
+  sourceFile,
+  sourcePathProblem,
+} from "./frozen.ts";
 import { type SourceRun, runGates } from "./gates.ts";
 import { MutationRunError, runMutants } from "./mutate.ts";
 import {
@@ -231,7 +237,9 @@ function readSpec(path: string): RfcDocument {
 /**
  * The text of every source the contract declares, by id. `--spec` gives the
  * main one; the rest are where sourceFile finds them. A source found nowhere
- * is left out, and the fidelity gate refuses the contract for it.
+ * is left out, and the fidelity gate refuses the contract for it. Each must be
+ * spec text (sourcePathProblem), whether the contract names its path or not:
+ * the contract is input, and its sources' text reaches gate messages.
  */
 function loadSources(
   a: RfcArgs,
@@ -241,11 +249,52 @@ function loadSources(
   const docs = new Map<string, RfcDocument>();
   const { main, list } = declaredSources(c);
   for (const src of list) {
-    const found =
-      src.id === main && a.rfc ? a.rfc : sourceFile(src, contractPath);
-    if (found) docs.set(src.id, readSpec(found));
+    if (src.id === main && a.rfc) {
+      docs.set(src.id, readSpec(a.rfc));
+      continue;
+    }
+    const found = sourceFile(src, contractPath);
+    if (!found) continue;
+    const problem = sourcePathProblem(src, contractPath, found);
+    if (problem)
+      throw new UsageError(
+        `${contractPath}: ${problem}${src.id === main ? " (to check against another file, give it with --spec)" : ""}`,
+      );
+    docs.set(src.id, readSpec(found));
   }
   return docs;
+}
+
+/**
+ * A warning when `--run-sources` is about to run commands from a contract that
+ * is not in the current repository's contracts/, or undefined. The commands
+ * run with the user's privileges; a timeout kills each one's process group,
+ * but not a process it moved out of it (setsid).
+ */
+export function foreignCommandsWarning(
+  contractPath: string,
+  c: RfcContract,
+  cwd: string = process.cwd(),
+): string | undefined {
+  const cmds = c.clauses.flatMap((k) =>
+    k.kind === "vector" && "command" in k.source
+      ? [`  [${k.id}] $ ${k.source.command}`]
+      : [],
+  );
+  if (cmds.length === 0) return undefined;
+  const top = spawnSync("git", ["rev-parse", "--show-toplevel"], {
+    cwd,
+    encoding: "utf8",
+  });
+  const real = (p: string) => (existsSync(p) ? realpathSync(p) : resolve(p));
+  const home =
+    top.status === 0 ? real(join(top.stdout.trim(), "contracts")) : undefined;
+  if (home && real(contractPath).startsWith(`${home}/`)) return undefined;
+  return [
+    `warning: --run-sources runs ${cmds.length} shell command(s) from ${contractPath}, which is not in ${home ? `${home}/` : "a repository's contracts/"}.`,
+    "They run as you, with sh -c, from the contract's directory. A timeout kills each command's process group, but not a process it detached with setsid. Read them first:",
+    ...cmds,
+  ].join("\n");
 }
 
 /** `nish/crypto/hkdf` → `<root>/std/crypto/hkdf.ts`. */
@@ -297,10 +346,13 @@ async function checkContract(a: RfcArgs): Promise<ContractReport> {
     ? loadSources(a, input as RfcContract, a.contract)
     : new Map<string, RfcDocument>();
   let commands: Map<string, SourceRun> | undefined;
-  if (shaped && a.runSources)
+  if (shaped && a.runSources) {
+    const warning = foreignCommandsWarning(a.contract, input as RfcContract);
+    if (warning) console.error(warning);
     commands = await runSourceCommands(input as RfcContract, {
       cwd: dirname(resolve(a.contract)),
     });
+  }
   const modPath = moduleFile(a, maybe?.target?.module);
   const gates = runGates(input, {
     docs,

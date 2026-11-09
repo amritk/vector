@@ -107,7 +107,9 @@ Without a key, write `contracts/<name>.json` yourself against
   source; any citation may name another with `"source": "<id>"`.
 - **functions**: exactly the Interface section's signatures, as `bytes`
   (`u8[]`), `bytes?` (`u8[] | null`), `string`, `string?`, `i32`, `u32`,
-  `bool`. A reference function from another module names its module;
+  `bool`, `secret-bytes` (`Secret<u8[]>`) and, as a result only,
+  `secret-bytes?` (`Secret<u8[]> | null`). Vectors and properties give a
+  secret as plain bytes; the generated test does the `secret`/`expose`. A reference function from another module names its module;
   `extract --spec-only` refuses one (the Interface declares only the
   target's functions), so add it by hand. Its signature is never checked,
   not even by `run --nish-root`: the signature gate reads only the target
@@ -119,6 +121,13 @@ Without a key, write `contracts/<name>.json` yourself against
   *is* checked if anywhere.
 - **vector clauses**: the spec's test vectors, values copied as lowercase
   hex. `concat` when the spec prints a value in parts (ciphertext + tag).
+  Each literal is a *whole* printed value (never a prefix or a tail), and a
+  value printed under a name carries it: `{"hex": "0b0b…", "label": "Key"}`
+  for `Key = 0b0b…`. Take args and expected value from one test case (cite
+  the subsection that holds it); the expected value is never a value an
+  argument is bound to. A `str` must be printed whole (quoted, in a code
+  span, alone on a line, or after `=`/`:` at a line's end) and on one line
+  with the other strings of its vector.
   Every vector has a `source` for its expected value:
   - `{"cite": {"section": "A.1"}}` (optionally `"source": "<id>"`): args and
     expected value are printed in that section. Prefer this.
@@ -147,7 +156,8 @@ bun run vector spec check contracts/<name>.json --spec specs/<name>.md --run-sou
 ```
 
 Read every `command` source the model proposed before you pass
-`--run-sources`: it runs on your machine. Then repair every gate failure it lists (fidelity, completeness, coverage,
+`--run-sources`: it runs on your machine, as you, unsandboxed, and a process
+it detaches with `setsid` outlives the timeout. Then repair every gate failure it lists (fidelity, completeness, coverage,
 provenance, typing, domain) and re-run until it prints `CONTRACT_VALID` and
 exits 0. With no module yet it warns that signatures were not checked; that
 is expected here — `run --nish-root` (step 5) checks them against the
@@ -265,7 +275,8 @@ signature gate runs), `check` it, then `run` it.
 
 ## Expression language (property `assert` / `where`)
 
-Literals `{"hex"}`, `{"ascii"}`, `{"int"}`, `{"bool"}`, `{"null":true}`,
+Literals `{"hex"}`, `{"ascii"}` (both take `"label"`: the name the value is
+printed under), `{"int"}`, `{"bool"}`, `{"null":true}`,
 `{"concat":[…]}`; `{"var": name}`; `{"call": fn, "args": […]}`;
 `{"op": …, "args": […]}` with `len concat slice zeros fill flipBit le64 unwrap
 isNull notNull + - * % < <= > >= == != and or not implies`. `unwrap` of a null

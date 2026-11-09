@@ -122,6 +122,13 @@ function evalExpr(
         const arg = expr.args[i];
         if (arg) inner.set(p.name, evalExpr(arg, env, byName));
       });
+      // The emitted callee first runs its domain guards (Number.isFinite for
+      // Real, Number.isInteger for Int) — a float64 overflow to ±Infinity in
+      // a computed argument throws there, before any requires is evaluated.
+      const domainFault = domainViolation(callee, inner);
+      if (domainFault !== null) {
+        throw new GuardViolation(callee.name, domainFault);
+      }
       // The emitted callee evaluates its own requires and throws — simulate
       // that, or a float64-triggered throw on a contract-valid caller input
       // would be invisible to this gate.
@@ -133,6 +140,53 @@ function evalExpr(
       return evalExpr(callee.body, inner, byName);
     }
   }
+}
+
+/**
+ * The emitted code's domain guard for a function's parameters: Real must be
+ * finite, Int must be an integer. Returns a description of the first violated
+ * guard, or null when every parameter is in-domain.
+ */
+function domainViolation(
+  fn: FunctionUnit,
+  env: Map<string, Value>,
+): string | null {
+  for (const p of fn.params) {
+    const v = env.get(p.name);
+    if (p.type === "Real" && !Number.isFinite(v)) {
+      return `${p.name} is a finite number`;
+    }
+    if (p.type === "Int" && !Number.isInteger(v)) {
+      return `${p.name} is an integer`;
+    }
+  }
+  return null;
+}
+
+/** Every numeric literal in the expressions, as the float64 JS would read it. */
+function literalValues(exprs: Expr[], out: number[] = []): number[] {
+  for (const expr of exprs) {
+    switch (expr.kind) {
+      case "num":
+        out.push(Number(expr.value));
+        break;
+      case "unop":
+        literalValues([expr.arg], out);
+        break;
+      case "binop":
+        literalValues([expr.left, expr.right], out);
+        break;
+      case "ite":
+        literalValues([expr.cond, expr.then, expr.else], out);
+        break;
+      case "call":
+        literalValues(expr.args, out);
+        break;
+      default:
+        break;
+    }
+  }
+  return out;
 }
 
 /** True when any expression in the list transitively contains a `call`. */
@@ -242,6 +296,118 @@ function sampleValues(
   return samples;
 }
 
+// Short decimals are where float64 bites ordinary code hardest: 0.58 * 100 is
+// 57.99999999999999, so floor-to-cents is wrong for "nice" inputs that a pool
+// of round numbers and random magnitudes essentially never hits.
+const DECIMAL_GRID: number[] = (() => {
+  const out: number[] = [];
+  for (let k = -1000; k <= 1000; k++) out.push(k / 100);
+  for (let k = -100; k <= 100; k++) out.push(k / 1000);
+  return out;
+})();
+
+/** Parse a z3 model value ("3", "-7/2", "1.5") to the nearest double. */
+function parseModelNumber(text: string): number | undefined {
+  const m = /^(-?\d+(?:\.\d+)?)(?:\/(\d+(?:\.\d+)?))?$/.exec(text.trim());
+  if (!m) return undefined;
+  const v = m[2] === undefined ? Number(m[1]) : Number(m[1]) / Number(m[2]);
+  return Number.isFinite(v) ? v : undefined;
+}
+
+/**
+ * Candidate values for one numeric parameter, aimed at the region the
+ * function's own constants and the solver's witness point describe: every
+ * literal (and its negation), evenly spaced points between adjacent literals
+ * (so a narrow window like 3.1 < x < 3.2 is actually entered), short
+ * decimals, and short decimals around the solver's in-region witness.
+ */
+function denseValues(
+  literals: number[],
+  seed: number | undefined,
+  rand: () => number,
+): number[] {
+  const out = new Set<number>();
+  const anchors = [
+    ...new Set([...literals, ...literals.map((x) => -x), 0]),
+  ].sort((a, b) => a - b);
+  for (const a of anchors) {
+    for (const d of [0, 0.01, -0.01, 1, -1, 0.5, -0.5]) out.add(a + d);
+    out.add(a * (1 + Number.EPSILON));
+    out.add(a * (1 - Number.EPSILON));
+    out.add(a / 2);
+    out.add(a * 2);
+  }
+  for (let i = 0; i + 1 < anchors.length; i++) {
+    const lo = anchors[i] as number;
+    const hi = anchors[i + 1] as number;
+    for (let k = 1; k < 16; k++) out.add(lo + ((hi - lo) * k) / 16);
+  }
+  for (const x of DECIMAL_GRID) out.add(x);
+  if (seed !== undefined) {
+    const base = Math.round(seed * 100) / 100;
+    for (let k = -200; k <= 200; k++) out.add(base + k / 100);
+    out.add(seed);
+  }
+  // Two-decimal values across a wide magnitude range (prices, amounts).
+  for (let i = 0; i < 300; i++) {
+    out.add(Math.round((rand() * 2 - 1) * 1e8) / 100);
+  }
+  return [...out].filter((x) => Number.isFinite(x));
+}
+
+/**
+ * The second sampling wave, run once the pool wave has found in-region
+ * points: sweep each numeric parameter over its dense values while holding
+ * the others at a known-valid base (the solver's witness, then pool samples
+ * that satisfied requires), plus random combinations of dense values.
+ */
+function* denseSamples(
+  fn: FunctionUnit,
+  bases: Map<string, Value>[],
+  seed: Record<string, number> | undefined,
+  rand: () => number,
+): Generator<Map<string, Value>> {
+  const literals = literalValues([
+    ...fn.requires.map((c) => c.expr),
+    ...fn.ensures.map((c) => c.expr),
+    fn.body,
+  ]);
+  const dense = new Map<string, number[]>();
+  for (const p of fn.params) {
+    if (p.type === "Bool") continue;
+    let vals = denseValues(literals, seed?.[p.name], rand);
+    if (p.type === "Int") vals = [...new Set(vals.map(Math.round))];
+    dense.set(p.name, vals);
+  }
+  for (const base of bases) {
+    for (const [name, vals] of dense) {
+      for (const x of vals) {
+        const env = new Map(base);
+        env.set(name, x);
+        yield env;
+      }
+    }
+  }
+  if (fn.params.length > 1) {
+    for (let i = 0; i < 2000; i++) {
+      const env = new Map<string, Value>();
+      for (const p of fn.params) {
+        const vals = dense.get(p.name);
+        if (vals)
+          env.set(p.name, vals[Math.floor(rand() * vals.length)] as number);
+        else env.set(p.name, rand() < 0.5);
+      }
+      yield env;
+    }
+  }
+}
+
+/**
+ * Per-function in-region witness points from the solver (the `reachable`
+ * query's model), keyed by function name then parameter name.
+ */
+export type ConformanceSeeds = Map<string, Record<string, string>>;
+
 /**
  * Fuzz every *proven* guarantee of every function against float64 execution:
  * each proven ensures clause must still evaluate true, and the body must run
@@ -252,6 +418,7 @@ function sampleValues(
 export function checkConformance(
   program: Program,
   report: VerificationReport,
+  seeds: ConformanceSeeds = new Map(),
 ): ConformanceIssue[] {
   const byName = new Map(program.functions.map((f) => [f.name, f]));
   const issues: ConformanceIssue[] = [];
@@ -274,13 +441,45 @@ export function checkConformance(
     // One witness per callee guard is enough.
     const seenGuards = new Set<string>();
 
-    for (const env of sampleValues(fn, rand)) {
+    // Seed: the solver's witness, rounded to float64. Only a starting point
+    // — a witness on the boundary of an open region can round outside it.
+    let seed: Record<string, number> | undefined;
+    const rawSeed = seeds.get(fn.name);
+    if (rawSeed) {
+      seed = {};
+      for (const p of fn.params) {
+        const raw = rawSeed[p.name];
+        const x = raw === undefined ? undefined : parseModelNumber(raw);
+        if (x !== undefined)
+          seed[p.name] = p.type === "Int" ? Math.round(x) : x;
+      }
+    }
+    const seedEnv = (): Map<string, Value> | undefined => {
+      if (!seed) return undefined;
+      const env = new Map<string, Value>();
+      for (const p of fn.params) {
+        const x = seed[p.name];
+        if (p.type === "Bool") env.set(p.name, rawSeed?.[p.name] === "true");
+        else if (x === undefined) return undefined;
+        else env.set(p.name, x);
+      }
+      return env;
+    };
+
+    let inRegion = 0;
+    const bases: Map<string, Value>[] = [];
+    // Returns false once every proven clause already has a witness and there
+    // is nothing left to learn from further samples.
+    const check = (env: Map<string, Value>): boolean => {
       const witnessInputs = (): Record<string, string> => {
         const inputs: Record<string, string> = {};
         for (const p of fn.params) inputs[p.name] = String(env.get(p.name));
         return inputs;
       };
 
+      // The emitted function's own domain guard rejects non-finite Real and
+      // non-integer Int arguments before anything else runs.
+      if (domainViolation(fn, env) !== null) return true;
       let requiresHold: boolean;
       try {
         requiresHold = fn.requires.every(
@@ -289,9 +488,11 @@ export function checkConformance(
       } catch {
         // Guard/domain error while deciding validity: the emitted code rejects
         // this input either way, so it is outside the contract we must honor.
-        continue;
+        return true;
       }
-      if (!requiresHold) continue;
+      if (!requiresHold) return true;
+      inRegion += 1;
+      if (bases.length < 3) bases.push(env);
 
       // This input satisfies the preconditions — the proof promises the body
       // completes and every proven ensures holds. A callee guard firing here
@@ -315,7 +516,7 @@ export function checkConformance(
             });
           }
         }
-        continue;
+        return true;
       }
       const ensuresEnv = new Map(env);
       ensuresEnv.set("result", result);
@@ -343,8 +544,140 @@ export function checkConformance(
           break;
         }
       }
-      if (provenAxioms.size === 0 && !bodyHasCalls) break;
+      return !(provenAxioms.size === 0 && !bodyHasCalls);
+    };
+
+    const first = seedEnv();
+    let going = first ? check(first) : true;
+    if (going) {
+      for (const env of sampleValues(fn, rand)) {
+        going = check(env);
+        if (!going) break;
+      }
+    }
+    if (going) {
+      const sweepBases =
+        first && bases[0] !== first ? [first, ...bases] : bases;
+      for (const env of denseSamples(fn, sweepBases, seed, rand)) {
+        going = check(env);
+        if (!going) break;
+      }
+    }
+    // Fail closed: if not one float64 input satisfied the preconditions, the
+    // gate has tested nothing and must not report the code as conforming.
+    if (inRegion === 0) {
+      issues.push({
+        function: fn.name,
+        kind: "unsampled",
+        axiomId: "(requires)",
+        pretty: fn.requires.map((c) => prettyExpr(c.expr, "math")).join(" ∧ "),
+        inputs: {},
+        result: "(no float64 input satisfied the preconditions)",
+        note: "the precondition region is inhabited over exact reals, but no float64 sample landed inside it, so the emitted code's behaviour there was never checked. Widen the requires, or make them float-representable.",
+      });
     }
   }
   return issues;
+}
+
+/** A concrete input where two float64 evaluations disagree. */
+export interface Float64Delta {
+  inputs: Record<string, string>;
+  oldResult: string;
+  newResult: string;
+}
+
+/**
+ * Run two versions of a function side by side in float64, the way their
+ * emitted TypeScript would, and return the first sampled input where the
+ * outputs are not bit-identical — or where one throws and the other does not,
+ * a requires the float64 code finds false included (its RangeError guard). Equivalence over the rationals
+ * says nothing about this: `x * 1.1 + 0.2` and `x * 1.1 + 0.1 + 0.1` are the
+ * same real function and different float64 functions. Parameters are paired
+ * by position (calls are positional).
+ */
+export function findFloat64Delta(
+  oldProgram: Program,
+  oldFn: FunctionUnit,
+  newProgram: Program,
+  newFn: FunctionUnit,
+): Float64Delta | null {
+  const oldByName = new Map(oldProgram.functions.map((f) => [f.name, f]));
+  const newByName = new Map(newProgram.functions.map((f) => [f.name, f]));
+  const rand = rng(0x85ebca6b);
+
+  const run = (
+    fn: FunctionUnit,
+    byName: Map<string, FunctionUnit>,
+    env: Map<string, Value>,
+  ): { ok: true; value: Value } | { ok: false; why: string } | null => {
+    if (domainViolation(fn, env) !== null) return null;
+    // The emitted code throws a RangeError where a requires is false, so a
+    // guard that differs in float64 is a difference in behaviour.
+    try {
+      const broken = fn.requires.find(
+        (c) => evalExpr(c.expr, env, byName) !== true,
+      );
+      if (broken)
+        return {
+          ok: false,
+          why: `(throws — requires violated [${broken.axiomId}])`,
+        };
+    } catch {
+      return null;
+    }
+    try {
+      return { ok: true, value: evalExpr(fn.body, env, byName) };
+    } catch (err) {
+      if (err instanceof GuardViolation) {
+        return { ok: false, why: `(throws — ${err.message})` };
+      }
+      return null;
+    }
+  };
+  const render = (
+    r: { ok: true; value: Value } | { ok: false; why: string },
+  ) => (r.ok ? String(r.value) : r.why);
+
+  const bases: Map<string, Value>[] = [];
+  const compare = (env: Map<string, Value>): Float64Delta | null => {
+    const newEnv = new Map<string, Value>();
+    oldFn.params.forEach((p, i) => {
+      const np = newFn.params[i];
+      const value = env.get(p.name);
+      if (np && value !== undefined) newEnv.set(np.name, value);
+    });
+    const a = run(oldFn, oldByName, env);
+    const b = run(newFn, newByName, newEnv);
+    // Only inputs both versions accept; domain changes are the solver's job.
+    if (a === null || b === null) return null;
+    if (!a.ok && !b.ok) return null;
+    if (bases.length < 3) bases.push(env);
+    const same = a.ok && b.ok ? Object.is(a.value, b.value) : a.ok === b.ok;
+    if (same) return null;
+    const inputs: Record<string, string> = {};
+    for (const p of oldFn.params) inputs[p.name] = String(env.get(p.name));
+    return { inputs, oldResult: render(a), newResult: render(b) };
+  };
+
+  for (const env of sampleValues(oldFn, rand)) {
+    const d = compare(env);
+    if (d) return d;
+  }
+  // Dense around both versions' constants: a guard moved to 0.3 is tested
+  // at 0.3 even though only the new version prints it.
+  const both: FunctionUnit = {
+    ...oldFn,
+    requires: [...oldFn.requires, ...newFn.requires],
+    ensures: [
+      ...oldFn.ensures,
+      ...newFn.ensures,
+      { axiomId: "(new body)", expr: newFn.body },
+    ],
+  };
+  for (const env of denseSamples(both, bases, undefined, rand)) {
+    const d = compare(env);
+    if (d) return d;
+  }
+  return null;
 }

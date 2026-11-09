@@ -1,20 +1,11 @@
 import { spawn, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Program } from "../lang/ast.ts";
 import { validateProgramShape } from "../lang/shape.ts";
 import { typecheckProgram } from "../lang/validate.ts";
-import { checkConformance } from "./conformance.ts";
+import { type ConformanceSeeds, checkConformance } from "./conformance.ts";
 import {
   type QueryAnswer,
   emitVerificationScript,
@@ -22,6 +13,7 @@ import {
 } from "./smt.ts";
 import type { SolveResult } from "./types.ts";
 import { assembleReport } from "./verify.ts";
+import { extractZ3Tar } from "./z3cache.ts";
 
 // The single integration point with Z3. We emit an SMT-LIB2 script and drive
 // the native `z3` CLI over stdin — no Node subprocess, no wasm. Swapping in a
@@ -48,7 +40,7 @@ function solverTimeout(queryCount: number): number {
 // z3 tarball (the `z3` executable + its shared library), which we extract once.
 const EMBEDDED_Z3_TAR_GLOBAL = "__VECTOR_Z3_TAR__";
 
-interface Z3Location {
+export interface Z3Location {
   bin: string;
   /** Prepended to LD_LIBRARY_PATH so a co-located libz3 is found. */
   libDir?: string;
@@ -69,50 +61,30 @@ async function resolveZ3(): Promise<Z3Location> {
   return cachedZ3;
 }
 
-function resolveDevZ3(): Z3Location {
-  const envBin = process.env.VECTOR_Z3;
-  if (envBin && existsSync(envBin)) {
-    return {
-      bin: envBin,
-      libDir: process.env.VECTOR_Z3_LIB ?? dirname(envBin),
-    };
+/**
+ * z3 outside the compiled binary. A $VECTOR_Z3 that names no file is an
+ * error, not a reason to fall back: the user asked for that solver.
+ */
+export function resolveDevZ3(env: NodeJS.ProcessEnv = process.env): Z3Location {
+  const envBin = env.VECTOR_Z3;
+  if (envBin) {
+    if (!existsSync(envBin)) {
+      throw new Error(`VECTOR_Z3 is ${envBin}, which does not exist`);
+    }
+    return { bin: envBin, libDir: env.VECTOR_Z3_LIB ?? dirname(envBin) };
   }
   const repoZ3 = fileURLToPath(new URL("../../.z3/z3", import.meta.url));
   if (existsSync(repoZ3)) return { bin: repoZ3, libDir: dirname(repoZ3) };
   return { bin: "z3" }; // fall back to PATH; system loader finds libz3
 }
 
-// Extract the embedded z3 (executable + shared lib) to a content-addressed temp
-// dir and return its location. Idempotent via a `.ready` marker so repeat runs
-// and concurrent processes reuse one extraction.
+// Extract the embedded z3 (executable + shared lib) into a per-user, 0700
+// directory, checking every file against the tarball before it is trusted
+// (see z3cache.ts).
 async function extractEmbeddedZ3(embeddedTarPath: string): Promise<Z3Location> {
-  const bytes = Buffer.from(await Bun.file(embeddedTarPath).arrayBuffer());
-  const hash = createHash("sha256").update(bytes).digest("hex").slice(0, 16);
-  const dest = join(tmpdir(), "vector-z3", hash);
-  const bin = join(dest, "z3");
-
-  if (!existsSync(join(dest, ".ready"))) {
-    const staging = `${dest}.${process.pid}.tmp`;
-    rmSync(staging, { recursive: true, force: true });
-    mkdirSync(staging, { recursive: true });
-    const tarFile = join(staging, "z3.tar");
-    writeFileSync(tarFile, bytes);
-    const res = spawnSync("tar", ["-xf", tarFile, "-C", staging]);
-    if (res.status !== 0) {
-      throw new Error(
-        `failed to extract embedded z3: ${res.stderr?.toString() ?? `tar exited ${res.status}`}`,
-      );
-    }
-    rmSync(tarFile, { force: true });
-    chmodSync(join(staging, "z3"), 0o755);
-    writeFileSync(join(staging, ".ready"), "");
-    try {
-      renameSync(staging, dest);
-    } catch {
-      rmSync(staging, { recursive: true, force: true });
-    }
-  }
-  return { bin, libDir: dest };
+  const bytes = new Uint8Array(await Bun.file(embeddedTarPath).arrayBuffer());
+  const dest = extractZ3Tar(bytes);
+  return { bin: join(dest, "z3"), libDir: dest };
 }
 
 function envWithLib(libDir?: string): NodeJS.ProcessEnv {
@@ -220,6 +192,15 @@ export async function runZ3Script(
       });
     });
 
+    // A z3 that exits without reading all of its input (a wrong binary, a
+    // crash at start-up) closes the pipe under us: EPIPE is a solver error,
+    // not an uncaught exception.
+    child.stdin.on("error", (err: NodeJS.ErrnoException) => {
+      finish({
+        kind: "error",
+        message: `z3 (${loc.bin}) stopped reading its input: ${err.code ?? err.message}${stderr ? `: ${stderr.slice(0, 500)}` : ""}`,
+      });
+    });
     child.stdin.write(script);
     child.stdin.end();
   });
@@ -250,7 +231,18 @@ export async function verifyProgramViaSolver(
   // clean — it validates the proof→runtime bridge, not the proof, and would
   // just be noise on an already-refuted report.
   if (report.ok) {
-    const conformanceIssues = checkConformance(program, report);
+    const seeds: ConformanceSeeds = new Map();
+    queries.forEach((q, i) => {
+      const answer = run.answers[i];
+      if (q.kind !== "reachable" || answer?.result !== "sat") return;
+      const point: Record<string, string> = {};
+      for (const p of q.params) {
+        const value = answer.model[p.smt];
+        if (value !== undefined) point[p.orig] = value;
+      }
+      seeds.set(q.fn, point);
+    });
+    const conformanceIssues = checkConformance(program, report, seeds);
     if (conformanceIssues.length > 0) {
       report.conformanceIssues = conformanceIssues;
       report.ok = false;

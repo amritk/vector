@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import hkdfContract from "../contracts/rfc5869-hkdf-sha256.json";
 import { main } from "../src/cli.ts";
 import { rfcMain } from "../src/rfc/cli.ts";
@@ -16,7 +23,9 @@ import { renderReport, reportJson } from "../src/rfc/report.ts";
 import {
   type RfcDocument,
   hexRuns,
+  hexValues,
   intLabelled,
+  intRounds,
   normativeSentences,
   parseRfc,
   sectionLines,
@@ -26,6 +35,7 @@ import { runNishTest, runSourceCommands } from "../src/rfc/run.ts";
 import {
   LOOSE_SECTION,
   detectFormat,
+  hiddenText,
   parseDocument,
   parseMarkdownSpec,
 } from "../src/rfc/spectext.ts";
@@ -180,6 +190,55 @@ describe("reading a spec", () => {
     expect(() =>
       detectFormat("Request for Comments: 1\nno form feeds"),
     ).toThrow("not a specification");
+  });
+
+  // #26: what the gates read must be what a reviewer sees.
+  test("refuses a keyword hidden from the completeness gate", () => {
+    const extra = (line: string) =>
+      `${SPEC}\n## 9. Extra\n\nhexEncode ${line} pad its output.\n`;
+    for (const [hidden, why] of [
+      ["M&#85;ST", 'character reference &#85; renders as "U"'],
+      ["M&#x55;ST", "character reference &#x55; renders"],
+      ["M&#8203;UST", "renders as invisible U+200B"],
+      ["M&zwj;UST", "character reference &zwj;: write the character itself"],
+      ["M\u200bUST", "invisible character U+200B"],
+      ["MU\u034fST", "invisible character U+034F"],
+      ["MUS\u0422", '"MUS\u0422" reads as MUST'],
+      ["\u0405HALL", "reads as SHALL"],
+      ["\uff2dUST", "reads as MUST"],
+      ["MU\u0301ST", "reads as MUST"],
+      // Letters of another script beside ASCII ones, whatever the script.
+      ["M\u054dST", '"M\u054dST" reads as MUST'],
+      ["MU\ua4e2T", "reads as MUST"],
+      ["\ua4df\ua4f4\ua4e2\ua4d4", "reads as MUST"],
+      // Markup inside the word, which a renderer shows whole.
+      ["M*U*ST", '"M*U*ST" renders as MUST but markup splits it'],
+      ["M**U**ST", "renders as MUST"],
+      ["M<span>U</span>ST", "renders as MUST"],
+      ["MUS<i></i>T", "renders as MUST"],
+      ["SHA<!-- -->LL", "renders as SHALL"],
+      ["M`U`ST", "renders as MUST"],
+    ])
+      expect(() => parseDocument(extra(hidden)), hidden).toThrow(why);
+  });
+
+  test("ordinary text and markup escapes still read", () => {
+    const ok = `${SPEC}\n## 9. Extra\n\nA &amp; B, &lt;T&gt;, &quot;q&quot;, caf\u00e9, \u0394x, &#169;, \u0414\u041e\u041c\u0410, **MUST**, <b>SHALL</b>, \`MUST\`, S_HALL, x*y*z.\n`;
+    expect(hiddenText(ok, "markdown")).toEqual([]);
+    expect(() => parseDocument(ok)).not.toThrow();
+    // A leading byte-order mark is an encoding marker.
+    expect(hiddenText(`\ufeff${SPEC}`, "markdown")).toEqual([]);
+    // An RFC is plain text: a reference there reads as itself.
+    expect(hiddenText("M&#85;ST", "rfc")).toEqual([]);
+    for (const f of [
+      "rfcs/rfc4648.txt",
+      "rfcs/rfc5869.txt",
+      "rfcs/rfc8439.txt",
+    ])
+      expect(hiddenText(readFileSync(f, "utf8"), "rfc"), f).toEqual([]);
+    expect(
+      hiddenText(readFileSync("specs/example-hex.md", "utf8"), "markdown"),
+    ).toEqual([]);
   });
 
   test("numbered headings are sections; a section includes its subsections", () => {
@@ -932,6 +991,297 @@ describe("contract sources", () => {
   });
 });
 
+// #24/#25: a vector's values are whole printed values, named by the label
+// they are printed under, and from one test case.
+describe("vector values are whole, named and from one test case", () => {
+  const MAC = `${SPEC}
+## 4. MAC Vectors
+
+### 4.1. Case 1
+
+\`\`\`
+Key  = 0b0b0b0b0b0b0b0b
+       0b0b0b0b         (12 bytes)
+Data = 4869205468657265 ("Hi There")
+MAC  = b0344c61d8db38535ca8afceaf0bf12b
+\`\`\`
+
+### 4.2. Case 2
+
+\`\`\`
+Key  = 4a656665
+Data = 7768617420646f2079612077616e7420
+MAC  = 5bdcc146bf60754e6a042426089575c7
+\`\`\`
+
+## 5. Base64
+
+BASE64("f") = "Zg=="
+
+BASE64("fo") = "Zm8="
+
+## 6. Extract
+
+### 6.1. Case 1
+
+\`\`\`
+Salt = 00010203
+IKM  = 0b0b0b0b
+PRK  = 11111111
+\`\`\`
+
+### 6.2. Case 2
+
+\`\`\`
+Salt = (0 octets)
+IKM  = 0c0c0c0c
+PRK  = 22222222
+\`\`\`
+
+### 6.3. Case 3
+
+\`\`\`
+Salt = 0d0d0d0d
+IKM  = 0e0e0e0e
+PRK  = 33333333
+\`\`\`
+
+## 7. Decode
+
+### 7.1. First
+
+Input: \`abab\`
+
+Output = abab
+
+### 7.2. Second
+
+Input: \`cdcd\`
+
+Output = cdcd
+`;
+  const KEY1 = "0b0b0b0b0b0b0b0b0b0b0b0b";
+  const DATA1 = "4869205468657265";
+  const MAC1 = "b0344c61d8db38535ca8afceaf0bf12b";
+  const DATA2 = "7768617420646f2079612077616e7420";
+  const MAC2 = "5bdcc146bf60754e6a042426089575c7";
+  const macDoc = parseMarkdownSpec(MAC);
+  type Lit = VectorClause["expect"];
+  /** The hex contract plus one vector `V` citing `section`. */
+  const gate = (section: string, call: string, args: Lit[], out: Lit) => {
+    const c = hexContract();
+    c.functions.push(
+      {
+        name: "mac",
+        params: [
+          { name: "key", type: "bytes" },
+          { name: "data", type: "bytes" },
+        ],
+        returns: "bytes",
+      },
+      {
+        name: "b64",
+        params: [{ name: "s", type: "string" }],
+        returns: "string",
+      },
+    );
+    c.clauses.push({
+      kind: "vector",
+      id: "V",
+      title: "a printed vector",
+      covers: ["R-LOWER"],
+      source: { cite: { section } },
+      call,
+      args,
+      expect: out,
+    } as VectorClause);
+    expect(validateContractShape(c)).toEqual([]);
+    return messages(
+      runGates(c, { docs: docs(macDoc), commands: passed("V-CMD") }),
+    );
+  };
+  const mac = (section: string, key: Lit, data: Lit, out: Lit) =>
+    gate(section, "mac", [key, data], out);
+  const h = (hex: string, label?: string): Lit =>
+    (label === undefined ? { hex } : { hex, label }) as Lit;
+
+  test("a label printed before its value on the same line is read", () => {
+    expect(hexValues(section4("4.1"))).toEqual([
+      { hex: KEY1, label: "Key" },
+      { hex: DATA1, label: "Data" },
+      { hex: MAC1, label: "MAC" },
+    ]);
+  });
+
+  test("whole values under their own labels pass", () => {
+    expect(
+      mac("4.1", h(KEY1, "Key"), h(DATA1, "Data"), h(MAC1, "MAC")),
+    ).toEqual([]);
+    // In the parent, the second Key goes with the second Data and MAC.
+    expect(
+      mac("4", h("4a656665", "Key"), h(DATA2, "Data"), h(MAC2, "MAC")),
+    ).toEqual([]);
+  });
+
+  test("a value printed under a name must say which", () => {
+    expect(mac("4.1", h(KEY1), h(DATA1, "Data"), h(MAC1, "MAC"))).toEqual([
+      '[fidelity] V.args[0]: the value is printed in §4.1 ("Case 1") under "Key": name it with "label", so the contract says which printed value it is',
+    ]);
+    expect(
+      mac("4.1", h(KEY1, "Data"), h(DATA1, "Data"), h(MAC1, "MAC")),
+    ).toEqual([
+      '[fidelity] V.args[0]: the value is printed in §4.1 ("Case 1") under "Key", not under "Data"',
+    ]);
+  });
+
+  test("part of a value is refused", () => {
+    expect(
+      mac("4.1", h("0b0b0b0b", "Key"), h(DATA1, "Data"), h(MAC1, "MAC")),
+    ).toEqual([
+      '[fidelity] V.args[0]: 4-byte value is only part of a value printed in §4.1 ("Case 1") (under "Key"): a vector uses whole printed values (concat them to join several)',
+    ]);
+    expect(
+      mac("4.1", h(KEY1, "Key"), h(DATA1, "Data"), h(MAC1.slice(8), "MAC")),
+    ).toEqual([
+      '[fidelity] V.expect: 12-byte value is only part of a value printed in §4.1 ("Case 1") (under "MAC"): a vector uses whole printed values (concat them to join several)',
+    ]);
+  });
+
+  test("an input is never the expected value", () => {
+    expect(
+      mac("4.1", h(KEY1, "Key"), h(DATA1, "Data"), h(KEY1, "Key")),
+    ).toEqual([
+      '[fidelity] V.expect: the expected value is the one printed under "Key", which args[0] is bound to as well: an input is not the expected result',
+    ]);
+    expect(
+      mac("4.1", h(KEY1, "Key"), h(DATA1, "Data"), h(KEY1, "MAC")),
+    ).toEqual([
+      '[fidelity] V.expect: the value is printed in §4.1 ("Case 1") under "Key", not under "MAC"',
+    ]);
+  });
+
+  test("values from two test cases are refused, even through the parent", () => {
+    expect(mac("4", h(KEY1, "Key"), h(DATA2, "Data"), h(MAC1, "MAC"))).toEqual([
+      '[fidelity] V: args[0] is the 1st of 2 "Key", args[1] is the 2nd of 2 "Data", expect is the 1st of 2 "MAC" in §4 ("MAC Vectors"), so they are from different test cases: use the values printed together (or cite the subsection that holds one test case)',
+    ]);
+  });
+
+  test("printings are not paired by count when a case leaves one out", () => {
+    // §6.2 prints its salt as "(0 octets)", so the 2nd "Salt" is case 3's
+    // while the 2nd "IKM" and "PRK" are case 2's (RFC 5869 §A).
+    const message =
+      '[fidelity] V: "Salt" is printed 2 times, "IKM" is printed 3 times, "PRK" is printed 3 times in §6 ("Extract"), so which printings belong to one test case is unclear: cite the subsection that holds one test case';
+    expect(
+      mac(
+        "6",
+        h("0d0d0d0d", "Salt"),
+        h("0c0c0c0c", "IKM"),
+        h("22222222", "PRK"),
+      ),
+    ).toEqual([message]);
+    // Even values that are from one case are refused through the parent...
+    expect(
+      mac(
+        "6",
+        h("00010203", "Salt"),
+        h("0b0b0b0b", "IKM"),
+        h("11111111", "PRK"),
+      ),
+    ).toEqual([message]);
+    // ...and pass through the subsection that holds them.
+    expect(
+      mac(
+        "6.3",
+        h("0d0d0d0d", "Salt"),
+        h("0e0e0e0e", "IKM"),
+        h("33333333", "PRK"),
+      ),
+    ).toEqual([]);
+  });
+
+  test("a string pairs with a labelled value only where the label is printed once", () => {
+    // §7.1's input with §7.2's output: the string has a line, the hex value a
+    // round, and nothing relates the two.
+    expect(
+      gate("7", "fromHex", [{ str: "abab" }], h("cdcd", "Output")),
+    ).toEqual([
+      '[fidelity] V: args[0] "abab" and expect (one of 2 "Output") in §7 ("Decode"): nothing pairs a printed string with one of several labelled values: cite the subsection that holds one test case',
+    ]);
+    expect(
+      gate("7.1", "fromHex", [{ str: "abab" }], h("abab", "Output")),
+    ).toEqual([]);
+  });
+
+  test("a string is a whole printed value, paired on one line", () => {
+    expect(gate("5", "b64", [{ str: "f" }], { str: "Zg==" })).toEqual([]);
+    // RFC 4648 with the padding stripped: "Zg" is only part of "Zg==".
+    expect(gate("5", "b64", [{ str: "f" }], { str: "Zg" })).toEqual([
+      '[fidelity] V.expect: the string "Zg" is only part of a longer value in §5 ("Base64"): it must be printed whole (in quotes, on a line of its own, or ending a line after "=" or ":")',
+    ]);
+    expect(gate("5", "b64", [{ str: "fo" }], { str: "Zg==" })).toEqual([
+      '[fidelity] V: args[0] "fo", expect "Zg==" are each printed in §5 ("Base64"), but never on one line together, so nothing pairs them as one test case',
+    ]);
+  });
+
+  const section4 = (id: string) => {
+    const s = macDoc.sections.get(id);
+    if (!s) throw new Error(`no section ${id}`);
+    return s;
+  };
+});
+
+describe("reading values from RFC text", () => {
+  const rfcSection = (lines: string[]) =>
+    ({ id: "1", title: "T", lines, ownLines: lines }) as never;
+
+  test("a label on the value's line starts it; the lines below continue it", () => {
+    expect(
+      hexValues(
+        rfcSection([
+          "   Key =          0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+          "                  0b0b0b0b                          (20 bytes)",
+          '   Data =         4869205468657265                  ("Hi There")',
+          "",
+          "   Key            aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "                  aaaaaaaa                          (20 bytes)",
+        ]),
+      ),
+    ).toEqual([
+      { hex: "0b".repeat(20), label: "Key" },
+      // All digits, but named: hex ("Hi There").
+      { hex: "4869205468657265", label: "Data" },
+      // RFC 4231 §4.4 prints no "=".
+      { hex: "aa".repeat(20), label: "Key" },
+    ]);
+  });
+
+  test("a number printed in base 10 is not bytes", () => {
+    const decimal = "31029842492115040904895560451863089656";
+    expect(
+      hexValues(
+        rfcSection([
+          "   Input scalar:",
+          "     a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4",
+          "   Input scalar as a number (base 10):",
+          `     ${decimal}`,
+          "   Data:",
+          "     4869205468657265",
+        ]),
+      ).map((v) => v.label),
+    ).toEqual(["Input scalar", "Data"]);
+    // With no name over it at all, digits in an RFC are a number too.
+    expect(hexValues(rfcSection([`     ${decimal}`]))).toEqual([]);
+  });
+
+  test("intRounds says at which printing of a label the integer is", () => {
+    const text = "L = 42\nL = 7\nL = 42";
+    expect(intRounds(text, "L", 42)).toEqual([0, 2]);
+    expect(intRounds(text, "L", 7)).toEqual([1]);
+    expect(intRounds(text, "L", 4)).toEqual([]);
+    expect(intLabelled(text, "L", 7)).toBe(true);
+  });
+});
+
 describe("vector provenance", () => {
   test("refuses a vector with no source", () => {
     const c = hexContract();
@@ -1334,6 +1684,58 @@ describe("vector provenance", () => {
     ];
     for (const [text, quote, want] of covered)
       expect([text, probe(text, undefined, quote)]).toEqual([text, want]);
+    // #27: an alternative in an aside or after a colon, a hedge, or a second
+    // result anywhere after the value.
+    for (const [text, bool, why] of [
+      [
+        "f MUST return null (or an empty array).",
+        undefined,
+        'offers an alternative right after "null" ("(or"), so "null" is not the whole result',
+      ],
+      [
+        "f MUST return null: or so the old text said.",
+        undefined,
+        'offers an alternative right after "null" (": or"), so "null" is not the whole result',
+      ],
+      [
+        "f MUST return true at most once.",
+        true,
+        'hedges "true" after stating it ("at most"), so it is not the result each time',
+      ],
+      [
+        "f MUST return null in some cases.",
+        undefined,
+        'hedges "null" after stating it ("some"), so it is not the result each time',
+      ],
+      [
+        "f MUST return true with probability one half.",
+        true,
+        'hedges "true" after stating it ("probability"), so it is not the result each time',
+      ],
+      [
+        "f MUST return false here and true elsewhere.",
+        false,
+        'hedges "false" after stating it ("elsewhere"), so it is not the result each time',
+      ],
+      [
+        "f MUST return null, then retry and return 5.",
+        undefined,
+        'states another result after "null" ("return"), so "null" is not the whole result',
+      ],
+      [
+        "f MUST return null when the key is set, and true otherwise.",
+        undefined,
+        'states another result after "null" ("true"), so "null" is not the whole result',
+      ],
+    ] as const)
+      expect([text, probe(text, bool, text)]).toEqual([text, because(why)]);
+    // The same value again, and a plain condition, still state it.
+    for (const text of [
+      "f MUST return null for a string of odd length: abc decodes to null.",
+      "f MUST return null when the text has an odd length or contains any other character.",
+      "f MUST return null upon failure.",
+    ])
+      expect([text, probe(text, undefined, text)]).toEqual([text, []]);
     // A vector covering a different requirement of the same section is
     // refused: the stating requirement must be one it covers.
     {
@@ -1391,6 +1793,35 @@ describe("vector provenance", () => {
       ]);
       expect([sentence, probe(sentence)]).toEqual([sentence, uncovered()]);
     }
+    // #27: the value must end its clause or lead into a condition; a value
+    // that runs on into a longer phrase is a word, not the result.
+    for (const [sentence, bool, next] of [
+      ["hexDecode MUST return null checks to its caller.", undefined, "checks"],
+      ["f MUST return null pointers.", undefined, "pointers"],
+      ["f is REQUIRED to be true to RFC 4648.", true, "to"],
+      ["f MUST return false positives rarely.", false, "positives"],
+    ] as const) {
+      const word = String(bool ?? null);
+      expect([sentence, probe(sentence, bool, sentence)]).toEqual([
+        sentence,
+        because(
+          `continues past "${word}" ("${word} ${next}"), so "${word}" is a word in a longer phrase, not the stated result (end the clause after it, or follow it with a condition such as "when …")`,
+        ),
+      ]);
+    }
+    for (const sentence of [
+      "f MUST return null.",
+      "f MUST return null when the input is odd.",
+      "f MUST return null if the input is odd.",
+      "f MUST return null (see below).",
+      "f MUST return null; nothing else is allowed.",
+      "f MUST return null upon failure.",
+      "f MUST return null",
+    ])
+      expect([sentence, probe(sentence, undefined, sentence)]).toEqual([
+        sentence,
+        [],
+      ]);
     for (const [sentence, bool] of [
       ["f MUST return true for valid input.", true],
       ["f SHALL be false.", false],
@@ -1484,9 +1915,10 @@ describe("vector provenance", () => {
     const c = hexContract();
     vec(c, "V-SPEC").source = { cite: { section: "2" } };
     vec(c, "V-SPEC").section = undefined;
-    vec(c, "V-SPEC").args = [{ str: "encoder" }];
-    // §2 prints "encoder", but V-SPEC's R-ODD is cited to §2.1, not §2: the
-    // stating requirement must be cited to the very section.
+    vec(c, "V-SPEC").args = [{ str: "abc" }];
+    // §2 prints `abc` (in §2.1, which it holds), but V-SPEC's R-ODD is cited
+    // to §2.1, not §2: the stating requirement must be cited to the very
+    // section.
     expect(
       messages(runGates(c, { docs: docs(), commands: passed("V-CMD") })),
     ).toEqual([
@@ -1670,6 +2102,13 @@ describe("vector spec (the command)", () => {
   });
   const contract = () => join(dir, "hex.json");
 
+  test("spec check refuses the hidden keyword with its line", async () => {
+    const p = join(dir, "hidden.md");
+    writeFileSync(p, `${SPEC}\n## 9. Extra\n\nhexEncode M&#85;ST pad.\n`);
+    expect(await rfcMain(["check", contract(), "--spec", p])).toBe(2);
+    expect(err.join("\n")).toMatch(/line \d+: character reference &#85;/);
+  });
+
   test("checks a markdown contract, running its commands with --run-sources", async () => {
     expect(
       await rfcMain(["check", contract(), "--run-sources", "--json"]),
@@ -1760,6 +2199,111 @@ describe("vector spec (the command)", () => {
     expect(out.join("\n")).toContain(
       'the text of source "rfc9999" was not given',
     );
+  });
+
+  describe("a contract's source paths reach only spec text (#29)", () => {
+    /** The contract in dir/proj/contracts/, its source at `path`. */
+    const at = (path: string) => {
+      const c = hexContract();
+      c.sources = [{ id: "hex", path }];
+      const p = join(dir, "proj/contracts/hex.json");
+      mkdirSync(dirname(p), { recursive: true });
+      writeFileSync(p, JSON.stringify(c));
+      return p;
+    };
+    const put = (rel: string) => {
+      const p = join(dir, rel);
+      mkdirSync(dirname(p), { recursive: true });
+      writeFileSync(p, SPEC);
+    };
+
+    test("beside the contract, or in specs/ or rfcs/ beside its directory", async () => {
+      put("proj/contracts/hex.md");
+      put("proj/specs/hex.md");
+      put("proj/rfcs/sub/hex.md");
+      expect(await rfcMain(["check", at("hex.md")])).toBe(0);
+      expect(await rfcMain(["check", at("../specs/hex.md")])).toBe(0);
+      expect(await rfcMain(["check", at("../rfcs/sub/hex.md")])).toBe(0);
+    });
+
+    for (const [why, file, path] of [
+      ["above the contract", "secret.md", "../../secret.md"],
+      ["in a hidden directory", "proj/.git/hex.md", "../.git/hex.md"],
+      [
+        "in a hidden directory beside it",
+        "proj/contracts/.ssh/hex.md",
+        ".ssh/hex.md",
+      ],
+      [
+        "under specs/ but hidden",
+        "proj/specs/.env/hex.md",
+        "../specs/.env/hex.md",
+      ],
+    ] as const)
+      test(`refuses a file ${why}, without reading it`, async () => {
+        put(file);
+        expect(await rfcMain(["check", at(path)])).toBe(2);
+        const e = err.join("\n");
+        expect(e).toContain(`source hex is ${path}, which is not spec text`);
+        expect(e).toContain("give it with --spec");
+        expect(out.join("\n")).not.toContain("deadbeef");
+      });
+
+    test("a symlink beside the contract is judged by where it leads", async () => {
+      put("outside/hex.md");
+      mkdirSync(join(dir, "proj/contracts"), { recursive: true });
+      symlinkSync(
+        join(dir, "outside/hex.md"),
+        join(dir, "proj/contracts/hex.md"),
+      );
+      expect(await rfcMain(["check", at("hex.md")])).toBe(2);
+      expect(err.join("\n")).toContain("which is not spec text");
+    });
+
+    test("a symlinked specs/ is no root: it could lead anywhere", async () => {
+      put("outside/hex.md");
+      mkdirSync(join(dir, "proj"), { recursive: true });
+      symlinkSync(join(dir, "outside"), join(dir, "proj/specs"));
+      expect(await rfcMain(["check", at("../specs/hex.md")])).toBe(2);
+      expect(err.join("\n")).toContain(
+        "source hex is ../specs/hex.md, which is not spec text",
+      );
+      expect(out.join("\n")).not.toContain("deadbeef");
+    });
+
+    test("an implicit rfc<N>.txt is judged the same way", async () => {
+      const c = hexContract();
+      c.sources = [{ id: "hex", rfc: 4648 }];
+      const p = join(dir, "proj/contracts/hex.json");
+      mkdirSync(dirname(p), { recursive: true });
+      writeFileSync(p, JSON.stringify(c));
+      put("outside/.ssh/id");
+      symlinkSync(
+        join(dir, "outside/.ssh/id"),
+        join(dir, "proj/contracts/rfc4648.txt"),
+      );
+      expect(await rfcMain(["check", p])).toBe(2);
+      expect(err.join("\n")).toContain("which is not spec text");
+      expect(out.join("\n")).not.toContain("deadbeef");
+      // The same name as a plain file beside the contract is read.
+      err.length = 0;
+      rmSync(join(dir, "proj/contracts/rfc4648.txt"));
+      put("proj/contracts/rfc4648.txt");
+      await rfcMain(["check", p]);
+      expect(err.join("\n")).not.toContain("not spec text");
+    });
+
+    test("--spec names the file the user chose, wherever it is", async () => {
+      put("outside/hex.md");
+      expect(
+        await rfcMain([
+          "check",
+          at("../../outside/hex.md"),
+          "--spec",
+          join(dir, "outside/hex.md"),
+        ]),
+      ).toBe(0);
+    });
   });
 
   test("a contract of the wrong shape is refused without reading sources", async () => {

@@ -8,8 +8,14 @@
 // rfcs/. Fails closed: a git error, an unreadable contract or a missing source
 // is a failure.
 
-import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import {
+  existsSync,
+  lstatSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+} from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 import {
   type RfcContract,
   type SourceDecl,
@@ -41,6 +47,48 @@ export function sourceFile(
     join(VECTOR_ROOT, "rfcs", `rfc${src.rfc}.txt`),
   ].find(existsSync);
 }
+
+/**
+ * Why a contract may not read `file` as a source it declares, or undefined
+ * when it may. A contract can come from anyone, so its sources may be only
+ * spec text: in the contract's own directory, or in the specs/ and rfcs/ beside
+ * it, beside its parent or in vector. A specs/ or rfcs/ that is itself a
+ * symlink is no root: it could lead anywhere. The file's own symlinks are
+ * resolved first, and no part of its path below its root may start with "."
+ * (.git, .ssh, .env). This holds for an implicit rfc<N>.txt as well as a
+ * `path`: a checked-out repository can hold symlinks of either name.
+ */
+export function sourcePathProblem(
+  src: SourceDecl,
+  contractPath: string,
+  file: string,
+): string | undefined {
+  const here = real(dirname(resolve(contractPath)));
+  const roots = [
+    here,
+    ...[join(here, ".."), join(here, "../.."), VECTOR_ROOT].flatMap((r) =>
+      SOURCE_DIRS.map((d) => join(real(r), d)).filter((d) => !isSymlink(d)),
+    ),
+  ];
+  const f = real(file);
+  const under = roots.find((r) => f.startsWith(`${r}/`));
+  if (
+    under !== undefined &&
+    !relative(under, f)
+      .split("/")
+      .some((part) => part.startsWith("."))
+  )
+    return undefined;
+  return `source ${src.id} is ${src.path ?? file}, which is not spec text: a contract may read sources only beside it or under specs/ or rfcs/, and not in a hidden directory or through a symlinked specs/ or rfcs/`;
+}
+
+const isSymlink = (p: string) => {
+  try {
+    return lstatSync(p).isSymbolicLink();
+  } catch {
+    return false;
+  }
+};
 
 /**
  * A changed path's side of the freeze. A generated test is on the spec side:

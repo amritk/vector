@@ -20,6 +20,7 @@ import {
   type Literal,
   type PropertyClause,
   type RfcContract,
+  type SigTy,
   type ValueTy,
   type VectorClause,
   bytesToHex,
@@ -30,6 +31,8 @@ import {
   literalBytes,
   sourceOf,
   typeOf,
+  valueTy,
+  withoutControlChars,
 } from "./contract.ts";
 import type { PropertySamples } from "./sample.ts";
 
@@ -222,6 +225,14 @@ const charAtStr = (s: string, i: i32): string => {
   }
   return s.slice(i, i + 1);
 };`,
+  copyBytes: `/** A fresh copy of \`b\`. */
+const copyBytes = (b: u8[]): u8[] => {
+  const out: u8[] = [];
+  for (const x of b) {
+    out.push(x);
+  }
+  return out;
+};`,
   Unwrap: `/**
  * \`unwrap\` without exceptions: a null is recorded and stands in as no bytes,
  * and the sample that saw it fails.
@@ -260,6 +271,8 @@ const HELPER_DEPS: Record<string, string[]> = {
   unwrapStr: ["Unwrap"],
 };
 const HELPER_ORDER = Object.keys(HELPERS);
+/** Every helper the test can define, for the contract's TEST_NAMES. */
+export const HELPER_NAMES = [...HELPER_ORDER, "unwrapStr"];
 
 class Emitter {
   readonly used = new Set<string>();
@@ -275,6 +288,78 @@ class Emitter {
     this.used.add(h);
     for (const d of HELPER_DEPS[h] ?? []) this.use(d);
     return h;
+  }
+
+  /** What the test imports from nish:secret. */
+  readonly secretNames = new Set<string>();
+  /** Plain-bytes wrappers of the functions that take or return a Secret. */
+  readonly plainWrappers = new Map<string, string>();
+
+  /**
+   * A call of a contract function on emitted arguments. One that takes or
+   * returns a `Secret<u8[]>` goes through a wrapper (plainWrapper), so the
+   * rest of the test sees plain bytes.
+   */
+  call(sig: FnSig, args: string[]): string {
+    const secret = (t: SigTy) => t !== valueTy(t);
+    if (!secret(sig.returns) && !sig.params.some((p) => secret(p.type)))
+      return `${sig.name}(${args.join(", ")})`;
+    const name = `plain_${sig.name}`;
+    if (!this.plainWrappers.has(name))
+      this.plainWrappers.set(name, this.plainWrapper(sig, name));
+    return `${name}(${args.join(", ")})`;
+  }
+
+  /**
+   * `sig.name` on plain bytes, under nish's rules for a Secret: each secret
+   * argument is a fresh copy wrapped with \`secret\` and wiped after the call;
+   * a secret result is copied out with \`expose\`, then wiped.
+   */
+  plainWrapper(sig: FnSig, name: string): string {
+    this.use("copyBytes");
+    this.secretNames.add("Secret").add("wipe");
+    const params = sig.params.map(
+      (p) => `a_${p.name}: ${NISH_TY[valueTy(p.type)]}`,
+    );
+    const body: string[] = [];
+    const args = sig.params.map((p) => {
+      if (p.type !== "secret-bytes") return `a_${p.name}`;
+      this.secretNames.add("secret");
+      body.push(
+        `  const s_${p.name}: Secret<u8[]> = secret(copyBytes(a_${p.name}));`,
+      );
+      return `s_${p.name}`;
+    });
+    const wipes = sig.params
+      .filter((p) => p.type === "secret-bytes")
+      .map((p) => `  wipe(s_${p.name});`);
+    const call = `${sig.name}(${args.join(", ")})`;
+    const ret = valueTy(sig.returns);
+    if (sig.returns === "secret-bytes" || sig.returns === "secret-bytes?") {
+      this.secretNames.add("expose");
+      body.push(
+        `  const r: Secret<u8[]>${ret === "bytes?" ? " | null" : ""} = ${call};`,
+        ...wipes,
+      );
+      if (ret === "bytes?")
+        body.push("  if (r === null) {", "    return null;", "  }");
+      body.push(
+        "  const out: u8[] = expose(r, copyBytes);",
+        "  wipe(r);",
+        "  return out;",
+      );
+    } else
+      body.push(
+        `  const r: ${NISH_TY[ret]} = ${call};`,
+        ...wipes,
+        "  return r;",
+      );
+    return [
+      `/** ${sig.name} on plain bytes: secrets are copied in, wiped after. */`,
+      `const ${name} = (${params.join(", ")}): ${NISH_TY[ret]} => {`,
+      ...body,
+      "};",
+    ].join("\n");
   }
 
   bytesLit(b: Uint8Array): string {
@@ -326,8 +411,10 @@ class Emitter {
         : `v_${e.var}`;
     if ("call" in e) {
       const sig = this.fns.get(e.call) as FnSig;
-      const args = e.args.map((a, i) => this.expr(a, sig.params[i].type));
-      return `${e.call}(${args.join(", ")})`;
+      return this.call(
+        sig,
+        e.args.map((a, i) => this.expr(a, valueTy(sig.params[i].type))),
+      );
     }
     if ("let" in e) throw new Error("a let may only open the assert");
     if (!("op" in e)) {
@@ -422,6 +509,15 @@ const testName = (k: Clause) => `[${k.id}] ${k.title} (${k.covers.join(", ")})`;
 
 const jsString = (s: string) => JSON.stringify(s);
 
+/**
+ * Text that stays inside a `//` or `/** *\/` comment: control characters and
+ * line separators become spaces and `*\/` cannot close the comment. The
+ * contract gate refuses such text already; this keeps the emitter safe on
+ * its own (a regenerate command holds a path, which may contain anything).
+ */
+export const commentText = (s: string) =>
+  withoutControlChars(s).replace(/\*\//g, "* /");
+
 const fnName = (k: Clause) => `clause_${k.id.replace(/[^A-Za-z0-9_]/g, "_")}`;
 
 /** A source as a reader knows it: "RFC 8439", or its id for a spec that is not an RFC. */
@@ -431,7 +527,7 @@ function sourceName(c: RfcContract, id: string): string {
 }
 
 function docComment(c: RfcContract, k: Clause): string {
-  const lines = ["/**", ` * ${k.title}`];
+  const lines = ["/**", ` * ${commentText(k.title)}`];
   for (const id of k.covers) {
     const r = c.requirements.find((x) => x.id === id);
     if (!r) continue;
@@ -439,8 +535,7 @@ function docComment(c: RfcContract, k: Clause): string {
       " *",
       ` * ${r.id} — ${sourceName(c, sourceOf(c, r.source))} §${r.section}, ${r.level}:`,
     );
-    for (const l of wrap(r.quote, 72))
-      lines.push(` *   ${l.replace(/\*\//g, "* /")}`);
+    for (const l of wrap(r.quote, 72)) lines.push(` *   ${commentText(l)}`);
   }
   lines.push(" */");
   return lines.join("\n");
@@ -462,11 +557,13 @@ function wrap(text: string, width: number): string[] {
 
 function emitVector(em: Emitter, k: VectorClause): string {
   const sig = em.fns.get(k.call) as FnSig;
-  const args = k.args.map((a, i) => em.literal(a, sig.params[i].type));
-  const call = `${k.call}(${args.join(", ")})`;
+  const call = em.call(
+    sig,
+    k.args.map((a, i) => em.literal(a, valueTy(sig.params[i].type))),
+  );
   const name = jsString(testName(k));
   let body: string;
-  switch (sig.returns) {
+  switch (valueTy(sig.returns)) {
     case "bytes":
       body = `t.eqStr(${name}, ${em.use("hexOf")}(${call}), ${jsString(bytesToHex(literalBytes(k.expect) as Uint8Array))})`;
       break;
@@ -637,7 +734,7 @@ export function emitNishTest(
   }
   const header = [
     `// GENERATED by vector from the contract "${c.contract}" (${sourceName(c, declaredSources(c).main)},`,
-    `// ${c.source.title}). Do not edit: change the contract and regenerate${opts.regenerate ? ` with\n//   ${opts.regenerate}` : ""}.`,
+    `// ${commentText(c.source.title)}). Do not edit: change the contract and regenerate${opts.regenerate ? ` with\n//   ${commentText(opts.regenerate)}` : ""}.`,
     "//",
     "// Each check names its clause in brackets and the requirements it covers in",
     "// parentheses; every requirement's RFC text is quoted above its checks.",
@@ -656,17 +753,37 @@ export function emitNishTest(
     ...[...byModule.entries()].map(
       ([mod, names]) => `import { ${names.join(", ")} } from ${jsString(mod)};`,
     ),
+    ...(em.secretNames.size > 0
+      ? [
+          `import { ${["Secret", "expose", "secret", "wipe"].filter((n) => em.secretNames.has(n)).join(", ")} } from "nish:secret";`,
+        ]
+      : []),
   ];
-  const helpers = HELPER_ORDER.filter((h) => em.used.has(h)).map((h) =>
-    h === "Unwrap" && em.used.has("unwrapStr")
-      ? HELPERS.Unwrap.replace(/\n\}$/, `\n${UNWRAP_STR}\n}`)
-      : HELPERS[h],
-  );
+  const helpers = [
+    ...HELPER_ORDER.filter((h) => em.used.has(h)).map((h) =>
+      h === "Unwrap" && em.used.has("unwrapStr")
+        ? HELPERS.Unwrap.replace(/\n\}$/, `\n${UNWRAP_STR}\n}`)
+        : HELPERS[h],
+    ),
+    ...[...em.plainWrappers.keys()]
+      .sort()
+      .map((k) => em.plainWrappers.get(k) as string),
+  ];
+  // `main` records what each clause returned and, once the suite is done,
+  // prints it after the nonce `spec run` passes as the first argument. A
+  // module that exits early or prints its own PASS lines can't produce a
+  // matching end line (see checkTranscript in run.ts).
   const main = [
     "export const main = (): i32 => {",
     `  const t: Suite = new Suite(${jsString(c.contract)});`,
-    ...c.clauses.map((k) => `  ${fnName(k)}(t);`),
-    "  return t.done();",
+    `  let ran: string = "";`,
+    ...c.clauses.map(
+      (k) => `  ran = \`\${ran}\${${fnName(k)}(t) ? "1" : "0"}\`;`,
+    ),
+    "  const code: i32 = t.done();",
+    `  const nonce: string = toI32(process.argv.length) > 1 ? process.argv[1] : "-";`,
+    "  console.log(`vector-done ${nonce} ${ran}`);",
+    "  return code;",
     "};",
   ];
   return `${[header.join("\n"), imports.join("\n"), ...helpers, ...bodies, main.join("\n")].join("\n\n")}\n`;

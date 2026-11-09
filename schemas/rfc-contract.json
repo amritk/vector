@@ -152,9 +152,32 @@
       "pattern": "^(?:\\d+(?:\\.\\d+)*|[A-Z](?:\\.\\d+)*)$",
       "description": "A section number: 2.3, A.1, 4 (an RFC's, or a markdown spec's numbered heading)."
     },
-    "valueType": {
-      "enum": ["bytes", "bytes?", "string", "string?", "i32", "u32", "bool"],
-      "description": "bytes? is bytes or null (a refusal)."
+    "paramType": {
+      "enum": [
+        "bytes",
+        "bytes?",
+        "string",
+        "string?",
+        "i32",
+        "u32",
+        "bool",
+        "secret-bytes"
+      ],
+      "description": "bytes? is bytes or null (a refusal). secret-bytes is a nish Secret<u8[]>: bytes in the contract, wrapped with secret() by the generated test."
+    },
+    "returnType": {
+      "enum": [
+        "bytes",
+        "bytes?",
+        "string",
+        "string?",
+        "i32",
+        "u32",
+        "bool",
+        "secret-bytes",
+        "secret-bytes?"
+      ],
+      "description": "As paramType; secret-bytes? is a Secret<u8[]> or null, read with expose()."
     },
     "requirement": {
       "type": "object",
@@ -239,14 +262,14 @@
                 "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
               },
               "type": {
-                "$ref": "#/$defs/valueType"
+                "$ref": "#/$defs/paramType"
               }
             },
             "required": ["name", "type"]
           }
         },
         "returns": {
-          "$ref": "#/$defs/valueType"
+          "$ref": "#/$defs/returnType"
         }
       },
       "required": ["name", "params", "returns"]

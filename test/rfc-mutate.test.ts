@@ -812,6 +812,7 @@ const result = (
       stdout,
       stderr,
       nish: "/x/nish",
+      integrity: [],
     },
   };
 };
@@ -1179,7 +1180,9 @@ describe("running mutants with a fake runner", () => {
         'grep -q HANG "$m" && { sleep 30; exit 0; }',
         'grep -q CRASH "$m" && kill -9 $$',
         `grep -q FAIL "$m" && { printf 'FAIL  [${ids[0]}] x\\n'; exit 1; }`,
-        `printf '${out}\\n'`,
+        // The end line the real test's main prints, with the nonce the
+        // watchdog passed on from `run <file> <nonce>`.
+        `printf '${out}\\nvector-done %s ${"1".repeat(ids.length)}\\n' "$1"`,
         "",
       ].join("\n"),
     );

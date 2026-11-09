@@ -37,6 +37,118 @@ describe("diffPrograms", () => {
     expect(outcome.status).toBe("EQUIVALENT");
   }, 60_000);
 
+  test("DIFFERENT: equal over the reals but not in float64 (#18)", async () => {
+    const make = (body: Program["functions"][number]["body"]): Program => ({
+      programName: "total",
+      functions: [
+        {
+          name: "total",
+          layer: 1,
+          purpose: "price with fee",
+          params: [{ name: "price", type: "Real" }],
+          returnType: "Real",
+          requires: [
+            {
+              axiomId: "R",
+              expr: {
+                kind: "binop",
+                op: ">=",
+                left: { kind: "var", name: "price" },
+                right: { kind: "num", value: "0" },
+              },
+            },
+          ],
+          ensures: [
+            {
+              axiomId: "E",
+              expr: {
+                kind: "binop",
+                op: ">=",
+                left: { kind: "var", name: "result" },
+                right: { kind: "var", name: "price" },
+              },
+            },
+          ],
+          body,
+        },
+      ],
+    });
+    const scaled = {
+      kind: "binop",
+      op: "*",
+      left: { kind: "var", name: "price" },
+      right: { kind: "num", value: "1.1" },
+    } as const;
+    const tenth = { kind: "num", value: "0.1" } as const;
+    const before = make({
+      kind: "binop",
+      op: "+",
+      left: scaled,
+      right: { kind: "num", value: "0.2" },
+    });
+    const after = make({
+      kind: "binop",
+      op: "+",
+      left: { kind: "binop", op: "+", left: scaled, right: tenth },
+      right: tenth,
+    });
+    const outcome = await diffPrograms(before, after);
+    expect(outcome.status).toBe("DIFFERENT");
+    if (outcome.status !== "DIFFERENT") return;
+    expect(outcome.report.matched[0]?.equivalent).toBe(true);
+    const delta = outcome.report.float64Deltas[0];
+    expect(delta?.name).toBe("total");
+    expect(delta?.oldResult).not.toBe(delta?.newResult);
+    expect(outcome.summary).toContain("float64");
+  }, 60_000);
+
+  test("DIFFERENT: a requires equal over the reals but not in float64 (#18)", async () => {
+    type Expr = Program["functions"][number]["body"];
+    const x = { kind: "var", name: "x" } as const;
+    const num = (value: string) => ({ kind: "num", value }) as const;
+    const op = (o: string, left: Expr, right: Expr) =>
+      ({ kind: "binop", op: o, left, right }) as Expr;
+    const make = (guard: Expr): Program => ({
+      programName: "f",
+      functions: [
+        {
+          name: "f",
+          layer: 1,
+          purpose: "p",
+          params: [{ name: "x", type: "Real" }],
+          returnType: "Real",
+          requires: [
+            { axiomId: "R0", expr: op(">=", x, num("0")) },
+            { axiomId: "R", expr: guard },
+          ],
+          ensures: [
+            {
+              axiomId: "E",
+              expr: op(">=", { kind: "var", name: "result" }, num("0")),
+            },
+          ],
+          body: x,
+        },
+      ],
+    });
+    // Over the reals both guards are x <= 0.3; in float64 (0.3 + 0.1) + 0.2
+    // is 0.6000000000000001, so the old code throws at 0.3 and the new does not.
+    const before = make(
+      op("<=", op("+", op("+", x, num("0.1")), num("0.2")), num("0.6")),
+    );
+    const after = make(op("<=", x, num("0.3")));
+    const outcome = await diffPrograms(before, after);
+    expect(outcome.status).toBe("DIFFERENT");
+    if (outcome.status !== "DIFFERENT") return;
+    expect(outcome.report.matched[0]?.equivalent).toBe(true);
+    expect(outcome.report.float64Deltas[0]).toEqual({
+      name: "f",
+      inputs: { x: "0.3" },
+      oldResult: "(throws — requires violated [R])",
+      newResult: "0.3",
+    });
+  }, 60_000);
+
   test("EQUIVALENT: a contract rewording alone is not a behavioral change", async () => {
     const next = clone();
     const usdToEur = next.functions[1];

@@ -37,6 +37,10 @@ export interface ContractReport {
 /** What a survivor means: the module can change there and no clause notices. */
 export const SURVIVOR_MEANING = "behaviour no requirement pins down";
 
+/** What SATISFIED claims, and what it does not (#30). */
+export const SATISFIED_MEANING =
+  "SATISFIED: the spec's vectors match and every property held at every sample. It is not a proof: code no vector or sample reaches is untested. `vector spec mutate` shows which plausible bugs the contract would miss.";
+
 /** Mutants that ran to a verdict: stillborn ones (no build) are not counted. */
 function mutationLine(m: MutationReport): string {
   const c = m.counts;
@@ -169,11 +173,16 @@ export function renderReport(r: ContractReport): string {
     for (const a of m.unusedAllowances)
       out.push(`  ! allowSurvivors ${a.file}:${a.line} matched no survivor`);
   }
+  if (r.run && r.run.integrity.length > 0) {
+    out.push("", " The transcript cannot be trusted:");
+    for (const p of r.run.integrity) out.push(`  ! ${p}`);
+  }
   if (r.run && r.run.status === "ERROR") {
     out.push("", " The test did not complete:");
     const tail = (r.run.stderr || r.run.stdout).trim().split("\n").slice(-15);
     for (const l of tail) out.push(`  | ${l}`);
   }
+  if (reportStatus(r) === "SATISFIED") out.push("", ` ${SATISFIED_MEANING}`);
   out.push(
     "",
     " ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run",
@@ -348,6 +357,11 @@ export function renderMarkdown(r: ContractReport): string {
     for (const w of warnings) out.push(`- ${cell(`${w.at}: ${w.message}`)}`);
     out.push("");
   }
+  if (r.run && r.run.integrity.length > 0) {
+    out.push("### The transcript cannot be trusted", "");
+    for (const p of r.run.integrity) out.push(`- ${cell(p)}`);
+    out.push("");
+  }
   if (r.run && r.run.status === "ERROR") {
     const tail = (r.run.stderr || r.run.stdout).trim().split("\n").slice(-15);
     out.push(
@@ -359,6 +373,7 @@ export function renderMarkdown(r: ContractReport): string {
       "",
     );
   }
+  if (status === "SATISFIED") out.push(`_${SATISFIED_MEANING}_`, "");
   return out.join("\n").trimEnd();
 }
 
@@ -413,6 +428,7 @@ export function reportJson(r: ContractReport): unknown {
             ]),
           ),
           requirements: Object.fromEntries(r.run.requirements),
+          integrity: r.run.integrity,
         }
       : undefined,
     mutation: r.mutation

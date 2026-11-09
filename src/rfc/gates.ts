@@ -30,6 +30,7 @@ import {
   type FnSig,
   type Literal,
   type RfcContract,
+  type SigTy,
   type TypeEnv,
   type ValueTy,
   type VectorClause,
@@ -42,19 +43,23 @@ import {
   typeOf,
   typeOfLiteral,
   validateContractShape,
+  valueTy,
   vectorArgsAt,
 } from "./contract.ts";
 import {
+  type HexValue,
   type RfcDocument,
   type RfcSection,
   findSection,
   hexPrinted,
-  hexRuns,
-  intLabelled,
+  hexValues,
+  intLabelCount,
+  intRounds,
   normalizeText,
   normativeSentences,
   ownSpans,
   sectionLines,
+  sectionSpans,
   sectionText,
 } from "./rfctext.ts";
 
@@ -226,15 +231,15 @@ function checkTyping(c: RfcContract, issues: GateIssue[]): void {
         }
         k.args.forEach((a, i) => {
           const p = sig.params[i];
-          if (p && !literalFits(a, p.type)) {
+          if (p && !literalFits(a, valueTy(p.type))) {
             errors.push(
-              `args[${i}]: ${k.call}(${p.name}) wants ${p.type}, got ${typeOfLiteral(a)}`,
+              `args[${i}]: ${k.call}(${p.name}) wants ${valueTy(p.type)}, got ${typeOfLiteral(a)}`,
             );
           }
         });
-        if (!literalFits(k.expect, sig.returns)) {
+        if (!literalFits(k.expect, valueTy(sig.returns))) {
           errors.push(
-            `expect: ${k.call} returns ${sig.returns}, got ${typeOfLiteral(k.expect)}`,
+            `expect: ${k.call} returns ${valueTy(sig.returns)}, got ${typeOfLiteral(k.expect)}`,
           );
         }
       }
@@ -373,13 +378,16 @@ function checkFidelity(
     const at = vectorArgsAt(k);
     const sec = citedSection(c, docs, at, k.id, issues);
     if (!sec) continue;
-    const check = literalCheck(sec, place(c, docs, at), k.id, issues, warnings);
-    k.args.forEach((a, i) => check(a, `args[${i}]`));
+    const where = place(c, docs, at);
+    const check = literalCheck(sec, where, k.id, issues, warnings);
+    const args = k.args.flatMap((a, i) => check(a, `args[${i}]`));
     // A command or spec source vouches for the expected value instead.
-    if (!("cite" in k.source)) continue;
+    const cited = "cite" in k.source;
     const word = resultWord(k.expect);
-    if (word === null) check(k.expect, "expect");
-    else {
+    const expect = cited && word === null ? check(k.expect, "expect") : [];
+    oneTestCase(k.id, where, sec, args, expect, issues);
+    if (!cited) continue;
+    if (word !== null) {
       const why = statesResult(c, docs, k, at, sec, word);
       if (why !== null)
         issues.push({
@@ -471,8 +479,48 @@ const DENY_RE = new RegExp(
 const SENTENCE_END = /[.;!?](?=\s+["'“(\[A-Z]|\s*$)/;
 // Right after the value: an alternative ("null or throw", "null, and 5") or
 // a hyphen of any kind ("null-terminated", U+2010 to U+2015, U+2212).
+// After a comma, colon, semicolon or opening bracket too: "null (or an empty
+// array)", "null: or so the old text said".
 const ALTERNATIVE_RE =
-  /^\s*(?:,\s*)?(?:(?:or|and)(?![A-Za-z0-9])|[/\-\u2010-\u2015\u2212])/i;
+  /^\s*(?:[,:;([]\s*)?(?:(?:or|and|else|alternatively|either)(?![A-Za-z0-9])|[/\-\u2010-\u2015\u2212])/i;
+// Right after the value: what may follow it when the value is the whole
+// result. Punctuation or the end closes the clause; a connective starts a
+// condition or circumstance ("null when the input is odd", "null on
+// failure"). Anything else — "null checks", "true to RFC X" — makes the value
+// a word in a longer phrase, not the stated result. An opening bracket
+// starts an aside ("null (see below)"). `to` is left out on purpose:
+// "MUST be true to RFC X" is not the result true, and so is `instead`, which
+// RETRACT_RE refuses wherever it is. A connective only opens the condition:
+// HEDGE_RE and another result in the rest of the sentence are refused too.
+const CLAUSE_END_RE = new RegExp(
+  `^(?:\\s*(?:$|[.,;:!?()[\\]])|\\s+(?:${[
+    "when",
+    "whenever",
+    "if",
+    "unless",
+    "for",
+    "on",
+    "upon",
+    "in",
+    "at",
+    "from",
+    "after",
+    "before",
+    "otherwise",
+    "because",
+    "since",
+    "as",
+    "until",
+    "while",
+    "with",
+    "without",
+    "then",
+    "here",
+    "there",
+    "immediately",
+  ].join("|")})(?![A-Za-z0-9]))`,
+  "i",
+);
 // Anywhere after the value in the rest of the quote: a word that withdraws,
 // negates or condemns it ("…, but this was removed", "…, which is a bug").
 const RETRACT_RE = new RegExp(
@@ -507,6 +555,46 @@ const RETRACT_RE = new RegExp(
   ].join("|")})(?![A-Za-z0-9])`,
   "i",
 );
+
+// Anywhere after the value in the rest of the quote: a word that makes it
+// the result only sometimes, or only by someone's account ("true at most
+// once", "null in some cases", "true with probability one half", "null, or
+// so the old text said").
+const HEDGE_RE = new RegExp(
+  `(?<![A-Za-z0-9])(?:${[
+    "at\\s+(?:most|least)",
+    "some(?:times)?",
+    "occasional[a-z]*",
+    "usual[a-z]*",
+    "often",
+    "typical[a-z]*",
+    "general[a-z]*",
+    "most[a-z]*",
+    "possib[a-z]*",
+    "probab[a-z]*",
+    "random[a-z]*",
+    "perhaps",
+    "maybe",
+    "once",
+    "twice",
+    "times",
+    "elsewhere",
+    "said",
+    "claim[a-z]*",
+  ].join("|")})(?![A-Za-z0-9])`,
+  "i",
+);
+// Anywhere after the value in the rest of the quote: another result ("null,
+// then retry and return 5", "false here and true elsewhere").
+const otherResultRe = (word: string): RegExp =>
+  new RegExp(
+    `(?<![A-Za-z0-9])(?:${[
+      ...["true", "false", "null"].filter((w) => w !== word.toLowerCase()),
+      "return[a-z]*",
+      "yield[a-z]*",
+    ].join("|")})(?![A-Za-z0-9])`,
+    "i",
+  );
 
 /**
  * The section's prose, whitespace-collapsed, and the spans of its sentences
@@ -556,9 +644,9 @@ const proseSentences = (
  * the guards read the whole prose sentence around it, so a quote cut out of
  * a qualified sentence ("Earlier drafts said that f MUST return null, but
  * …") is judged with what it left out: DENY_RE over the sentence before the
- * keyword, ALTERNATIVE_RE right after the value, and RETRACT_RE over the
- * rest of every sentence the quote touches. Every occurrence of the quote
- * in the prose must pass.
+ * keyword, ALTERNATIVE_RE right after the value, and RETRACT_RE, HEDGE_RE
+ * and another result over the rest of every sentence the quote touches.
+ * Every occurrence of the quote in the prose must pass.
  */
 const quoteStates = (
   quote: string,
@@ -595,11 +683,29 @@ const quoteStates = (
         why = `offers an alternative right after "${word}" ("${alt[0].trim()}"), so "${word}" is not the whole result`;
         continue;
       }
-      const retract = RETRACT_RE.exec(
-        text.slice(to, Math.max(last, spanAt(to - 1)[1])),
-      );
+      if (!CLAUSE_END_RE.test(rest)) {
+        const next = /^\s*([^\s.,;:!?)\]]+)/.exec(rest)?.[1] ?? "";
+        why = `continues past "${word}" ("${word} ${next}"), so "${word}" is a word in a longer phrase, not the stated result (end the clause after it, or follow it with a condition such as "when …")`;
+        continue;
+      }
+      const tail = text.slice(to, Math.max(last, spanAt(to - 1)[1]));
+      const retract = RETRACT_RE.exec(tail);
       if (retract) {
         why = `retracts "${word}" after stating it ("${retract[0]}")`;
+        continue;
+      }
+      // A hedge or a second result belongs to this statement only up to its
+      // full stop, wherever SENTENCE_END would end the sentence: "to null.
+      // isHex MUST be False" states two results, not one.
+      const clause = tail.split(/[.!?](?:\s|$)/)[0] ?? "";
+      const hedge = HEDGE_RE.exec(clause);
+      if (hedge) {
+        why = `hedges "${word}" after stating it ("${hedge[0]}"), so it is not the result each time`;
+        continue;
+      }
+      const other = otherResultRe(word).exec(clause);
+      if (other) {
+        why = `states another result after "${word}" ("${other[0]}"), so "${word}" is not the whole result`;
         continue;
       }
       return null;
@@ -620,8 +726,10 @@ const quoteStates = (
  * MUST, SHALL or REQUIRED to (never followed by NOT), optionally "always",
  * a result verb, then `word` as a whole word; with nothing before the keyword
  * in its prose sentence (inside the quote or not) matching DENY_RE, no
- * alternative or hyphen right after the value, and no retraction in the rest
- * of any sentence the quote touches. Returns why it does not, or
+ * alternative or hyphen right after the value, the value ending its clause
+ * (CLAUSE_END_RE: punctuation, the end, or a condition such as "when …"
+ * next, never "null checks" or "true to"), and no retraction, hedge or
+ * other result in the rest of any sentence the quote touches. Returns why it does not, or
  * null when it does. Everything this does not recognise is refused.
  */
 function statesResult(
@@ -673,6 +781,75 @@ function isEmptyValue(lit: Literal): boolean {
   return false;
 }
 
+/**
+ * Where one literal of a vector was found: a printed value's label (hex and
+ * labelled ints), or the lines a string is printed on.
+ */
+type Bound =
+  | { at: string; label: string | null; rounds?: Rounds }
+  | { at: string; lines: Set<number>; text: string };
+
+/**
+ * A label printed more than once in a section (a parent of several test
+ * cases, or one listing several cases under the same names, as RFC 7748
+ * §5.2 does) is read in rounds: its k-th printing belongs with the k-th
+ * printing of every other repeated label. `rounds` holds the printings that
+ * carry the value; `of` is how many there are.
+ */
+type Rounds = { label: string; of: number; has: Set<number> };
+
+const QUOTE_PAIRS: [string, string][] = [
+  ['"', '"'],
+  ["'", "'"],
+  ["\u201c", "\u201d"],
+  ["\u2018", "\u2019"],
+  ["`", "`"],
+];
+
+/**
+ * The lines (of `sectionLines`, joined by "\n") on which `value` is printed
+ * as a whole value: inside quotes, as a markdown code span (`spans`, from
+ * `sectionSpans`), as a whole line, or ending a line after "=" or ":". A
+ * wrapped value counts on every line it spans. Never a substring of a longer
+ * value: "Zg" is not printed by `"Zg=="`.
+ */
+function textLines(
+  lines: string,
+  spans: string[][],
+  value: string,
+): Set<number> {
+  const v = value
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    .replace(/ /g, "[ \\n]");
+  const forms = [
+    ...QUOTE_PAIRS.map(([o, c]) => `${o}(${v})${c}`),
+    `(?<=^|\\n)(${v})(?=\\n|$)`,
+    `[=:] ?(${v})(?=\\n|$)`,
+  ];
+  const found = new Set<number>();
+  spans.forEach((on, i) => {
+    if (on.includes(value)) found.add(i);
+  });
+  for (const form of forms) {
+    for (const m of lines.matchAll(new RegExp(form, "g"))) {
+      const from = (m.index ?? 0) + m[0].indexOf(m[1]);
+      const first = lines.slice(0, from).split("\n").length - 1;
+      const last = first + m[1].split("\n").length - 1;
+      for (let i = first; i <= last; i++) found.add(i);
+    }
+  }
+  return found;
+}
+
+const sameLabel = (a: string, b: string) =>
+  normalizeText(a).toLowerCase() === normalizeText(b).toLowerCase();
+
+const quoted = (labels: string[]) =>
+  [...new Set(labels)].map((l) => `"${l}"`).join(" or ");
+
+const ordinal = (n: number) =>
+  `${n}${n % 10 === 1 && n % 100 !== 11 ? "st" : n % 10 === 2 && n % 100 !== 12 ? "nd" : n % 10 === 3 && n % 100 !== 13 ? "rd" : "th"}`;
+
 /** Checks literals against one section's text. */
 function literalCheck(
   sec: NonNullable<ReturnType<typeof findSection>>,
@@ -680,80 +857,204 @@ function literalCheck(
   id: string,
   issues: GateIssue[],
   warnings: GateWarning[],
-) {
-  const runs = hexRuns(sec);
+): (lit: Literal, at: string) => Bound[] {
+  const values = hexValues(sec);
   const text = sectionText(sec);
   const lines = sectionLines(sec);
-  const check = (lit: Literal, at: string) => {
+  const spans = sectionSpans(sec);
+  const fail = (at: string, message: string): Bound[] => {
+    issues.push({ gate: "fidelity", at: `${id}.${at}`, message });
+    return [];
+  };
+  const inSection = `${where} ("${sec.title}")`;
+  const rounds = (label: string, of: number, has: number[]) =>
+    of > 1 ? { rounds: { label, of, has: new Set(has) } } : {};
+  const hexCheck = (
+    at: string,
+    hex: string,
+    bytes: number,
+    label: string | undefined,
+  ): Bound[] => {
+    const whole = values.filter((v) => v.hex === hex);
+    if (whole.length === 0) {
+      const part = values.find((v) => hexPrinted([v.hex], hex));
+      return fail(
+        at,
+        part
+          ? `${bytes}-byte value is only part of a value printed in ${inSection}${part.label ? ` (under "${part.label}")` : ""}: a vector uses whole printed values (concat them to join several)`
+          : `${bytes}-byte value is not printed in ${inSection}`,
+      );
+    }
+    const named = whole.filter((v) => v.label !== null) as (HexValue & {
+      label: string;
+    })[];
+    if (label === undefined) {
+      if (named.length === 0) return [{ at, label: null }];
+      return fail(
+        at,
+        `the value is printed in ${inSection} under ${quoted(named.map((v) => v.label))}: name it with "label", so the contract says which printed value it is`,
+      );
+    }
+    if (!named.some((v) => sameLabel(v.label, label)))
+      return fail(
+        at,
+        named.length > 0
+          ? `the value is printed in ${inSection} under ${quoted(named.map((v) => v.label))}, not under "${label}"`
+          : `the value is printed in ${inSection}, but not under the label "${label}"`,
+      );
+    const under = values.filter(
+      (v) => v.label !== null && sameLabel(v.label, label),
+    );
+    const has = under.flatMap((v, i) => (v.hex === hex ? [i] : []));
+    return [{ at, label, ...rounds(label, under.length, has) }];
+  };
+  const check = (lit: Literal, at: string): Bound[] => {
     if ("concat" in lit) {
-      lit.concat.forEach((p, i) => check(p, `${at}.concat[${i}]`));
-      return;
+      return lit.concat.flatMap((p, i) => check(p, `${at}.concat[${i}]`));
     }
     if ("unchecked" in lit && lit.unchecked) {
       warnings.push({
         at: `${id}.${at}`,
         message: `not checked against the RFC: ${lit.unchecked}`,
       });
-      return;
+      return [];
     }
     if (isEmptyValue(lit)) {
       // "" is in every text and the empty hex run in every section, so an
       // empty value is found only where the section prints one.
       if (!EMPTY_PRINTED_RE.test(text))
-        issues.push({
-          gate: "fidelity",
-          at: `${id}.${at}`,
-          message: `the empty value is not printed in ${where} ("${sec.title}"): it needs "" or "(0 octets)" there`,
-        });
-      return;
+        return fail(
+          at,
+          `the empty value is not printed in ${inSection}: it needs "" or "(0 octets)" there`,
+        );
+      return [];
     }
     if ("hex" in lit || "ascii" in lit) {
       const bytes = literalBytes(lit) as Uint8Array;
+      const label = "label" in lit ? lit.label : undefined;
       // Whitespace alone normalizes to "", which every text holds: such a
       // value is matched only as hex.
-      const printedAsText =
-        "ascii" in lit &&
-        normalizeText(lit.ascii) !== "" &&
-        text.includes(normalizeText(lit.ascii));
-      if (!printedAsText && !hexPrinted(runs, bytesToHex(bytes))) {
-        issues.push({
-          gate: "fidelity",
-          at: `${id}.${at}`,
-          message: `${bytes.length}-byte value is not printed in ${where} ("${sec.title}")`,
-        });
+      if ("ascii" in lit && normalizeText(lit.ascii) !== "") {
+        const shown = textLines(lines, spans, normalizeText(lit.ascii));
+        if (shown.size > 0) return [{ at, lines: shown, text: lit.ascii }];
       }
-    } else if ("str" in lit) {
+      return hexCheck(at, bytesToHex(bytes), bytes.length, label);
+    }
+    if ("str" in lit) {
       // The section text is whitespace-collapsed, so only a string already
       // in that form is compared as the test uses it.
-      if (lit.str !== normalizeText(lit.str)) {
-        issues.push({
-          gate: "fidelity",
-          at: `${id}.${at}`,
-          message: `the string ${JSON.stringify(lit.str)} has leading, trailing or repeated whitespace, so it cannot be matched against the RFC text`,
-        });
-      } else if (!text.includes(lit.str)) {
-        issues.push({
-          gate: "fidelity",
-          at: `${id}.${at}`,
-          message: `the string ${JSON.stringify(lit.str)} is not printed in ${where} ("${sec.title}")`,
-        });
-      }
-    } else if ("int" in lit) {
+      if (lit.str !== normalizeText(lit.str))
+        return fail(
+          at,
+          `the string ${JSON.stringify(lit.str)} has leading, trailing or repeated whitespace, so it cannot be matched against the RFC text`,
+        );
+      const shown = textLines(lines, spans, lit.str);
+      if (shown.size === 0)
+        return fail(
+          at,
+          text.includes(lit.str)
+            ? `the string ${JSON.stringify(lit.str)} is only part of a longer value in ${inSection}: it must be printed whole (in quotes, on a line of its own, or ending a line after "=" or ":")`
+            : `the string ${JSON.stringify(lit.str)} is not printed in ${inSection}`,
+        );
+      return [{ at, lines: shown, text: lit.str }];
+    }
+    if ("int" in lit) {
       if (lit.label === undefined) {
         warnings.push({
           at: `${id}.${at}`,
           message: `not checked against the RFC: the integer ${lit.int} has no "label" to find it by`,
         });
-      } else if (!intLabelled(lines, lit.label, lit.int)) {
-        issues.push({
-          gate: "fidelity",
-          at: `${id}.${at}`,
-          message: `${where} does not print "${lit.label}" followed by ${lit.int}`,
-        });
+        return [];
       }
+      const has = intRounds(lines, lit.label, lit.int);
+      if (has.length === 0)
+        return fail(
+          at,
+          `${where} does not print "${lit.label}" followed by ${lit.int}`,
+        );
+      const of = intLabelCount(lines, lit.label);
+      return [{ at, label: lit.label, ...rounds(lit.label, of, has) }];
     }
+    return [];
   };
   return check;
+}
+
+/**
+ * A cited vector's values must be one test case: strings printed on one
+ * shared line (`BASE16("f") = "66"`), values under repeated labels from one
+ * round (the first "Key" with the first "Data", never the second), and the
+ * expected value not a value the arguments are also bound to (a key used as
+ * the expected MAC).
+ */
+function oneTestCase(
+  id: string,
+  where: string,
+  sec: RfcSection,
+  args: Bound[],
+  expect: Bound[],
+  issues: GateIssue[],
+): void {
+  const texts = [...args, ...expect].filter(
+    (b): b is Extract<Bound, { lines: Set<number> }> => "lines" in b,
+  );
+  if (texts.length > 1) {
+    const shared = [...texts[0].lines].filter((l) =>
+      texts.every((t) => t.lines.has(l)),
+    );
+    if (shared.length === 0)
+      issues.push({
+        gate: "fidelity",
+        at: id,
+        message: `${texts.map((t) => `${t.at} ${JSON.stringify(t.text)}`).join(", ")} are each printed in ${where} ("${sec.title}"), but never on one line together, so nothing pairs them as one test case`,
+      });
+  }
+  const repeated = [...args, ...expect].flatMap((b) =>
+    "rounds" in b && b.rounds ? [{ at: b.at, ...b.rounds }] : [],
+  );
+  // A string is placed by its line and a labelled value by its round; nothing
+  // relates the two, so they pair only where the label is printed once.
+  if (texts.length > 0 && repeated.length > 0)
+    issues.push({
+      gate: "fidelity",
+      at: id,
+      message: `${texts.map((t) => `${t.at} ${JSON.stringify(t.text)}`).join(", ")} and ${repeated.map((b) => `${b.at} (one of ${b.of} "${b.label}")`).join(", ")} in ${where} ("${sec.title}"): nothing pairs a printed string with one of several labelled values: cite the subsection that holds one test case`,
+    });
+  // Rounds pair only when every label is printed once per test case: a case
+  // that prints one of them as "(0 octets)", or not at all, shifts its later
+  // printings into the next case (RFC 5869 §A).
+  else if (repeated.length > 1 && new Set(repeated.map((b) => b.of)).size > 1)
+    issues.push({
+      gate: "fidelity",
+      at: id,
+      message: `${repeated.map((b) => `"${b.label}" is printed ${b.of} times`).join(", ")} in ${where} ("${sec.title}"), so which printings belong to one test case is unclear: cite the subsection that holds one test case`,
+    });
+  else if (repeated.length > 1) {
+    const shared = [...repeated[0].has].filter((r) =>
+      repeated.every((b) => b.has.has(r)),
+    );
+    const nth = (has: Set<number>) =>
+      [...has].map((r) => ordinal(r + 1)).join(" or ");
+    if (shared.length === 0)
+      issues.push({
+        gate: "fidelity",
+        at: id,
+        message: `${repeated.map((b) => `${b.at} is the ${nth(b.has)} of ${b.of} "${b.label}"`).join(", ")} in ${where} ("${sec.title}"), so they are from different test cases: use the values printed together (or cite the subsection that holds one test case)`,
+      });
+  }
+  for (const e of expect) {
+    if (!("label" in e) || e.label === null) continue;
+    const label = e.label;
+    const same = args.find(
+      (a) => "label" in a && a.label !== null && sameLabel(a.label, label),
+    );
+    if (same)
+      issues.push({
+        gate: "fidelity",
+        at: `${id}.${e.at}`,
+        message: `the expected value is the one printed under "${label}", which ${same.at} is bound to as well: an input is not the expected result`,
+      });
+  }
 }
 
 /**
@@ -878,10 +1179,13 @@ function checkCompleteness(
 
 // ── Signatures against the implementation's source ───────────────────────
 
-const NISH_TYPES: Record<string, ValueTy> = {
+const NISH_TYPES: Record<string, SigTy> = {
   "u8[]": "bytes",
   "u8[] | null": "bytes?",
   "null | u8[]": "bytes?",
+  "Secret<u8[]>": "secret-bytes",
+  "Secret<u8[]> | null": "secret-bytes?",
+  "null | Secret<u8[]>": "secret-bytes?",
   string: "string",
   "string | null": "string?",
   "null | string": "string?",

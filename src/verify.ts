@@ -249,9 +249,11 @@ export function collectFeedbackItems(
       issue: "conformance",
       counterexample: { inputs: issue.inputs, result: issue.result },
       hint:
-        issue.kind === "callee-guard"
-          ? "The callee's precondition holds at this call site over exact reals, but float64 rounding of the computed argument violates its guard — the emitted code throws on an input this function's contract accepts. Guard the call with an ite, or strengthen this function's requires with a float-safe margin."
-          : "Proven over exact reals but FALSE when the emitted float64 code runs on the input shown. Avoid exact `==`/`!=` over Real results (float rounding); use an inequality/tolerance, or move to Int where the value is genuinely discrete.",
+        issue.kind === "unsampled"
+          ? "No float64 input satisfied this function's preconditions, so the emitted code could not be checked against its contract. Widen the requires (or use bounds a double can represent) so real inputs exist."
+          : issue.kind === "callee-guard"
+            ? "The callee's precondition holds at this call site over exact reals, but float64 rounding of the computed argument violates its guard — the emitted code throws on an input this function's contract accepts. Guard the call with an ite, or strengthen this function's requires with a float-safe margin."
+            : "Proven over exact reals but FALSE when the emitted float64 code runs on the input shown. Avoid exact `==`/`!=` over Real results (float rounding); use an inequality/tolerance, or move to Int where the value is genuinely discrete.",
     });
   }
   return items;
@@ -313,9 +315,11 @@ export function formatReportFeedback(report: VerificationReport): string {
       .map(([k, v]) => `${k} = ${v}`)
       .join(", ");
     lines.push(
-      issue.kind === "callee-guard"
-        ? `Function ${issue.function}: the call into ${issue.axiomId.replace(/^\(calls /, "").replace(/\)$/, "")} throws in float64 at ${inputs} — its guard ${issue.pretty} was proven over reals but is violated by the rounded argument. Guard the call with an ite or add a float-safe margin to the requires.`
-        : `Function ${issue.function}, ensures ${issue.axiomId} (${issue.pretty}): proven over reals but FALSE in float64 at ${inputs} → result = ${issue.result}. Avoid exact == over Real; use an inequality/tolerance.`,
+      issue.kind === "unsampled"
+        ? `Function ${issue.function}: no float64 input satisfies its requires (${issue.pretty}), so the emitted code could not be checked — widen the requires or use float-representable bounds.`
+        : issue.kind === "callee-guard"
+          ? `Function ${issue.function}: the call into ${issue.axiomId.replace(/^\(calls /, "").replace(/\)$/, "")} throws in float64 at ${inputs} — its guard ${issue.pretty} was proven over reals but is violated by the rounded argument. Guard the call with an ite or add a float-safe margin to the requires.`
+          : `Function ${issue.function}, ensures ${issue.axiomId} (${issue.pretty}): proven over reals but FALSE in float64 at ${inputs} → result = ${issue.result}. Avoid exact == over Real; use an inequality/tolerance.`,
     );
   }
   return lines.join("\n");

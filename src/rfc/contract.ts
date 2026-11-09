@@ -25,6 +25,23 @@ export const VALUE_TYPES = [
 ] as const;
 export type ValueTy = (typeof VALUE_TYPES)[number];
 
+/**
+ * The types a function's parameters and result may have: the value types, and
+ * `secret-bytes` for a nish `Secret<u8[]>`, plus `secret-bytes?` (`| null`) as
+ * a result. In the contract a secret is its bytes; the generated test wraps an
+ * argument with `secret` and reads a result with `expose`.
+ */
+export const SIG_TYPES = [
+  ...VALUE_TYPES,
+  "secret-bytes",
+  "secret-bytes?",
+] as const;
+export type SigTy = (typeof SIG_TYPES)[number];
+
+/** What a parameter or result of type `t` is in the contract. */
+export const valueTy = (t: SigTy): ValueTy =>
+  t === "secret-bytes" ? "bytes" : t === "secret-bytes?" ? "bytes?" : t;
+
 export const LEVELS = [
   "MUST",
   "MUST NOT",
@@ -63,13 +80,13 @@ export interface Requirement {
 
 export interface Param {
   name: string;
-  type: ValueTy;
+  type: SigTy;
 }
 
 export interface FnSig {
   name: string;
   params: Param[];
-  returns: ValueTy;
+  returns: SigTy;
   /** The module that exports it, when not the contract's target (a reference function). */
   module?: string;
 }
@@ -91,13 +108,18 @@ export interface Exclusion {
  * A literal value. `hex` and `ascii` are checked against the RFC text unless
  * `unchecked` says why they are not printed there; `concat` is checked part by
  * part. `repeat` writes `hex` that many times (RFC-printed runs like 22 × 0b).
- * `str` is a string value (`ascii` is bytes); both are checked as text. An
- * `int` is checked only next to its `label`, the name the RFC prints it under
- * ("L = 42"); without one it is unchecked, and the report says so.
+ * `str` is a string value (`ascii` is bytes); both are checked as text, as a
+ * whole printed value (quoted, a whole line, or ending a line after = or :).
+ * Bytes must be a whole printed value too, and one the RFC prints under a
+ * name ("Key = 00:01:…", a dump under "Ciphertext:") must give that name as
+ * `label`. An `int` is checked only next to its `label`, the name the RFC
+ * prints it under ("L = 42"); without one it is unchecked, and the report
+ * says so. A label printed more than once in the cited section is read in
+ * rounds: the k-th printing of each label belongs to one test case.
  */
 export type Literal =
-  | { hex: string; repeat?: number; unchecked?: string }
-  | { ascii: string; unchecked?: string }
+  | { hex: string; repeat?: number; label?: string; unchecked?: string }
+  | { ascii: string; label?: string; unchecked?: string }
   | { str: string; unchecked?: string }
   | { int: number; label?: string; unchecked?: string }
   | { bool: boolean }
@@ -325,6 +347,57 @@ export function nishModuleFile(module: string): string | undefined {
 
 export const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 export const IDENT_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
+/**
+ * Names the generated nish test defines, imports or binds around a call (its
+ * helpers, `main`, the Suite, nish:secret, the locals of a clause and of a
+ * secret wrapper), and the prefixes it puts on names: a contract function
+ * named one of these would be shadowed by it, or clash with it, and the test
+ * would not compile. emit-nish.test pins this against the helpers it emits.
+ */
+export const TEST_NAMES = new Set([
+  "hexOf",
+  "hexOrNull",
+  "unhex",
+  "nibble",
+  "bytesEq",
+  "isNullBytes",
+  "concatBytes",
+  "sliceBytes",
+  "fillBytes",
+  "flipBit",
+  "le64",
+  "strEq",
+  "isNullStr",
+  "strOrNull",
+  "shiftCase",
+  "utf8Bytes",
+  "asciiOrNull",
+  "charAtStr",
+  "copyBytes",
+  "Unwrap",
+  "unwrapStr",
+  "main",
+  "Suite",
+  "Secret",
+  "expose",
+  "secret",
+  "wipe",
+  "t",
+  "i",
+  "u",
+  "r",
+  "out",
+  "holds",
+  "why",
+  "ran",
+  "code",
+  "nonce",
+  "process",
+  "console",
+  "toI32",
+]);
+export const TEST_PREFIXES = ["plain_", "clause_", "table_", "v_", "a_", "s_"];
 export const SECTION_RE = /^(?:\d+(?:\.\d+)*|[A-Z](?:\.\d+)*)$/;
 export const MAX_BYTES_LEN = 4096;
 
@@ -422,13 +495,29 @@ function checkKeys(
   }
 }
 
+function checkLabel(
+  v: Record<string, unknown>,
+  at: string,
+  errors: string[],
+): void {
+  if (
+    v.label !== undefined &&
+    (typeof v.label !== "string" || !/[A-Za-z]/.test(v.label))
+  ) {
+    errors.push(
+      `${at}.label: the name the RFC prints the value under, with a letter`,
+    );
+  }
+}
+
 function shapeLiteral(v: unknown, at: string, errors: string[]): void {
   if (!isObj(v)) {
     errors.push(`${at}: expected a literal object`);
     return;
   }
   if ("hex" in v) {
-    checkKeys(v, ["hex", "repeat", "unchecked"], at, errors);
+    checkKeys(v, ["hex", "repeat", "label", "unchecked"], at, errors);
+    checkLabel(v, at, errors);
     if (typeof v.hex !== "string" || !/^(?:[0-9a-f]{2})*$/.test(v.hex)) {
       errors.push(`${at}.hex: lowercase hex with an even number of digits`);
     }
@@ -439,7 +528,8 @@ function shapeLiteral(v: unknown, at: string, errors: string[]): void {
       errors.push(`${at}.repeat: an integer >= 1`);
     }
   } else if ("ascii" in v) {
-    checkKeys(v, ["ascii", "unchecked"], at, errors);
+    checkKeys(v, ["ascii", "label", "unchecked"], at, errors);
+    checkLabel(v, at, errors);
     if (typeof v.ascii !== "string") errors.push(`${at}.ascii: a string`);
   } else if ("str" in v) {
     checkKeys(v, ["str", "unchecked"], at, errors);
@@ -448,14 +538,7 @@ function shapeLiteral(v: unknown, at: string, errors: string[]): void {
     }
   } else if ("int" in v) {
     checkKeys(v, ["int", "label", "unchecked"], at, errors);
-    if (
-      v.label !== undefined &&
-      (typeof v.label !== "string" || !/[A-Za-z]/.test(v.label))
-    ) {
-      errors.push(
-        `${at}.label: the name the RFC prints the value under, with a letter`,
-      );
-    }
+    checkLabel(v, at, errors);
     if (
       !Number.isInteger(v.int) ||
       (v.int as number) < I32_MIN ||
@@ -595,9 +678,41 @@ function shapeAlphabet(a: unknown, at: string, errors: string[]): void {
   });
 }
 
+/*
+ * Free text in a contract is copied into comments in the generated test,
+ * where a line break would end the comment and let the rest of the field run
+ * as code; so it must be one line, without control characters.
+ */
+const isControl = (cp: number) =>
+  cp < 0x20 || (cp >= 0x7f && cp <= 0x9f) || cp === 0x2028 || cp === 0x2029;
+
+/**
+ * The first control character in `s` (C0, DEL, C1, or a Unicode line or
+ * paragraph separator), as "U+000A"; undefined when there is none.
+ */
+export function controlChar(s: string): string | undefined {
+  for (const ch of s) {
+    const cp = ch.codePointAt(0) ?? 0;
+    if (isControl(cp))
+      return `U+${cp.toString(16).toUpperCase().padStart(4, "0")}`;
+  }
+  return undefined;
+}
+
+/** `s` with each control character replaced by a space. */
+export const withoutControlChars = (s: string) =>
+  [...s].map((ch) => (isControl(ch.codePointAt(0) ?? 0) ? " " : ch)).join("");
+
 const strField = (o: Obj, k: string, at: string, errors: string[]) => {
-  if (typeof o[k] !== "string" || (o[k] as string).trim() === "") {
+  const v = o[k];
+  if (typeof v !== "string" || v.trim() === "") {
     errors.push(`${at}.${k}: a non-empty string`);
+  } else {
+    const ch = controlChar(v);
+    if (ch)
+      errors.push(
+        `${at}.${k}: one line of text, without control characters (found ${ch}); it is copied into comments in the generated test`,
+      );
   }
 };
 
@@ -685,9 +800,18 @@ export function validateContractShape(input: unknown): string[] {
       }
       if (typeof f.name !== "string" || !IDENT_RE.test(f.name)) {
         errors.push(`${at}.name: an identifier`);
+      } else {
+        const name = f.name;
+        if (
+          TEST_NAMES.has(name) ||
+          TEST_PREFIXES.some((x) => name.startsWith(x))
+        )
+          errors.push(
+            `${at}.name: "${name}" is a name the generated test uses itself (its helpers and locals, and names starting ${TEST_PREFIXES.join(" ")}), so the test cannot call such a function`,
+          );
       }
-      if (!(VALUE_TYPES as readonly unknown[]).includes(f.returns)) {
-        errors.push(`${at}.returns: one of ${VALUE_TYPES.join(" ")}`);
+      if (!(SIG_TYPES as readonly unknown[]).includes(f.returns)) {
+        errors.push(`${at}.returns: one of ${SIG_TYPES.join(" ")}`);
       }
       if (!Array.isArray(f.params)) errors.push(`${at}.params: an array`);
       else {
@@ -701,8 +825,12 @@ export function validateContractShape(input: unknown): string[] {
           if (typeof p.name !== "string" || !IDENT_RE.test(p.name)) {
             errors.push(`${pat}.name: an identifier`);
           }
-          if (!(VALUE_TYPES as readonly unknown[]).includes(p.type)) {
-            errors.push(`${pat}.type: one of ${VALUE_TYPES.join(" ")}`);
+          if (p.type === "secret-bytes?") {
+            errors.push(
+              `${pat}.type: secret-bytes? is a result type only; a parameter may be secret-bytes`,
+            );
+          } else if (!(SIG_TYPES as readonly unknown[]).includes(p.type)) {
+            errors.push(`${pat}.type: one of ${SIG_TYPES.join(" ")}`);
           }
         });
       }
@@ -1171,7 +1299,7 @@ export function typeOf(
     let ok = true;
     e.args.forEach((a, i) => {
       const t = typeOf(a, env, `${at}.args[${i}]`, errors);
-      const want = sig.params[i].type;
+      const want = valueTy(sig.params[i].type);
       if (t === null) ok = false;
       else if (!assignable(t, want)) {
         ok = false;
@@ -1180,7 +1308,7 @@ export function typeOf(
         );
       }
     });
-    return ok ? sig.returns : null;
+    return ok ? valueTy(sig.returns) : null;
   }
   const ts = e.args.map((a, i) => typeOf(a, env, `${at}.args[${i}]`, errors));
   if (ts.some((t) => t === null)) return null;

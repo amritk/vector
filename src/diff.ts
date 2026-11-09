@@ -1,6 +1,7 @@
 import type { Program } from "./lang/ast.ts";
 import { validateProgramShape } from "./lang/shape.ts";
 import { typecheckProgram } from "./lang/validate.ts";
+import { type Float64Delta, findFloat64Delta } from "./solve/conformance.ts";
 import {
   type DiffCheck,
   type MatchedFunctionDiff,
@@ -19,9 +20,12 @@ import { signatureOf } from "./solve/smt.ts";
 // this check, not by fattening the contract into code.
 //
 //   EQUIVALENT — every shared function provably behaves identically for all
-//                inputs; nothing to review.
+//                inputs over the rationals AND no sampled float64 input
+//                tells the emitted versions apart; nothing to review.
 //   DIFFERENT  — at least one concrete behavioral change (a value delta, a
-//                domain change, a removed function, or a changed signature);
+//                domain change, a removed function, a changed signature, or
+//                — for functions equal over the rationals — a float64 input
+//                where the emitted code returns a different value);
 //                review the listed witnesses against the intended change.
 //   UNDECIDED  — no difference found, but some check came back unknown
 //                (usually nonlinear arithmetic); not proven equivalent.
@@ -46,6 +50,11 @@ export interface ProgramDiffReport {
     oldSignature: string;
     newSignature: string;
   }[];
+  /**
+   * Functions proven equivalent over the rationals whose emitted float64
+   * code nonetheless returns a different value on a sampled input.
+   */
+  float64Deltas: ({ name: string } & Float64Delta)[];
 }
 
 export type DiffOutcome =
@@ -97,6 +106,22 @@ export async function diffPrograms(
     millis = run.millis;
   }
 
+  // Equal over the rationals is not equal in the emitted code: re-check every
+  // rational-equivalent pair by running both versions in float64.
+  const float64Deltas: ProgramDiffReport["float64Deltas"] = [];
+  for (const m of matched) {
+    if (!m.equivalent) continue;
+    const pair = pairing.comparable.find((c) => c.oldFn.name === m.name);
+    if (!pair) continue;
+    const delta = findFloat64Delta(
+      oldProgram,
+      pair.oldFn,
+      newProgram,
+      pair.newFn,
+    );
+    if (delta) float64Deltas.push({ name: m.name, ...delta });
+  }
+
   const report: ProgramDiffReport = {
     solver,
     millis,
@@ -106,11 +131,13 @@ export async function diffPrograms(
     added: pairing.added.map(signatureOf),
     removed: pairing.removed.map(signatureOf),
     signatureChanged: pairing.signatureChanged,
+    float64Deltas,
   };
 
   const hasDifference =
     report.removed.length > 0 ||
     report.signatureChanged.length > 0 ||
+    float64Deltas.length > 0 ||
     matched.some((m) => anyStatus(m, "witness"));
   const hasUnknown = matched.some((m) => anyStatus(m, "unknown"));
   const status: DiffStatus = hasDifference
@@ -148,7 +175,15 @@ export function renderDiffSummary(
   lines.push("");
 
   for (const m of report.matched) {
-    if (m.equivalent) {
+    const floatDelta = report.float64Deltas.find((d) => d.name === m.name);
+    if (m.equivalent && floatDelta) {
+      lines.push(
+        ` ✘ ${m.signature} — equal over the reals, but the emitted float64 code DIFFERS`,
+      );
+      lines.push(
+        `     float64: at ${fmtInputs(floatDelta.inputs)} → old = ${floatDelta.oldResult}, new = ${floatDelta.newResult}`,
+      );
+    } else if (m.equivalent) {
       lines.push(` ✓ ${m.signature} — EQUIVALENT for all inputs`);
     } else if (anyStatus(m, "witness")) {
       lines.push(` ✘ ${m.signature} — BEHAVIOR DIFFERS`);
@@ -221,7 +256,8 @@ export function renderDiffSummary(
         : " restate nonlinear bodies in linear arithmetic and re-run.",
   );
   lines.push(
-    " (Proven over exact rationals; assumes both versions pass --verify.)",
+    " (Proven over exact rationals, then compared on sampled float64 inputs;",
   );
+  lines.push("  assumes both versions pass --verify.)");
   return lines.join("\n");
 }

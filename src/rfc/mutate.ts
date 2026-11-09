@@ -508,8 +508,10 @@ function mutantDiagnostic(stderr: string, sources: string[]): string | null {
  * reported an error, and an error otherwise (nish or the linker failed, the
  * build hung or was killed): no mutant is counted on a run that did not run.
  * Once started: timeout past the limit; survived when every clause passed;
- * killed on a failed clause or a non-zero exit (a panic). A null exit (the
- * runner itself was killed) or exit 0 without a verdict on every clause throws.
+ * killed on a failed clause, a non-zero exit (a panic), or a transcript that
+ * fails checkTranscript (the run ended early or printed lines the test did
+ * not write). A null exit (the runner itself was killed) or exit 0 without a
+ * verdict on every clause throws.
  */
 export function classify(r: ExecResult): {
   outcome: MutantOutcome;
@@ -540,6 +542,10 @@ export function classify(r: ExecResult): {
       outcome: "killed",
       detail: stderr.split("\n")[0] || `exit ${run.exitCode}`,
     };
+  // Exit 0, no failed clause, but the transcript isn't the test's own (the
+  // mutant exited early or printed clause lines): the test did not vouch for it.
+  if (run.integrity.length > 0)
+    return { outcome: "killed", detail: run.integrity[0] };
   throw new MutationRunError(
     `the test exited 0 without a verdict on every clause: ${stderr || "(no output)"}`,
   );
@@ -610,10 +616,11 @@ export interface RunMutantsOptions {
 const WATCHDOG_GRACE_MS = 10_000;
 
 /**
- * A script that stands in for `nish` as run.ts calls it (`run <file>`) and does
+ * A script that stands in for `nish` as run.ts calls it (`run <file> <nonce>`) and does
  * it in two steps, each in its own process group and each with `ms` to finish:
  * leave `<file>`'s path in `testPath`, build the test with
- * `nish <file> --link <bin>`, then, only if that worked, run `<bin>` and leave
+ * `nish <file> --link <bin>`, then, only if that worked, run `<bin> [args ...]`
+ * (the arguments after `<file>`, as `nish run` would pass them) and leave
  * `started` behind once it has started (not when it fails to: a missing or
  * non-executable binary exits 127 and never ran). A run past its time is killed as a
  * group (a looping mutant's children would otherwise hold the output pipes
@@ -635,8 +642,8 @@ const { spawn } = require("node:child_process");
 const { writeFileSync } = require("node:fs");
 const { signals } = require("node:os").constants;
 const args = process.argv.slice(2);
-if (args.length !== 2 || args[0] !== "run") {
-  console.error("vector-watchdog: expected run <file>, got " + args.join(" "));
+if (args.length < 2 || args[0] !== "run") {
+  console.error("vector-watchdog: expected run <file> [args ...], got " + args.join(" "));
   process.exit(125);
 }
 writeFileSync(${j(o.testPath)}, args[1]);
@@ -672,7 +679,7 @@ build.on("close", (code, signal) => {
     process.stderr.write(out);
     process.exit(status(code, signal) || 125);
   }
-  const test = start(${j(o.bin)}, [], "inherit");
+  const test = start(${j(o.bin)}, args.slice(2), "inherit");
   test.on("spawn", () => writeFileSync(${j(o.started)}, ""));
   const timer = setTimeout(() => {
     if (killGroup(test)) writeFileSync(${j(o.timedOut)}, "");
