@@ -26,6 +26,7 @@ import {
   BINDING_LEVELS,
   type Citation,
   type Clause,
+  type Expr,
   type ExprTy,
   type FnSig,
   type Literal,
@@ -36,6 +37,7 @@ import {
   type VectorClause,
   assignable,
   bytesToHex,
+  callsIn,
   citeLabel,
   declaredSources,
   literalBytes,
@@ -312,6 +314,29 @@ function checkCoverage(
       });
     }
   }
+  // Covering a requirement is a claim, so the clause making it has to test
+  // something. A property whose assertion never calls a function under test
+  // holds whatever the implementation does, and so does a comparison of an
+  // expression with itself; either would "cover" a requirement for free.
+  for (const k of c.clauses) {
+    if (k.kind !== "property") continue;
+    if (callsIn(k.assert).size === 0) {
+      issues.push({
+        gate: "coverage",
+        at: k.id,
+        message:
+          "the assertion calls none of the functions under test, so it holds whatever the implementation does and checks nothing",
+      });
+    }
+    const self = selfComparison(k.assert);
+    if (self) {
+      issues.push({
+        gate: "coverage",
+        at: k.id,
+        message: `the assertion compares an expression with itself ("${self}"), which no implementation can change the outcome of`,
+      });
+    }
+  }
   if (!c.clauses.some((k) => k.kind === "property")) {
     warnings.push({
       at: "clauses",
@@ -319,6 +344,33 @@ function checkCoverage(
         "no property clauses: the contract checks only the RFC's own vectors",
     });
   }
+}
+
+const COMPARISONS = new Set(["==", "!=", "<", "<=", ">", ">="]);
+
+/** The operator of the first comparison whose two operands are the same expression. */
+function selfComparison(e: Expr): string | null {
+  if ("let" in e) {
+    for (const b of e.let) {
+      const hit = selfComparison(b.value);
+      if (hit) return hit;
+    }
+    return selfComparison(e.in);
+  }
+  if (!("op" in e || "call" in e)) return null;
+  if (
+    "op" in e &&
+    COMPARISONS.has(e.op) &&
+    e.args.length === 2 &&
+    JSON.stringify(e.args[0]) === JSON.stringify(e.args[1])
+  ) {
+    return e.op;
+  }
+  for (const a of e.args) {
+    const hit = selfComparison(a);
+    if (hit) return hit;
+  }
+  return null;
 }
 
 /** The cited section, or an issue saying why there is none. */

@@ -40,8 +40,11 @@ export interface ConformanceIssue {
    * code throws on an input this function's own contract accepts.
    * unsampled — no float64 input satisfied the preconditions, so the gate
    * could not check the emitted code at all (fails closed).
+   * emitted-code — the emitted TypeScript itself, executed, disagrees with the
+   * program the solver proved (or does not compile): an emitter fault, not a
+   * fault in the program.
    */
-  kind: "postcondition" | "callee-guard" | "unsampled";
+  kind: "postcondition" | "callee-guard" | "unsampled" | "emitted-code";
   axiomId: string;
   pretty: string;
   inputs: Record<string, string>;
