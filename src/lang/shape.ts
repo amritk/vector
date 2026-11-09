@@ -75,7 +75,7 @@ function checkExpr(value: unknown, where: string, errors: string[]): void {
         !NUM_LITERAL_RE.test(value.value)
       ) {
         errors.push(
-          `${where}: num.value must be a plain decimal string like "0.91", got ${JSON.stringify(value.value)}`,
+          `${where}: num.value must be a plain decimal string like "0.91" (no leading zeros, no exponent), got ${JSON.stringify(value.value)}`,
         );
       } else if (!roundTrips(value.value)) {
         errors.push(

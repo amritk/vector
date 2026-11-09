@@ -521,11 +521,82 @@ export function checkConformance(
     // A body with calls can still throw via a callee's guard even when there
     // is nothing left to check about the postconditions.
     const bodyHasCalls = containsCall([fn.body]);
-    if (clauses.length === 0 && !bodyHasCalls) continue;
     // One witness per callee guard is enough.
     const seenGuards = new Set<string>();
     const emittedFn = emitted.get(fn.name);
     let emittedFlagged = false;
+    const witnessInputs = (env: Map<string, Value>): Record<string, string> => {
+      const inputs: Record<string, string> = {};
+      for (const p of fn.params) inputs[p.name] = String(env.get(p.name));
+      return inputs;
+    };
+
+    // Differential check, on every sample (rejected inputs included): the
+    // emitted function must throw exactly where the proven program rejects
+    // the input and return exactly what it computes everywhere else.
+    const differ = (env: Map<string, Value>): void => {
+      if (!emittedFn || emittedFlagged) return;
+      const want = interpretCall(fn, env, byName);
+      const got = runEmitted(
+        emittedFn,
+        fn.params.map((p) => env.get(p.name) as Value),
+      );
+      const show = (o: Outcome | { fault: string }): string =>
+        "fault" in o
+          ? `fails with "${o.fault}"`
+          : o.threw
+            ? "throws"
+            : `returns ${String(o.value)}`;
+      const agree =
+        !("fault" in got) &&
+        got.threw === want.threw &&
+        (got.threw || want.threw || Object.is(got.value, want.value));
+      if (agree) return;
+      emittedFlagged = true;
+      issues.push({
+        function: fn.name,
+        kind: "emitted-code",
+        axiomId: "(emitted code)",
+        pretty: "the emitted TypeScript computes the proven program",
+        inputs: witnessInputs(env),
+        result: `(emitted code ${show(got)}; the proven program ${show(want)})`,
+        note: "the emitted TypeScript, executed, disagrees with the program the solver proved. This is a fault in vector's emitter, not in the program — the proof does not cover this output.",
+      });
+    };
+    // Guard probes. Every sample is well-typed, so on its own the sampling
+    // never exercises what the domain guards exist to reject: NaN, a
+    // fractional Int, a non-boolean Bool. Substitute each into an otherwise
+    // ordinary input; the emitted function must throw on every one.
+    const probeGuards = (base: Map<string, Value> | undefined): void => {
+      if (!base) return;
+      for (const p of fn.params) {
+        const bad: unknown[] =
+          p.type === "Bool"
+            ? [0, 1, "true", null]
+            : [
+                Number.NaN,
+                Number.POSITIVE_INFINITY,
+                Number.NEGATIVE_INFINITY,
+                "1",
+                true,
+                null,
+              ].concat(p.type === "Int" ? [0.5, 2 ** 53, -(2 ** 53)] : []);
+        for (const value of bad) {
+          const env = new Map(base);
+          env.set(p.name, value as Value);
+          differ(env);
+        }
+      }
+    };
+
+    if (clauses.length === 0 && !bodyHasCalls) {
+      // Nothing proven to re-check in float64, but the emitted function still
+      // ships, so it is still run against the program.
+      const samples = sampleValues(fn, rand);
+      probeGuards(samples[0]);
+      for (const env of samples) differ(env);
+      continue;
+    }
 
     // Seed: the solver's witness, rounded to float64. Only a starting point
     // — a witness on the boundary of an open region can round outside it.
@@ -557,44 +628,7 @@ export function checkConformance(
     // Returns false once every proven clause already has a witness and there
     // is nothing left to learn from further samples.
     const check = (env: Map<string, Value>): boolean => {
-      const witnessInputs = (): Record<string, string> => {
-        const inputs: Record<string, string> = {};
-        for (const p of fn.params) inputs[p.name] = String(env.get(p.name));
-        return inputs;
-      };
-
-      // Differential check, on every sample (rejected inputs included): the
-      // emitted function must throw exactly where the proven program rejects
-      // the input and return exactly what it computes everywhere else.
-      if (emittedFn && !emittedFlagged) {
-        const want = interpretCall(fn, env, byName);
-        const got = runEmitted(
-          emittedFn,
-          fn.params.map((p) => env.get(p.name) as Value),
-        );
-        const show = (o: Outcome | { fault: string }): string =>
-          "fault" in o
-            ? `fails with "${o.fault}"`
-            : o.threw
-              ? "throws"
-              : `returns ${String(o.value)}`;
-        const agree =
-          !("fault" in got) &&
-          got.threw === want.threw &&
-          (got.threw || want.threw || Object.is(got.value, want.value));
-        if (!agree) {
-          emittedFlagged = true;
-          issues.push({
-            function: fn.name,
-            kind: "emitted-code",
-            axiomId: "(emitted code)",
-            pretty: "the emitted TypeScript computes the proven program",
-            inputs: witnessInputs(),
-            result: `(emitted code ${show(got)}; the proven program ${show(want)})`,
-            note: "the emitted TypeScript, executed, disagrees with the program the solver proved. This is a fault in vector's emitter, not in the program — the proof does not cover this output.",
-          });
-        }
-      }
+      differ(env);
 
       // The emitted function's own domain guard rejects non-finite Real and
       // non-safe-integer Int arguments before anything else runs.
@@ -629,9 +663,9 @@ export function checkConformance(
               kind: "callee-guard",
               axiomId: `(calls ${err.callee})`,
               pretty: err.guardPretty,
-              inputs: witnessInputs(),
+              inputs: witnessInputs(env),
               result: `(throws — ${err.callee} requires ${err.guardPretty})`,
-              note: "the call-site precondition was proven over exact reals, but float64 rounding of the computed argument violates the callee's guard, so the emitted code throws on an input this function's contract accepts.",
+              note: "the call-site precondition was proven over exact reals, but the argument as float64 computes it (rounded, overflowed, or past the safe-integer range) violates the callee's guard, so the emitted code throws on an input this function's contract accepts.",
             });
           }
         }
@@ -654,7 +688,7 @@ export function checkConformance(
             kind: "postcondition",
             axiomId: clause.axiomId,
             pretty: prettyExpr(clause.expr, "math"),
-            inputs: witnessInputs(),
+            inputs: witnessInputs(env),
             result: String(result),
             note: "proven over exact reals but false in float64 execution — the postcondition uses exact arithmetic the emitted code cannot honor (rounding, non-finite, or exact equality).",
           });
@@ -668,6 +702,7 @@ export function checkConformance(
 
     const first = seedEnv();
     let going = first ? check(first) : true;
+    probeGuards(first ?? sampleValues(fn, rng(1))[0]);
     if (going) {
       for (const env of sampleValues(fn, rand)) {
         going = check(env);

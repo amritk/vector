@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { emitTypeScript } from "../src/emit/typescript.ts";
+import { validateExprShape } from "../src/generated/program/expr.ts";
 import { parseProgram } from "../src/generated/program/index.ts";
-import type { Expr, Program } from "../src/lang/ast.ts";
+import { type Expr, NUM_LITERAL_RE, type Program } from "../src/lang/ast.ts";
 import { prettyExpr } from "../src/report/pretty.ts";
 import { checkConformance } from "../src/solve/conformance.ts";
 import { verifyProgramViaSolver } from "../src/solve/runner.ts";
@@ -269,9 +270,35 @@ describe("emitTypeScript", () => {
     expect(noGuard.map((i) => i.kind)).toEqual(["emitted-code"]);
     expect(noGuard[0]?.result).toContain("the proven program throws");
 
+    // Guards that let through what only an ill-typed caller would send.
+    const guardFaults: [string, string][] = [
+      ['typeof flag !== "boolean"', "false"],
+      ["!Number.isSafeInteger(n)", "!Number.isInteger(n)"],
+      ["!Number.isSafeInteger(n)", 'typeof n !== "number"'],
+    ];
+    for (const [from, to] of guardFaults) {
+      const source = emitTypeScript(absProgram);
+      expect(source).toContain(from);
+      const weak = run(() => source.replace(from, to));
+      expect(weak.map((i) => i.kind)).toEqual(["emitted-code"]);
+      expect(weak[0]?.result).toContain("the proven program throws");
+    }
+
     // Source that does not compile was never checked: fail closed.
     const broken = run(() => "export function pick(n: number {");
     expect(broken.map((i) => i.kind)).toEqual(["emitted-code"]);
     expect(broken[0]?.result).toContain("does not compile");
   }, 60_000);
+});
+
+describe("numeric literals", () => {
+  test("a leading zero is refused: Z3 reads decimal, JavaScript reads octal", () => {
+    for (const ok of ["0", "-0", "10", "0.50", "-3.25", "100"]) {
+      expect(NUM_LITERAL_RE.test(ok)).toBe(true);
+    }
+    for (const bad of ["010", "-010", "08", "00", "00.5", "1.", ".5", "1e3"]) {
+      expect(NUM_LITERAL_RE.test(bad)).toBe(false);
+      expect(validateExprShape({ kind: "num", value: bad })).toBe(false);
+    }
+  });
 });
