@@ -29,6 +29,7 @@ import { exportsCheck, moduleDiff, renderExports } from "./exports.ts";
 import type { ExtractDeps } from "./extract.ts";
 import {
   frozenCheck,
+  readChecked,
   renderFrozen,
   sourceFile,
   sourcePathProblem,
@@ -225,12 +226,14 @@ function need<T>(v: T | undefined, what: string): T {
   return v;
 }
 
-function readSpec(path: string): RfcDocument {
-  let text: string;
-  try {
-    text = readFileSync(path, "utf8");
-  } catch {
-    throw new UsageError(`cannot read ${path}`);
+function readSpec(path: string, given?: string): RfcDocument {
+  let text = given;
+  if (text === undefined) {
+    try {
+      text = readFileSync(path, "utf8");
+    } catch {
+      throw new UsageError(`cannot read ${path}`);
+    }
   }
   try {
     return parseDocument(text);
@@ -260,12 +263,17 @@ function loadSources(
     }
     const found = sourceFile(src, contractPath);
     if (!found) continue;
-    const problem = sourcePathProblem(src, contractPath, found);
-    if (problem)
+    let got: ReturnType<typeof readChecked>;
+    try {
+      got = readChecked(found, (f) => sourcePathProblem(src, contractPath, f));
+    } catch {
+      throw new UsageError(`cannot read ${found}`);
+    }
+    if ("problem" in got)
       throw new UsageError(
-        `${contractPath}: ${problem}${src.id === main ? " (to check against another file, give it with --spec)" : ""}`,
+        `${contractPath}: ${got.problem}${src.id === main ? " (to check against another file, give it with --spec)" : ""}`,
       );
-    docs.set(src.id, readSpec(found));
+    docs.set(src.id, readSpec(found, got.text));
   }
   return docs;
 }
