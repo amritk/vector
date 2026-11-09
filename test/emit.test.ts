@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { emitTypeScript } from "../src/emit/typescript.ts";
 import { parseProgram } from "../src/generated/program/index.ts";
+import type { Expr } from "../src/lang/ast.ts";
+import { prettyExpr } from "../src/report/pretty.ts";
 import currencyFixture from "./fixtures/currency.json";
 
 describe("emitTypeScript", () => {
@@ -171,5 +173,26 @@ describe("emitTypeScript", () => {
     const transpiler = new Bun.Transpiler({ loader: "ts" });
     expect(() => transpiler.transformSync(emitted)).not.toThrow();
     expect(transpiler.transformSync(emitted)).not.toContain("pwned");
+  });
+
+  test("negation of an infix expression keeps its parentheses", () => {
+    const x: Expr = { kind: "var", name: "x" };
+    const zero: Expr = { kind: "num", value: "0" };
+    const lt: Expr = { kind: "binop", op: "<", left: x, right: zero };
+    const not: Expr = { kind: "unop", op: "not", arg: lt };
+    // `!x < 0` parses as `(!x) < 0` in JS — a different predicate.
+    expect(prettyExpr(not, "ts")).toBe("!(x < 0)");
+    expect(prettyExpr(not, "math")).toBe("¬(x < 0)");
+    const implies: Expr = { kind: "binop", op: "implies", left: lt, right: lt };
+    expect(prettyExpr(implies, "ts")).toBe("!(x < 0) || x < 0");
+    const abs: Expr = {
+      kind: "ite",
+      cond: { kind: "unop", op: "not", arg: { ...lt, op: ">=" } },
+      then: { kind: "unop", op: "neg", arg: x },
+      else: x,
+    };
+    const f = new Function("x", `return ${prettyExpr(abs, "ts")};`);
+    expect(f(5)).toBe(5);
+    expect(f(-5)).toBe(5);
   });
 });
