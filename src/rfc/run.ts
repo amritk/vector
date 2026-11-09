@@ -1,9 +1,16 @@
 // Running a generated test against the implementation, and reading the result
 // back in the contract's terms: which requirement each PASS/FAIL line speaks to.
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -189,12 +196,93 @@ interface Spawned {
   timedOut: boolean;
 }
 
-/** Run a program to completion (or until `timeoutMs`, then SIGKILL). */
+let namespacePrefix: string[] | undefined;
+
+/**
+ * The unshare(1) prefix that runs a command as the first process of its own
+ * user and PID namespaces, or [] where that is not available (not Linux, no
+ * unshare, user namespaces disabled or restricted). When that first process
+ * dies, the kernel kills every process left in the namespace, one that left
+ * the process group with setsid included; `--kill-child` makes it die with
+ * unshare, which is what a timeout kills.
+ */
+export function pidNamespacePrefix(): string[] {
+  if (namespacePrefix) return namespacePrefix;
+  namespacePrefix = [];
+  if (process.platform !== "linux") return namespacePrefix;
+  for (const map of ["--map-current-user", "--map-root-user"]) {
+    const argv = ["unshare", "--user", map, "--pid", "--fork", "--kill-child"];
+    const r = spawnSync(argv[0], [...argv.slice(1), "true"], {
+      stdio: "ignore",
+      timeout: 5_000,
+    });
+    if (r.status === 0) {
+      namespacePrefix = argv;
+      break;
+    }
+  }
+  return namespacePrefix;
+}
+
+/**
+ * How a source command is kept from outliving its run. "namespace": its own
+ * PID namespace (pidNamespacePrefix). "marked": on Linux without one, every
+ * process it starts inherits a variable naming this run, and each process
+ * that still has it when the command ends is killed; a process that clears
+ * its environment escapes that. "group": elsewhere, its process group only,
+ * which a process leaves with setsid.
+ */
+export type Containment = "namespace" | "marked" | "group";
+
+export const sourceContainment = (): Containment =>
+  pidNamespacePrefix().length > 0
+    ? "namespace"
+    : existsSync("/proc/self/environ")
+      ? "marked"
+      : "group";
+
+const MARK = "VECTOR_SOURCE_RUN";
+
+/**
+ * SIGKILL every process of this user whose environment holds `MARK=<run>`,
+ * until a pass finds none: a process can fork while a pass reads /proc, but
+ * not once it is killed.
+ */
+function killMarked(run: string): void {
+  const needle = Buffer.from(`${MARK}=${run}\0`);
+  for (let pass = 0; pass < 20; pass++) {
+    let found = 0;
+    for (const pid of readdirSync("/proc")) {
+      if (!/^\d+$/.test(pid) || Number(pid) === process.pid) continue;
+      let env: Buffer;
+      try {
+        env = readFileSync(`/proc/${pid}/environ`);
+      } catch {
+        continue; // another user's, or gone
+      }
+      if (!env.includes(needle)) continue;
+      try {
+        process.kill(Number(pid), "SIGKILL");
+        found++;
+      } catch {
+        // ESRCH: it exited between the read and the kill.
+      }
+    }
+    if (found === 0) return;
+  }
+}
+
+/**
+ * Run a program to completion (or until `timeoutMs`, then SIGKILL). With
+ * `mark`, every process it starts carries `MARK=<mark>`, and those still
+ * running at the timeout or when it ends are killed too.
+ */
 function spawnCollect(
   bin: string,
   args: string[],
   timeoutMs: number,
   cwd?: string,
+  mark?: string,
 ): Promise<Spawned> {
   return new Promise((resolve) => {
     // Its own process group, so a timeout kills what it started too: a
@@ -203,10 +291,14 @@ function spawnCollect(
       cwd,
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
+      env: mark ? { ...process.env, [MARK]: mark } : process.env,
     });
     let stdout = "";
     let stderr = "";
     let timedOut = false;
+    const sweep = () => {
+      if (mark) killMarked(mark);
+    };
     const timer = setTimeout(() => {
       timedOut = true;
       try {
@@ -214,6 +306,9 @@ function spawnCollect(
       } catch {
         // ESRCH: the whole group already exited; "close" is on its way.
       }
+      // A process that left the group may hold stdout open, and "close"
+      // would wait for it.
+      sweep();
     }, timeoutMs);
     child.stdout.on("data", (d) => {
       stdout += d;
@@ -223,6 +318,7 @@ function spawnCollect(
     });
     child.on("error", (err) => {
       clearTimeout(timer);
+      sweep();
       resolve({
         code: null,
         stdout,
@@ -232,6 +328,7 @@ function spawnCollect(
     });
     child.on("close", (code) => {
       clearTimeout(timer);
+      sweep();
       resolve({ code, stdout, stderr, timedOut });
     });
   });
@@ -241,17 +338,30 @@ function spawnCollect(
  * Run each vector's `command` source (with `sh -c`, from `cwd`) and compare its
  * trimmed stdout with the expected value: lowercase hex for bytes, the text
  * itself for a string. A timeout, a non-zero exit or a different output fails.
+ * Nothing a command starts outlives it, not at its timeout and not after it
+ * exits, as far as `containment` (sourceContainment by default) can hold it.
  */
 export async function runSourceCommands(
   c: RfcContract,
-  opts: { cwd?: string; timeoutMs?: number } = {},
+  opts: { cwd?: string; timeoutMs?: number; containment?: Containment } = {},
 ): Promise<Map<string, SourceRun>> {
   const out = new Map<string, SourceRun>();
   const timeoutMs = opts.timeoutMs ?? 30_000;
+  const how = opts.containment ?? sourceContainment();
   for (const k of c.clauses) {
     if (k.kind !== "vector" || !("command" in k.source)) continue;
     const command = k.source.command;
-    const r = await spawnCollect("sh", ["-c", command], timeoutMs, opts.cwd);
+    const [bin, ...pre] = [
+      ...(how === "namespace" ? pidNamespacePrefix() : []),
+      "sh",
+    ];
+    const r = await spawnCollect(
+      bin,
+      [...pre, "-c", command],
+      timeoutMs,
+      opts.cwd,
+      how === "marked" ? randomBytes(16).toString("hex") : undefined,
+    );
     out.set(k.id, { id: k.id, command, ...judgeCommand(k, r, timeoutMs) });
   }
   return out;

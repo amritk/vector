@@ -43,7 +43,12 @@ import {
   reportStatus,
 } from "./report.ts";
 import type { RfcDocument } from "./rfctext.ts";
-import { runNishTest, runSourceCommands } from "./run.ts";
+import {
+  type Containment,
+  runNishTest,
+  runSourceCommands,
+  sourceContainment,
+} from "./run.ts";
 import { sampleContract } from "./sample.ts";
 import { parseDocument } from "./spectext.ts";
 
@@ -265,16 +270,26 @@ function loadSources(
   return docs;
 }
 
+const CONTAINMENT_NOTE: Record<Containment, string> = {
+  namespace:
+    "Each runs in its own PID namespace: at its timeout or its exit, everything it started is killed.",
+  marked:
+    "At each one's timeout or exit, every process it started is killed, found by a variable they inherit; one that clears its environment escapes (no PID namespace here: user namespaces are off or restricted).",
+  group:
+    "A timeout kills each command's process group, but not a process it detached with setsid (no PID namespace here: not Linux).",
+};
+
 /**
  * A warning when `--run-sources` is about to run commands from a contract that
  * is not in the current repository's contracts/, or undefined. The commands
- * run with the user's privileges; a timeout kills each one's process group,
- * but not a process it moved out of it (setsid).
+ * run with the user's privileges, files and network; it says how far
+ * sourceContainment keeps what they start from outliving them.
  */
 export function foreignCommandsWarning(
   contractPath: string,
   c: RfcContract,
   cwd: string = process.cwd(),
+  containment: Containment = sourceContainment(),
 ): string | undefined {
   const cmds = c.clauses.flatMap((k) =>
     k.kind === "vector" && "command" in k.source
@@ -292,7 +307,7 @@ export function foreignCommandsWarning(
   if (home && real(contractPath).startsWith(`${home}/`)) return undefined;
   return [
     `warning: --run-sources runs ${cmds.length} shell command(s) from ${contractPath}, which is not in ${home ? `${home}/` : "a repository's contracts/"}.`,
-    "They run as you, with sh -c, from the contract's directory. A timeout kills each command's process group, but not a process it detached with setsid. Read them first:",
+    `They run as you, with sh -c, from the contract's directory, with your files and network. ${CONTAINMENT_NOTE[containment]} Read them first:`,
     ...cmds,
   ].join("\n");
 }

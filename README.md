@@ -281,9 +281,11 @@ bun run vector spec extract --spec-only --twice --spec specs/example-hex.md \
 files and network: it is not a sandbox. Read every command before you pass it,
 above all in a contract you did not write; when the contract is not in the
 current repository's `contracts/`, `check` prints the commands it is about to
-run on stderr. A command that runs past its 30 s timeout is killed with its
-process group, but a process it moved out of the group (`setsid`, a daemon)
-keeps running.
+run on stderr. On Linux each command runs in its own PID namespace (or,
+where user namespaces are off, every process it starts carries a variable
+naming the run), so at its 30 s timeout or its exit everything it started is
+killed, a `setsid`'d process or daemon included; one that also clears its
+environment escapes the fallback. Elsewhere only its process group is killed.
 
 `check` exits 0 when the contract is valid, `run` when every clause passed
 (`SATISFIED`); `VIOLATED` / `ERROR` / `INVALID` exit 1, usage errors 2.
