@@ -1068,6 +1068,15 @@ Data         = 4869205468657265
 HMAC-SHA-256 = b0344c61d8db38535ca8afceaf0bf12b
 HMAC-SHA-512 = 87aa7cdea5ef619d4ff0b4241a1d6cb0
 \`\`\`
+
+## 9. Numbered cases
+
+\`\`\`
+Input1  = 0c0c0c0c
+Output1 = 1d1d1d1d
+Input2  = 0e0e0e0e
+Output2 = 2f2f2f2f
+\`\`\`
 `;
   const KEY1 = "0b0b0b0b0b0b0b0b0b0b0b0b";
   const DATA1 = "4869205468657265";
@@ -1101,6 +1110,11 @@ HMAC-SHA-512 = 87aa7cdea5ef619d4ff0b4241a1d6cb0
         ],
         returns: "bytes" as const,
       })),
+      {
+        name: "blake2s",
+        params: [{ name: "data", type: "bytes" }],
+        returns: "bytes",
+      },
     );
     c.clauses.push({
       kind: "vector",
@@ -1250,6 +1264,24 @@ HMAC-SHA-512 = 87aa7cdea5ef619d4ff0b4241a1d6cb0
     expect(gate("8", "mac512", args, h(SHA256, "HMAC-SHA-256"))).toEqual([
       '[fidelity] V.expect: the value is printed under "HMAC-SHA-256" in §8 ("Variants"), but mac512 names 512, as in "HMAC-SHA-512": a vector uses the value printed for the variant its function computes',
     ]);
+  });
+
+  test("numbered test cases are not variants", () => {
+    // blake2s names 2, but Input1 and Input2 count cases (#32 review).
+    const one = gate(
+      "9",
+      "blake2s",
+      [h("0c0c0c0c", "Input1")],
+      h("1d1d1d1d", "Output1"),
+    );
+    expect(one).toEqual([]);
+    const two = gate(
+      "9",
+      "blake2s",
+      [h("0e0e0e0e", "Input2")],
+      h("2f2f2f2f", "Output2"),
+    );
+    expect(two).toEqual([]);
   });
 
   test("a function named for no variant is warned about", () => {

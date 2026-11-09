@@ -1019,12 +1019,21 @@ function ownVariant(
       (l) => skeleton(l) === skeleton(label) && !sameLabel(l, label),
     );
     if (siblings.length === 0) continue;
+    // A position whose numbers run consecutively (Input1, Input2; Test Case
+    // 3, 4) counts test cases, not variants: blake2s naming 2 says nothing
+    // about which of Input1 and Input2 it computes.
+    const counts = (i: number) => {
+      const ns = [
+        ...new Set([label, ...siblings].map((l) => Number(digits(l)[i]))),
+      ];
+      return Math.max(...ns) - Math.min(...ns) + 1 === ns.length;
+    };
     // The label's numbers where a sibling differs, and the siblings' there.
     const own = new Set<string>();
     const theirs = new Map<string, string>();
     for (const sib of siblings) {
       digits(sib).forEach((d, i) => {
-        if (d === mine[i]) return;
+        if (d === mine[i] || counts(i)) return;
         own.add(mine[i]);
         if (!theirs.has(d)) theirs.set(d, sib);
       });
