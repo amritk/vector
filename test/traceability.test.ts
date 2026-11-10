@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { SpecPlan } from "../src/agents/architect.ts";
 import { parseProgram } from "../src/generated/program/index.ts";
-import { checkAxiomTraceability } from "../src/pipeline.ts";
+import type { SpecPlan } from "../src/lang/ast.ts";
+import { checkAxiomTraceability } from "../src/verify.ts";
 import currencyFixture from "./fixtures/currency.json";
 
 const specPlan: SpecPlan = {

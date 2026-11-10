@@ -52,19 +52,10 @@ one per line:
     export const hexDecode = (text: string): u8[] | null
 ```
 
-Signatures go only in code: an indented block (after a blank line or the
-heading) or a ` ``` ` / `~~~` fence. Each is `export const f = (a: T): R` or
-`export function f(a: T): R`, followed by nothing but an optional `;` and
-`// comment`: no body, no `=>`, no `{`. Types only from `u8[]`, `u8[] | null`,
-`null | u8[]`, `string`, `string | null`, `null | string`, `i32`, `u32`,
-`boolean`. The section fails closed: the word `export` (any case) outside code
-there — a bullet, table, inline code, or prose like "Export the bytes…" —
-refuses the spec, as do `export type`/`interface`/other forms and `export`
-anywhere but the start of a code line. The section's code holds only
-signatures and `//` comments; names are ASCII letters and digits (no `_`).
-Anywhere else in the spec the bare word `export` refuses too (entities, HTML,
-invisible or look-alike letters do not hide it): write "exported" or
-"exports".
+Signatures go in code (an indented block or a fence), one `export const` or
+`export function` per line, with types from `u8[]`, `u8[] | null`, `string`,
+`string | null`, `i32`, `u32`, `boolean`. This is the contract's source for
+`functions`, so keep it to the module's exports and nothing else.
 
 For an RFC: `rfcs/rfc<N>.txt` if it is there, otherwise
 `curl -sSfL -o rfcs/rfc<N>.txt https://www.rfc-editor.org/rfc/rfc<N>.txt`
@@ -78,25 +69,8 @@ do, so **do not read the implementation** — there may not be one yet. Take
 the signatures from the spec's Interface section, and the requirements from
 its binding sentences: `grep -n "MUST\|SHALL\|REQUIRED" specs/<name>.md`.
 
-With an API key, the model can propose it from the spec alone, twice:
-
-```bash
-bun run vector spec extract --spec-only --twice --spec specs/<name>.md \
-  --target nish/<name> -o contracts/<name>.json [--format markdown]
-```
-
-`--spec-only` gives the model only the spec and checks signatures against the
-Interface section (a spec without one, with an export line it cannot read,
-or with `export` outside code there, exits 2 before any model call). `--twice` runs two independent extractions and
-lists where they disagree as warnings — a requirement one states and the other
-does not, a requirement stated at different levels, a partial match (one
-run's quote holds a sentence the other's does not), one tested in one run and
-untested in the other, or a binding sentence the runs handle differently
-(tested, untested, excluded, not covered); read every one before you accept
-run 1's contract. Exit 0 writes the contract, 1
-means no valid contract (either run, with `--twice`).
-
-Without a key, write `contracts/<name>.json` yourself against
+vector never calls a model and there is no extraction command: you write
+`contracts/<name>.json` yourself, in this session, against
 `schemas/rfc-contract.json`. `contracts/rfc5869-hkdf-sha256.json` and
 `contracts/rfc8439-chacha20-poly1305.json` are the worked examples.
 
@@ -109,9 +83,8 @@ Without a key, write `contracts/<name>.json` yourself against
   (`u8[]`), `bytes?` (`u8[] | null`), `string`, `string?`, `i32`, `u32`,
   `bool`, `secret-bytes` (`Secret<u8[]>`) and, as a result only,
   `secret-bytes?` (`Secret<u8[]> | null`). Vectors and properties give a
-  secret as plain bytes; the generated test does the `secret`/`expose`. A reference function from another module names its module;
-  `extract --spec-only` refuses one (the Interface declares only the
-  target's functions), so add it by hand. Its signature is never checked,
+  secret as plain bytes; the generated test does the `secret`/`expose`. A reference function from another module names its module.
+  Its signature is never checked,
   not even by `run --nish-root`: the signature gate reads only the target
   module's functions, so get the reference function's types right yourself.
 - **requirements**: verbatim quotes, cited to the most specific section.
@@ -264,10 +237,9 @@ module all exit 1 too.
 
 ### 8. Report
 
-Post the dashboard (`--format markdown` on `check`, `run`, `mutate` and
-`extract` is a PR comment): each requirement with its evidence, the
-exclusions, command sources that were not run, `--twice` disagreements, every
-survivor, and any failure with its sample.
+Post the dashboard (`--format markdown` on `check`, `run` and `mutate` is a
+PR comment): each requirement with its evidence, the exclusions, command
+sources that were not run, every survivor, and any failure with its sample.
 
 ## Without a PR
 

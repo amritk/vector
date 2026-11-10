@@ -22,21 +22,25 @@ async function bundledPackages(): Promise<string[]> {
   });
   expect(result.success).toBe(true);
   const found = new Set<string>();
+  let ownModules = 0;
   for (const output of result.outputs) {
     const code = await output.text();
+    // Bun marks vector's own modules the same way (`// src/cli.ts`); seeing
+    // those proves the marker format still holds, so an empty set is real.
+    ownModules += code.match(/^\/\/ src\/\S+\.ts$/gm)?.length ?? 0;
     for (const m of code.matchAll(
       /^\/\/ (?:.*\/)?node_modules\/((?:@[^/\s]+\/)?[^/\s]+)\//gm,
     )) {
       found.add(m[1] as string);
     }
   }
+  expect(ownModules).toBeGreaterThan(0);
   return [...found].sort();
 }
 
 describe("third-party notices", () => {
   test("cover exactly the npm packages bundled into the binary", async () => {
     const bundled = await bundledPackages();
-    expect(bundled.length).toBeGreaterThan(0);
     expect(noticedPackages()).toEqual(bundled);
   });
 

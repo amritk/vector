@@ -1,10 +1,10 @@
 {
   "name": "vector",
   "version": "0.1.0",
-  "description": "vector — turn a casual prompt into a formally verified TypeScript program via LLM spec extraction, code+contract generation, and deterministic Z3 proof.",
+  "description": "vector — a deterministic judge: prove a spec plan and program with Z3 and emit TypeScript, and check implementations against spec and RFC contracts. It never calls a model; authoring is done in Claude Code.",
   "license": "MIT",
   "type": "module",
-  "main": "src/pipeline.ts",
+  "main": "src/verify.ts",
   "bin": {
     "vector": "./src/cli.ts"
   },
@@ -20,11 +20,8 @@
     "format": "biome check . --write",
     "lint": "biome check ."
   },
-  "dependencies": {
-    "@amritk/helpers": "^0.12.0",
-    "@anthropic-ai/sdk": "^0.98.0"
-  },
   "devDependencies": {
+    "@amritk/helpers": "^0.12.0",
     "@amritk/mjst": "^0.9.0",
     "@biomejs/biome": "^1.8.3",
     "bun-types": "^1.1.6",

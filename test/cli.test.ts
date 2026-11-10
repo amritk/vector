@@ -12,21 +12,15 @@ describe("parseArgs", () => {
     expect(args.json).toBe(true);
   });
 
-  test("joins bare words into one prompt", () => {
-    const args = parseArgs(["Build", "a", "converter"]);
-    expect(args.prompt).toBe("Build a converter");
+  test("rejects a bare prompt: vector never calls a model", () => {
+    expect(() => parseArgs(["Build", "a", "converter"])).toThrow(
+      /does not call a model/,
+    );
   });
 
-  test("accepts a valid --max-retries", () => {
-    expect(parseArgs(["--max-retries", "5"]).maxRetries).toBe(5);
+  test("--max-retries is gone with the model loop", () => {
+    expect(() => parseArgs(["--max-retries", "5"])).toThrow(CliError);
   });
-
-  test.each([["abc"], ["0"], ["-1"], ["2.5"]])(
-    "rejects --max-retries %s instead of silently defaulting",
-    (bad) => {
-      expect(() => parseArgs(["--max-retries", bad])).toThrow(CliError);
-    },
-  );
 
   test("rejects unknown flags", () => {
     expect(() => parseArgs(["--bogus"])).toThrow(CliError);
