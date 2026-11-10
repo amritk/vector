@@ -1,7 +1,11 @@
-# vector — formally verified functions from a prompt
+# vector — formally verified functions, written in Claude Code
 
 Turn a casual natural-language request into a **formally verified** TypeScript
-program. Inspired by Dijkstra's EWD249 — *"testing can show the presence of
+program. vector itself never calls a model: Claude Code (the bundled skills, on
+your Claude subscription) writes the spec plan and program, and vector judges
+them. No API key.
+
+Inspired by Dijkstra's EWD249 — *"testing can show the presence of
 bugs, but never their absence"* — vector never treats generated code as a black
 box: an SMT solver (Z3) **proves** every postcondition holds for **all** inputs
 before a single line of code is emitted. If a contract can't be proven, the code
@@ -19,9 +23,10 @@ prompt ─▶ Architect ─▶ formal axioms + a layered decomposition   (the Sp
        ─▶ emit      ─▶ runnable TypeScript + a "Dijkstra Dashboard"
 ```
 
-The LLM only ever *proposes* a structured artifact; a theorem prover holds the
-veto. When Z3 finds a counterexample it flows back as structured feedback and
-the program is repaired, up to a retry bound. **Unproven code is never emitted.**
+Claude Code plays Architect and Generator; it only ever *proposes* a structured
+artifact, and a theorem prover holds the veto (`vector --verify`). When Z3 finds
+a counterexample it flows back as structured feedback and Claude repairs the
+program in context, then re-verifies. **Unproven code is never emitted.**
 
 ---
 
@@ -29,11 +34,10 @@ the program is repaired, up to a retry bound. **Unproven code is never emitted.*
 
 - [RFC → contract → Nish test](#rfc--contract--nish-test)
 - [The idea](#the-idea)
-- [Two ways to run it](#two-ways-to-run-it)
+- [Where the model runs](#where-the-model-runs)
 - [Install & requirements](#install--requirements)
 - [CLI usage](#cli-usage)
-  - [Prompt mode (full pipeline)](#prompt-mode-full-pipeline)
-  - [Verify mode (deterministic, no API key)](#verify-mode-deterministic-no-api-key)
+  - [Verify mode](#verify-mode)
   - [Fixture mode](#fixture-mode)
   - [Diff mode (the regeneration gate)](#diff-mode-the-regeneration-gate)
   - [Flags](#flags)
@@ -274,10 +278,6 @@ bun run vector spec check contracts/rfc8439-chacha20-poly1305.json --nish-root .
 bun run vector spec emit  contracts/rfc8439-chacha20-poly1305.json -o aead_rfc8439.ts
 bun run vector spec run   contracts/rfc8439-chacha20-poly1305.json --nish-root ../nish
 bun run vector spec check contracts/<name>.json --spec specs/<name>.md --run-sources
-bun run vector spec extract --spec rfcs/rfc5869.txt --module ../nish/std/crypto/hkdf.ts \
-  --target nish/crypto/hkdf -o contracts/new.json      # model proposes, gates repair (needs a key)
-bun run vector spec extract --spec-only --twice --spec specs/example-hex.md \
-  --target nish/hex -o contracts/example-hex.json      # from the spec alone, two runs compared
 ```
 
 `--run-sources` runs each `command` source with `sh -c`, as you, with your
@@ -296,105 +296,11 @@ Elsewhere only its process group is killed. If vector itself is interrupted
 
 `check` exits 0 when the contract is valid, `run` when every clause passed
 (`SATISFIED`); `VIOLATED` / `ERROR` / `INVALID` exit 1, usage errors 2.
-`extract` exits 0 when it wrote a contract that passed every gate, 1 when it
-found none, 2 for a usage error or a spec it cannot read (before any model
-call). `--nish-root` uses `build/nish` (the working tree's std); without it,
-the seed — whose `nish/…` is the last release — and it warns. Inside Claude
-Code the `vector-spec` skill plays the extractor with no API key.
-
-### Extracting from the spec alone
-
-`extract --spec-only` gives the model the spec and nothing else: no module
-source, no module signatures. The contract's `functions` come from the spec's
-**Interface** section, a numbered section titled `Interface` whose code
-declares the exports:
-
-```
-## 2. Interface
-
-    export const hexEncode = (bytes: u8[]): string
-    export const hexDecode = (text: string): u8[] | null
-```
-
-Signatures are read only from code: an indented block (four spaces or a tab,
-after a blank line or the heading) or a block fenced with ` ``` ` or `~~~`.
-Code is read as written, so markdown never rewrites a signature. The
-section's code holds only signatures, blank lines and `//` comments (a usage
-example goes in another section). Every code line with `export` is one
-signature, read strictly:
-
-- `export const f = (a: T, b: U): R`
-- `export function f(a: T): R`
-
-followed by nothing but an optional `;` and an optional `// comment`: no body,
-no `=>`, no `{`. A signature is ASCII, its names are letters and digits (no
-`_`, which markdown could turn into emphasis), every parameter is `name: T`,
-named once, and every type is
-one the contract can declare: `u8[]`, `u8[] | null`, `null | u8[]`, `string`,
-`string | null`, `null | string`, `i32`, `u32`, `boolean` (the signature
-gate's own list; spacing does not matter). The signature gate then checks the
-contract's functions against them: the contract must declare every Interface
-signature, its `target.module` must be the `--target` (in the module mode
-too), and it may not name a function from another module (the spec declares
-only the target's, so `--spec-only` refuses a reference function).
-
-Refused, with exit 2 and no model call: a spec with no Interface section or
-more than one, one that declares nothing, a spec that is not markdown (an RFC
-has no code blocks to read), and, anywhere in the Interface section:
-
-- the word `export`, in any letter case, outside code: in a bullet, table
-  cell, blockquote, inline code, emphasis or plain prose ("Export the bytes as
-  lowercase hex." too; "exported" and "exports" are fine);
-- in code, `export` anywhere but the start of a line (`// export …` too), not
-  in lowercase, or twice on one line; any other code line (a type carried on
-  to the next line, `| null`, refuses rather than being dropped);
-- a body (`=> x`, `{ … }`), a note after the signature (`… : string — encodes
-  x`, `… : string.`), a `/* … */` comment inside it;
-- a type not on the list (`u8`, `{a: u8}`, `Promise<string>`), an optional,
-  defaulted or function-typed parameter, a parameter named twice, a name
-  declared twice;
-- any other export (`export type`, `export interface`, `export let`,
-  `export default`, `export async function`, `export { … }`): the section
-  declares only functions;
-
-and `--module` or `--nish-root` alongside `--spec-only`.
-
-Outside the Interface section too, the word `export` may appear **nowhere**
-in the spec except as a signature that was read: in another section, in a
-comment, in boilerplate, in text before the first heading. It is counted as a
-rendered page shows it: numeric entities (`ex&#112;ort`), inline HTML,
-link syntax, markup, invisible characters and look-alike letters (a Cyrillic
-`е`) do not hide it. So wherever this reader and a markdown renderer disagree
-(an HTML comment a renderer shows as text, a heading inside an HTML block),
-an export the page shows is refused, never skipped. The reading fails closed:
-write "exported" or "exports" in prose, never the bare word.
-
-A hand-written contract is not checked this way: when a contract names a
-reference function from another module (`"module": "nish/crypto/hmac"`), the
-signature gate never checks that function's signature, under `run
---nish-root` or otherwise; only the target module's functions are read
-against its exports.
-
-`extract --twice` runs two independent extractions (neither sees the other's
-contract or feedback) and compares them. Ids and line breaks don't count;
-requirements are matched by section and quote, where two quotes match when one
-contains the other or their spans of the main spec overlap. Each of these is a
-disagreement:
-
-- a requirement one run states and the other does not (or excludes);
-- a matched requirement stated at different levels (`MUST` in one,
-  `DEFINITION` in the other);
-- a matched requirement one run tests and the other states without testing,
-  for requirements from any source, binding or not;
-- a matched pair where one quote holds more sentences than the other ("A
-  SHOULD x." against "A SHOULD x. B SHOULD y."): a partial match;
-- a binding (MUST/SHALL/REQUIRED) sentence of the main spec that the runs
-  handle differently: tested, stated but untested, excluded, or not covered.
-
-Disagreements are warnings for the human reviewer, not a gate: they are listed
-under Warnings in the text and `--format markdown` reports, with a line saying
-whether the runs agree, and under `twice.disagreements` in `--json`. The
-contract written is run 1's. Either run finding no valid contract exits 1 and writes nothing.
+`--nish-root` uses `build/nish` (the working tree's std); without it,
+the seed — whose `nish/…` is the last release — and it warns. Contracts are written
+by hand or by Claude Code: the `vector-spec` skill reads the spec, writes the
+contract, and repairs it against `check`'s gate feedback. vector calls no
+model.
 
 ### What it catches
 
@@ -518,7 +424,7 @@ that does not build is *stillborn*: reported, not counted; when every mutant
 is stillborn, none was judged, and that is a failure. `--max N` runs N
 mutants spread across the diff; `--jobs N` runs them in parallel.
 
-**`--format markdown`** (`check`, `emit`, `run`, `mutate`, `extract`) prints the dashboard
+**`--format markdown`** (`check`, `emit`, `run`, `mutate`) prints the dashboard
 for a PR comment: each requirement's quote, then a table of its clauses with
 their outcome and evidence, the vector sources run, the exclusions, and the
 mutation survivors. Text is the
@@ -539,8 +445,8 @@ A module lands spec-first, in two PRs: the **spec side** (`specs/`,
 
 | Step | Command | Exit 0 | Exit 1 |
 |---|---|---|---|
-| 1. write the spec | `specs/<name>.md`, numbered headings and an Interface section | — | — |
-| 2. contract, `check` | `vector spec extract --spec-only --twice …` (or by hand), then `vector spec check contracts/<name>.json --spec specs/<name>.md --run-sources` | `CONTRACT_VALID` | `INVALID` |
+| 1. write the spec | `specs/<name>.md`, with numbered headings | — | — |
+| 2. contract, `check` | write `contracts/<name>.json` (the `vector-spec` skill, or by hand), then `vector spec check contracts/<name>.json --spec specs/<name>.md --run-sources` | `CONTRACT_VALID` | `INVALID` |
 | 3. freeze | `"source": {…, "sha256": "<sha256sum of the spec>"}`, then `vector spec frozen --base origin/main contracts/<name>.json` | spec side only, hashes match | both sides touched, the spec changed, no `sha256`, a contract source outside `specs/` or `rfcs/`, no contract |
 | 4. `emit` / `stale` | `vector spec emit contracts/<name>.json -o test/spec/<name>.ts`, then `vector spec stale test/spec/<name>.ts contracts/<name>.json` | the test is the contract's | stale, missing or doubled marker line |
 | 5. implement, `run` | `vector spec run contracts/<name>.json --nish-root ../nish` | `SATISFIED` | `VIOLATED` / `ERROR` / `INVALID` |
@@ -609,22 +515,23 @@ input — that the postconditions follow from the preconditions. The model is a
 
 ---
 
-## Two ways to run it
+## Where the model runs
 
-The exact same deterministic engine (schemas, validators, Z3) backs both; they
-differ only in **who plays the two LLM roles**.
+vector is the deterministic half only: schemas, validators, traceability and Z3.
+It makes no model calls and needs no API key. The two model roles, Architect
+(the `SpecPlan`) and Generator (the `Program`), are played by **Claude Code
+itself**, in context, through the bundled skill, so they run on your Claude
+subscription rather than on API tokens.
 
-| | Prompt mode (CLI) | Claude Code skill |
-|---|---|---|
-| Architect + Generator | vector's own Anthropic API calls | **Claude Code itself**, in-context |
-| API key | `ANTHROPIC_API_KEY` required | none — no nested LLM call |
-| Entry point | `vector "<prompt>"` | you just ask, in natural language |
-| Retry loop | inside `pipeline.ts` | Claude repairs in-context, re-verifying |
-| Engine's job | the whole pipeline | the deterministic **veto** only (`vector --verify`) |
-| Best for | standalone / CI with a key | working inside Claude Code |
+| | |
+|---|---|
+| Architect + Generator | Claude Code, via `.claude/skills/vector` |
+| Engine's job | the deterministic **veto** (`vector --verify`) |
+| Repair loop | Claude repairs in context and re-verifies |
+| Headless / CI | `claude -p "…"` with the skill, then gate on `vector --verify` |
 
-Both guarantee the same invariant: **code is presented only when Z3 has proven
-every postcondition.**
+The invariant: **code is presented only when Z3 has proven every
+postcondition.**
 
 ---
 
@@ -641,40 +548,20 @@ bun run fetch-z3    # puts a native z3 into .z3/ (see below)
   `z3` binary or put one on `PATH`. The compiled binary bundles its own, so it
   needs none of this (see [Architecture notes](#architecture-notes)). No Node
   required anywhere.
-- **`ANTHROPIC_API_KEY`** — only for *prompt mode*. Put it in `.env` (see
-  `.env.example`) or the environment. The verify/fixture paths and the Claude
-  Code skill need **no** key.
+- No API key. vector never calls a model; authoring happens in
+  [Claude Code](https://claude.com/claude-code) through the bundled skills.
 
 ---
 
 ## CLI usage
 
-The `vector` bin has four modes.
+The `vector` bin has three modes, plus `vector spec`.
 
-### Prompt mode (full pipeline)
-
-Needs `ANTHROPIC_API_KEY`. vector calls the model as Architect then Generator,
-verifies, and retries on counterexamples.
-
-```bash
-bun run vector "Build a USD to EUR converter that throws an error if the amount is negative"
-```
-
-Phases printed as it runs:
-
-```
-[1/5] Spec extraction ...... 5 axiom(s): AX1 (pre), AX2 (post), ...
-[2/5] Decomposition ........ 2 layer(s): applyRate → usdToEur
-[3/5] Generative logic ..... attempt 1/3
-[4/5] Deterministic solver . Z3 4.16.0 (native) · 3 VCs · 3 unsat · 0 sat · 0 unknown · 170 ms
-[5/5] Report ............... PROVEN
-```
-
-### Verify mode (deterministic, no API key)
+### Verify mode
 
 Verify a **SpecPlan + Program** pair that some *other* agent produced — inside
 Claude Code, that agent is Claude Code itself. This is the deterministic veto
-only: shape → typecheck → axiom traceability → Z3. No credentials.
+only: shape → typecheck → axiom traceability → Z3.
 
 ```bash
 # structured JSON (what the skill consumes)
@@ -746,9 +633,8 @@ type checks.
 | `--spec <file>` / `--program <file>` | verify | Explicit form of the two `--verify` paths. |
 | `--diff <old> <new>` | diff | Prove a regeneration behavior-preserving, or show the deltas. |
 | `--fixture <file>` | fixture | Verify a lone Program JSON. |
-| `--max-retries N` | prompt | Generator repair attempts (default `3`). |
 | `--json` | all | Emit machine-readable JSON instead of the dashboard. |
-| `--emit <file>` | prompt/verify/fixture | Write the proven TypeScript to a file (only when PROVEN). |
+| `--emit <file>` | verify/fixture | Write the proven TypeScript to a file (only when PROVEN). |
 
 > Note: because `vector` is an npm script, `bun run vector --flag` passes `--flag`
 > straight through. The `--` in `bun run vector -- --fixture …` is optional but
@@ -767,7 +653,7 @@ bun run build      # → dist/vector
 
 `dist/vector` bundles the CLI, the engine, and a native `z3` solver into one
 file. It needs **nothing on `PATH`** — no Node, no separate z3 install, no `bun
-install`, no repo checkout, no `ANTHROPIC_API_KEY` for the verify/fixture paths.
+install`, no repo checkout, no API key.
 On first use it unpacks z3 into `$XDG_CACHE_HOME/vector/z3` (else
 `~/.cache/vector/z3`), a directory it creates with mode 0700 and refuses to use
 if it is a symlink, another user's, or writable by others, or if any directory
@@ -778,7 +664,6 @@ Drop it anywhere and run it:
 ```bash
 ./dist/vector --verify spec.json program.json --json
 ./dist/vector --fixture program.json
-./dist/vector "Build a USD to EUR converter that throws if the amount is negative"
 ```
 
 The build needs a native z3 in `.z3/` first (`bun run fetch-z3`).
@@ -798,7 +683,7 @@ on subsequent runs) and runs z3 from there.
 ## The Claude Code skill
 
 `.claude/skills/vector/` packages vector so it works **starting from the initial
-prompt** inside Claude Code — no API key, no nested LLM call.
+prompt** inside Claude Code: no API key, no model call from vector.
 
 **How to use it:** just ask, in natural language, for a small numeric function
 that must be *proven* correct — e.g. *"give me a provably correct fee calculator
@@ -822,8 +707,9 @@ clamping, rounding, and bounds checks.
    is `PROVEN`.
 
 The schemas remain the single source of truth — the skill points Claude at
-`schemas/*.json` directly rather than keeping copies that could drift. The
-nested-API pipeline (`vector "<prompt>"`) stays available for standalone/CI use.
+`schemas/*.json` directly rather than keeping copies that could drift. For
+headless use (CI, scripts), run the same skill with `claude -p "…"`; vector's
+part is still only `--verify`.
 
 ---
 
@@ -1152,27 +1038,25 @@ bun run generate:schemas    # → src/generated/ (checked in, never hand-edited)
 
 `src/lang/shape.ts` is a deep structural validator owned by the engine: it
 returns the **full** list of problems (the generated parsers throw on the
-first), and is what feeds both the pipeline's and the skill's repair loops.
+first), and is what feeds the skill's repair loop.
 
 ---
 
 ## Project layout
 
 ```
-schemas/            JSON Schemas — source of truth for types + LLM output
+schemas/            JSON Schemas — source of truth for types + the skill's output
 scripts/
   build-binary.ts   compiles the standalone `dist/vector` executable
   fetch-z3.ts       fetches a native z3 into .z3/ (source + build both use it)
 src/
-  cli.ts            entrypoint (the `vector` bin) — prompt / verify / fixture / diff modes
+  cli.ts            entrypoint (the `vector` bin) — verify / fixture / diff modes, `vector spec`
   bin.ts            compile-only entry: embeds the native z3, then runs cli.ts
-  pipeline.ts       prompt mode: SPEC → GENERATE → VALIDATE → VERIFY → (retry) → REPORT
   verify.ts         deterministic (SpecPlan, Program) → proof veto + structured
                     feedback; the engine core the Claude Code skill calls
   diff.ts           the regeneration gate: old vs new program → EQUIVALENT or
                     concrete behavioral deltas
   lang/             AST types (generated), shape validator, typechecker, style lint
-  agents/           Architect + Generator LLM phases (prompt mode)
   solve/            vector-lang → SMT-LIB2 (smt.ts) → native z3 → report (runner.ts);
                     equivalence checking (equiv.ts)
   emit/             AST → runnable TypeScript
@@ -1182,7 +1066,7 @@ src/
                     rfctext.ts (sections, hex, BCP 14 sentences), spectext.ts
                     (markdown specs, format detection), gates.ts,
                     sample.ts (Z3 boundaries), emit-nish.ts, run.ts, report.ts,
-                    extract.ts (model-proposed contracts), cli.ts (`vector spec`)
+                    cli.ts (`vector spec`)
 contracts/          RFC contracts (RFC 5869 HKDF, RFC 8439 ChaCha20-Poly1305)
 rfcs/               the RFCs' plain text, unmodified, as rfc-editor.org serves it
 test/               bun test suites + fixtures
@@ -1208,18 +1092,21 @@ located in order: an embedded copy extracted from the compiled binary,
 the `z3-solver` wasm build in a Node subprocess to dodge a Bun pthread abort;
 the native CLI removes both the wasm and the Node dependency.)
 
-**Where the veto lives.** `src/verify.ts` is the deterministic core shared by
-both entry points: shape → typecheck → `checkAxiomTraceability` → Z3, returning
-the discriminated `VerifyOutcome`. `pipeline.ts` (prompt mode) re-exports its
-`checkAxiomTraceability` and reuses its feedback formatter, so the two paths can
-never disagree about what "proven" means.
+**Where the veto lives.** `src/verify.ts` is the deterministic core:
+shape → typecheck → `checkAxiomTraceability` → Z3, returning the discriminated
+`VerifyOutcome`. `--verify`, `--fixture` and the skill all go through it, so
+they cannot disagree about what "proven" means.
+
+**No model calls.** vector has no model client and no SDK dependency. Writing
+the spec plan, the program and spec contracts is Claude Code's job, through the
+skills in `.claude/skills/`; vector only checks what they write.
 
 ---
 
 ## Develop
 
 ```bash
-bun test                 # unit + solver + verify + pipeline suites
+bun test                 # unit + solver + verify + spec suites
 bun run typecheck        # tsc --noEmit
 bun run lint             # biome
 bun run format           # biome --write
@@ -1230,8 +1117,8 @@ bun run build            # compile the standalone dist/vector binary
 
 The solver-backed suites need a native z3 (`bun run fetch-z3`, or `$VECTOR_Z3` /
 `PATH`). They cover the shape validator, typechecker, emitter, the solver, the
-`verify.ts` gate (PROVEN / REFUTED / INVALID paths), and the full prompt-mode
-retry loop with the LLM agents mocked and the real z3 subprocess.
+`verify.ts` gate (PROVEN / REFUTED / INVALID paths) against the real z3
+subprocess.
 
 The RFC suites (`test/rfc.test.ts`, `test/rfc-lang.test.ts`) also run the
 generated tests against a real nish when `VECTOR_NISH` points at a nish binary,

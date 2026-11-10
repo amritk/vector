@@ -8,12 +8,10 @@ import { verifyProgramViaSolver } from "./solve/runner.ts";
 import type { VerificationReport } from "./solve/types.ts";
 
 // The deterministic verifier, exposed as a one-shot over a (SpecPlan, Program)
-// pair. This is the veto half of vector with the two LLM phases removed: when
-// Claude Code itself plays Architect + Generator, it emits the two JSON
-// artifacts and calls this to have Z3 (plus the shape/type/traceability gates)
-// prove or refute them. The structured `feedback` it returns is what drives the
-// in-context repair loop, exactly as the counterexamples drove the nested
-// generator in pipeline.ts.
+// pair. vector never calls a model: Claude Code (the vector skill) or a person
+// writes the two JSON artifacts and calls this to have Z3 (plus the
+// shape/type/traceability gates) prove or refute them. The structured
+// `feedback` it returns is what drives the in-context repair loop.
 
 /** One machine-readable repair instruction: a single clause the solver could not prove. */
 export interface VerifyFeedbackItem {

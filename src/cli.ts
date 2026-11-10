@@ -10,23 +10,21 @@ import { renderDashboard, verdictStatus } from "./report/dashboard.ts";
 import { verifyProgramViaSolver } from "./solve/runner.ts";
 import { verifySpecAndProgram } from "./verify.ts";
 
-// vector CLI. Four modes:
-//   vector "Build a USD to EUR converter..."            (full LLM pipeline)
-//   vector --fixture test/fixtures/currency.json        (solver-only, no API key)
-//   vector --verify spec.json program.json --json       (verify LLM-emitted JSON;
-//                                                      the Claude Code skill path)
+// vector CLI. It never calls a model: the spec plan and program are written by
+// Claude Code (the vector skill) or by hand, and vector judges them.
+//   vector --fixture test/fixtures/currency.json        (verify one program)
+//   vector --verify spec.json program.json --json       (verify a spec plan and
+//                                                      its program; the skill path)
 //   vector --diff old-program.json new-program.json     (prove a regeneration
 //                                                      behavior-preserving, or
 //                                                      show the concrete deltas)
 
 interface CliArgs {
-  prompt?: string;
   fixture?: string;
   spec?: string;
   program?: string;
   diffOld?: string;
   diffNew?: string;
-  maxRetries: number;
   json: boolean;
   emit?: string;
 }
@@ -42,7 +40,7 @@ export class CliError extends Error {
 }
 
 export function parseArgs(argv: string[]): CliArgs {
-  const args: CliArgs = { maxRetries: 3, json: false };
+  const args: CliArgs = { json: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     switch (arg) {
@@ -65,18 +63,6 @@ export function parseArgs(argv: string[]): CliArgs {
       case "--program":
         args.program = argv[++i];
         break;
-      case "--max-retries": {
-        const raw = argv[++i];
-        const n = Number(raw);
-        if (!Number.isInteger(n) || n < 1) {
-          throw new CliError(
-            `--max-retries expects an integer >= 1, got ${JSON.stringify(raw)}`,
-            2,
-          );
-        }
-        args.maxRetries = n;
-        break;
-      }
       case "--json":
         args.json = true;
         break;
@@ -87,7 +73,10 @@ export function parseArgs(argv: string[]): CliArgs {
         if (arg?.startsWith("--")) {
           throw new CliError(`Unknown flag: ${arg}`, 2);
         }
-        args.prompt = args.prompt ? `${args.prompt} ${arg}` : arg;
+        throw new CliError(
+          `unexpected argument ${JSON.stringify(arg)}: vector does not call a model. Ask Claude Code for the function (the vector skill writes the spec plan and program), then check them with vector --verify`,
+          2,
+        );
     }
   }
   return args;
@@ -287,45 +276,6 @@ async function runDiff(args: CliArgs): Promise<number> {
   }
 }
 
-async function runPrompt(args: CliArgs): Promise<number> {
-  if (!args.prompt) throw new Error("runPrompt requires a prompt");
-  const { runPipeline } = await import("./pipeline.ts");
-  console.log("VECTOR");
-  const outcome = await runPipeline(args.prompt, {
-    maxRetries: args.maxRetries,
-    onPhase: phase,
-  });
-  console.log();
-  console.log(outcome.dashboardText);
-  if (outcome.emittedCode) {
-    console.log(
-      "\n── EMITTED TYPESCRIPT ─────────────────────────────────────────────\n",
-    );
-    console.log(outcome.emittedCode);
-    if (args.emit) {
-      const { writeFileSync } = await import("node:fs");
-      writeFileSync(args.emit, outcome.emittedCode);
-      console.log(`(written to ${args.emit})`);
-    }
-  }
-  if (args.json) {
-    console.log(
-      JSON.stringify(
-        {
-          status: outcome.status,
-          attempts: outcome.attempts,
-          specPlan: outcome.specPlan,
-          program: outcome.program,
-          report: outcome.report,
-        },
-        null,
-        2,
-      ),
-    );
-  }
-  return outcome.status === "PROVEN" ? 0 : 1;
-}
-
 export async function main(argv: string[]): Promise<number> {
   if (argv[0] === "spec" || argv[0] === "rfc") {
     const { rfcMain } = await import("./rfc/cli.ts");
@@ -340,27 +290,25 @@ export async function main(argv: string[]): Promise<number> {
     const args = parseArgs(argv);
     const verifyMode = Boolean(args.spec || args.program);
     const diffMode = Boolean(args.diffOld || args.diffNew);
-    if (!args.fixture && !args.prompt && !verifyMode && !diffMode) {
+    if (!args.fixture && !verifyMode && !diffMode) {
       console.error(
-        'Usage: vector "<prompt>" [--max-retries N] [--json] [--emit <file>]\n' +
-          "       vector --fixture <program.json> [--json] [--emit <file>]\n" +
+        "Usage: vector --fixture <program.json> [--json] [--emit <file>]\n" +
           "       vector --verify <spec.json> <program.json> [--json] [--emit <file>]\n" +
           "       vector --diff <old-program.json> <new-program.json> [--json]\n" +
-          "       vector spec check|emit|run|extract …  (spec or RFC → contract → nish test; alias: vector rfc)\n" +
+          "       vector spec check|emit|run|mutate|frozen|stale|exports …  (spec or RFC → contract → nish test; alias: vector rfc)\n" +
           "       vector --licenses  (vector's license and third-party notices)",
       );
       return 2;
     }
     if (diffMode) return await runDiff(args);
     if (verifyMode) return await runVerify(args);
-    if (args.fixture) return await runFixture(args);
-    return await runPrompt(args);
+    return await runFixture(args);
   } catch (err) {
     if (err instanceof CliError) {
       console.error(`error: ${err.message}`);
       return err.exitCode;
     }
-    // API/infrastructure failures surface as one clean line, not a stack.
+    // Solver/infrastructure failures surface as one clean line, not a stack.
     console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
     return 1;
   }

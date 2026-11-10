@@ -9,7 +9,6 @@ import {
   validateContractShape,
 } from "../src/rfc/contract.ts";
 import { emitNishTest } from "../src/rfc/emit-nish.ts";
-import { extractContract } from "../src/rfc/extract.ts";
 import { exportedSignatures, runGates } from "../src/rfc/gates.ts";
 import { hexRuns, normativeSentences, parseRfc } from "../src/rfc/rfctext.ts";
 import {
@@ -467,36 +466,6 @@ describe("the transcript must be the test's own (#22)", () => {
     expect(src).toContain("process.argv[1]");
     expect(src).toContain("console.log(`vector-done ${nonce} ${ran}`);");
     expect(src).not.toContain("  return t.done();");
-  });
-});
-
-describe("extraction with a model in the loop", () => {
-  test("gate failures go back as feedback until the contract passes", async () => {
-    const wrong = clone(hkdf);
-    wrong.requirements[2].quote = "PRK is HashLen octets";
-    const turns: string[] = [];
-    const answers = [wrong, hkdf];
-    const outcome = await extractContract(
-      {
-        rfcText: readFileSync("rfcs/rfc5869.txt", "utf8"),
-        moduleSource: [
-          "export const hkdfExtractSha256 = (salt: u8[], ikm: u8[]): u8[] => x",
-          "export const hkdfExpandSha256 = (prk: u8[], info: u8[], length: i32): u8[] | null => {",
-        ].join("\n"),
-        target: "nish/crypto/hkdf",
-      },
-      {
-        propose: async (turn) => {
-          turns.push(turn);
-          return answers.shift();
-        },
-      },
-    );
-    expect(outcome.attempts).toBe(2);
-    expect(outcome.contract?.contract).toBe("rfc5869-hkdf-sha256");
-    expect(turns[1]).toContain(
-      "[fidelity] R-PRK-LEN: quote not found in RFC §2.2",
-    );
   });
 });
 

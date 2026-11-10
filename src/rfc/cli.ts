@@ -4,11 +4,9 @@
 //   vector spec check   <contract.json>   gates + Z3 domains; exit 0 when valid
 //   vector spec emit    <contract.json> -o <main.ts>
 //   vector spec run     <contract.json>   check, emit, then run it with nish
-//   vector spec extract --spec <spec> --module <src.ts> --target <spec> -o <contract.json>
-//                                         (the LLM proposes; the gates dispose)
-//   vector spec extract --spec-only --spec <spec> --target <spec> -o <contract.json> [--twice]
-//                                         (the model sees only the spec; signatures from its
-//                                         Interface section; --twice compares two runs)
+//
+// vector never calls a model. A contract is written by hand or by Claude Code
+// (the vector-spec skill), and `check` judges it against the spec's text.
 //
 // The PR gates:
 //   vector spec frozen  [contract.json…] --base <ref>   spec side or implementation, not both
@@ -26,7 +24,6 @@ import {
 } from "./contract.ts";
 import { emitNishTest, sha256, staleReason } from "./emit-nish.ts";
 import { exportsCheck, moduleDiff, renderExports } from "./exports.ts";
-import type { ExtractDeps } from "./extract.ts";
 import {
   frozenCheck,
   readChecked,
@@ -56,8 +53,6 @@ import { parseDocument } from "./spectext.ts";
 export const RFC_USAGE = `Usage: vector spec check <contract.json> [options]
        vector spec emit  <contract.json> -o <main.ts> [options]
        vector spec run   <contract.json> [-o <main.ts>] [options]
-       vector spec extract --spec <file> --module <src.ts> --target <module> -o <contract.json> [--twice]
-       vector spec extract --spec-only --spec <file> --target <module> -o <contract.json> [--twice]
        vector spec frozen  [<contract.json>…] --base <ref> [--repo <dir>]
        vector spec stale   <test.ts> <contract.json>
        vector spec exports <contract.json> --base <ref> --nish-root <dir>
@@ -77,13 +72,8 @@ Options:
   --repo <dir>        frozen: the repository (default: the current directory)
   --jobs <n>          mutate: mutants run at once (default 1)
   --max <n>           mutate: at most this many mutants, spread over the changed lines
-  --format <f>        text (default), markdown (check, emit, run, mutate, extract: a PR comment) or json
-  --json              the same as --format json
-  --max-retries <n>   extract: repair attempts (default 3)
-  --spec-only         extract: the model's prompt holds only the spec; signatures come from the
-                      spec's Interface section (refused without one, and with --module)
-  --twice             extract: two independent extractions; where they disagree is listed as
-                      warnings for the reviewer`;
+  --format <f>        text (default), markdown (check, emit, run, mutate: a PR comment) or json
+  --json              the same as --format json`;
 
 interface RfcArgs {
   cmd: string;
@@ -95,16 +85,12 @@ interface RfcArgs {
   module?: string;
   nishRoot?: string;
   nish?: string;
-  target?: string;
   base?: string;
   repo?: string;
   jobs?: number;
   max?: number;
   format: "text" | "markdown" | "json";
   runSources: boolean;
-  maxRetries: number;
-  specOnly: boolean;
-  twice: boolean;
 }
 
 class UsageError extends Error {}
@@ -115,9 +101,6 @@ function parse(argv: string[]): RfcArgs {
     positional: [],
     format: "text",
     runSources: false,
-    maxRetries: 3,
-    specOnly: false,
-    twice: false,
   };
   for (let i = 1; i < argv.length; i++) {
     const x = argv[i];
@@ -144,12 +127,6 @@ function parse(argv: string[]): RfcArgs {
       case "--run-sources":
         a.runSources = true;
         break;
-      case "--spec-only":
-        a.specOnly = true;
-        break;
-      case "--twice":
-        a.twice = true;
-        break;
       case "--module":
         a.module = val();
         break;
@@ -158,9 +135,6 @@ function parse(argv: string[]): RfcArgs {
         break;
       case "--nish":
         a.nish = val();
-        break;
-      case "--target":
-        a.target = val();
         break;
       case "--json":
         a.format = "json";
@@ -186,12 +160,6 @@ function parse(argv: string[]): RfcArgs {
       case "--max":
         a.max = count();
         break;
-      case "--max-retries":
-        a.maxRetries = Number(val());
-        if (!Number.isInteger(a.maxRetries) || a.maxRetries < 1) {
-          throw new UsageError("--max-retries expects an integer >= 1");
-        }
-        break;
       default:
         if (x.startsWith("-")) throw new UsageError(`unexpected argument ${x}`);
         a.positional.push(x);
@@ -206,17 +174,11 @@ function parse(argv: string[]): RfcArgs {
     throw new UsageError("stale needs <test.ts> <contract.json>");
   if (
     a.format === "markdown" &&
-    !["check", "emit", "run", "mutate", "extract"].includes(a.cmd)
+    !["check", "emit", "run", "mutate"].includes(a.cmd)
   )
     throw new UsageError(
-      "--format markdown is for check, emit, run, mutate and extract",
+      "--format markdown is for check, emit, run and mutate",
     );
-  for (const [on, flag] of [
-    [a.specOnly, "--spec-only"],
-    [a.twice, "--twice"],
-  ] as const)
-    if (on && a.cmd !== "extract")
-      throw new UsageError(`${flag} is for extract`);
   return a;
 }
 
@@ -498,34 +460,11 @@ async function mutate(a: RfcArgs): Promise<number> {
   return report.mutation.survivors.length === 0 ? 0 : 1;
 }
 
-/**
- * `vector spec …`. `deps` replaces the model behind `extract`; tests pass a
- * fake one, and the CLI the real one.
- */
-export async function rfcMain(
-  argv: string[],
-  deps?: ExtractDeps,
-): Promise<number> {
+/** `vector spec …`. */
+export async function rfcMain(argv: string[]): Promise<number> {
   let a: RfcArgs;
   try {
     a = parse(argv);
-    if (a.cmd === "extract") {
-      const { runExtract } = await import("./extract.ts");
-      return await runExtract(
-        {
-          rfcPath: a.rfc,
-          modulePath: a.module,
-          nishRoot: a.nishRoot,
-          target: a.target,
-          out: a.out,
-          maxRetries: a.maxRetries,
-          format: a.format,
-          specOnly: a.specOnly,
-          twice: a.twice,
-        },
-        deps,
-      );
-    }
     if (a.cmd === "stale") return stale(a);
     if (a.cmd === "frozen") {
       const r = frozenCheck({

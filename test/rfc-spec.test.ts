@@ -2240,13 +2240,14 @@ describe("vector spec (the command)", () => {
     expect(out.join("\n")).toContain(`(written to ${file})`);
   });
 
-  test("usage names vector spec, for the CLI and for extract", async () => {
+  test("usage names vector spec; extract is gone (vector calls no model)", async () => {
     expect(await main([])).toBe(2);
     expect(err.join("\n")).toContain(
-      "vector spec check|emit|run|extract …  (spec or RFC → contract → nish test; alias: vector rfc)",
+      "vector spec check|emit|run|mutate|frozen|stale|exports …  (spec or RFC → contract → nish test; alias: vector rfc)",
     );
     expect(await rfcMain(["extract"])).toBe(2);
-    expect(err.join("\n")).toContain("error: extract needs --spec <file>");
+    expect(err.join("\n")).toContain("Usage: vector spec check");
+    expect(err.join("\n")).not.toContain("extract");
   });
 
   test("--spec gives the main source's text; --rfc is the same", async () => {
