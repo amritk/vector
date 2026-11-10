@@ -49,6 +49,7 @@ the program is repaired, up to a retry bound. **Unproven code is never emitted.*
 - [Architecture notes](#architecture-notes)
 - [Develop](#develop)
 - [Limitations](#limitations)
+- [License](#license)
 
 
 ## RFC → contract → Nish test
@@ -782,6 +783,10 @@ Drop it anywhere and run it:
 
 The build needs a native z3 in `.z3/` first (`bun run fetch-z3`).
 
+The binary embeds the Bun runtime and Z3, both under their own licenses. Anyone
+you give it to can read vector's license and every third-party notice with
+`./dist/vector --licenses` (see [License](#license)).
+
 How it's built (`scripts/build-binary.ts`): because `bun build --compile`
 already emits a platform-specific executable, we embed a matching native z3 (the
 `z3` binary + its shared library) as a tarball. On first solve the binary
@@ -1264,4 +1269,17 @@ vector verifies exactly the fragment Z3 can decide, and no more:
   your intent* — the displayed Hoare triples are what you should read and sign
   off on. vector makes that contract small and auditable; it does not read your
   mind.
-```
+
+---
+
+## License
+
+vector is MIT-licensed; see [`LICENSE`](LICENSE).
+
+It depends on, bundles or quotes work by others, under their own licenses:
+the Bun runtime and Z3, which the compiled binary embeds; the npm packages it
+bundles; the IETF RFCs in `rfcs/` and the excerpts quoted from them in
+`contracts/`; and two excerpts of nish used as test fixtures.
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) lists each with its license
+text, and `vector --licenses` prints vector's license and those notices from the
+binary itself.
