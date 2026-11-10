@@ -331,6 +331,11 @@ export async function main(argv: string[]): Promise<number> {
     const { rfcMain } = await import("./rfc/cli.ts");
     return rfcMain(argv.slice(1));
   }
+  if (argv.length === 1 && argv[0] === "--licenses") {
+    const { licensesText } = await import("./licenses.ts");
+    process.stdout.write(licensesText());
+    return 0;
+  }
   try {
     const args = parseArgs(argv);
     const verifyMode = Boolean(args.spec || args.program);
@@ -341,7 +346,8 @@ export async function main(argv: string[]): Promise<number> {
           "       vector --fixture <program.json> [--json] [--emit <file>]\n" +
           "       vector --verify <spec.json> <program.json> [--json] [--emit <file>]\n" +
           "       vector --diff <old-program.json> <new-program.json> [--json]\n" +
-          "       vector spec check|emit|run|extract …  (spec or RFC → contract → nish test; alias: vector rfc)",
+          "       vector spec check|emit|run|extract …  (spec or RFC → contract → nish test; alias: vector rfc)\n" +
+          "       vector --licenses  (vector's license and third-party notices)",
       );
       return 2;
     }
