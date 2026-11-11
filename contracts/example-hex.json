@@ -14,7 +14,9 @@
     {
       "id": "rfc4648",
       "rfc": 4648,
-      "path": "../rfcs/rfc4648.txt"
+      "path": "../rfcs/rfc4648.txt",
+      "file": "rfcs/rfc4648.txt",
+      "sha256": "84e14418f795d503be5f34bf23ce4ebaa119e9ec7c9f667d8caeb111385b178f"
     }
   ],
   "target": {

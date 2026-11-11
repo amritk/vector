@@ -11,10 +11,14 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { sha256 } from "../src/rfc/emit-nish.ts";
 import { readChecked } from "../src/rfc/frozen.ts";
 
 // A contract's source is judged by where it leads, and then read. Whatever is
 // judged must be what is read, even if a symlink is swapped in between (#29).
+
+/** What is read comes with the sha256 of its bytes. */
+const SPEC_SHA = sha256(Buffer.from("spec text"));
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -43,7 +47,7 @@ function layout() {
 describe("reading a source checks the file it opened", () => {
   test("an ordinary source is read", () => {
     const { link, allowed } = layout();
-    expect(readChecked(link, allowed)).toEqual({ text: "spec text" });
+    expect(readChecked(link, allowed)).toEqual({ text: "spec text", sha256: SPEC_SHA });
   });
 
   test("a link swapped after the check, before the open, is refused", () => {
@@ -64,7 +68,7 @@ describe("reading a source checks the file it opened", () => {
       if (calls++ === 1) swap("secret");
       return allowed(f);
     });
-    expect(r).toEqual({ text: "spec text" });
+    expect(r).toEqual({ text: "spec text", sha256: SPEC_SHA });
   });
 
   test("a FIFO is refused at once, not waited on", () => {

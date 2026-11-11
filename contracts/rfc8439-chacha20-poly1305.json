@@ -6,6 +6,14 @@
     "title": "ChaCha20 and Poly1305 for IETF Protocols",
     "sha256": "25bef70fbf7a07ff45c2fe4cb7c6ce954eac687413d8610603268b4e4415324c"
   },
+  "sources": [
+    {
+      "id": "rfc8439",
+      "rfc": 8439,
+      "file": "rfcs/rfc8439.txt",
+      "sha256": "25bef70fbf7a07ff45c2fe4cb7c6ce954eac687413d8610603268b4e4415324c"
+    }
+  ],
   "target": {
     "module": "nish/crypto/chacha20poly1305"
   },

@@ -4,7 +4,8 @@
 // the PR writes: the one exception is a generated test under test/spec/, which
 // is spec side only while it names the sha256 of a contract at the PR's head.
 // Each contract's main source must also still hash to the `source.sha256` it
-// records, and every source it declares by path must lie under specs/ or
+// records, each source must still be the file and sha256 its `sources` entry
+// records (an RFC file too), and every source it declares by path must lie under specs/ or
 // rfcs/. Fails closed: a git error, an unreadable contract or a missing source
 // is a failure.
 
@@ -89,7 +90,44 @@ export function sourcePathProblem(
 }
 
 /**
- * The text of `file`, or why it may not be read. `problem` judges a resolved
+ * How a contract's `sources[].file` names `file`: its path relative to the
+ * repo root, which is the directory holding the contract's directory
+ * (contracts/x.json -> .), else relative to vector's own root, where an
+ * rfc<N>.txt may come from; symlinks resolved, so the name is the same on any
+ * machine. Its real path when it is under neither.
+ */
+export function sourceLabel(file: string, contractPath: string): string {
+  const f = real(file);
+  for (const root of [
+    join(dirname(resolve(contractPath)), ".."),
+    VECTOR_ROOT,
+  ]) {
+    const r = relative(real(root), f);
+    if (!r.startsWith("..")) return r;
+  }
+  return f;
+}
+
+/**
+ * Why `file`, with sha256 `got`, is not what `src` records it read, or
+ * undefined when it is (or `src` records neither).
+ */
+export function recordedProblem(
+  src: SourceDecl,
+  contractPath: string,
+  file: string,
+  got: string,
+): string | undefined {
+  const read = sourceLabel(file, contractPath);
+  if (src.file !== undefined && read !== src.file)
+    return `source ${src.id} was read from ${read}, but its file is ${src.file}`;
+  if (src.sha256 !== undefined && got !== src.sha256)
+    return `source ${src.id} (${read}) has sha256 ${got}, but its sha256 is ${src.sha256}: the source changed under the contract`;
+  return undefined;
+}
+
+/**
+ * The text of `file` and the sha256 of its bytes, or why it may not be read. `problem` judges a resolved
  * path; it is asked twice: before `file` is opened, and then of the file that
  * was actually opened (its path from /proc/self/fd on Linux; elsewhere its
  * realpath, which must still be the same inode). So a symlink or directory
@@ -100,7 +138,7 @@ export function sourcePathProblem(
 export function readChecked(
   file: string,
   problem: (real: string) => string | undefined,
-): { text: string } | { problem: string } {
+): { text: string; sha256: string } | { problem: string } {
   const before = problem(real(file));
   if (before) return { problem: before };
   // O_NONBLOCK: a FIFO opens at once instead of waiting for a writer.
@@ -121,7 +159,8 @@ export function readChecked(
     const after = problem(opened);
     if (after) return { problem: after };
     if (!st.isFile()) return { problem: `${file} is not a regular file` };
-    return { text: readFileSync(fd, "utf8") };
+    const bytes = readFileSync(fd);
+    return { text: bytes.toString("utf8"), sha256: sha256(bytes) };
   } finally {
     closeSync(fd);
   }
@@ -293,6 +332,14 @@ function sourceProblem(path: string, top: string): string | undefined {
   const got = sha256(readFileSync(file));
   if (got !== want)
     return `its main source ${file} has sha256 ${got}, but source.sha256 is ${want}: the spec changed under the contract`;
+  // Each source that records its file or sha256, an RFC's included.
+  for (const s of list) {
+    if (s.file === undefined && s.sha256 === undefined) continue;
+    const f = sourceFile(s, path);
+    if (!f || !existsSync(f)) return `source ${s.id} is not on disk`;
+    const problem = recordedProblem(s, path, f, sha256(readFileSync(f)));
+    if (problem) return problem;
+  }
   return undefined;
 }
 

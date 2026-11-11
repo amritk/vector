@@ -16,7 +16,7 @@
     "source": {
       "type": "object",
       "additionalProperties": false,
-      "description": "rfc alone: a single-RFC contract. With `sources`, give `main` (the source the completeness gate reads) instead of rfc.",
+      "description": "rfc alone: a single-RFC contract; `sources` may then add sources or declare rfc<N> itself. Or give `main` (the source the completeness gate reads) and `sources` instead of rfc.",
       "properties": {
         "rfc": {
           "type": "integer"
@@ -668,6 +668,15 @@
         "path": {
           "type": "string",
           "description": "The spec's file, relative to the contract."
+        },
+        "file": {
+          "type": "string",
+          "description": "The file whose bytes were read for this source, relative to the repo root: the directory that holds the contract's directory (contracts/x.json -> its parent), or vector's own root when the file came from there, e.g. rfcs/rfc4648.txt. `vector spec check` fails when it reads another file."
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "The sha256 of that file's bytes. `vector spec check` and `vector spec frozen` fail when the bytes differ."
         }
       },
       "required": ["id"]
