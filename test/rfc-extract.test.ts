@@ -332,7 +332,8 @@ describe("vector spec extract", () => {
       "functions",
       "clauses",
     ]);
-    expect(c.$schema).toBe("../schemas/rfc-contract.json");
+    // Named from where the contract would be written: test/fixtures/contracts.
+    expect(c.$schema).toBe("../../../schemas/rfc-contract.json");
     const digest = new Bun.CryptoHasher("sha256").update(MINI).digest("hex");
     expect(c.source).toEqual({
       title: "Extract fixture: nish/hex without a byte-list vector",
