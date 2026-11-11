@@ -80,7 +80,9 @@ const DEFINITION = "Definition: ";
 const UNTESTED = "Untested: ";
 const RFC_TARGET_RE = /^RFC([0-9]+)$/;
 const KEYWORD_RE = new RegExp(
+  // Longest first, so `MUST NOT` is not read as `MUST`.
   `(?<!")\\b(${LEVELS.filter((l) => l !== "DEFINITION")
+    .sort((a, b) => b.length - a.length)
     .map((l) => l.replace(" ", "\\s+"))
     .join("|")})\\b(?!")`,
 );
@@ -152,7 +154,7 @@ interface Quoted {
   quote: string;
   level: Level;
   /** For a blockquote: the RFC quoted. */
-  cite?: { rfc: number; section: string; loc: Loc };
+  cite?: { rfc: number; section: string };
   loc: Loc;
 }
 
@@ -163,9 +165,12 @@ export function profileToContract(
 ): { contract: RfcContract } | { refusals: Refusal[] } {
   const refusals: Refusal[] = [];
   const refuse = (loc: Loc, message: string, col?: number) => {
-    const r: Refusal = { file: xmlPath, line: lineOf(loc), message };
-    if (col !== undefined) r.col = col;
-    refusals.push(r);
+    refusals.push({
+      file: xmlPath,
+      line: lineOf(loc),
+      ...(col === undefined ? {} : { col }),
+      message,
+    });
   };
 
   // The RFCs, each resolved once, and the sections cited in each.
@@ -178,11 +183,6 @@ export function profileToContract(
     }
     return d;
   };
-  const sectionOf = (n: number, section: string, loc: Loc) => {
-    const sec = findSection(rfc(n), section);
-    if (!sec) refuse(loc, `Section ${section} of RFC${n} does not exist`);
-    return sec;
-  };
   const referenced = new Map<string, number | undefined>(
     doc.references.map((r) => [r.anchor, r.rfc]),
   );
@@ -191,6 +191,8 @@ export function profileToContract(
     const target = x.attrs.target ?? "";
     const n = referenced.get(target);
     if (n === undefined) {
+      // An RFC with no <reference> at all was refused with the other xrefs.
+      if (!referenced.has(target) && RFC_TARGET_RE.test(target)) return null;
       refuse(x.loc, `xref to "${target}" names no RFC <reference>`);
       return null;
     }
@@ -226,7 +228,9 @@ export function profileToContract(
     }
     const n = referenced.get(target);
     const section = x.attrs.section;
-    if (n !== undefined && section !== undefined) sectionOf(n, section, x.loc);
+    if (n === undefined || section === undefined) continue;
+    if (!findSection(rfc(n), section))
+      refuse(x.loc, `Section ${section} of RFC${n} does not exist`);
   }
 
   // -- the interface: one block, read by its front end.
@@ -342,7 +346,7 @@ export function profileToContract(
       section: x.attrs.section,
       quote,
       level: (kw ?? "DEFINITION") as Level,
-      cite: { rfc: n2, section: x.attrs.section, loc: x.loc },
+      cite: { rfc: n2, section: x.attrs.section },
       loc: n.loc,
     };
   };
@@ -360,9 +364,11 @@ export function profileToContract(
         blocks(n, section);
         return;
       }
+      // An anchored block is a requirement or refused as one, never both.
+      if (n.attrs.anchor !== undefined)
+        for (const l of bcp14Under(n)) handled.add(l);
       const q = readBlock(n, section);
       if (!q) return;
-      for (const l of bcp14Under(n)) handled.add(l);
       if (section === LOOSE_SECTION && !q.cite) {
         refuse(
           n.loc,
@@ -417,7 +423,8 @@ export function profileToContract(
   for (const q of [...requirements, ...exclusions]) {
     if (!q.cite) continue;
     cited.add(q.cite.rfc);
-    const sec = sectionOf(q.cite.rfc, q.cite.section, q.cite.loc);
+    // A missing section was refused with the other xrefs.
+    const sec = findSection(rfc(q.cite.rfc), q.cite.section);
     if (sec && !sectionText(sec).includes(normalizeText(q.quote)))
       refuse(
         q.loc,
@@ -519,31 +526,18 @@ export function profileToContract(
     const source = sourceCell(srcC, isSpec);
     if (!source) return null;
     if (!title) return null;
-    const v: VectorClause = {
+    return {
       kind: "vector",
       id,
       title,
       covers,
       source,
+      // Section sits before call; a cited vector's section is in its source.
+      ...("cite" in source ? {} : { section }),
       call: pc.call,
       args: settled.args,
       expect: settled.expect,
     };
-    if (!("cite" in source)) {
-      // The key order a contract writes: section before call.
-      return {
-        kind: v.kind,
-        id,
-        title,
-        covers,
-        source,
-        section,
-        call: v.call,
-        args: v.args,
-        expect: v.expect,
-      };
-    }
-    return v;
   }
 
   function sourceCell(td: XmlNode, isSpec: boolean): VectorSource | null {

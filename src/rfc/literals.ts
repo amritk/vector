@@ -68,8 +68,8 @@ class Reader {
       throw new Fail("unexpected text after the value", this.i);
   }
 
-  /** `(a, b, …)` after an opening paren already read. */
-  list(): RawLiteral[] {
+  /** `(a, b, …)` after an opening paren already read; `inConcat` refuses a nested concat. */
+  list(inConcat = false): RawLiteral[] {
     const out: RawLiteral[] = [];
     this.skip();
     if (this.text[this.i] === ")") {
@@ -77,7 +77,7 @@ class Reader {
       return out;
     }
     for (;;) {
-      out.push(this.literal());
+      out.push(this.literal(inConcat));
       this.skip();
       if (this.text[this.i] === ")") {
         this.i++;
@@ -87,7 +87,7 @@ class Reader {
     }
   }
 
-  literal(): RawLiteral {
+  literal(inConcat = false): RawLiteral {
     this.skip();
     const at = this.i;
     const rest = this.text.slice(at);
@@ -113,8 +113,11 @@ class Reader {
       return { kind: "empty" };
     }
     if (rest.startsWith("concat(")) {
+      // One level only: concatenation is associative, and a nested one would
+      // recurse as deep as the cell is long.
+      if (inConcat) throw new Fail("concat does not nest; list every part", at);
       this.i += 7;
-      const parts = this.list();
+      const parts = this.list(true);
       if (parts.length === 0)
         throw new Fail("concat needs at least one part", at);
       return { kind: "concat", parts };
@@ -153,8 +156,8 @@ const caught = <T>(f: () => T): T | LiteralError => {
   try {
     return f();
   } catch (e) {
-    if (e instanceof Fail) return { message: e.message, col: e.at + 1 };
-    throw e;
+    if (!(e instanceof Fail)) throw e;
+    return { message: e.message, col: e.at + 1 };
   }
 };
 

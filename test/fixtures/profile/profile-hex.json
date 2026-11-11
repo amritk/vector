@@ -1,0 +1,452 @@
+{
+  "contract": {
+    "contract": "profile-hex",
+    "source": {
+      "title": "Profile fixture: a spec the profile reads into a contract",
+      "main": "profile-hex"
+    },
+    "sources": [
+      {
+        "id": "profile-hex",
+        "path": "../specs/profile-hex.xml"
+      },
+      {
+        "id": "rfc4648",
+        "rfc": 4648
+      }
+    ],
+    "target": {
+      "module": "nish/hex"
+    },
+    "requirements": [
+      {
+        "id": "R-ENC-LEN",
+        "section": "3.1",
+        "level": "MUST",
+        "quote": "hexEncode MUST return exactly two characters per input byte."
+      },
+      {
+        "id": "R-ENC-DIGITS",
+        "section": "3.2",
+        "level": "MUST",
+        "quote": "Each byte MUST be written high nibble first, using the digits 0-9 and a-f."
+      },
+      {
+        "id": "R-DEF-DIGIT",
+        "section": "4.1",
+        "level": "DEFINITION",
+        "quote": "a hex digit is one of the characters 0-9, a-f and A-F."
+      },
+      {
+        "id": "R-RFC-VECTORS",
+        "source": "rfc4648",
+        "section": "10",
+        "level": "DEFINITION",
+        "quote": "BASE16(\"f\") = \"66\""
+      },
+      {
+        "id": "R-DEC-REJECT",
+        "section": "4.2",
+        "level": "MUST",
+        "quote": "hexDecode MUST return null when the text has an odd length or contains any other character, including whitespace and a \"0x\" prefix."
+      },
+      {
+        "id": "R-DEC-EMPTY",
+        "section": "4.3",
+        "level": "MUST",
+        "quote": "hexDecode of the empty string MUST return an empty array, not null."
+      }
+    ],
+    "exclusions": [
+      {
+        "source": "rfc4648",
+        "section": "10",
+        "quote": "BASE16(\"fo\") = \"666F\"",
+        "reason": "the reference prints uppercase digits. Checked by: R-ENC-DIGITS."
+      },
+      {
+        "section": "4.4",
+        "quote": "hexDecode MUST NOT index a table by the value of a digit.",
+        "reason": "timing is not observable from a unit test. Checked by: code review."
+      },
+      {
+        "section": "4.4",
+        "quote": "Callers SHOULD NOT decode secrets with this module.",
+        "reason": "an obligation on the caller."
+      }
+    ],
+    "functions": [
+      {
+        "name": "hexEncode",
+        "params": [
+          {
+            "name": "bytes",
+            "type": "bytes"
+          }
+        ],
+        "returns": "string"
+      },
+      {
+        "name": "hexDecode",
+        "params": [
+          {
+            "name": "text",
+            "type": "string"
+          }
+        ],
+        "returns": "bytes?"
+      }
+    ],
+    "clauses": [
+      {
+        "kind": "vector",
+        "id": "V1",
+        "title": "empty input decodes to empty bytes",
+        "covers": ["R-DEC-EMPTY"],
+        "source": {
+          "cite": {
+            "source": "rfc4648",
+            "section": "10"
+          }
+        },
+        "call": "hexDecode",
+        "args": [
+          {
+            "str": ""
+          }
+        ],
+        "expect": {
+          "ascii": ""
+        }
+      },
+      {
+        "kind": "vector",
+        "id": "V2",
+        "title": "one byte",
+        "covers": ["R-RFC-VECTORS"],
+        "source": {
+          "cite": {
+            "source": "rfc4648",
+            "section": "10"
+          }
+        },
+        "call": "hexDecode",
+        "args": [
+          {
+            "str": "66"
+          }
+        ],
+        "expect": {
+          "ascii": "f"
+        }
+      },
+      {
+        "kind": "vector",
+        "id": "V3",
+        "title": "bytes literal",
+        "covers": ["R-ENC-LEN"],
+        "source": {
+          "command": "python3 -c 'print(bytes([0,15,240,255]).hex())'"
+        },
+        "section": "5",
+        "call": "hexEncode",
+        "args": [
+          {
+            "hex": "000ff0ff"
+          }
+        ],
+        "expect": {
+          "str": "000ff0ff"
+        }
+      },
+      {
+        "kind": "vector",
+        "id": "V4",
+        "title": "odd length",
+        "covers": ["R-DEC-REJECT"],
+        "source": {
+          "spec": "4.3"
+        },
+        "section": "5",
+        "call": "hexDecode",
+        "args": [
+          {
+            "str": "abc"
+          }
+        ],
+        "expect": {
+          "null": true
+        }
+      },
+      {
+        "kind": "vector",
+        "id": "V5",
+        "title": "empty bytes literal",
+        "covers": ["R-DEC-EMPTY"],
+        "source": {
+          "cite": {
+            "section": "4.3"
+          }
+        },
+        "call": "hexEncode",
+        "args": [
+          {
+            "hex": ""
+          }
+        ],
+        "expect": {
+          "str": ""
+        }
+      },
+      {
+        "kind": "vector",
+        "id": "V6",
+        "title": "string with escapes",
+        "covers": ["R-DEC-REJECT", "R-DEF-DIGIT"],
+        "source": {
+          "spec": "4.3"
+        },
+        "section": "5",
+        "call": "hexDecode",
+        "args": [
+          {
+            "str": "a\"b\\cA\n"
+          }
+        ],
+        "expect": {
+          "null": true
+        }
+      },
+      {
+        "kind": "vector",
+        "id": "V7",
+        "title": "concat and a labelled value",
+        "covers": ["R-ENC-LEN"],
+        "source": {
+          "cite": {
+            "source": "rfc4648",
+            "section": "10"
+          }
+        },
+        "call": "hexEncode",
+        "args": [
+          {
+            "concat": [
+              {
+                "hex": "00"
+              },
+              {
+                "hex": "ff"
+              }
+            ]
+          }
+        ],
+        "expect": {
+          "hex": "00ff",
+          "label": "Key"
+        }
+      },
+      {
+        "kind": "vector",
+        "id": "V8",
+        "title": "labelled argument",
+        "covers": ["R-ENC-DIGITS"],
+        "source": {
+          "command": "echo 0b0b0b"
+        },
+        "section": "5",
+        "call": "hexEncode",
+        "args": [
+          {
+            "hex": "0b0b0b",
+            "label": "Key"
+          }
+        ],
+        "expect": {
+          "str": "0b0b0b"
+        }
+      },
+      {
+        "kind": "property",
+        "id": "P-ENC-LEN",
+        "title": "two characters per byte",
+        "covers": ["R-ENC-LEN", "R-ENC-DIGITS"],
+        "forall": [
+          {
+            "name": "b",
+            "type": "bytes",
+            "minLen": 0,
+            "maxLen": 64
+          }
+        ],
+        "assert": {
+          "op": "==",
+          "args": [
+            {
+              "op": "strLen",
+              "args": [
+                {
+                  "call": "hexEncode",
+                  "args": [
+                    {
+                      "var": "b"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "op": "*",
+              "args": [
+                {
+                  "int": 2
+                },
+                {
+                  "op": "len",
+                  "args": [
+                    {
+                      "var": "b"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "kind": "property",
+        "id": "P-ENC-LOWER",
+        "title": "output is lowercase",
+        "covers": ["R-ENC-DIGITS"],
+        "forall": [
+          {
+            "name": "b",
+            "type": "bytes",
+            "minLen": 0,
+            "maxLen": 64
+          },
+          {
+            "name": "t",
+            "type": "string",
+            "minLen": 0,
+            "maxLen": 32,
+            "alphabet": ["hexdigit", "HEXDIGIT"]
+          }
+        ],
+        "where": {
+          "op": "==",
+          "args": [
+            {
+              "op": "%",
+              "args": [
+                {
+                  "op": "strLen",
+                  "args": [
+                    {
+                      "var": "t"
+                    }
+                  ]
+                },
+                {
+                  "int": 2
+                }
+              ]
+            },
+            {
+              "int": 0
+            }
+          ]
+        },
+        "assert": {
+          "let": [
+            {
+              "name": "e",
+              "value": {
+                "call": "hexEncode",
+                "args": [
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            }
+          ],
+          "in": {
+            "op": "==",
+            "args": [
+              {
+                "var": "e"
+              },
+              {
+                "op": "lower",
+                "args": [
+                  {
+                    "var": "e"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      {
+        "kind": "property",
+        "id": "P-DEC-ODD",
+        "title": "odd-length text is rejected",
+        "covers": ["R-DEC-REJECT"],
+        "forall": [
+          {
+            "name": "t",
+            "type": "string",
+            "minLen": 1,
+            "maxLen": 33,
+            "alphabet": ["hexdigit"]
+          }
+        ],
+        "assert": {
+          "op": "implies",
+          "args": [
+            {
+              "op": "==",
+              "args": [
+                {
+                  "op": "%",
+                  "args": [
+                    {
+                      "op": "strLen",
+                      "args": [
+                        {
+                          "var": "t"
+                        }
+                      ]
+                    },
+                    {
+                      "int": 2
+                    }
+                  ]
+                },
+                {
+                  "int": 1
+                }
+              ]
+            },
+            {
+              "op": "isNull",
+              "args": [
+                {
+                  "call": "hexDecode",
+                  "args": [
+                    {
+                      "var": "t"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
