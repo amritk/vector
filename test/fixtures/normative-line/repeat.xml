@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rfc number="9991" docName="draft-repeat-00" category="std" ipr="trust200902" version="3">
+<front><title>Repeat</title></front>
+<middle>
+<?line 10?>
+<section anchor="once"><name>Once</name>
+<t>A sender <bcp14>MUST</bcp14> pad the block. Then more.</t>
+<t>A sender MUST pad the block.</t>
+<t>A reader <bcp14>MAY</bcp14> stop.</t>
+</section>
+<section anchor="twice"><name>Twice</name>
+<t>A sender <bcp14>MUST</bcp14> pad the block.</t>
+<t>A sender <bcp14>MUST</bcp14> pad the block.</t>
+</section>
+</middle>
+</rfc>

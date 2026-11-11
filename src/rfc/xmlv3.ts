@@ -106,7 +106,16 @@ export interface V3Document extends RfcDocument {
     section: string;
     level: Level;
     sentence: string;
+    /** Where its first <bcp14> is. */
     loc: Loc;
+    /**
+     * The line of its section's own lines (ownLines) the sentence is in, and
+     * where in that line's text it starts: which copy it is, when the same
+     * text is also in a paragraph with no <bcp14>. For an unnumbered
+     * section, the line counts from that section's start, not doc.loose's.
+     */
+    line: number;
+    start: number;
     anchor?: string;
   }[];
 }
@@ -740,13 +749,7 @@ interface Line {
   spans: string[];
 }
 
-interface Normative {
-  section: string;
-  level: Level;
-  sentence: string;
-  loc: Loc;
-  anchor?: string;
-}
+type Normative = V3Document["normative"][number];
 
 // Elements holding either running text or further blocks.
 const CONTAINERS = new Set([
@@ -806,7 +809,7 @@ class Builder {
       for (const row of cellNodes(n)) {
         for (const { node, header } of row) {
           const c = cell(node, header);
-          this.normativeIn(node, id, here);
+          this.normativeIn(node, id, here, out.length);
           out.push({ text: c.text, prose: false, code: null, spans: c.code });
         }
       }
@@ -832,7 +835,7 @@ class Builder {
   ): void {
     const text = isElement(n) ? plainText(n) : clean(n.text);
     if (text === "") return;
-    if (isElement(n)) this.normativeIn(n, id, anchor);
+    if (isElement(n)) this.normativeIn(n, id, anchor, out.length);
     out.push({
       text,
       prose,
@@ -846,12 +849,14 @@ class Builder {
    * splits a section's text, each at the level its markup names. A keyword
    * with a double quote on either side is named, not used (the RFC 2119
    * boilerplate's `"MUST"`), and makes no entry: rfctext's KEYWORD_RE reads
-   * it the same way.
+   * it the same way. `line` is the index of the line `n` makes in its
+   * section's own lines.
    */
   private normativeIn(
     n: XmlNode,
     section: string,
     anchor: string | undefined,
+    line: number,
   ): void {
     const found: XmlNode[] = [];
     const marked = clean(render(n, { bcp14: found }));
@@ -923,14 +928,14 @@ class Builder {
       const key = `${level}\n${before}`;
       if (seen.has(key)) return;
       seen.add(key);
+      const from = before < 0 ? 0 : before + 2;
       const entry: Normative = {
         section,
         level: level as Level,
-        sentence: text.slice(
-          before < 0 ? 0 : before + 2,
-          after < 0 ? text.length : after + 1,
-        ),
+        sentence: text.slice(from, after < 0 ? text.length : after + 1),
         loc: b.loc,
+        line,
+        start: from,
       };
       if (anchor !== undefined) entry.anchor = anchor;
       this.normative.push(entry);

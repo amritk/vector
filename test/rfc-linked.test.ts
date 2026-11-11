@@ -574,15 +574,17 @@ ${blocks}
     ]);
   });
 
-  test("a copy in a paragraph with no <bcp14> makes each copy one to quote", () => {
-    // Its text does not say which paragraph is marked, so both are asked
-    // for: a false failure the contract answers by quoting both, never a
-    // false pass.
+  test("a copy in a paragraph with no <bcp14> is not the one to quote", () => {
+    // The reader records which paragraph is marked, so quoting it is
+    // enough, and quoting only the unmarked copy covers nothing.
     const UNMARKED = `<t>${X_TEXT}</t><t>${X} Then more.</t>`;
-    expect(uncoveredIn(UNMARKED, `${X_TEXT} Then more.`)).toEqual([
-      neither("MUST NOT", X_TEXT),
-    ]);
-    expect(uncoveredIn(UNMARKED, X_TEXT)).toEqual([]);
+    expect(uncoveredIn(UNMARKED, `${X_TEXT} Then more.`)).toEqual([]);
+    expect(
+      uncoveredIn(
+        `<t>${X} Then more.</t><t>${X_TEXT} Again.</t>`,
+        `${X_TEXT} Again.`,
+      ),
+    ).toEqual([neither("MUST NOT", X_TEXT)]);
   });
 
   test("a sentence inside a longer one is not one of its occurrences", () => {
