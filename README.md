@@ -154,18 +154,25 @@ drift; 1 means drift, a warning, or a render failure; 2 means a usage error, a
 missing input, or the wrong tools.
 
 `vector spec extract specs/<name>.xml [-o contracts/<name>.json] [--check]`
-reads the XML. Without `-o` it writes the contract to stdout. With `--check` it
-prints a unified diff against the `-o` file and exits 1 if they differ. Given a
-`.md` it exits 2: `build it first: scripts/build-spec.sh specs/<name>.md`.
+reads the XML. Without `-o` it writes the contract to stdout, with its
+relative paths (`$schema`, the sources, the sidecar it reads) taken as if it
+were at `contracts/<name>.json` beside the spec's `specs/`. With `-o` it
+writes that file. `--check` needs `-o` and writes nothing: it prints a unified
+diff against the `-o` file and exits 1 if they differ (a missing file counts as
+empty). Given a `.md` it exits 2: `build it first: scripts/build-spec.sh
+specs/<name>.md`. `-o` may name neither the spec it reads nor a
+`*.survivors.json` sidecar.
 
 It refuses everything it cannot read, all at once, each refusal as `file:line`.
 The file is the XML; the line is the markdown line the XML came from when the
 XML carries kramdown-rfc's `<?line?>` marks, and the XML line otherwise. It also runs `spec check`'s gates
-(without `--run-sources`). Exit codes:
+(without `--run-sources`); a gate's refusal about `allowSurvivors` names the
+sidecar file instead. Exit codes:
 
-- 0: the contract was written, or is up to date.
-- 1: one or more refusals.
-- 2: a usage error, a missing file, or a missing RFC.
+- 0: the contract was written or printed, or with `--check` is up to date.
+- 1: one or more refusals, or with `--check` a difference.
+- 2: a usage error, an unreadable file (the sidecar included), or a missing
+  RFC, with the `curl` command that fetches it.
 
 The output is canonical: schema key order, 2-space indent, a trailing newline,
 so a rebuild changes only what the spec changed. Extract fills in the main
@@ -529,17 +536,13 @@ failure, never a pass. Results exit 0 (OK) or 1 (refused); usage and git
 errors exit 2.
 
 ```bash
-bun run vector spec frozen  --base origin/main contracts/rfc8439-chacha20-poly1305.json
+bun run vector spec frozen  --base origin/main [contracts/*.json]
 bun run vector spec stale   test/spec/aead_rfc8439.ts contracts/rfc8439-chacha20-poly1305.json
 node scripts/spec-stale.mjs test/spec/aead_rfc8439.ts contracts/rfc8439-chacha20-poly1305.json
 bun run vector spec exports contracts/rfc5869-hkdf-sha256.json --nish-root ../nish --base origin/main
 bun run vector spec mutate  contracts/rfc5869-hkdf-sha256.json --nish-root ../nish --base origin/main \
   [--jobs N] [--max N] [--format markdown]
 ```
-
-Give `frozen` its contract paths explicitly: a `contracts/<name>.survivors.json`
-sidecar is a `.json` in `contracts/` but not a contract, so a glob or a run
-with no paths would try to read it as one.
 
 **frozen** — a PR changes the spec side or the implementation, never both, so
 a test can't be loosened in the PR that changes the code it tests. Paths are

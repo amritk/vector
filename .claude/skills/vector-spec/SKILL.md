@@ -242,6 +242,10 @@ bun run vector spec check contracts/<name>.json --run-sources
 - It runs `check`'s gates: fidelity, completeness, coverage, provenance,
   typing and domain.
 - It fills in every `sha256`, so there is no freeze step to do by hand.
+- `-o` writes the contract; without it, the contract goes to stdout.
+  `--check -o contracts/<name>.json` writes nothing and exits 1 with a diff
+  when the committed contract is not what the spec states. A refusal about
+  `allowSurvivors` names the sidecar, not the XML.
 
 **check --run-sources** runs the `command` sources. Read every command before
 you pass `--run-sources`: it runs on your machine, as you, with your files and
@@ -343,8 +347,7 @@ PR, allow it with a reason in `contracts/<name>.survivors.json`:
 ```
 
 Then re-extract, which merges that file in verbatim. Re-run `emit`, `stale`
-and `frozen` too (give `frozen` the contract path explicitly: the sidecar is a
-`.json` in `contracts/` but not a contract), because the contract's bytes changed. Survivors are usually
+and `frozen` too (`frozen` skips `*.survivors.json` sidecars), because the contract's bytes changed. Survivors are usually
 found by the implementation PR's `mutate` run, but the allow-list still
 belongs in a spec-side PR.
 
