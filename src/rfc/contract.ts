@@ -286,14 +286,19 @@ export interface SourceDecl {
   rfc?: number;
   /** Relative to the contract's directory. */
   path?: string;
+  /** The file read for it, as sourceLabel names it, like rfcs/rfc4648.txt. */
+  file?: string;
+  /** The sha256 of that file's bytes. */
+  sha256?: string;
 }
 
 export interface RfcContract {
   contract: string;
   /**
-   * `rfc` alone: a single-RFC contract, whose one source is that RFC. With
-   * `sources`, `main` names the source the completeness gate reads; `rfc` is
-   * then given on the source's own entry.
+   * `rfc`: a single-RFC contract, whose main source is that RFC; `sources`
+   * may add others, or declare rfc<N> itself to record its file. Or `main`
+   * with `sources`: `main` names the source the completeness gate reads, and
+   * `rfc` is given on the source's own entry.
    */
   /**
    * `sha256`: the hex sha256 of the main source file's bytes, which
@@ -410,9 +415,16 @@ export function declaredSources(c: RfcContract): {
   main: string;
   list: SourceDecl[];
 } {
-  if (c.sources) return { main: c.source.main as string, list: c.sources };
+  if (c.source.main !== undefined)
+    return { main: c.source.main, list: c.sources as SourceDecl[] };
   const id = `rfc${c.source.rfc}`;
-  return { main: id, list: [{ id, rfc: c.source.rfc }] };
+  const list = c.sources ?? [];
+  return {
+    main: id,
+    list: list.some((d) => d.id === id)
+      ? list
+      : [{ id, rfc: c.source.rfc }, ...list],
+  };
 }
 
 /** The source a citation names, its default resolved. */
@@ -1077,19 +1089,26 @@ function shapeSources(input: Obj, errors: string[]): Set<string> {
     (typeof src.sha256 !== "string" || !SHA256_RE.test(src.sha256))
   )
     errors.push("contract.source.sha256: 64 lowercase hex digits");
-  if (input.sources === undefined) {
-    if (!Number.isInteger(src.rfc) || (src.rfc as number) < 1) {
+  // `rfc` names the main source; `main` names it among `sources` instead.
+  const rfcForm = src.rfc !== undefined || input.sources === undefined;
+  const mainId =
+    rfcForm && Number.isInteger(src.rfc) && (src.rfc as number) >= 1
+      ? `rfc${src.rfc}`
+      : undefined;
+  if (rfcForm) {
+    if (mainId === undefined)
       errors.push("contract.source.rfc: the RFC number");
-    } else ids.add(`rfc${src.rfc}`);
     if (src.main !== undefined) {
       errors.push("contract.source.main: only with contract.sources");
+      if (input.sources !== undefined)
+        errors.push(
+          "contract.source.rfc: with contract.source.main, give the RFC number on its entry there",
+        );
     }
-    return ids;
   }
-  if (src.rfc !== undefined) {
-    errors.push(
-      "contract.source.rfc: with contract.sources, give the RFC number on its entry there",
-    );
+  if (input.sources === undefined) {
+    if (mainId) ids.add(mainId);
+    return ids;
   }
   if (!Array.isArray(input.sources) || input.sources.length === 0) {
     errors.push("contract.sources: a non-empty array");
@@ -1101,7 +1120,7 @@ function shapeSources(input: Obj, errors: string[]): Set<string> {
       errors.push(`${at}: an object`);
       return;
     }
-    checkKeys(d, ["id", "rfc", "path"], at, errors);
+    checkKeys(d, ["id", "rfc", "path", "file", "sha256"], at, errors);
     if (typeof d.id !== "string" || !ID_RE.test(d.id)) {
       errors.push(`${at}.id: an id`);
     } else if (ids.has(d.id)) {
@@ -1121,8 +1140,26 @@ function shapeSources(input: Obj, errors: string[]): Set<string> {
     if (d.rfc === undefined && d.path === undefined) {
       errors.push(`${at}: needs "rfc", "path" or both`);
     }
+    if (
+      d.file !== undefined &&
+      (typeof d.file !== "string" ||
+        d.file.includes("\\") ||
+        d.file.split("/").some((p) => p === "" || p === "." || p === ".."))
+    ) {
+      errors.push(
+        `${at}.file: a path inside the repo, with / separators, like rfcs/rfc4648.txt`,
+      );
+    }
+    if (
+      d.sha256 !== undefined &&
+      (typeof d.sha256 !== "string" || !SHA256_RE.test(d.sha256))
+    )
+      errors.push(`${at}.sha256: 64 lowercase hex digits`);
+    if (d.id === mainId && d.rfc !== undefined && d.rfc !== src.rfc)
+      errors.push(`${at}.rfc: ${src.rfc}, as contract.source.rfc says`);
   });
-  if (typeof src.main !== "string" || !ids.has(src.main)) {
+  if (mainId) ids.add(mainId);
+  else if (!rfcForm && (typeof src.main !== "string" || !ids.has(src.main))) {
     errors.push(
       "contract.source.main: the id of the main source in contract.sources",
     );
