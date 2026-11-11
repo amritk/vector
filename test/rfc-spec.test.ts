@@ -2277,16 +2277,16 @@ describe("vector spec (the command)", () => {
     expect(err.join("\n")).toContain("not a specification");
   });
 
-  test("refuses a contract whose source is found nowhere", async () => {
+  test("refuses a contract whose RFC is found nowhere, saying how to fetch it", async () => {
     const c = hexContract();
     c.sources = [
       { id: "hex", path: "hex.md" },
       { id: "rfc9999", rfc: 9999 },
     ];
     writeFileSync(contract(), JSON.stringify(c));
-    expect(await rfcMain(["check", contract()])).toBe(1);
-    expect(out.join("\n")).toContain(
-      'the text of source "rfc9999" was not given',
+    expect(await rfcMain(["check", contract()])).toBe(2);
+    expect(err.join("\n")).toContain(
+      "error: rfc9999 not found; fetch it: curl -sSfL -o rfcs/rfc9999.xml https://www.rfc-editor.org/rfc/rfc9999.xml",
     );
   });
 

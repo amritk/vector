@@ -17,21 +17,10 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import {
-  type RfcContract,
-  declaredSources,
-  validateContractShape,
-} from "./contract.ts";
+import { type RfcContract, validateContractShape } from "./contract.ts";
 import { emitNishTest, sha256, staleReason } from "./emit-nish.ts";
 import { exportsCheck, moduleDiff, renderExports } from "./exports.ts";
-import {
-  frozenCheck,
-  readChecked,
-  recordedProblem,
-  renderFrozen,
-  sourceFile,
-  sourcePathProblem,
-} from "./frozen.ts";
+import { frozenCheck, renderFrozen } from "./frozen.ts";
 import { type GateIssue, type SourceRun, runGates } from "./gates.ts";
 import { MutationRunError, runMutants } from "./mutate.ts";
 import {
@@ -49,7 +38,7 @@ import {
   sourceContainment,
 } from "./run.ts";
 import { sampleContract } from "./sample.ts";
-import { parseDocument } from "./spectext.ts";
+import { loadSources } from "./sources.ts";
 
 export const RFC_USAGE = `Usage: vector spec check <contract.json> [options]
        vector spec emit  <contract.json> -o <main.ts> [options]
@@ -63,7 +52,8 @@ export const RFC_USAGE = `Usage: vector spec check <contract.json> [options]
 Options:
   --spec <file>       the main source's text, an RFC or a markdown spec (--rfc is the same)
                       (default: the source's path, relative to the contract, or
-                      rfcs/rfc<N>.txt next to the contract or in vector)
+                      rfcs/rfc<N>.xml, else rfc<N>.txt, next to the contract
+                      or in vector)
   --run-sources       run the vectors' \`command\` sources (30 s each) and check their output;
                       without it they are reported as not run
   --module <file>     the target module's source, for the signature gate
@@ -189,61 +179,6 @@ function need<T>(v: T | undefined, what: string): T {
   return v;
 }
 
-function readSpec(path: string, text: string): RfcDocument {
-  try {
-    return parseDocument(text);
-  } catch (err) {
-    throw new UsageError(`${path}: ${(err as Error).message}`);
-  }
-}
-
-/**
- * The text of every source the contract declares, by id. `--spec` gives the
- * main one; the rest are where sourceFile finds them. A source found nowhere
- * is left out, and the fidelity gate refuses the contract for it. Each must be
- * spec text (sourcePathProblem), whether the contract names its path or not:
- * the contract is input, and its sources' text reaches gate messages. A source
- * read from another file, or other bytes, than its `sources` entry records is
- * a fidelity issue in `issues`: the contract was checked against something else.
- */
-function loadSources(
-  a: RfcArgs,
-  c: RfcContract,
-  contractPath: string,
-  issues: GateIssue[],
-): Map<string, RfcDocument> {
-  const docs = new Map<string, RfcDocument>();
-  const { main, list } = declaredSources(c);
-  for (const src of list) {
-    // --spec names the main source's file itself, so its path is not judged as
-    // spec text; but it is still the file and bytes the entry records, if any.
-    const given = src.id === main ? a.rfc : undefined;
-    const found = given ?? sourceFile(src, contractPath);
-    if (!found) continue;
-    let got: ReturnType<typeof readChecked>;
-    try {
-      got = readChecked(found, (f) =>
-        given ? undefined : sourcePathProblem(src, contractPath, f),
-      );
-    } catch {
-      throw new UsageError(`cannot read ${found}`);
-    }
-    if ("problem" in got)
-      throw new UsageError(
-        `${contractPath}: ${got.problem}${src.id === main ? " (to check against another file, give it with --spec, and update its sources entry's file and sha256 if it records them)" : ""}`,
-      );
-    const problem = recordedProblem(src, contractPath, found, got.sha256);
-    if (problem)
-      issues.push({
-        gate: "fidelity",
-        at: `sources.${src.id}`,
-        message: problem,
-      });
-    docs.set(src.id, readSpec(found, got.text));
-  }
-  return docs;
-}
-
 const CONTAINMENT_NOTE: Record<Containment, string> = {
   namespace:
     "Each runs in its own PID namespace: at its timeout or its exit, everything it started inside it is killed. A service it asks to start something (a tmux server already running, systemd-run, at, docker) is outside it, and setuid tools such as sudo do not work in it.",
@@ -331,10 +266,17 @@ async function checkContract(a: RfcArgs): Promise<ContractReport> {
   // Sources are read (and commands run) only for a contract of valid shape;
   // the shape gate reports the rest.
   const shaped = validateContractShape(input).length === 0;
+  // A source read from another file, or other bytes, than its `sources`
+  // entry records is a fidelity issue: the contract was checked against
+  // something else. One it may not read, or found nowhere, is an error.
   const read: GateIssue[] = [];
-  const docs = shaped
-    ? loadSources(a, input as RfcContract, a.contract, read)
-    : new Map<string, RfcDocument>();
+  let docs = new Map<string, RfcDocument>();
+  if (shaped) {
+    const got = loadSources(input as RfcContract, a.contract, a.rfc);
+    docs = got.docs;
+    for (const [id, message] of got.problems)
+      read.push({ gate: "fidelity", at: `sources.${id}`, message });
+  }
   let commands: Map<string, SourceRun> | undefined;
   if (shaped && a.runSources) {
     const warning = foreignCommandsWarning(a.contract, input as RfcContract);

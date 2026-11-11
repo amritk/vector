@@ -12,7 +12,8 @@
 //                after its label, on the same line (an unlabelled int is
 //                reported as unchecked)
 //   completeness every MUST/SHALL/REQUIRED of the main source is quoted by a
-//                requirement or an exclusion
+//                requirement or an exclusion (in RFC XML, every one its
+//                <bcp14> markup marks)
 //   provenance   every vector says where its expected value comes from, and it
 //                does: printed in the cited section, stated by the spec
 //                section (null/bool only), or printed by a source command run
@@ -63,6 +64,7 @@ import {
   sectionSpans,
   sectionText,
 } from "./rfctext.ts";
+import type { V3Document } from "./xmlv3.ts";
 
 export interface GateIssue {
   gate:
@@ -1242,7 +1244,7 @@ function checkCompleteness(
       });
     }
   }
-  for (const n of normativeSentences(rfc)) {
+  for (const n of bindingSentences(rfc)) {
     const sec = findSection(rfc, n.section);
     if (!sec) {
       // Text outside every numbered section cannot be cited, so its
@@ -1257,7 +1259,9 @@ function checkCompleteness(
     const covered = quotes.some(
       (q) =>
         q.section === n.section &&
-        ownSpans(sec, q.quote).some(([a, b]) => a <= n.at && n.at < b),
+        ownSpans(sec, q.quote).some(([a, b]) =>
+          n.at.some((at) => a <= at && at < b),
+        ),
     );
     if (!covered) {
       issues.push({
@@ -1267,6 +1271,35 @@ function checkCompleteness(
       });
     }
   }
+}
+
+/**
+ * The binding sentences completeness accounts for, each with every offset of
+ * its keyword in its section's normalized own text. RFC XML marks its
+ * keywords with <bcp14>, and that markup, not a scan of the text, says which
+ * are used: a "MUST" in an example or a quoted definition is not one. Its
+ * SHOULDs and MAYs bind nothing, as in plain text. A sentence is found in its
+ * section's own text, where a quote must cover its keyword; one that cannot be
+ * found (it spans a list or table) has no offset, so no quote covers it and it
+ * is reported rather than passed.
+ */
+function bindingSentences(
+  doc: RfcDocument,
+): { section: string; keyword: string; sentence: string; at: number[] }[] {
+  if (!("normative" in doc))
+    return normativeSentences(doc).map((n) => ({ ...n, at: [n.at] }));
+  return (doc as V3Document).normative
+    .filter((n) => BINDING_LEVELS.has(n.level))
+    .map((n) => {
+      const sec = findSection(doc, n.section);
+      const k = n.sentence.indexOf(n.level);
+      return {
+        section: n.section,
+        keyword: n.level,
+        sentence: n.sentence,
+        at: sec ? ownSpans(sec, n.sentence).map(([a]) => a + k) : [],
+      };
+    });
 }
 
 // ── Signatures against the implementation's source ───────────────────────

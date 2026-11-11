@@ -39,8 +39,10 @@ export const VECTOR_ROOT = resolve(
 
 /**
  * Where a source's text is: its `path`, relative to the contract, else
- * rfc<N>.txt beside the contract, in ../rfcs, then in vector's rfcs/. The first
- * that exists, or undefined.
+ * rfc<N>.xml or rfc<N>.txt beside the contract, in ../rfcs, then in vector's
+ * rfcs/. The first that exists, or undefined. At each place the XML comes
+ * first: it is the RFC's definitive form since RFC 8650, and its <bcp14>
+ * markup says which keywords bind.
  */
 export function sourceFile(
   src: SourceDecl,
@@ -48,11 +50,9 @@ export function sourceFile(
 ): string | undefined {
   const here = dirname(contractPath);
   if (src.path) return resolve(here, src.path);
-  return [
-    join(here, `rfc${src.rfc}.txt`),
-    join(here, "../rfcs", `rfc${src.rfc}.txt`),
-    join(VECTOR_ROOT, "rfcs", `rfc${src.rfc}.txt`),
-  ].find(existsSync);
+  return [here, join(here, "../rfcs"), join(VECTOR_ROOT, "rfcs")]
+    .flatMap((d) => ["xml", "txt"].map((x) => join(d, `rfc${src.rfc}.${x}`)))
+    .find(existsSync);
 }
 
 /**
@@ -62,7 +62,7 @@ export function sourceFile(
  * it, beside its parent or in vector. A specs/ or rfcs/ that is itself a
  * symlink is no root: it could lead anywhere. The file's own symlinks are
  * resolved first, and no part of its path below its root may start with "."
- * (.git, .ssh, .env). This holds for an implicit rfc<N>.txt as well as a
+ * (.git, .ssh, .env). This holds for an implicit rfc<N>.xml or .txt as well as a
  * `path`: a checked-out repository can hold symlinks of either name.
  */
 export function sourcePathProblem(
@@ -92,7 +92,7 @@ export function sourcePathProblem(
 /**
  * How a contract's `sources[].file` names `file`: its path under specs/ or
  * rfcs/ of the innermost directory that holds it there, of vector's own root
- * (where an rfc<N>.txt may come from) and the contract's directory and its
+ * (where an rfc<N>.xml or .txt may come from) and the contract's directory and its
  * ancestors, so a contract at the repo root, in contracts/ or deeper names
  * rfcs/x.txt alike. A file in or below the contract's directory but under no
  * specs/ or rfcs/ is named from the directory holding it (contracts/x.txt).
