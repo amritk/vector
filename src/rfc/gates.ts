@@ -1275,9 +1275,8 @@ function checkCompleteness(
 }
 
 /**
- * The binding keywords completeness accounts for, one entry each, with every
- * offset it may have in its section's normalized own text (a sentence can
- * appear there more than once). RFC XML marks its keywords with <bcp14>, and
+ * The binding keywords completeness accounts for, one entry each, with its
+ * offset in its section's normalized own text (none if it cannot be found). RFC XML marks its keywords with <bcp14>, and
  * that markup, not a scan of the text, says which sentences hold one: a
  * "MUST" in an example or a quoted definition is not one. Its SHOULDs and
  * MAYs bind nothing, as in plain text. The reader gives one entry per level
@@ -1293,11 +1292,22 @@ function bindingSentences(
 ): { section: string; keyword: string; sentence: string; at: number[] }[] {
   if (!("normative" in doc))
     return normativeSentences(doc).map((n) => ({ ...n, at: [n.at] }));
-  return (doc as V3Document).normative
+  const v3 = doc as V3Document;
+  // Entries come in document order, as their sentences do in the section's
+  // own text, so the i-th entry of a section, level and sentence is that
+  // sentence's i-th occurrence there: a quote of one occurrence covers it
+  // alone, as normativeSentences' offsets do on the text path.
+  const seen = new Map<string, number>();
+  return v3.normative
     .filter((n) => BINDING_LEVELS.has(n.level))
     .flatMap((n) => {
+      const key = `${n.section}\n${n.level}\n${n.sentence}`;
+      const i = seen.get(key) ?? 0;
+      seen.set(key, i + 1);
       const sec = findSection(doc, n.section);
-      const starts = sec ? ownSpans(sec, n.sentence).map(([a]) => a) : [];
+      const start = sec
+        ? sentenceStarts(v3, sec, n.section, n.sentence)[i]
+        : undefined;
       const uses = [...n.sentence.matchAll(KEYWORD_RE)]
         .filter((m) => m[1] === n.level)
         .map((m) => m.index);
@@ -1307,8 +1317,39 @@ function bindingSentences(
         sentence: n.sentence,
       };
       if (uses.length === 0) return [{ ...entry, at: [] }];
-      return uses.map((k) => ({ ...entry, at: starts.map((a) => a + k) }));
+      return uses.map((k) => ({
+        ...entry,
+        at: start === undefined ? [] : [start + k],
+      }));
     });
+}
+
+/**
+ * Where `sentence` starts in a section's own text, each time it is a sentence
+ * of its own there. An occurrence inside a longer sentence the reader found in
+ * the section ("Note: The server MUST ...") is that sentence's, not this one's,
+ * so it is left out; otherwise it would shift which occurrence is whose.
+ */
+function sentenceStarts(
+  doc: V3Document,
+  sec: RfcSection,
+  section: string,
+  sentence: string,
+): number[] {
+  const longer = new Set(
+    doc.normative
+      .filter(
+        (n) =>
+          n.section === section &&
+          n.sentence.length > sentence.length &&
+          n.sentence.includes(sentence),
+      )
+      .map((n) => n.sentence),
+  );
+  const outer = [...longer].flatMap((l) => ownSpans(sec, l));
+  return ownSpans(sec, sentence)
+    .filter(([a, e]) => !outer.some(([b, f]) => b <= a && e <= f))
+    .map(([a]) => a);
 }
 
 // ── Signatures against the implementation's source ───────────────────────

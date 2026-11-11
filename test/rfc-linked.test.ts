@@ -116,6 +116,11 @@ describe("an RFC source resolves to rfc<N>.xml before rfc<N>.txt", () => {
     const txt = join(d, "rfcs/rfc9996.txt");
     expect(sourceFile({ ...r, file: "rfcs/rfc9996.txt" }, c)).toBe(txt);
     expect(sourceFile(r, c)).toBe(join(d, "rfcs/rfc9996.xml"));
+    // Nor does one at a nearer place: beside the contract.
+    write(d, "contracts/rfc9996.xml", RFC8707);
+    expect(sourceFile({ ...r, file: "rfcs/rfc9996.txt" }, c)).toBe(txt);
+    expect(sourceFile(r, c)).toBe(join(d, "contracts/rfc9996.xml"));
+    rmSync(join(d, "contracts/rfc9996.xml"));
     // A recorded file found nowhere: the first found is read, and
     // recordedProblem reports that it is not the one recorded.
     rmSync(txt);
@@ -427,23 +432,23 @@ ${body}
 });
 
 describe("completeness tells each <bcp14> keyword in a sentence apart", () => {
-  /** An RFC XML document of section 1 holding `body`. */
-  const xml = (body: string) =>
+  /** An RFC XML document of section 1 holding `blocks`. */
+  const xml = (blocks: string) =>
     `<?xml version="1.0" encoding="UTF-8"?>
 <rfc number="9990" docName="x" category="std" ipr="trust200902" version="3">
 <front><title>X</title></front>
 <middle>
 <section anchor="one"><name>One</name>
-<t>${body}</t>
+${blocks}
 <t>A writer <bcp14>MAY</bcp14> rest.</t>
 </section>
 </middle>
 </rfc>
 `;
   /** The completeness issues when a requirement quotes `quote`. */
-  const uncovered = (body: string, quote: string) => {
+  const uncoveredIn = (blocks: string, quote: string) => {
     const d = tmp();
-    write(d, "x.xml", xml(body));
+    write(d, "x.xml", xml(blocks));
     const c: RfcContract = {
       contract: "x",
       source: { title: "X", main: "x" },
@@ -472,6 +477,9 @@ describe("completeness tells each <bcp14> keyword in a sentence apart", () => {
       .issues.filter((i) => i.gate === "completeness")
       .map((i) => i.message);
   };
+  /** As uncoveredIn, with section 1 holding the paragraph `body`. */
+  const uncovered = (body: string, quote: string) =>
+    uncoveredIn(`<t>${body}</t>`, quote);
   const neither = (keyword: string, sentence: string) =>
     `${keyword} sentence is neither a requirement nor an exclusion: ${JSON.stringify(sentence)}`;
 
@@ -521,6 +529,44 @@ describe("completeness tells each <bcp14> keyword in a sentence apart", () => {
         "A writer MUSTn't stop.",
       ),
     ).toEqual([neither("MUST", "A writer MUSTn't stop.")]);
+  });
+
+  const X = "The server <bcp14>MUST NOT</bcp14> send X.";
+  const X_TEXT = "The server MUST NOT send X.";
+  test("a sentence said twice: a quote of one occurrence covers it alone", () => {
+    // In a paragraph and then a list item: quoting the paragraph's sentence
+    // (with what follows it there) leaves the list item's uncovered.
+    expect(
+      uncoveredIn(
+        `<t>${X} Then more.</t><ul><li>${X}</li></ul>`,
+        `${X_TEXT} Then more.`,
+      ),
+    ).toEqual([neither("MUST NOT", X_TEXT)]);
+    // In two paragraphs, and in a paragraph and a table cell.
+    expect(
+      uncoveredIn(`<t>${X} Then more.</t><t>${X}</t>`, `${X_TEXT} Then more.`),
+    ).toEqual([neither("MUST NOT", X_TEXT)]);
+    expect(
+      uncoveredIn(
+        `<t>${X} Then more.</t><table><tbody><tr><td>${X}</td></tr></tbody></table>`,
+        `${X_TEXT} Then more.`,
+      ),
+    ).toEqual([neither("MUST NOT", X_TEXT)]);
+    // Twice in one paragraph, with the second quoted.
+    expect(uncoveredIn(`<t>${X} ${X}</t>`, `X. ${X_TEXT}`)).toEqual([
+      neither("MUST NOT", X_TEXT),
+    ]);
+  });
+
+  test("a sentence inside a longer one is not one of its occurrences", () => {
+    // "Note: The server MUST NOT send X." holds the shorter sentence's text,
+    // but is a sentence of its own: quoting it covers it, not the shorter.
+    const NOTE = `Note: ${X}`;
+    expect(uncoveredIn(`<t>${NOTE}</t><t>${X}</t>`, `Note: ${X_TEXT}`)).toEqual(
+      [neither("MUST NOT", X_TEXT)],
+    );
+    // The shorter text alone is found in both, so covers both keywords.
+    expect(uncoveredIn(`<t>${NOTE}</t><t>${X}</t>`, X_TEXT)).toEqual([]);
   });
 });
 

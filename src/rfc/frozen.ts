@@ -22,7 +22,7 @@ import {
   realpathSync,
   statSync,
 } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import {
   type RfcContract,
   type SourceDecl,
@@ -40,8 +40,8 @@ export const VECTOR_ROOT = resolve(
 /**
  * Where a source's text is: its `path`, relative to the contract, else
  * rfc<N>.xml or rfc<N>.txt beside the contract, in ../rfcs, then in vector's
- * rfcs/. The first place holding one; there, the form its recorded `file`
- * names, else the first. Undefined if none exists. At each place the XML comes first: it is the RFC's definitive
+ * rfcs/. The nearest with its recorded `file`'s name, else the first that
+ * exists, or undefined. At each place the XML comes first: it is the RFC's definitive
  * form since RFC 8650, and its <bcp14> markup says which keywords bind.
  */
 export function sourceFile(
@@ -54,14 +54,12 @@ export function sourceFile(
     .flatMap((d) => ["xml", "txt"].map((x) => join(d, `rfc${src.rfc}.${x}`)))
     .filter(existsSync);
   // A recorded file names the bytes the contract was checked against: an
-  // rfc<N>.xml added later beside that rfc<N>.txt must not displace it. It
-  // picks only between the forms at the nearest place, though: a file of the
-  // same name further off (vector's own rfcs/) is not the one recorded.
-  const near = found.filter((f) => dirname(f) === dirname(found[0]));
-  return (
-    near.find((f) => src.file && sourceLabel(f, contractPath) === src.file) ??
-    found[0]
-  );
+  // rfc<N>.xml added later, at that place or a nearer one, must not displace
+  // it. Its name, not its label, picks it, so a nearer file of that name that
+  // no label can name (a symlink out of the tree) is still the one found, and
+  // sourcePathProblem refuses it rather than a further copy being read.
+  const recorded = src.file && basename(src.file);
+  return found.find((f) => basename(f) === recorded) ?? found[0];
 }
 
 /**
