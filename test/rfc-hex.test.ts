@@ -23,10 +23,10 @@ import { VECTOR_ROOT } from "../src/rfc/frozen.ts";
 import { runGates } from "../src/rfc/gates.ts";
 import { parseRfc } from "../src/rfc/rfctext.ts";
 import { makeScratch } from "../src/rfc/scratch.ts";
-import { parseDocument } from "../src/rfc/spectext.ts";
+import { parseV3 } from "../src/rfc/xmlv3.ts";
 
-// The acceptance contract: `contracts/example-hex.json`, hand-written from
-// `specs/example-hex.md`, against the Nish reference implementation in
+// The acceptance contract: `contracts/example-hex.json`, extracted from
+// `specs/example-hex.xml` (built from `specs/example-hex.md`), against the Nish reference implementation in
 // `test/fixtures/nish-hex/hex.ts`. Every gate passes on the contract as
 // committed, and each one refuses a copy of it with one thing broken.
 
@@ -93,7 +93,7 @@ async function cli(argv: string[]) {
  */
 function tree(c: RfcContract = hex, p = "vector-hex-"): string {
   const d = tmp(p);
-  for (const f of ["specs/example-hex.md", "rfcs/rfc4648.txt"])
+  for (const f of ["specs/example-hex.xml", "rfcs/rfc4648.txt"])
     write(d, f, readFileSync(join(VECTOR_ROOT, f), "utf8"));
   write(d, "contracts/example-hex.json", `${JSON.stringify(c, null, 2)}\n`);
   return d;
@@ -193,7 +193,7 @@ describe("contracts/example-hex.json as committed", () => {
   });
 
   test("records the spec's sha256, and §5's timing MUST is the one exclusion", () => {
-    const spec = readFileSync(join(VECTOR_ROOT, "specs/example-hex.md"));
+    const spec = readFileSync(join(VECTOR_ROOT, "specs/example-hex.xml"));
     const digest = new Bun.CryptoHasher("sha256").update(spec).digest("hex");
     expect(hex.source.sha256).toBe(digest);
     expect(hex.exclusions?.map((e) => e.section)).toEqual(["5"]);
@@ -347,8 +347,9 @@ describe("each gate refuses a broken copy of the contract", () => {
     const docs = new Map([
       [
         "example-hex",
-        parseDocument(
-          readFileSync(join(VECTOR_ROOT, "specs/example-hex.md"), "utf8"),
+        parseV3(
+          readFileSync(join(VECTOR_ROOT, "specs/example-hex.xml"), "utf8"),
+          "specs/example-hex.xml",
         ),
       ],
       [
@@ -492,11 +493,11 @@ describe("frozen on the hex contract", () => {
 
   test("a spec edited after the contract was frozen is refused (sha256)", async () => {
     const d = based();
-    const spec = readFileSync(join(d, "specs/example-hex.md"), "utf8");
+    const spec = readFileSync(join(d, "specs/example-hex.xml"), "utf8");
     write(
       d,
-      "specs/example-hex.md",
-      spec.replace("MUST equal b", "MUST equal  b"),
+      "specs/example-hex.xml",
+      spec.replace("</bcp14> equal b.", "</bcp14> equal  b."),
     );
     const r = await cli(["frozen", "--base", "HEAD", "--repo", d]);
     expect(r.code).toBe(1);

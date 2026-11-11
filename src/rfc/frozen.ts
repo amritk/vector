@@ -236,8 +236,15 @@ const real = (p: string) => (existsSync(p) ? realpathSync(p) : resolve(p));
 const nulList = (s: string) => s.split("\0").filter((f) => f !== "");
 
 /**
+ * The suffix of a contract's allowSurvivors sidecar, which `spec extract`
+ * merges into contracts/<name>.json: not a contract, so never globbed as one.
+ */
+export const SIDECAR_SUFFIX = ".survivors.json";
+
+/**
  * Checks the working tree of `repo` against its fork point from `base`.
- * `contracts` defaults to every contracts/*.json at the repository's top;
+ * `contracts` defaults to every contracts/*.json at the repository's top but
+ * the *.survivors.json sidecars;
  * finding none is a failure.
  */
 export function frozenCheck(o: {
@@ -281,7 +288,7 @@ export function frozenCheck(o: {
     const dir = join(top, "contracts");
     files = existsSync(dir)
       ? readdirSync(dir)
-          .filter((f) => f.endsWith(".json"))
+          .filter((f) => f.endsWith(".json") && !f.endsWith(SIDECAR_SUFFIX))
           .sort()
           .map((f) => join(dir, f))
       : [];
