@@ -246,6 +246,8 @@ Rules the profile enforces:
 | `null`, `true`, `false` | themselves |
 | `42`, `-1` | a decimal integer, in range for the parameter (`i32`, or `u32` 0..4294967295) |
 | `Key = 0b0b0b` | labelled bytes: lowercase hex pairs, no spaces; the label is the name the cited section prints the value under |
+| `L = 42` | a labelled decimal integer, checked against the cited section's "L = 42". Where the parameter (or return) type is `i32` or `u32` it is the int; anywhere else digits that are also hex pairs (`42`) are labelled bytes, and digits with a leading zero are never an int: `L = 00` is bytes, and `L = 042` (not whole hex pairs) is refused |
+| `22 × 0b`, `22 x 0b`, `IKM = 22 × 0b` | a run of bytes written that many times (`{hex, repeat}`), as RFCs print runs; optionally labelled. `22×0b` also reads. The count is at least 1, the run lowercase hex pairs, and the expansion at most 65536 bytes |
 | `concat([00], Key = ff)` | the parts joined, all bytes; one level (`concat` does not nest), at least one part. `‖` is refused |
 
 The Call cell is `f(arg, …)`: as many arguments as `f` has parameters, each of

@@ -1,10 +1,12 @@
 // The vector table's Call and Expected cells: `hexDecode("66")`, `"f"`,
-// `[00 0f]`, `Key = 00ff`, `concat([00], [ff])`. A cell is read in two steps.
-// First its text is parsed into raw literals, which do not yet know whether a
-// quoted string is bytes or text. Then the callee's signature settles each
-// one: a quoted string where bytes go becomes `{ascii}`, and where a string
-// goes `{str}`. Reading `"f"` the same way in both places would make the
-// contract say something the table does not.
+// `[00 0f]`, `Key = 00ff`, `L = 42`, `22 × 0b`, `concat([00], [ff])`. A
+// cell is read in two steps. First its text is parsed into raw literals,
+// which do not yet know whether a quoted string is bytes or text. Then the
+// callee's signature settles each one: a quoted string where bytes go
+// becomes `{ascii}`, and where a string goes `{str}`; `L = 42` is the int 42
+// where an int goes and the byte 0x42 anywhere else. Reading `"f"` the same
+// way in both places would make the contract say something the table does
+// not.
 
 import {
   type FnSig,
@@ -30,6 +32,10 @@ export type RawLiteral =
   | { kind: "bool"; value: boolean }
   | { kind: "int"; value: number }
   | { kind: "labelled"; label: string; hex: string }
+  /** `L = 42`; `hex` when the digits are also hex pairs (`L = 42`, not `L = 7`). */
+  | { kind: "labelled-int"; label: string; value: number; hex?: string }
+  /** `22 × 0b`: `hex` written `count` times, optionally labelled. */
+  | { kind: "repeat"; count: number; hex: string; label?: string }
   | { kind: "concat"; parts: RawLiteral[] };
 
 /** Why a cell was refused; `col` is 1-based in the cell's text. */
@@ -48,9 +54,30 @@ class Fail extends Error {
 }
 
 const STRING_RE = /^"(?:[^"\\\n]|\\.)*"/;
-const INT_RE = /^(?:0|-?[1-9][0-9]*)(?![0-9A-Za-z_])/;
+/** A decimal integer with no leading zero; the one grammar for every int. */
+const INT = "(?:0|-?[1-9][0-9]*)";
+const INT_RE = new RegExp(`^${INT}(?![0-9A-Za-z_])`);
 const WORD_RE = /^(null|true|false)(?![0-9A-Za-z_])/;
-const LABELLED_RE = /^([A-Za-z][A-Za-z0-9_-]*(?: [A-Za-z0-9_-]+)*) = (\S+)/;
+const LABEL_RE = /^([A-Za-z][A-Za-z0-9_-]*(?: [A-Za-z0-9_-]+)*) = /;
+const HEX_RE = /^(?:[0-9a-f]{2})+$/;
+/** A whole text that is a decimal integer: `L = 42]` is not one. */
+const INT_TEXT_RE = new RegExp(`^${INT}$`);
+/** A labelled value's text: up to a space, `,` or `)` (inside a call), or the end. */
+const VALUE_RE = /^[^\s,)]*/;
+/**
+ * `count × run` (spaces around `×` optional), or `count x run`; the run ends
+ * at a space, `,` or `)`.
+ */
+const REPEAT_RE = /^(-?[0-9]+)(?: ?× ?| x )([^\s,)]*)/;
+/** The most bytes a run may expand to: enough for any RFC-printed run. */
+export const MAX_REPEAT = 65536;
+export const REPEAT_COUNT_MESSAGE =
+  "a repeat count is a whole number of at least 1";
+export const REPEAT_SIZE_MESSAGE = `a repeated run expands to at most ${MAX_REPEAT} bytes`;
+export const REPEAT_RUN_MESSAGE =
+  "a repeated run is whole bytes: lowercase hex pairs with no spaces";
+export const LABELLED_MESSAGE =
+  "a labelled value is `Label = hex` (lowercase hex pairs with no spaces), `Label = 42` or `Label = 22 × 0b`";
 const CALL_RE = /^([A-Za-z_][A-Za-z0-9_]*)\(/;
 
 class Reader {
@@ -90,6 +117,21 @@ class Reader {
       }
       this.expect(",", "`,` or `)`");
     }
+  }
+
+  /** `22 × 0b` at the reader, or null. */
+  private repeat(): Extract<RawLiteral, { kind: "repeat" }> | null {
+    const m = this.text.slice(this.i).match(REPEAT_RE);
+    if (!m) return null;
+    const count = Number(m[1]);
+    if (!INT_TEXT_RE.test(m[1]) || count < 1)
+      throw new Fail(REPEAT_COUNT_MESSAGE, this.i);
+    if (!HEX_RE.test(m[2]))
+      throw new Fail(REPEAT_RUN_MESSAGE, this.i + m[0].length - m[2].length);
+    if (count * (m[2].length / 2) > MAX_REPEAT)
+      throw new Fail(REPEAT_SIZE_MESSAGE, this.i);
+    this.i += m[0].length;
+    return { kind: "repeat", count, hex: m[2] };
   }
 
   literal(inConcat = false): RawLiteral {
@@ -134,22 +176,31 @@ class Reader {
         ? { kind: "null" }
         : { kind: "bool", value: word[1] === "true" };
     }
+    const run = this.repeat();
+    if (run) return run;
     const int = rest.match(INT_RE);
     if (int) {
       this.i += int[0].length;
       return { kind: "int", value: Number(int[0]) };
     }
-    const lab = rest.match(LABELLED_RE);
+    const lab = rest.match(LABEL_RE);
     if (lab) {
-      // The value runs to the next `,` or `)` (inside a call) or the end.
-      const hex = lab[2].replace(/[,)].*$/, "");
-      if (!/^(?:[0-9a-f]{2})+$/.test(hex))
-        throw new Fail(
-          "a labelled value is `Label = hex`, lowercase hex pairs with no spaces",
-          at,
-        );
-      this.i += lab[0].length - lab[2].length + hex.length;
-      return { kind: "labelled", label: lab[1], hex };
+      this.i += lab[0].length;
+      const label = lab[1];
+      const labelled = this.repeat();
+      if (labelled) return { ...labelled, label };
+      const text = (this.text.slice(this.i).match(VALUE_RE) as string[])[0];
+      const isHex = HEX_RE.test(text);
+      const isInt = INT_TEXT_RE.test(text);
+      if (!isInt && !isHex) throw new Fail(LABELLED_MESSAGE, at);
+      this.i += text.length;
+      if (!isInt) return { kind: "labelled", label, hex: text };
+      return {
+        kind: "labelled-int",
+        label,
+        value: Number(text),
+        ...(isHex ? { hex: text } : {}),
+      };
     }
     if (rest.startsWith("‖"))
       throw new Fail("`‖` is not a literal; write concat(a, b)", at);
@@ -240,6 +291,17 @@ export function settle(
       return { int: raw.value };
     case "labelled":
       return { hex: raw.hex, label: raw.label };
+    case "labelled-int":
+      // An int where the signature takes one; hex pairs anywhere else.
+      if (raw.hex === undefined || ty === "i32" || ty === "u32")
+        return { int: raw.value, label: raw.label };
+      return { hex: raw.hex, label: raw.label };
+    case "repeat":
+      return {
+        hex: raw.hex,
+        repeat: raw.count,
+        ...(raw.label === undefined ? {} : { label: raw.label }),
+      };
     case "concat": {
       const parts: Literal[] = [];
       for (const p of raw.parts) {
@@ -259,6 +321,14 @@ export interface CellError {
   cell: "Call" | "Expected";
   message: string;
 }
+
+/** Why digits where an int goes were read as bytes: a leading zero. */
+const zeroHint = (raw: RawLiteral, ty: ValueTy | undefined) =>
+  raw.kind === "labelled" &&
+  /^[0-9]+$/.test(raw.hex) &&
+  (ty === "i32" || ty === "u32")
+    ? ` (\`${raw.label} = ${raw.hex}\` has a leading zero, so it is bytes)`
+    : "";
 
 /**
  * A vector's call and expected cells, settled and typed by `fn`'s signature:
@@ -284,7 +354,7 @@ export function settleVector(
     if (typeof lit === "string") call(lit);
     else if (ty !== undefined && !fits(lit, ty))
       call(
-        `argument ${i + 1} of ${fn.name} (${p.name}) is ${ty}, not ${kindOf(lit)}${"int" in lit ? ` ${lit.int}` : ""}`,
+        `argument ${i + 1} of ${fn.name} (${p.name}) is ${ty}, not ${kindOf(lit)}${"int" in lit ? ` ${lit.int}` : ""}${zeroHint(a, ty)}`,
       );
     else out.push(lit);
   }
@@ -294,7 +364,7 @@ export function settleVector(
   else if (!fits(e, ret))
     errors.push({
       cell: "Expected",
-      message: `${fn.name} returns ${ret}, not ${kindOf(e)}${"int" in e ? ` ${e.int}` : ""}`,
+      message: `${fn.name} returns ${ret}, not ${kindOf(e)}${"int" in e ? ` ${e.int}` : ""}${zeroHint(expect, ret)}`,
     });
   if (errors.length > 0) return errors;
   return { args: out, expect: e as Literal };
