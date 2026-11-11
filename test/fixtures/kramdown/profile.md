@@ -54,7 +54,7 @@ Each byte MUST be written high nibble first, using the digits 0-9 and a-f.
 
 ~~~ ts-property
 // P-ENC-LOWER covers R-ENC-DIGITS — output is lowercase
-forall (b: u8[] /* 0..64 */, t: string /* 0..32 hexdigit " \t\n\r!" */) => { const e = hexEncode(b); return e === e.toLowerCase(); }
+forall (b: u8[] /* 0..64 */, t: string /* 0..32 hexdigit HEXDIGIT */) => { const e = hexEncode(b); return e === e.toLowerCase(); }
 where t.length % 2 === 0
 ~~~
 
@@ -74,6 +74,11 @@ Definition: a hex digit is one of the characters 0-9, a-f and A-F.
 hexDecode MUST return null when the text has an odd length or contains any
 other character, including whitespace and a "0x" prefix.
 {: #R-DEC-REJECT}
+
+~~~ ts-property
+// P-DEC-ODD covers R-DEC-REJECT — odd-length text is rejected
+forall (t: string /* 1..1 " \t\n\r!" */, n: i32 /* 0..31 */) => implies(n % 2 === 1, hexDecode(t.repeat(n)) === null)
+~~~
 
 ## Empty input {#empty-input}
 

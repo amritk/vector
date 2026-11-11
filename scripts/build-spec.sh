@@ -16,8 +16,9 @@
 #
 # Reference cache. kramdown-rfc 1.7.43 (lib/kramdown-rfc2629.rb) reads
 #   KRAMDOWN_REFCACHEDIR  the cache directory (default ".refcache", relative to the cwd)
-#   KRAMDOWN_OFFLINE      when set, never fetch: use the cached file whatever its age,
-#                         and print "*** ... No such file" when it is missing
+#   KRAMDOWN_OFFLINE      when set, never fetch: use the cached file whatever its age;
+#                         a missing one prints "*** KRAMDOWN_OFFLINE: Inserting broken
+#                         reference for reference.X.xml" and a placeholder is used
 #   KRAMDOWN_REFCACHE_QUIET, KRAMDOWN_REFCACHETTL*, KRAMDOWN_REFCACHE_REFETCH
 # This script points KRAMDOWN_REFCACHEDIR at the committed <repo>/.refcache and sets
 # KRAMDOWN_OFFLINE, so a build reads only committed bytes and touches no network.
@@ -26,6 +27,7 @@
 # build would depend on the network and the day. A spec that cites a reference not
 # yet in the cache fails; rerun once with --fetch (which drops OFFLINE so kramdown-rfc
 # fetches the missing entries from bib.ietf.org into .refcache) and commit them.
+# --fetch also refreshes any entry older than its TTL, so review the .refcache diff.
 # KRAMDOWN_SAFE is also set: it disables {::include …}, which would read arbitrary
 # files (or URLs) into the build. xml2rfc runs with --no-network.
 #
@@ -99,8 +101,8 @@ for tool in kramdown-rfc xml2rfc; do
     exit 2
   fi
 done
-have_kd="$(kramdown-rfc --version 2>/dev/null | awk '{print $2}')"
-have_x2r="$(xml2rfc --version 2>/dev/null | awk '{print $2}')"
+have_kd="$(kramdown-rfc --version 2>/dev/null | awk '{print $2}' || true)"
+have_x2r="$(xml2rfc --version 2>/dev/null | awk '{print $2}' || true)"
 if [ "$have_kd" != "$KRAMDOWN_RFC_VERSION" ] || [ "$have_x2r" != "$XML2RFC_VERSION" ]; then
   echo "build-spec: need kramdown-rfc $KRAMDOWN_RFC_VERSION and xml2rfc $XML2RFC_VERSION, found kramdown-rfc ${have_kd:-?} and xml2rfc ${have_x2r:-?}; install the pinned tools:" >&2
   install_hint
@@ -108,8 +110,8 @@ if [ "$have_kd" != "$KRAMDOWN_RFC_VERSION" ] || [ "$have_x2r" != "$XML2RFC_VERSI
 fi
 
 # The <date> defaults to the build day, which would make every rebuild on another
-# day drift; require it pinned in the YAML front matter (before the first "--- ").
-if ! awk 'NR > 1 && /^---/ { exit } /^date:[ \t]*[^ \t]/ { found = 1 } END { exit !found }' "$spec"; then
+# day drift; require it pinned in the YAML front matter (line 1 "---" up to the next "---").
+if ! awk 'NR == 1 && !/^---/ { exit } NR > 1 && /^---/ { exit } /^date:[ \t]*[^ \t]/ { found = 1 } END { exit !found }' "$spec"; then
   echo "build-spec: $spec: front matter has no date: line; pin one (e.g. date: 2026-11-11) so rebuilds are reproducible" >&2
   exit 1
 fi
@@ -117,16 +119,19 @@ fi
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-# Run a tool, keep its stderr, and fail if it printed anything we treat as an error.
-# $1 is the regex of fatal lines; the rest is the command.
+# Run a tool, keep its stderr, and fail if it exits non-zero or printed a line
+# matching the fatal regex. $1 names the step, $2 is the regex, the rest is the command.
 run_strict() {
-  local fatal="$1"
-  shift
+  local step="$1" fatal="$2"
+  shift 2
   local status=0
   "$@" 2>"$tmp/stderr" || status=$?
   if [ "$status" -ne 0 ] || grep -Eq "$fatal" "$tmp/stderr"; then
     cat "$tmp/stderr" >&2
-    echo "build-spec: $1 failed on $spec (exit $status); see the messages above" >&2
+    if grep -q "KRAMDOWN_OFFLINE: Inserting broken reference" "$tmp/stderr"; then
+      echo "build-spec: a cited reference is not in .refcache; run once with --fetch and commit the new .refcache files" >&2
+    fi
+    echo "build-spec: $step failed on $spec (exit $status); warnings are errors, see the messages above" >&2
     exit 1
   fi
 }
@@ -135,13 +140,13 @@ mkdir -p "$repo/.refcache"
 kd_env=(env KRAMDOWN_REFCACHEDIR="$repo/.refcache" KRAMDOWN_SAFE=1 KRAMDOWN_REFCACHE_QUIET=1)
 [ "$fetch" -eq 1 ] || kd_env+=(KRAMDOWN_OFFLINE=1)
 # kramdown-rfc writes the XML to stdout; redirect in a subshell so run_strict sees stderr.
-run_strict '^\*\*' sh -c '"$@" > "$0"' "$tmp/v2.xml" "${kd_env[@]}" kramdown-rfc "$spec"
+run_strict kramdown-rfc '^\*\*' sh -c '"$@" > "$0"' "$tmp/v2.xml" "${kd_env[@]}" kramdown-rfc "$spec"
 
 x2r_quiet=(--no-network -s "Too long line found" -s "Total table width")
 x2r_fatal='(Warning|Error):'
-run_strict "$x2r_fatal" xml2rfc "${x2r_quiet[@]}" --v2v3 "$tmp/v2.xml" -o "$tmp/built.xml"
-run_strict "$x2r_fatal" xml2rfc "${x2r_quiet[@]}" --text "$tmp/built.xml" -o "$tmp/built.txt"
-run_strict "$x2r_fatal" xml2rfc "${x2r_quiet[@]}" --html "$tmp/built.xml" -o "$tmp/built.html"
+run_strict "xml2rfc --v2v3" "$x2r_fatal" xml2rfc "${x2r_quiet[@]}" --v2v3 "$tmp/v2.xml" -o "$tmp/built.xml"
+run_strict "xml2rfc --text" "$x2r_fatal" xml2rfc "${x2r_quiet[@]}" --text "$tmp/built.xml" -o "$tmp/built.txt"
+run_strict "xml2rfc --html" "$x2r_fatal" xml2rfc "${x2r_quiet[@]}" --html "$tmp/built.xml" -o "$tmp/built.html"
 
 if [ "$check" -eq 0 ]; then
   cp "$tmp/built.xml" "$out"
