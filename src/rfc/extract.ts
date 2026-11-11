@@ -6,7 +6,7 @@
 // `--check`. extract never touches the network and never runs xml2rfc: an RFC
 // found nowhere is an error that says how to fetch it.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { RfcContract, SourceDecl } from "./contract.ts";
 import { SIDECAR_SUFFIX, VECTOR_ROOT, sourceLabel } from "./frozen.ts";
@@ -223,7 +223,9 @@ const refusalLine = (r: Refusal): string => `${r.file}:${r.line}: ${r.message}`;
  */
 function mdBeside(xmlPath: string): string | undefined {
   const md = xmlPath.replace(/\.xml$/, ".md");
-  return md !== xmlPath && existsSync(md) ? md : undefined;
+  return md !== xmlPath && statSync(md, { throwIfNoEntry: false })?.isFile()
+    ? md
+    : undefined;
 }
 
 /**

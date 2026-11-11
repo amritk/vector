@@ -96,6 +96,15 @@ describe("an XML reader refusal", () => {
       `${t.xml}:3: not RFC XML: the root element is <foo>, not <rfc>`,
     ]);
   });
+
+  test("names the XML when the .md beside it is a directory", async () => {
+    const t = tree('<?xml version="1.0"?>\n<?line 10?>\n<foo/>\n', undefined);
+    mkdirSync(t.md);
+    const r = await extract(t.xml);
+    expect(r.err).toEqual([
+      `${t.xml}:3: not RFC XML: the root element is <foo>, not <rfc>`,
+    ]);
+  });
 });
 
 /**
