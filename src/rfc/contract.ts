@@ -286,7 +286,7 @@ export interface SourceDecl {
   rfc?: number;
   /** Relative to the contract's directory. */
   path?: string;
-  /** The file read for it, relative to the repo root (see sourceLabel). */
+  /** The file read for it, as sourceLabel names it, like rfcs/rfc4648.txt. */
   file?: string;
   /** The sha256 of that file's bytes. */
   sha256?: string;

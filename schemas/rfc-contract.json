@@ -671,7 +671,7 @@
         },
         "file": {
           "type": "string",
-          "description": "The file whose bytes were read for this source, relative to the repo root: the directory that holds the contract's directory (contracts/x.json -> its parent), or vector's own root when the file came from there, e.g. rfcs/rfc4648.txt. `vector spec check` fails when it reads another file."
+          "description": "The file whose bytes were read for this source: its path under rfcs/ or specs/ of the nearest directory holding it there, counting the contract's directory, its ancestors and vector's own root (e.g. rfcs/rfc4648.txt), or, for a file beside the contract, from the directory holding the contract's directory (contracts/x.txt). `vector spec check` fails when it reads another file."
         },
         "sha256": {
           "type": "string",

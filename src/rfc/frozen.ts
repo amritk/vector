@@ -22,7 +22,7 @@ import {
   realpathSync,
   statSync,
 } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import {
   type RfcContract,
   type SourceDecl,
@@ -90,20 +90,33 @@ export function sourcePathProblem(
 }
 
 /**
- * How a contract's `sources[].file` names `file`: its path relative to the
- * innermost root it lies under, of the repo root (the directory holding the
- * contract's directory: contracts/x.json -> .) and vector's own root, where an
- * rfc<N>.txt may come from. Symlinks are resolved, and the innermost root wins
- * whichever holds the other, so the name does not depend on where vector or
- * the repo sits on disk. Its real path when it is under neither.
+ * How a contract's `sources[].file` names `file`: its path under specs/ or
+ * rfcs/ of the innermost directory that holds it there, of vector's own root
+ * (where an rfc<N>.txt may come from) and the contract's directory and its
+ * ancestors, so a contract at the repo root, in contracts/ or deeper names
+ * rfcs/x.txt alike. A file in or below the contract's directory but under no
+ * specs/ or rfcs/ is named from the directory holding it (contracts/x.txt).
+ * Symlinks are resolved, and the name does not depend on where vector or the
+ * repo sits on disk. Undefined for any other file: no path can record it.
  */
-export function sourceLabel(file: string, contractPath: string): string {
+export function sourceLabel(
+  file: string,
+  contractPath: string,
+): string | undefined {
   const f = real(file);
-  const inside = [join(dirname(resolve(contractPath)), ".."), VECTOR_ROOT]
-    .map((root) => relative(real(root), f))
-    .filter((r) => r !== ".." && !r.startsWith(`..${sep}`) && !isAbsolute(r));
-  if (inside.length === 0) return f;
-  return inside.reduce((a, b) => (b.length < a.length ? b : a));
+  const here = real(dirname(resolve(contractPath)));
+  const roots = [real(VECTOR_ROOT)];
+  for (let d = here; ; d = dirname(d)) {
+    roots.push(d);
+    if (dirname(d) === d) break;
+  }
+  const labels = roots
+    .map((root) => relative(root, f))
+    .filter((r) => SOURCE_DIRS.some((d) => r.startsWith(`${d}${sep}`)));
+  if (labels.length > 0)
+    return labels.reduce((a, b) => (b.length < a.length ? b : a));
+  if (f.startsWith(`${here}${sep}`)) return relative(dirname(here), f);
+  return undefined;
 }
 
 /**
@@ -116,7 +129,10 @@ export function recordedProblem(
   file: string,
   got: string,
 ): string | undefined {
-  const read = sourceLabel(file, contractPath);
+  const label = sourceLabel(file, contractPath);
+  const read = label ?? real(file);
+  if (src.file !== undefined && label === undefined)
+    return `source ${src.id} was read from ${read}, which its file cannot name: it is under no specs/ or rfcs/ of the contract's repo or of vector, nor beside the contract`;
   if (src.file !== undefined && read !== src.file)
     return `source ${src.id} was read from ${read}, but its file is ${src.file}`;
   if (src.sha256 !== undefined && got !== src.sha256)

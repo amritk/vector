@@ -182,24 +182,47 @@ describe("how a source's file is named", () => {
     );
   });
 
-  test("a first part like ..data is inside the root", () => {
+  test("from the contract's nearest ancestor holding it under rfcs/ or specs/", () => {
     const d = tmp();
-    write(d, "..data/spec.md", "s");
-    expect(sourceLabel(join(d, "..data/spec.md"), join(d, "c/x.json"))).toBe(
-      "..data/spec.md",
-    );
+    write(d, "rfcs/x.txt", "s");
+    for (const c of ["c.json", "contracts/c.json", "contracts/sub/c.json"])
+      expect(sourceLabel(join(d, "rfcs/x.txt"), join(d, c))).toBe("rfcs/x.txt");
   });
 
-  test("else its real path", () => {
+  test("a file beside the contract is named from the directory holding it", () => {
+    const d = tmp();
+    write(d, "contracts/x.txt", "s");
+    expect(
+      sourceLabel(join(d, "contracts/x.txt"), join(d, "contracts/c.json")),
+    ).toBe("contracts/x.txt");
+  });
+
+  test("any other file has no name, and recording one is refused", () => {
     const d = tmp();
     write(d, "x/spec.md", "s");
-    const contract = join(VECTOR_ROOT, "contracts/c.json");
-    expect(sourceLabel(join(d, "x/spec.md"), join(d, "a/b/c.json"))).toBe(
-      join(d, "x/spec.md"),
+    const contract = join(d, "a/b/c.json");
+    expect(sourceLabel(join(d, "x/spec.md"), contract)).toBeUndefined();
+    expect(
+      sourceLabel(join(d, "x/spec.md"), join(VECTOR_ROOT, "contracts/c.json")),
+    ).toBeUndefined();
+    expect(
+      recordedProblem(
+        { id: "s", file: "x/spec.md" },
+        contract,
+        join(d, "x/spec.md"),
+        ZERO,
+      ),
+    ).toBe(
+      `source s was read from ${join(d, "x/spec.md")}, which its file cannot name: it is under no specs/ or rfcs/ of the contract's repo or of vector, nor beside the contract`,
     );
-    expect(sourceLabel(join(d, "x/spec.md"), contract)).toBe(
-      join(d, "x/spec.md"),
-    );
+    expect(
+      recordedProblem(
+        { id: "s", sha256: HKDF_SHA },
+        contract,
+        join(d, "x/spec.md"),
+        ZERO,
+      ),
+    ).toContain(`source s (${join(d, "x/spec.md")}) has sha256 ${ZERO}`);
   });
 
   test("what was read is checked against what the entry records", () => {
@@ -263,6 +286,17 @@ describe("spec check verifies the file and bytes each source was read from", () 
     );
   });
 
+  test("--spec naming the recorded file passes", async () => {
+    const { d, contract } = project(hkdf);
+    const r = await cli([
+      "check",
+      contract,
+      "--spec",
+      join(d, "rfcs/rfc5869.txt"),
+    ]);
+    expect(r.code).toBe(0);
+  });
+
   test("--spec is judged by the file it names", async () => {
     const { contract } = project(hkdf);
     const elsewhere = join(tmp(), "rfc5869.txt");
@@ -270,7 +304,7 @@ describe("spec check verifies the file and bytes each source was read from", () 
     const r = await cli(["check", contract, "--spec", elsewhere]);
     expect(r.code).toBe(1);
     expect(r.out).toContain(
-      `source rfc5869 was read from ${elsewhere}, but its file is rfcs/rfc5869.txt`,
+      `source rfc5869 was read from ${elsewhere}, which its file cannot name`,
     );
   });
 });
