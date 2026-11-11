@@ -47,7 +47,10 @@ function layout() {
 describe("reading a source checks the file it opened", () => {
   test("an ordinary source is read", () => {
     const { link, allowed } = layout();
-    expect(readChecked(link, allowed)).toEqual({ text: "spec text", sha256: SPEC_SHA });
+    expect(readChecked(link, allowed)).toEqual({
+      text: "spec text",
+      sha256: SPEC_SHA,
+    });
   });
 
   test("a link swapped after the check, before the open, is refused", () => {

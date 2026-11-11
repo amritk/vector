@@ -5,8 +5,8 @@
 // is spec side only while it names the sha256 of a contract at the PR's head.
 // Each contract's main source must also still hash to the `source.sha256` it
 // records, each source must still be the file and sha256 its `sources` entry
-// records (an RFC file too), and every source it declares by path must lie under specs/ or
-// rfcs/. Fails closed: a git error, an unreadable contract or a missing source
+// records (an RFC file too), and every source it declares by path must lie
+// under specs/ or rfcs/. Fails closed: a git error, an unreadable contract or a missing source
 // is a failure.
 
 import {
@@ -127,8 +127,8 @@ export function recordedProblem(
 }
 
 /**
- * The text of `file` and the sha256 of its bytes, or why it may not be read. `problem` judges a resolved
- * path; it is asked twice: before `file` is opened, and then of the file that
+ * The text of `file` and the sha256 of its bytes, or why it may not be read.
+ * `problem` judges a resolved path; it is asked twice: before `file` is opened, and then of the file that
  * was actually opened (its path from /proc/self/fd on Linux; elsewhere its
  * realpath, which must still be the same inode). So a symlink or directory
  * swapped between the check and the read cannot change what is read: the

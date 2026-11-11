@@ -202,12 +202,9 @@ function readSpec(path: string, text: string): RfcDocument {
  * main one; the rest are where sourceFile finds them. A source found nowhere
  * is left out, and the fidelity gate refuses the contract for it. Each must be
  * spec text (sourcePathProblem), whether the contract names its path or not:
- * the contract is input, and its sources' text reaches gate messages.
- */
-/**
- * The text of each source found, by id. A source read from another file, or
- * other bytes, than its `sources` entry records is a fidelity issue in
- * `issues`: the contract was checked against something else.
+ * the contract is input, and its sources' text reaches gate messages. A source
+ * read from another file, or other bytes, than its `sources` entry records is
+ * a fidelity issue in `issues`: the contract was checked against something else.
  */
 function loadSources(
   a: RfcArgs,
