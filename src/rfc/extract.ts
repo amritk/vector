@@ -10,8 +10,13 @@ import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { RfcContract, SourceDecl } from "./contract.ts";
 import { SIDECAR_SUFFIX, VECTOR_ROOT, sourceLabel } from "./frozen.ts";
-import { runGates } from "./gates.ts";
-import { type Refusal, locate, profileToContract } from "./profile.ts";
+import { type GateIssue, runGates } from "./gates.ts";
+import {
+  type Locator,
+  type Refusal,
+  locate,
+  profileToContract,
+} from "./profile.ts";
 import type { RfcDocument } from "./rfctext.ts";
 import {
   type LoadedSource,
@@ -184,12 +189,18 @@ function rfcEntry(got: LoadedSource, contractPath: string): SourceDecl {
   const here = dirname(resolve(contractPath));
   const file = resolve(got.file);
   const local = [here, join(here, "..", "rfcs")].includes(dirname(file));
+  // sourceFile looks only where sourceLabel can name a file, so this is a
+  // guard: a contract never records `"file": undefined`.
+  const label = sourceLabel(got.file, contractPath);
+  if (label === undefined)
+    throw new Error(
+      `${got.file} is in no place a contract at ${contractPath} can name it from`,
+    );
   return {
     id: `rfc${n}`,
     rfc: n,
     ...(local ? { path: posix(relative(here, file)) } : {}),
-    // sourceFile looks only where sourceLabel can name a file.
-    file: sourceLabel(got.file, contractPath) as string,
+    file: label,
     sha256: got.sha256,
   };
 }
@@ -215,6 +226,26 @@ function xmlRefusalLine(err: XmlRefusal, file: string): string {
     : `${file}:${mdLine}: ${err.message.slice(at.length)}`;
 }
 
+/**
+ * The gates' issues as refusals, sorted by line, each once: two clauses'
+ * fields can break one rule on one line. An issue with the sidecar's
+ * allowSurvivors is the sidecar's, so it names that file, after the rest.
+ */
+export function gateRefusals(
+  issues: GateIssue[],
+  locator: Locator,
+  sidecar: string,
+): string[] {
+  const rows = issues.map((i) => {
+    const what = `${i.gate}: ${i.message}`;
+    if (i.message.startsWith("allowSurvivors"))
+      return { line: Number.MAX_SAFE_INTEGER, text: `${sidecar}: ${what}` };
+    const { file, line } = locate(locator, i.at);
+    return { line, text: `${file}:${line}: ${what}` };
+  });
+  return [...new Set(rows.sort((a, b) => a.line - b.line).map((r) => r.text))];
+}
+
 export type ExtractResult = { text: string } | { refusals: string[] };
 
 /**
@@ -237,6 +268,9 @@ export function extract(xmlPath: string, contractPath: string): ExtractResult {
         rfcs.set(n, got);
         return got.doc;
       } catch (err) {
+        // A cited RFC's XML is an input extract cannot read, not the spec's
+        // refusal: an error (exit 2) that names the RFC's file.
+        if (err instanceof XmlRefusal) throw new Error(err.message);
         if (!(err instanceof MissingRfcFile)) throw err;
         missing.push(err);
         // Read as an RFC with no sections; its refusals are not printed.
@@ -275,14 +309,10 @@ export function extract(xmlPath: string, contractPath: string): ExtractResult {
 
   // The gates `spec check` runs, but the source commands' and the module's.
   const { issues } = runGates(full, { docs });
-  if (issues.length > 0) {
-    const lines = issues
-      .map((i) => ({ ...locate(locator, i.at), i }))
-      .sort((a, b) => a.line - b.line)
-      .map(({ file, line, i }) => `${file}:${line}: ${i.gate}: ${i.message}`);
-    // Two clauses' fields can break one rule on one line: print it once.
-    return { refusals: [...new Set(lines)] };
-  }
+  if (issues.length > 0)
+    return {
+      refusals: gateRefusals(issues, locator, survivorsPath(contractPath)),
+    };
   return { text: canonicalJson(full) };
 }
 

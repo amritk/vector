@@ -23,7 +23,7 @@ import { type RfcContract, validateContractShape } from "./contract.ts";
 import { emitNishTest, sha256, staleReason } from "./emit-nish.ts";
 import { exportsCheck, moduleDiff, renderExports } from "./exports.ts";
 import { defaultContractPath, extract, unifiedDiff } from "./extract.ts";
-import { frozenCheck, renderFrozen } from "./frozen.ts";
+import { SIDECAR_SUFFIX, frozenCheck, renderFrozen } from "./frozen.ts";
 import { type GateIssue, type SourceRun, runGates } from "./gates.ts";
 import { MutationRunError, runMutants } from "./mutate.ts";
 import {
@@ -439,6 +439,13 @@ function extractCommand(a: RfcArgs): number {
     throw new UsageError(`extract reads an RFC XML v3 spec (.xml), not ${xml}`);
   if (a.check && !a.out)
     throw new UsageError("--check needs -o <contract.json>");
+  // -o is overwritten: never the spec, nor the sidecar extract reads.
+  if (a.out !== undefined && resolve(a.out) === resolve(xml))
+    throw new UsageError(`-o ${a.out} is the spec extract reads`);
+  if (a.out?.endsWith(SIDECAR_SUFFIX))
+    throw new UsageError(
+      `-o ${a.out} is an allowSurvivors sidecar, not a contract`,
+    );
   const r = extract(xml, a.out ?? defaultContractPath(xml));
   if ("refusals" in r) {
     for (const line of r.refusals) console.error(line);

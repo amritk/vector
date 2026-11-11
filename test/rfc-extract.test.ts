@@ -16,6 +16,7 @@ import {
   CONTRACT_KEYS,
   canonicalJson,
   defaultContractPath,
+  gateRefusals,
   survivorsPath,
   unifiedDiff,
 } from "../src/rfc/extract.ts";
@@ -308,6 +309,15 @@ describe("vector spec extract", () => {
     r = await cli(["check", "c.json", "--check"]);
     expect(r.code).toBe(2);
     expect(r.err).toBe("error: --check is for extract");
+    // -o is overwritten, so it is never the spec or a sidecar.
+    r = await cli(["extract", MINI_XML, "-o", MINI_XML]);
+    expect(r.code).toBe(2);
+    expect(r.err).toBe(`error: -o ${MINI_XML} is the spec extract reads`);
+    r = await cli(["extract", MINI_XML, "-o", "contracts/x.survivors.json"]);
+    expect(r.code).toBe(2);
+    expect(r.err).toBe(
+      "error: -o contracts/x.survivors.json is an allowSurvivors sidecar, not a contract",
+    );
     r = await cli(["extract", join(tmpdir(), "vector-no-such-spec.xml")]);
     expect(r.code).toBe(2);
     expect(r.err).toContain("error: cannot read ");
@@ -429,7 +439,7 @@ describe("vector spec extract", () => {
     expect(c.allowSurvivors).toEqual(survivors);
   });
 
-  test("a sidecar entry the schema refuses is a refusal at the docName", async () => {
+  test("a sidecar entry the schema refuses is a refusal that names the sidecar", async () => {
     const t = tree();
     write(
       t.d,
@@ -438,7 +448,11 @@ describe("vector spec extract", () => {
     );
     const r = await cli(["extract", t.xml]);
     expect(r.code).toBe(1);
-    expect(r.err).toContain(`${t.xml}:10: shape: allowSurvivors[0]`);
+    const side = join(t.d, "contracts/extract-mini.survivors.json");
+    expect(r.err.split("\n")).toEqual([
+      `${side}: shape: allowSurvivors[0].file: a non-empty string`,
+      `${side}: shape: allowSurvivors[0].reason: a non-empty string`,
+    ]);
   });
 
   test("a sidecar that is not JSON, or holds no list, is an error", async () => {
@@ -471,6 +485,16 @@ describe("vector spec extract", () => {
     expect(r.code).toBe(2);
     expect(r.err).toBe(
       `error: ${join(t.d, "rfcs/rfc4648.txt")} is not a regular file`,
+    );
+  });
+
+  test("a cited RFC's malformed XML is an error naming its file, not a refusal", async () => {
+    const t = tree(MINI.replaceAll("4648", "9871"), "extract-mini", false);
+    write(t.d, "rfcs/rfc9871.xml", '<?xml version="1.0"?>\n<foo/>\n');
+    const r = await cli(["extract", t.xml]);
+    expect(r.code).toBe(2);
+    expect(r.err).toBe(
+      `error: ${join(t.d, "rfcs/rfc9871.xml")}:2: not RFC XML: the root element is <foo>, not <rfc>`,
     );
   });
 
@@ -523,6 +547,40 @@ describe("vector spec extract", () => {
   });
 });
 
+describe("gateRefusals", () => {
+  const locator = { file: "s.xml", root: 1, at: { V1: 7, V2: 9 } };
+  test("each refusal once, sorted by line; the sidecar's last, by its file", () => {
+    const fidelity = (at: string) => ({
+      gate: "fidelity" as const,
+      at,
+      message: "1-byte value is not printed in §6",
+    });
+    expect(
+      gateRefusals(
+        [
+          {
+            gate: "shape",
+            at: "",
+            message: 'allowSurvivors[0]: missing "file"',
+          },
+          fidelity("V2.expect"),
+          // Two fields of V1 break one rule on its one line: printed once.
+          fidelity("V1.call"),
+          fidelity("V1.expect"),
+          { gate: "shape", at: "", message: "the root" },
+        ],
+        locator,
+        "c.survivors.json",
+      ),
+    ).toEqual([
+      "s.xml:1: shape: the root",
+      "s.xml:7: fidelity: 1-byte value is not printed in §6",
+      "s.xml:9: fidelity: 1-byte value is not printed in §6",
+      'c.survivors.json: shape: allowSurvivors[0]: missing "file"',
+    ]);
+  });
+});
+
 describe("contracts/example-hex.json", () => {
   test("is what specs/example-hex.xml states", async () => {
     const r = await cli([
@@ -534,6 +592,17 @@ describe("contracts/example-hex.json", () => {
     ]);
     expect(r.err).toBe("");
     expect(r.code).toBe(0);
+  });
+
+  test("two extracts of specs/example-hex.xml are byte-identical, and the committed file", async () => {
+    const a = await cli(["extract", "specs/example-hex.xml"]);
+    const b = await cli(["extract", "specs/example-hex.xml"]);
+    expect(a.err).toBe("");
+    expect(a.code).toBe(0);
+    expect(b.out).toBe(a.out);
+    expect(a.out).toBe(
+      readFileSync(join(VECTOR_ROOT, "contracts/example-hex.json"), "utf8"),
+    );
   });
 });
 

@@ -163,11 +163,23 @@ page describes the service but states no license, the served
 the service's code, not its data. A `<reference>` for an RFC is bibliographic
 metadata (title, authors, date, series identifiers, and the RFC's own abstract)
 derived from that IETF Document; where it reproduces the RFC's abstract it is
-an excerpt covered by the IETF Trust Legal Provisions above. vector keeps no
-fetched BibXML in this repository: the one fixture that would have held some
-uses a hand-written stub instead. A `<reference>` committed in a spec's own XML
-(a published RFC's back matter, as in `rfcs/rfc8707.xml`) is part of that
-document and is redistributed with it under the same terms.
+an excerpt covered by the IETF Trust Legal Provisions above.
+
+vector commits fetched BibXML in two places:
+
+- `.refcache/reference.RFC.2119.xml`, `.refcache/reference.RFC.4648.xml` and
+  `.refcache/reference.RFC.8174.xml` are the `<reference>`s kramdown-rfc
+  fetched from bib.ietf.org when it built `specs/*.xml`, kept unedited so a
+  rebuild needs no network.
+- Each built spec XML (`specs/example-hex.xml`) embeds those `<reference>`s in
+  its back matter, as kramdown-rfc wrote them.
+
+Each holds the bibliographic metadata listed above and the cited RFC's
+abstract, and is redistributed under the IETF Trust Legal Provisions that
+cover the RFC it describes. The `test/fixtures/xmlv3/` fixture uses a
+hand-written stub in place of fetched BibXML. A `<reference>` committed in a
+published RFC's own XML (its back matter, as in `rfcs/rfc8707.xml`) is part of
+that document and is redistributed with it under the same terms.
 
 ### nish (`test/fixtures/mutate/`)
 
