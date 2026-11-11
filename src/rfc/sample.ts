@@ -303,7 +303,9 @@ function intTerm(e: Expr, vars: Map<string, Var>): string | null {
   if (e.op === "%") {
     // Z3's mod is Euclidean and JS's/Nish's % truncates; they agree for a
     // non-negative dividend and a positive literal divisor, which is all this
-    // encodes (the dividend's sign is pinned by an ite).
+    // encodes (the dividend's sign is pinned by an ite). A computed divisor,
+    // which may be 0, stays outside the encoding: evalPure and the emitted
+    // remI32 both give 0 for it, and the solver never has to agree.
     const l = intTerm(e.args[0], vars);
     const d = e.args[1];
     if (!l || !("int" in d) || d.int <= 0) return null;

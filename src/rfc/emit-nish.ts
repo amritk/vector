@@ -185,6 +185,17 @@ const bitwiseBytes = (a: u8[], b: u8[], k: i32): u8[] => {
   }
   return out;
 };`,
+  remI32: `/**
+ * The contract's \`a % b\`: truncating, and 0 when \`b\` is 0. A divisor of -1
+ * also gives 0, which is what truncating % gives, without the overflow that
+ * \`-2147483648 % -1\` can trap on.
+ */
+const remI32 = (a: i32, b: i32): i32 => {
+  if (b === 0 || b === -1) {
+    return 0;
+  }
+  return a % b;
+};`,
   le64: `/** \`n\` as 8 little-endian bytes. */
 const le64 = (n: i32): u8[] => {
   const out: u8[] = [];
@@ -489,8 +500,11 @@ class Emitter {
       case "+":
       case "-":
       case "*":
-      case "%":
         return wrapU32(`(${a(0)} ${e.op} ${a(1)})`);
+      case "%":
+        // Through a helper, so a computed zero divisor gives 0 here exactly as
+        // evalPure gives it when sampling `where`.
+        return wrapU32(`${this.use("remI32")}(${a(0)}, ${a(1)})`);
       case "le64":
         return `${this.use("le64")}(${a(0)})`;
       case "<":
