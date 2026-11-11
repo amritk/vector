@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rfc number="9992" docName="draft-positions-00" category="std" ipr="trust200902" version="3">
+<front><title>Positions</title></front>
+<middle>
+<section anchor="one"><name>One</name>
+<t>First a sender <bcp14>MUST</bcp14> pad. Then a sender <bcp14>SHALL</bcp14> send.</t>
+<ul><li>A list item <bcp14>MUST</bcp14> hold.</li></ul>
+<table><tbody><tr><td>A cell <bcp14>MUST</bcp14> hold.</td></tr></tbody></table>
+<section anchor="sub"><name>Sub</name>
+<t>Sub text.</t>
+<t>A sub <bcp14>MUST</bcp14> hold.</t>
+</section>
+</section>
+</middle>
+</rfc>
