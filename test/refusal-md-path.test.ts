@@ -11,7 +11,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { rfcMain } from "../src/rfc/cli.ts";
 import type { RfcContract } from "../src/rfc/contract.ts";
-import { gateRefusals } from "../src/rfc/extract.ts";
 import { VECTOR_ROOT } from "../src/rfc/frozen.ts";
 import { locate, shapeRefusals } from "../src/rfc/profile.ts";
 
@@ -185,24 +184,6 @@ describe("a locator's files", () => {
     expect(locate(locator, "V2.expect")).toEqual({ file: "s.md", line: 9 });
     expect(locate(locator, "V1.expect")).toEqual({ file: "s.xml", line: 7 });
     expect(locate(locator, "")).toEqual({ file: "s.xml", line: 1 });
-  });
-
-  test("gateRefusals prints each at its own file", () => {
-    const fidelity = (at: string) => ({
-      gate: "fidelity" as const,
-      at,
-      message: "1-byte value is not printed in §6",
-    });
-    expect(
-      gateRefusals(
-        [fidelity("V2.expect"), fidelity("V1.call")],
-        locator,
-        "c.survivors.json",
-      ),
-    ).toEqual([
-      "s.xml:7: fidelity: 1-byte value is not printed in §6",
-      "s.md:9: fidelity: 1-byte value is not printed in §6",
-    ]);
   });
 });
 

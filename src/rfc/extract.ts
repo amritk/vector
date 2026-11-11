@@ -222,9 +222,8 @@ const refusalLine = (r: Refusal): string => `${r.file}:${r.line}: ${r.message}`;
  * names a file that is not there: it names the XML at its XML line instead.
  */
 function mdBeside(xmlPath: string): string | undefined {
-  if (!xmlPath.endsWith(".xml")) return undefined;
-  const md = `${xmlPath.slice(0, -".xml".length)}.md`;
-  return existsSync(md) ? md : undefined;
+  const md = xmlPath.replace(/\.xml$/, ".md");
+  return md !== xmlPath && existsSync(md) ? md : undefined;
 }
 
 /**
@@ -235,7 +234,7 @@ function mdBeside(xmlPath: string): string | undefined {
 function xmlRefusalLine(err: XmlRefusal, file: string, md?: string): string {
   const at = `${file}:${err.loc.xmlLine}: `;
   const w = whereOf(err.loc, file, md);
-  return w.file === file || !err.message.startsWith(at)
+  return w.file === file
     ? err.message
     : `${w.file}:${w.line}: ${err.message.slice(at.length)}`;
 }
