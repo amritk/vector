@@ -189,8 +189,10 @@ export function evalPure(e: Expr, env: Record<string, Value>): Value {
     case "*":
       return Math.imul(n(0), n(1));
     case "%": {
+      // As the emitted remI32: 0 for a zero divisor, truncating otherwise
+      // (`| 0` turns JS's -0, as in -4 % 2 or -2147483648 % -1, into 0).
       const d = n(1);
-      return d === 0 ? 0 : n(0) % d;
+      return d === 0 ? 0 : (n(0) % d) | 0;
     }
     case "le64": {
       const out = new Uint8Array(8);
@@ -303,7 +305,9 @@ function intTerm(e: Expr, vars: Map<string, Var>): string | null {
   if (e.op === "%") {
     // Z3's mod is Euclidean and JS's/Nish's % truncates; they agree for a
     // non-negative dividend and a positive literal divisor, which is all this
-    // encodes (the dividend's sign is pinned by an ite).
+    // encodes (the dividend's sign is pinned by an ite). A computed divisor,
+    // which may be 0, stays outside the encoding: evalPure and the emitted
+    // remI32 both give 0 for it, and the solver never has to agree.
     const l = intTerm(e.args[0], vars);
     const d = e.args[1];
     if (!l || !("int" in d) || d.int <= 0) return null;
