@@ -38,7 +38,10 @@ const FIXTURE = linked as unknown as RfcContract;
 const clone = (): RfcContract => JSON.parse(JSON.stringify(FIXTURE));
 const RFC8707 = readFileSync(join(VECTOR_ROOT, "rfcs/rfc8707.xml"), "utf8");
 const RFC4648 = readFileSync(join(VECTOR_ROOT, "rfcs/rfc4648.txt"), "utf8");
-const SPEC = readFileSync(join(VECTOR_ROOT, "specs/example-hex.md"), "utf8");
+const SPEC = readFileSync(
+  join(VECTOR_ROOT, "test/fixtures/legacy/example-hex.md"),
+  "utf8",
+);
 
 const dirs: string[] = [];
 afterAll(() => {

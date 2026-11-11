@@ -56,6 +56,7 @@ const project = (c: RfcContract, name = "c.json") => {
   const d = tmp();
   for (const f of [
     "specs/example-hex.md",
+    "specs/example-hex.xml",
     "rfcs/rfc4648.txt",
     "rfcs/rfc5869.txt",
   ])

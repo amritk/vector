@@ -4,6 +4,8 @@
 //   vector spec check   <contract.json>   gates + Z3 domains; exit 0 when valid
 //   vector spec emit    <contract.json> -o <main.ts>
 //   vector spec run     <contract.json>   check, emit, then run it with nish
+//   vector spec extract <spec.xml> [-o <contract.json>] [--check]
+//                                         the contract an RFC XML v3 spec states
 //
 // vector never calls a model. A contract is written by hand or by Claude Code
 // (the vector-spec skill), and `check` judges it against the spec's text.
@@ -20,6 +22,7 @@ import { dirname, join, resolve } from "node:path";
 import { type RfcContract, validateContractShape } from "./contract.ts";
 import { emitNishTest, sha256, staleReason } from "./emit-nish.ts";
 import { exportsCheck, moduleDiff, renderExports } from "./exports.ts";
+import { defaultContractPath, extract, unifiedDiff } from "./extract.ts";
 import { frozenCheck, renderFrozen } from "./frozen.ts";
 import { type GateIssue, type SourceRun, runGates } from "./gates.ts";
 import { MutationRunError, runMutants } from "./mutate.ts";
@@ -43,6 +46,7 @@ import { MissingRfcFiles, loadSources } from "./sources.ts";
 export const RFC_USAGE = `Usage: vector spec check <contract.json> [options]
        vector spec emit  <contract.json> -o <main.ts> [options]
        vector spec run   <contract.json> [-o <main.ts>] [options]
+       vector spec extract <spec.xml> [-o <contract.json>] [--check]
        vector spec frozen  [<contract.json>…] --base <ref> [--repo <dir>]
        vector spec stale   <test.ts> <contract.json>
        vector spec exports <contract.json> --base <ref> --nish-root <dir>
@@ -54,6 +58,7 @@ Options:
                       (default: the source's path, relative to the contract, or
                       rfcs/rfc<N>.xml, else rfc<N>.txt, next to the contract
                       or in vector)
+  --check             extract: write nothing; exit 1 with a diff if -o differs
   --run-sources       run the vectors' \`command\` sources (30 s each) and check their output;
                       without it they are reported as not run
   --module <file>     the target module's source, for the signature gate
@@ -82,6 +87,7 @@ interface RfcArgs {
   max?: number;
   format: "text" | "markdown" | "json";
   runSources: boolean;
+  check: boolean;
 }
 
 class UsageError extends Error {}
@@ -92,6 +98,7 @@ function parse(argv: string[]): RfcArgs {
     positional: [],
     format: "text",
     runSources: false,
+    check: false,
   };
   for (let i = 1; i < argv.length; i++) {
     const x = argv[i];
@@ -114,6 +121,9 @@ function parse(argv: string[]): RfcArgs {
       case "--rfc":
       case "--spec":
         a.rfc = val();
+        break;
+      case "--check":
+        a.check = true;
         break;
       case "--run-sources":
         a.runSources = true;
@@ -411,6 +421,50 @@ async function mutate(a: RfcArgs): Promise<number> {
   return report.mutation.survivors.length === 0 ? 0 : 1;
 }
 
+/**
+ * `vector spec extract <spec.xml> [-o <contract.json>] [--check]`: the
+ * contract to stdout, or written to -o; with --check, exit 1 and a diff when
+ * -o is not it. Refusals exit 1, each `file:line: message`.
+ */
+function extractCommand(a: RfcArgs): number {
+  const xml = need(a.contract, "extract needs <spec.xml>");
+  // extract reads only xml2rfc's output, and never runs it.
+  if (xml.endsWith(".md")) {
+    console.error(`build it first: scripts/build-spec.sh ${xml}`);
+    return 2;
+  }
+  if (!xml.endsWith(".xml"))
+    throw new UsageError(`extract reads an RFC XML v3 spec (.xml), not ${xml}`);
+  if (a.check && !a.out)
+    throw new UsageError("--check needs -o <contract.json>");
+  const r = extract(xml, a.out ?? defaultContractPath(xml));
+  if ("refusals" in r) {
+    for (const line of r.refusals) console.error(line);
+    return 1;
+  }
+  if (!a.out) {
+    process.stdout.write(r.text);
+    return 0;
+  }
+  if (a.check) {
+    const now = existsSync(a.out) ? readText(a.out) : "";
+    const diff = unifiedDiff(
+      now,
+      r.text,
+      a.out,
+      `${a.out} (extracted from ${xml})`,
+    );
+    if (diff === "") return 0;
+    process.stdout.write(diff);
+    console.error(
+      `${a.out} is not what ${xml} states; run: vector spec extract ${xml} -o ${a.out}`,
+    );
+    return 1;
+  }
+  writeFileSync(a.out, r.text);
+  return 0;
+}
+
 /** `vector spec …`. */
 export async function rfcMain(argv: string[]): Promise<number> {
   let a: RfcArgs;
@@ -437,6 +491,7 @@ export async function rfcMain(argv: string[]): Promise<number> {
       return gateResult(a, r, renderExports(r));
     }
     if (a.cmd === "mutate") return await mutate(a);
+    if (a.cmd === "extract") return extractCommand(a);
     if (!["check", "emit", "run"].includes(a.cmd)) {
       console.error(RFC_USAGE);
       return 2;

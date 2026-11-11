@@ -1,0 +1,54 @@
+{
+  "allowSurvivors": [
+    {
+      "file": "std/hex.ts",
+      "line": 31,
+      "reason": "Equivalent: hexRangeMask's AND is within 2^8 of 0 mod 2^32 for every byte, so bits 30 and 31 always agree and `>> 30` gives the same 0 or -1 as `>> 31` (checked for all 256 bytes and all three ranges, and for the 16 nibbles)."
+    },
+    {
+      "file": "std/hex.ts",
+      "line": 38,
+      "reason": "Equivalent: hexDigitOf is only called with a nibble (0-15), so the ranges 10-15 and 10-16 select the same values."
+    },
+    {
+      "file": "std/hex.ts",
+      "line": 46,
+      "reason": "Equivalent: widening the digit range to 47 lets '/' through with the value 47 - 48 = -1, which is the not-a-digit marker, so '/' is still refused (P-OTHER-EDGE samples it); no other byte changes."
+    },
+    {
+      "file": "std/hex.ts",
+      "line": 60,
+      "reason": "Unreachable by a test: the guard only acts on inputs of 2^30 - 1 bytes or more, whose encoding is nish's string-length limit; a contract samples at most 4096 bytes, and the spec states no length limit to test against."
+    },
+    {
+      "file": "std/hex.ts",
+      "line": 61,
+      "reason": "Unreachable by a test: the panic runs only for an input over 2^30 - 1 bytes (see line 60)."
+    },
+    {
+      "file": "std/hex.ts",
+      "line": 71,
+      "reason": "Equivalent: the guard is always true (o = 2i with i < n, and outLen = 2n), so `o >= -1`, `o + 0 < outLen`, `o + 1 <= outLen` and `||` do not change which stores run; it exists only to drop the bounds check."
+    },
+    {
+      "file": "std/hex.ts",
+      "line": 87,
+      "reason": "Equivalent: `>= 2147483647` and `> 2147483646` differ from the original only at a length of exactly 2^31 - 1, which is odd, so hexDecode returns null on both paths. Unreachable: `> 2147483648` differs only at a length of exactly 2^31, a string no test can build."
+    },
+    {
+      "file": "std/hex.ts",
+      "line": 100,
+      "reason": "Equivalent: n is even here (odd lengths returned null above) and k steps by 2 from 0, so `k + 0 < n`, `k + 1 < n` and `k + 1 <= n` all stop at the same k."
+    },
+    {
+      "file": "std/hex.ts",
+      "line": 103,
+      "reason": "Equivalent: hexNibbleOf returns -1 or 0-15, and `>> 30` and `>> 31` agree on all of those (-1 and 0), so the verdict word is unchanged."
+    },
+    {
+      "file": "std/hex.ts",
+      "line": 106,
+      "reason": "Equivalent: the guard is always true (j = k / 2 < n / 2 = outLen), so `j >= -1`, `j <= outLen` and `||` do not change which stores run; it exists only to drop the bounds check."
+    }
+  ]
+}

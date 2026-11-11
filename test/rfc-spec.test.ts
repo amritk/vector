@@ -237,7 +237,10 @@ describe("reading a spec", () => {
     ])
       expect(hiddenText(readFileSync(f, "utf8"), "rfc"), f).toEqual([]);
     expect(
-      hiddenText(readFileSync("specs/example-hex.md", "utf8"), "markdown"),
+      hiddenText(
+        readFileSync("test/fixtures/legacy/example-hex.md", "utf8"),
+        "markdown",
+      ),
     ).toEqual([]);
   });
 
@@ -366,7 +369,9 @@ describe("reading a spec", () => {
   });
 
   test("reads the real hex spec: its sections, every MUST, nothing in the preamble", () => {
-    const hex = parseDocument(readFileSync("specs/example-hex.md", "utf8"));
+    const hex = parseDocument(
+      readFileSync("test/fixtures/legacy/example-hex.md", "utf8"),
+    );
     expect([...hex.sections.keys()]).toEqual([
       "1",
       "2",
@@ -1957,7 +1962,9 @@ describe("vector provenance", () => {
   });
 
   test("the hex spec's §4.2 still states null for V7 to V9", () => {
-    const hex = parseDocument(readFileSync("specs/example-hex.md", "utf8"));
+    const hex = parseDocument(
+      readFileSync("test/fixtures/legacy/example-hex.md", "utf8"),
+    );
     const c = hexContract();
     c.requirements = [
       {
@@ -2240,14 +2247,18 @@ describe("vector spec (the command)", () => {
     expect(out.join("\n")).toContain(`(written to ${file})`);
   });
 
-  test("usage names vector spec; extract is gone (vector calls no model)", async () => {
+  test("usage names vector spec; extract reads built XML, never a model", async () => {
     expect(await main([])).toBe(2);
     expect(err.join("\n")).toContain(
-      "vector spec check|emit|run|mutate|frozen|stale|exports …  (spec or RFC → contract → nish test; alias: vector rfc)",
+      "vector spec check|emit|run|extract|mutate|frozen|stale|exports …  (spec or RFC → contract → nish test; alias: vector rfc)",
     );
     expect(await rfcMain(["extract"])).toBe(2);
+    expect(err.join("\n")).toContain("error: extract needs <spec.xml>");
+    expect(await rfcMain(["help"])).toBe(2);
     expect(err.join("\n")).toContain("Usage: vector spec check");
-    expect(err.join("\n")).not.toContain("extract");
+    expect(err.join("\n")).toContain(
+      "vector spec extract <spec.xml> [-o <contract.json>] [--check]",
+    );
   });
 
   test("--spec gives the main source's text; --rfc is the same", async () => {

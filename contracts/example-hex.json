@@ -4,12 +4,12 @@
   "source": {
     "title": "Spec 0001: nish/hex — hexadecimal encoding and decoding",
     "main": "example-hex",
-    "sha256": "53d05a63046cabd83306283215e99fe5b2ba9eabc9b8b795da1ec396f9e69411"
+    "sha256": "1c972eeca28874e9379542a3571f955dfb4f87262359484f86bbac1aede51c6b"
   },
   "sources": [
     {
       "id": "example-hex",
-      "path": "../specs/example-hex.md"
+      "path": "../specs/example-hex.xml"
     },
     {
       "id": "rfc4648",
