@@ -295,7 +295,7 @@ export async function main(argv: string[]): Promise<number> {
         "Usage: vector --fixture <program.json> [--json] [--emit <file>]\n" +
           "       vector --verify <spec.json> <program.json> [--json] [--emit <file>]\n" +
           "       vector --diff <old-program.json> <new-program.json> [--json]\n" +
-          "       vector spec check|emit|run|mutate|frozen|stale|exports …  (spec or RFC → contract → nish test; alias: vector rfc)\n" +
+          "       vector spec check|emit|run|extract|mutate|frozen|stale|exports …  (spec or RFC → contract → nish test; alias: vector rfc)\n" +
           "       vector --licenses  (vector's license and third-party notices)",
       );
       return 2;

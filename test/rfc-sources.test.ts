@@ -55,7 +55,7 @@ const write = (d: string, rel: string, s: string) => {
 const project = (c: RfcContract, name = "c.json") => {
   const d = tmp();
   for (const f of [
-    "specs/example-hex.md",
+    "specs/example-hex.xml",
     "rfcs/rfc4648.txt",
     "rfcs/rfc5869.txt",
   ])
@@ -333,7 +333,7 @@ describe("spec frozen flags a changed RFC file, not only the main spec", () => {
     expect(problem(repo(hex).d)).toBeUndefined();
   });
 
-  test("a changed RFC file beside a markdown main spec", () => {
+  test("a changed RFC file beside the XML main spec", () => {
     const { d } = repo(hex);
     write(d, "rfcs/rfc4648.txt", `${RFC4648}\n`);
     expect(problem(d)).toStartWith(

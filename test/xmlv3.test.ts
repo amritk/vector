@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import {
   findSection,
+  hexValues,
   normativeSentences,
   sectionText,
 } from "../src/rfc/rfctext.ts";
@@ -1326,5 +1327,52 @@ describe("cost stays linear in the input", () => {
         40000,
       ),
     );
+  });
+});
+
+describe("byte lists", () => {
+  const sections = (body: string) =>
+    parseV3(
+      doc(
+        `<section anchor="s"><name>S</name>${body}</section>
+         <section anchor="n"><name>N</name><t>No list: [RFC4648], [0x00], [0], [abc], [] and 0f f0.</t></section>`,
+      ),
+      "h.xml",
+    ).sections;
+
+  test("a section that prints [xx xx] lists gets each as a hex run of its own", () => {
+    const d = sections(
+      `<t>Bytes [00 0f, f0 ff] then [AB] here.</t>
+       <table><tbody><tr><td><tt>hexEncode([de ad])</tt></td><td>1234</td></tr></tbody></table>`,
+    );
+    const s = d.get("1");
+    expect(s?.hexLines).toEqual([
+      "Bytes [00 0f, f0 ff] then [AB] here.",
+      "--",
+      "00 0f f0 ff",
+      "--",
+      "--",
+      "AB",
+      "--",
+      ...(s?.lines
+        .slice(1)
+        .flatMap((l) =>
+          l.includes("[de ad]") ? [l, "--", "de ad", "--"] : [l],
+        ) ?? []),
+    ]);
+    expect(hexValues(s as never).map((v) => v.hex)).toEqual(
+      expect.arrayContaining(["000ff0ff", "ab", "dead"]),
+    );
+  });
+
+  test("a section with none, or only text that is not a byte list, has no hexLines", () => {
+    const d = sections("<t>Nothing here.</t>");
+    expect(d.get("1")?.hexLines).toBeUndefined();
+    expect(d.get("2")?.hexLines).toBeUndefined();
+  });
+
+  test("RFC 8707 prints no byte list, so its sections read as before", () => {
+    const d = parseV3(RFC8707, "rfc8707.xml");
+    for (const s of d.sections.values()) expect(s.hexLines).toBeUndefined();
   });
 });

@@ -981,7 +981,29 @@ function toSection(
     proseLines: all.map((l) => (l.prose ? l.text : "")),
     codeLines: all.map((l) => l.code),
     spanLines: all.map((l) => l.spans),
+    ...(all.some((l) => BYTE_LIST_RE.test(l.text))
+      ? { hexLines: all.flatMap((l) => [l.text, ...byteLists(l.text)]) }
+      : {}),
   };
+}
+
+// A byte list such as "[00 0f f0 ff]", as spectext.ts reads one in markdown.
+const BYTE_LIST = String.raw`\[([0-9a-fA-F]{2}(?:[ ,]+[0-9a-fA-F]{2})*)\]`;
+const BYTE_LIST_RE = new RegExp(BYTE_LIST);
+const BYTE_LISTS_RE = new RegExp(BYTE_LIST, "g");
+
+/**
+ * Each byte list in a line, as a hex-run line fenced by breaks ("--" is never
+ * hex), so the fidelity gate sees bytes a spec prints in a list. A section
+ * that prints one gets hexLines, which also makes hexValues read it as a
+ * markdown spec does; a section with none (every RFC's) is read as before.
+ */
+function byteLists(text: string): string[] {
+  return [...text.matchAll(BYTE_LISTS_RE)].flatMap((m) => [
+    "--",
+    m[1].replace(/[ ,]+/g, " "),
+    "--",
+  ]);
 }
 
 /** Whether `text` looks like RFC XML (its root element is `<rfc>`). */
