@@ -3,16 +3,17 @@
 // file (src/rfc/report.ts sits near 6%) would make any useful floor fail; this
 // totals bun's lcov report instead.
 //
-// The floors sit just under the lower of two measurements of the same tree:
-// CI (lines 74.42%, functions 84.82%) and a cloud session on bun 1.4.4 (74.83%,
-// 85.44%). The two count functions differently, so a floor taken from one
-// machine alone can fail on the other. Raise the floors as coverage rises.
-// Never lower them to get a branch green.
+// The floors sit just under the lower of the measurements of the same tree. The
+// lines floor comes from main at bcc739d in a cloud session (lines 93.00%,
+// functions 95.61%). The functions floor is still the one from CI (84.82%) and
+// a cloud session on bun 1.4.4 (85.44%): the two count functions differently,
+// so a floor taken from one machine alone can fail on the other. Raise the
+// floors as coverage rises. Never lower them to get a branch green.
 import { spawnSync } from "node:child_process";
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
-const FLOOR = { lines: 74, functions: 84 };
+const FLOOR = { lines: 91, functions: 84 };
 
 const dir = join(import.meta.dir, "..", "coverage");
 rmSync(dir, { recursive: true, force: true });

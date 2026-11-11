@@ -243,9 +243,9 @@ export const SIDECAR_SUFFIX = ".survivors.json";
 
 /**
  * Checks the working tree of `repo` against its fork point from `base`.
- * `contracts` defaults to every contracts/*.json at the repository's top but
- * the *.survivors.json sidecars;
- * finding none is a failure.
+ * `contracts` defaults to every contracts/*.json at the repository's top;
+ * either way the *.survivors.json sidecars are skipped, and finding no
+ * contract is a failure.
  */
 export function frozenCheck(o: {
   repo: string;
@@ -283,7 +283,7 @@ export function frozenCheck(o: {
     ),
   ]);
 
-  let files = o.contracts ?? [];
+  let files = o.contracts?.filter((f) => !f.endsWith(SIDECAR_SUFFIX)) ?? [];
   if (!o.contracts) {
     const dir = join(top, "contracts");
     files = existsSync(dir)
