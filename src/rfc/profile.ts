@@ -21,6 +21,7 @@
 // refusal past it names the last line it did write.
 
 import {
+  BINDING_LEVELS,
   type Clause,
   type Exclusion,
   type FnSig,
@@ -36,6 +37,7 @@ import {
   TEST_PREFIXES,
   type VectorClause,
   type VectorSource,
+  callsIn,
   controlChar,
   validateContractShape,
 } from "./contract.ts";
@@ -82,6 +84,7 @@ export const VECTOR_HEADER = [
   "Source",
   "Title",
 ] as const;
+const VECTOR_NAMES = new Set(VECTOR_HEADER.map((h) => h.toLowerCase()));
 
 const DEFINITION = "Definition: ";
 const UNTESTED = "Untested: ";
@@ -194,7 +197,7 @@ export function profileToContract(
   doc: V3Document,
   xmlPath: string,
   resolve: RfcResolver,
-): { contract: RfcContract } | { refusals: Refusal[] } {
+): { contract: RfcContract; locator: Locator } | { refusals: Refusal[] } {
   const refusals: Refusal[] = [];
   const refuse = (loc: Loc, message: string, col?: number) => {
     refusals.push({
@@ -325,6 +328,7 @@ export function profileToContract(
   };
   const interfaces = code.filter((c) => fronted(c, "interface"));
   let functions: FnSig[] = [];
+  let fnLocs: Loc[] = [];
   let module = "";
   if (interfaces.length !== 1) {
     const where = interfaces.length ? interfaces[1].loc : doc.root.loc;
@@ -341,16 +345,19 @@ export function profileToContract(
     else if (r) {
       functions = r.functions;
       module = r.module;
+      const at = lineOf(codeOf(iface).loc);
+      fnLocs = r.lines.map((l) => ({ xmlLine: at + l - 1 }));
       checkText(iface.loc, "the ts-interface block's module", module);
-      for (const { name } of functions)
+      functions.forEach(({ name }, i) => {
         if (
           TEST_NAMES.has(name) ||
           TEST_PREFIXES.some((x) => name.startsWith(x))
         )
           refuse(
-            iface.loc,
+            fnLocs[i],
             `function ${name}: the generated test uses this name itself (its helpers, and names starting ${TEST_PREFIXES.join(" ")}), so it cannot call such a function`,
           );
+      });
     }
   }
   const fnByName = new Map(functions.map((f) => [f.name, f]));
@@ -638,12 +645,11 @@ export function profileToContract(
       elements(tr).filter((c) => c.name === "td" || c.name === "th");
     const header = rows[0] ? cellsOf(rows[0]).map(cellText) : [];
     // A table that looks like a vector table is one, exactly, or refused: it
-    // is headed Id, and has a Call or an Expected column. Prose tables
-    // (`ID | Algorithm | Notes`, `Case | Input | Expected`) are not.
-    const looksLike =
-      /^ids?$/i.test(header[0] ?? "") &&
-      header.some((h) => /^(call|expected)$/i.test(h));
-    if (!looksLike) return;
+    // has three or more of the six header names, in any order or case. Prose
+    // tables (`ID | Algorithm | Notes`, `Case | Input | Expected`) have two
+    // at most, so a renamed or reordered vector table is never dropped.
+    if (header.filter((h) => VECTOR_NAMES.has(h.toLowerCase())).length < 3)
+      return;
     if (header.join("|") !== VECTOR_HEADER.join("|")) {
       refuse(
         table.loc,
@@ -855,6 +861,24 @@ export function profileToContract(
     );
   if (refusals.length > 0) return sorted();
 
+  // The coverage gate's two checks, refused here at a line: a binding
+  // requirement is covered by some clause, and a property tests something.
+  const covered = new Set([...vectors, ...properties].flatMap((k) => k.covers));
+  for (const q of requirements)
+    if (BINDING_LEVELS.has(q.level) && !covered.has(q.id))
+      refuse(
+        q.loc,
+        `${q.id} is ${q.level}, but no clause covers it; cover it with a vector or a property, or follow it with an Untested: paragraph`,
+      );
+  properties.forEach((k, i) => {
+    if (callsIn(k.assert).size === 0)
+      refuse(
+        propertyLocs[i],
+        `property ${k.id}'s assertion calls none of the functions under test, so it checks nothing`,
+      );
+  });
+  if (refusals.length > 0) return sorted();
+
   const sources: SourceDecl[] = [
     { id: contract, path: `../specs/${contract}.xml` },
     ...[...cited].sort((a, b) => a - b).map((n) => ({ id: rfcId(n), rfc: n })),
@@ -874,6 +898,7 @@ export function profileToContract(
     reason: q.reason,
   });
   const clauses: Clause[] = [...vectors, ...properties];
+  const clauseLocs = [...vectorLocs, ...propertyLocs];
   const result: RfcContract = {
     contract,
     source: { title: doc.title, main: contract },
@@ -889,10 +914,47 @@ export function profileToContract(
   const shape = shapeRefusals(result, xmlPath, doc.root.loc, {
     requirements: requirements.map((q) => q.loc),
     exclusions: exclusions.map((q) => q.loc),
-    clauses: [...vectorLocs, ...propertyLocs],
-    functions: functions.map(() => iface.loc),
+    clauses: clauseLocs,
+    functions: fnLocs,
   });
-  return shape.length > 0 ? { refusals: shape } : { contract: result };
+  if (shape.length > 0) return { refusals: shape };
+  // Where each id was read, for the gates' issues: the first wins.
+  const at: Record<string, number> = {};
+  const put = (key: string, loc: Loc) => {
+    if (!Object.hasOwn(at, key)) at[key] = lineOf(loc);
+  };
+  for (const q of requirements) put(q.id, q.loc);
+  for (const q of exclusions) put(`exclusion §${q.section}`, q.loc);
+  clauses.forEach((k, i) => put(k.id, clauseLocs[i]));
+  functions.forEach((f, i) => put(f.name, fnLocs[i]));
+  return {
+    contract: result,
+    locator: { file: xmlPath, root: lineOf(doc.root.loc), at },
+  };
+}
+
+/**
+ * Where a contract's parts were read: `at[key]` is the line of the
+ * requirement, clause or function with that id or name, or of the first
+ * exclusion in a section, keyed `exclusion §N` as the gates name it.
+ */
+export interface Locator {
+  file: string;
+  /** The line of the document's root, for what names no part. */
+  root: number;
+  at: Record<string, number>;
+}
+
+/**
+ * The file and line a gate issue's `at` names: the longest key that is `at`
+ * or a prefix of it ending before a `.` (`V1.expect` is V1's line, and an id
+ * may hold a dot), else the root.
+ */
+export function locate(l: Locator, at: string): { file: string; line: number } {
+  for (let k = at; ; k = k.slice(0, k.lastIndexOf("."))) {
+    if (Object.hasOwn(l.at, k)) return { file: l.file, line: l.at[k] };
+    if (!k.includes(".")) return { file: l.file, line: l.root };
+  }
 }
 
 /**

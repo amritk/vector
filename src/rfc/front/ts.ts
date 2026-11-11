@@ -313,7 +313,11 @@ function readType(c: Cursor): { name: string; pos: Pos } {
 
 const IFACE = "ts-interface";
 
-function parseInterface(text: string): { module: string; functions: FnSig[] } {
+function parseInterface(text: string): {
+  module: string;
+  functions: FnSig[];
+  lines: number[];
+} {
   const c = new Cursor(lex(text, IFACE));
   const head = c.raw();
   const m =
@@ -329,6 +333,7 @@ function parseInterface(text: string): { module: string; functions: FnSig[] } {
     );
   c.skipRaw();
   const functions: FnSig[] = [];
+  const lines: number[] = [];
   while (c.peek().kind !== "eof") {
     c.expect("export");
     const isConst = c.eat("const");
@@ -367,13 +372,14 @@ function parseInterface(text: string): { module: string; functions: FnSig[] } {
       );
     c.eat(";");
     functions.push({ name: name.text, params, returns });
+    lines.push(name.line);
   }
   if (functions.length === 0)
     throw new Refusal(
       "a ts-interface declares at least one function",
       at(c.peek()),
     );
-  return { module: m[1], functions };
+  return { module: m[1], functions, lines };
 }
 
 function sigType(c: Cursor, result: boolean): SigTy {

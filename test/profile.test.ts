@@ -17,6 +17,7 @@ import {
   type Refusal,
   type RfcResolver,
   VECTOR_HEADER,
+  locate,
   profileToContract,
   shapeRefusals,
 } from "../src/rfc/profile.ts";
@@ -117,6 +118,10 @@ const MIN = sec(
 );
 const property = (code: string) =>
   `<sourcecode type="ts-property"><![CDATA[\n${code}\n]]></sourcecode>`;
+/** A property covering R-D and R-N, which are binding and so need a clause. */
+const COVER_DN = property(
+  "// P-DN covers R-D, R-N — t\nforall (b: u8[] /* 0..4 */) => hexEncode(b) === hexEncode(b)",
+);
 
 describe("fixtures", () => {
   test("the kramdown fixture is refused for its quote and its .repeat, exactly", () => {
@@ -238,7 +243,7 @@ describe("contract", () => {
 <blockquote anchor="R-D"><t>(a.k.a. resource server, application, API, etc.)
 <xref target="RFC8707" section="2"/></t></blockquote>
 <blockquote anchor="R-N"><t>The URI MUST NOT include a fragment component.
-<xref target="RFC8707" section="2"/></t></blockquote>`),
+<xref target="RFC8707" section="2"/></t></blockquote>${COVER_DN}`),
       ),
     );
     expect(c.requirements.slice(1)).toEqual([
@@ -310,13 +315,13 @@ describe("contract", () => {
     ]);
   });
 
-  test("a prose table is not a vector table: one is headed Id and has Call or Expected", () => {
+  test("a prose table is not a vector table: it has at most two vector header names", () => {
     const prose = [
       ["Name"],
       ["ID", "Algorithm", "Notes"],
       ["Case", "Input", "Expected"],
       ["Name", "Call", "Effect"],
-      ["Call", "Id", "Expected"],
+      ["Id", "Title"],
     ];
     const c = contract(
       spec(MIN + sec(prose.map((h) => table([row("x")], h)).join(""))),
@@ -1170,8 +1175,10 @@ describe("refusals of review round 1", () => {
     const h: string[] = [...VECTOR_HEADER];
     const bad = [
       ["ID", ...h.slice(1)],
-      ["Id", "Expected"],
-      ["ids", "x", "call"],
+      ["Id", "Call", "Expected"],
+      [h[1], h[0], ...h.slice(2)],
+      ["Name", ...h.slice(1)],
+      ["Id", "Input", "Output", ...h.slice(3)],
       [h[0], h[2], h[1], ...h.slice(3)],
     ];
     expect(
@@ -1422,11 +1429,11 @@ describe("refusals of review round 2", () => {
     ]);
   });
 
-  test("a function name the generated test uses itself", () => {
+  test("a function name the generated test uses itself, at its own line", () => {
     const head = `<section><name>I</name>${iface(`${IFACE_CODE}export function plain_x(a: string): string\n`)}</section>`;
     expect(located(spec(MIN, { head }))).toEqual([
       {
-        line: 2,
+        line: 7, // the function's own line in the block
         message:
           "function plain_x: the generated test uses this name itself (its helpers, and names starting plain_ clause_ table_ v_ a_ s_), so it cannot call such a function",
       },
@@ -1507,6 +1514,7 @@ describe("refusals of review round 2", () => {
         `<t anchor="R-S">hexDecode <bcp14>SHOULD NOT</bcp14> fail.</t>`,
         REQ,
         T([src(RFC10)]),
+        COVER_DN,
       ),
     );
     expect(c.requirements.map((q) => [q.id, q.level])).toEqual([
@@ -1551,5 +1559,95 @@ describe("refusals of review round 2", () => {
         .sort((a, b) => a.line - b.line),
     );
     expect(validateContractShape(broken).length).toBe(3);
+  });
+});
+
+describe("refusals of review round 3", () => {
+  const lines = (...ls: string[]) =>
+    spec(sec(`\n${ls.join("\n")}\n`, ' numbered="true"'));
+  const V = table([
+    vector('hexDecode("66")', '"f"', {
+      source: `<xref target="RFC4648" section="10"/>`,
+    }),
+  ]);
+
+  test("a binding requirement no clause covers; a non-binding one may be", () => {
+    expect(
+      located(
+        lines(
+          REQ,
+          `<t anchor="R-B">hexEncode <bcp14>SHALL</bcp14> work.</t>`,
+          `<t anchor="R-M">hexEncode <bcp14>MAY</bcp14> work.</t>`,
+          V,
+        ),
+      ),
+    ).toEqual([
+      {
+        line: 9,
+        message:
+          "R-B is SHALL, but no clause covers it; cover it with a vector or a property, or follow it with an Untested: paragraph",
+      },
+    ]);
+  });
+
+  test("a property whose assertion calls no function under test", () => {
+    expect(
+      located(
+        lines(
+          REQ,
+          V,
+          property(
+            "// P-X covers R-A — t\nforall (b: u8[] /* 0..4 */) => b === b",
+          ),
+        ),
+      ),
+    ).toEqual([
+      {
+        line: 12, // its covers line
+        message:
+          "property P-X's assertion calls none of the functions under test, so it checks nothing",
+      },
+    ]);
+  });
+
+  test("the locator puts a line on each issue the gates find", () => {
+    const r = run(
+      lines(
+        REQ,
+        `<t anchor="R-B.2">isHex <bcp14>MUST</bcp14> work.</t>`,
+        table([
+          vector('hexDecode("66")', '"f"', { covers: "R-A, R-B.2" }),
+          vector("hexEncode([66])", '"f"', { id: "V.2", covers: "R-A" }),
+        ]),
+      ),
+    );
+    if (!("contract" in r)) throw new Error(JSON.stringify(r.refusals));
+    const { contract: c, locator } = r;
+    expect(locator.at).toEqual({
+      "R-A": 8,
+      "R-B.2": 9,
+      V1: 11,
+      "V.2": 12,
+      hexDecode: 4,
+      hexEncode: 5,
+      isHex: 6,
+    });
+    // Break V.2 and R-B.2 so the gates name each; every issue gets its line.
+    const broken = {
+      ...c,
+      clauses: [{ ...c.clauses[0], covers: ["R-A"] }, ...c.clauses.slice(1)],
+      functions: [...c.functions, c.functions[0]],
+    } as RfcContract;
+    const g = runGates(broken);
+    expect(g.issues.map((i) => [i.at, locate(locator, i.at).line])).toEqual([
+      ["hexDecode", 4],
+      ["R-B.2", 9],
+    ]);
+    expect(locate(locator, "V.2.expect")).toEqual({
+      file: "specs/t.xml",
+      line: 12,
+    });
+    expect(locate(locator, "sources.rfc4648").line).toBe(locator.root);
+    expect(locate(locator, "").line).toBe(locator.root);
   });
 });
