@@ -10,6 +10,8 @@ import { LOOSE_SECTION } from "../src/rfc/spectext.ts";
 import {
   MAX_DEPTH,
   MAX_INPUT_BYTES,
+  MAX_SECTION_LINES,
+  MAX_XREF_TEXT,
   type XmlNode,
   XmlRefusal,
   codeOf,
@@ -43,6 +45,10 @@ function refusal(text: string): XmlRefusal {
 const refused = (text: string) => refusal(text).message;
 
 /** The first element named `name`, depth first. */
+const fail = (): never => {
+  throw new Error("missing");
+};
+
 function find(n: XmlNode, name: string): XmlNode {
   const hit = (k: XmlNode): XmlNode | undefined =>
     k.name === name ? k : k.children.filter(isElement).map(hit).find(Boolean);
@@ -160,11 +166,15 @@ describe("RFC 8707, unmodified from rfc-editor.org", () => {
     expect(
       d.normative.filter((n) => n.section === "2.1").map((n) => n.level),
     ).toEqual(["MAY", "MAY"]);
-    // The BCP 14 boilerplate's own keywords, one per level.
-    expect(d.normative.filter((n) => n.section === "1.1")).toHaveLength(10);
-    // Every MUST/SHALL the text-based reader finds in a section, the markup finds too.
+    // The BCP 14 boilerplate names each keyword in quotes ("MUST"): it
+    // defines them, it does not use them, as rfctext's KEYWORD_RE reads it.
+    expect(sectionText(d.sections.get("1.1") ?? fail())).toContain(
+      '"MUST", "MUST NOT"',
+    );
+    expect(d.normative.filter((n) => n.section === "1.1")).toEqual([]);
+    // Every MUST/SHALL the text-based reader finds in a section, the markup
+    // finds too, the boilerplate's included.
     for (const s of normativeSentences(d)) {
-      if (s.section === "1.1") continue;
       expect(
         d.normative.some(
           (n) => n.section === s.section && n.sentence === s.sentence,
@@ -219,6 +229,91 @@ describe("kramdown-rfc output", () => {
     expect(md[38]).toBe("# Extra");
     // Before any <?line?>, there is no markdown line.
     expect(find(d.root, "title").loc).toEqual({ xmlLine: 17 });
+  });
+});
+
+describe("the authoring pipeline's own output (test/fixtures/kramdown/profile.xml)", () => {
+  // kramdown-rfc and xml2rfc as pinned on main wrote this from profile.md:
+  // read here as it is, never edited.
+  const text = read("fixtures/kramdown/profile.xml");
+  const md = read("fixtures/kramdown/profile.md").split("\n");
+  const d = parseV3(text, "profile.xml");
+
+  test("sections, anchors and the unnumbered section", () => {
+    expect([...d.sections.keys()]).toEqual([
+      "1",
+      "2",
+      "3",
+      "3.1",
+      "3.2",
+      "4",
+      "4.1",
+      "4.2",
+      "4.3",
+      "4.4",
+      "5",
+      "6",
+      "A",
+    ]);
+    expect(d.sectionByAnchor.get("empty-input")).toBe("4.3");
+    expect(d.sectionByAnchor.get("appendix-section")).toBe("A");
+    expect(d.loose?.lines).toEqual(["This section is unnumbered."]);
+  });
+
+  test("normative entries are the anchored requirements, not the boilerplate", () => {
+    expect(sectionText(d.sections.get("1") ?? fail())).toContain(
+      '"MUST", "MUST NOT", "REQUIRED"',
+    );
+    expect(d.normative.map((n) => [n.section, n.level, n.anchor])).toEqual([
+      ["3.1", "MUST", "R-ENC-LEN"],
+      ["3.2", "MUST", "R-ENC-DIGITS"],
+      ["4.2", "MUST", "R-DEC-REJECT"],
+      ["4.3", "MUST", "R-DEC-EMPTY"],
+      ["4.4", "MUST NOT", "R-DEC-TIMING"],
+    ]);
+    // The text-based reader agrees, sentence for sentence.
+    expect(
+      normativeSentences(d).map((s) => [s.section, s.keyword, s.sentence]),
+    ).toEqual(d.normative.map((n) => [n.section, n.level, n.sentence]));
+    // kramdown-rfc records a markdown line only at `--- middle` and
+    // `--- back`, so inside a part the line is the recorded one plus the XML
+    // distance: 88, where the sentence is on 90.
+    const timing = d.normative[4];
+    expect(timing.loc).toEqual({ xmlLine: 96, mdLine: 88 });
+    expect(md[89]).toBe(
+      "hexDecode MUST NOT index a table by the value of a digit.",
+    );
+  });
+
+  test("table cells keep their code spans", () => {
+    const table = find(d.root, "table");
+    const rows = tableRows(table);
+    expect(rows[0].map((c) => c.text)).toEqual([
+      "Id",
+      "Call",
+      "Expected",
+      "Covers",
+      "Source",
+      "Title",
+    ]);
+    expect(rows[1].map((c) => [c.text, c.code])).toEqual([
+      ["V1", []],
+      ['hexDecode("")', ['hexDecode("")']],
+      ["(empty)", ["(empty)"]],
+      ["R-DEC-EMPTY", []],
+      ["Section 10 of [RFC4648]", []],
+      ["empty input decodes to empty bytes", []],
+    ]);
+    expect(rows[6][1].code).toEqual(['hexDecode("a\\"b\\\\c\\u0041\\n")']);
+    expect(rows[4][4].text).toBe("Section 4.3");
+  });
+
+  test("the appendix after the signed <?line?> lands on its markdown line", () => {
+    const a = d.root.children.filter(isElement).find((n) => n.name === "back");
+    const appendix = a && find(a, "section");
+    expect(appendix?.loc.mdLine).toBe(119);
+    expect(md[118]).toBe("# Appendix Section");
+    expect(find(d.root, "abstract").loc.mdLine).toBeUndefined();
   });
 });
 
@@ -595,6 +690,12 @@ describe("bcp14 normative sentences", () => {
     ]);
   });
 
+  test("space at either end inside the element is not part of the keyword", () => {
+    expect(norm("<t>It <bcp14> MUST\n</bcp14> go.</t>")).toEqual([
+      ["1", "MUST", "It MUST go.", null],
+    ]);
+  });
+
   test("in list items, table cells, blockquotes and unnumbered sections", () => {
     const d = parseV3(
       doc(
@@ -621,6 +722,28 @@ describe("bcp14 normative sentences", () => {
       [LOOSE_SECTION, "OPTIONAL", "u OPTIONAL", null],
     ]);
     expect(d.normative[0].loc.xmlLine).toBe(2);
+  });
+
+  test("a keyword with a double quote on either side is named, not used", () => {
+    expect(
+      norm(
+        `<t>"<bcp14>MUST</bcp14>", "<bcp14>SHALL\n NOT</bcp14>" and "<bcp14>NOT RECOMMENDED</bcp14>" mean this. "<bcp14>MAY</bcp14> x. <bcp14>SHOULD</bcp14>" y. A <bcp14>MUST</bcp14> "z".</t>`,
+      ),
+    ).toEqual([["1", "MUST", 'A MUST "z".', null]]);
+    // Curly quotes and quotes a word away still use the keyword, as in rfctext.
+    expect(
+      norm('<t>\u201c<bcp14>MAY</bcp14>\u201d " <bcp14>MUST</bcp14> "</t>').map(
+        (n) => n[1],
+      ),
+    ).toEqual(["MAY", "MUST"]);
+  });
+
+  test("a bcp14 inside a bcp14 keeps each keyword's own ends", () => {
+    expect(
+      norm(
+        '<t>A <bcp14><bcp14>MUST</bcp14></bcp14> b. "<bcp14>MAY</bcp14>"</t>',
+      ),
+    ).toEqual([["1", "MUST", "A MUST b.", null]]);
   });
 
   test("a bcp14 that holds no keyword is refused", () => {
@@ -777,9 +900,57 @@ describe("bounds", () => {
     expect(refused(`${pad} `)).toBe(
       `spec.xml:1: input is ${MAX_INPUT_BYTES + 1} bytes, over the ${MAX_INPUT_BYTES}-byte limit (MAX_INPUT_BYTES)`,
     );
-    // Bytes, not characters.
-    expect(refused(`${pad.slice(0, -10) + "é".repeat(5)}</rfc>`)).toContain(
-      "over the",
+    // Bytes, not characters: this is about half MAX_INPUT_BYTES characters.
+    const wide = `<rfc>${"é".repeat(MAX_INPUT_BYTES / 2)}</rfc>`;
+    expect(wide.length).toBeLessThan(MAX_INPUT_BYTES);
+    expect(refused(wide)).toBe(
+      `spec.xml:1: input is ${MAX_INPUT_BYTES + 11} bytes, over the ${MAX_INPUT_BYTES}-byte limit (MAX_INPUT_BYTES)`,
+    );
+  });
+
+  test(`numbered sections holding over ${MAX_SECTION_LINES} lines are refused`, () => {
+    // Each section holds its subsections' lines too, so lines deep down are
+    // held many times over: 200 deep with 20,000 lines is 4,000,000.
+    const deep = (depth: number, lines: number) =>
+      `<rfc><middle>${"<section>".repeat(depth)}${"<t>a</t>".repeat(lines)}${"</section>".repeat(depth)}</middle></rfc>`;
+    const start = performance.now();
+    expect(refused(deep(200, 20_000))).toBe(
+      `spec.xml:1: numbered sections hold over ${MAX_SECTION_LINES} lines, counting each subsection's in its parents' (MAX_SECTION_LINES)`,
+    );
+    expect(performance.now() - start).toBeLessThan(2000);
+    const d = parseV3(deep(100, 20_000), "deep.xml");
+    expect(d.sections.size).toBe(100);
+    expect(d.sections.get("1")?.lines).toHaveLength(20_000);
+    expect(d.sections.get("1")?.ownLines).toHaveLength(0);
+    // Unnumbered sections hold their own lines only: one copy each.
+    const loose = `<rfc><middle><section numbered="false">${"<t>a</t>".repeat(900_000)}</section></middle></rfc>`;
+    expect(parseV3(loose, "loose.xml").loose?.lines).toHaveLength(900_000);
+  });
+
+  test(`xref text past the input's length and ${MAX_XREF_TEXT} is refused`, () => {
+    // Each section's name holds two xrefs to the one before it, by title:
+    // the worked-out text doubles each time.
+    const chain = (n: number) => {
+      let out = '<section anchor="s0"><name>xxxxxxxxxxxxxxxx</name></section>';
+      for (let i = 1; i <= n; i++) {
+        const x = `<xref target="s${i - 1}" format="title"/>`;
+        out += `<section anchor="s${i}"><name>${x}${x}</name></section>`;
+      }
+      return doc(out);
+    };
+    const ok = parseV3(chain(8), "x.xml");
+    expect(ok.sections.get("9")?.title).toHaveLength(16 * 2 ** 8);
+    const start = performance.now();
+    expect(refused(chain(40))).toMatch(
+      /^spec\.xml:1: the xref text worked out runs past [0-9]+ characters, the input's length and MAX_XREF_TEXT$/,
+    );
+    expect(performance.now() - start).toBeLessThan(2000);
+    // derivedContent, the preptool's own, is input and is not counted.
+    const prepped = doc(
+      `<section anchor="s"><name>${"n".repeat(60_000)}</name><t>${'<xref target="s" format="title" derivedContent="d"/>'.repeat(2000)}</t></section>`,
+    );
+    expect(parseV3(prepped, "p.xml").sections.get("1")?.lines[0]).toBe(
+      Array(2000).fill("d").join(""),
     );
   });
 
@@ -852,6 +1023,28 @@ describe("well-formedness", () => {
         "<rfc>&#1;</rfc>",
         "spec.xml:1: character reference &#1; names no XML character",
       ],
+      // A character XML does not allow, raw, wherever it stands.
+      ["<rfc>\n\u0001</rfc>", "spec.xml:2: U+0001 is not an XML character"],
+      [
+        "<rfc><![CDATA[\u0002]]></rfc>",
+        "spec.xml:1: U+0002 is not an XML character",
+      ],
+      ["<rfc a='\u0000'/>", "spec.xml:1: U+0000 is not an XML character"],
+      [
+        "<rfc>\n\n<!-- \u001f --></rfc>",
+        "spec.xml:3: U+001F is not an XML character",
+      ],
+      [
+        "<rfc><?pi \u000b?></rfc>",
+        "spec.xml:1: U+000B is not an XML character",
+      ],
+      ["<rfc>\uFFFE</rfc>", "spec.xml:1: U+FFFE is not an XML character"],
+      ["<rfc>\uD800x</rfc>", "spec.xml:1: U+D800 is not an XML character"],
+      ["<rfc>x\uDC00</rfc>", "spec.xml:1: U+DC00 is not an XML character"],
+      [
+        "<rfc>\n<?line 1000000000?></rfc>",
+        "spec.xml:2: <?line 1000000000?> names a line past 999999999",
+      ],
       [
         "<rfc><![CDATA[x</rfc>",
         "spec.xml:1: malformed XML: unterminated CDATA section",
@@ -890,6 +1083,46 @@ describe("well-formedness", () => {
       { text: "d", loc: { xmlLine: 1 } },
       { text: "e", loc: { xmlLine: 1 } },
     ]);
+  });
+
+  test("a raw sentinel cannot forge a bcp14 keyword's place", () => {
+    // U+0001/U+0002 mark bcp14 keywords while a sentence is found; in the
+    // input they would move a MUST into another sentence, so they are refused.
+    expect(
+      refused(
+        doc(
+          "<section><t>\u0001 x. A <bcp14>MUST</bcp14> y.\u0002</t></section>",
+        ),
+      ),
+    ).toBe("spec.xml:1: U+0001 is not an XML character");
+    // Astral characters, a surrogate pair each, are XML characters.
+    expect(plainText(parseV3("<rfc>\u{1F600}</rfc>", "a.xml").root)).toBe(
+      "\u{1F600}",
+    );
+  });
+
+  test("an attribute named __proto__ or constructor is an attribute", () => {
+    const d = parseV3('<rfc __proto__="x" constructor="y"/>', "a.xml");
+    expect(Object.keys(d.root.attrs)).toEqual(["__proto__", "constructor"]);
+    expect(d.root.attrs.__proto__).toBe("x");
+    expect(refused('<rfc __proto__="x" __proto__="y"/>')).toBe(
+      "spec.xml:1: malformed XML: duplicate attribute __proto__ on <rfc>",
+    );
+    // No attribute reads through to Object.prototype.
+    expect(parseV3("<rfc/>", "a.xml").root.attrs.toString).toBeUndefined();
+  });
+
+  test("a signed <?line ±N?> corrects the unsigned ones after it", () => {
+    const d = parseV3(
+      "<rfc>\n<?line 10?>\n<a/>\n<?line -3?>\n<b/>\n<?line 20?>\n<c/>\n<?line +5?><?line 30?>\n<d/></rfc>",
+      "l.xml",
+    );
+    const at = (name: string) => find(d.root, name).loc;
+    expect(at("a")).toEqual({ xmlLine: 3, mdLine: 11 });
+    // The correction moves no line by itself.
+    expect(at("b")).toEqual({ xmlLine: 5, mdLine: 13 });
+    expect(at("c")).toEqual({ xmlLine: 7, mdLine: 18 });
+    expect(at("d")).toEqual({ xmlLine: 9, mdLine: 33 });
   });
 
   test("attribute values are decoded and either quote works", () => {
@@ -947,6 +1180,40 @@ describe("cost stays linear in the input", () => {
   test("many sibling sections", () => {
     const xml = `<rfc><middle>${"<section/>".repeat(40000)}</middle></rfc>`;
     fast(() => expect(parseV3(xml, "f.xml").sections.size).toBe(40000));
+  });
+
+  test("many keywords in one sentence", () => {
+    const xml = doc(
+      `<section><t>${"x <bcp14>MUST</bcp14> ".repeat(100_000)}</t></section>`,
+    );
+    fast(() => expect(parseV3(xml, "f.xml").normative).toHaveLength(1));
+  });
+
+  test("many xrefs by title to one long name", () => {
+    const xml = doc(
+      `<section anchor="s"><name>${" ".repeat(1_000_000)}n</name><t>${'<xref target="s" format="title"/>'.repeat(100_000)}</t></section>`,
+    );
+    fast(() => expect(parseV3(xml, "f.xml").sections.size).toBe(1));
+  });
+
+  test("xref, eref and bcp14 nested deep around much text", () => {
+    for (const [open, close] of [
+      ['<xref target="s">', "</xref>"],
+      ['<eref target="https://example.com/">', "</eref>"],
+    ]) {
+      const xml = doc(
+        `<section anchor="s"><name>S</name><t>${open.repeat(250)}${"a  b. ".repeat(200_000)}${close.repeat(250)}</t></section>`,
+      );
+      fast(() =>
+        expect(
+          sectionText(parseV3(xml, "f.xml").sections.get("1") ?? fail()),
+        ).toContain("a b. a b."),
+      );
+    }
+    const bcp = doc(
+      `<section><t>${"<bcp14>".repeat(250)}MUST${" x".repeat(500_000)}${"</bcp14>".repeat(250)}</t></section>`,
+    );
+    fast(() => expect(() => parseV3(bcp, "f.xml")).toThrow(XmlRefusal));
   });
 
   test("a table with many cells", () => {

@@ -14,6 +14,14 @@
 //     Expand references first (kramdown-rfc with `v: 3`, or `xml2rfc --expand`).
 //   - Input over MAX_INPUT_BYTES and elements nested over MAX_DEPTH deep are
 //     refused before they can cost anything.
+//   - A character XML does not allow (U+0000-U+0008, U+000B, U+000C,
+//     U+000E-U+001F, U+FFFE, U+FFFF, a lone surrogate) is refused wherever it
+//     stands, raw or as a reference: in text, CDATA, an attribute, a comment
+//     or a processing instruction.
+//   - What the reader derives is bounded too: the xref text it works out for
+//     source the preptool has not seen (MAX_XREF_TEXT past the input's own
+//     length), and the lines numbered sections hold, a section holding its
+//     subsections' lines as well (MAX_SECTION_LINES).
 //
 // Every refusal is an XmlRefusal naming the file and the XML line.
 //
@@ -22,7 +30,12 @@
 // `--- middle`/`--- back` part, N being the markdown line of that marker),
 // the markdown line N + (XML lines since that instruction): exact while the
 // XML keeps the markdown's line breaks, and the nearest line kramdown-rfc
-// recorded otherwise.
+// recorded otherwise. A signed `<?line -N?>` or `<?line +N?>` is, as in
+// kramdown-rfc, a correction to every later unsigned N (it writes one after
+// the boilerplate it expands); it moves no line by itself. N has at most 9
+// digits. Where the XML runs longer than the markdown (a table, which
+// kramdown-rfc writes a line per cell), lines after it read too far on
+// until the next `<?line N?>`.
 //
 // Sections are numbered as xml2rfc numbers them: `<middle>` sections 1, 2,
 // 2.1; `<back>` sections A, B, A.1. Every `<section>` takes a place in the
@@ -56,6 +69,16 @@ import { LOOSE_SECTION } from "./spectext.ts";
 export const MAX_INPUT_BYTES = 8 * 1024 * 1024;
 /** Elements may nest this deep; one more is refused. */
 export const MAX_DEPTH = 256;
+/**
+ * The xref text worked out for xrefs without derivedContent may run this many
+ * characters past the input's length; more is refused.
+ */
+export const MAX_XREF_TEXT = 64 * 1024;
+/**
+ * Numbered sections may hold this many lines in all, each counting its
+ * subsections' lines too; more is refused.
+ */
+export const MAX_SECTION_LINES = 2_000_000;
 
 export interface Loc {
   xmlLine: number;
@@ -108,8 +131,7 @@ const child = (n: XmlNode, name: string): XmlNode | undefined =>
 const NAME_RE = /[A-Za-z_:][A-Za-z0-9_.:-]*/y;
 const REF_RE = /&(?:#([0-9]+)|#x([0-9a-fA-F]+)|([A-Za-z_:][A-Za-z0-9_.:-]*));/y;
 const NUMERIC_ENTITY_RE = /^&#(?:([0-9]+)|x([0-9a-fA-F]+));$/;
-const LINE_PI_RE = /^line\s+([0-9]+)\s*$/;
-
+const LINE_PI_RE = /^line\s+([+-]?)([0-9]+)\s*$/;
 // XML 1.0's Char production: what a character reference may name.
 const xmlChar = (c: number): boolean =>
   c === 0x9 ||
@@ -123,6 +145,8 @@ class Reader {
   private pos = 0;
   private readonly lineStarts: number[] = [0];
   private linePi: { n: number; xmlLine: number } | null = null;
+  // The sum of the signed `<?line ±N?>` met so far.
+  private lineCorrection = 0;
   private readonly entities = new Map([
     ["amp", "&"],
     ["lt", "<"],
@@ -137,6 +161,24 @@ class Reader {
   ) {
     for (let i = src.indexOf("\n"); i >= 0; i = src.indexOf("\n", i + 1)) {
       this.lineStarts.push(i + 1);
+    }
+    // XML 1.0's Char production, raw: whatever text, CDATA, attribute,
+    // comment or PI it stands in.
+    for (let i = 0; i < src.length; i++) {
+      const c = src.charCodeAt(i);
+      if (c >= 0x20 && c < 0xd800) continue;
+      if (c >= 0xd800 && c <= 0xdbff) {
+        const d = src.charCodeAt(i + 1);
+        if (d >= 0xdc00 && d <= 0xdfff) {
+          i++;
+          continue;
+        }
+      } else if (c === 0x9 || c === 0xa || c === 0xd) continue;
+      else if (c >= 0xe000 && c <= 0xfffd) continue;
+      this.fail(
+        `U+${c.toString(16).toUpperCase().padStart(4, "0")} is not an XML character`,
+        i,
+      );
     }
   }
 
@@ -277,7 +319,15 @@ class Reader {
     const at = this.pos;
     this.pos += 2;
     const m = LINE_PI_RE.exec(this.until("?>", "processing instruction"));
-    if (m) this.linePi = { n: Number(m[1]), xmlLine: this.line(at) };
+    if (!m) return;
+    if (m[2].length > 9)
+      this.fail(`<?line ${m[1]}${m[2]}?> names a line past 999999999`, at);
+    const n = Number(m[2]);
+    if (m[1] === "") {
+      this.linePi = { n: n + this.lineCorrection, xmlLine: this.line(at) };
+    } else {
+      this.lineCorrection += m[1] === "-" ? -n : n;
+    }
   }
 
   private comment(): void {
@@ -355,7 +405,10 @@ class Reader {
     }
     this.pos++;
     const name = this.name("after <");
-    const node: XmlNode = { name, attrs: {}, children: [], loc: this.loc(at) };
+    // No prototype, so an attribute named __proto__ or constructor is just
+    // an attribute.
+    const attrs: Record<string, string> = Object.create(null);
+    const node: XmlNode = { name, attrs, children: [], loc: this.loc(at) };
     for (;;) {
       const ws = this.skipWs();
       if (this.at("/>")) {
@@ -500,9 +553,10 @@ const BLOCKS = new Set([
   "date",
 ]);
 
-// Kept out of the text by sentinels that no XML text can hold (XML refuses
-// U+0001 and U+0002, raw or as a reference), so a bcp14 keyword's offset in
-// the normalized text can be read off afterwards.
+// Kept out of the text by sentinels that no XML text can hold (the reader
+// refuses U+0001 and U+0002 anywhere in the input, raw or as a reference),
+// so a bcp14 keyword's offset in the normalized text can be read off
+// afterwards.
 const OPEN = "\u0001";
 const CLOSE = "\u0002";
 
@@ -511,6 +565,9 @@ interface Render {
   bcp14: XmlNode[] | null;
 }
 
+// Whitespace is collapsed once, by the caller (clean), not at each level:
+// elements nest up to MAX_DEPTH deep, and each level copying and collapsing
+// all the text under it again would cost depth times the input.
 function render(n: XmlNode | XmlText, r: Render): string {
   if (!isElement(n)) return n.text;
   const inner = () => n.children.map((c) => render(c, r)).join("");
@@ -525,13 +582,13 @@ function render(n: XmlNode | XmlText, r: Render): string {
       // xml2rfc prints the name these carry as an attribute.
       return ` ${n.attrs.fullname ?? ""} ${inner()} `;
     case "xref":
-      return renderXref(n, normalizeText(inner()));
+      return renderXref(n, inner().trim());
     case "eref":
-      return renderEref(n, normalizeText(inner()));
+      return renderEref(n, inner().trim());
     case "bcp14":
       if (!r.bcp14) return inner();
       r.bcp14.push(n);
-      return OPEN + normalizeText(inner()) + CLOSE;
+      return OPEN + inner().trim() + CLOSE;
     default:
       return BLOCKS.has(n.name) ? ` ${inner()} ` : inner();
   }
@@ -784,7 +841,10 @@ class Builder {
 
   /**
    * The sentences of `n` holding a `<bcp14>`, split as normativeSentences
-   * splits a section's text, each at the level its markup names.
+   * splits a section's text, each at the level its markup names. A keyword
+   * with a double quote on either side is named, not used (the RFC 2119
+   * boilerplate's `"MUST"`), and makes no entry: rfctext's KEYWORD_RE reads
+   * it the same way.
    */
   private normativeIn(
     n: XmlNode,
@@ -794,36 +854,72 @@ class Builder {
     const found: XmlNode[] = [];
     const marked = clean(render(n, { bcp14: found }));
     if (found.length === 0) return;
-    let text = "";
-    const at: number[] = [];
-    for (const ch of marked) {
-      if (ch === OPEN) at.push(text.length);
-      else if (ch !== CLOSE) text += ch;
+    // The text without sentinels, and where each keyword starts and ends in it.
+    const parts: string[] = [];
+    const start: number[] = [];
+    const end: number[] = [];
+    const open: number[] = [];
+    let length = 0;
+    let from = 0;
+    for (let i = 0; i < marked.length; i++) {
+      const ch = marked[i];
+      if (ch !== OPEN && ch !== CLOSE) continue;
+      parts.push(marked.slice(from, i));
+      length += i - from;
+      from = i + 1;
+      if (ch === OPEN) {
+        open.push(start.length);
+        start.push(length);
+      } else {
+        end[open.pop() ?? 0] = length;
+      }
     }
+    parts.push(marked.slice(from));
+    const text = parts.join("");
+    // Where each sentence break (". ") starts, in order.
+    const stops: number[] = [];
+    for (let i = text.indexOf(". "); i >= 0; i = text.indexOf(". ", i + 1))
+      stops.push(i);
+    // The first stop at or after `at`.
+    const next = (at: number): number => {
+      let lo = 0;
+      let hi = stops.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (stops[mid] < at) lo = mid + 1;
+        else hi = mid;
+      }
+      return lo;
+    };
     const seen = new Set<string>();
     found.forEach((b, i) => {
-      const word = plainText(b);
+      // Its text as plainText would give it, read off the text already made.
+      const word = end[i] - start[i] > 15 ? null : text.slice(start[i], end[i]);
       const level = word === "NOT RECOMMENDED" ? "SHOULD NOT" : word;
-      if (!KEYWORDS.has(level)) {
+      if (level === null || !KEYWORDS.has(level)) {
+        const shown =
+          word ?? `${text.slice(start[i], start[i] + 40).trimEnd()}...`;
         throw new XmlRefusal(
           this.file,
           b.loc,
-          `<bcp14> holds "${word}", which is not a BCP 14 keyword`,
+          `<bcp14> holds "${shown}", which is not a BCP 14 keyword`,
         );
       }
-      const dot = text.lastIndexOf(". ", at[i]);
-      const stop = text.indexOf(". ", at[i]);
-      const sentence = text.slice(
-        dot < 0 ? 0 : dot + 2,
-        stop < 0 ? text.length : stop + 1,
-      );
-      const key = `${level}\n${sentence}`;
+      if (text[start[i] - 1] === '"' || text[end[i]] === '"') return;
+      // As lastIndexOf(". ", at) and indexOf(". ", at) would find them.
+      const j = next(start[i]);
+      const after = j < stops.length ? stops[j] : -1;
+      const before = after === start[i] ? after : j > 0 ? stops[j - 1] : -1;
+      const key = `${level}\n${before}`;
       if (seen.has(key)) return;
       seen.add(key);
       const entry: Normative = {
         section,
         level: level as Level,
-        sentence,
+        sentence: text.slice(
+          before < 0 ? 0 : before + 2,
+          after < 0 ? text.length : after + 1,
+        ),
         loc: b.loc,
       };
       if (anchor !== undefined) entry.anchor = anchor;
@@ -989,11 +1085,37 @@ export function parseV3(text: string, file: string): V3Document {
     const name = child(n, "name");
     return name ? plainText(name) : "";
   };
+  // Names and titles as derived() reads them, each rendered once: a name
+  // holding an xref renders it as worked out so far, in document order.
+  const named = new Map<XmlNode, string>();
+  const textOf = (n: XmlNode | undefined): string => {
+    if (!n) return "";
+    let s = named.get(n);
+    if (s === undefined) {
+      s = plainText(n);
+      named.set(n, s);
+    }
+    return s;
+  };
+  // A name can hold an xref to a section whose name holds xrefs too, so what
+  // is worked out can outgrow the input many times over: it is counted.
+  const budget = text.length + MAX_XREF_TEXT;
+  let spent = 0;
   for (const x of xrefs) {
     const target = x.attrs.target ?? "";
     const t = byAnchor.get(target);
     const reference = t?.name === "reference" || t?.name === "referencegroup";
-    xrefInfo.set(x, { reftext: derived(x, t, reference), reference });
+    const reftext =
+      x.attrs.derivedContent === undefined ? derived(x, t, reference) : "";
+    spent += reftext.length;
+    if (spent > budget) {
+      throw new XmlRefusal(
+        file,
+        x.loc,
+        `the xref text worked out runs past ${budget} characters, the input's length and MAX_XREF_TEXT`,
+      );
+    }
+    xrefInfo.set(x, { reftext, reference });
   }
 
   // The preptool's derivedContent, for source that has not been through it.
@@ -1008,19 +1130,19 @@ export function parseV3(text: string, file: string): V3Document {
     if (reference) {
       if (format === "title") {
         const title = child(child(t, "front") ?? t, "title");
-        return title ? plainText(title) : target;
+        return title ? textOf(title) : target;
       }
       return display.get(target) ?? target;
     }
     if (format === "none") return "";
-    if (format === "title") return nameOf(t) || target;
+    if (format === "title") return textOf(child(t, "name")) || target;
     const s = infoOf.get(t);
     if (s) {
       if (format === "counter") return s.numbered ? s.id : "";
       const kind = s.back ? "Appendix" : "Section";
       return s.numbered
         ? `${kind} ${s.id}`
-        : `${kind} "${nameOf(t) || target}"`;
+        : `${kind} "${textOf(child(t, "name")) || target}"`;
     }
     const fig = figures.get(t);
     if (fig !== undefined)
@@ -1037,19 +1159,43 @@ export function parseV3(text: string, file: string): V3Document {
   for (const s of infos) {
     s.own = builder.sectionLines(s.node, s.numbered ? s.id : LOOSE_SECTION);
   }
-  const collect = (s: SectionInfo): Line[] => [
-    ...s.own,
-    ...s.subs.flatMap(collect),
-  ];
+  // Every section's lines in document order: a section's own, then its
+  // subsections', so each section's lines are one run of `all`.
+  const all: Line[] = [];
+  const runs = new Map<SectionInfo, [number, number]>();
+  const lay = (s: SectionInfo): void => {
+    const from = all.length;
+    for (const l of s.own) all.push(l);
+    s.subs.forEach(lay);
+    runs.set(s, [from, all.length]);
+  };
+  for (const s of infos) if (!runs.has(s)) lay(s);
+  let held = 0;
+  for (const s of infos) {
+    if (!s.numbered) continue;
+    const [from, to] = runs.get(s) ?? [0, 0];
+    held += to - from;
+    if (held > MAX_SECTION_LINES) {
+      throw new XmlRefusal(
+        file,
+        s.node.loc,
+        `numbered sections hold over ${MAX_SECTION_LINES} lines, counting each subsection's in its parents' (MAX_SECTION_LINES)`,
+      );
+    }
+  }
   const sections = new Map<string, RfcSection>();
   const sectionByAnchor = new Map<string, string>();
   const loose: Line[] = [];
   for (const s of infos) {
     if (!s.numbered) {
-      loose.push(...s.own);
+      for (const l of s.own) loose.push(l);
       continue;
     }
-    sections.set(s.id, toSection(s.id, nameOf(s.node), s.own, collect(s)));
+    const [from, to] = runs.get(s) ?? [0, 0];
+    sections.set(
+      s.id,
+      toSection(s.id, nameOf(s.node), s.own, all.slice(from, to)),
+    );
     const anchor = s.node.attrs.anchor;
     // The first element with an anchor owns it, as for xrefs above.
     if (anchor !== undefined && byAnchor.get(anchor) === s.node)
