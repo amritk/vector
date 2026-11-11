@@ -1,11 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
+import { validateContractShape } from "../src/rfc/contract.ts";
 import { BYTES_MESSAGE as BYTES_HINT } from "../src/rfc/front/ts.ts";
+import { runGates } from "../src/rfc/gates.ts";
 import {
   isLiteralError,
   parseCall,
   parseLiteral,
   settle,
+  settleVector,
 } from "../src/rfc/literals.ts";
 import {
   type Refusal,
@@ -29,6 +32,7 @@ const REFS = `<references>
 <reference anchor="RFC4648"><front><title>B</title></front><seriesInfo name="RFC" value="4648"/></reference>
 <reference anchor="RFC8707"><front><title>R</title></front><seriesInfo name="RFC" value="8707"/></reference>
 <reference anchor="RFC9999"><front><title>M</title></front><seriesInfo name="RFC" value="9999"/></reference>
+<reference anchor="RFC5869"><front><title>H</title></front><seriesInfo name="RFC" value="5869"/></reference>
 <reference anchor="BOOK"><front><title>N</title></front></reference>
 </references>`;
 
@@ -57,6 +61,12 @@ const refusals = (xml: string, path?: string): Refusal[] => {
 };
 const messages = (xml: string, path?: string) =>
   refusals(xml, path).map((r) => r.message);
+/** Each refusal's line, column when it has one, and message; the file is checked. */
+const located = (xml: string) =>
+  refusals(xml).map(({ file, line, col, message }) => {
+    expect(file).toBe("specs/t.xml");
+    return col === undefined ? { line, message } : { line, col, message };
+  });
 const contract = (xml: string) => {
   const r = run(xml);
   if (!("contract" in r)) throw new Error(JSON.stringify(r.refusals));
@@ -69,7 +79,8 @@ const tt = (s: string) => `<tt>${s}</tt>`;
 const row = (...cells: string[]) =>
   `<tr>${cells.map((c) => `<td>${c}</td>`).join("")}</tr>`;
 const table = (rows: string[], header: readonly string[] = VECTOR_HEADER) =>
-  `<table><thead><tr>${header.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table>`;
+  // One row a line, from the line after the table's, so a row's line is known.
+  `<table><thead><tr>${header.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>\n${rows.join("\n")}</tbody></table>`;
 const RFC10 = `<xref target="RFC4648" section="10"/>`;
 const vector = (call: string, expected: string, extra: Partial<Cells> = {}) =>
   row(
@@ -115,6 +126,11 @@ describe("fixtures", () => {
             col: 98,
             message: "`.repeat` is not in the ts-property subset",
           },
+          {
+            file: path,
+            line: 180,
+            message: "Expected: hexEncode returns string, not bytes",
+          },
         ],
       }),
     );
@@ -133,9 +149,38 @@ describe("fixtures", () => {
     );
   });
 
+  test("the pinned profile-hex contract has a valid shape and passes the gates", () => {
+    const pinned = JSON.parse(read("fixtures/profile/profile-hex.json"));
+    expect(validateContractShape(pinned.contract)).toEqual([]);
+    const g = runGates(pinned.contract);
+    expect(g.issues).toEqual([]);
+    expect(g.ok).toBe(true);
+  });
+
+  test("profile-hex has each construct example-hex has", () => {
+    const text = read("fixtures/profile/profile-hex.json");
+    for (const k of [
+      '{"hex":"abcd"}', // bytes expected for a bytes return
+      '{"ascii":"foo"}', // several characters as ascii
+      '"op":"unwrap"',
+      '"op":"notNull"',
+      '"op":"and"',
+      '"op":"strConcat"',
+      '"alphabet":["g","G"," ","\\"","x"]', // a JSON-string alphabet
+      '"label":"Key"',
+      '"concat":',
+    ])
+      expect([k, JSON.stringify(JSON.parse(text)).includes(k)]).toEqual([
+        k,
+        true,
+      ]);
+  });
+
   test("the same input gives the same output", () => {
     const xml = read("fixtures/profile/profile-hex.xml");
-    const once = JSON.stringify(run(xml, "x/profile-hex.xml"));
+    const first = run(xml, "x/profile-hex.xml");
+    expect("contract" in first).toBe(true);
+    const once = JSON.stringify(first);
     expect(JSON.stringify(run(xml, "x/profile-hex.xml"))).toBe(once);
   });
 });
@@ -320,10 +365,30 @@ describe("refusals", () => {
     ]);
   });
 
-  test("a section the RFC does not have", () => {
+  test("a section an RFC used as a source does not have, in prose too", () => {
     expect(
-      messages(spec(sec(`<t>See <xref target="RFC4648" section="99"/>.</t>`))),
-    ).toEqual(["Section 99 of RFC4648 does not exist"]);
+      located(
+        spec(
+          sec(
+            `${REQ}\n<t>See <xref target="RFC4648" section="99"/>.</t>\n${table([vector('hexDecode("66")', '"f"')])}`,
+          ),
+        ),
+      ),
+    ).toEqual([{ line: 8, message: "Section 99 of RFC4648 does not exist" }]);
+  });
+
+  test("a section xref to an RFC nothing cites needs no file", () => {
+    const asked: number[] = [];
+    const r = run(
+      spec(sec(`<t>See <xref target="RFC9999" section="99"/>.</t>`)),
+      "specs/t.xml",
+      (n) => {
+        asked.push(n);
+        return resolver(n);
+      },
+    );
+    expect("contract" in r).toBe(true);
+    expect(asked).toEqual([]);
   });
 
   test("a section the RFC does not have, in a blockquote", () => {
@@ -361,7 +426,13 @@ describe("refusals", () => {
 
   test("a missing RFC file: the resolver's error propagates", () => {
     expect(() =>
-      run(spec(sec(`<t>See <xref target="RFC9999" section="1"/>.</t>`))),
+      run(
+        spec(
+          sec(
+            `<blockquote anchor="R-B"><t>q <xref target="RFC9999" section="1"/></t></blockquote>`,
+          ),
+        ),
+      ),
     ).toThrow("ENOENT");
   });
 
@@ -370,7 +441,7 @@ describe("refusals", () => {
     run(
       spec(
         sec(
-          `<t><xref target="RFC4648" section="10"/> <xref target="RFC4648" section="4"/></t>`,
+          `${REQ}<t><xref target="RFC4648" section="10"/> <xref target="RFC4648" section="4"/></t>${table([vector('hexDecode("66")', '"f"')])}`,
         ),
       ),
       "specs/t.xml",
@@ -396,8 +467,9 @@ describe("refusals", () => {
         ),
       ),
     ).toEqual([
-      'the types do not settle "x": a quoted string goes where bytes or a string does, not past the last parameter',
-      'the types do not settle "yes": a quoted string goes where bytes or a string does, not bool',
+      'Expected: the types do not settle "yes": a quoted string goes where bytes or a string does, not bool',
+      "Call: hexDecode takes 1 argument(s), not 2",
+      'Call: the types do not settle "x": a quoted string goes where bytes or a string does, not past the last parameter',
     ]);
   });
 
@@ -464,7 +536,13 @@ describe("refusals", () => {
 
   test("an interface the front end refuses", () => {
     const head = `<section><name>I</name>${iface("\nexport function f(\n")}</section>`;
-    expect(messages(spec("", { head })).length).toBeGreaterThan(0);
+    expect(located(spec("", { head }))).toEqual([
+      {
+        line: 3,
+        col: 1,
+        message: "missing `// module: nish/<name>` first line",
+      },
+    ]);
   });
 
   test("a sourcecode type no front end reads", () => {
@@ -592,14 +670,19 @@ describe("refusals", () => {
               ]),
           ),
         ),
-      ).map(({ col, message }) => ({ col, message })),
+      ).map(({ line, col, message }) => ({ line, col, message })),
     ).toEqual([
+      { line: 8, col: 1, message: "Call: a call is `name(args…)`" },
       {
+        line: 9,
+        col: 1,
+        message: "Expected: `‖` is not a literal; write concat(a, b)",
+      },
+      {
+        line: 10,
         col: undefined,
         message: '"nope" is not a function of the ts-interface block',
       },
-      { col: 1, message: "Call: a call is `name(args…)`" },
-      { col: 1, message: "Expected: `‖` is not a literal; write concat(a, b)" },
     ]);
   });
 
@@ -718,13 +801,439 @@ describe("literals", () => {
     ).toEqual({
       concat: [{ ascii: "f" }, { hex: "00" }],
     });
+    for (const part of [
+      { kind: "int", value: 1 },
+      { kind: "null" },
+      { kind: "bool", value: true },
+    ] as const)
+      expect(settle({ kind: "concat", parts: [part, s] }, "bytes")).toMatch(
+        /^a concat part is bytes, not /,
+      );
+    expect(settle({ kind: "string", value: "é" }, "bytes")).toBe(
+      'a quoted string is printable ASCII, tab, LF and CR only; "é" is not',
+    );
+  });
+
+  test("a vector is typed by the signature: arity, kind, nullability, range", () => {
+    const fn = (params: string[], returns: string) =>
+      ({
+        name: "f",
+        params: params.map((type, i) => ({ name: `p${i}`, type })),
+        returns,
+      }) as Parameters<typeof settleVector>[0];
+    const lit = (t: string) => {
+      const r = parseLiteral(t);
+      if (isLiteralError(r)) throw new Error(t);
+      return r;
+    };
+    const cases: [string[], string, string[], string, string[]][] = [
+      [
+        ["string"],
+        "bytes?",
+        ["[00]"],
+        "null",
+        ["Call: argument 1 of f (p0) is string, not bytes"],
+      ],
+      [
+        ["string"],
+        "bytes?",
+        ["null"],
+        "null",
+        ["Call: argument 1 of f (p0) is string, not null"],
+      ],
+      [
+        ["string"],
+        "bytes?",
+        ["(empty)"],
+        "null",
+        ["Call: argument 1 of f (p0) is string, not bytes"],
+      ],
+      [
+        ["string"],
+        "bytes?",
+        ["-1"],
+        "null",
+        ["Call: argument 1 of f (p0) is string, not an int -1"],
+      ],
+      [
+        ["string"],
+        "bytes?",
+        [],
+        "null",
+        ["Call: f takes 1 argument(s), not 0"],
+      ],
+      [
+        ["u32"],
+        "bool",
+        ["-1"],
+        "true",
+        ["Call: argument 1 of f (p0) is u32, not an int -1"],
+      ],
+      [
+        ["u32"],
+        "bool",
+        ["4294967296"],
+        "true",
+        ["Call: argument 1 of f (p0) is u32, not an int 4294967296"],
+      ],
+      [
+        ["i32"],
+        "bool",
+        ["2147483648"],
+        "true",
+        ["Call: argument 1 of f (p0) is i32, not an int 2147483648"],
+      ],
+      [
+        ["bytes"],
+        "string",
+        ["[00]"],
+        "[00]",
+        ["Expected: f returns string, not bytes"],
+      ],
+      [
+        ["bytes"],
+        "string",
+        ["[00]"],
+        "null",
+        ["Expected: f returns string, not null"],
+      ],
+      [
+        ["bytes"],
+        "u32",
+        ["[00]"],
+        "-1",
+        ["Expected: f returns u32, not an int -1"],
+      ],
+    ];
+    for (const [params, returns, args, expected, want] of cases) {
+      const r = settleVector(fn(params, returns), args.map(lit), lit(expected));
+      expect([args, expected, r]).toEqual([
+        args,
+        expected,
+        want.map((w) => {
+          const [cell, ...m] = w.split(": ");
+          return { cell: cell as "Call" | "Expected", message: m.join(": ") };
+        }),
+      ]);
+    }
     expect(
-      settle(
-        { kind: "concat", parts: [{ kind: "int", value: 1 }, s] },
-        "bytes",
+      settleVector(
+        fn(["u32", "i32"], "bytes?"),
+        [lit("4294967295"), lit("-2147483648")],
+        lit("null"),
       ),
     ).toEqual({
-      concat: [{ int: 1 }, { ascii: "f" }],
+      args: [{ int: 4294967295 }, { int: -2147483648 }],
+      expect: { null: true },
     });
+  });
+});
+
+describe("refusals of review round 1", () => {
+  /** A spec whose one numbered section holds `lines`, one a line. */
+  const lines = (...ls: string[]) =>
+    spec(sec(`\n${ls.join("\n")}\n`, ' numbered="true"'));
+  const T = (rows: string[]) => table(rows);
+
+  test("a vector is typed by its signature in the spec", () => {
+    expect(
+      located(
+        lines(
+          REQ,
+          T([
+            vector("hexDecode([00])", "null"),
+            vector("hexDecode(null)", "null", { id: "V2" }),
+            vector("hexDecode((empty))", "null", { id: "V3" }),
+            vector("hexDecode(-1)", "null", { id: "V4" }),
+            vector("hexDecode()", "null", { id: "V5" }),
+            vector("hexEncode(Key = , [00])", '"00"', { id: "V6" }),
+            vector("hexEncode(-0)", '"00"', { id: "V7" }),
+            vector("hexEncode([00])", "[00]", { id: "V8" }),
+            vector('isHex("ab")', "-1", { id: "V9" }),
+          ]),
+        ),
+      ),
+    ).toEqual([
+      {
+        line: 10,
+        message: "Call: argument 1 of hexDecode (text) is string, not bytes",
+      },
+      {
+        line: 11,
+        message: "Call: argument 1 of hexDecode (text) is string, not null",
+      },
+      {
+        line: 12,
+        message: "Call: argument 1 of hexDecode (text) is string, not bytes",
+      },
+      {
+        line: 13,
+        message:
+          "Call: argument 1 of hexDecode (text) is string, not an int -1",
+      },
+      { line: 14, message: "Call: hexDecode takes 1 argument(s), not 0" },
+      {
+        line: 15,
+        col: 11,
+        message:
+          "Call: a labelled value is `Label = hex`, lowercase hex pairs with no spaces",
+      },
+      { line: 16, col: 11, message: "Call: not a literal" },
+      { line: 17, message: "Expected: hexEncode returns string, not bytes" },
+      { line: 18, message: "Expected: isHex returns bool, not an int -1" },
+    ]);
+  });
+
+  test("a cell is read as its raw text, spaces and all", () => {
+    expect(
+      located(lines(REQ, T([vector("hexEncode([00  0f])", '"000f"')]))),
+    ).toEqual([{ line: 10, col: 11, message: `Call: ${BYTES_HINT}` }]);
+    const c = contract(lines(REQ, T([vector('hexDecode("a  b")', "null")])));
+    expect(c.clauses[0]).toMatchObject({
+      call: "hexDecode",
+      args: [{ str: "a  b" }],
+    });
+  });
+
+  test("a quoted string outside printable ASCII, tab, LF and CR", () => {
+    expect(
+      located(
+        lines(
+          REQ,
+          T([
+            vector('hexEncode(concat([00], "é"))', '"00"'),
+            vector('hexDecode("\\u0000")', "null", { id: "V2" }),
+          ]),
+        ),
+      ),
+    ).toEqual([
+      {
+        line: 10,
+        message:
+          'Call: a quoted string is printable ASCII, tab, LF and CR only; "é" is not',
+      },
+      {
+        line: 11,
+        message:
+          'Call: a quoted string is printable ASCII, tab, LF and CR only; "\\u0000" is not',
+      },
+    ]);
+  });
+
+  test("a Definition: with BCP 14, and one with no anchor", () => {
+    expect(
+      located(
+        lines(
+          `<t anchor="R-D">Definition: hex <bcp14>MUST</bcp14> be lowercase.</t>`,
+          "<t>Definition: hex is base 16.</t>",
+        ),
+      ),
+    ).toEqual([
+      {
+        line: 8,
+        message:
+          "R-D is a definition but holds BCP 14 keywords; a definition holds none",
+      },
+      { line: 9, message: "a Definition: paragraph needs an anchor" },
+    ]);
+  });
+
+  test("two levels in one sentence", () => {
+    expect(
+      located(
+        lines(
+          `<t anchor="R-T">It <bcp14>MUST</bcp14> and <bcp14>MAY</bcp14> be.</t>`,
+          "<t>It <bcp14>SHOULD</bcp14> or <bcp14>SHOULD NOT</bcp14> be.</t>",
+          "<t>Untested: none.</t>",
+        ),
+      ),
+    ).toEqual([
+      {
+        line: 8,
+        message:
+          "R-T holds more than one BCP 14 level (MUST, MAY); give each level its own sentence",
+      },
+      {
+        line: 9,
+        message:
+          "an excluded paragraph holds more than one BCP 14 level (SHOULD, SHOULD NOT); exclude each level apart",
+      },
+    ]);
+  });
+
+  test("an Untested: that excludes nothing, and a second one", () => {
+    expect(
+      located(
+        lines(
+          "<t>Untested: nothing before.</t>",
+          "<t>It <bcp14>SHOULD</bcp14> be.</t>",
+          "<t>Untested: once.</t>",
+          "<t>Untested: twice.</t>",
+        ),
+      ),
+    ).toEqual([
+      {
+        line: 8,
+        message:
+          "this Untested: paragraph excludes nothing; it must directly follow the requirement or BCP 14 paragraph it excludes",
+      },
+      {
+        line: 11,
+        message:
+          "this Untested: paragraph excludes nothing; it must directly follow the requirement or BCP 14 paragraph it excludes",
+      },
+    ]);
+  });
+
+  test("a blockquote's level is the reader's: NOT RECOMMENDED is SHOULD NOT", () => {
+    const c = contract(
+      lines(
+        `<blockquote anchor="R-NR"><t>This, however, is NOT RECOMMENDED <xref target="RFC5869" section="3.3"/></t></blockquote>`,
+      ),
+    );
+    expect(c.requirements).toEqual([
+      expect.objectContaining({ id: "R-NR", level: "SHOULD NOT" }),
+    ]);
+  });
+
+  test("a blockquote of two levels", () => {
+    expect(
+      located(
+        lines(
+          `<blockquote anchor="R-Q"><t>The URI MUST NOT include a fragment component. It SHOULD NOT include a query component <xref target="RFC8707" section="2"/></t></blockquote>`,
+        ),
+      ),
+    ).toEqual([
+      {
+        line: 8,
+        message:
+          "blockquote R-Q holds more than one BCP 14 level (MUST NOT, SHOULD NOT); quote one level per requirement",
+      },
+    ]);
+  });
+
+  test("a requirement id given twice is refused by the parser, at the second", () => {
+    expect(() =>
+      parseV3(lines(REQ, REQ.replace("work", "run")), "specs/t.xml"),
+    ).toThrow('specs/t.xml:9: anchor "R-A" is used again; first on line 8');
+  });
+
+  test("a table that resembles the vector header must be it", () => {
+    const h = [...VECTOR_HEADER];
+    const bad = [
+      ["ID", ...h.slice(1)],
+      [h[1], h[0], ...h.slice(2)],
+      ["Name", "Call"],
+      ["Ids", "x"],
+      ["Thing", "expected"],
+    ];
+    expect(
+      located(
+        lines(
+          REQ,
+          ...bad.map((hd) => table([], hd)),
+          table([], ["Name", "Value"]),
+        ),
+      ),
+    ).toEqual(
+      bad.map((hd, i) => ({
+        line: 9 + 2 * i,
+        message: `a vector table's header is Id | Call | Expected | Covers | Source | Title, not ${hd.join(" | ")}`,
+      })),
+    );
+  });
+
+  test("a second vector table", () => {
+    expect(
+      located(
+        lines(
+          REQ,
+          T([vector('hexDecode("66")', '"f"')]),
+          T([vector('hexDecode("67")', '"g"', { id: "V2" })]),
+        ),
+      ),
+    ).toEqual([
+      { line: 11, message: "a spec has one vector table; this is a second" },
+    ]);
+  });
+
+  test("Id and Covers cells", () => {
+    expect(
+      located(
+        lines(
+          REQ,
+          T([
+            vector('hexDecode("66")', '"f"', { id: "" }),
+            vector('hexDecode("66")', '"f"', { id: "-V" }),
+            vector('hexDecode("66")', '"f"', { id: "V3", covers: "" }),
+            vector('hexDecode("66")', '"f"', { id: "V4", covers: "R-A,, R-A" }),
+            vector('hexDecode("66")', '"f"', { id: "V4" }),
+          ]),
+        ),
+      ),
+    ).toEqual([
+      {
+        line: 10,
+        message:
+          'clause id "" is not letters, digits, ".", "_" and "-", starting with a letter or digit',
+      },
+      {
+        line: 11,
+        message:
+          'clause id "-V" is not letters, digits, ".", "_" and "-", starting with a letter or digit',
+      },
+      { line: 12, message: "Covers names no requirement" },
+      { line: 13, message: "Covers has an empty item" },
+      { line: 13, message: 'Covers names "R-A" twice' },
+      { line: 14, message: "clause id V4 is given twice" },
+    ]);
+  });
+
+  test("a clause id shared by a vector and a property", () => {
+    expect(
+      located(
+        lines(
+          REQ,
+          T([vector('hexDecode("66")', '"f"', { id: "P-X" })]),
+          property(
+            "// P-X covers R-A — t\nforall (b: u8[] /* 0..4 */) => hexEncode(b) === hexEncode(b)",
+          ),
+        ),
+      ),
+    ).toEqual([{ line: 12, message: "clause id P-X is given twice" }]);
+  });
+
+  test("a row refusal reports every cell", () => {
+    expect(
+      located(
+        lines(
+          REQ,
+          T([row("-V", tt("hexDecode(1)"), tt("1"), "R-NO", "the RFC", "")]),
+        ),
+      ).map((r) => r.message),
+    ).toEqual([
+      "Call: argument 1 of hexDecode (text) is string, not an int 1",
+      'Covers names "R-NO", which is no requirement',
+      "Expected: hexDecode returns bytes?, not an int 1",
+      "Source must be {{Section N of RFCx}}, a section anchor, or a single code span",
+      'clause id "-V" is not letters, digits, ".", "_" and "-", starting with a letter or digit',
+      "vector -V has no title",
+    ]);
+  });
+
+  test("many paragraphs are read in linear time", () => {
+    const n = 20000;
+    const body = Array.from({ length: n }, (_, i) =>
+      i % 2 === 0
+        ? `<t>It <bcp14>SHOULD</bcp14> be ${i}.</t>`
+        : "<t>Untested: many.</t>",
+    );
+    const xml = lines(REQ, ...body, T([vector('hexDecode("66")', '"f"')]));
+    const doc = parseV3(xml, "specs/t.xml");
+    const t0 = performance.now();
+    const r = profileToContract(doc, "specs/t.xml", resolver);
+    const ms = performance.now() - t0;
+    expect("contract" in r && r.contract.exclusions?.length).toBe(n / 2);
+    expect(ms).toBeLessThan(2000);
   });
 });

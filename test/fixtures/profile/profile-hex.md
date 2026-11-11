@@ -85,10 +85,33 @@ other character, including whitespace and a "0x" prefix.
 forall (t: string /* 1..33 hexdigit */) => implies(t.length % 2 === 1, hexDecode(t) === null)
 ~~~
 
+~~~ ts-property
+// P-DEC-OTHER covers R-DEC-REJECT — any other character is refused
+forall (
+  a: string /* 0..16 hexdigit HEXDIGIT */,
+  x: string /* 1..1 "gG \"x" */,
+  z: string /* 0..16 hexdigit HEXDIGIT */,
+) => hexDecode(a + (x + z)) === null
+where (a + (x + z)).length % 2 === 0
+~~~
+
 ## Empty input {#empty-input}
 
 hexDecode of the empty string MUST return an empty array, not null.
 {: #R-DEC-EMPTY}
+
+## Round trip
+
+For all bytes b, hexDecode(hexEncode(b)) MUST equal b.
+{: #R-ROUND-TRIP}
+
+~~~ ts-property
+// P-ROUND-TRIP covers R-ROUND-TRIP — hexDecode(hexEncode(b)) is b
+forall (b: u8[] /* 0..64 */) => {
+  const d = hexDecode(hexEncode(b));
+  return d !== null && unwrap(d) === b;
+}
+~~~
 
 ## Timing
 
@@ -111,8 +134,10 @@ Untested: an obligation on the caller.
 | V4 | `hexDecode("abc")` | `null` | R-DEC-REJECT | {{empty-input}} | odd length |
 | V5 | `hexEncode([])` | `""` | R-DEC-EMPTY | {{empty-input}} | empty bytes literal |
 | V6 | `hexDecode("a\"b\\cA\n")` | `null` | R-DEC-REJECT, R-DEF-DIGIT | {{empty-input}} | string with escapes |
-| V7 | `hexEncode(concat([00], [ff]))` | `Key = 00ff` | R-ENC-LEN | {{Section 10 of RFC4648}} | concat and a labelled value |
+| V7 | `hexEncode(concat([00], Key = ff))` | `"00ff"` | R-ENC-LEN | {{Section 10 of RFC4648}} | concat of a bytes literal and a labelled value |
 | V8 | `hexEncode(Key = 0b0b0b)` | `"0b0b0b"` | R-ENC-DIGITS | `echo 0b0b0b` | labelled argument |
+| V9 | `hexDecode("aBcD")` | `[ab cd]` | R-ROUND-TRIP | `python3 -c 'print(bytes.fromhex("aBcD").hex())'` | mixed case decodes to bytes |
+| V10 | `hexDecode("666f6f")` | `"foo"` | R-ROUND-TRIP | {{Section 10 of RFC4648}} | several characters as ascii |
 
 # Unnumbered Notes
 {: numbered="false"}

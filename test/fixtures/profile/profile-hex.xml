@@ -91,10 +91,30 @@ other character, including whitespace and a "0x" prefix.</t>
 // P-DEC-ODD covers R-DEC-REJECT — odd-length text is rejected
 forall (t: string /* 1..33 hexdigit */) => implies(t.length % 2 === 1, hexDecode(t) === null)
 ]]></sourcecode>
+        <sourcecode type="ts-property"><![CDATA[
+// P-DEC-OTHER covers R-DEC-REJECT — any other character is refused
+forall (
+  a: string /* 0..16 hexdigit HEXDIGIT */,
+  x: string /* 1..1 "gG \"x" */,
+  z: string /* 0..16 hexdigit HEXDIGIT */,
+) => hexDecode(a + (x + z)) === null
+where (a + (x + z)).length % 2 === 0
+]]></sourcecode>
       </section>
       <section anchor="empty-input">
         <name>Empty input</name>
         <t anchor="R-DEC-EMPTY">hexDecode of the empty string <bcp14>MUST</bcp14> return an empty array, not null.</t>
+      </section>
+      <section anchor="round-trip">
+        <name>Round trip</name>
+        <t anchor="R-ROUND-TRIP">For all bytes b, hexDecode(hexEncode(b)) <bcp14>MUST</bcp14> equal b.</t>
+        <sourcecode type="ts-property"><![CDATA[
+// P-ROUND-TRIP covers R-ROUND-TRIP — hexDecode(hexEncode(b)) is b
+forall (b: u8[] /* 0..64 */) => {
+  const d = hexDecode(hexEncode(b));
+  return d !== null && unwrap(d) === b;
+}
+]]></sourcecode>
       </section>
       <section anchor="timing">
         <name>Timing</name>
@@ -187,13 +207,13 @@ forall (t: string /* 1..33 hexdigit */) => implies(t.length % 2 === 1, hexDecode
           <tr>
             <td align="left">V7</td>
             <td align="left">
-              <tt>hexEncode(concat([00], [ff]))</tt></td>
+              <tt>hexEncode(concat([00], Key = ff))</tt></td>
             <td align="left">
-              <tt>Key = 00ff</tt></td>
+              <tt>"00ff"</tt></td>
             <td align="left">R-ENC-LEN</td>
             <td align="left">
               <xref section="10" sectionFormat="of" target="RFC4648"/></td>
-            <td align="left">concat and a labelled value</td>
+            <td align="left">concat of a bytes literal and a labelled value</td>
           </tr>
           <tr>
             <td align="left">V8</td>
@@ -205,6 +225,28 @@ forall (t: string /* 1..33 hexdigit */) => implies(t.length % 2 === 1, hexDecode
             <td align="left">
               <tt>echo 0b0b0b</tt></td>
             <td align="left">labelled argument</td>
+          </tr>
+          <tr>
+            <td align="left">V9</td>
+            <td align="left">
+              <tt>hexDecode("aBcD")</tt></td>
+            <td align="left">
+              <tt>[ab cd]</tt></td>
+            <td align="left">R-ROUND-TRIP</td>
+            <td align="left">
+              <tt>python3 -c 'print(bytes.fromhex("aBcD").hex())'</tt></td>
+            <td align="left">mixed case decodes to bytes</td>
+          </tr>
+          <tr>
+            <td align="left">V10</td>
+            <td align="left">
+              <tt>hexDecode("666f6f")</tt></td>
+            <td align="left">
+              <tt>"foo"</tt></td>
+            <td align="left">R-ROUND-TRIP</td>
+            <td align="left">
+              <xref section="10" sectionFormat="of" target="RFC4648"/></td>
+            <td align="left">several characters as ascii</td>
           </tr>
         </tbody>
       </table>
@@ -256,7 +298,7 @@ forall (t: string /* 1..33 hexdigit */) => implies(t.length % 2 === 1, hexDecode
         <seriesInfo name="DOI" value="10.17487/RFC8174"/>
       </reference>
     </references>
-    <?line 140?>
+    <?line 165?>
 
 <section anchor="appendix-section">
       <name>Appendix Section</name>
@@ -264,48 +306,53 @@ forall (t: string /* 1..33 hexdigit */) => implies(t.length % 2 === 1, hexDecode
     </section>
   </back>
   <!-- ##markdown-source:
-H4sIAAAAAAAAA41X/VLjyBH/f56iIyp1eMsytmE51nfslQ+bW+74Ch+bbO1u
-1Y2kka0gS4o0AruArTxEHiDPkkfJk+TXo5EtA0eloEDqmemPX/+6e+S6rtCR
-jtWAnPM8DaNYURjNdZlDIqnIlE96qiiza7mSQUFRolOs+mmic+lrR0jPy9Xt
-gGoVUzUXQeoncgY1QS5D7VoNLpbcblf4UqtJmi8GUBamIsryAem8LHS/233X
-7Yui9GZRUUQwscgU7wpUpvAn0QKGtkUABQPqd/u7bq+HXyFLPU3zgSByqTL8
-Ufk6zemwigcLRGk+GdCtkYskzWdSR7eKz1wcHuzs7uwNhOu6JL3CBCbEsEaj
-TUmqLSJRGMF9uAaXVaG37JZi6yaXsyC9S7ZssJ1ZQHeRnjKEQt+ljBg0l74u
-nqAaloUyslzRTAYV0NKLYTeLy4JkQmru4wlWKQ0F3stEJj4iVgEVQEUlvsK2
-AKtw8x9lqlVHmGhmURDESogNOkK+0gDmoUWIK3hwoxZ0l+bIqXNyfXnltKv/
-dHpmni/Gf7k+uhiP+Pnyw/D4ePkg7I7LD2fXx6PV0+rkwdnJyfh0VB2GlNZE
-wjkZfsIKe+ycnV8dnZ0Ojx2kGSBEBYE85QxRkQQgIJunmHQqz3KlEbAsRKAK
-P488vODMzwfn//l3b4fu7/+ERPZ7vXePj/Zlr/f9Dl7upiqprKVJvLCvwHsh
-ZJYpmbMWGcfkyyzSMi6wt6BiimQSJwVQvvnMyHwd0I+en/V23lsBB7wmrDFb
-ExrMnkueHa5AfEH0gpklmmvyJ0iv+zv8tPZe494Q/vhTHCWK3N7eT+8FcwTJ
-sPwmGYAnKINplEx+oEiDklHBVDb5YcZ2LMtUHkoflPv27Rvpwo2Wkq0tmoGB
-3G+SqJhucaNQ8yzNdVUb3DnGiZ+iAvZp01ugvgZU7n3+2hoQKgeG6+1hmRge
-84mR4hObWs11va1VHaMHSso4ZkfYNaOalYiNDTpWyURPhViZNPkEw8qcyw0N
-AEwxZTuV3A5UXlCmmCpZqYmd64j7AW1cuOPTA/d4fPq4jBiVjZ16wQGf18sI
-8ZZ1LPe37ePo6Jejq0v67z//9ZI5NiTCNGd6bno2rq031O10dnfozVaL9t+v
-cNv0Wp3YREb7+/vUpzfkWYFFYYNG0STShRBj6U+N+ipyJPEujzRaCU2jyRQZ
-8jwzD/JCtwm9J5mYthWY49R135mCkm7YxKEK5lUozv46vlgHo4FAWmqGF7yL
-0zuV+7J4NXpUcZ1zK97uMxrGSfow/ptRXcN0b2nG9GpC9sMy7QY11dHpMVs/
-gPVNrD6KO9ObdY3tn4Es7+zW1DIcrKk19H2VadObEIsQIxVGSVSNDMmGKww5
-yBTVhpbNuDbyDmzbDKwBeOge1gCPxocVVsD3Pf08vBz3djed0EFw5OzuOhDe
-31+qqjJ6XdZsJ9vjo1WBd/fj+ODq7OKSJtG+48Wpf2PmhbOuNK217h7+v3qv
-z8+R2edarxMelCoYmDgx7oAlz6sMaQOTSrRgk2hLrQ4dTJV/A/w8XBCaDOkY
-eC/U3+HKCt5lC1irYC580+iNUW4ONJVmlKZBQDaPuB/wNUZGCa8sRMozeJWJ
-Nkxg7HJioSpCFJm0c1aS0507CAG5na/yc+BejH8FvH9UALzjbDRa0X91pKJ/
-ELjWN+MyKJLbcJdlsMb4Hhi/vWK8JXo0y+JIFZvPCNtrNztmy8gYqdayO4xn
-mV7YJne/ofjNNW+PTaQtZ81y7U0Tfb6xmDWZ53JRXZ/YThOp8cn51adHY/Qq
-mpnieZJKnmZ89ZsDbs33ITDC2L2Vcamqu46Ju6n26ujk6PSXddoZ9Qwm+5F6
-hcpvjbowT2fQUaI6zWVunXrGEdxsI3UH5h0AfM7ZaiJTUPlaKB9hF/VlD2aq
-Kddp+sDE8+JoYq6OqPuq5o1OMzevsM/eWdGbH+gowPRim/g3nmcV4yGpiPNA
-l2mZg4sPwA4XeHoQD7jtuebP8t/a47MHHKGPPWj4fUUJx2n9zpJNkz3z3EgW
-3v6wD2BNNahTQWNuB5XYTHMyNvtPbKJzVVbRyiqLzS71uk1uoGaGGc3bVrPt
-7J+7XeqGFHYpDL9aE91uNwzxay3VwxlL2QKfEMk2uT59Z1pTdQOBlnbvbbu/
-023337792upA/2ar9R2fr4KK0RlQmpULO0+Ck55vo2P+rwC1Rc/RNYvMxLRq
-UEbl2ydR1aE4L6XnqbIm+muO7j519IvjffniD78kr/jbpsYUetGebQamFnBJ
-l1md9e/Xo0DfxWcUp+hrmz5zfiqrv+GbBIMVGXqaoNdoUGmznTmWnkJdBbZN
-GOt769atFY9/amKYlwYt7K0EawpfWnYzLy/1y3xSfac8cAVfJ0k58xR/kp1i
-8hXck2rJvhPis8JMQ3OpLmwkeCyXx+wXmyf9G9Y3zPiTN5qTDRvfo2isVtgG
-Q3BXY2PDjvgfovLsHskPAAA=
+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
 
 -->
 

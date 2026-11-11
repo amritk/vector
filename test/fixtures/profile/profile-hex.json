@@ -55,6 +55,12 @@
         "section": "4.3",
         "level": "MUST",
         "quote": "hexDecode of the empty string MUST return an empty array, not null."
+      },
+      {
+        "id": "R-ROUND-TRIP",
+        "section": "4.4",
+        "level": "MUST",
+        "quote": "For all bytes b, hexDecode(hexEncode(b)) MUST equal b."
       }
     ],
     "exclusions": [
@@ -65,12 +71,12 @@
         "reason": "the reference prints uppercase digits. Checked by: R-ENC-DIGITS."
       },
       {
-        "section": "4.4",
+        "section": "4.5",
         "quote": "hexDecode MUST NOT index a table by the value of a digit.",
         "reason": "timing is not observable from a unit test. Checked by: code review."
       },
       {
-        "section": "4.4",
+        "section": "4.5",
         "quote": "Callers SHOULD NOT decode secrets with this module.",
         "reason": "an obligation on the caller."
       }
@@ -220,7 +226,7 @@
       {
         "kind": "vector",
         "id": "V7",
-        "title": "concat and a labelled value",
+        "title": "concat of a bytes literal and a labelled value",
         "covers": ["R-ENC-LEN"],
         "source": {
           "cite": {
@@ -236,14 +242,14 @@
                 "hex": "00"
               },
               {
-                "hex": "ff"
+                "hex": "ff",
+                "label": "Key"
               }
             ]
           }
         ],
         "expect": {
-          "hex": "00ff",
-          "label": "Key"
+          "str": "00ff"
         }
       },
       {
@@ -264,6 +270,46 @@
         ],
         "expect": {
           "str": "0b0b0b"
+        }
+      },
+      {
+        "kind": "vector",
+        "id": "V9",
+        "title": "mixed case decodes to bytes",
+        "covers": ["R-ROUND-TRIP"],
+        "source": {
+          "command": "python3 -c 'print(bytes.fromhex(\"aBcD\").hex())'"
+        },
+        "section": "5",
+        "call": "hexDecode",
+        "args": [
+          {
+            "str": "aBcD"
+          }
+        ],
+        "expect": {
+          "hex": "abcd"
+        }
+      },
+      {
+        "kind": "vector",
+        "id": "V10",
+        "title": "several characters as ascii",
+        "covers": ["R-ROUND-TRIP"],
+        "source": {
+          "cite": {
+            "source": "rfc4648",
+            "section": "10"
+          }
+        },
+        "call": "hexDecode",
+        "args": [
+          {
+            "str": "666f6f"
+          }
+        ],
+        "expect": {
+          "ascii": "foo"
         }
       },
       {
@@ -445,6 +491,167 @@
               ]
             }
           ]
+        }
+      },
+      {
+        "kind": "property",
+        "id": "P-DEC-OTHER",
+        "title": "any other character is refused",
+        "covers": ["R-DEC-REJECT"],
+        "forall": [
+          {
+            "name": "a",
+            "type": "string",
+            "minLen": 0,
+            "maxLen": 16,
+            "alphabet": ["hexdigit", "HEXDIGIT"]
+          },
+          {
+            "name": "x",
+            "type": "string",
+            "minLen": 1,
+            "maxLen": 1,
+            "alphabet": ["g", "G", " ", "\"", "x"]
+          },
+          {
+            "name": "z",
+            "type": "string",
+            "minLen": 0,
+            "maxLen": 16,
+            "alphabet": ["hexdigit", "HEXDIGIT"]
+          }
+        ],
+        "where": {
+          "op": "==",
+          "args": [
+            {
+              "op": "%",
+              "args": [
+                {
+                  "op": "strLen",
+                  "args": [
+                    {
+                      "op": "strConcat",
+                      "args": [
+                        {
+                          "var": "a"
+                        },
+                        {
+                          "op": "strConcat",
+                          "args": [
+                            {
+                              "var": "x"
+                            },
+                            {
+                              "var": "z"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "int": 2
+                }
+              ]
+            },
+            {
+              "int": 0
+            }
+          ]
+        },
+        "assert": {
+          "op": "isNull",
+          "args": [
+            {
+              "call": "hexDecode",
+              "args": [
+                {
+                  "op": "strConcat",
+                  "args": [
+                    {
+                      "var": "a"
+                    },
+                    {
+                      "op": "strConcat",
+                      "args": [
+                        {
+                          "var": "x"
+                        },
+                        {
+                          "var": "z"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "kind": "property",
+        "id": "P-ROUND-TRIP",
+        "title": "hexDecode(hexEncode(b)) is b",
+        "covers": ["R-ROUND-TRIP"],
+        "forall": [
+          {
+            "name": "b",
+            "type": "bytes",
+            "minLen": 0,
+            "maxLen": 64
+          }
+        ],
+        "assert": {
+          "let": [
+            {
+              "name": "d",
+              "value": {
+                "call": "hexDecode",
+                "args": [
+                  {
+                    "call": "hexEncode",
+                    "args": [
+                      {
+                        "var": "b"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "in": {
+            "op": "and",
+            "args": [
+              {
+                "op": "notNull",
+                "args": [
+                  {
+                    "var": "d"
+                  }
+                ]
+              },
+              {
+                "op": "==",
+                "args": [
+                  {
+                    "op": "unwrap",
+                    "args": [
+                      {
+                        "var": "d"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          }
         }
       }
     ]

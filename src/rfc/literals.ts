@@ -8,10 +8,15 @@
 
 import {
   type FnSig,
+  I32_MAX,
+  I32_MIN,
   type Literal,
+  STRING_CHAR_RE,
   type ValueTy,
+  assignable,
   isBytesLike,
   isStringLike,
+  typeOfLiteral,
   valueTy,
 } from "./contract.ts";
 import { BYTES_MESSAGE, BYTES_RE } from "./front/ts.ts";
@@ -43,7 +48,7 @@ class Fail extends Error {
 }
 
 const STRING_RE = /^"(?:[^"\\\n]|\\.)*"/;
-const INT_RE = /^-?(?:0|[1-9][0-9]*)(?![0-9A-Za-z_])/;
+const INT_RE = /^(?:0|-?[1-9][0-9]*)(?![0-9A-Za-z_])/;
 const WORD_RE = /^(null|true|false)(?![0-9A-Za-z_])/;
 const LABELLED_RE = /^([A-Za-z][A-Za-z0-9_-]*(?: [A-Za-z0-9_-]+)*) = (\S+)/;
 const CALL_RE = /^([A-Za-z_][A-Za-z0-9_]*)\(/;
@@ -138,7 +143,7 @@ class Reader {
     if (lab) {
       // The value runs to the next `,` or `)` (inside a call) or the end.
       const hex = lab[2].replace(/[,)].*$/, "");
-      if (!/^(?:[0-9a-f]{2})*$/.test(hex))
+      if (!/^(?:[0-9a-f]{2})+$/.test(hex))
         throw new Fail(
           "a labelled value is `Label = hex`, lowercase hex pairs with no spaces",
           at,
@@ -189,11 +194,28 @@ export function parseLiteral(text: string): RawLiteral | LiteralError {
 export const isLiteralError = (x: object): x is LiteralError =>
   "message" in x && "col" in x;
 
+const U32_MAX = 4294967295;
+
+/** What a literal is, for a message: its type, or `int` for an integer. */
+const kindOf = (lit: Literal): string =>
+  "int" in lit ? "an int" : typeOfLiteral(lit);
+
+/** Does `lit` stand for a value of type `ty`? An int must be in range. */
+function fits(lit: Literal, ty: ValueTy): boolean {
+  if ("int" in lit) {
+    if (ty === "u32") return lit.int >= 0 && lit.int <= U32_MAX;
+    return ty === "i32" && lit.int >= I32_MIN && lit.int <= I32_MAX;
+  }
+  return assignable(typeOfLiteral(lit), ty);
+}
+
+const STRING_SET = "a quoted string is printable ASCII, tab, LF and CR only";
+
 /**
  * The literal `raw` is where a value of type `ty` goes; undefined `ty` is a
- * place no signature types (an argument past the last parameter). Only a
- * quoted string needs the type; a mismatch of any other literal is the type
- * gate's to report, with the signature in hand.
+ * place no signature types (an argument past the last parameter). A quoted
+ * string is `{ascii}` where bytes go and `{str}` where a string goes; every
+ * other literal is as written, and `fits` judges it against `ty`.
  */
 export function settle(
   raw: RawLiteral,
@@ -201,6 +223,8 @@ export function settle(
 ): Literal | string {
   switch (raw.kind) {
     case "string":
+      if (!STRING_CHAR_RE.test(raw.value))
+        return `${STRING_SET}; ${JSON.stringify(raw.value)} is not`;
       if (ty !== undefined && isBytesLike(ty)) return { ascii: raw.value };
       if (ty !== undefined && isStringLike(ty)) return { str: raw.value };
       return `the types do not settle ${JSON.stringify(raw.value)}: a quoted string goes where bytes or a string does, not ${ty ?? "past the last parameter"}`;
@@ -221,6 +245,8 @@ export function settle(
       for (const p of raw.parts) {
         const lit = settle(p, "bytes");
         if (typeof lit === "string") return lit;
+        if (typeOfLiteral(lit) !== "bytes")
+          return `a concat part is bytes, not ${kindOf(lit)}`;
         parts.push(lit);
       }
       return { concat: parts };
@@ -228,20 +254,48 @@ export function settle(
   }
 }
 
-/** A vector's call and expected cells, settled by `fn`'s signature. */
+/** A refusal of one of a vector's cells. */
+export interface CellError {
+  cell: "Call" | "Expected";
+  message: string;
+}
+
+/**
+ * A vector's call and expected cells, settled and typed by `fn`'s signature:
+ * as many arguments as parameters, each of its parameter's type, an int in
+ * range, and an expected value of the return type. Every refusal is given.
+ */
 export function settleVector(
   fn: FnSig,
   args: RawLiteral[],
   expect: RawLiteral,
-): { args: Literal[]; expect: Literal } | string {
+): { args: Literal[]; expect: Literal } | CellError[] {
+  const errors: CellError[] = [];
+  const call = (message: string) => errors.push({ cell: "Call", message });
+  if (args.length !== fn.params.length)
+    call(
+      `${fn.name} takes ${fn.params.length} argument(s), not ${args.length}`,
+    );
   const out: Literal[] = [];
   for (const [i, a] of args.entries()) {
     const p = fn.params[i];
-    const lit = settle(a, p && valueTy(p.type));
-    if (typeof lit === "string") return lit;
-    out.push(lit);
+    const ty = p && valueTy(p.type);
+    const lit = settle(a, ty);
+    if (typeof lit === "string") call(lit);
+    else if (ty !== undefined && !fits(lit, ty))
+      call(
+        `argument ${i + 1} of ${fn.name} (${p.name}) is ${ty}, not ${kindOf(lit)}${"int" in lit ? ` ${lit.int}` : ""}`,
+      );
+    else out.push(lit);
   }
-  const e = settle(expect, valueTy(fn.returns));
-  if (typeof e === "string") return e;
-  return { args: out, expect: e };
+  const ret = valueTy(fn.returns);
+  const e = settle(expect, ret);
+  if (typeof e === "string") errors.push({ cell: "Expected", message: e });
+  else if (!fits(e, ret))
+    errors.push({
+      cell: "Expected",
+      message: `${fn.name} returns ${ret}, not ${kindOf(e)}${"int" in e ? ` ${e.int}` : ""}`,
+    });
+  if (errors.length > 0) return errors;
+  return { args: out, expect: e as Literal };
 }
