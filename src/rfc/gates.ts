@@ -1290,6 +1290,7 @@ function checkCompleteness(
  * gives one entry per level per sentence, so each use of that level in the
  * sentence is found as normativeSentences finds keywords (KEYWORD_RE): "MUST
  * NOT do A and MUST do B" is two keywords, and a quote must cover each.
+ * Each entry is found at the line and offset the reader recorded for it.
  */
 function bindingSentences(
   doc: RfcDocument,
@@ -1310,28 +1311,27 @@ function bindingSentences(
       // reader recorded, so the same words in a paragraph with no <bcp14>
       // are not it. Where its text is not there, nothing locates it and it
       // is reported: never a false pass.
-      const base = lineAt[n.line] ?? null;
-      const found =
-        base !== null &&
+      const base = lineAt[n.line];
+      const at =
+        base != null &&
         normalizeText(sec?.ownLines[n.line] ?? "").startsWith(
           n.sentence,
           n.start,
-        );
-      const uses = found
-        ? [...n.sentence.matchAll(KEYWORD_RE)]
-            .filter((m) => m[1] === n.level)
-            .map((m) => m.index)
-        : [];
+        )
+          ? base + n.start
+          : null;
       const entry = {
         section: n.section,
         keyword: n.level,
         sentence: n.sentence,
       };
-      if (uses.length === 0) return [{ ...entry, at: [] }];
-      return uses.map((k) => ({
-        ...entry,
-        at: [(base as number) + n.start + k],
-      }));
+      const uses =
+        at === null
+          ? []
+          : [...n.sentence.matchAll(KEYWORD_RE)]
+              .filter((m) => m[1] === n.level)
+              .map((m) => ({ ...entry, at: [at + m.index] }));
+      return uses.length > 0 ? uses : [{ ...entry, at: [] }];
     });
 }
 
