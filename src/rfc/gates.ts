@@ -1245,6 +1245,7 @@ function checkCompleteness(
       });
     }
   }
+  const quoteSpans = new Map<string, [number, number][]>();
   for (const n of bindingSentences(rfc)) {
     const sec = findSection(rfc, n.section);
     if (!sec) {
@@ -1257,13 +1258,18 @@ function checkCompleteness(
       });
       continue;
     }
-    const covered = quotes.some(
-      (q) =>
-        q.section === n.section &&
-        ownSpans(sec, q.quote).some(([a, b]) =>
-          n.at.some((at) => a <= at && at < b),
-        ),
-    );
+    // Each section's quote spans are found once, not once per sentence: a
+    // long RFC has thousands of sentences and of quotes.
+    let spans = quoteSpans.get(n.section);
+    if (!spans) {
+      spans = quotes
+        .filter((q) => q.section === n.section)
+        .flatMap((q) => ownSpans(sec, q.quote));
+      quoteSpans.set(n.section, spans);
+    }
+    const inSpan = (at: number) =>
+      (spans as [number, number][]).some(([a, b]) => a <= at && at < b);
+    const covered = n.at.length > 0 && n.at.every(inSpan);
     if (!covered) {
       issues.push({
         gate: "completeness",
@@ -1275,81 +1281,97 @@ function checkCompleteness(
 }
 
 /**
- * The binding keywords completeness accounts for, one entry each, with its
- * offset in its section's normalized own text (none if it cannot be found). RFC XML marks its keywords with <bcp14>, and
- * that markup, not a scan of the text, says which sentences hold one: a
- * "MUST" in an example or a quoted definition is not one. Its SHOULDs and
- * MAYs bind nothing, as in plain text. The reader gives one entry per level
- * per sentence, so each use of that level in the sentence is found as
- * normativeSentences finds keywords (KEYWORD_RE): "MUST NOT do A and MUST do
- * B" is two keywords, and a quote must cover each. A sentence that cannot be
- * found in its section's own text (it spans a list or table), or whose level
- * KEYWORD_RE does not find, has no offset, so no quote covers it and it is
- * reported rather than passed.
+ * The binding keywords completeness accounts for, one entry each, with the
+ * offsets in its section's normalized own text a quote must cover: every one
+ * of them, and none means it cannot be covered and is reported. RFC XML marks
+ * its keywords with <bcp14>, and that markup, not a scan of the text, says
+ * which sentences hold one: a "MUST" in an example or a quoted definition is
+ * not one. Its SHOULDs and MAYs bind nothing, as in plain text. The reader
+ * gives one entry per level per sentence, so each use of that level in the
+ * sentence is found as normativeSentences finds keywords (KEYWORD_RE): "MUST
+ * NOT do A and MUST do B" is two keywords, and a quote must cover each.
  */
 function bindingSentences(
   doc: RfcDocument,
 ): { section: string; keyword: string; sentence: string; at: number[] }[] {
   if (!("normative" in doc))
     return normativeSentences(doc).map((n) => ({ ...n, at: [n.at] }));
-  const v3 = doc as V3Document;
-  // Entries come in document order, as their sentences do in the section's
-  // own text, so the i-th entry of a section, level and sentence is that
-  // sentence's i-th occurrence there: a quote of one occurrence covers it
-  // alone, as normativeSentences' offsets do on the text path.
+  const binding = (doc as V3Document).normative.filter((n) =>
+    BINDING_LEVELS.has(n.level),
+  );
+  const keyOf = (n: (typeof binding)[number]) =>
+    `${n.section}\n${n.level}\n${n.sentence}`;
+  const total = new Map<string, number>();
+  for (const n of binding) total.set(keyOf(n), (total.get(keyOf(n)) ?? 0) + 1);
+  const indexes = new Map<string, Map<string, number[]>>();
   const seen = new Map<string, number>();
-  return v3.normative
-    .filter((n) => BINDING_LEVELS.has(n.level))
-    .flatMap((n) => {
-      const key = `${n.section}\n${n.level}\n${n.sentence}`;
-      const i = seen.get(key) ?? 0;
-      seen.set(key, i + 1);
-      const sec = findSection(doc, n.section);
-      const start = sec
-        ? sentenceStarts(v3, sec, n.section, n.sentence)[i]
-        : undefined;
-      const uses = [...n.sentence.matchAll(KEYWORD_RE)]
-        .filter((m) => m[1] === n.level)
-        .map((m) => m.index);
-      const entry = {
-        section: n.section,
-        keyword: n.level,
-        sentence: n.sentence,
-      };
-      if (uses.length === 0) return [{ ...entry, at: [] }];
-      return uses.map((k) => ({
-        ...entry,
-        at: start === undefined ? [] : [start + k],
-      }));
-    });
+  return binding.flatMap((n) => {
+    const sec = findSection(doc, n.section);
+    let index = indexes.get(n.section);
+    if (!index) {
+      index = sec ? sentenceIndex(sec) : new Map();
+      indexes.set(n.section, index);
+    }
+    const key = keyOf(n);
+    const i = seen.get(key) ?? 0;
+    seen.set(key, i + 1);
+    // Entries come in document order, as the reader's paragraphs do in the
+    // section's own lines, so with as many places as entries the i-th entry
+    // is the i-th place. Otherwise (the same sentence again in a paragraph
+    // with no <bcp14>, which the reader does not tell apart from the marked
+    // one by its text), which place is the entry's is unknown, so each must
+    // be quoted: a false failure the contract can answer, never a false pass.
+    const places = index.get(n.sentence) ?? [];
+    const count = total.get(key) as number;
+    const mine = places.length === count ? [places[i]] : places;
+    const uses = [...n.sentence.matchAll(KEYWORD_RE)]
+      .filter((m) => m[1] === n.level)
+      .map((m) => m.index);
+    const entry = {
+      section: n.section,
+      keyword: n.level,
+      sentence: n.sentence,
+    };
+    if (uses.length === 0) return [{ ...entry, at: [] }];
+    return uses.map((k) => ({ ...entry, at: mine.map((a) => a + k) }));
+  });
 }
 
 /**
- * Where `sentence` starts in a section's own text, each time it is a sentence
- * of its own there. An occurrence inside a longer sentence the reader found in
- * the section ("Note: The server MUST ...") is that sentence's, not this one's,
- * so it is left out; otherwise it would shift which occurrence is whose.
+ * Where each sentence of a section's own prose starts in its normalized own
+ * text, by sentence. The reader makes each paragraph, list item and table
+ * cell one line, and splits an entry's sentence out of that line's text at
+ * ". ", so each line is split the same way here, and the sentence is found
+ * only where it is a whole sentence of a line: not inside a longer one, and
+ * not in an <artwork> or <sourcecode> line (codeLines), which no <bcp14> is
+ * in. One pass over the section, so a long RFC costs no more than its length.
  */
-function sentenceStarts(
-  doc: V3Document,
-  sec: RfcSection,
-  section: string,
-  sentence: string,
-): number[] {
-  const longer = new Set(
-    doc.normative
-      .filter(
-        (n) =>
-          n.section === section &&
-          n.sentence.length > sentence.length &&
-          n.sentence.includes(sentence),
-      )
-      .map((n) => n.sentence),
-  );
-  const outer = [...longer].flatMap((l) => ownSpans(sec, l));
-  return ownSpans(sec, sentence)
-    .filter(([a, e]) => !outer.some(([b, f]) => b <= a && e <= f))
-    .map(([a]) => a);
+function sentenceIndex(sec: RfcSection): Map<string, number[]> {
+  const index = new Map<string, number[]>();
+  // normalizeText only collapses whitespace, so the section's normalized
+  // text is its lines, each normalized, the non-empty ones joined by spaces.
+  let base = 0;
+  sec.ownLines.forEach((raw, k) => {
+    const line = normalizeText(raw);
+    if (line === "") return;
+    if (sec.codeLines?.[k] == null) {
+      let from = 0;
+      for (
+        let stop = line.indexOf(". ");
+        ;
+        stop = line.indexOf(". ", stop + 1)
+      ) {
+        const sentence = line.slice(from, stop < 0 ? line.length : stop + 1);
+        const at = index.get(sentence);
+        if (at) at.push(base + from);
+        else index.set(sentence, [base + from]);
+        if (stop < 0) break;
+        from = stop + 2;
+      }
+    }
+    base += line.length + 1;
+  });
+  return index;
 }
 
 // ── Signatures against the implementation's source ───────────────────────

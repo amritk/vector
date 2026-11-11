@@ -558,6 +558,30 @@ ${blocks}
     ]);
   });
 
+  test("a copy in <artwork> or <sourcecode> is not an occurrence", () => {
+    // The copy comes first: the marked paragraph's quote covers its keyword.
+    const ART = `<artwork>${X_TEXT}</artwork>`;
+    expect(
+      uncoveredIn(`${ART}<t>${X} Then more.</t>`, `${X_TEXT} Then more.`),
+    ).toEqual([]);
+    // Quoting the copy alone does not cover the marked paragraph.
+    const OUT = `<sourcecode>Out: ${X_TEXT}</sourcecode>`;
+    expect(uncoveredIn(`${OUT}<t>${X}</t>`, `Out: ${X_TEXT}`)).toEqual([
+      neither("MUST NOT", X_TEXT),
+    ]);
+  });
+
+  test("a copy in a paragraph with no <bcp14> makes each copy one to quote", () => {
+    // Its text does not say which paragraph is marked, so both are asked
+    // for: a false failure the contract answers by quoting both, never a
+    // false pass.
+    const UNMARKED = `<t>${X_TEXT}</t><t>${X} Then more.</t>`;
+    expect(uncoveredIn(UNMARKED, `${X_TEXT} Then more.`)).toEqual([
+      neither("MUST NOT", X_TEXT),
+    ]);
+    expect(uncoveredIn(UNMARKED, X_TEXT)).toEqual([]);
+  });
+
   test("a sentence inside a longer one is not one of its occurrences", () => {
     // "Note: The server MUST NOT send X." holds the shorter sentence's text,
     // but is a sentence of its own: quoting it covers it, not the shorter.
