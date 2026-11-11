@@ -283,8 +283,6 @@ export function frozenCheck(o: {
     ),
   ]);
 
-  // A sidecar passed by name (a contracts/*.json glob) is skipped like the
-  // default skips it.
   let files = o.contracts?.filter((f) => !f.endsWith(SIDECAR_SUFFIX)) ?? [];
   if (!o.contracts) {
     const dir = join(top, "contracts");

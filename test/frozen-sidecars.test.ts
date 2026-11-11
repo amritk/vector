@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { VECTOR_ROOT, frozenCheck } from "../src/rfc/frozen.ts";
 
 // `vector spec frozen --base … contracts/*.json` expands to the
@@ -29,7 +29,7 @@ const repo = () => {
     "specs/example-hex.xml",
     "rfcs/rfc4648.txt",
   ]) {
-    mkdirSync(join(d, f, ".."), { recursive: true });
+    mkdirSync(dirname(join(d, f)), { recursive: true });
     cpSync(join(VECTOR_ROOT, f), join(d, f));
   }
   git(d, "init", "-q");
