@@ -18,6 +18,7 @@ import {
   MAX_REPEAT,
   REPEAT_RUN_MESSAGE as RUN,
   type RawLiteral,
+  REPEAT_SIZE_MESSAGE as SIZE,
   isLiteralError,
   parseCall,
   parseLiteral,
@@ -103,6 +104,41 @@ describe("a labelled integer", () => {
     ]);
   });
 
+  test("where an int goes, bytes and out-of-range ints are refused", () => {
+    const fn: FnSig = {
+      name: "f",
+      params: [
+        { name: "a", type: "i32" },
+        { name: "b", type: "i32" },
+        { name: "c", type: "u32" },
+      ],
+      returns: "i32",
+    };
+    expect(
+      settleVector(
+        fn,
+        [raw("L = 0a"), raw("L = 00"), raw("L = 4294967296")],
+        raw("R = 07"),
+      ),
+    ).toEqual([
+      { cell: "Call", message: "argument 1 of f (a) is i32, not bytes" },
+      {
+        cell: "Call",
+        message:
+          "argument 2 of f (b) is i32, not bytes (`L = 00` has a leading zero, so it is bytes)",
+      },
+      {
+        cell: "Call",
+        message: "argument 3 of f (c) is u32, not an int 4294967296",
+      },
+      {
+        cell: "Expected",
+        message:
+          "f returns i32, not bytes (`R = 07` has a leading zero, so it is bytes)",
+      },
+    ]);
+  });
+
   test("refusals, with the 1-based column", () => {
     for (const [text, col] of [
       ["L = -0", 1],
@@ -110,6 +146,7 @@ describe("a labelled integer", () => {
       ["L = ", 1],
       ["L = 42]", 1],
       ["L = 42.0", 1],
+      ["L = 042", 1],
     ] as const)
       expect(parseLiteral(text)).toEqual({ message: LABELLED, col });
     expect(parseCall("f(1, L = 0A)")).toEqual({ message: LABELLED, col: 6 });
@@ -125,9 +162,11 @@ describe("a repeated run", () => {
     expect(raw("22 × 0b")).toEqual(ikm);
     expect(raw("22 x 0b")).toEqual(ikm);
     expect(raw("IKM = 22 × 0b")).toEqual({ ...ikm, label: "IKM" });
-    expect(raw(`${MAX_REPEAT} × 00ff`)).toEqual({
+    expect(raw("22×0b")).toEqual(ikm);
+    expect(raw("22 ×0b")).toEqual(ikm);
+    expect(raw(`${MAX_REPEAT / 2} × 00ff`)).toEqual({
       kind: "repeat",
-      count: MAX_REPEAT,
+      count: MAX_REPEAT / 2,
       hex: "00ff",
     });
     expect(settle(raw("22 × 0b"), "bytes")).toEqual({ hex: "0b", repeat: 22 });
@@ -157,7 +196,8 @@ describe("a repeated run", () => {
       ["0 × 0b", COUNT, 1],
       ["-1 × 0b", COUNT, 1],
       ["01 × 0b", COUNT, 1],
-      [`${MAX_REPEAT + 1} × 0b`, COUNT, 1],
+      [`${MAX_REPEAT + 1} × 0b`, SIZE, 1],
+      [`${MAX_REPEAT} × 0b0b`, SIZE, 1],
       ["IKM = 0 × 0b", COUNT, 7],
       ["22 × 0", RUN, 6],
       ["22 × 0B", RUN, 6],
@@ -227,7 +267,11 @@ describe("spec extract", () => {
 
   test("a run or an int the section does not print is refused", async () => {
     for (const [from, to, says] of [
-      ["IKM = 22 × 0b", "IKM = 21 × 0b", '"IKM"'],
+      [
+        "IKM = 22 × 0b",
+        "IKM = 21 × 0b",
+        '21-byte value is only part of a value printed in rfc5869 §A.1 ("Test Case 1") (under "IKM")',
+      ],
       ["L = 42", "L = 41", 'does not print "L" followed by 41'],
     ]) {
       const r = await extract(FIXTURE.replace(from, to));
