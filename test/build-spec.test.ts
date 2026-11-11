@@ -73,17 +73,19 @@ describe("build-spec.sh arguments", () => {
     expect(r.stderr).toContain("is not a .md file");
   });
 
-  test("missing tools are refused with the pinned install commands", () => {
-    // /usr/bin:/bin has bash and coreutils but not kramdown-rfc.
-    if (Bun.which("kramdown-rfc", { PATH: "/usr/bin:/bin" })) return;
-    const r = run([fixture], { PATH: "/usr/bin:/bin" });
-    expect(r.code).toBe(2);
-    expect(r.stderr).toContain("kramdown-rfc is not installed");
-    expect(r.stderr).toContain(
-      "gem install kramdown-rfc -v 1.7.43 --no-document",
-    );
-    expect(r.stderr).toContain("pip install xml2rfc==3.35.0");
-  });
+  // /usr/bin:/bin has bash and coreutils but, normally, not kramdown-rfc.
+  test.skipIf(Boolean(Bun.which("kramdown-rfc", { PATH: "/usr/bin:/bin" })))(
+    "missing tools are refused with the pinned install commands",
+    () => {
+      const r = run([fixture], { PATH: "/usr/bin:/bin" });
+      expect(r.code).toBe(2);
+      expect(r.stderr).toContain("kramdown-rfc is not installed");
+      expect(r.stderr).toContain(
+        "gem install kramdown-rfc -v 1.7.43 --no-document",
+      );
+      expect(r.stderr).toContain("pip install xml2rfc==3.35.0");
+    },
+  );
 });
 
 describe.skipIf(!pinned)("build-spec.sh with the pinned tools", () => {
@@ -93,13 +95,16 @@ describe.skipIf(!pinned)("build-spec.sh with the pinned tools", () => {
     expect(r.code).toBe(0);
   });
 
-  test("a rebuild reproduces profile.xml byte for byte", () => {
+  test("a rebuild reproduces profile.xml byte for byte, bar the Ruby version", () => {
+    // kramdown-rfc's banner comment names the Ruby that ran it, which the pins
+    // do not fix; every other byte must match.
+    const ruby = (xml: string) => xml.replace(/\(Ruby [^)]*\)/, "(Ruby)");
     withCopy(
       (md) => md,
       (md) => {
         expect(run([md]).code).toBe(0);
-        expect(readFileSync(md.replace(/\.md$/, ".xml"), "utf8")).toBe(
-          readFileSync(fixtureXml, "utf8"),
+        expect(ruby(readFileSync(md.replace(/\.md$/, ".xml"), "utf8"))).toBe(
+          ruby(readFileSync(fixtureXml, "utf8")),
         );
       },
     );
@@ -146,8 +151,9 @@ describe.skipIf(!pinned)("build-spec.sh with the pinned tools", () => {
       (md) => {
         const r = run([md]);
         expect(r.code).toBe(1);
-        expect(r.stderr).toContain(
-          '*** attributes left {"vector-contract"=>"x"}!',
+        // Ruby 3.4 changed Hash#inspect from {"k"=>"v"} to {"k" => "v"}.
+        expect(r.stderr).toMatch(
+          /\*\*\* attributes left \{"vector-contract"\s*=>\s*"x"\}!/,
         );
       },
     );
@@ -171,6 +177,30 @@ describe.skipIf(!pinned)("build-spec.sh with the pinned tools", () => {
         const r = run([md]);
         expect(r.code).toBe(1);
         expect(r.stderr).toContain("front matter has no date: line");
+      },
+    );
+  });
+
+  test("a date that is not ISO YYYY-MM-DD is refused", () => {
+    withCopy(
+      (md) => md.replace("date: 2026-11-11", "date: 11 November 2026"),
+      (md) => {
+        const r = run([md]);
+        expect(r.code).toBe(1);
+        expect(r.stderr).toContain("is not an ISO YYYY-MM-DD date");
+      },
+    );
+  });
+
+  test("a spec dated well in the past still builds", () => {
+    // xml2rfc warns when the document date is more than 3 days from today;
+    // the script pins xml2rfc's notion of today to the spec's date.
+    withCopy(
+      (md) => md.replace("date: 2026-11-11", "date: 2020-01-15"),
+      (md) => {
+        const r = run([md]);
+        expect(r.stderr).toBe("");
+        expect(r.code).toBe(0);
       },
     );
   });

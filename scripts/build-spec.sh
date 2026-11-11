@@ -37,6 +37,8 @@
 # warnings are silenced with its own --silence flag because they are cosmetic and
 # unavoidable for a spec carrying a six-column vector table or a long property line:
 # "Too long line found" and "Total table width". They change nothing in the XML.
+# A third, "The document date … is more than 3 days away from today's date", is
+# silenced because the date is pinned on purpose (see below).
 #
 # --check canonicalization. Both the rebuilt and the committed XML are reduced by
 # removing exactly two kinds of markup, and nothing else:
@@ -110,9 +112,15 @@ if [ "$have_kd" != "$KRAMDOWN_RFC_VERSION" ] || [ "$have_x2r" != "$XML2RFC_VERSI
 fi
 
 # The <date> defaults to the build day, which would make every rebuild on another
-# day drift; require it pinned in the YAML front matter (line 1 "---" up to the next "---").
-if ! awk 'NR == 1 && !/^---/ { exit } NR > 1 && /^---/ { exit } /^date:[ \t]*[^ \t]/ { found = 1 } END { exit !found }' "$spec"; then
+# day drift; require it pinned, as an ISO YYYY-MM-DD date, in the YAML front matter
+# (line 1 "---" up to the next "---").
+date="$(awk 'NR == 1 && !/^---/ { exit } NR > 1 && /^---/ { exit } /^date:/ { sub(/^date:[ \t]*/, ""); sub(/[ \t]+$/, ""); print; exit }' "$spec")"
+if [ -z "$date" ]; then
   echo "build-spec: $spec: front matter has no date: line; pin one (e.g. date: 2026-11-11) so rebuilds are reproducible" >&2
+  exit 1
+fi
+if ! [[ "$date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+  echo "build-spec: $spec: front matter date: $date is not an ISO YYYY-MM-DD date (e.g. date: 2026-11-11)" >&2
   exit 1
 fi
 
@@ -142,7 +150,12 @@ kd_env=(env KRAMDOWN_REFCACHEDIR="$repo/.refcache" KRAMDOWN_SAFE=1 KRAMDOWN_REFC
 # kramdown-rfc writes the XML to stdout; redirect in a subshell so run_strict sees stderr.
 run_strict kramdown-rfc '^\*\*' sh -c '"$@" > "$0"' "$tmp/v2.xml" "${kd_env[@]}" kramdown-rfc "$spec"
 
-x2r_quiet=(--no-network -s "Too long line found" -s "Total table width")
+# "The document date" is silenced too: xml2rfc 3.35.0 warns when an Internet-Draft's
+# date is more than 3 days from datetime.date.today() (writers/preptool.py; its
+# --date option does not reach that check), so with warnings as errors a spec with a
+# pinned date would stop building 3 days after it was dated. The pinned date is
+# required above; the warning carries no information about the document itself.
+x2r_quiet=(--no-network -s "Too long line found" -s "Total table width" -s "The document date")
 x2r_fatal='(Warning|Error):'
 run_strict "xml2rfc --v2v3" "$x2r_fatal" xml2rfc "${x2r_quiet[@]}" --v2v3 "$tmp/v2.xml" -o "$tmp/built.xml"
 run_strict "xml2rfc --text" "$x2r_fatal" xml2rfc "${x2r_quiet[@]}" --text "$tmp/built.xml" -o "$tmp/built.txt"
