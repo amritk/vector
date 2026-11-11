@@ -95,8 +95,8 @@ const PUNCT = [
 ];
 
 /** `[00 0f f0 ff]`: lowercase hex pairs, single spaces; `[]` is empty. */
-const BYTES_RE = /^\[((?:[0-9a-f]{2}(?: [0-9a-f]{2})*)?)\]/;
-const BYTES_MESSAGE =
+export const BYTES_RE = /^\[((?:[0-9a-f]{2}(?: [0-9a-f]{2})*)?)\]/;
+export const BYTES_MESSAGE =
   "a bytes literal is lowercase hex pairs separated by single spaces, like [00 0f]";
 
 function lex(source: string, subset: string): Tok[] {
