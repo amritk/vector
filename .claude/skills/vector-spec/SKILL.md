@@ -1,33 +1,40 @@
 ---
 name: vector-spec
 description: >-
-  Turn a specification — an RFC, or a markdown spec with numbered headings —
-  into a contract and a generated Nish test that checks an implementation
-  against it: verbatim requirements, the spec's own test vectors, and
-  properties sampled at solver-chosen boundaries. Every quote and every
-  test-vector byte is checked against the spec text, every vector says where
-  its expected value comes from, and every MUST/SHALL in the main spec must be
-  tested or explicitly excluded. Also walks a spec-first PR: approve the spec,
-  freeze its contract, then gate the implementation PR on it (frozen, stale,
-  exports, mutate). Use when asked to check nish's std/crypto (or any nish
-  module) against an RFC or a spec, to write RFC-conformance tests, "RFC =>
-  nish test" / "spec => nish test", or to land a module spec-first.
+  Turn a specification, an RFC or a module's spec, into a kramdown-rfc spec
+  that vector extracts into a contract, plus a generated Nish test that checks
+  an implementation against it. The test holds verbatim requirements, test
+  vectors, and properties sampled at solver-chosen boundaries. Every quote is
+  checked against the RFC it quotes, every vector says where its expected value
+  comes from, and every BCP 14 sentence in the spec must be tested or
+  explicitly excluded. Also walks a spec-first PR: approve the spec, extract
+  and freeze its contract, then gate the implementation PR on it (frozen,
+  stale, exports, mutate). Use when asked to check nish's std/crypto (or any
+  nish module) against an RFC or a spec, to write RFC-conformance tests,
+  "RFC => nish test" / "spec => nish test", or to land a module spec-first.
 ---
 
 # vector spec — spec → contract → Nish test, and the PR that implements it
 
 `vector rfc` is the same command under its old name.
 
-**You** write the contract; **the spec text and Z3 hold the veto**; **nish runs
-the test.** You never decide that a quote or a vector is right — `vector spec
-check` does, against the spec's own text. Every gate below is deterministic
-and fails closed: a git error, a missing source, an unreadable diff or a Z3
-`unknown` is a failure, never a pass. A FAIL is a finding about the
-implementation (or the contract) — show it; never weaken a clause to pass.
+**You** write the spec. **`vector spec extract`** writes the contract from it.
+**The RFC text and Z3 hold the veto**, and **nish runs the test.** Never write
+or edit `contracts/<name>.json` by hand: change the spec, rebuild, and
+re-extract. You never decide that a quote or a vector is right; extract and
+`check` do, against the cited text. Every gate below is deterministic and fails
+closed: a git error, a missing source, an unreadable diff or a Z3 `unknown` is
+a failure, never a pass. A FAIL is a finding about the implementation (or the
+spec). Show it, and never weaken a clause to pass.
 
-Exit codes, for every command: **0** pass, **1** refused (`INVALID`,
-`VIOLATED`, `ERROR`, a stale test, an unlisted export, a survivor), **2** a
-usage error, an unreadable spec or a git error.
+Exit codes, for every command: **0** pass, **1** refused (extract's refusals,
+`INVALID`, `VIOLATED`, `ERROR`, a stale test, an unlisted export, a survivor),
+**2** a usage error, a missing file or RFC, the wrong build tools, or a git
+error.
+
+The README's [Writing a spec (kramdown-rfc)](../../../README.md#writing-a-spec-kramdown-rfc)
+is the reference for every construct below.
+`test/fixtures/profile/profile-hex.md` is a spec that uses all of them.
 
 ## The PR workflow, in order
 
@@ -37,120 +44,209 @@ A module lands in two PRs. The first is the **spec side** (`specs/`,
 never be loosened in the PR that changes the code it tests. Do the steps in
 this order; each one's command is the gate CI runs.
 
-### 1. Write the spec
+### 0. Tools
 
-`specs/<name>.md` (`specs/example-hex.md` is the worked example). Its sections
-must be numbered headings (`## 3. Encoding`, `### 3.1. Length`,
-`## Appendix A. Vectors`); a MUST outside every numbered section is refused.
-Give it an **Interface** section whose code declares the module's exports,
-one per line:
-
-```
-## 2. Interface
-
-    export const hexEncode = (bytes: u8[]): string
-    export const hexDecode = (text: string): u8[] | null
-```
-
-Signatures go in code (an indented block or a fence), one `export const` or
-`export function` per line, with types from `u8[]`, `u8[] | null`, `string`,
-`string | null`, `i32`, `u32`, `boolean`. This is the contract's source for
-`functions`, so keep it to the module's exports and nothing else.
-
-For an RFC: `rfcs/rfc<N>.txt` if it is there, otherwise
-`curl -sSfL -o rfcs/rfc<N>.txt https://www.rfc-editor.org/rfc/rfc<N>.txt`
-(unmodified; the IETF Trust allows copying an RFC whole). A human approves the
-spec; nothing after this step may change it.
-
-### 2. Write the contract from the spec alone, then `check` it
-
-The contract must say what the spec asks for, not what some code happens to
-do, so **do not read the implementation** — there may not be one yet. Take
-the signatures from the spec's Interface section, and the requirements from
-its binding sentences: `grep -n "MUST\|SHALL\|REQUIRED" specs/<name>.md`.
-
-vector never calls a model and there is no extraction command: you write
-`contracts/<name>.json` yourself, in this session, against
-`schemas/rfc-contract.json`. `contracts/rfc5869-hkdf-sha256.json` and
-`contracts/rfc8439-chacha20-poly1305.json` are the worked examples.
-
-- **source**: one RFC is `"source": {"rfc": N, "title": …}`. Several
-  documents (or a markdown spec) are `"sources": [{"id": "hex", "path":
-  "../specs/hex.md"}, {"id": "rfc4648", "rfc": 4648}]` with
-  `"source": {"title": …, "main": "hex"}`. Completeness reads only the main
-  source; any citation may name another with `"source": "<id>"`.
-- **functions**: exactly the Interface section's signatures, as `bytes`
-  (`u8[]`), `bytes?` (`u8[] | null`), `string`, `string?`, `i32`, `u32`,
-  `bool`, `secret-bytes` (`Secret<u8[]>`) and, as a result only,
-  `secret-bytes?` (`Secret<u8[]> | null`). Vectors and properties give a
-  secret as plain bytes; the generated test does the `secret`/`expose`. A reference function from another module names its module.
-  Its signature is never checked,
-  not even by `run --nish-root`: the signature gate reads only the target
-  module's functions, so get the reference function's types right yourself.
-- **requirements**: verbatim quotes, cited to the most specific section.
-  Level = the BCP 14 keyword, or `DEFINITION` for what the algorithm is.
-- **exclusions**: each MUST/SHALL sentence a functional test cannot observe
-  (caller obligations, timing, key management), with the reason and where it
-  *is* checked if anywhere.
-- **vector clauses**: the spec's test vectors, values copied as lowercase
-  hex. `concat` when the spec prints a value in parts (ciphertext + tag).
-  Each literal is a *whole* printed value (never a prefix or a tail), and a
-  value printed under a name carries it: `{"hex": "0b0b…", "label": "Key"}`
-  for `Key = 0b0b…`. Take args and expected value from one test case (cite
-  the subsection that holds it); the expected value is never a value an
-  argument is bound to. Where a case is printed for several variants
-  (`HMAC-SHA-256 =`, `HMAC-SHA-512 =`), use the row whose number is in the
-  function's name. A `str` must be printed whole (quoted, in a code
-  span, alone on a line, or after `=`/`:` at a line's end) and on one line
-  with the other strings of its vector.
-  Every vector has a `source` for its expected value:
-  - `{"cite": {"section": "A.1"}}` (optionally `"source": "<id>"`): args and
-    expected value are printed in that section. Prefer this.
-  - `{"command": "…"}` plus `"section"` (where the args are printed): the
-    expected value is the command's trimmed stdout (hex for bytes). It runs
-    only under `--run-sources` (30 s timeout); otherwise it is reported as
-    not run, never as passed.
-  - `{"spec": "4.2"}` plus `"section"`: only for an expected `null` or
-    `bool`. The vector must `cover` a requirement cited to §4.2 whose quote
-    states the value as an affirmative requirement ("f MUST return null
-    when …", "f SHALL be false") — not "null or …", not "null-terminated",
-    not retracted later, not only in a table or code block, and not cut
-    from a qualified sentence (the whole prose sentence around the quote
-    is read: "For example, … MUST return null" fails). A descriptive
-    "f returns null on failure" does not count; see the README's rule. A
-    `cite` source for `null` or a `bool` is held to the same rule.
-- **property clauses**: the spec's definitions as checks over a typed
-  domain — lengths, bounds written as integer comparisons (Z3 samples both
-  sides of each), round trips, tamper rejection, and the construction
-  rebuilt from other functions.
-
-Then:
+`scripts/build-spec.sh` runs only with the pinned tools, and exits 2 with this
+hint otherwise:
 
 ```bash
-bun run vector spec check contracts/<name>.json --spec specs/<name>.md --run-sources
+gem install kramdown-rfc -v 1.7.43 --no-document
+pip install xml2rfc==3.35.0
 ```
 
-Read every `command` source the model proposed before you pass
-`--run-sources`: it runs on your machine, as you, with your files and
-network. On Linux nothing it starts outlives it; elsewhere a process it
-detaches with `setsid` outlives the timeout. Then repair every gate failure it lists (fidelity, completeness, coverage,
-provenance, typing, domain) and re-run until it prints `CONTRACT_VALID` and
-exits 0. With no module yet it warns that signatures were not checked; that
-is expected here — `run --nish-root` (step 5) checks them against the
-implementation, and fails on a mismatch.
+### 1. Draft the spec
 
-### 3. Freeze the contract
+Write `specs/<name>.md` in kramdown-rfc from the RFC or the request alone.
+**Do not read the implementation**: there may not be one yet, and the spec
+must say what is asked for, not what some code does.
 
-Record the sha256 of the main spec file's bytes in the contract — the first
-field of the output, not the file name after it:
+Front matter: `docname: draft-<name>-00`, where `<name>` is the file's
+basename, and a pinned `date: YYYY-MM-DD`. List each RFC you cite under
+`normative:`, but not RFC 2119 or 8174. Close the front matter with
+`--- abstract`, then write the abstract, then `--- middle`.
+
+```yaml
+---
+title: "Hex encoding"
+abbrev: Hex
+docname: draft-hex-00
+category: info
+ipr: trust200902
+submissiontype: independent
+v: 3
+date: 2026-11-11
+author:
+  - name: …
+normative:
+  RFC4648:
+--- abstract
+
+…
+
+--- middle
+
+# Introduction
+
+{::boilerplate bcp14-tagged}
+```
+
+The boilerplate is the first paragraph of `# Introduction`. Then add these
+parts.
+
+**One interface block.** It is the contract's `target` and `functions`, so
+keep it to the module's exports:
+
+````
+~~~ ts-interface
+// module: nish/hex
+export const hexEncode = (bytes: u8[]): string
+export function hexDecode(text: string): u8[] | null
+~~~
+````
+
+The types are `u8[]`, `string`, `i32`, `u32`, `boolean` and `Secret<u8[]>`.
+Add `| null` to `u8[]` or `string`, and to `Secret<u8[]>` as a result only.
+
+**Requirements: one BCP 14 level per paragraph,** each anchored on the next
+line. A requirement in an unnumbered section is refused.
+
+```
+hexEncode MUST return exactly two characters per input byte.
+{: #R-ENC-LEN}
+
+Definition: a hex digit is one of the characters 0-9, a-f and A-F.
+{: #R-DEF-DIGIT}
+```
+
+**Quotes from an RFC** go in a blockquote. The last line of the blockquote is
+the citation, and the attribute must include `gi="blockquote"`. The quote must
+appear verbatim in that section of the RFC.
+
+```
+> BASE16("f") = "66"
+> {{Section 10 of RFC4648}}
+{: #R-RFC-VECTORS gi="blockquote"}
+```
+
+**Exclusions.** Some BCP 14 sentences cannot be observed by a functional
+test: caller obligations, timing, key management. Follow each one directly
+with an `Untested:` paragraph that gives the reason and, where it exists, what
+checks it instead. That sentence can be a requirement or an unanchored
+paragraph:
+
+```
+hexDecode MUST NOT index a table by the value of a digit.
+{: #R-DEC-TIMING}
+
+Untested: timing is not observable from a unit test. Checked by: code review.
+```
+
+**One vector table** has exactly this header:
+
+```
+| Id | Call | Expected | Covers | Source | Title |
+|----|------|----------|--------|--------|-------|
+| V1 | `hexDecode("66")` | `"f"` | R-RFC-VECTORS | {{Section 10 of RFC4648}} | one byte |
+| V2 | `hexEncode([00 0f f0 ff])` | `"000ff0ff"` | R-ENC-LEN | `python3 -c 'print(bytes([0,15,240,255]).hex())'` | bytes literal |
+| V3 | `hexDecode("abc")` | `null` | R-DEC-REJECT | {{empty-input}} | odd length |
+```
+
+- **Call and Expected** are each one code span.
+- **Literals:**
+  - `"text"`: ASCII bytes where bytes go, a string where a string goes.
+  - `[00 0f]`: bytes.
+  - `[]` or `(empty)`: empty bytes.
+  - `null`, `true`, `false`.
+  - Decimal integers.
+  - `Key = 0b0b0b`: labelled bytes. Use the label the cited section prints
+    the value under.
+  - `concat(a, b, …)`: one level, all parts bytes. Never `‖`.
+- **Source** says where the expected value comes from:
+  - `{{Section N of RFCx}}`: the value is printed there. Prefer this.
+  - `{{anchor}}`: a section of this spec. Use it only for a `null` or `bool`
+    the covered requirement states.
+  - A code span holding a command: the value is its trimmed stdout.
+- **Values from an RFC:**
+  - Each one is a *whole* printed value, never a prefix or a tail.
+  - Take the arguments and the expected value from one test case.
+  - Where a case is printed for several variants, use the row whose number
+    is in the function's name.
+  - The README's "What a printed value is" and "When a section states
+    `null`, `true` or `false`" give the full rules.
+
+**Properties.** Each is a `ts-property` block. Line 1 is
+`// P-ID covers R-ID, … — title`:
+
+````
+~~~ ts-property
+// P-ROUND-TRIP covers R-ROUND-TRIP — hexDecode(hexEncode(b)) is b
+forall (b: u8[] /* 0..64 */) => {
+  const d = hexDecode(hexEncode(b));
+  return d !== null && unwrap(d) === b;
+}
+~~~
+````
+
+Write the spec's definitions as checks over a typed domain:
+
+- lengths;
+- bounds written as integer comparisons (Z3 samples both sides of each);
+- round trips;
+- tamper rejection;
+- the construction rebuilt from other functions.
+
+Use the README's ts-property list for the subset: operators, operations,
+`where`, and the forms that are refused. Remember that its semantics are
+vector's, not JavaScript's. For example, `.slice` clamps, `a % 0` is 0, and
+`===` on bytes compares contents.
+
+**Linked RFCs.** The RFC text must be in `rfcs/`, unmodified. The IETF Trust
+allows copying an RFC whole. Extract's missing-RFC message gives the `curl`
+command: `rfc<N>.xml` for N ≥ 8700, `.txt` for older ones.
+
+### 2. Build, extract, `check`
 
 ```bash
-sha256sum specs/<name>.md | cut -d' ' -f1      # macOS: shasum -a 256 specs/<name>.md | cut -d' ' -f1
-# → "source": { …, "sha256": "<hex>" }
+scripts/build-spec.sh specs/<name>.md         # writes specs/<name>.xml
+bun run vector spec extract specs/<name>.xml -o contracts/<name>.json
+bun run vector spec check contracts/<name>.json --run-sources
 ```
 
-Commit the spec, the contract and (step 4's) generated test together, in the
-spec-side PR, and gate it:
+**build-spec.sh**
+
+- It runs offline against the committed `.refcache/`. The first time the spec
+  cites a reference, add `--fetch`, then review and commit the `.refcache/`
+  diff.
+- Warnings are errors. Fix the markdown until it builds clean.
+
+**extract**
+
+- It lists every refusal at once, each as `file:line` in the `.md`. The line
+  can run late after a table.
+- Repair the **spec**, never the contract. Then rebuild and re-extract until
+  it exits 0.
+- It runs `check`'s gates: fidelity, completeness, coverage, provenance,
+  typing and domain.
+- It fills in every `sha256`, so there is no freeze step to do by hand.
+
+**check --run-sources** runs the `command` sources. Read every command before
+you pass `--run-sources`: it runs on your machine, as you, with your files and
+network. On Linux nothing it starts outlives it; elsewhere, a process it
+detaches with `setsid` outlives the 30 s timeout. With no module yet, `check`
+warns that signatures were not checked. That is expected here: `run
+--nish-root` (step 5) checks them against the implementation.
+
+Commit `specs/<name>.md`, `specs/<name>.xml` and `contracts/<name>.json`
+together. Then show the spec to
+a human for approval. **The reviewer confirms that:**
+
+- each `ts-property` says what the prose it covers says, no more and no less;
+- each `Untested:` reason is true, and what it says checks the sentence
+  really does.
+
+Nothing after this step may change the spec.
+
+### 3. Freeze
 
 ```bash
 bun run vector spec frozen --base origin/main contracts/<name>.json
@@ -158,11 +254,15 @@ bun run vector spec frozen --base origin/main contracts/<name>.json
 
 Run it last, after step 4's `emit` and `stale`, so it sees the whole PR.
 
-Exit 0: the PR is all spec side, and every contract's main source still
-hashes to its `source.sha256`. Exit 1: the PR also touches implementation
-files, or the spec changed under the contract (or it has no `sha256`), or no
-contract was found. From here, the spec and contract change only in a PR of
-their own.
+- **Exit 0:** the PR is all spec side, and every contract source still hashes
+  to its recorded `sha256`.
+- **Exit 1:** one of these:
+  - the PR also touches implementation files;
+  - the spec or a linked RFC changed under the contract;
+  - a `sha256` is missing;
+  - no contract was found.
+
+From here, the spec and contract change only in a PR of their own.
 
 ### 4. Emit the test, and keep it fresh
 
@@ -171,9 +271,9 @@ bun run vector spec emit contracts/<name>.json -o test/spec/<name>.ts
 bun run vector spec stale test/spec/<name>.ts contracts/<name>.json
 ```
 
-`emit` writes `// vector-contract-sha256: <hex>` into the test's header;
-`stale` exits 1 when that line names other bytes than the contract's (or is
-missing, or appears twice). In a repository that does not install vector,
+`emit` writes `// vector-contract-sha256: <hex>` into the test's header.
+`stale` exits 1 when that line names other bytes than the contract's, or is
+missing, or appears twice. In a repository that does not install vector,
 `node scripts/spec-stale.mjs <test> <contract>` is the same check with the
 same exit codes. A test in `test/spec/` counts as spec side only while
 `stale` passes it.
@@ -187,11 +287,15 @@ The implementation PR touches the code and nothing on the spec side
 bun run vector spec run contracts/<name>.json --nish-root ../nish [--format markdown]
 ```
 
-It re-runs every `check` gate, now with the signature gate against the
-module, then runs the test. Exit 0 is `SATISFIED`: every clause passed. `VIOLATED` (a clause failed, with
-its sample) and `ERROR` (it did not build, or finished early) exit 1.
-`--nish-root` uses `build/nish`, which tests the working tree's std; the seed
-tests the last release's std and warns.
+It re-runs every `check` gate, now including the signature gate against the
+module, then runs the test.
+
+- **Exit 0** is `SATISFIED`: every clause passed.
+- **Exit 1** is `VIOLATED` (a clause failed, shown with its sample) or
+  `ERROR` (the test did not build, or finished early).
+
+`--nish-root` uses `build/nish`, which tests the working tree's std. Without
+it, the seed tests the last release's std and warns.
 
 ### 6. Check the exports
 
@@ -200,17 +304,12 @@ bun run vector spec exports contracts/<name>.json --nish-root ../nish --base ori
 ```
 
 Every export the diff adds to or changes in the target module must be a
-function the contract tests, or be listed with a reason:
+function the contract tests. Exit 1 names each one that is not.
 
-```json
-"outOfScope": [{ "name": "hexTable", "reason": "internal helper, not in the spec" }]
-```
-
-Exit 1 names each unlisted export. An `outOfScope` entry belongs in the
-spec-side PR, approved with the contract, never added in the implementation
-PR to get it green. Such entries usually become known only when the
-implementation PR fails `exports`; adding one changes the contract's bytes,
-so in that spec-side PR re-run `emit` and `stale` (step 4) and `frozen`.
+A spec cannot declare `outOfScope` exports yet: the profile has no construct
+for them. When `exports` fails, either drop the export from the
+implementation, or add the function to the spec, with a clause that tests it,
+in a spec-side PR.
 
 ### 7. Mutate the diff
 
@@ -219,51 +318,53 @@ bun run vector spec mutate contracts/<name>.json --nish-root ../nish --base orig
   [--jobs N] [--max N] [--format markdown]
 ```
 
-It mutates only the module's lines changed since `--base` and runs the test
-against each mutant. A survivor is printed as `file:line`, its mutated line,
-and *behaviour no requirement pins down*, and exits 1. Kill it with a property
-or vector the spec supports, or — in a spec-side PR — allow it with the reason:
+It mutates only the module's lines changed since `--base`, and runs the test
+against each mutant. A survivor is printed with its `file:line`, its mutated
+line, and *behaviour no requirement pins down*, and the command exits 1. Kill
+the survivor with a property or vector the spec supports. Or, in a spec-side
+PR, allow it with a reason in `contracts/<name>.survivors.json`:
 
 ```json
-"allowSurvivors": [{ "file": "std/hex.ts", "line": 42, "reason": "…" }]
+{ "allowSurvivors": [{ "file": "std/hex.ts", "line": 42, "reason": "…" }] }
 ```
 
-Like `outOfScope`, an `allowSurvivors` entry is usually found by the
-implementation PR's `mutate` run, and changes the contract's bytes: add it in
-a spec-side PR, then re-run `emit`, `stale` and `frozen` there.
+Then re-extract, which merges that file in verbatim. Re-run `emit`, `stale`
+and `frozen` too, because the contract's bytes changed. Survivors are usually
+found by the implementation PR's `mutate` run, but the allow-list still
+belongs in a spec-side PR.
 
-Zero mutants, every mutant stillborn, or a test that fails on the unmutated
-module all exit 1 too.
+`mutate` also exits 1 in these cases:
+
+- there are zero mutants;
+- every mutant is stillborn;
+- the test fails on the unmutated module.
 
 ### 8. Report
 
-Post the dashboard (`--format markdown` on `check`, `run` and `mutate` is a
-PR comment): each requirement with its evidence, the exclusions, command
-sources that were not run, every survivor, and any failure with its sample.
+Post the dashboard: `--format markdown` on `check`, `run` and `mutate` gives a
+PR comment. It shows:
+
+- each requirement with its evidence;
+- the exclusions;
+- command sources that were not run;
+- every survivor;
+- any failure, with its sample.
 
 ## Without a PR
 
-To check an existing module against an RFC (nish's std/crypto), steps 1, 2
-and 5 are enough: write the contract (here you may read the module for its
-signatures, and pass `--module <src.ts>` or `--nish-root` to `check` so the
-signature gate runs), `check` it, then `run` it.
+To check an existing module against an RFC (nish's std/crypto), do these
+steps:
 
-## Expression language (property `assert` / `where`)
-
-Literals `{"hex"}`, `{"ascii"}` (both take `"label"`: the name the value is
-printed under), `{"int"}`, `{"bool"}`, `{"null":true}`,
-`{"concat":[…]}`; `{"var": name}`; `{"call": fn, "args": […]}`;
-`{"op": …, "args": […]}` with `len concat slice zeros fill flipBit xor bitAnd
-bitOr le64 unwrap isNull notNull + - * % < <= > >= == != and or not implies`.
-`xor`/`bitAnd`/`bitOr` combine two byte strings byte by byte, as long as the
-longer (the shorter reads as zeros past its end), so `xor(key, fill(0x36,
-64))` is HMAC's inner padded key for a key of at most 64 bytes. `unwrap` of a
-null fails the sample. `where` may not call the functions under test.
+1. Write the spec (step 1). Here you may read the module for its signatures.
+2. Build and extract it (step 2).
+3. `check` it, passing `--module <src.ts>` or `--nish-root` so the signature
+   gate runs.
+4. `run` it (step 5).
 
 ## Limits — say them
 
-A passing contract is evidence, not proof: properties are sampled (Z3
-boundaries + seeded random), not quantified. A `command` source is only as
+A passing contract is evidence, not proof. Properties are sampled (Z3
+boundaries plus seeded random), not quantified. A `command` source is only as
 good as the command. Timing, secret wiping and other non-functional MUSTs are
 excluded and must be checked elsewhere (nish's ct-asm/ct-timing and wipe
 tests).
