@@ -164,8 +164,11 @@ specs/<name>.md`. `-o` may name neither the spec it reads nor a
 `*.survivors.json` sidecar.
 
 It refuses everything it cannot read, all at once, each refusal as `file:line`.
-The file is the XML; the line is the markdown line the XML came from when the
-XML carries kramdown-rfc's `<?line?>` marks, and the XML line otherwise. It also runs `spec check`'s gates
+Where the XML carries kramdown-rfc's `<?line?>` marks, a refusal names the
+markdown the XML was built from, `specs/<name>.md` beside it, at the markdown
+line. Otherwise it names the XML at the XML line: before the first mark, and
+for every refusal when that `.md` is not on disk, so a refusal never names a
+file that is not there. It also runs `spec check`'s gates
 (without `--run-sources`); a gate's refusal about `allowSurvivors` names the
 sidecar file instead. Exit codes:
 
