@@ -160,13 +160,8 @@ describe("frontEndFor", () => {
 // ── ts-interface ───────────────────────────────────────────────────────────
 
 describe("ts-interface", () => {
-  const iface = (body: string) =>
-    ts.parseInterface(`// module: nish/m\n${body}`);
-
   test("maps every type, either null order, comments and blank lines", () => {
-    const r = ts.parseInterface(`
-
-//   module:   nish/crypto/x
+    const r = ts.parseInterface(`//   module:   nish/crypto/x
 // a comment line
 export function a(p: u8[], q: null | u8[], r: string, s: string | null): i32;
 export const b = (p: u32, q: boolean, k: Secret<u8[]>,): Secret<u8[]> | null /* trailing */
@@ -200,7 +195,16 @@ export const e = (): u8[] | null`);
         { name: "e", params: [], returns: "bytes?" },
       ],
     });
-    expect(iface("")).toEqual({ module: "nish/m", functions: [] });
+  });
+
+  test("CRLF line ends parse as LF", () => {
+    const lf = "// module: nish/m\n// c\nexport function f(a: u8[]): i32\n";
+    expect(ts.parseInterface(lf.replace(/\n/g, "\r\n"))).toEqual(
+      ts.parseInterface(lf),
+    );
+    expect(ts.parseInterface(lf.replace(/\n/g, "\r"))).toEqual(
+      ts.parseInterface(lf),
+    );
   });
 
   const cases: [string, string, string][] = [
@@ -245,13 +249,30 @@ export const e = (): u8[] | null`);
     ["export function (): i32", "expected a function name, got `(`", "("],
     ["export function f(a: ): i32", "expected a type, got `)`", "): i32"],
     ["export function f(a: i32", "expected `)`, got end of block", ""],
+    ["", "a ts-interface declares at least one function", ""],
+    [
+      "// only a comment\n",
+      "a ts-interface declares at least one function",
+      "",
+    ],
+    [
+      "export function xor(a: u8[]): u8[]",
+      "`xor` is a ts-property op; give the function another name",
+      "xor",
+    ],
+    [
+      "export const concat = (a: string): string",
+      "`concat` is a ts-property op; give the function another name",
+      "concat",
+    ],
   ];
   for (const [body, message, needle] of cases)
     test(message, () => {
       const text = `// module: nish/m\n${body}`;
+      const lines = text.split("\n");
       const pos = needle
         ? posOf(text, needle)
-        : { line: 2, col: body.length + 1 };
+        : { line: lines.length, col: lines[lines.length - 1].length + 1 };
       expect(refusal(ts.parseInterface(text))).toEqual({ message, ...pos });
     });
 
@@ -265,6 +286,15 @@ export const e = (): u8[] | null`);
       message: "missing `// module: nish/<name>` first line",
       line: 2,
       col: 3,
+    });
+    expect(
+      refusal(
+        ts.parseInterface("\n// module: nish/m\nexport function f(): i32"),
+      ),
+    ).toEqual({
+      message: "missing `// module: nish/<name>` first line",
+      line: 2,
+      col: 1,
     });
     expect(refusal(ts.parseInterface("/* module: nish/m */"))).toEqual({
       message: "missing `// module: nish/<name>` first line",
@@ -293,9 +323,7 @@ const i = { var: "i" };
 
 describe("ts-property mappings", () => {
   test("the covers line, forall and its bounds", () => {
-    const r = parsed(`
-
-// P-1.a_b covers R-1,R-2 ,  R-3 — a title — with a dash
+    const r = parsed(`// P-1.a_b covers R-1,R-2 ,  R-3 — a title — with a dash
 forall (
   b: u8[] /* 1..4096 */, // a comment
   i: i32 /* -2147483648..2147483647 */,
@@ -514,16 +542,25 @@ forall (
       "concat(b, b) === b",
       { op: "==", args: [{ op: "concat", args: [b, b] }, b] },
     ],
-    // A string literal is ASCII bytes wherever bytes are wanted.
-    ['b === "ab"', { op: "==", args: [b, { ascii: "ab" }] }],
-    ['"ab" !== b', { op: "!=", args: [{ ascii: "ab" }, b] }],
+    // A string literal is ASCII bytes in a contract op's bytes argument.
     [
-      'concat("a", b) === "a".concat(b)',
+      'concat("a", b) === b.concat(b)',
       {
         op: "==",
         args: [
           { op: "concat", args: [{ ascii: "a" }, b] },
-          { op: "concat", args: [{ ascii: "a" }, b] },
+          { op: "concat", args: [b, b] },
+        ],
+      },
+    ],
+    // `.concat` on a string is TypeScript's string concat.
+    [
+      '"ab".concat("cd") === t.concat(t)',
+      {
+        op: "==",
+        args: [
+          { op: "strConcat", args: [{ str: "ab" }, { str: "cd" }] },
+          { op: "strConcat", args: [t, t] },
         ],
       },
     ],
@@ -535,13 +572,6 @@ forall (
           { op: "flipBit", args: [{ ascii: "a" }, { int: 0 }] },
           { op: "xor", args: [{ ascii: "a" }, b] },
         ],
-      },
-    ],
-    [
-      'hexEncode("a") === "61"',
-      {
-        op: "==",
-        args: [{ call: "hexEncode", args: [{ ascii: "a" }] }, { str: "61" }],
       },
     ],
     [
@@ -590,15 +620,27 @@ forall (
       expect(assertOf(body)).toEqual(want as PropertyClause["assert"]));
 
   test("const bindings are not in scope in where", () => {
-    const r = ts.parseProperty(
-      prop("{ const x = 1; return x > 0; }", " where x > 0"),
-      FNS,
-    );
-    expect(refusal(r).message).toBe("unknown identifier `x`");
+    const text = prop("{ const x = 1; return x > 0; }", " where x > 0");
+    expect(refusal(ts.parseProperty(text, FNS))).toEqual({
+      message: "unknown identifier `x`",
+      ...posOf(text, "x > 0"),
+    });
+  });
+
+  test("CRLF line ends parse as LF", () => {
+    const lf = prop("{\n  const n = b.length;\n  return n >= 0;\n}");
+    expect(parsed(lf.replace(/\n/g, "\r\n"))).toEqual(parsed(lf));
+  });
+
+  test("a long && chain is not nesting", () => {
+    const r = parsed(prop(Array(1000).fill("i > 0").join(" && ")));
+    expect(r.clause.assert).toMatchObject({ op: "and" });
   });
 });
 
 // ── ts-property: refusals ──────────────────────────────────────────────────
+
+const DEPTH = "the expression nests more than 64 deep; name a part with const";
 
 describe("ts-property refusals", () => {
   // [text, message, the text the refusal points at]
@@ -881,6 +923,44 @@ describe("ts-property refusals", () => {
     [prop("b ‖ b"), "`‖` is not in the ts-property subset", "‖"],
     [prop("$ === 0"), "`$` is not in the ts-property subset", "$"],
     [prop("true /* open"), "unterminated `/*` comment", "/* open"],
+    // Text whose TypeScript meaning differs from the contract's.
+    [prop('b === "ab"'), "cannot compare u8[] with string", "b ==="],
+    [prop('"ab" !== b'), "cannot compare string with u8[]", '"ab" !=='],
+    [
+      prop('hexEncode("a") === "61"'),
+      "`hexEncode` expects u8[], got string",
+      '"a"',
+    ],
+    [prop('b.concat("cd") === b'), "`.concat` wants u8[], got string", '"cd"'],
+    [prop('"ab".concat(b) === t'), "`.concat` wants string, got u8[]", "b)"],
+    [
+      prop("b.slice(-2, 5) === b"),
+      "a negative `.slice` index counts from the end in TypeScript and clamps to 0 in the contract",
+      "-2",
+    ],
+    [
+      prop("b.slice(0, -1) === b"),
+      "a negative `.slice` index counts from the end in TypeScript and clamps to 0 in the contract",
+      "-1",
+    ],
+    [
+      prop("i % 0 === 0"),
+      "`% 0` is NaN in TypeScript and 0 in the contract",
+      "0 ===",
+    ],
+    // Nesting is bounded.
+    [prop(`${"(".repeat(65)}true${")".repeat(65)}`), DEPTH, "(true"],
+    [
+      prop(`${Array(70).fill("i").join(" + ")} > 0`),
+      DEPTH,
+      `${Array(70).fill("i").join(" + ")} > 0`,
+    ],
+    [prop(`${"!".repeat(70)}true`), DEPTH, `${"!".repeat(6)}true`],
+    [
+      prop(`${"b.concat(".repeat(70)}b${")".repeat(70)} === b`),
+      DEPTH,
+      `${"b.concat(".repeat(6)}b)`,
+    ],
   ];
   for (const [text, message, needle] of cases)
     test(message, () => {
@@ -896,4 +976,25 @@ describe("ts-property refusals", () => {
           })();
       expect(r).toEqual({ message, ...pos });
     });
+
+  test("an interface function named like an op", () => {
+    const fns = [
+      ...FNS,
+      { name: "xor", params: [], returns: "bytes" },
+    ] as FnSig[];
+    const text = prop("xor(b, b) === b");
+    expect(refusal(ts.parseProperty(text, fns))).toEqual({
+      message: "`xor` is both an interface function and a ts-property op",
+      ...posOf(text, "xor"),
+    });
+  });
+
+  test("the covers line is the first line", () => {
+    const text = `\n${prop("true")}`;
+    expect(refusal(ts.parseProperty(text, FNS))).toEqual({
+      message: "missing `// P-ID covers R-ID — title` line",
+      line: 2,
+      col: 1,
+    });
+  });
 });

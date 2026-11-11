@@ -99,7 +99,8 @@ const BYTES_RE = /^\[((?:[0-9a-f]{2}(?: [0-9a-f]{2})*)?)\]/;
 const BYTES_MESSAGE =
   "a bytes literal is lowercase hex pairs separated by single spaces, like [00 0f]";
 
-function lex(text: string, subset: string): Tok[] {
+function lex(source: string, subset: string): Tok[] {
+  const text = source.replace(/\r\n?/g, "\n");
   const toks: Tok[] = [];
   let i = 0;
   let line = 1;
@@ -120,7 +121,7 @@ function lex(text: string, subset: string): Tok[] {
       lineStart = i;
       continue;
     }
-    if (c === " " || c === "\t" || c === "\r") {
+    if (c === " " || c === "\t") {
       i++;
       continue;
     }
@@ -319,7 +320,7 @@ function parseInterface(text: string): { module: string; functions: FnSig[] } {
     head.kind === "comment" && head.lineComment
       ? head.value.match(/^\s*module:\s*(\S+)\s*$/)
       : null;
-  if (!m)
+  if (!m || head.line !== 1)
     throw new Refusal("missing `// module: nish/<name>` first line", at(head));
   if (!nishModuleFile(m[1]))
     throw new Refusal(
@@ -335,6 +336,11 @@ function parseInterface(text: string): { module: string; functions: FnSig[] } {
     const name = c.ident("a function name");
     if (functions.some((f) => f.name === name.text))
       throw new Refusal(`\`${name.text}\` is declared twice`, at(name));
+    if (CALL_OPS.has(name.text as Op))
+      throw new Refusal(
+        `\`${name.text}\` is a ts-property op; give the function another name`,
+        at(name),
+      );
     if (isConst) c.expect("=");
     c.expect("(");
     const params: FnSig["params"] = [];
@@ -362,6 +368,11 @@ function parseInterface(text: string): { module: string; functions: FnSig[] } {
     c.eat(";");
     functions.push({ name: name.text, params, returns });
   }
+  if (functions.length === 0)
+    throw new Refusal(
+      "a ts-interface declares at least one function",
+      at(c.peek()),
+    );
   return { module: m[1], functions };
 }
 
@@ -392,6 +403,19 @@ interface V {
   pos: Pos;
   /** Set for a bare string literal, whose meaning (str or ascii) the context decides. */
   str?: string;
+  /** How deep the expression nests; unset for a leaf. */
+  depth?: number;
+}
+
+/** Deeper nesting is refused, so a hostile block cannot exhaust the stack. */
+const MAX_DEPTH = 64;
+const DEPTH_MESSAGE = `the expression nests more than ${MAX_DEPTH} deep; name a part with const`;
+
+/** The depth of a node over these operands, refused past MAX_DEPTH. */
+function depthOver(args: V[], pos: Pos): number {
+  const depth = 1 + Math.max(0, ...args.map((a) => a.depth ?? 0));
+  if (depth > MAX_DEPTH) throw new Refusal(DEPTH_MESSAGE, pos);
+  return depth;
 }
 
 /** Infix operators of TypeScript the subset leaves out, refused by name. */
@@ -450,6 +474,8 @@ class PropertyParser {
   private vars = new Map<string, ValueTy>();
   /** True while parsing `where`, which may not call the implementation. */
   private inWhere = false;
+  /** How many operands are being parsed inside one another. */
+  private nest = 0;
 
   constructor(text: string, fns: FnSig[]) {
     this.c = new Cursor(lex(text, PROP));
@@ -492,7 +518,7 @@ class PropertyParser {
       head.kind === "comment" && head.lineComment
         ? head.value.match(/^\s*(\S+)\s+covers\s+(.*)$/)
         : null;
-    if (!m) throw new Refusal(COVERS_HINT, at(head));
+    if (!m || head.line !== 1) throw new Refusal(COVERS_HINT, at(head));
     const dash = m[2].indexOf(" — ");
     const title = dash < 0 ? "" : m[2].slice(dash + 3).trim();
     if (!title)
@@ -638,11 +664,7 @@ class PropertyParser {
         );
         continue;
       }
-      // A string literal compared with bytes means its ASCII bytes.
-      const bytesLike = (v: V) => v.t === "bytes" || v.t === "bytes?";
-      const a = bytesLike(r) ? asBytes(l) : l;
-      const b = bytesLike(l) ? asBytes(r) : r;
-      l = this.typed({ op: eq ? "==" : "!=", args: [a.e, b.e] }, [a, b], name);
+      l = this.typed({ op: eq ? "==" : "!=", args: [l.e, r.e] }, [l, r], name);
     }
   }
 
@@ -687,6 +709,11 @@ class PropertyParser {
       }
       this.c.next();
       const r = this.unary();
+      if (t.text === "%" && "int" in r.e && r.e.int === 0)
+        throw new Refusal(
+          "`% 0` is NaN in TypeScript and 0 in the contract",
+          r.pos,
+        );
       l = this.typed(
         { op: t.text as Op, args: [l.e, r.e] },
         [l, r],
@@ -711,8 +738,15 @@ class PropertyParser {
   }
 
   private unary(): V {
+    const t = this.c.peek();
+    if (++this.nest > MAX_DEPTH) throw new Refusal(DEPTH_MESSAGE, at(t));
+    const v = this.operand(t);
+    this.nest--;
+    return v;
+  }
+
+  private operand(t: Tok): V {
     const c = this.c;
-    const t = c.peek();
     if (c.eat("!")) {
       const a = this.unary();
       return this.typed({ op: "not", args: [a.e] }, [a], "`!`", at(t));
@@ -765,8 +799,16 @@ class PropertyParser {
           `${name} takes ${n} argument(s), got ${args.length}`,
           at(argsAt),
         );
-      const all = op === "concat" ? [v, ...args].map(asBytes) : [v, ...args];
-      v = this.typed({ op, args: all.map((a) => a.e) }, all, name, v.pos);
+      for (const a of op === "slice" ? args : [])
+        if ("int" in a.e && a.e.int < 0)
+          throw new Refusal(
+            "a negative `.slice` index counts from the end in TypeScript and clamps to 0 in the contract",
+            a.pos,
+          );
+      // `.concat` is TypeScript's: string concat on a string, array concat on u8[].
+      const real = op === "concat" && v.t === "string" ? "strConcat" : op;
+      const all = [v, ...args];
+      v = this.typed({ op: real, args: all.map((a) => a.e) }, all, name, v.pos);
     }
   }
 
@@ -826,6 +868,11 @@ class PropertyParser {
     }
     if (ty) throw new Refusal(`\`${t.text}\` is not a function`, pos);
     const sig = this.fns.get(t.text);
+    if (sig && CALL_OPS.has(sig.name as Op))
+      throw new Refusal(
+        `\`${sig.name}\` is both an interface function and a ts-property op`,
+        pos,
+      );
     if (sig) return this.call(sig, pos);
     if (!CALL_OPS.has(t.text as Op))
       throw new Refusal(`unknown function \`${t.text}\``, pos);
@@ -855,15 +902,19 @@ class PropertyParser {
       );
     const typed = args.map((a, i) => {
       const want = valueTy(sig.params[i].type);
-      const v = want === "bytes" || want === "bytes?" ? asBytes(a) : a;
-      if (!assignable(v.t, want))
+      if (!assignable(a.t, want))
         throw new Refusal(
-          `\`${sig.name}\` expects ${tsTy(want)}, got ${tsTy(v.t)}`,
-          v.pos,
+          `\`${sig.name}\` expects ${tsTy(want)}, got ${tsTy(a.t)}`,
+          a.pos,
         );
-      return v.e;
+      return a.e;
     });
-    return { e: { call: sig.name, args: typed }, t: valueTy(sig.returns), pos };
+    return {
+      e: { call: sig.name, args: typed },
+      t: valueTy(sig.returns),
+      pos,
+      depth: depthOver(args, pos),
+    };
   }
 
   /**
@@ -887,7 +938,7 @@ class PropertyParser {
         m[1] === undefined ? pos : args[Number(m[1])].pos,
       );
     }
-    return { e, t, pos };
+    return { e, t, pos, depth: depthOver(args, pos) };
   }
 }
 
