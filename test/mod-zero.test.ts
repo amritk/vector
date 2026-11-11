@@ -60,6 +60,7 @@ describe("a computed % 0", () => {
     expect(rem(7, -2)).toBe(1);
     expect(rem(-2147483648, -1)).toBe(0);
     expect(rem(-7, -1)).toBe(0);
+    expect(rem(-4, 2)).toBe(0);
   });
 
   test("where keeps every sample, and the assert holds on each", async () => {

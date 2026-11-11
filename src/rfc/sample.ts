@@ -189,10 +189,10 @@ export function evalPure(e: Expr, env: Record<string, Value>): Value {
     case "*":
       return Math.imul(n(0), n(1));
     case "%": {
-      // As the emitted remI32: 0 for a zero divisor, and for -1, where JS
-      // would give -0 for -2147483648 % -1.
+      // As the emitted remI32: 0 for a zero divisor, truncating otherwise
+      // (`| 0` turns JS's -0, as in -4 % 2 or -2147483648 % -1, into 0).
       const d = n(1);
-      return d === 0 || d === -1 ? 0 : n(0) % d;
+      return d === 0 ? 0 : (n(0) % d) | 0;
     }
     case "le64": {
       const out = new Uint8Array(8);
