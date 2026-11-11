@@ -10,7 +10,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { RfcContract, SourceDecl } from "./contract.ts";
 import { sha256 } from "./emit-nish.ts";
-import { sourceLabel } from "./frozen.ts";
+import { SIDECAR_SUFFIX, sourceLabel } from "./frozen.ts";
 import { runGates } from "./gates.ts";
 import { type Refusal, locate, profileToContract } from "./profile.ts";
 import {
@@ -59,18 +59,18 @@ const width = (s: string): number => [...s].length;
 /**
  * `v` as canonical JSON, as biome formats it, so a written contract passes
  * `biome check`: 2-space indent, `\n`, a trailing newline; every non-empty
- * object expanded; an array of primitives on one line when that line, with
- * its trailing comma, is at most 80 characters, else one element per line.
+ * object expanded; an array that holds no object on one line when that line, with
+ * its trailing comma, is at most 80 characters, else expanded: an array of
+ * numbers filled, as many to a line as fit, any other one element per line.
  */
 export function canonicalJson(v: unknown): string {
   const write = (x: unknown, indent: string, used: number): string => {
     const inner = `${indent}  `;
     if (Array.isArray(x)) {
       if (x.length === 0) return "[]";
-      if (x.every((e) => e === null || typeof e !== "object")) {
-        const flat = `[${x.map((e) => JSON.stringify(e)).join(", ")}]`;
-        if (used + width(flat) <= LINE_WIDTH) return flat;
-      }
+      const flat = inline(x);
+      if (flat !== undefined && used + width(flat) <= LINE_WIDTH) return flat;
+      if (x.every((e) => typeof e === "number")) return fill(x, indent);
       const items = x.map(
         (e, i) => inner + write(e, inner, width(inner) + comma(i, x.length)),
       );
@@ -88,6 +88,37 @@ export function canonicalJson(v: unknown): string {
     return JSON.stringify(x);
   };
   return `${write(v, "", 0)}\n`;
+}
+
+/** `x` on one line, or undefined when it holds an object. */
+function inline(x: unknown): string | undefined {
+  if (!Array.isArray(x))
+    return x !== null && typeof x === "object" ? undefined : JSON.stringify(x);
+  const items = x.map(inline);
+  return items.every((e) => e !== undefined)
+    ? `[${items.join(", ")}]`
+    : undefined;
+}
+
+/**
+ * An array of numbers expanded as biome fills it: each line holds as many
+ * elements, each with its comma, as fit in 80 characters.
+ */
+function fill(x: number[], indent: string): string {
+  const inner = `${indent}  `;
+  const lines: string[] = [];
+  let line = "";
+  x.forEach((e, i) => {
+    const item = JSON.stringify(e) + (i < x.length - 1 ? "," : "");
+    if (line !== "" && width(`${line} ${item}`) <= LINE_WIDTH) {
+      line = `${line} ${item}`;
+    } else {
+      if (line !== "") lines.push(line);
+      line = inner + item;
+    }
+  });
+  lines.push(line);
+  return `[\n${lines.join("\n")}\n${indent}]`;
 }
 
 /** The width of the comma after element `i` of `n`. */
@@ -118,17 +149,19 @@ export function defaultContractPath(xmlPath: string): string {
 }
 
 /**
- * The sidecar that holds the allowSurvivors of a spec's contract, beside the
- * spec: specs/<name>.survivors.json. Not in contracts/, where `spec frozen`
- * reads every .json as a contract.
+ * The sidecar that holds the allowSurvivors of a contract, beside it:
+ * contracts/<name>.survivors.json. `spec frozen` skips it (SIDECAR_SUFFIX).
  */
-export function survivorsPath(xmlPath: string): string {
-  return join(dirname(xmlPath), `${basename(xmlPath, ".xml")}.survivors.json`);
+export function survivorsPath(contractPath: string): string {
+  return join(
+    dirname(contractPath),
+    `${basename(contractPath, ".json")}${SIDECAR_SUFFIX}`,
+  );
 }
 
 /** The sidecar's allowSurvivors, or undefined when there is no sidecar. */
-function readSurvivors(xmlPath: string): unknown[] | undefined {
-  const file = survivorsPath(xmlPath);
+function readSurvivors(contractPath: string): unknown[] | undefined {
+  const file = survivorsPath(contractPath);
   if (!existsSync(file)) return undefined;
   let got: unknown;
   try {
@@ -159,12 +192,15 @@ function rfcEntry(
   return {
     id: `rfc${n}`,
     rfc: n,
-    ...(local ? { path: relative(here, file).split(sep).join("/") } : {}),
+    ...(local ? { path: posix(relative(here, file)) } : {}),
     // sourceFile looks only where sourceLabel can name a file.
     file: sourceLabel(got.file, contractPath) as string,
     sha256: got.sha256,
   };
 }
+
+/** A relative path with `/` separators, as a contract records one. */
+const posix = (p: string): string => p.split(sep).join("/");
 
 /** A refusal as extract prints it: `file:line: message`. */
 const refusalLine = (r: Refusal): string => `${r.file}:${r.line}: ${r.message}`;
@@ -189,12 +225,13 @@ export type ExtractResult = { text: string } | { refusals: string[] };
  * that is found nowhere, and an Error for a file it cannot read.
  */
 export function extract(xmlPath: string, contractPath: string): ExtractResult {
-  let text: string;
+  let bytes: Buffer;
   try {
-    text = readFileSync(xmlPath, "utf8");
+    bytes = readFileSync(xmlPath);
   } catch (err) {
     throw new Error(`cannot read ${xmlPath}: ${(err as Error).message}`);
   }
+  const text = bytes.toString("utf8");
   const rfcs = new Map<number, LoadedSource>();
   const missing: MissingRfcFile[] = [];
   let read: ReturnType<typeof profileToContract>;
@@ -220,12 +257,16 @@ export function extract(xmlPath: string, contractPath: string): ExtractResult {
   if ("refusals" in read) return { refusals: read.refusals.map(refusalLine) };
 
   const { contract, locator } = read;
-  const survivors = readSurvivors(xmlPath);
+  const survivors = readSurvivors(contractPath);
   const full = ordered({
     $schema: "../schemas/rfc-contract.json",
     ...contract,
-    source: { ...contract.source, sha256: sha256(Buffer.from(text, "utf8")) },
+    // The hash of the bytes read, as `spec check` hashes them.
+    source: { ...contract.source, sha256: sha256(bytes) },
     sources: contract.sources?.map((d) => {
+      // The spec itself, by its path from where the contract is written.
+      if (d.rfc === undefined && d.path !== undefined)
+        return { ...d, path: posix(relative(dirname(contractPath), xmlPath)) };
       const got = d.rfc === undefined ? undefined : rfcs.get(d.rfc);
       return got ? rfcEntry(d.rfc as number, got, contractPath) : d;
     }),
@@ -249,6 +290,9 @@ export function extract(xmlPath: string, contractPath: string): ExtractResult {
   return { text: canonicalJson(full) };
 }
 
+/** Marks a last line that has no newline; JSON text holds no NUL. */
+const NO_EOL = "\u0000";
+
 /**
  * A unified diff of `a` (the file `aName`) against `b` (`bName`), with three
  * lines of context, or "" when they are equal. Lines are matched by their
@@ -261,30 +305,50 @@ export function unifiedDiff(
   bName: string,
 ): string {
   if (a === b) return "";
-  const split = (s: string) =>
-    s === "" ? [] : s.replace(/\n$/, "").split("\n");
+  // A last line with no newline is marked, so it differs from one with one.
+  const split = (s: string) => {
+    if (s === "") return [];
+    const lines = s.replace(/\n$/, "").split("\n");
+    if (!s.endsWith("\n")) lines[lines.length - 1] += NO_EOL;
+    return lines;
+  };
   const x = split(a);
   const y = split(b);
-  // lcs[i][j]: the longest common subsequence of x[i..] and y[j..].
-  const lcs = Array.from({ length: x.length + 1 }, () =>
-    new Array<number>(y.length + 1).fill(0),
+  // The lines both share at the start and the end need no LCS.
+  let pre = 0;
+  while (pre < x.length && pre < y.length && x[pre] === y[pre]) pre++;
+  let suf = 0;
+  while (
+    suf < x.length - pre &&
+    suf < y.length - pre &&
+    x[x.length - 1 - suf] === y[y.length - 1 - suf]
+  )
+    suf++;
+  const xm = x.length - suf;
+  const ym = y.length - suf;
+  // lcs[i - pre][j - pre]: the longest common subsequence of x[i..xm] and
+  // y[j..ym].
+  const lcs = Array.from({ length: xm - pre + 1 }, () =>
+    new Array<number>(ym - pre + 1).fill(0),
   );
-  for (let i = x.length - 1; i >= 0; i--)
-    for (let j = y.length - 1; j >= 0; j--)
-      lcs[i][j] =
+  for (let i = xm - 1; i >= pre; i--)
+    for (let j = ym - 1; j >= pre; j--)
+      lcs[i - pre][j - pre] =
         x[i] === y[j]
-          ? lcs[i + 1][j + 1] + 1
-          : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+          ? lcs[i - pre + 1][j - pre + 1] + 1
+          : Math.max(lcs[i - pre + 1][j - pre], lcs[i - pre][j - pre + 1]);
   // The edit script: " ", "-" or "+" and the line, with each side's index.
   const ops: { op: string; line: string; i: number; j: number }[] = [];
   let i = 0;
   let j = 0;
   while (i < x.length || j < y.length) {
-    if (i < x.length && j < y.length && x[i] === y[j]) {
+    // Within the shared start and end, or matched within the middle.
+    const mid = i < xm && j < ym;
+    if (i < pre || (i >= xm && j >= ym) || (mid && x[i] === y[j])) {
       ops.push({ op: " ", line: x[i], i: i++, j: j++ });
     } else if (
-      i < x.length &&
-      (j === y.length || lcs[i + 1][j] >= lcs[i][j + 1])
+      i < xm &&
+      (j === ym || lcs[i - pre + 1][j - pre] >= lcs[i - pre][j - pre + 1])
     ) {
       // A deletion before an insertion, as diff -u prints them.
       ops.push({ op: "-", line: x[i], i: i++, j });
@@ -319,7 +383,9 @@ export function unifiedDiff(
     const bCount = count("-");
     out.push(
       `@@ -${from(aCount, hunk[0].i)},${aCount} +${from(bCount, hunk[0].j)},${bCount} @@`,
-      ...hunk.map((o) => o.op + o.line),
+      ...hunk.map((o) =>
+        (o.op + o.line).replace(NO_EOL, "\n\\ No newline at end of file"),
+      ),
     );
     k = stop;
   }

@@ -180,6 +180,8 @@ function parse(argv: string[]): RfcArgs {
     throw new UsageError(
       "--format markdown is for check, emit, run and mutate",
     );
+  if (a.check && a.cmd !== "extract")
+    throw new UsageError("--check is for extract");
   return a;
 }
 

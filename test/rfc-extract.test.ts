@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, spyOn, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import {
   cpSync,
   mkdirSync,
@@ -18,7 +19,7 @@ import {
   survivorsPath,
   unifiedDiff,
 } from "../src/rfc/extract.ts";
-import { VECTOR_ROOT } from "../src/rfc/frozen.ts";
+import { SIDECAR_SUFFIX, VECTOR_ROOT, frozenCheck } from "../src/rfc/frozen.ts";
 
 // `vector spec extract`: a kramdown-rfc spec's XML → its canonical contract.
 // The fixture test/fixtures/extract/extract-mini.md is specs/example-hex.md
@@ -106,20 +107,22 @@ describe("canonicalJson", () => {
     );
   });
 
-  test("an array of objects, or of arrays, is one element per line", () => {
+  test("an array that holds an object is one element per line", () => {
     expect(canonicalJson([{ a: 1 }, [1, 2]])).toBe(
       '[\n  {\n    "a": 1\n  },\n  [1, 2]\n]\n',
     );
     // An element's width counts its own comma.
     const inner = ["y".repeat(71)]; // 2 + 75 + 1 (comma) = 78: fits
-    expect(canonicalJson([inner, 1])).toBe(
-      `[\n  ${JSON.stringify(inner)},\n  1\n]\n`,
+    expect(canonicalJson([inner, {}])).toBe(
+      `[\n  ${JSON.stringify(inner)},\n  {}\n]\n`,
     );
   });
 
   test("every committed contract is in canonical form", () => {
     const dir = join(VECTOR_ROOT, "contracts");
-    const files = readdirSync(dir).filter((f) => f.endsWith(".json"));
+    const files = readdirSync(dir).filter(
+      (f) => f.endsWith(".json") && !f.endsWith(SIDECAR_SUFFIX),
+    );
     expect(files.length).toBeGreaterThan(2);
     for (const f of files) {
       const text = readFileSync(join(dir, f), "utf8");
@@ -130,6 +133,54 @@ describe("canonicalJson", () => {
   test("the key order starts with $schema and ends with allowSurvivors", () => {
     expect(CONTRACT_KEYS[0]).toBe("$schema");
     expect(CONTRACT_KEYS.at(-1)).toBe("allowSurvivors");
+  });
+});
+
+describe("canonicalJson, as biome lays out what does not fit", () => {
+  test("an array of arrays with no object is inline when it fits", () => {
+    expect(canonicalJson({ k: [[1, "a"], [], [null]] })).toBe(
+      '{\n  "k": [[1, "a"], [], [null]]\n}\n',
+    );
+  });
+
+  test("an array of numbers is filled, as many to a line as fit in 80", () => {
+    const n = Array.from({ length: 40 }, (_, i) => i);
+    // What `biome format` writes for {"a": [0, …, 39]}.
+    expect(canonicalJson({ a: n })).toBe(
+      [
+        "{",
+        '  "a": [',
+        "    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,",
+        "    21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39",
+        "  ]",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    // The last element has no comma, so it fits where a comma would not.
+    // As biome writes it: 1234 ends a line at 80, 12345 would not fit.
+    const six = Array(6).fill(10 ** 9);
+    expect(canonicalJson({ k: [...six, 1234], j: [...six, 12345] })).toBe(
+      [
+        "{",
+        '  "k": [',
+        `    ${six.join(", ")}, 1234`,
+        "  ],",
+        '  "j": [',
+        `    ${six.join(", ")},`,
+        "    12345",
+        "  ]",
+        "}",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  test("an array of strings or booleans that does not fit is one per line", () => {
+    const b = Array.from({ length: 20 }, () => true);
+    expect(canonicalJson(b)).toBe(
+      `[\n${b.map(() => "  true").join(",\n")}\n]\n`,
+    );
   });
 });
 
@@ -183,6 +234,36 @@ describe("unifiedDiff", () => {
     ]);
   });
 
+  test("a missing newline at the end is a change, marked as diff -u marks it", () => {
+    expect(unifiedDiff("a\nb", "a\nb\n", "x", "y")).toBe(
+      "--- x\n+++ y\n@@ -1,2 +1,2 @@\n a\n-b\n\\ No newline at end of file\n+b\n",
+    );
+    expect(unifiedDiff("a\n", "a\nb", "x", "y")).toBe(
+      "--- x\n+++ y\n@@ -1,1 +1,2 @@\n a\n+b\n\\ No newline at end of file\n",
+    );
+  });
+
+  test("a long shared start and end are context, not part of the match", () => {
+    const a = `${lines(2000)}`;
+    const b = a.replace("l1000\n", "mid\n");
+    expect(unifiedDiff(a, b, "x", "y")).toBe(
+      [
+        "--- x",
+        "+++ y",
+        "@@ -997,7 +997,7 @@",
+        " l997",
+        " l998",
+        " l999",
+        "-l1000",
+        "+mid",
+        " l1001",
+        " l1002",
+        " l1003",
+        "",
+      ].join("\n"),
+    );
+  });
+
   test("an insertion and a deletion count their sides", () => {
     const b = lines(4).replace("l2\n", "l2\nnew\n").replace("l4\n", "");
     expect(unifiedDiff(lines(4), b, "x", "y")).toBe(
@@ -198,9 +279,9 @@ describe("paths", () => {
     );
   });
 
-  test("the allowSurvivors sidecar is specs/<name>.survivors.json", () => {
-    expect(survivorsPath(join("a", "specs", "x.xml"))).toBe(
-      join("a", "specs", "x.survivors.json"),
+  test("the allowSurvivors sidecar is contracts/<name>.survivors.json", () => {
+    expect(survivorsPath(join("a", "contracts", "x.json"))).toBe(
+      join("a", "contracts", "x.survivors.json"),
     );
   });
 });
@@ -224,6 +305,9 @@ describe("vector spec extract", () => {
     r = await cli(["extract", MINI_XML, "--check"]);
     expect(r.code).toBe(2);
     expect(r.err).toBe("error: --check needs -o <contract.json>");
+    r = await cli(["check", "c.json", "--check"]);
+    expect(r.code).toBe(2);
+    expect(r.err).toBe("error: --check is for extract");
     r = await cli(["extract", join(tmpdir(), "vector-no-such-spec.xml")]);
     expect(r.code).toBe(2);
     expect(r.err).toContain("error: cannot read ");
@@ -283,6 +367,18 @@ describe("vector spec extract", () => {
     expect(check.code, check.out).toBe(0);
   });
 
+  test("the spec's path is from where -o writes the contract", async () => {
+    const t = tree();
+    const out = join(t.d, "deep/dir/c.json");
+    mkdirSync(dirname(out), { recursive: true });
+    const r = await cli(["extract", t.xml, "-o", out]);
+    expect(r.code, r.err).toBe(0);
+    const c = JSON.parse(readFileSync(out, "utf8"));
+    expect(c.sources[0].path).toBe("../../specs/extract-mini.xml");
+    const check = await cli(["check", out]);
+    expect(check.code, check.out).toBe(0);
+  });
+
   test("--check: 0 when up to date, else 1 with a unified diff", async () => {
     const t = tree();
     let r = await cli(["extract", t.xml, "-o", t.out, "--check"]);
@@ -315,14 +411,14 @@ describe("vector spec extract", () => {
     const t = tree();
     const { allowSurvivors } = JSON.parse(
       readFileSync(
-        join(VECTOR_ROOT, "specs/example-hex.survivors.json"),
+        join(VECTOR_ROOT, "contracts/example-hex.survivors.json"),
         "utf8",
       ),
     );
     const survivors = allowSurvivors.slice(0, 2);
     write(
       t.d,
-      "specs/extract-mini.survivors.json",
+      "contracts/extract-mini.survivors.json",
       JSON.stringify({ allowSurvivors: survivors }),
     );
     const r = await cli(["extract", t.xml]);
@@ -336,7 +432,7 @@ describe("vector spec extract", () => {
     const t = tree();
     write(
       t.d,
-      "specs/extract-mini.survivors.json",
+      "contracts/extract-mini.survivors.json",
       JSON.stringify({ allowSurvivors: [{ line: 3 }] }),
     );
     const r = await cli(["extract", t.xml]);
@@ -346,7 +442,7 @@ describe("vector spec extract", () => {
 
   test("a sidecar that is not JSON, or holds no list, is an error", async () => {
     const t = tree();
-    const side = join(t.d, "specs/extract-mini.survivors.json");
+    const side = join(t.d, "contracts/extract-mini.survivors.json");
     writeFileSync(side, "{");
     let r = await cli(["extract", t.xml]);
     expect(r.code).toBe(2);
@@ -437,5 +533,41 @@ describe("contracts/example-hex.json", () => {
     ]);
     expect(r.err).toBe("");
     expect(r.code).toBe(0);
+  });
+});
+
+describe("spec frozen and the sidecar", () => {
+  test("contracts/*.survivors.json is not globbed as a contract", async () => {
+    const t = tree();
+    write(
+      t.d,
+      "contracts/extract-mini.survivors.json",
+      readFileSync(
+        join(VECTOR_ROOT, "contracts/example-hex.survivors.json"),
+        "utf8",
+      ),
+    );
+    expect((await cli(["extract", t.xml, "-o", t.out])).code).toBe(0);
+    for (const args of [
+      ["init", "-q"],
+      ["add", "-A"],
+      [
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@example.com",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-qm",
+        "c",
+      ],
+    ])
+      expect(spawnSync("git", args, { cwd: t.d }).status).toBe(0);
+    const r = frozenCheck({ repo: t.d, base: "HEAD" });
+    expect(r.contracts.map((c) => c.path)).toEqual([
+      join(t.d, "contracts/extract-mini.json"),
+    ]);
+    expect(r.problems).toEqual([]);
   });
 });
