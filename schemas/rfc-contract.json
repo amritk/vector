@@ -663,7 +663,7 @@
         },
         "rfc": {
           "type": "integer",
-          "description": "An RFC number: rfcs/rfc<N>.txt."
+          "description": "An RFC number. Unless `path` is given, its text is rfc<N>.xml, else rfc<N>.txt, beside the contract, in ../rfcs, then in vector's rfcs/; at each place the XML comes first, and a recorded `file` picks between them."
         },
         "path": {
           "type": "string",
