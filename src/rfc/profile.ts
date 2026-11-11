@@ -66,8 +66,12 @@ import {
 } from "./xmlv3.ts";
 
 export interface Refusal {
+  /** The markdown file when `line` is its line, else the XML file. */
   file: string;
-  /** The markdown line when the XML carries `<?line N?>`, else the XML line. */
+  /**
+   * The markdown line when the XML carries `<?line N?>` and the markdown
+   * file is known, else the XML line.
+   */
   line: number;
   col?: number;
   message: string;
@@ -116,7 +120,23 @@ const textFault = (s: string): string | undefined => {
   const ch = controlChar(s);
   return ch ? `holds a control character (${ch})` : undefined;
 };
-const lineOf = (loc: Loc): number => loc.mdLine ?? loc.xmlLine;
+/**
+ * Where `loc` is printed: the markdown file `md` at its markdown line when
+ * both are known, else the XML file `xml` at its XML line.
+ */
+export const whereOf = (
+  loc: Loc,
+  xml: string,
+  md?: string,
+): { file: string; line: number } =>
+  md !== undefined && loc.mdLine !== undefined
+    ? { file: md, line: loc.mdLine }
+    : { file: xml, line: loc.xmlLine };
+/** `loc` moved `n` lines down, in the XML and in the markdown alike. */
+const below = (loc: Loc, n: number): Loc => ({
+  xmlLine: loc.xmlLine + n,
+  ...(loc.mdLine === undefined ? {} : { mdLine: loc.mdLine + n }),
+});
 const rfcId = (rfc: number) => `rfc${rfc}`;
 
 /** A section of the document, as parseV3 numbers it. */
@@ -197,12 +217,13 @@ export function profileToContract(
   doc: V3Document,
   xmlPath: string,
   resolve: RfcResolver,
+  mdPath?: string,
 ): { contract: RfcContract; locator: Locator } | { refusals: Refusal[] } {
   const refusals: Refusal[] = [];
+  const where = (loc: Loc) => whereOf(loc, xmlPath, mdPath);
   const refuse = (loc: Loc, message: string, col?: number) => {
     refusals.push({
-      file: xmlPath,
-      line: lineOf(loc),
+      ...where(loc),
       ...(col === undefined ? {} : { col }),
       message,
     });
@@ -323,8 +344,8 @@ export function profileToContract(
     node: XmlNode,
     rs: { line: number; col: number; message: string }[],
   ) => {
-    const at = lineOf(codeOf(node).loc);
-    for (const r of rs) refuse({ xmlLine: at + r.line - 1 }, r.message, r.col);
+    const at = codeOf(node).loc;
+    for (const r of rs) refuse(below(at, r.line - 1), r.message, r.col);
   };
   const interfaces = code.filter((c) => fronted(c, "interface"));
   let functions: FnSig[] = [];
@@ -345,8 +366,8 @@ export function profileToContract(
     else if (r) {
       functions = r.functions;
       module = r.module;
-      const at = lineOf(codeOf(iface).loc);
-      fnLocs = r.lines.map((l) => ({ xmlLine: at + l - 1 }));
+      const at = codeOf(iface).loc;
+      fnLocs = r.lines.map((l) => below(at, l - 1));
       checkText(iface.loc, "the ts-interface block's module", module);
       functions.forEach(({ name }, i) => {
         if (
@@ -911,17 +932,28 @@ export function profileToContract(
   };
   // The backstop: each value was checked where it was read, so this finds
   // nothing; if it ever does, the issue is refused at a line all the same.
-  const shape = shapeRefusals(result, xmlPath, doc.root.loc, {
-    requirements: requirements.map((q) => q.loc),
-    exclusions: exclusions.map((q) => q.loc),
-    clauses: clauseLocs,
-    functions: fnLocs,
-  });
+  const shape = shapeRefusals(
+    result,
+    xmlPath,
+    doc.root.loc,
+    {
+      requirements: requirements.map((q) => q.loc),
+      exclusions: exclusions.map((q) => q.loc),
+      clauses: clauseLocs,
+      functions: fnLocs,
+    },
+    mdPath,
+  );
   if (shape.length > 0) return { refusals: shape };
   // Where each id was read, for the gates' issues: the first wins.
+  const root = where(doc.root.loc);
   const at: Record<string, number> = {};
+  const files: Record<string, string> = {};
   const put = (key: string, loc: Loc) => {
-    if (!Object.hasOwn(at, key)) at[key] = lineOf(loc);
+    if (Object.hasOwn(at, key)) return;
+    const w = where(loc);
+    at[key] = w.line;
+    if (w.file !== root.file) files[key] = w.file;
   };
   for (const q of requirements) put(q.id, q.loc);
   for (const q of exclusions) put(`exclusion §${q.section}`, q.loc);
@@ -929,7 +961,12 @@ export function profileToContract(
   functions.forEach((f, i) => put(f.name, fnLocs[i]));
   return {
     contract: result,
-    locator: { file: xmlPath, root: lineOf(doc.root.loc), at },
+    locator: {
+      file: root.file,
+      root: root.line,
+      at,
+      ...(Object.keys(files).length > 0 ? { files } : {}),
+    },
   };
 }
 
@@ -939,10 +976,16 @@ export function profileToContract(
  * exclusion in a section, keyed `exclusion §N` as the gates name it.
  */
 export interface Locator {
+  /** The file of `root`, and of each `at` line not in `files`. */
   file: string;
   /** The line of the document's root, for what names no part. */
   root: number;
   at: Record<string, number>;
+  /**
+   * The file of an `at` line when it is not `file`: the markdown for a part
+   * read at a markdown line, or the XML for one read before the first.
+   */
+  files?: Record<string, string>;
 }
 
 /**
@@ -952,7 +995,8 @@ export interface Locator {
  */
 export function locate(l: Locator, at: string): { file: string; line: number } {
   for (let k = at; ; k = k.slice(0, k.lastIndexOf("."))) {
-    if (Object.hasOwn(l.at, k)) return { file: l.file, line: l.at[k] };
+    if (Object.hasOwn(l.at, k))
+      return { file: l.files?.[k] ?? l.file, line: l.at[k] };
     if (!k.includes(".")) return { file: l.file, line: l.root };
   }
 }
@@ -960,13 +1004,16 @@ export function locate(l: Locator, at: string): { file: string; line: number } {
 /**
  * validateContractShape's issues with `contract`, each refused at the line of
  * the element its value came from: `locs.requirements[i]` for an issue under
- * `requirements[i]`, and so on; any other at `root`. Sorted by line.
+ * `requirements[i]`, and so on; any other at `root`. Each is in the markdown
+ * `md` at its markdown line when both are known, else in `file`. Sorted by
+ * line.
  */
 export function shapeRefusals(
   contract: RfcContract,
   file: string,
   root: Loc,
   locs: Record<"requirements" | "exclusions" | "clauses" | "functions", Loc[]>,
+  md?: string,
 ): Refusal[] {
   return validateContractShape(contract)
     .map((issue) => {
@@ -975,8 +1022,7 @@ export function shapeRefusals(
       );
       const loc = (m && locs[m[1] as keyof typeof locs][Number(m[2])]) || root;
       return {
-        file,
-        line: lineOf(loc),
+        ...whereOf(loc, file, md),
         message: `the contract read here is not valid: ${issue}`,
       };
     })

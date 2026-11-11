@@ -7,6 +7,7 @@ import {
 import { BYTES_MESSAGE as BYTES_HINT } from "../src/rfc/front/ts.ts";
 import { runGates } from "../src/rfc/gates.ts";
 import {
+  LABELLED_MESSAGE as LABELLED,
   isLiteralError,
   parseCall,
   parseLiteral,
@@ -136,19 +137,19 @@ describe("fixtures", () => {
         refusals: [
           {
             file: path,
-            line: 68,
+            line: 76,
             message:
               'R-RFC-VECTORS is not in Section 10 of RFC4648: "The base 16 encoding of "f" is "66"."',
           },
           {
             file: path,
-            line: 79,
+            line: 87,
             col: 98,
             message: "`.repeat` is not in the ts-property subset",
           },
           {
             file: path,
-            line: 180,
+            line: 188,
             message: "Expected: hexEncode returns string, not bytes",
           },
         ],
@@ -815,11 +816,7 @@ describe("literals", () => {
       ["[0 1]", BYTES_HINT, 1],
       ["concat()", "concat needs at least one part", 1],
       ["concat(concat([00]))", "concat does not nest; list every part", 8],
-      [
-        "K = 0A",
-        "a labelled value is `Label = hex`, lowercase hex pairs with no spaces",
-        1,
-      ],
+      ["K = 0A", LABELLED, 1],
       ["a ‖ b", "not a literal", 1],
       ["‖", "`‖` is not a literal; write concat(a, b)", 1],
       ["1 2", "unexpected text after the value", 3],
@@ -1028,8 +1025,7 @@ describe("refusals of review round 1", () => {
       {
         line: 15,
         col: 11,
-        message:
-          "Call: a labelled value is `Label = hex`, lowercase hex pairs with no spaces",
+        message: `Call: ${LABELLED}`,
       },
       { line: 16, col: 11, message: "Call: not a literal" },
       { line: 17, message: "Expected: hexEncode returns string, not bytes" },

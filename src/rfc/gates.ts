@@ -1290,88 +1290,74 @@ function checkCompleteness(
  * gives one entry per level per sentence, so each use of that level in the
  * sentence is found as normativeSentences finds keywords (KEYWORD_RE): "MUST
  * NOT do A and MUST do B" is two keywords, and a quote must cover each.
+ *
+ * Each entry is located by the position the reader recorded for it: its
+ * line in the section's ownLines and the sentence's offset in that line,
+ * added to where the line starts in the normalized own text. So the same
+ * words elsewhere (a paragraph with no <bcp14>, or a second marked copy)
+ * are not this entry's place, and each marked copy is its own entry to
+ * quote. Where the recorded position does not hold the sentence (the
+ * reader's text and plainText disagree, as for `x<bcp14> MUST</bcp14>`,
+ * which reads "xMUST" to the reader and "x MUST" in the line), the entry
+ * gets no offsets and is reported: a false failure, never a false pass.
  */
 function bindingSentences(
   doc: RfcDocument,
 ): { section: string; keyword: string; sentence: string; at: number[] }[] {
   if (!("normative" in doc))
     return normativeSentences(doc).map((n) => ({ ...n, at: [n.at] }));
-  const binding = (doc as V3Document).normative.filter((n) =>
-    BINDING_LEVELS.has(n.level),
-  );
-  const keyOf = (n: (typeof binding)[number]) =>
-    `${n.section}\n${n.level}\n${n.sentence}`;
-  const total = new Map<string, number>();
-  for (const n of binding) total.set(keyOf(n), (total.get(keyOf(n)) ?? 0) + 1);
-  const indexes = new Map<string, Map<string, number[]>>();
-  const seen = new Map<string, number>();
-  return binding.flatMap((n) => {
-    const sec = findSection(doc, n.section);
-    let index = indexes.get(n.section);
-    if (!index) {
-      index = sec ? sentenceIndex(sec) : new Map();
-      indexes.set(n.section, index);
-    }
-    const key = keyOf(n);
-    const i = seen.get(key) ?? 0;
-    seen.set(key, i + 1);
-    // Entries come in document order, as the reader's paragraphs do in the
-    // section's own lines, so with as many places as entries the i-th entry
-    // is the i-th place. Otherwise (the same sentence again in a paragraph
-    // with no <bcp14>, which the reader does not tell apart from the marked
-    // one by its text), which place is the entry's is unknown, so each must
-    // be quoted: a false failure the contract can answer, never a false pass.
-    const places = index.get(n.sentence) ?? [];
-    const count = total.get(key) as number;
-    const mine = places.length === count ? [places[i]] : places;
-    const uses = [...n.sentence.matchAll(KEYWORD_RE)]
-      .filter((m) => m[1] === n.level)
-      .map((m) => m.index);
-    const entry = {
-      section: n.section,
-      keyword: n.level,
-      sentence: n.sentence,
-    };
-    if (uses.length === 0) return [{ ...entry, at: [] }];
-    return uses.map((k) => ({ ...entry, at: mine.map((a) => a + k) }));
-  });
+  const starts = new Map<string, (number | null)[]>();
+  return (doc as V3Document).normative
+    .filter((n) => BINDING_LEVELS.has(n.level))
+    .flatMap((n) => {
+      const sec = findSection(doc, n.section);
+      let lineAt = starts.get(n.section);
+      if (!lineAt) {
+        lineAt = sec ? lineStarts(sec) : [];
+        starts.set(n.section, lineAt);
+      }
+      // The entry's own copy of the sentence, by the line and offset the
+      // reader recorded, so the same words in a paragraph with no <bcp14>
+      // are not it. Where its text is not there, nothing locates it and it
+      // is reported: never a false pass.
+      const base = lineAt[n.line];
+      const at =
+        base != null &&
+        normalizeText(sec?.ownLines[n.line] ?? "").startsWith(
+          n.sentence,
+          n.start,
+        )
+          ? base + n.start
+          : null;
+      const entry = {
+        section: n.section,
+        keyword: n.level,
+        sentence: n.sentence,
+      };
+      const uses =
+        at === null
+          ? []
+          : [...n.sentence.matchAll(KEYWORD_RE)]
+              .filter((m) => m[1] === n.level)
+              .map((m) => ({ ...entry, at: [at + m.index] }));
+      return uses.length > 0 ? uses : [{ ...entry, at: [] }];
+    });
 }
 
 /**
- * Where each sentence of a section's own prose starts in its normalized own
- * text, by sentence. The reader makes each paragraph, list item and table
- * cell one line, and splits an entry's sentence out of that line's text at
- * ". ", so each line is split the same way here, and the sentence is found
- * only where it is a whole sentence of a line: not inside a longer one, and
- * not in an <artwork> or <sourcecode> line (codeLines), which no <bcp14> is
- * in. One pass over the section, so a long RFC costs no more than its length.
+ * Where each of a section's own lines starts in its normalized own text, or
+ * null for an empty line. normalizeText only collapses whitespace, so that
+ * text is its lines, each normalized, the non-empty ones joined by spaces.
  */
-function sentenceIndex(sec: RfcSection): Map<string, number[]> {
-  const index = new Map<string, number[]>();
-  // normalizeText only collapses whitespace, so the section's normalized
-  // text is its lines, each normalized, the non-empty ones joined by spaces.
+function lineStarts(sec: RfcSection): (number | null)[] {
   let base = 0;
-  sec.ownLines.forEach((raw, k) => {
+  return sec.ownLines.map((raw) => {
     const line = normalizeText(raw);
-    if (line === "") return;
-    if (sec.codeLines?.[k] == null) {
-      let from = 0;
-      for (
-        let stop = line.indexOf(". ");
-        ;
-        stop = line.indexOf(". ", stop + 1)
-      ) {
-        const sentence = line.slice(from, stop < 0 ? line.length : stop + 1);
-        const at = index.get(sentence);
-        if (at) at.push(base + from);
-        else index.set(sentence, [base + from]);
-        if (stop < 0) break;
-        from = stop + 2;
-      }
-    }
+    if (line === "") return null;
+    const at = base;
     base += line.length + 1;
+    return at;
   });
-  return index;
 }
 
 // ── Signatures against the implementation's source ───────────────────────

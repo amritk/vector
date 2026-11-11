@@ -508,12 +508,13 @@ describe("vector spec extract", () => {
     expect(r.out).toBe("");
   });
 
-  test("the XML reader's refusal, at the markdown line when the XML has one", async () => {
+  test("the XML reader's refusal, at the XML line when no markdown is beside it", async () => {
+    // The XML carries a markdown line, but there is no bad.md to name.
     let t = tree('<?xml version="1.0"?>\n<?line 10?>\n<foo/>\n', "bad");
     let r = await cli(["extract", t.xml]);
     expect(r.code).toBe(1);
     expect(r.err).toBe(
-      `${t.xml}:11: not RFC XML: the root element is <foo>, not <rfc>`,
+      `${t.xml}:3: not RFC XML: the root element is <foo>, not <rfc>`,
     );
     t = tree('<?xml version="1.0"?>\n\n<foo/>\n', "bad");
     r = await cli(["extract", t.xml]);
