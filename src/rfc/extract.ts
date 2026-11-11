@@ -16,6 +16,7 @@ import {
   type Refusal,
   locate,
   profileToContract,
+  whereOf,
 } from "./profile.ts";
 import type { RfcDocument } from "./rfctext.ts";
 import {
@@ -215,15 +216,28 @@ const posix = (p: string): string => p.split(sep).join("/");
 const refusalLine = (r: Refusal): string => `${r.file}:${r.line}: ${r.message}`;
 
 /**
- * An XmlRefusal as `file:line: reason`, at the markdown line when the XML
- * carries one, as the profile's refusals are.
+ * The markdown the spec at `xmlPath` is built from, as scripts/build-spec.sh
+ * reads it: the `.md` beside it with its base name, written in the form
+ * `xmlPath` is. Undefined when that file is not on disk, so a refusal never
+ * names a file that is not there: it names the XML at its XML line instead.
  */
-function xmlRefusalLine(err: XmlRefusal, file: string): string {
-  const { xmlLine, mdLine } = err.loc;
-  const at = `${file}:${xmlLine}: `;
-  return mdLine === undefined || !err.message.startsWith(at)
+function mdBeside(xmlPath: string): string | undefined {
+  if (!xmlPath.endsWith(".xml")) return undefined;
+  const md = `${xmlPath.slice(0, -".xml".length)}.md`;
+  return existsSync(md) ? md : undefined;
+}
+
+/**
+ * An XmlRefusal as `file:line: reason`, where the profile's refusals are:
+ * in the markdown `md` at the markdown line when both are known, else in the
+ * XML `file` at the XML line.
+ */
+function xmlRefusalLine(err: XmlRefusal, file: string, md?: string): string {
+  const at = `${file}:${err.loc.xmlLine}: `;
+  const w = whereOf(err.loc, file, md);
+  return w.file === file || !err.message.startsWith(at)
     ? err.message
-    : `${file}:${mdLine}: ${err.message.slice(at.length)}`;
+    : `${w.file}:${w.line}: ${err.message.slice(at.length)}`;
 }
 
 /**
@@ -259,27 +273,33 @@ export function extract(xmlPath: string, contractPath: string): ExtractResult {
   const missing: MissingRfcFile[] = [];
   let spec: LoadedSource;
   let read: ReturnType<typeof profileToContract>;
+  const md = mdBeside(xmlPath);
   try {
     // Read, hashed and parsed as `spec check --spec` reads it.
     spec = loadSource({ id: "spec", path: xmlPath }, contractPath, xmlPath);
-    read = profileToContract(spec.doc as V3Document, xmlPath, (n) => {
-      try {
-        const got = loadSource({ id: `rfc${n}`, rfc: n }, contractPath);
-        rfcs.set(n, got);
-        return got.doc;
-      } catch (err) {
-        // A cited RFC's XML is an input extract cannot read, not the spec's
-        // refusal: an error (exit 2) that names the RFC's file.
-        if (err instanceof XmlRefusal) throw new Error(err.message);
-        if (!(err instanceof MissingRfcFile)) throw err;
-        missing.push(err);
-        // Read as an RFC with no sections; its refusals are not printed.
-        return { number: n, sections: new Map() };
-      }
-    });
+    read = profileToContract(
+      spec.doc as V3Document,
+      xmlPath,
+      (n) => {
+        try {
+          const got = loadSource({ id: `rfc${n}`, rfc: n }, contractPath);
+          rfcs.set(n, got);
+          return got.doc;
+        } catch (err) {
+          // A cited RFC's XML is an input extract cannot read, not the spec's
+          // refusal: an error (exit 2) that names the RFC's file.
+          if (err instanceof XmlRefusal) throw new Error(err.message);
+          if (!(err instanceof MissingRfcFile)) throw err;
+          missing.push(err);
+          // Read as an RFC with no sections; its refusals are not printed.
+          return { number: n, sections: new Map() };
+        }
+      },
+      md,
+    );
   } catch (err) {
     if (err instanceof XmlRefusal)
-      return { refusals: [xmlRefusalLine(err, xmlPath)] };
+      return { refusals: [xmlRefusalLine(err, xmlPath, md)] };
     throw err;
   }
   if (missing.length > 0) throw new MissingRfcFiles(missing);

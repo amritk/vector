@@ -136,19 +136,19 @@ describe("fixtures", () => {
         refusals: [
           {
             file: path,
-            line: 68,
+            line: 76,
             message:
               'R-RFC-VECTORS is not in Section 10 of RFC4648: "The base 16 encoding of "f" is "66"."',
           },
           {
             file: path,
-            line: 79,
+            line: 87,
             col: 98,
             message: "`.repeat` is not in the ts-property subset",
           },
           {
             file: path,
-            line: 180,
+            line: 188,
             message: "Expected: hexEncode returns string, not bytes",
           },
         ],
