@@ -1,7 +1,6 @@
 // The vector table's Call and Expected cells: `hexDecode("66")`, `"f"`,
 // `[00 0f]`, `Key = 00ff`, `L = 42`, `22 × 0b`, `concat([00], [ff])`. A cell
-// is read in two steps.
-// First its text is parsed into raw literals, which do not yet know whether a
+// is read in two steps. First its text is parsed into raw literals, which do not yet know whether a
 // quoted string is bytes or text. Then the callee's signature settles each
 // one: a quoted string where bytes go becomes `{ascii}`, and where a string
 // goes `{str}`; `L = 42` is the int 42 where an int goes and the byte 0x42
@@ -58,6 +57,10 @@ const INT_RE = /^(?:0|-?[1-9][0-9]*)(?![0-9A-Za-z_])/;
 const WORD_RE = /^(null|true|false)(?![0-9A-Za-z_])/;
 const LABEL_RE = /^([A-Za-z][A-Za-z0-9_-]*(?: [A-Za-z0-9_-]+)*) = /;
 const HEX_RE = /^(?:[0-9a-f]{2})+$/;
+/** A whole text that is a decimal integer: `L = 42]` is not one. */
+const INT_TEXT_RE = /^(?:0|-?[1-9][0-9]*)$/;
+/** A labelled value's text: up to a space, `,` or `)` (inside a call), or the end. */
+const VALUE_RE = /^[^\s,)]*/;
 /** `count × run`, or with an ASCII `x`; the run ends at a space, `,` or `)`. */
 const REPEAT_RE = /^(-?[0-9]+) [×x] ([^\s,)]*)/;
 /** The most times a run may repeat: enough for any RFC-printed run. */
@@ -105,15 +108,15 @@ class Reader {
     }
   }
 
-  /** `22 × 0b` at the reader, or null; `at` is where a refusal points. */
-  private repeat(at: number): Extract<RawLiteral, { kind: "repeat" }> | null {
+  /** `22 × 0b` at the reader, or null. */
+  private repeat(): Extract<RawLiteral, { kind: "repeat" }> | null {
     const m = this.text.slice(this.i).match(REPEAT_RE);
     if (!m) return null;
     const count = Number(m[1]);
     if (!/^[1-9][0-9]*$/.test(m[1]) || count > MAX_REPEAT)
       throw new Fail(
         `a repeat count is a whole number from 1 to ${MAX_REPEAT}`,
-        at,
+        this.i,
       );
     if (!HEX_RE.test(m[2]))
       throw new Fail(
@@ -166,7 +169,7 @@ class Reader {
         ? { kind: "null" }
         : { kind: "bool", value: word[1] === "true" };
     }
-    const run = this.repeat(at);
+    const run = this.repeat();
     if (run) return run;
     const int = rest.match(INT_RE);
     if (int) {
@@ -177,18 +180,20 @@ class Reader {
     if (lab) {
       this.i += lab[0].length;
       const label = lab[1];
-      const labelled = this.repeat(at);
+      const labelled = this.repeat();
       if (labelled) return { ...labelled, label };
-      // The value runs to the next space, `,` or `)` (inside a call) or the end.
-      const text = (this.text.slice(this.i).match(/^[^\s,)]*/) as string[])[0];
-      const hex = HEX_RE.test(text) ? { hex: text } : {};
-      if (INT_RE.test(text)) {
-        this.i += text.length;
-        return { kind: "labelled-int", label, value: Number(text), ...hex };
-      }
-      if (!("hex" in hex)) throw new Fail(LABELLED_MESSAGE, at);
+      const text = (this.text.slice(this.i).match(VALUE_RE) as string[])[0];
+      const isHex = HEX_RE.test(text);
+      const isInt = INT_TEXT_RE.test(text);
+      if (!isInt && !isHex) throw new Fail(LABELLED_MESSAGE, at);
       this.i += text.length;
-      return { kind: "labelled", label, hex: text };
+      if (!isInt) return { kind: "labelled", label, hex: text };
+      return {
+        kind: "labelled-int",
+        label,
+        value: Number(text),
+        ...(isHex ? { hex: text } : {}),
+      };
     }
     if (rest.startsWith("‖"))
       throw new Fail("`‖` is not a literal; write concat(a, b)", at);
