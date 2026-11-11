@@ -215,7 +215,8 @@ function loadSources(
   const docs = new Map<string, RfcDocument>();
   const { main, list } = declaredSources(c);
   for (const src of list) {
-    // --spec names the main source's file itself, so it is not judged.
+    // --spec names the main source's file itself, so its path is not judged as
+    // spec text; but it is still the file and bytes the entry records, if any.
     const given = src.id === main ? a.rfc : undefined;
     const found = given ?? sourceFile(src, contractPath);
     if (!found) continue;
@@ -229,7 +230,7 @@ function loadSources(
     }
     if ("problem" in got)
       throw new UsageError(
-        `${contractPath}: ${got.problem}${src.id === main ? " (to check against another file, give it with --spec)" : ""}`,
+        `${contractPath}: ${got.problem}${src.id === main ? " (to check against another file, give it with --spec, and update its sources entry's file and sha256 if it records them)" : ""}`,
       );
     const problem = recordedProblem(src, contractPath, found, got.sha256);
     if (problem)

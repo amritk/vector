@@ -6,8 +6,8 @@
 // Each contract's main source must also still hash to the `source.sha256` it
 // records, each source must still be the file and sha256 its `sources` entry
 // records (an RFC file too), and every source it declares by path must lie
-// under specs/ or rfcs/. Fails closed: a git error, an unreadable contract or a missing source
-// is a failure.
+// under specs/ or rfcs/. Fails closed: a git error, an unreadable contract or
+// a missing source is a failure.
 
 import {
   constants,
@@ -22,7 +22,7 @@ import {
   realpathSync,
   statSync,
 } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   type RfcContract,
   type SourceDecl,
@@ -91,21 +91,19 @@ export function sourcePathProblem(
 
 /**
  * How a contract's `sources[].file` names `file`: its path relative to the
- * repo root, which is the directory holding the contract's directory
- * (contracts/x.json -> .), else relative to vector's own root, where an
- * rfc<N>.txt may come from; symlinks resolved, so the name is the same on any
- * machine. Its real path when it is under neither.
+ * innermost root it lies under, of the repo root (the directory holding the
+ * contract's directory: contracts/x.json -> .) and vector's own root, where an
+ * rfc<N>.txt may come from. Symlinks are resolved, and the innermost root wins
+ * whichever holds the other, so the name does not depend on where vector or
+ * the repo sits on disk. Its real path when it is under neither.
  */
 export function sourceLabel(file: string, contractPath: string): string {
   const f = real(file);
-  for (const root of [
-    join(dirname(resolve(contractPath)), ".."),
-    VECTOR_ROOT,
-  ]) {
-    const r = relative(real(root), f);
-    if (!r.startsWith("..")) return r;
-  }
-  return f;
+  const inside = [join(dirname(resolve(contractPath)), ".."), VECTOR_ROOT]
+    .map((root) => relative(real(root), f))
+    .filter((r) => r !== ".." && !r.startsWith(`..${sep}`) && !isAbsolute(r));
+  if (inside.length === 0) return f;
+  return inside.reduce((a, b) => (b.length < a.length ? b : a));
 }
 
 /**
@@ -337,7 +335,10 @@ function sourceProblem(path: string, top: string): string | undefined {
     if (s.file === undefined && s.sha256 === undefined) continue;
     const f = sourceFile(s, path);
     if (!f || !existsSync(f)) return `source ${s.id} is not on disk`;
-    const problem = recordedProblem(s, path, f, sha256(readFileSync(f)));
+    // Read as spec check reads it: spec text only, and never a device or FIFO.
+    const got = readChecked(f, (p) => sourcePathProblem(s, path, p));
+    if ("problem" in got) return got.problem;
+    const problem = recordedProblem(s, path, f, got.sha256);
     if (problem) return problem;
   }
   return undefined;

@@ -7,6 +7,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -168,6 +169,27 @@ describe("how a source's file is named", () => {
     );
   });
 
+  test("relative to the innermost root, wherever vector sits", () => {
+    // vector nested under the contract's repo: the file is vector's own rfcs/.
+    const contract = join(dirname(VECTOR_ROOT), "contracts/c.json");
+    expect(sourceLabel(join(VECTOR_ROOT, "rfcs/rfc5869.txt"), contract)).toBe(
+      "rfcs/rfc5869.txt",
+    );
+    // a repo nested under vector: the file is the repo's own rfcs/.
+    const inner = join(VECTOR_ROOT, "contracts/c.json");
+    expect(sourceLabel(join(VECTOR_ROOT, "rfcs/rfc5869.txt"), inner)).toBe(
+      "rfcs/rfc5869.txt",
+    );
+  });
+
+  test("a first part like ..data is inside the root", () => {
+    const d = tmp();
+    write(d, "..data/spec.md", "s");
+    expect(sourceLabel(join(d, "..data/spec.md"), join(d, "c/x.json"))).toBe(
+      "..data/spec.md",
+    );
+  });
+
   test("else its real path", () => {
     const d = tmp();
     write(d, "x/spec.md", "s");
@@ -258,8 +280,10 @@ describe("spec frozen flags a changed RFC file, not only the main spec", () => {
     const r = spawnSync("git", args, { cwd, encoding: "utf8" });
     if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
   };
-  const repo = (c: RfcContract) => {
+  /** `c` in a fresh repo, after `edit` changes its files, committed. */
+  const repo = (c: RfcContract, edit: (d: string) => void = () => {}) => {
     const p = project(c);
+    edit(p.d);
     git(p.d, "init", "-q");
     git(p.d, "config", "user.email", "t@example.com");
     git(p.d, "config", "user.name", "t");
@@ -289,6 +313,18 @@ describe("spec frozen flags a changed RFC file, not only the main spec", () => {
     expect(problem(repo(c).d)).toBe(
       "source rfc4648 was read from rfcs/rfc4648.txt, but its file is rfcs/old.txt",
     );
+  });
+
+  test("a recorded source is read as spec text, never through a device", () => {
+    const c = clone(hex);
+    const entry = (c.sources as NonNullable<RfcContract["sources"]>)[1];
+    entry.path = undefined;
+    const { d } = repo(c, (d) => {
+      rmSync(join(d, "rfcs/rfc4648.txt"));
+      symlinkSync("/dev/zero", join(d, "rfcs/rfc4648.txt"));
+    });
+    expect(problem(d)).toContain("source rfc4648 is ");
+    expect(problem(d)).toContain("which is not spec text");
   });
 
   test("a recorded source that is not on disk", () => {
