@@ -19,6 +19,7 @@ import { VECTOR_ROOT, frozenCheck, sourceFile } from "../src/rfc/frozen.ts";
 import { runGates } from "../src/rfc/gates.ts";
 import {
   MissingRfcFile,
+  MissingRfcFiles,
   SourcePathError,
   fetchHint,
   loadSource,
@@ -105,6 +106,24 @@ describe("an RFC source resolves to rfc<N>.xml before rfc<N>.txt", () => {
     expect(sourceFile(decl, c)).toBe(join(d, "contracts/rfc4648.txt"));
   });
 
+  test("a recorded file is the one read, though an .xml sits beside it", () => {
+    // An RFC vector's own rfcs/ lacks, so only these files can be found.
+    const r = { id: "r", rfc: 9996 };
+    const d = tmp();
+    write(d, "rfcs/rfc9996.txt", RFC4648);
+    write(d, "rfcs/rfc9996.xml", RFC8707);
+    const c = join(d, "contracts/c.json");
+    const txt = join(d, "rfcs/rfc9996.txt");
+    expect(sourceFile({ ...r, file: "rfcs/rfc9996.txt" }, c)).toBe(txt);
+    expect(sourceFile(r, c)).toBe(join(d, "rfcs/rfc9996.xml"));
+    // A recorded file found nowhere: the first found is read, and
+    // recordedProblem reports that it is not the one recorded.
+    rmSync(txt);
+    expect(sourceFile({ ...r, file: "rfcs/rfc9996.txt" }, c)).toBe(
+      join(d, "rfcs/rfc9996.xml"),
+    );
+  });
+
   test("vector's own rfcs/ holds rfc8707.xml", () => {
     expect(sourceFile({ id: "r", rfc: 8707 }, join(tmp(), "c.json"))).toBe(
       join(VECTOR_ROOT, "rfcs/rfc8707.xml"),
@@ -167,6 +186,31 @@ describe("an RFC found nowhere says how to fetch it", () => {
       "error: rfc9998 not found; fetch it: curl -sSfL -o rfcs/rfc9998.xml https://www.rfc-editor.org/rfc/rfc9998.xml",
     );
   });
+
+  test("every RFC found nowhere is named, each with its command", async () => {
+    const c = clone();
+    c.sources?.push({ id: "rfc9998", rfc: 9998 }, { id: "rfc1", rfc: 1 });
+    const r = await check(c);
+    expect(r.code).toBe(2);
+    expect(r.err).toBe(
+      [
+        "error: rfc9998 not found; fetch it: curl -sSfL -o rfcs/rfc9998.xml https://www.rfc-editor.org/rfc/rfc9998.xml",
+        "error: rfc1 not found; fetch it: curl -sSfL -o rfcs/rfc1.txt https://www.rfc-editor.org/rfc/rfc1.txt",
+      ].join("\n"),
+    );
+    let thrown: unknown;
+    try {
+      loadSources(c, project(c).contract);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(MissingRfcFiles);
+    const missing = (thrown as MissingRfcFiles).missing;
+    expect(missing.map((m) => m.rfc)).toEqual([9998, 1]);
+    expect((thrown as Error).message.split("\n")).toEqual(
+      missing.map((m) => m.message),
+    );
+  });
 });
 
 describe("loading a source", () => {
@@ -178,9 +222,12 @@ describe("loading a source", () => {
     expect((got.doc as V3Document).normative.length).toBeGreaterThan(0);
   });
 
-  test("RFC XML is known by its text as well as by .xml", () => {
-    expect("normative" in readDocument("x.txt", RFC8707)).toBe(true);
+  test("the name decides the reader: .xml is RFC XML, and only .xml", () => {
+    expect("normative" in readDocument("x.xml", RFC8707)).toBe(true);
     expect("normative" in readDocument("x.md", SPEC)).toBe(false);
+    expect(() => readDocument("x.txt", RFC8707)).toThrow(
+      /^x\.txt: not a specification/,
+    );
   });
 
   test("a refusal names the file", () => {
@@ -376,6 +423,104 @@ ${body}
     expect(issues).toContain(
       'SHALL sentence is neither a requirement nor an exclusion: "A writer SHALL write."',
     );
+  });
+});
+
+describe("completeness tells each <bcp14> keyword in a sentence apart", () => {
+  /** An RFC XML document of section 1 holding `body`. */
+  const xml = (body: string) =>
+    `<?xml version="1.0" encoding="UTF-8"?>
+<rfc number="9990" docName="x" category="std" ipr="trust200902" version="3">
+<front><title>X</title></front>
+<middle>
+<section anchor="one"><name>One</name>
+<t>${body}</t>
+<t>A writer <bcp14>MAY</bcp14> rest.</t>
+</section>
+</middle>
+</rfc>
+`;
+  /** The completeness issues when a requirement quotes `quote`. */
+  const uncovered = (body: string, quote: string) => {
+    const d = tmp();
+    write(d, "x.xml", xml(body));
+    const c: RfcContract = {
+      contract: "x",
+      source: { title: "X", main: "x" },
+      sources: [{ id: "x", path: "x.xml" }],
+      target: { module: "nish/x" },
+      functions: [{ name: "f", params: [], returns: "string" }],
+      requirements: [
+        { id: "R", section: "1", level: "MAY", quote: "A writer MAY rest." },
+        { id: "Q", section: "1", level: "MUST", quote },
+      ],
+      clauses: [
+        {
+          kind: "vector",
+          id: "V",
+          title: "v",
+          covers: ["R", "Q"],
+          source: { cite: { section: "1" } },
+          call: "f",
+          args: [],
+          expect: { str: "rest" },
+        },
+      ],
+    };
+    const { docs } = loadSources(c, join(d, "c.json"));
+    return runGates(c, { docs })
+      .issues.filter((i) => i.gate === "completeness")
+      .map((i) => i.message);
+  };
+  const neither = (keyword: string, sentence: string) =>
+    `${keyword} sentence is neither a requirement nor an exclusion: ${JSON.stringify(sentence)}`;
+
+  const TWO =
+    "A writer <bcp14>MUST NOT</bcp14> do A and <bcp14>MUST</bcp14> do B.";
+  const TWO_TEXT = "A writer MUST NOT do A and MUST do B.";
+  test("two keywords: a quote of the first does not cover the second", () => {
+    expect(uncovered(TWO, "A writer MUST NOT do A")).toEqual([
+      neither("MUST", TWO_TEXT),
+    ]);
+    expect(uncovered(TWO, "and MUST do B.")).toEqual([
+      neither("MUST NOT", TWO_TEXT),
+    ]);
+    expect(uncovered(TWO, TWO_TEXT)).toEqual([]);
+  });
+
+  const TWICE =
+    "A writer <bcp14>MUST</bcp14> do A and <bcp14>MUST</bcp14> do B.";
+  const TWICE_TEXT = "A writer MUST do A and MUST do B.";
+  test("the same keyword twice: a quote must cover each", () => {
+    expect(uncovered(TWICE, "A writer MUST do A")).toEqual([
+      neither("MUST", TWICE_TEXT),
+    ]);
+    expect(uncovered(TWICE, "and MUST do B.")).toEqual([
+      neither("MUST", TWICE_TEXT),
+    ]);
+    expect(uncovered(TWICE, TWICE_TEXT)).toEqual([]);
+  });
+
+  const QUOTED =
+    'The "MUST" label and the MUSTER field: a writer <bcp14>MUST</bcp14> set it.';
+  const QUOTED_TEXT =
+    'The "MUST" label and the MUSTER field: a writer MUST set it.';
+  test("the keyword's text inside a quoted or longer word is not it", () => {
+    expect(uncovered(QUOTED, "a writer MUST set it.")).toEqual([]);
+    expect(uncovered(QUOTED, 'The "MUST" label and the MUSTER field:')).toEqual(
+      [neither("MUST", QUOTED_TEXT)],
+    );
+  });
+
+  test("a keyword its markup marks but the text runs on from is reported", () => {
+    // "MUSTn't" is not a keyword as used, so nothing locates it and no quote
+    // can cover it: it is reported rather than passed.
+    expect(
+      uncovered(
+        "A writer <bcp14>MUST</bcp14>n't stop.",
+        "A writer MUSTn't stop.",
+      ),
+    ).toEqual([neither("MUST", "A writer MUSTn't stop.")]);
   });
 });
 

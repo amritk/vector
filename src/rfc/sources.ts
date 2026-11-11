@@ -18,7 +18,7 @@ import {
 } from "./frozen.ts";
 import type { RfcDocument } from "./rfctext.ts";
 import { parseDocument } from "./spectext.ts";
-import { type V3Document, isV3Xml, parseV3 } from "./xmlv3.ts";
+import { type V3Document, parseV3 } from "./xmlv3.ts";
 
 /**
  * The command that fetches RFC `n` into rfcs/. The RFC Editor publishes XML
@@ -48,6 +48,19 @@ export class MissingRfcFile extends Error {
 }
 
 /**
+ * Every RFC a contract declares that is found nowhere, so one run says what
+ * to fetch for all of them.
+ */
+export class MissingRfcFiles extends Error {
+  readonly missing: MissingRfcFile[];
+  constructor(missing: MissingRfcFile[]) {
+    super(missing.map((m) => m.message).join("\n"));
+    this.name = "MissingRfcFiles";
+    this.missing = missing;
+  }
+}
+
+/**
  * A source a contract may not read (sourcePathProblem), or that is not a file.
  * Its own class so the CLI can say how to give the main source another way.
  */
@@ -63,15 +76,15 @@ export interface LoadedSource {
 }
 
 /**
- * A source's document, by its form: RFC XML v3 if the file is .xml or its
- * text opens as an <rfc> document, else an RFC's text or a markdown spec.
- * A refusal names the file.
+ * A source's document, by its form: RFC XML v3 if the file is .xml, else an
+ * RFC's text or a markdown spec. The name, not a sniff of the text, decides,
+ * so the reader a file gets is plain from its name. A refusal names the file.
  */
 export function readDocument(
   file: string,
   text: string,
 ): RfcDocument | V3Document {
-  if (file.endsWith(".xml") || isV3Xml(text)) return parseV3(text, file);
+  if (file.endsWith(".xml")) return parseV3(text, file);
   try {
     return parseDocument(text);
   } catch (err) {
@@ -131,7 +144,8 @@ export function rfcDecl(
 /**
  * Every source a contract declares, by id, and the fidelity problems of those
  * read from another file, or other bytes, than their entry records. `main` is
- * the main source's file when the user gave one (--spec).
+ * the main source's file when the user gave one (--spec). Throws
+ * MissingRfcFiles naming every RFC found nowhere, and as loadSource does.
  */
 export function loadSources(
   c: RfcContract,
@@ -140,6 +154,7 @@ export function loadSources(
 ): { docs: Map<string, RfcDocument>; problems: Map<string, string> } {
   const docs = new Map<string, RfcDocument>();
   const problems = new Map<string, string>();
+  const missing: MissingRfcFile[] = [];
   const declared = declaredSources(c);
   for (const decl of declared.list) {
     const given = decl.id === declared.main ? main : undefined;
@@ -147,6 +162,10 @@ export function loadSources(
     try {
       got = loadSource(decl, contractPath, given);
     } catch (err) {
+      if (err instanceof MissingRfcFile) {
+        missing.push(err);
+        continue;
+      }
       if (!(err instanceof SourcePathError)) throw err;
       throw new SourcePathError(
         `${contractPath}: ${err.message}${decl.id === declared.main ? " (to check against another file, give it with --spec, and update its sources entry's file and sha256 if it records them)" : ""}`,
@@ -156,5 +175,6 @@ export function loadSources(
     if (problem) problems.set(decl.id, problem);
     docs.set(decl.id, got.doc);
   }
+  if (missing.length > 0) throw new MissingRfcFiles(missing);
   return { docs, problems };
 }

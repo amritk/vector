@@ -50,6 +50,7 @@ import {
 } from "./contract.ts";
 import {
   type HexValue,
+  KEYWORD_RE,
   type RfcDocument,
   type RfcSection,
   findSection,
@@ -1274,14 +1275,18 @@ function checkCompleteness(
 }
 
 /**
- * The binding sentences completeness accounts for, each with every offset of
- * its keyword in its section's normalized own text. RFC XML marks its
- * keywords with <bcp14>, and that markup, not a scan of the text, says which
- * are used: a "MUST" in an example or a quoted definition is not one. Its
- * SHOULDs and MAYs bind nothing, as in plain text. A sentence is found in its
- * section's own text, where a quote must cover its keyword; one that cannot be
- * found (it spans a list or table) has no offset, so no quote covers it and it
- * is reported rather than passed.
+ * The binding keywords completeness accounts for, one entry each, with every
+ * offset it may have in its section's normalized own text (a sentence can
+ * appear there more than once). RFC XML marks its keywords with <bcp14>, and
+ * that markup, not a scan of the text, says which sentences hold one: a
+ * "MUST" in an example or a quoted definition is not one. Its SHOULDs and
+ * MAYs bind nothing, as in plain text. The reader gives one entry per level
+ * per sentence, so each use of that level in the sentence is found as
+ * normativeSentences finds keywords (KEYWORD_RE): "MUST NOT do A and MUST do
+ * B" is two keywords, and a quote must cover each. A sentence that cannot be
+ * found in its section's own text (it spans a list or table), or whose level
+ * KEYWORD_RE does not find, has no offset, so no quote covers it and it is
+ * reported rather than passed.
  */
 function bindingSentences(
   doc: RfcDocument,
@@ -1290,15 +1295,19 @@ function bindingSentences(
     return normativeSentences(doc).map((n) => ({ ...n, at: [n.at] }));
   return (doc as V3Document).normative
     .filter((n) => BINDING_LEVELS.has(n.level))
-    .map((n) => {
+    .flatMap((n) => {
       const sec = findSection(doc, n.section);
-      const k = n.sentence.indexOf(n.level);
-      return {
+      const starts = sec ? ownSpans(sec, n.sentence).map(([a]) => a) : [];
+      const uses = [...n.sentence.matchAll(KEYWORD_RE)]
+        .filter((m) => m[1] === n.level)
+        .map((m) => m.index);
+      const entry = {
         section: n.section,
         keyword: n.level,
         sentence: n.sentence,
-        at: sec ? ownSpans(sec, n.sentence).map(([a]) => a + k) : [],
       };
+      if (uses.length === 0) return [{ ...entry, at: [] }];
+      return uses.map((k) => ({ ...entry, at: starts.map((a) => a + k) }));
     });
 }
 

@@ -38,7 +38,7 @@ import {
   sourceContainment,
 } from "./run.ts";
 import { sampleContract } from "./sample.ts";
-import { loadSources } from "./sources.ts";
+import { MissingRfcFiles, loadSources } from "./sources.ts";
 
 export const RFC_USAGE = `Usage: vector spec check <contract.json> [options]
        vector spec emit  <contract.json> -o <main.ts> [options]
@@ -473,6 +473,10 @@ export async function rfcMain(argv: string[]): Promise<number> {
     print(a, report);
     return report.run.status === "SATISFIED" ? 0 : 1;
   } catch (err) {
+    if (err instanceof MissingRfcFiles) {
+      for (const m of err.missing) console.error(`error: ${m.message}`);
+      return 2;
+    }
     if (err instanceof UsageError) {
       console.error(`error: ${err.message}`);
       return 2;

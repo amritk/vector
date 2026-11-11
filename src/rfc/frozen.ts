@@ -40,9 +40,9 @@ export const VECTOR_ROOT = resolve(
 /**
  * Where a source's text is: its `path`, relative to the contract, else
  * rfc<N>.xml or rfc<N>.txt beside the contract, in ../rfcs, then in vector's
- * rfcs/. The first that exists, or undefined. At each place the XML comes
- * first: it is the RFC's definitive form since RFC 8650, and its <bcp14>
- * markup says which keywords bind.
+ * rfcs/. The first place holding one; there, the form its recorded `file`
+ * names, else the first. Undefined if none exists. At each place the XML comes first: it is the RFC's definitive
+ * form since RFC 8650, and its <bcp14> markup says which keywords bind.
  */
 export function sourceFile(
   src: SourceDecl,
@@ -50,9 +50,18 @@ export function sourceFile(
 ): string | undefined {
   const here = dirname(contractPath);
   if (src.path) return resolve(here, src.path);
-  return [here, join(here, "../rfcs"), join(VECTOR_ROOT, "rfcs")]
+  const found = [here, join(here, "../rfcs"), join(VECTOR_ROOT, "rfcs")]
     .flatMap((d) => ["xml", "txt"].map((x) => join(d, `rfc${src.rfc}.${x}`)))
-    .find(existsSync);
+    .filter(existsSync);
+  // A recorded file names the bytes the contract was checked against: an
+  // rfc<N>.xml added later beside that rfc<N>.txt must not displace it. It
+  // picks only between the forms at the nearest place, though: a file of the
+  // same name further off (vector's own rfcs/) is not the one recorded.
+  const near = found.filter((f) => dirname(f) === dirname(found[0]));
+  return (
+    near.find((f) => src.file && sourceLabel(f, contractPath) === src.file) ??
+    found[0]
+  );
 }
 
 /**

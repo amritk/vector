@@ -383,7 +383,11 @@ export interface NormativeSentence {
 // boilerplate naming the keywords, not a requirement. The boundaries are
 // letters and digits, not `\b`, so a markdown `_MUST_` or `__MUST NOT__`
 // (where `_` is a word character) is a keyword too.
-const KEYWORD_RE =
+/**
+ * A binding BCP 14 keyword as used: a whole word, the longer "MUST NOT" before
+ * "MUST", and not in quotes (the RFC 2119 boilerplate names them).
+ */
+export const KEYWORD_RE =
   /(?<!")(?<![A-Za-z0-9])(MUST NOT|MUST|SHALL NOT|SHALL|REQUIRED)(?![A-Za-z0-9])(?!")/g;
 
 /** Every binding BCP 14 keyword in the RFC, with the sentence it sits in. */
