@@ -13,7 +13,10 @@ import { rfcMain } from "../src/rfc/cli.ts";
 import { type FnSig, validateContractShape } from "../src/rfc/contract.ts";
 import { VECTOR_ROOT } from "../src/rfc/frozen.ts";
 import {
+  REPEAT_COUNT_MESSAGE as COUNT,
+  LABELLED_MESSAGE as LABELLED,
   MAX_REPEAT,
+  REPEAT_RUN_MESSAGE as RUN,
   type RawLiteral,
   isLiteralError,
   parseCall,
@@ -26,11 +29,6 @@ import {
 // Call and Expected cells. The fixture test/fixtures/literals/literals-hkdf.xml
 // cites RFC 5869 A.1, which prints both: "IKM = 0x0b0b…0b (22 octets)" and
 // "L = 42".
-
-const LABELLED =
-  "a labelled value is `Label = hex` (lowercase hex pairs with no spaces), `Label = 42` or `Label = 22 × 0b`";
-const COUNT = `a repeat count is a whole number from 1 to ${MAX_REPEAT}`;
-const RUN = "a repeated run is whole bytes: lowercase hex pairs with no spaces";
 
 const raw = (text: string): RawLiteral => {
   const r = parseLiteral(text);

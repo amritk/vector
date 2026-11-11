@@ -7,6 +7,7 @@ import {
 import { BYTES_MESSAGE as BYTES_HINT } from "../src/rfc/front/ts.ts";
 import { runGates } from "../src/rfc/gates.ts";
 import {
+  LABELLED_MESSAGE as LABELLED,
   isLiteralError,
   parseCall,
   parseLiteral,
@@ -23,9 +24,6 @@ import {
 } from "../src/rfc/profile.ts";
 import { parseRfc } from "../src/rfc/rfctext.ts";
 import { parseV3 } from "../src/rfc/xmlv3.ts";
-
-const LABELLED =
-  "a labelled value is `Label = hex` (lowercase hex pairs with no spaces), `Label = 42` or `Label = 22 × 0b`";
 
 const read = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
 
