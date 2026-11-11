@@ -29,9 +29,9 @@ function parsed(text: string, fns = FNS) {
   return r;
 }
 
-/** Where `needle` first occurs in `text`, as a refusal position. */
+/** Where `needle` last occurs in `text`, as a refusal position. */
 function posOf(text: string, needle: string): { line: number; col: number } {
-  const i = text.indexOf(needle);
+  const i = text.lastIndexOf(needle);
   if (i < 0) throw new Error(`no ${needle} in ${text}`);
   const before = text.slice(0, i).split("\n");
   return { line: before.length, col: before[before.length - 1].length + 1 };
@@ -768,7 +768,7 @@ describe("ts-property refusals", () => {
     ],
     [prop("true false"), "unexpected `false`", "false"],
     [prop("("), "unexpected end of block", ""],
-    [prop(")"), "unexpected `)`", ") =>"],
+    [prop(")"), "unexpected `)`", ")"],
     // Operators and forms outside the subset.
     [
       prop("i > 0 ==> i >= 0"),
@@ -797,6 +797,11 @@ describe("ts-property refusals", () => {
       prop("[0] === b"),
       "a bytes literal is lowercase hex pairs separated by single spaces, like [00 0f]",
       "[0]",
+    ],
+    [
+      prop("[b] === b"),
+      "a bytes literal is lowercase hex pairs separated by single spaces, like [00 0f]",
+      "[b]",
     ],
     [
       prop("[0A] === b"),
@@ -839,7 +844,7 @@ describe("ts-property refusals", () => {
       "b === null",
     ],
     [prop("null === null"), "cannot compare null with null", "null === null"],
-    [prop("!1"), "`!` wants boolean, got i32", "!1"],
+    [prop("!1"), "`!` wants boolean, got i32", "1"],
     [prop("true && 1"), "`&&` wants boolean, got i32", "1"],
     [prop("(1).length === 1"), "`.length` wants u8[], got i32", "(1)"],
     [prop("t.slice(0, 1) === t"), "`.slice` wants u8[], got string", "t.slice"],
@@ -849,7 +854,7 @@ describe("ts-property refusals", () => {
     [
       prop("t === 'a'"),
       "`'` strings are not in the ts-property subset; use double quotes",
-      "'",
+      "'a'",
     ],
     [
       prop("t === `a`"),

@@ -96,6 +96,8 @@ const PUNCT = [
 
 /** `[00 0f f0 ff]`: lowercase hex pairs, single spaces; `[]` is empty. */
 const BYTES_RE = /^\[((?:[0-9a-f]{2}(?: [0-9a-f]{2})*)?)\]/;
+const BYTES_MESSAGE =
+  "a bytes literal is lowercase hex pairs separated by single spaces, like [00 0f]";
 
 function lex(text: string, subset: string): Tok[] {
   const toks: Tok[] = [];
@@ -179,6 +181,13 @@ function lex(text: string, subset: string): Tok[] {
         pos(i),
       );
     const bytes = rest.match(BYTES_RE);
+    const prev = toks.findLast((t) => t.kind !== "comment");
+    const operand = !(
+      prev?.kind === "ident" ||
+      (prev?.kind === "punct" && (prev.text === ")" || prev.text === "]"))
+    );
+    if (!bytes && operand && /^\[[0-9A-Fa-f ]+\]/.test(rest))
+      throw new Refusal(BYTES_MESSAGE, pos(i));
     if (bytes) {
       push("bytes", i, i + bytes[0].length, bytes[1].replaceAll(" ", ""));
       i += bytes[0].length;
@@ -200,10 +209,7 @@ function lex(text: string, subset: string): Tok[] {
 /** A cursor over the tokens that skips comments unless asked for them. */
 class Cursor {
   private i = 0;
-  constructor(
-    private readonly toks: Tok[],
-    readonly subset: string,
-  ) {}
+  constructor(private readonly toks: Tok[]) {}
 
   /** The next token, comments included. */
   raw(): Tok {
@@ -284,7 +290,7 @@ function readType(c: Cursor): { name: string; pos: Pos } {
   const first = c.ident("a type");
   const parts = [first.text];
   for (;;) {
-    const t = c.peek();
+    const t = c.raw(); // a comment ends the type: it may be a bounds comment
     const last = parts[parts.length - 1];
     const afterSep = last === "<" || last === "|";
     if (t.kind === "ident" && afterSep) parts.push(t.text);
@@ -307,7 +313,7 @@ function readType(c: Cursor): { name: string; pos: Pos } {
 const IFACE = "ts-interface";
 
 function parseInterface(text: string): { module: string; functions: FnSig[] } {
-  const c = new Cursor(lex(text, IFACE), IFACE);
+  const c = new Cursor(lex(text, IFACE));
   const head = c.raw();
   const m =
     head.kind === "comment" && head.lineComment
@@ -446,7 +452,7 @@ class PropertyParser {
   private inWhere = false;
 
   constructor(text: string, fns: FnSig[]) {
-    this.c = new Cursor(lex(text, PROP), PROP);
+    this.c = new Cursor(lex(text, PROP));
     this.fns = new Map(fns.map((f) => [f.name, f]));
   }
 
@@ -801,11 +807,7 @@ class PropertyParser {
           c.expect(")");
           return { ...v, pos };
         }
-        if (t.text === "[")
-          throw new Refusal(
-            "a bytes literal is lowercase hex pairs separated by single spaces, like [00 0f]",
-            pos,
-          );
+        if (t.text === "[") throw new Refusal(BYTES_MESSAGE, pos);
         this.refuseInfix(t);
     }
     throw new Refusal(`unexpected ${shown(t)}`, pos);
