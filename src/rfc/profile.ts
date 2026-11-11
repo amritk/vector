@@ -30,13 +30,19 @@ import {
   type PropertyClause,
   type Requirement,
   type RfcContract,
+  SECTION_RE,
   type SourceDecl,
+  TEST_NAMES,
+  TEST_PREFIXES,
   type VectorClause,
   type VectorSource,
+  controlChar,
+  validateContractShape,
 } from "./contract.ts";
 import { frontEndFor } from "./front/index.ts";
 import {
   isLiteralError,
+  kindOf,
   parseCall,
   parseLiteral,
   settleVector,
@@ -98,6 +104,15 @@ const levelOf = (word: string): Level => {
 };
 
 const elements = (n: XmlNode): XmlNode[] => n.children.filter(isElement);
+/**
+ * Why `s` cannot be free text in a contract (validateContractShape's rule:
+ * not blank, one line, no control characters), or undefined when it can.
+ */
+const textFault = (s: string): string | undefined => {
+  if (s.trim() === "") return "is empty";
+  const ch = controlChar(s);
+  return ch ? `holds a control character (${ch})` : undefined;
+};
 const lineOf = (loc: Loc): number => loc.mdLine ?? loc.xmlLine;
 const rfcId = (rfc: number) => `rfc${rfc}`;
 
@@ -153,6 +168,9 @@ function ownCode(sec: XmlNode): XmlNode[] {
 const rawText = (n: XmlNode): string =>
   n.children.map((c) => (isElement(c) ? rawText(c) : c.text)).join("");
 
+/** A cell's raw text, ends trimmed: no character inside is rewritten. */
+const cellText = (n: XmlNode): string => rawText(n).trim();
+
 /** Whitespace-only text around exactly one element child, or null. */
 function only(n: XmlNode): XmlNode | null {
   const els = elements(n);
@@ -187,6 +205,20 @@ export function profileToContract(
     });
   };
 
+  /** `what` as free text in the contract, or a refusal at `loc`. */
+  const checkText = (loc: Loc, what: string, s: string) => {
+    const fault = textFault(s);
+    if (fault) refuse(loc, `${what} ${fault}`);
+  };
+  const sorted = (): { refusals: Refusal[] } => ({
+    refusals: refusals.sort(
+      (a, b) =>
+        a.line - b.line ||
+        (a.col ?? 0) - (b.col ?? 0) ||
+        (a.message < b.message ? -1 : a.message > b.message ? 1 : 0),
+    ),
+  });
+
   // The RFCs, each resolved once, and the sections cited in each.
   const resolved = new Map<number, RfcDocument>();
   const rfc = (n: number): RfcDocument => {
@@ -196,6 +228,19 @@ export function profileToContract(
       resolved.set(n, d);
     }
     return d;
+  };
+  // Each cited section's text, made once.
+  const texts = new Map<string, string>();
+  const textOf = (n: number, section: string): string | undefined => {
+    const key = `${n} ${section}`;
+    let t = texts.get(key);
+    if (t === undefined) {
+      const sec = findSection(rfc(n), section);
+      if (!sec) return undefined;
+      t = sectionText(sec);
+      texts.set(key, t);
+    }
+    return t;
   };
   const referenced = new Map<string, number | undefined>(
     doc.references.map((r) => [r.anchor, r.rfc]),
@@ -208,6 +253,14 @@ export function profileToContract(
       // An RFC with no <reference> at all was refused with the other xrefs.
       if (!referenced.has(target) && RFC_TARGET_RE.test(target)) return null;
       refuse(x.loc, `xref to "${target}" names no RFC <reference>`);
+      return null;
+    }
+    const section = x.attrs.section ?? "";
+    if (!SECTION_RE.test(section)) {
+      refuse(
+        x.loc,
+        `section "${section}" of RFC${n} is not a section number like 2.3 or A.1`,
+      );
       return null;
     }
     return n;
@@ -227,9 +280,23 @@ export function profileToContract(
       doc.root.loc,
       `docName "${doc.docName}" names contract "${name}", but the file is ${base}.xml`,
     );
+  } else if (!ID_RE.test(name)) {
+    refuse(
+      doc.root.loc,
+      `docName "${doc.docName}" names contract "${name}", which is not letters, digits, ".", "_" and "-", starting with a letter or digit`,
+    );
   } else contract = name;
+  checkText(doc.root.loc, "the title", doc.title);
 
   const sections = sectionsOf(doc.root);
+
+  // -- v2 tables: the pipeline runs `xml2rfc --v2v3`, so none is left to read.
+  for (const t of descendants(doc.root))
+    if (t.name === "texttable")
+      refuse(
+        t.loc,
+        "a <texttable> is v2 XML; write a v3 <table> (xml2rfc --v2v3 converts one)",
+      );
 
   // -- xrefs: every RFC xref has a reference. The sections cited are checked
   // once the RFCs used as sources are known: an uncited one needs no file.
@@ -274,6 +341,16 @@ export function profileToContract(
     else if (r) {
       functions = r.functions;
       module = r.module;
+      checkText(iface.loc, "the ts-interface block's module", module);
+      for (const { name } of functions)
+        if (
+          TEST_NAMES.has(name) ||
+          TEST_PREFIXES.some((x) => name.startsWith(x))
+        )
+          refuse(
+            iface.loc,
+            `function ${name}: the generated test uses this name itself (its helpers, and names starting ${TEST_PREFIXES.join(" ")}), so it cannot call such a function`,
+          );
     }
   }
   const fnByName = new Map(functions.map((f) => [f.name, f]));
@@ -315,7 +392,8 @@ export function profileToContract(
           refuse(n.loc, "a Definition: paragraph needs an anchor");
           return null;
         }
-        if (found.length > 0 || bcp14Under(n).length > 0) {
+        // A quoted keyword ("MUST") is named, not used: the reader makes no entry.
+        if (found.length > 0) {
           refuse(
             n.loc,
             `${anchor} is a definition but holds BCP 14 keywords; a definition holds none`,
@@ -448,13 +526,17 @@ export function profileToContract(
           );
           return;
         }
+        const reason = plainText(next).slice(UNTESTED.length);
+        checkText(next.loc, "the Untested: reason", reason);
+        const quote = plainText(n);
+        checkText(n.loc, "the excluded sentence", quote);
         exclusions.push({
           id: "",
           section,
-          quote: plainText(n),
+          quote,
           level: levels[0],
           loc: n.loc,
-          reason: plainText(next).slice(UNTESTED.length),
+          reason,
         });
         return;
       }
@@ -465,6 +547,18 @@ export function profileToContract(
         for (const l of bcp14Under(untested)) handled.add(l);
       }
       if (q === null) return;
+      if (!ID_RE.test(q.id)) {
+        refuse(
+          n.loc,
+          `requirement id "${q.id}" is not letters, digits, ".", "_" and "-", starting with a letter or digit`,
+        );
+        return;
+      }
+      const fault = textFault(q.quote);
+      if (fault) {
+        refuse(n.loc, `${q.id}'s quote ${fault}`);
+        return;
+      }
       if (section === LOOSE_SECTION && !q.cite) {
         refuse(
           n.loc,
@@ -472,12 +566,11 @@ export function profileToContract(
         );
         return;
       }
-      if (untested)
-        exclusions.push({
-          ...q,
-          reason: plainText(untested).slice(UNTESTED.length),
-        });
-      else requirements.push(q);
+      if (untested) {
+        const reason = plainText(untested).slice(UNTESTED.length);
+        checkText(untested.loc, `${q.id}'s Untested: reason`, reason);
+        exclusions.push({ ...q, reason });
+      } else requirements.push(q);
     });
     for (const n of kids)
       if (isUntested(n) && !used.has(n))
@@ -501,8 +594,8 @@ export function profileToContract(
     if (!q.cite) continue;
     cited.add(q.cite.rfc);
     // A missing section is refused with the other cited xrefs.
-    const sec = findSection(rfc(q.cite.rfc), q.cite.section);
-    if (sec && !sectionText(sec).includes(normalizeText(q.quote)))
+    const text = textOf(q.cite.rfc, q.cite.section);
+    if (text !== undefined && !text.includes(normalizeText(q.quote)))
       refuse(
         q.loc,
         `${q.id || "the quote"} is not in Section ${q.cite.section} of RFC${q.cite.rfc}: "${q.quote}"`,
@@ -535,6 +628,7 @@ export function profileToContract(
 
   // -- vectors: one table.
   const vectors: VectorClause[] = [];
+  const vectorLocs: Loc[] = [];
   let vectorTable: XmlNode | undefined;
   for (const t of tables) readTable(t.node, t.section);
 
@@ -542,10 +636,12 @@ export function profileToContract(
     const rows = descendants(table).filter((n) => n.name === "tr");
     const cellsOf = (tr: XmlNode) =>
       elements(tr).filter((c) => c.name === "td" || c.name === "th");
-    const header = rows[0] ? cellsOf(rows[0]).map(plainText) : [];
-    // A table that looks like a vector table is one, exactly, or refused.
+    const header = rows[0] ? cellsOf(rows[0]).map(cellText) : [];
+    // A table that looks like a vector table is one, exactly, or refused: it
+    // is headed Id, and has a Call or an Expected column. Prose tables
+    // (`ID | Algorithm | Notes`, `Case | Input | Expected`) are not.
     const looksLike =
-      /^ids?$/i.test(header[0] ?? "") ||
+      /^ids?$/i.test(header[0] ?? "") &&
       header.some((h) => /^(call|expected)$/i.test(h));
     if (!looksLike) return;
     if (header.join("|") !== VECTOR_HEADER.join("|")) {
@@ -569,7 +665,10 @@ export function profileToContract(
     }
     for (const tr of rows.slice(1)) {
       const v = readRow(cellsOf(tr), section, tr);
-      if (v) vectors.push(v);
+      if (v) {
+        vectors.push(v);
+        vectorLocs.push(tr.loc);
+      }
     }
   }
 
@@ -595,11 +694,12 @@ export function profileToContract(
     // Every cell is judged; the row is refused if any is.
     const before = refusals.length;
     const [idC, callC, expC, coversC, srcC, titleC] = cells;
-    const id = plainText(idC);
+    const id = cellText(idC);
     checkId(id, idC.loc);
     const title = plainText(titleC);
     if (!title) refuse(titleC.loc, `vector ${id} has no title`);
-    const coversText = plainText(coversC);
+    else checkText(titleC.loc, `vector ${id}'s title`, title);
+    const coversText = cellText(coversC);
     const covers = coversText ? coversText.split(",").map((c) => c.trim()) : [];
     checkCovers(covers, coversC.loc);
     const call = codeCell(callC);
@@ -628,11 +728,9 @@ export function profileToContract(
             );
       }
     }
-    const isSpec =
-      settled !== null &&
-      !Array.isArray(settled) &&
-      ("null" in settled.expect || "bool" in settled.expect);
-    const source = sourceCell(srcC, isSpec);
+    const expect =
+      settled !== null && !Array.isArray(settled) ? settled.expect : null;
+    const source = sourceCell(srcC, expect);
     if (
       refusals.length > before ||
       !source ||
@@ -656,9 +754,32 @@ export function profileToContract(
     };
   }
 
-  function sourceCell(td: XmlNode, isSpec: boolean): VectorSource | null {
+  /** The Source cell, judged against the settled Expected when there is one. */
+  function sourceCell(
+    td: XmlNode,
+    expect: VectorClause["expect"] | null,
+  ): VectorSource | null {
     const el = only(td);
-    if (el?.name === "tt") return { command: rawText(el) };
+    if (el?.name === "tt") {
+      const command = rawText(el);
+      if (command.trim() === "") {
+        refuse(td.loc, "Source: a command is a shell command, not blank");
+        return null;
+      }
+      // What a command prints is compared as bytes (hex) or a string.
+      if (
+        expect &&
+        !("hex" in expect || "ascii" in expect || "concat" in expect) &&
+        !("str" in expect)
+      ) {
+        refuse(
+          td.loc,
+          `Source: a command prints bytes or a string, so its Expected is one, not ${kindOf(expect)}`,
+        );
+        return null;
+      }
+      return { command };
+    }
     if (el?.name === "xref") {
       const target = el.attrs.target ?? "";
       const section = el.attrs.section;
@@ -676,6 +797,7 @@ export function profileToContract(
         );
         return null;
       }
+      const isSpec = expect !== null && ("null" in expect || "bool" in expect);
       return isSpec ? { spec: num } : { cite: { section: num } };
     }
     refuse(
@@ -687,6 +809,7 @@ export function profileToContract(
 
   // -- properties, read by their front end against the interface.
   const properties: PropertyClause[] = [];
+  const propertyLocs: Loc[] = [];
   for (const node of code) {
     const fe = fronted(node, "property");
     if (!fe) continue;
@@ -695,8 +818,10 @@ export function profileToContract(
       frontRefuse(node, r.refusals);
       continue;
     }
-    checkId(r.id, codeOf(node).loc);
-    checkCovers(r.covers, codeOf(node).loc);
+    const at = codeOf(node).loc;
+    checkId(r.id, at);
+    checkCovers(r.covers, at);
+    checkText(at, `property ${r.id}'s title`, r.title ?? "");
     const { forall, where, assert } = r.clause;
     properties.push({
       kind: "property",
@@ -707,6 +832,7 @@ export function profileToContract(
       ...(where === undefined ? {} : { where }),
       assert,
     });
+    propertyLocs.push(at);
   }
 
   // -- every section cited in an RFC used as a source exists.
@@ -718,15 +844,16 @@ export function profileToContract(
       refuse(x.loc, `Section ${section} of RFC${n} does not exist`);
   }
 
-  if (refusals.length > 0) {
-    refusals.sort(
-      (a, b) =>
-        a.line - b.line ||
-        (a.col ?? 0) - (b.col ?? 0) ||
-        (a.message < b.message ? -1 : a.message > b.message ? 1 : 0),
+  if (refusals.length > 0) return sorted();
+  // Only now: when something was refused, an empty list is its consequence.
+  if (requirements.length === 0)
+    refuse(doc.root.loc, "a spec needs at least one requirement");
+  if (vectors.length + properties.length === 0)
+    refuse(
+      doc.root.loc,
+      "a spec needs at least one clause: a vector table row or a ts-property block",
     );
-    return { refusals };
-  }
+  if (refusals.length > 0) return sorted();
 
   const sources: SourceDecl[] = [
     { id: contract, path: `../specs/${contract}.xml` },
@@ -747,16 +874,49 @@ export function profileToContract(
     reason: q.reason,
   });
   const clauses: Clause[] = [...vectors, ...properties];
-  return {
-    contract: {
-      contract,
-      source: { title: doc.title, main: contract },
-      sources,
-      target: { module },
-      requirements: requirements.map(out),
-      exclusions: exclusions.map(excl),
-      functions,
-      clauses,
-    },
+  const result: RfcContract = {
+    contract,
+    source: { title: doc.title, main: contract },
+    sources,
+    target: { module },
+    requirements: requirements.map(out),
+    exclusions: exclusions.map(excl),
+    functions,
+    clauses,
   };
+  // The backstop: each value was checked where it was read, so this finds
+  // nothing; if it ever does, the issue is refused at a line all the same.
+  const shape = shapeRefusals(result, xmlPath, doc.root.loc, {
+    requirements: requirements.map((q) => q.loc),
+    exclusions: exclusions.map((q) => q.loc),
+    clauses: [...vectorLocs, ...propertyLocs],
+    functions: functions.map(() => iface.loc),
+  });
+  return shape.length > 0 ? { refusals: shape } : { contract: result };
+}
+
+/**
+ * validateContractShape's issues with `contract`, each refused at the line of
+ * the element its value came from: `locs.requirements[i]` for an issue under
+ * `requirements[i]`, and so on; any other at `root`. Sorted by line.
+ */
+export function shapeRefusals(
+  contract: RfcContract,
+  file: string,
+  root: Loc,
+  locs: Record<"requirements" | "exclusions" | "clauses" | "functions", Loc[]>,
+): Refusal[] {
+  return validateContractShape(contract)
+    .map((issue) => {
+      const m = issue.match(
+        /^(requirements|exclusions|clauses|functions)\[(\d+)\]/,
+      );
+      const loc = (m && locs[m[1] as keyof typeof locs][Number(m[2])]) || root;
+      return {
+        file,
+        line: lineOf(loc),
+        message: `the contract read here is not valid: ${issue}`,
+      };
+    })
+    .sort((a, b) => a.line - b.line);
 }

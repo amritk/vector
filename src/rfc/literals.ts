@@ -197,7 +197,8 @@ export const isLiteralError = (x: object): x is LiteralError =>
 const U32_MAX = 4294967295;
 
 /** What a literal is, for a message: its type, or `int` for an integer. */
-const kindOf = (lit: Literal): string =>
+/** What a literal is, as a refusal names it: "an int", "bytes", "null", … */
+export const kindOf = (lit: Literal): string =>
   "int" in lit ? "an int" : typeOfLiteral(lit);
 
 /** Does `lit` stand for a value of type `ty`? An int must be in range. */

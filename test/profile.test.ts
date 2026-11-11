@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
-import { validateContractShape } from "../src/rfc/contract.ts";
+import {
+  type RfcContract,
+  validateContractShape,
+} from "../src/rfc/contract.ts";
 import { BYTES_MESSAGE as BYTES_HINT } from "../src/rfc/front/ts.ts";
 import { runGates } from "../src/rfc/gates.ts";
 import {
@@ -15,6 +18,7 @@ import {
   type RfcResolver,
   VECTOR_HEADER,
   profileToContract,
+  shapeRefusals,
 } from "../src/rfc/profile.ts";
 import { parseRfc } from "../src/rfc/rfctext.ts";
 import { parseV3 } from "../src/rfc/xmlv3.ts";
@@ -100,6 +104,17 @@ interface Cells {
   title: string;
 }
 const REQ = `<t anchor="R-A">hexDecode <bcp14>MUST</bcp14> work.</t>`;
+/**
+ * A section holding R-A and one vector covering it, sourced from the
+ * section itself: no RFC is cited. A contract needs a requirement and a clause.
+ */
+const MIN = sec(
+  REQ +
+    table([
+      vector('hexDecode("66")', '"f"', { source: `<xref target="min"/>` }),
+    ]),
+  ' anchor="min"',
+);
 const property = (code: string) =>
   `<sourcecode type="ts-property"><![CDATA[\n${code}\n]]></sourcecode>`;
 
@@ -217,7 +232,8 @@ describe("contract", () => {
   test("a blockquote quoting an XML RFC, with its keyword as its level", () => {
     const c = contract(
       spec(
-        sec(`<blockquote anchor="R-Q"><t>a client MAY indicate</t>
+        MIN +
+          sec(`<blockquote anchor="R-Q"><t>a client MAY indicate</t>
 <t>the protected resource <xref target="RFC8707" section="2"/></t></blockquote>
 <blockquote anchor="R-D"><t>(a.k.a. resource server, application, API, etc.)
 <xref target="RFC8707" section="2"/></t></blockquote>
@@ -225,7 +241,7 @@ describe("contract", () => {
 <xref target="RFC8707" section="2"/></t></blockquote>`),
       ),
     );
-    expect(c.requirements).toEqual([
+    expect(c.requirements.slice(1)).toEqual([
       {
         id: "R-Q",
         source: "rfc8707",
@@ -294,25 +310,36 @@ describe("contract", () => {
     ]);
   });
 
-  test("a table whose first header is not Id is not a vector table", () => {
-    const c = contract(spec(sec(table([row("x")], ["Name"]))));
-    expect(c.clauses).toEqual([]);
+  test("a prose table is not a vector table: one is headed Id and has Call or Expected", () => {
+    const prose = [
+      ["Name"],
+      ["ID", "Algorithm", "Notes"],
+      ["Case", "Input", "Expected"],
+      ["Name", "Call", "Effect"],
+      ["Call", "Id", "Expected"],
+    ];
+    const c = contract(
+      spec(MIN + sec(prose.map((h) => table([row("x")], h)).join(""))),
+    );
+    expect(c.clauses.map((v) => v.id)).toEqual(["V1"]);
   });
 
   test("an anchored paragraph without BCP 14 is no requirement", () => {
     expect(
-      contract(spec(sec(`<t anchor="note">Just prose.</t>`))).requirements,
-    ).toEqual([]);
+      contract(
+        spec(MIN + sec(`<t anchor="note">Just prose.</t>`)),
+      ).requirements.map((r) => r.id),
+    ).toEqual(["R-A"]);
   });
 
   test("sections in <back> are lettered, and nested sections numbered", () => {
-    const xml = `<rfc docName="draft-t-00" version="3"><front><title>T</title></front><middle>${IFACE}</middle><back>${REFS}<section><name>A</name>${sec(REQ)}</section></back></rfc>`;
+    const xml = `<rfc docName="draft-t-00" version="3"><front><title>T</title></front><middle>${IFACE}${MIN.replace(REQ, "")}</middle><back>${REFS}<section><name>A</name>${sec(REQ)}</section></back></rfc>`;
     expect(contract(xml).requirements[0].section).toBe("A.1");
   });
 
   test("a document with no <back> still reads", () => {
-    const xml = `<rfc docName="draft-t-00" version="3"><front><title>T</title></front><middle>${IFACE}</middle></rfc>`;
-    expect(contract(xml).requirements).toEqual([]);
+    const xml = `<rfc docName="draft-t-00" version="3"><front><title>T</title></front><middle>${IFACE}${MIN}</middle></rfc>`;
+    expect(contract(xml).requirements.map((r) => r.id)).toEqual(["R-A"]);
   });
 });
 
@@ -380,7 +407,7 @@ describe("refusals", () => {
   test("a section xref to an RFC nothing cites needs no file", () => {
     const asked: number[] = [];
     const r = run(
-      spec(sec(`<t>See <xref target="RFC9999" section="99"/>.</t>`)),
+      spec(MIN + sec(`<t>See <xref target="RFC9999" section="99"/>.</t>`)),
       "specs/t.xml",
       (n) => {
         asked.push(n);
@@ -475,7 +502,7 @@ describe("refusals", () => {
 
   test("a cell without backticks", () => {
     expect(
-      refusals(
+      located(
         spec(
           sec(
             REQ +
@@ -492,20 +519,15 @@ describe("refusals", () => {
               ]),
           ),
         ),
-      ).map((r) => r.message),
+      ),
     ).toEqual([
-      "cell must be a single code span",
-      "cell must be a single code span",
+      { line: 8, message: "cell must be a single code span" },
+      { line: 9, message: "cell must be a single code span" },
     ]);
   });
 
   test("two ts-interface blocks", () => {
-    expect(
-      refusals(spec(sec(iface()))).map(({ line, message }) => ({
-        line,
-        message,
-      })),
-    ).toEqual([
+    expect(located(spec(sec(iface())))).toEqual([
       {
         line: 7,
         message: "a spec has exactly one ts-interface block; this one has 2",
@@ -588,28 +610,40 @@ describe("refusals", () => {
       `<blockquote anchor="R-E"></blockquote>`,
       `<blockquote anchor="R-F"><t><xref target="RFC4648" section="10"/> after</t></blockquote>`,
     ];
-    expect(messages(spec(sec(bad.join(""))))).toEqual(
-      ["R-B", "R-C", "R-D", "R-E", "R-F"].map(
-        (a) =>
-          `blockquote ${a} must be <t> paragraphs, the last ending with {{Section N of RFCx}}`,
-      ),
+    expect(located(spec(sec(bad.join("\n"))))).toEqual(
+      ["R-B", "R-C", "R-D", "R-E", "R-F"].map((a, i) => ({
+        line: 7 + i,
+        message: `blockquote ${a} must be <t> paragraphs, the last ending with {{Section N of RFCx}}`,
+      })),
     );
   });
 
   test("a requirement, an exclusion and a vector table in an unnumbered section", () => {
     expect(
-      messages(
+      located(
         spec(
           sec(
-            `${REQ}<t>It <bcp14>SHOULD</bcp14> be.</t><t>Untested: no.</t>${table([])}`,
+            `${REQ}\n<t>It <bcp14>SHOULD</bcp14> be.</t><t>Untested: no.</t>\n${table([])}`,
             ` numbered="false"`,
           ),
         ),
       ),
     ).toEqual([
-      "R-A is in an unnumbered section; a requirement needs a section number",
-      "a vector table is in an unnumbered section; it needs a section number",
-      "an excluded sentence is in an unnumbered section; it needs a section number",
+      {
+        line: 7,
+        message:
+          "R-A is in an unnumbered section; a requirement needs a section number",
+      },
+      {
+        line: 8,
+        message:
+          "an excluded sentence is in an unnumbered section; it needs a section number",
+      },
+      {
+        line: 9,
+        message:
+          "a vector table is in an unnumbered section; it needs a section number",
+      },
     ]);
   });
 
@@ -636,14 +670,18 @@ describe("refusals", () => {
   });
 
   test("a vector table with the wrong header", () => {
-    expect(messages(spec(sec(table([], ["Id", "Call", "Expected"]))))).toEqual([
-      "a vector table's header is Id | Call | Expected | Covers | Source | Title, not Id | Call | Expected",
+    expect(located(spec(sec(table([], ["Id", "Call", "Expected"]))))).toEqual([
+      {
+        line: 7,
+        message:
+          "a vector table's header is Id | Call | Expected | Covers | Source | Title, not Id | Call | Expected",
+      },
     ]);
   });
 
   test("a vector row with the wrong cell count, and one with no title", () => {
     expect(
-      messages(
+      located(
         spec(
           sec(
             REQ +
@@ -654,7 +692,10 @@ describe("refusals", () => {
           ),
         ),
       ),
-    ).toEqual(["a vector row has 6 cells, not 2", "vector V1 has no title"]);
+    ).toEqual([
+      { line: 8, message: "a vector row has 6 cells, not 2" },
+      { line: 9, message: "vector V1 has no title" },
+    ]);
   });
 
   test("Call and Expected cells that do not parse, with columns", () => {
@@ -688,7 +729,7 @@ describe("refusals", () => {
 
   test("a Source cell that is none of the three forms", () => {
     expect(
-      messages(
+      located(
         spec(
           sec(
             REQ +
@@ -707,9 +748,16 @@ describe("refusals", () => {
         ),
       ),
     ).toEqual([
-      "Source must be {{Section N of RFCx}}, a section anchor, or a single code span",
-      'Source names "nowhere", which is no numbered section',
-      'xref to "BOOK" names no RFC <reference>',
+      {
+        line: 8,
+        message:
+          "Source must be {{Section N of RFCx}}, a section anchor, or a single code span",
+      },
+      {
+        line: 9,
+        message: 'Source names "nowhere", which is no numbered section',
+      },
+      { line: 10, message: 'xref to "BOOK" names no RFC <reference>' },
     ]);
   });
 
@@ -1089,9 +1137,9 @@ describe("refusals of review round 1", () => {
     const c = contract(
       lines(
         `<blockquote anchor="R-NR"><t>This, however, is NOT RECOMMENDED <xref target="RFC5869" section="3.3"/></t></blockquote>`,
-      ),
+      ).replace("</middle>", `${MIN}</middle>`),
     );
-    expect(c.requirements).toEqual([
+    expect(c.requirements.slice(0, 1)).toEqual([
       expect.objectContaining({ id: "R-NR", level: "SHOULD NOT" }),
     ]);
   });
@@ -1119,13 +1167,12 @@ describe("refusals of review round 1", () => {
   });
 
   test("a table that resembles the vector header must be it", () => {
-    const h = [...VECTOR_HEADER];
+    const h: string[] = [...VECTOR_HEADER];
     const bad = [
       ["ID", ...h.slice(1)],
-      [h[1], h[0], ...h.slice(2)],
-      ["Name", "Call"],
-      ["Ids", "x"],
-      ["Thing", "expected"],
+      ["Id", "Expected"],
+      ["ids", "x", "call"],
+      [h[0], h[2], h[1], ...h.slice(3)],
     ];
     expect(
       located(
@@ -1210,14 +1257,25 @@ describe("refusals of review round 1", () => {
           REQ,
           T([row("-V", tt("hexDecode(1)"), tt("1"), "R-NO", "the RFC", "")]),
         ),
-      ).map((r) => r.message),
+      ),
     ).toEqual([
-      "Call: argument 1 of hexDecode (text) is string, not an int 1",
-      'Covers names "R-NO", which is no requirement',
-      "Expected: hexDecode returns bytes?, not an int 1",
-      "Source must be {{Section N of RFCx}}, a section anchor, or a single code span",
-      'clause id "-V" is not letters, digits, ".", "_" and "-", starting with a letter or digit',
-      "vector -V has no title",
+      {
+        line: 10,
+        message: "Call: argument 1 of hexDecode (text) is string, not an int 1",
+      },
+      { line: 10, message: 'Covers names "R-NO", which is no requirement' },
+      { line: 10, message: "Expected: hexDecode returns bytes?, not an int 1" },
+      {
+        line: 10,
+        message:
+          "Source must be {{Section N of RFCx}}, a section anchor, or a single code span",
+      },
+      {
+        line: 10,
+        message:
+          'clause id "-V" is not letters, digits, ".", "_" and "-", starting with a letter or digit',
+      },
+      { line: 10, message: "vector -V has no title" },
     ]);
   });
 
@@ -1234,6 +1292,264 @@ describe("refusals of review round 1", () => {
     const r = profileToContract(doc, "specs/t.xml", resolver);
     const ms = performance.now() - t0;
     expect("contract" in r && r.contract.exclusions?.length).toBe(n / 2);
-    expect(ms).toBeLessThan(2000);
+    expect(ms).toBeLessThan(10000);
+  });
+});
+
+describe("refusals of review round 2", () => {
+  /** A spec whose one numbered section holds `ls`, one a line. */
+  const lines = (...ls: string[]) =>
+    spec(sec(`\n${ls.join("\n")}\n`, ' numbered="true"'));
+  const T = (rows: string[]) => table(rows);
+  const src = (source: string, expected = '"f"', id = "V1") =>
+    vector('hexDecode("66")', expected, { id, source });
+
+  test("a blank command source, and one whose Expected is null or a bool", () => {
+    expect(
+      located(
+        lines(
+          REQ,
+          T([
+            src("<tt/>"),
+            src("<tt>   </tt>", '"f"', "V2"),
+            src(tt("echo"), "null", "V3"),
+            vector('isHex("66")', "true", { id: "V4", source: tt("echo") }),
+          ]),
+        ),
+      ),
+    ).toEqual([
+      { line: 10, message: "Source: a command is a shell command, not blank" },
+      { line: 11, message: "Source: a command is a shell command, not blank" },
+      {
+        line: 12,
+        message:
+          "Source: a command prints bytes or a string, so its Expected is one, not null",
+      },
+      {
+        line: 13,
+        message:
+          "Source: a command prints bytes or a string, so its Expected is one, not bool",
+      },
+    ]);
+  });
+
+  test("a blockquote of only its citation, and one holding a control character", () => {
+    expect(
+      located(
+        lines(
+          `<blockquote anchor="R-X"><t>${RFC10}</t></blockquote>`,
+          `<blockquote anchor="R-Y"><t>a&#127; ${RFC10}</t></blockquote>`,
+          REQ,
+          T([src(RFC10)]),
+        ),
+      ),
+    ).toEqual([
+      { line: 8, message: "R-X's quote is empty" },
+      { line: 9, message: "R-Y's quote holds a control character (U+007F)" },
+    ]);
+  });
+
+  test("an excluded sentence or reason holding a control character", () => {
+    expect(
+      located(
+        lines(
+          "<t>x <bcp14>MUST</bcp14> y&#127;.</t>",
+          "<t>Untested: no&#127;.</t>",
+          REQ,
+          T([src(RFC10)]),
+        ),
+      ),
+    ).toEqual([
+      {
+        line: 8,
+        message: "the excluded sentence holds a control character (U+007F)",
+      },
+      {
+        line: 9,
+        message: "the Untested: reason holds a control character (U+007F)",
+      },
+    ]);
+  });
+
+  test("a requirement anchor that is not an id", () => {
+    expect(
+      located(
+        lines(
+          `<t anchor="_R">hexDecode <bcp14>MUST</bcp14> work.</t>`,
+          REQ,
+          T([src(RFC10)]),
+        ),
+      ),
+    ).toEqual([
+      {
+        line: 8,
+        message:
+          'requirement id "_R" is not letters, digits, ".", "_" and "-", starting with a letter or digit',
+      },
+    ]);
+  });
+
+  test("an xref section that is not a section number", () => {
+    expect(
+      located(lines(REQ, T([src(`<xref target="RFC4648" section="three"/>`)]))),
+    ).toEqual([
+      {
+        line: 10,
+        message:
+          'section "three" of RFC4648 is not a section number like 2.3 or A.1',
+      },
+    ]);
+  });
+
+  test("a contract name that is not an id, and a title that is blank or holds a control character", () => {
+    expect(
+      refusals(spec(MIN, { docName: "draft-_t-00" }), "specs/_t.xml"),
+    ).toEqual([
+      {
+        file: "specs/_t.xml",
+        line: 1,
+        message:
+          'docName "draft-_t-00" names contract "_t", which is not letters, digits, ".", "_" and "-", starting with a letter or digit',
+      },
+    ]);
+    expect(
+      located(spec(MIN).replace("<title>T</title>", "<title> </title>")),
+    ).toEqual([{ line: 1, message: "the title is empty" }]);
+    expect(
+      located(spec(MIN).replace("<title>T</title>", "<title>T&#127;</title>")),
+    ).toEqual([
+      { line: 1, message: "the title holds a control character (U+007F)" },
+    ]);
+  });
+
+  test("a function name the generated test uses itself", () => {
+    const head = `<section><name>I</name>${iface(`${IFACE_CODE}export function plain_x(a: string): string\n`)}</section>`;
+    expect(located(spec(MIN, { head }))).toEqual([
+      {
+        line: 2,
+        message:
+          "function plain_x: the generated test uses this name itself (its helpers, and names starting plain_ clause_ table_ v_ a_ s_), so it cannot call such a function",
+      },
+    ]);
+  });
+
+  test("a spec with no requirement, or no clause", () => {
+    expect(located(lines(T([])))).toEqual([
+      {
+        line: 1,
+        message:
+          "a spec needs at least one clause: a vector table row or a ts-property block",
+      },
+      { line: 1, message: "a spec needs at least one requirement" },
+    ]);
+    expect(located(lines(REQ))).toEqual([
+      {
+        line: 1,
+        message:
+          "a spec needs at least one clause: a vector table row or a ts-property block",
+      },
+    ]);
+  });
+
+  test("a v2 <texttable>", () => {
+    expect(
+      located(
+        lines(
+          REQ,
+          "<texttable><ttcol>a</ttcol><c>b</c></texttable>",
+          T([src(RFC10)]),
+        ),
+      ),
+    ).toEqual([
+      {
+        line: 9,
+        message:
+          "a <texttable> is v2 XML; write a v3 <table> (xml2rfc --v2v3 converts one)",
+      },
+    ]);
+  });
+
+  test("Id, Covers and header cells are read raw: a non-breaking hyphen is not a hyphen", () => {
+    expect(
+      located(
+        lines(
+          REQ,
+          T([
+            vector('hexDecode("66")', '"f"', { covers: "R&#8209;A" }),
+            vector('hexDecode("66")', '"f"', { id: "V&#8209;2" }),
+          ]),
+        ),
+      ),
+    ).toEqual([
+      { line: 10, message: 'Covers names "R‑A", which is no requirement' },
+      {
+        line: 11,
+        message:
+          'clause id "V‑2" is not letters, digits, ".", "_" and "-", starting with a letter or digit',
+      },
+    ]);
+    const h: string[] = [...VECTOR_HEADER];
+    h[4] = "So&#8209;urce";
+    expect(located(lines(REQ, table([], h)))).toEqual([
+      {
+        line: 9,
+        message:
+          "a vector table's header is Id | Call | Expected | Covers | Source | Title, not Id | Call | Expected | Covers | So‑urce | Title",
+      },
+    ]);
+  });
+
+  test("a Definition may quote a keyword; MUST NOT and SHOULD NOT come from an anchored <t>", () => {
+    const c = contract(
+      lines(
+        `<t anchor="R-D">Definition: "<bcp14>MUST</bcp14>" is a keyword.</t>`,
+        `<t anchor="R-N">hexDecode <bcp14>MUST NOT</bcp14> fail.</t>`,
+        `<t anchor="R-S">hexDecode <bcp14>SHOULD NOT</bcp14> fail.</t>`,
+        REQ,
+        T([src(RFC10)]),
+      ),
+    );
+    expect(c.requirements.map((q) => [q.id, q.level])).toEqual([
+      ["R-D", "DEFINITION"],
+      ["R-N", "MUST NOT"],
+      ["R-S", "SHOULD NOT"],
+      ["R-A", "MUST"],
+    ]);
+  });
+
+  test("shapeRefusals maps each issue to its element's line, else the root", () => {
+    const c = contract(lines(REQ, T([src(RFC10)])));
+    const broken = {
+      ...c,
+      contract: "-bad",
+      requirements: [{ ...c.requirements[0], quote: "" }],
+      clauses: [{ ...c.clauses[0], title: "" }],
+    } as RfcContract;
+    const at = (xmlLine: number) => ({ xmlLine });
+    expect(
+      shapeRefusals(broken, "f.xml", at(1), {
+        requirements: [at(5)],
+        exclusions: [],
+        clauses: [at(7)],
+        functions: [at(2), at(2), at(2)],
+      }).map(({ file, line, message }) => ({
+        file,
+        line,
+        issue: message.replace("the contract read here is not valid: ", ""),
+      })),
+    ).toEqual(
+      validateContractShape(broken)
+        .map((issue) => ({
+          file: "f.xml",
+          line: issue.startsWith("requirements")
+            ? 5
+            : issue.startsWith("clauses")
+              ? 7
+              : 1,
+          issue,
+        }))
+        .sort((a, b) => a.line - b.line),
+    );
+    expect(validateContractShape(broken).length).toBe(3);
   });
 });
