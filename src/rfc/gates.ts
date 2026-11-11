@@ -1290,7 +1290,16 @@ function checkCompleteness(
  * gives one entry per level per sentence, so each use of that level in the
  * sentence is found as normativeSentences finds keywords (KEYWORD_RE): "MUST
  * NOT do A and MUST do B" is two keywords, and a quote must cover each.
- * Each entry is found at the line and offset the reader recorded for it.
+ *
+ * Each entry is located by the position the reader recorded for it: its
+ * line in the section's ownLines and the sentence's offset in that line,
+ * added to where the line starts in the normalized own text. So the same
+ * words elsewhere (a paragraph with no <bcp14>, or a second marked copy)
+ * are not this entry's place, and each marked copy is its own entry to
+ * quote. Where the recorded position does not hold the sentence (the
+ * reader's text and plainText disagree, as for `x<bcp14> MUST</bcp14>`,
+ * which reads "xMUST" to the reader and "x MUST" in the line), the entry
+ * gets no offsets and is reported: a false failure, never a false pass.
  */
 function bindingSentences(
   doc: RfcDocument,

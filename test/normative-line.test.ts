@@ -124,3 +124,53 @@ describe("completeness locates each entry by its own position", () => {
     ]);
   });
 });
+
+describe("positions in paragraphs, list items, cells and subsections", () => {
+  // Section 1 holds two marked sentences in one paragraph, a list item and
+  // a table cell; its subsection 1.1 holds one more, on its second line.
+  const QUOTES: [string, string][] = [
+    ["1", "First a sender MUST pad."],
+    ["1", "Then a sender SHALL send."],
+    ["1", "A list item MUST hold."],
+    ["1", "A cell MUST hold."],
+    ["1.1", "A sub MUST hold."],
+  ];
+  const positions = (quotes: [string, string][]) => {
+    const c = contract(quotes);
+    c.sources = [{ id: "repeat", path: "positions.xml" }];
+    return c;
+  };
+
+  test("each entry's line and offset hold its sentence", () => {
+    const d = load(positions(QUOTES)).get("repeat") as V3Document;
+    expect(
+      d.normative.map((n) => [n.section, n.sentence, n.line, n.start]),
+    ).toEqual([
+      ["1", "First a sender MUST pad.", 0, 0],
+      ["1", "Then a sender SHALL send.", 0, 25],
+      ["1", "A list item MUST hold.", 1, 0],
+      ["1", "A cell MUST hold.", 2, 0],
+      ["1.1", "A sub MUST hold.", 1, 0],
+    ]);
+    for (const n of d.normative) {
+      const line = d.sections.get(n.section)?.ownLines[n.line] ?? "";
+      expect(line.slice(n.start)).toStartWith(n.sentence);
+    }
+  });
+
+  test("quoting each covers it; leaving one out reports it alone", () => {
+    const docs = load(positions(QUOTES));
+    const issues = (q: [string, string][]) => {
+      return runGates(positions(q), { docs })
+        .issues.filter((i) => i.gate === "completeness")
+        .map((i) => i.message);
+    };
+    expect(issues(QUOTES)).toEqual([]);
+    expect(issues(QUOTES.filter((_, i) => i !== 1))).toEqual([
+      'SHALL sentence is neither a requirement nor an exclusion: "Then a sender SHALL send."',
+    ]);
+    expect(issues(QUOTES.filter((_, i) => i !== 4))).toEqual([
+      'MUST sentence is neither a requirement nor an exclusion: "A sub MUST hold."',
+    ]);
+  });
+});
