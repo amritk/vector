@@ -158,8 +158,9 @@ reads the XML. Without `-o` it writes the contract to stdout. With `--check` it
 prints a unified diff against the `-o` file and exits 1 if they differ. Given a
 `.md` it exits 2: `build it first: scripts/build-spec.sh specs/<name>.md`.
 
-It refuses everything it cannot read, all at once, each refusal as `file:line`
-with the markdown line the XML came from. It also runs `spec check`'s gates
+It refuses everything it cannot read, all at once, each refusal as `file:line`.
+The file is the XML; the line is the markdown line the XML came from when the
+XML carries kramdown-rfc's `<?line?>` marks, and the XML line otherwise. It also runs `spec check`'s gates
 (without `--run-sources`). Exit codes:
 
 - 0: the contract was written, or is up to date.
@@ -179,7 +180,7 @@ and is merged in verbatim.
 |---|---|---|
 | `contract` | `docname: draft-<name>-00` in the front matter; `<name>` must be the file's basename | `<rfc docName="draft-<name>-00">` |
 | `target.module`, the signatures | one `~~~ ts-interface` block, first line `// module: nish/<path>`, then `export function f(…): T` or `export const f = (…): T` lines | `<sourcecode type="ts-interface">` |
-| a requirement (`MUST` … `MAY`) | a paragraph holding one BCP 14 level, then `{: #R-ID}` on the next line | `<t anchor="R-ID">` with `<bcp14>` |
+| a requirement (`MUST` … `MAY`) | a paragraph holding one BCP 14 sentence, at one level, then `{: #R-ID}` on the next line | `<t anchor="R-ID">` with `<bcp14>` |
 | a requirement (`DEFINITION`) | a paragraph starting `Definition: `, with no BCP 14 keyword, then `{: #R-ID}` | `<t anchor="R-ID">Definition: …</t>` |
 | a requirement quoting an RFC | a blockquote whose last line is `{{Section N of RFCx}}`, then `{: #R-ID gi="blockquote"}` | `<blockquote anchor="R-ID">`, the `<xref section>` last |
 | an exclusion | a paragraph starting `Untested: ` right after a requirement, or after an unanchored BCP 14 paragraph | the next sibling `<t>Untested: …</t>` |
@@ -190,15 +191,22 @@ and is merged in verbatim.
 Rules the profile enforces:
 
 - **Requirements.** An id matches `[A-Za-z0-9][A-Za-z0-9._-]*`. Each
-  anchored paragraph holds one BCP 14 level: split `MUST … SHOULD` into two.
-  A requirement in an unnumbered section (`{: numbered="false"}` on the line
-  after the heading) is refused, because it has no section to cite. A quoted
-  requirement must appear verbatim in that section of the RFC.
+  anchored paragraph holds exactly one BCP 14 sentence, and that sentence
+  one level: `X MUST a. Y MUST b.` under one anchor is refused, so give each
+  sentence its own anchor, and split `MUST … SHOULD` into two sentences. In an
+  unnumbered section (`{: numbered="false"}` on the line after the heading) a
+  requirement of this spec, an exclusion of an unanchored sentence, and a
+  vector table are refused, because they have no section number to record. A
+  requirement quoting an RFC is accepted there, since it records the RFC's
+  section. A quoted requirement must appear verbatim in that section of the
+  RFC.
 - **Completeness.** Every BCP 14 sentence is in a requirement or excluded by
   the `Untested:` paragraph after it. An `Untested:` paragraph that follows
   nothing it can exclude is refused, and so is a `MUST`, `MUST NOT`,
   `SHALL`, `SHALL NOT`, `REQUIRED` or `DEFINITION` requirement that no
-  clause covers. The reason is the rest of the
+  clause covers. A requirement followed by `Untested:` is an exclusion, not a
+  requirement: no vector's Covers and no property may name it. The reason is
+  the rest of the
   paragraph and is kept whole, including `Checked by: …`. The
   `{::boilerplate bcp14-tagged}` key-words paragraph is skipped. Put it first
   in `# Introduction`.
@@ -209,7 +217,7 @@ Rules the profile enforces:
   | Source cell | Contract source |
   |---|---|
   | `{{Section N of RFCx}}` | `cite`, section N of that RFC |
-  | `{{anchor}}`, a section of this spec | `spec` (for a `null` or `bool` expected value), otherwise `cite`, that section |
+  | `{{anchor}}`, a numbered section of this spec | `spec` for a `null` or `bool` expected value; otherwise `cite`, that section, which must print the value |
   | a single code span, `` `python3 -c '…'` `` | `command`, with the table's section for the args; the expected value must be bytes or a string |
 
 - **Whole spec.** At least one requirement, and at least one vector row or
@@ -246,7 +254,8 @@ forall (b: u8[] /* 0..64 */) => {
 }
 ```
 
-- **Line 1** is `// P-ID covers R-ID, R-ID — title`. The title is required.
+- **Line 1** is `// P-ID covers R-ID, R-ID — title`. The title is required, and the
+  separator before it is exactly ` — ` (space, em dash, space).
 - **`forall (var, …) => body`**, optionally followed by `where expr`. Each
   variable has a bound in a comment:
   - `b: u8[] /* lo..hi */`: a length, with 0 ≤ lo ≤ hi ≤ 4096.
@@ -285,9 +294,13 @@ forall (b: u8[] /* 0..64 */) => {
 **Linked RFCs.** A spec cites an RFC by listing it under `normative:` and
 writing `{{Section N of RFCx}}`. A quoted requirement, an exclusion of a quote,
 or a vector Source can cite it. Each cited RFC becomes a `sources[]` entry.
-Its text is looked up as `rfc<N>.xml`, then `rfc<N>.txt`, in three places in
-order: beside the contract, in `../rfcs/`, then in vector's own `rfcs/`. A
-missing one exits 2 with the command that fetches it:
+Its text is looked up in three places, nearest first: beside the contract,
+in `../rfcs/`, then in vector's own `rfcs/`. At each place `rfc<N>.xml` comes
+before `rfc<N>.txt`, so the order is `./rfc<N>.xml`, `./rfc<N>.txt`,
+`../rfcs/rfc<N>.xml`, and so on. Once a contract records a source's `file`,
+that name wins: a contract that recorded `rfcs/rfc4648.txt` keeps reading it
+even after an `rfc4648.xml` is added at that place or a nearer one, and
+`check` and `frozen` verify the recorded bytes. A missing one exits 2 with the command that fetches it:
 `curl -sSfL -o rfcs/rfc<N>.xml https://www.rfc-editor.org/rfc/rfc<N>.xml` for
 N ≥ 8700, `.txt` below 8650, and either between. An RFC listed but never cited
 needs no file. Commit the file to `rfcs/`. Its `sha256` is in the contract, so
@@ -516,13 +529,17 @@ failure, never a pass. Results exit 0 (OK) or 1 (refused); usage and git
 errors exit 2.
 
 ```bash
-bun run vector spec frozen  --base origin/main [contracts/*.json]
+bun run vector spec frozen  --base origin/main contracts/rfc8439-chacha20-poly1305.json
 bun run vector spec stale   test/spec/aead_rfc8439.ts contracts/rfc8439-chacha20-poly1305.json
 node scripts/spec-stale.mjs test/spec/aead_rfc8439.ts contracts/rfc8439-chacha20-poly1305.json
 bun run vector spec exports contracts/rfc5869-hkdf-sha256.json --nish-root ../nish --base origin/main
 bun run vector spec mutate  contracts/rfc5869-hkdf-sha256.json --nish-root ../nish --base origin/main \
   [--jobs N] [--max N] [--format markdown]
 ```
+
+Give `frozen` its contract paths explicitly: a `contracts/<name>.survivors.json`
+sidecar is a `.json` in `contracts/` but not a contract, so a glob or a run
+with no paths would try to read it as one.
 
 **frozen** — a PR changes the spec side or the implementation, never both, so
 a test can't be loosened in the PR that changes the code it tests. Paths are
@@ -579,7 +596,8 @@ tests, or be listed in `outOfScope: [{ "name", "reason" }]` with a non-empty
 reason. A contract may not list a function it tests as out of scope. Deleting
 a tested function is refused (its test can no longer build); deleting an
 untested export is a note, which also says when its `outOfScope` entry can
-go. An export commented out counts as deleted. A re-export (`export { a }`),
+go. `extract` writes no `outOfScope` (the profile has no construct for it), so
+for an extracted contract every changed export must be tested. An export commented out counts as deleted. A re-export (`export { a }`),
 an `export const a = 1, b = 2`, or anything else it cannot name is refused.
 Only `target.module` is checked: a contract that also exercises another
 module (HKDF calls `hmacSha256`) does not gate that module's exports.
@@ -634,7 +652,7 @@ A module lands spec-first, in two PRs: the **spec side** (`specs/`,
 | 3. `frozen` | `vector spec frozen --base origin/main contracts/<name>.json` | spec side only, hashes match | both sides touched, the spec changed, no `sha256`, a contract source outside `specs/` or `rfcs/`, no contract |
 | 4. `emit` / `stale` | `vector spec emit contracts/<name>.json -o test/spec/<name>.ts`, then `vector spec stale test/spec/<name>.ts contracts/<name>.json` | the test is the contract's | stale, missing or doubled marker line |
 | 5. implement, `run` | `vector spec run contracts/<name>.json --nish-root ../nish` | `SATISFIED` | `VIOLATED` / `ERROR` / `INVALID` |
-| 6. `exports` | `vector spec exports contracts/<name>.json --nish-root ../nish --base origin/main` | every changed export tested or `outOfScope` | an unlisted export |
+| 6. `exports` | `vector spec exports contracts/<name>.json --nish-root ../nish --base origin/main` | every changed export tested | a changed export no clause tests (drop it, or add it to the spec with a clause that tests it) |
 | 7. `mutate` | `vector spec mutate contracts/<name>.json --nish-root ../nish --base origin/main` | no survivor outside `allowSurvivors` | a survivor, zero mutants, all stillborn |
 
 Every step exits 2 on a usage error (and `frozen`, `exports` and `mutate` on a
@@ -1246,18 +1264,19 @@ src/
   emit/             AST → runnable TypeScript
   report/           pretty-printer + Dijkstra Dashboard
   generated/        mjst output (checked in)
-  rfc/              spec → contract → Nish test: contract.ts (format, typing),
+  rfc/              spec → contract → Nish test: profile.ts (kramdown-rfc
+                    XML → contract), literals.ts, contract.ts (format, typing),
                     rfctext.ts (sections, hex, BCP 14 sentences), spectext.ts
                     (markdown specs, format detection), gates.ts,
                     sample.ts (Z3 boundaries), emit-nish.ts, run.ts, report.ts,
                     cli.ts (`vector spec`)
 contracts/          RFC contracts (RFC 5869 HKDF, RFC 8439 ChaCha20-Poly1305)
-rfcs/               the RFCs' plain text, unmodified, as rfc-editor.org serves it
+rfcs/               the RFCs, as XML (`rfc<N>.xml`) or plain text (`rfc<N>.txt`), unmodified, as rfc-editor.org serves them
 test/               bun test suites + fixtures
 .claude/skills/vector/
   SKILL.md          the skill: the Architect→Generator→verify→repair loop
 .claude/skills/vector-spec/
-  SKILL.md          the skill: spec → contract → check → run
+  SKILL.md          the skill: kramdown-rfc spec → build → extract → check → run
   reference/
     vector-lang.md     the vector-lang manual Claude reads before emitting artifacts
 ```
@@ -1282,8 +1301,9 @@ shape → typecheck → `checkAxiomTraceability` → Z3, returning the discrimin
 they cannot disagree about what "proven" means.
 
 **No model calls.** vector has no model client and no SDK dependency. Writing
-the spec plan, the program and spec contracts is Claude Code's job, through the
-skills in `.claude/skills/`; vector only checks what they write.
+the spec plan, the program and the kramdown-rfc specs is Claude Code's job,
+through the skills in `.claude/skills/`; vector only checks what they write,
+and `vector spec extract` derives each contract from its spec.
 
 ---
 

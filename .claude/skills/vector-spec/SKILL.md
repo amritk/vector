@@ -107,8 +107,12 @@ export function hexDecode(text: string): u8[] | null
 The types are `u8[]`, `string`, `i32`, `u32`, `boolean` and `Secret<u8[]>`.
 Add `| null` to `u8[]` or `string`, and to `Secret<u8[]>` as a result only.
 
-**Requirements: one BCP 14 level per paragraph,** each anchored on the next
-line. A requirement in an unnumbered section is refused.
+**Requirements: one BCP 14 sentence per anchored paragraph,** at one level,
+with the anchor on the next line. `X MUST a. Y MUST b.` under one anchor is
+refused: give each sentence its own anchor. In an unnumbered section, a
+requirement of this spec, an exclusion of an unanchored sentence, and a
+vector table are refused (no section number to record); an RFC quote is
+accepted there.
 
 ```
 hexEncode MUST return exactly two characters per input byte.
@@ -132,7 +136,8 @@ appear verbatim in that section of the RFC.
 test: caller obligations, timing, key management. Follow each one directly
 with an `Untested:` paragraph that gives the reason and, where it exists, what
 checks it instead. That sentence can be a requirement or an unanchored
-paragraph:
+paragraph. A requirement followed by `Untested:` becomes an exclusion: no
+vector's Covers and no property may name it.
 
 ```
 hexDecode MUST NOT index a table by the value of a digit.
@@ -163,9 +168,12 @@ Untested: timing is not observable from a unit test. Checked by: code review.
   - `concat(a, b, …)`: one level, all parts bytes. Never `‖`.
 - **Source** says where the expected value comes from:
   - `{{Section N of RFCx}}`: the value is printed there. Prefer this.
-  - `{{anchor}}`: a section of this spec. Use it only for a `null` or `bool`
-    the covered requirement states.
-  - A code span holding a command: the value is its trimmed stdout.
+  - `{{anchor}}`: a numbered section of this spec. For a `null` or `bool`
+    expected value it is a `spec` source (the covered requirement states it);
+    for any other value it is a `cite` of that section, which must print the
+    value.
+  - A code span holding a command: the value is its trimmed stdout, so the
+    Expected cell must be bytes or a string.
 - **Values from an RFC:**
   - Each one is a *whole* printed value, never a prefix or a tail.
   - Take the arguments and the expected value from one test case.
@@ -175,7 +183,8 @@ Untested: timing is not observable from a unit test. Checked by: code review.
     `null`, `true` or `false`" give the full rules.
 
 **Properties.** Each is a `ts-property` block. Line 1 is
-`// P-ID covers R-ID, … — title`:
+`// P-ID covers R-ID, … — title`, where the separator is exactly ` — `
+(space, em dash, space):
 
 ````
 ~~~ ts-property
@@ -202,7 +211,11 @@ vector's, not JavaScript's. For example, `.slice` clamps, `a % 0` is 0, and
 
 **Linked RFCs.** The RFC text must be in `rfcs/`, unmodified. The IETF Trust
 allows copying an RFC whole. Extract's missing-RFC message gives the `curl`
-command: `rfc<N>.xml` for N ≥ 8700, `.txt` for older ones.
+command: `rfc<N>.xml` for N ≥ 8700, `.txt` below 8650, and both between.
+The lookup goes nearest place first (beside the contract, `../rfcs/`, then
+vector's `rfcs/`), and at each place `.xml` before `.txt`. A `file` the
+contract already records wins: adding an `.xml` later does not displace a
+recorded `.txt`, and `check` and `frozen` verify the recorded bytes.
 
 ### 2. Build, extract, `check`
 
@@ -221,8 +234,9 @@ bun run vector spec check contracts/<name>.json --run-sources
 
 **extract**
 
-- It lists every refusal at once, each as `file:line` in the `.md`. The line
-  can run late after a table.
+- It lists every refusal at once, each as `file:line`. The file is the XML;
+  the line is the `.md` line when the XML carries `<?line?>` marks, otherwise
+  the XML line. The line can run late after a table.
 - Repair the **spec**, never the contract. Then rebuild and re-extract until
   it exits 0.
 - It runs `check`'s gates: fidelity, completeness, coverage, provenance,
@@ -329,7 +343,8 @@ PR, allow it with a reason in `contracts/<name>.survivors.json`:
 ```
 
 Then re-extract, which merges that file in verbatim. Re-run `emit`, `stale`
-and `frozen` too, because the contract's bytes changed. Survivors are usually
+and `frozen` too (give `frozen` the contract path explicitly: the sidecar is a
+`.json` in `contracts/` but not a contract), because the contract's bytes changed. Survivors are usually
 found by the implementation PR's `mutate` run, but the allow-list still
 belongs in a spec-side PR.
 
