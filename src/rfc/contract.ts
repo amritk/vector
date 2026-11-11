@@ -375,6 +375,7 @@ export const TEST_NAMES = new Set([
   "fillBytes",
   "flipBit",
   "bitwiseBytes",
+  "remI32",
   "le64",
   "strEq",
   "isNullStr",
