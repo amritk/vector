@@ -123,8 +123,6 @@ export class XmlRefusal extends Error {
 export const isElement = (n: XmlNode | XmlText): n is XmlNode => "name" in n;
 
 const elements = (n: XmlNode): XmlNode[] => n.children.filter(isElement);
-const child = (n: XmlNode, name: string): XmlNode | undefined =>
-  elements(n).find((c) => c.name === name);
 
 // ---------------------------------------------------------------- tokenizer
 
@@ -196,7 +194,10 @@ class Reader {
   loc(at: number): Loc {
     const xmlLine = this.line(at);
     const pi = this.linePi;
-    return pi ? { xmlLine, mdLine: pi.n + xmlLine - pi.xmlLine } : { xmlLine };
+    // A signed <?line -N?> can correct the count below the first line.
+    return pi
+      ? { xmlLine, mdLine: Math.max(1, pi.n + xmlLine - pi.xmlLine) }
+      : { xmlLine };
   }
 
   fail(reason: string, at = this.pos): never {
@@ -588,7 +589,8 @@ function render(n: XmlNode | XmlText, r: Render): string {
     case "bcp14":
       if (!r.bcp14) return inner();
       r.bcp14.push(n);
-      return OPEN + inner().trim() + CLOSE;
+      // Trimmed inside the sentinels by normativeIn, once per sentence.
+      return OPEN + inner() + CLOSE;
     default:
       return BLOCKS.has(n.name) ? ` ${inner()} ` : inner();
   }
@@ -870,7 +872,15 @@ class Builder {
       if (ch === OPEN) {
         open.push(start.length);
         start.push(length);
+        // A keyword's own leading and trailing space is not its text. After
+        // clean, a run of whitespace is one space.
+        if (marked[i + 1] === " ") from++;
       } else {
+        const last = parts[parts.length - 1];
+        if (last.endsWith(" ")) {
+          parts[parts.length - 1] = last.slice(0, -1);
+          length--;
+        }
         end[open.pop() ?? 0] = length;
       }
     }
@@ -1006,6 +1016,21 @@ export function parseV3(text: string, file: string): V3Document {
     );
   }
 
+  // The first child element of each name, indexed once per parent: xrefs ask
+  // the same target again and again, and a scan of its children each time
+  // would cost the xrefs times the target's size.
+  const firsts = new Map<XmlNode, Map<string, XmlNode>>();
+  const child = (n: XmlNode, name: string): XmlNode | undefined => {
+    let byName = firsts.get(n);
+    if (!byName) {
+      byName = new Map();
+      for (const c of n.children)
+        if (isElement(c) && !byName.has(c.name)) byName.set(c.name, c);
+      firsts.set(n, byName);
+    }
+    return byName.get(name);
+  };
+
   // Sections, numbered as xml2rfc numbers them.
   const infos: SectionInfo[] = [];
   const number = (
@@ -1054,9 +1079,30 @@ export function parseV3(text: string, file: string): V3Document {
   const tables = new Map<XmlNode, number>();
   const references: V3Document["references"] = [];
   const display = new Map<string, string>();
-  const walk = (n: XmlNode) => {
-    if (n.attrs.anchor !== undefined && !byAnchor.has(n.attrs.anchor))
-      byAnchor.set(n.attrs.anchor, n);
+  // Below a table cell: a table there is not v3, and refusing it keeps each
+  // cell's text, rendered whole for the table, from being rendered again for
+  // a table inside it, at each level.
+  const walk = (n: XmlNode, inCell: boolean) => {
+    const anchor = n.attrs.anchor;
+    if (anchor !== undefined) {
+      const first = byAnchor.get(anchor);
+      if (first) {
+        // Later stages name requirements by anchor: one anchor, one element.
+        throw new XmlRefusal(
+          file,
+          n.loc,
+          `anchor "${anchor}" is used again; first on line ${first.loc.xmlLine}`,
+        );
+      }
+      byAnchor.set(anchor, n);
+    }
+    if (inCell && (n.name === "table" || n.name === "texttable")) {
+      throw new XmlRefusal(
+        file,
+        n.loc,
+        `<${n.name}> inside a table cell is not RFC XML v3`,
+      );
+    }
     if (n.name === "xref") xrefs.push(n);
     if (n.name === "figure") figures.set(n, figures.size + 1);
     if (n.name === "table" || n.name === "texttable")
@@ -1076,9 +1122,11 @@ export function parseV3(text: string, file: string): V3Document {
         ref.rfc = Number(rfc.attrs.value);
       references.push(ref);
     }
-    elements(n).forEach(walk);
+    const below =
+      inCell || n.name === "td" || n.name === "th" || n.name === "c";
+    for (const c of elements(n)) walk(c, below);
   };
-  walk(root);
+  walk(root, false);
 
   const infoOf = new Map(infos.map((s) => [s.node, s]));
   const nameOf = (n: XmlNode) => {
@@ -1197,9 +1245,8 @@ export function parseV3(text: string, file: string): V3Document {
       toSection(s.id, nameOf(s.node), s.own, all.slice(from, to)),
     );
     const anchor = s.node.attrs.anchor;
-    // The first element with an anchor owns it, as for xrefs above.
-    if (anchor !== undefined && byAnchor.get(anchor) === s.node)
-      sectionByAnchor.set(anchor, s.id);
+    // Anchors are unique: the walk above refuses one used twice.
+    if (anchor !== undefined) sectionByAnchor.set(anchor, s.id);
   }
 
   const front = child(root, "front");

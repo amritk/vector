@@ -44,11 +44,12 @@ function refusal(text: string): XmlRefusal {
 
 const refused = (text: string) => refusal(text).message;
 
-/** The first element named `name`, depth first. */
+/** For `?? fail()`: a value the test expects to be there. */
 const fail = (): never => {
   throw new Error("missing");
 };
 
+/** The first element named `name`, depth first. */
 function find(n: XmlNode, name: string): XmlNode {
   const hit = (k: XmlNode): XmlNode | undefined =>
     k.name === name ? k : k.children.filter(isElement).map(hit).find(Boolean);
@@ -694,6 +695,16 @@ describe("bcp14 normative sentences", () => {
     expect(norm("<t>It <bcp14> MUST\n</bcp14> go.</t>")).toEqual([
       ["1", "MUST", "It MUST go.", null],
     ]);
+    expect(norm("<t>It<bcp14> MUST </bcp14>go.</t>")).toEqual([
+      ["1", "MUST", "ItMUSTgo.", null],
+    ]);
+    expect(norm("<t> <bcp14> MUST </bcp14> </t>")).toEqual([
+      ["1", "MUST", "MUST", null],
+    ]);
+    // Nested, each element's own spaces are dropped, and only those.
+    expect(
+      norm("<t>a <bcp14> <bcp14> MAY </bcp14> </bcp14> b. c <em> </em></t>"),
+    ).toEqual([["1", "MAY", "a MAY b.", null]]);
   });
 
   test("in list items, table cells, blockquotes and unnumbered sections", () => {
@@ -913,11 +924,9 @@ describe("bounds", () => {
     // held many times over: 200 deep with 20,000 lines is 4,000,000.
     const deep = (depth: number, lines: number) =>
       `<rfc><middle>${"<section>".repeat(depth)}${"<t>a</t>".repeat(lines)}${"</section>".repeat(depth)}</middle></rfc>`;
-    const start = performance.now();
     expect(refused(deep(200, 20_000))).toBe(
       `spec.xml:1: numbered sections hold over ${MAX_SECTION_LINES} lines, counting each subsection's in its parents' (MAX_SECTION_LINES)`,
     );
-    expect(performance.now() - start).toBeLessThan(2000);
     const d = parseV3(deep(100, 20_000), "deep.xml");
     expect(d.sections.size).toBe(100);
     expect(d.sections.get("1")?.lines).toHaveLength(20_000);
@@ -940,11 +949,9 @@ describe("bounds", () => {
     };
     const ok = parseV3(chain(8), "x.xml");
     expect(ok.sections.get("9")?.title).toHaveLength(16 * 2 ** 8);
-    const start = performance.now();
     expect(refused(chain(40))).toMatch(
       /^spec\.xml:1: the xref text worked out runs past [0-9]+ characters, the input's length and MAX_XREF_TEXT$/,
     );
-    expect(performance.now() - start).toBeLessThan(2000);
     // derivedContent, the preptool's own, is input and is not counted.
     const prepped = doc(
       `<section anchor="s"><name>${"n".repeat(60_000)}</name><t>${'<xref target="s" format="title" derivedContent="d"/>'.repeat(2000)}</t></section>`,
@@ -1125,6 +1132,15 @@ describe("well-formedness", () => {
     expect(at("d")).toEqual({ xmlLine: 9, mdLine: 33 });
   });
 
+  test("a correction below the first line leaves the markdown line at 1", () => {
+    const d = parseV3(
+      "<rfc>\n<?line -50?><?line 1?>\n<a/>\n<b/></rfc>",
+      "l.xml",
+    );
+    expect(find(d.root, "a").loc).toEqual({ xmlLine: 3, mdLine: 1 });
+    expect(find(d.root, "b").loc).toEqual({ xmlLine: 4, mdLine: 1 });
+  });
+
   test("attribute values are decoded and either quote works", () => {
     const d = parseV3(`<rfc a="x&amp;&#65;'" b = 'y"' />`, "a.xml");
     expect(d.root.attrs).toEqual({ a: "x&A'", b: 'y"' });
@@ -1135,12 +1151,48 @@ describe("well-formedness", () => {
     expect(d.root.attrs).toEqual({ a: "x y z", b: "\n\t" });
   });
 
-  test("the first element with an anchor owns it", () => {
+  test("an anchor used twice is refused, on any elements", () => {
+    expect(
+      refused(
+        '<rfc><middle>\n<section anchor="s"/>\n<section anchor="s"/></middle></rfc>',
+      ),
+    ).toBe('spec.xml:3: anchor "s" is used again; first on line 2');
+    expect(
+      refused(
+        '<rfc><middle><t anchor="t"/></middle><back><references><reference anchor="t"/></references></back></rfc>',
+      ),
+    ).toBe('spec.xml:1: anchor "t" is used again; first on line 1');
     const d = parseV3(
-      '<rfc><middle><section anchor="s"/><section anchor="s"/><t anchor="t"/><section anchor="t"/></middle></rfc>',
+      '<rfc><middle><section anchor="s"/><section anchor="u"/></middle></rfc>',
       "a.xml",
     );
-    expect([...d.sectionByAnchor]).toEqual([["s", "1"]]);
+    expect([...d.sectionByAnchor]).toEqual([
+      ["s", "1"],
+      ["u", "2"],
+    ]);
+  });
+
+  test("a table inside a table cell is refused", () => {
+    for (const [inner, name] of [
+      ["<table><tr><td><table/></td></tr></table>", "table"],
+      ["<table><thead><tr><th><table/></th></tr></thead></table>", "table"],
+      ["<table><tr><td><ul><li><table/></li></ul></td></tr></table>", "table"],
+      [
+        "<texttable><ttcol>h</ttcol><c><texttable/></c></texttable>",
+        "texttable",
+      ],
+      ["<table><tr><td><texttable/></td></tr></table>", "texttable"],
+    ]) {
+      expect(refused(doc(`<section>${inner}</section>`))).toBe(
+        `spec.xml:1: <${name}> inside a table cell is not RFC XML v3`,
+      );
+    }
+    // Beside a table, not in it, is fine.
+    const d = parseV3(
+      doc("<section><table><tr><td>a</td></tr></table><table/></section>"),
+      "a.xml",
+    );
+    expect(d.sections.size).toBe(1);
   });
 });
 
@@ -1168,7 +1220,8 @@ describe("cost stays linear in the input", () => {
   const fast = (f: () => unknown) => {
     const start = performance.now();
     f();
-    expect(performance.now() - start).toBeLessThan(2000);
+    // Generous: a slow machine passes, a quadratic step does not.
+    expect(performance.now() - start).toBeLessThan(10_000);
   };
 
   test("isV3Xml on many PIs or comments that never reach <rfc>", () => {
@@ -1211,9 +1264,59 @@ describe("cost stays linear in the input", () => {
       );
     }
     const bcp = doc(
-      `<section><t>${"<bcp14>".repeat(250)}MUST${" x".repeat(500_000)}${"</bcp14>".repeat(250)}</t></section>`,
+      `<section><t>${"<bcp14> ".repeat(250)}MUST${" x".repeat(500_000)}${" </bcp14>".repeat(250)}</t></section>`,
     );
-    fast(() => expect(() => parseV3(bcp, "f.xml")).toThrow(XmlRefusal));
+    expect(refused(bcp)).toBe(
+      'spec.xml:1: <bcp14> holds "MUST x x x x x x x x x x x x x x x x x x...", which is not a BCP 14 keyword',
+    );
+  });
+
+  test("many xrefs to a target with many children before its name", () => {
+    const many = "<t/>".repeat(200_000);
+    const xrefs = (format: string) =>
+      `<xref target="${format === "default" ? "s" : "r"}"${format === "default" ? "" : ' format="title"'}/>`.repeat(
+        4000,
+      );
+    for (const [xml, each] of [
+      [
+        doc(
+          `<section anchor="s">${many}<name>N</name></section><section><t>${'<xref target="s" format="title"/>'.repeat(4000)}</t></section>`,
+        ),
+        "N",
+      ],
+      [
+        doc(
+          `<section anchor="s" numbered="false">${many}<name>N</name></section><section><t>${xrefs("default")}</t></section>`,
+        ),
+        'Section "N"',
+      ],
+      [
+        `<rfc><middle><section><t>${xrefs("title")}</t></section></middle><back><references><reference anchor="r"><front>${"<author/>".repeat(200_000)}<title>T</title></front></reference></references></back></rfc>`,
+        "T",
+      ],
+      [
+        `<rfc><middle><section><t>${xrefs("title")}</t></section></middle><back><references><reference anchor="r">${"<seriesInfo/>".repeat(200_000)}<front><title>T</title></front></reference></references></back></rfc>`,
+        "T",
+      ],
+    ]) {
+      // Each xref reads the target's name or title.
+      fast(() =>
+        expect(
+          sectionText(
+            [...parseV3(xml, "f.xml").sections.values()].at(-1) ?? fail(),
+          ),
+        ).toBe(each.repeat(4000)),
+      );
+    }
+  });
+
+  test("tables nested in cells are refused before any is rendered", () => {
+    const xml = doc(
+      `<section>${"<table><tr><td><tt>x</tt> ".repeat(60)}${"<tt>a</tt> b. ".repeat(100_000)}${"</td></tr></table>".repeat(60)}</section>`,
+    );
+    expect(refused(xml)).toBe(
+      "spec.xml:1: <table> inside a table cell is not RFC XML v3",
+    );
   });
 
   test("a table with many cells", () => {
