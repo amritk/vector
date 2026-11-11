@@ -9,7 +9,7 @@ own `LICENSE`, when run as `vector --licenses`.
 |---|---|---|
 | Bun runtime | compiled binary | MIT; statically links LGPL-2 JavaScriptCore/WebKit, LGPL-2.1 TinyCC and others (see below) |
 | Z3 4.16.0 | compiled binary (`z3` + `libz3`) | MIT |
-| RFC 4648, RFC 5869, RFC 8439 | `rfcs/`, excerpts in `contracts/` | IETF Trust Legal Provisions |
+| RFC 4648, RFC 5869, RFC 8439, RFC 8707 | `rfcs/`, excerpts in `contracts/` and `test/` | IETF Trust Legal Provisions |
 | nish v0.34.0 excerpts | `test/fixtures/mutate/` | MIT |
 
 `test/notices.test.ts` bundles the CLI and fails if the set of npm packages in
@@ -94,14 +94,19 @@ unmodified copies of the RFC Editor's plain-text publications, byte-identical
 to <https://www.rfc-editor.org/rfc/rfc4648.txt>,
 <https://www.rfc-editor.org/rfc/rfc5869.txt> and
 <https://www.rfc-editor.org/rfc/rfc8439.txt>, with their copyright notices,
-legends and authors' addresses intact. Every contract records the SHA-256 of
-the RFC it was checked against, so a modified copy is caught.
+legends and authors' addresses intact. `rfcs/rfc8707.xml` is likewise the RFC
+Editor's published RFC XML v3 (RFC 7991) source, byte-identical to
+<https://www.rfc-editor.org/rfc/rfc8707.xml>, with its boilerplate intact.
+Every contract records the SHA-256 of the RFC it was checked against, so a
+modified copy is caught; `test/xmlv3.test.ts` pins the SHA-256 of
+`rfcs/rfc8707.xml` the same way.
 
 | RFC | Title | Stream | Copyright |
 |---|---|---|---|
 | 4648 | The Base16, Base32, and Base64 Data Encodings | IETF | © The Internet Society (2006) |
 | 5869 | HMAC-based Extract-and-Expand Key Derivation Function (HKDF) | IETF | © 2010 IETF Trust and the persons identified as the document authors |
 | 8439 | ChaCha20 and Poly1305 for IETF Protocols | IRTF | © 2018 IETF Trust and the persons identified as the document authors |
+| 8707 | Resource Indicators for OAuth 2.0 | IETF | © 2020 IETF Trust and the persons identified as the document authors |
 
 They are redistributed under BCP 78 and the IETF Trust's Legal Provisions
 Relating to IETF Documents (<https://trustee.ietf.org/license-info>), §3.c.i:
@@ -109,7 +114,7 @@ Relating to IETF Documents (<https://trustee.ietf.org/license-info>), §3.c.i:
 Documents in full and without modification".
 
 The contracts in `contracts/` (and the Nish tests `vector spec emit` writes from
-them) quote short, unmodified portions of these RFCs: requirement sentences and
+them), and `test/xmlv3.test.ts`, quote short, unmodified portions of these RFCs: requirement sentences and
 their known-answer test vectors. That is permitted by §3.c.iii provided each
 portion is attributed to the IETF and names the RFC it came from. Every contract
 names its RFC in `source` / `sources`, and every requirement and vector cites
@@ -135,7 +140,34 @@ Trust's Legal Provisions Relating to IETF Documents
 
 RFC 8439 is an IRTF-stream document, for which TLP §4's BSD grant may not
 apply (§8); its excerpts rely on §3.c.iii alone. These portions are derived
-from IETF RFC 4648, 5869 and 8439; please reproduce this note if possible.
+from IETF RFC 4648, 5869, 8439 and 8707; please reproduce this note if possible.
+
+### kramdown-rfc output (`test/fixtures/xmlv3/`)
+
+`test/fixtures/xmlv3/kramdown.md` was written for vector.
+`test/fixtures/xmlv3/kramdown.xml` is what kramdown-rfc 1.7.43 produces from it,
+with two edits: the compressed markdown-source comment is removed, and the
+`<reference anchor="RFC2119">` it fetched from bib.ietf.org is replaced by a
+hand-written stub (title and `seriesInfo` only). The generated XML is the
+output of a program run on vector's own input, not kramdown-rfc's code, and is
+under vector's license.
+
+### BibXML references (bib.ietf.org)
+
+Spec XML often carries `<reference>` elements that kramdown-rfc or xml2rfc
+fetched from the IETF BibXML Service (<https://bib.ietf.org/>). As of v1.5.4
+the service publishes no terms of use for the data it serves: its `/about`
+page describes the service but states no license, the served
+`reference.RFC.*.xml` files carry no notice, and the BSD-3-Clause license in
+<https://github.com/ietf-tools/bibxml-service> (© 2022 The IETF Trust) covers
+the service's code, not its data. A `<reference>` for an RFC is bibliographic
+metadata (title, authors, date, series identifiers, and the RFC's own abstract)
+derived from that IETF Document; where it reproduces the RFC's abstract it is
+an excerpt covered by the IETF Trust Legal Provisions above. vector keeps no
+fetched BibXML in this repository: the one fixture that would have held some
+uses a hand-written stub instead. A `<reference>` committed in a spec's own XML
+(a published RFC's back matter, as in `rfcs/rfc8707.xml`) is part of that
+document and is redistributed with it under the same terms.
 
 ### nish (`test/fixtures/mutate/`)
 
@@ -183,4 +215,8 @@ Apache-2.0), `bun-types` and `@types/node` (MIT), `@amritk/mjst` and its
 generators (MIT; `src/generated/` is its output from `schemas/`), `@amritk/helpers`
 (MIT; imported by `src/generated/`, which only the tests run), the
 `z3-solver` wheel (MIT) as fetched into the git-ignored `.z3/`, and nish itself,
-which `vector spec run` runs but does not ship.
+which `vector spec run` runs but does not ship. The RFC XML v3 reader
+(`src/rfc/xmlv3.ts`) is vector's own code; its plain-text rendering was checked
+against xml2rfc 3.35.0 (BSD-3-Clause, © 2022 IETF Trust) and its line mapping
+against kramdown-rfc 1.7.43 (MIT, © 2010-2015 Carsten Bormann), neither of
+which is copied, imported or shipped.

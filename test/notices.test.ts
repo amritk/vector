@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { licensesText } from "../src/licenses.ts";
 
@@ -52,5 +52,17 @@ describe("third-party notices", () => {
     expect(text).toContain(
       `https://github.com/oven-sh/bun/blob/bun-v${Bun.version}/LICENSE.md`,
     );
+  });
+
+  test("name every RFC in rfcs/, with a row in the RFC table", () => {
+    const files = readdirSync(join(root, "rfcs")).filter((f) =>
+      /^rfc\d+\.(txt|xml)$/.test(f),
+    );
+    expect(files.length).toBeGreaterThan(0);
+    for (const file of files) {
+      const n = /\d+/.exec(file)?.[0];
+      expect(notices).toContain(`\`rfcs/${file}\``);
+      expect(notices).toMatch(new RegExp(`^\\| ${n} \\| `, "m"));
+    }
   });
 });
