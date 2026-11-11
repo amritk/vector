@@ -122,9 +122,10 @@ export const hexDecode = (text: string): u8[] | null;
     expect(r).toEqual({
       module: hexContract.target.module,
       functions: HEX_FNS,
+      lines: [2, 3],
     });
     expect(JSON.stringify(r)).toBe(
-      JSON.stringify({ module: "nish/hex", functions: HEX_FNS }),
+      JSON.stringify({ module: "nish/hex", functions: HEX_FNS, lines: [2, 3] }),
     );
   });
 
@@ -194,6 +195,7 @@ export const e = (): u8[] | null`);
         { name: "d", params: [], returns: "secret-bytes" },
         { name: "e", params: [], returns: "bytes?" },
       ],
+      lines: [3, 4, 5, 6, 7],
     });
   });
 

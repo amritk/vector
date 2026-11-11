@@ -95,8 +95,8 @@ const PUNCT = [
 ];
 
 /** `[00 0f f0 ff]`: lowercase hex pairs, single spaces; `[]` is empty. */
-const BYTES_RE = /^\[((?:[0-9a-f]{2}(?: [0-9a-f]{2})*)?)\]/;
-const BYTES_MESSAGE =
+export const BYTES_RE = /^\[((?:[0-9a-f]{2}(?: [0-9a-f]{2})*)?)\]/;
+export const BYTES_MESSAGE =
   "a bytes literal is lowercase hex pairs separated by single spaces, like [00 0f]";
 
 function lex(source: string, subset: string): Tok[] {
@@ -313,7 +313,11 @@ function readType(c: Cursor): { name: string; pos: Pos } {
 
 const IFACE = "ts-interface";
 
-function parseInterface(text: string): { module: string; functions: FnSig[] } {
+function parseInterface(text: string): {
+  module: string;
+  functions: FnSig[];
+  lines: number[];
+} {
   const c = new Cursor(lex(text, IFACE));
   const head = c.raw();
   const m =
@@ -329,6 +333,7 @@ function parseInterface(text: string): { module: string; functions: FnSig[] } {
     );
   c.skipRaw();
   const functions: FnSig[] = [];
+  const lines: number[] = [];
   while (c.peek().kind !== "eof") {
     c.expect("export");
     const isConst = c.eat("const");
@@ -367,13 +372,14 @@ function parseInterface(text: string): { module: string; functions: FnSig[] } {
       );
     c.eat(";");
     functions.push({ name: name.text, params, returns });
+    lines.push(name.line);
   }
   if (functions.length === 0)
     throw new Refusal(
       "a ts-interface declares at least one function",
       at(c.peek()),
     );
-  return { module: m[1], functions };
+  return { module: m[1], functions, lines };
 }
 
 function sigType(c: Cursor, result: boolean): SigTy {

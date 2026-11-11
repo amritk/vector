@@ -23,9 +23,12 @@ export interface ParsedProperty {
 }
 
 export interface FrontEnd {
+  /** `lines[i]` is the block line (1-based) that declares `functions[i]`. */
   parseInterface(
     text: string,
-  ): { module: string; functions: FnSig[] } | { refusals: FrontRefusal[] };
+  ):
+    | { module: string; functions: FnSig[]; lines: number[] }
+    | { refusals: FrontRefusal[] };
   parseProperty(
     text: string,
     fns: FnSig[],
