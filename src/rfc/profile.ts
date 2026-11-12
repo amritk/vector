@@ -606,6 +606,8 @@ export function profileToContract(
     };
   };
   const tables: { node: XmlNode; section: string }[] = [];
+  /** BCP 14 sentences in unanchored blockquotes with no Untested: after. */
+  const unclaimed = new Set<Loc>();
   const blocks = (parent: XmlNode, section: string) => {
     const kids = elements(parent).filter(
       (c) => c.name !== "name" && c.name !== "section",
@@ -632,6 +634,10 @@ export function profileToContract(
         for (const l of bcp14Under(n)) handled.add(l);
       const q = readBlock(n, section, isUntested(next));
       if (q === undefined) {
+        // An unanchored blockquote with no Untested: after it quotes the RFC
+        // but neither requires nor excludes what it quotes.
+        if (n.name === "blockquote")
+          for (const l of bcp14Under(n)) unclaimed.add(l);
         // An unanchored BCP 14 paragraph excluded by the paragraph after it.
         if (n.name !== "t" || !isUntested(next)) return;
         const found = entriesUnder(n);
@@ -731,7 +737,9 @@ export function profileToContract(
       e.loc,
       mainRfc === undefined
         ? `BCP 14 sentence has no anchor and no Untested: paragraph after it: "${e.sentence}"`
-        : `${ownText("this BCP 14 sentence")}: "${e.sentence}"`,
+        : unclaimed.has(e.loc)
+          ? `this BCP 14 sentence is an RFC quote with no anchor and no Untested: paragraph; anchor the blockquote to require it, or follow it with Untested: to exclude it: "${e.sentence}"`
+          : `${ownText("this BCP 14 sentence")}: "${e.sentence}"`,
     );
   }
 

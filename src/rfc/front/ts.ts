@@ -363,6 +363,11 @@ function parseInterface(text: string): {
             `${m[1]} is the module under test; declare its functions first, before any \`// module:\` line`,
             at(t),
           );
+        if (from === m[1] && functions.length === 0)
+          throw new Refusal(
+            `${m[1]}, the module under test, declares no function; declare its functions before \`// module: ${r[1]}\``,
+            at(t),
+          );
         from = r[1];
       }
       c.skipRaw();
@@ -436,8 +441,8 @@ function parseInterface(text: string): {
 /**
  * The module a `// module: nish/<path>` comment names, or undefined for any
  * other comment. Refuses a comment meant as one that is not: a block comment,
- * or a line comment that starts with `module` but does not parse, so the
- * functions after it never silently keep the module above.
+ * or a line comment that starts `module:` or `module nish/` but does not
+ * parse, so the functions after it never silently keep the module above.
  */
 function moduleLine(t: Tok): RegExpMatchArray | undefined {
   const r = t.value.match(/^\s*module:\s*(\S+)\s*$/);
@@ -447,7 +452,7 @@ function moduleLine(t: Tok): RegExpMatchArray | undefined {
       at(t),
     );
   if (r) return r;
-  if (t.lineComment && /^\s*module\b/i.test(t.value))
+  if (t.lineComment && /^\s*module(?:\s*:|\s+nish\/)/i.test(t.value))
     throw new Refusal(
       `a module line is \`// module: nish/<path>\`, one module, not \`//${t.value}\``,
       at(t),

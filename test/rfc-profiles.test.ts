@@ -6,6 +6,7 @@ import {
   copyFileSync,
   mkdtempSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -181,7 +182,7 @@ describe("the main-source keyword", () => {
         file: "specs/mini-frame.xml",
         line: line + 1,
         message:
-          'this BCP 14 sentence is the spec\'s own text, but the main source is RFC9990; quote the RFC in a blockquote ending {{Section N of RFC9990}}: "The implementation MUST zero the key after use."',
+          'this BCP 14 sentence is an RFC quote with no anchor and no Untested: paragraph; anchor the blockquote to require it, or follow it with Untested: to exclude it: "The implementation MUST zero the key after use."',
       }),
     );
   });
@@ -207,6 +208,48 @@ describe("the main-source keyword", () => {
       "R-OWN, a BCP 14 paragraph, is the spec's own text, but the main source is RFC9990",
     );
   });
+});
+
+describe("the spec's own text in main mode", () => {
+  const OWN =
+    "is the spec's own text, but the main source is RFC9990; quote the RFC in a blockquote ending {{Section N of RFC9990}}";
+  const END = "</section>\n  </middle>";
+  /** The refusals of BASE with `extra` at the end of the framing section,
+   * and the 1-based line `extra` starts on. */
+  const refused = (extra: string) => {
+    const xml = variant(sub(END, `${extra}${END}`));
+    const r = run(xml);
+    if (!("refusals" in r)) throw new Error("expected refusals");
+    const line = xml.split("\n").findIndex((l) => l.includes(extra)) + 1;
+    return { refusals: r.refusals, line };
+  };
+  for (const [why, extra, message] of [
+    [
+      "a Definition: paragraph",
+      `<t anchor="D-FRAME">Definition: a frame is a length octet and data.</t>`,
+      `a Definition: paragraph ${OWN}`,
+    ],
+    [
+      "an excluded paragraph",
+      "<t>The implementation <bcp14>MUST</bcp14> zero the key after use.</t><t>Untested: not observable.</t>",
+      `an excluded paragraph ${OWN}`,
+    ],
+    [
+      "a vector whose Source is a section of the spec",
+      `<table><thead><tr><th>Id</th><th>Call</th><th>Expected</th><th>Covers</th><th>Source</th><th>Title</th></tr></thead><tbody><tr><td>V1</td><td><tt>frame(data = 00)</tt></td><td><tt>result = 0100</tt></td><td>R-PREFIX</td><td><xref target="framing"/></td><td>one octet</td></tr></tbody></table>`,
+      `Source framing, a section of the spec, ${OWN}`,
+    ],
+  ] as const)
+    test(`${why} is refused`, () => {
+      const { refusals, line } = refused(extra);
+      expect(refusals).toContainEqual(
+        expect.objectContaining({
+          file: "specs/mini-frame.xml",
+          line,
+          message,
+        }),
+      );
+    });
 });
 
 describe("an excluded RFC blockquote", () => {
@@ -305,6 +348,40 @@ export function frame(data: u8[]): u8[] | null`;
     }
   });
 
+  test("other comments that start with module are skipped", () => {
+    for (const comment of ["// module-level helper", "// module under test"]) {
+      const after = contract(withIface(`${IFACE}\n${comment}\n;`));
+      expect(after.functions.map((f) => f.name)).toEqual(["frame"]);
+      const between = contract(
+        withIface(
+          `${IFACE};\n${comment}\nexport function len(data: u8[]): i32`,
+        ),
+      );
+      expect(between.functions.map((f) => [f.name, f.module])).toEqual([
+        ["frame", undefined],
+        ["len", undefined],
+      ]);
+    }
+  });
+
+  test("a module under test that declares no function is refused", () => {
+    const xml = withIface(
+      "// module: nish/mini/frame\n// module: nish/mini/other\nexport function frame(data: u8[]): u8[] | null",
+    );
+    const r = run(xml);
+    if (!("refusals" in r)) throw new Error("expected refusals");
+    const line =
+      xml.split("\n").findIndex((l) => l === "// module: nish/mini/other") + 1;
+    expect(r.refusals).toContainEqual(
+      expect.objectContaining({
+        file: "specs/mini-frame.xml",
+        line,
+        message:
+          "nish/mini/frame, the module under test, declares no function; declare its functions before `// module: nish/mini/other`",
+      }),
+    );
+  });
+
   test("functions after a later // module: line name that module", () => {
     const c = contract(
       withIface(
@@ -357,7 +434,7 @@ export function frame(data: u8[]): u8[] | null`;
     ],
   ] as const)
     test(`${why} is refused`, () => {
-      expect(messages(withIface(code)).join("\n")).toContain(message);
+      expect(messages(withIface(code))).toContain(message);
     });
 });
 
@@ -419,7 +496,7 @@ describe("spec check --spec <profile>.xml", () => {
   const { spec, contract: c } = fixture("mini-frame");
 
   test("the profile that extracts to the contract passes", async () => {
-    const r = await cli(["check", c, "--spec", spec]);
+    const r = await cli(["check", c, "--spec", spec, "--run-sources"]);
     expect(r.out).toContain("CONTRACT_VALID");
     expect(r.code).toBe(0);
   });
@@ -442,23 +519,30 @@ describe("spec check --spec <profile>.xml", () => {
 
   test("a profile that extracts to something else is refused", async () => {
     const d = mkdtempSync(join(tmpdir(), "profile-check-"));
-    for (const dir of ["specs", "contracts", "rfcs"])
-      Bun.spawnSync(["mkdir", "-p", join(d, dir)]);
-    const s = join(d, "specs/mini-frame.xml");
-    const k = join(d, "contracts/mini-frame.json");
-    copyFileSync(here(`${FIX}/rfcs/rfc9990.xml`), join(d, "rfcs/rfc9990.xml"));
-    copyFileSync(c, k);
-    writeFileSync(
-      s,
-      BASE.replace(
-        "</blockquote>\n      <sourcecode",
-        "</blockquote>\n      <t>Note: one octet.</t>\n      <sourcecode",
-      ),
-    );
-    const r = await cli(["check", k, "--spec", s]);
-    expect(r.code).not.toBe(0);
-    expect(r.out).toContain(
-      `${k} is not what ${s} states; run: vector spec extract ${s} -o ${k}`,
-    );
+    try {
+      for (const dir of ["specs", "contracts", "rfcs"])
+        Bun.spawnSync(["mkdir", "-p", join(d, dir)]);
+      const s = join(d, "specs/mini-frame.xml");
+      const k = join(d, "contracts/mini-frame.json");
+      copyFileSync(
+        here(`${FIX}/rfcs/rfc9990.xml`),
+        join(d, "rfcs/rfc9990.xml"),
+      );
+      copyFileSync(c, k);
+      writeFileSync(
+        s,
+        BASE.replace(
+          "</blockquote>\n      <sourcecode",
+          "</blockquote>\n      <t>Note: one octet.</t>\n      <sourcecode",
+        ),
+      );
+      const r = await cli(["check", k, "--spec", s]);
+      expect(r.code).not.toBe(0);
+      expect(r.out).toContain(
+        `${k} is not what ${s} states; run: vector spec extract ${s} -o ${k}`,
+      );
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
   });
 });

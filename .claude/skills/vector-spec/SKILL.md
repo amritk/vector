@@ -109,11 +109,12 @@ Add `| null` to `u8[]` or `string`, and to `Secret<u8[]>` as a result only.
 
 A property may compare the module with another nish module (HKDF with
 HMAC). Declare that module's functions after a second `// module:` line,
-below the module under test's own; they are reference functions, not exports.
-A module line is exactly `// module: nish/<path>`, one module, after the
-previous signature's `;`; a block comment, or a line comment starting with
-`module` that does not parse (`// Module: …`, `//module …`, two modules), is
-refused:
+below the module under test's own, which declares at least one function;
+they are reference functions, not exports. A module line is exactly
+`// module: nish/<path>`, one module, after the previous signature's `;`; a
+block comment, or a line comment starting `module:` or `module nish/` that does
+not parse (`// Module: …`, `//module nish/…`, two modules), is refused. Other
+comments, such as `// module-level helper`, are skipped:
 
 ````
 ~~~ ts-interface
