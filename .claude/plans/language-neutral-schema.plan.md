@@ -76,6 +76,23 @@ stages:
 - **Today's spelling stays canonical.** `bytes?`, `string?`, `secret-bytes`, `nish/crypto/hkdf`, camelCase names: every existing contract stays valid and byte-identical. What changes is what they are documented to mean.
 - **One source for the unions.** `src/rfc/vocab.ts` (stage `vocab`) is the single place the constructs are listed. contract.ts, the gates and the language tables are typed against it. Stage `vocab` merges first and its exports are frozen for the rest of the run.
 
+## Standards
+
+Use a published standard wherever one exists, and cite it (by number and section) in the schema description, the vocab doc comment or the table's `choices`. Invent an encoding only where none fits, and say so.
+
+| construct | standard |
+|---|---|
+| schema itself | JSON Schema 2020-12 (already `$schema`); use its keywords (`format`, `pattern`, `$comment`) rather than prose where they can express a rule |
+| 64-bit integers in JSON | RFC 7493 (I-JSON) §2.2 and RFC 8259 §6: integers outside ±(2^53−1) are carried as decimal strings |
+| f64 | IEEE 754-2019 binary64; decimal text converts with round-to-nearest-even (§5.12); `bits` is the binary64 encoding as 16 lowercase hex digits; `ulps` tolerance is in binary64 units in the last place; NaN compares by bits |
+| bytes as hex | RFC 4648 §8 base16 (lowercase, as today) |
+| strings | RFC 8259 / Unicode UTF-8 (RFC 3629) |
+| requirement levels | BCP 14 (RFC 2119, RFC 8174), as today |
+| integer widths and wrapping | two's complement, modulo 2^w, as in IEEE 1003.1/C11 fixed-width `intN_t`/`uintN_t` |
+| module paths | a slash-separated path like a URI path (RFC 3986 §3.3 segments), lowercase |
+| name rules per language | each language's own style standard: Rust API Guidelines (RFC 430), PEP 8, the Ruby Style Guide, Zig Style Guide, Effective Go, C++ Core Guidelines NL, .NET Framework Design Guidelines, Java Language Specification §6.1 / Oracle conventions, Kotlin Coding Conventions, PSR-1/PSR-12, Swift API Design Guidelines, Effective Dart, the TypeScript handbook; for C, the prefix convention (ISO C has none) — each table names the one it follows |
+| language types | the language specification's own type names (e.g. Rust `u64`, Go `uint64`, C `uint64_t` from `<stdint.h>`, C# `ulong`, Kotlin `ULong`, Swift `UInt64`) |
+
 ## Stage vocab
 
 **Owns:** `schemas/rfc-contract.json`, `src/rfc/vocab.ts` (new), `test/vocab.test.ts` (new), `README.md`
