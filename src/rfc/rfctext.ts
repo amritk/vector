@@ -55,8 +55,8 @@ export interface RfcDocument {
   sections: Map<string, RfcSection>;
   /**
    * Text outside every numbered section (unnumbered sections, such as a
-   * kramdown-rfc spec's unnumbered headings). Its normative sentences cannot be cited, so the
-   * completeness gate refuses any it holds.
+   * kramdown-rfc spec's unnumbered headings). Its normative sentences cannot
+   * be cited, so the completeness gate refuses any it holds.
    */
   loose?: RfcSection;
 }

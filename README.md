@@ -33,21 +33,25 @@ contract: axioms, and the units that must satisfy them.
     { "id": "AX1", "kind": "pre", "statement": "The USD amount must be non-negative (throws if amount < 0)." },
     { "id": "AX2", "kind": "post", "statement": "For all amount >= 0, the result equals amount times 0.91." },
     { "id": "AX-RATE", "kind": "pre", "statement": "The exchange rate applied must be strictly positive." },
-    { "id": "AX2a", "kind": "post", "statement": "Applying a rate to an amount yields amount times rate." }
+    { "id": "AX2a", "kind": "post", "statement": "Applying a rate to an amount yields amount times rate." },
+    …
   ],
   "units": [
     { "name": "applyRate", "layer": 1, "purpose": "Multiply an amount by a positive exchange rate.",
       "params": [{ "name": "amount", "type": "Real" }, { "name": "rate", "type": "Real" }],
-      "returnType": "Real", "relevantAxiomIds": ["AX-RATE", "AX2a"] }
+      "returnType": "Real", "relevantAxiomIds": ["AX-RATE", "AX2a"] },
+    …
   ]
 }
 ```
 
 **2. Program** (`test/fixtures/currency.json`). This is the implementation
 and its contract in vector-lang, a small expression AST that Z3 can reason
-about.
+about. The excerpt is one entry of the file's `functions` list, without its
+`purpose`.
 
 ```json
+{ "programName": "usd_to_eur_converter", "functions": [
 {
   "name": "applyRate", "layer": 1,
   "params": [{ "name": "amount", "type": "Real" }, { "name": "rate", "type": "Real" }],
@@ -58,11 +62,11 @@ about.
     "expr": { "kind": "binop", "op": "==", "left": { "kind": "var", "name": "result" },
               "right": { "kind": "binop", "op": "*", "left": { "kind": "var", "name": "amount" }, "right": { "kind": "var", "name": "rate" } } } }],
   "body": { "kind": "binop", "op": "*", "left": { "kind": "var", "name": "amount" }, "right": { "kind": "var", "name": "rate" } }
-}
+}, … ] }
 ```
 
 **3. Proven TypeScript**, written by
-`vector --verify currency-spec.json currency.json --emit converter.ts` only
+`vector --verify test/fixtures/currency-spec.json test/fixtures/currency.json --emit converter.ts` only
 once Z3 has proven every contract.
 
 ```ts
@@ -102,6 +106,8 @@ hexEncode MUST return exactly two characters per input byte.
 // P-ENC-LEN covers R-ENC-LEN — two characters per byte
 forall (b: u8[] /* 0..64 */) => hexEncode(b).length === 2 * b.length
 ~~~
+
+…
 
 # Test Vectors
 

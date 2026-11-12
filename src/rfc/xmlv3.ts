@@ -883,8 +883,24 @@ class Builder {
       return;
     }
     if (CONTAINERS.has(n.name) && holdsBlocks(n)) {
+      // Text and inline children between two blocks are one line, as in
+      // hexParts: only a block child starts a new block.
       const inner = prose && n.name !== "blockquote";
-      for (const c of n.children) this.block(c, id, inner, here, out);
+      let run: (XmlNode | XmlText)[] = [];
+      const flush = (): void => {
+        const span = { name: "span", attrs: {}, children: run, loc: n.loc };
+        if (run.length > 0) this.block(span, id, inner, here, out);
+        run = [];
+      };
+      for (const c of n.children) {
+        if (!isElement(c) || INLINE.has(c.name)) {
+          run.push(c);
+          continue;
+        }
+        flush();
+        this.block(c, id, inner, here, out);
+      }
+      flush();
       return;
     }
     this.paragraph(n, id, prose && n.name !== "blockquote", here, out);
