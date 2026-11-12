@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "RfcContract",
-  "description": "What a specification (an RFC, or markdown with numbered headings) requires of a set of functions: verbatim requirements, the functions' signatures, and the clauses (test vectors and properties) that check them. Checked against the spec text by `vector spec check`, then compiled to a Nish test.",
+  "description": "What a specification (an RFC, or markdown with numbered headings) requires of a set of functions: verbatim requirements, the functions' signatures, and the clauses (test vectors and properties) that check them. Checked against the spec text by `vector spec check`, then compiled to a test of an implementation. It names no language: it records each construct as precisely as the spec states it, and a language that cannot express one drops that detail.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -49,8 +49,11 @@
       "additionalProperties": false,
       "properties": {
         "module": {
-          "type": "string",
-          "description": "The module under test as the test imports it, e.g. nish/crypto/hkdf."
+          "$ref": "#/$defs/modulePath",
+          "description": "The module under test, as a neutral path, e.g. nish/crypto/hkdf. Each language writes it in its own module form unless `modules` overrides it."
+        },
+        "modules": {
+          "$ref": "#/$defs/moduleOverrides"
         }
       },
       "required": ["module"]
@@ -118,7 +121,7 @@
           "file": {
             "type": "string",
             "minLength": 1,
-            "description": "Relative to the nish root, e.g. std/crypto/hkdf.ts."
+            "description": "Relative to the implementation's root, e.g. std/crypto/hkdf.ts."
           },
           "line": {
             "type": "integer",
@@ -152,18 +155,199 @@
       "pattern": "^(?:\\d+(?:\\.\\d+)*|[A-Z](?:\\.\\d+)*)$",
       "description": "A section number: 2.3, A.1, 4 (an RFC's, or a markdown spec's numbered heading)."
     },
+    "modulePath": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(?:/[a-z][a-z0-9_]*)+$",
+      "description": "A module as a neutral path `<root>/<segment>/…`: lowercase segments separated by `/`, like the segments of a URI path (RFC 3986 §3.3)."
+    },
+    "moduleOverrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Per-language override of the module form, keyed by language: how that language names the module when its default form, derived from the neutral path, is wrong. A language not listed uses its default.",
+      "properties": {
+        "rust": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ruby": {
+          "type": "string",
+          "minLength": 1
+        },
+        "zig": {
+          "type": "string",
+          "minLength": 1
+        },
+        "go": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cpp": {
+          "type": "string",
+          "minLength": 1
+        },
+        "csharp": {
+          "type": "string",
+          "minLength": 1
+        },
+        "c": {
+          "type": "string",
+          "minLength": 1
+        },
+        "java": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kotlin": {
+          "type": "string",
+          "minLength": 1
+        },
+        "python": {
+          "type": "string",
+          "minLength": 1
+        },
+        "typescript": {
+          "type": "string",
+          "minLength": 1
+        },
+        "php": {
+          "type": "string",
+          "minLength": 1
+        },
+        "swift": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dart": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "nameOverrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Per-language override of a name, keyed by language: the name that language uses when its default name rule (its own style guide's, applied to `name`) gives the wrong one. A language not listed uses its rule.",
+      "properties": {
+        "rust": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ruby": {
+          "type": "string",
+          "minLength": 1
+        },
+        "zig": {
+          "type": "string",
+          "minLength": 1
+        },
+        "go": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cpp": {
+          "type": "string",
+          "minLength": 1
+        },
+        "csharp": {
+          "type": "string",
+          "minLength": 1
+        },
+        "c": {
+          "type": "string",
+          "minLength": 1
+        },
+        "java": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kotlin": {
+          "type": "string",
+          "minLength": 1
+        },
+        "python": {
+          "type": "string",
+          "minLength": 1
+        },
+        "typescript": {
+          "type": "string",
+          "minLength": 1
+        },
+        "php": {
+          "type": "string",
+          "minLength": 1
+        },
+        "swift": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dart": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "ident": {
+      "type": "string",
+      "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+    },
+    "intType": {
+      "enum": ["i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64"],
+      "description": "A fixed-width integer: iN is two's complement and uN unsigned, N bits wide, as ISO C11 §7.20.1.1 intN_t/uintN_t; + - * wrap modulo 2^N."
+    },
+    "intValue": {
+      "description": "An integer: a JSON integer within ±(2^53−1), or a decimal string for a value beyond it, so 64-bit values are exact (RFC 7493 §2.2, RFC 8259 §6). The string must not be a value a JSON integer could carry; its pattern admits only 16 digits or more, since the exact bound 2^53−1 is beyond a pattern and is the contract validator's to check.",
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "string",
+          "pattern": "^-?[1-9][0-9]{15,}$"
+        }
+      ]
+    },
+    "f64Text": {
+      "type": "string",
+      "pattern": "^(?:-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|NaN|Infinity|-Infinity)$",
+      "description": "An IEEE 754-2019 binary64 value as text: a decimal, converted to the nearest double with roundTiesToEven (§4.3.1, §5.12.2), or NaN, Infinity, -Infinity; -0 is negative zero."
+    },
+    "f64Bits": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$",
+      "description": "The IEEE 754-2019 binary64 encoding (§3.4) as 16 lowercase hex digits, most significant first; it is how a NaN's payload is stated, and NaN compares by these bits."
+    },
     "paramType": {
       "enum": [
         "bytes",
         "bytes?",
         "string",
         "string?",
-        "i32",
-        "u32",
         "bool",
-        "secret-bytes"
+        "bool?",
+        "f64",
+        "f64?",
+        "secret-bytes",
+        "secret-bytes?",
+        "i8",
+        "i8?",
+        "i16",
+        "i16?",
+        "i32",
+        "i32?",
+        "i64",
+        "i64?",
+        "u8",
+        "u8?",
+        "u16",
+        "u16?",
+        "u32",
+        "u32?",
+        "u64",
+        "u64?"
       ],
-      "description": "bytes? is bytes or null (a refusal). secret-bytes is a nish Secret<u8[]>: bytes in the contract, wrapped with secret() by the generated test."
+      "description": "A parameter's type. bytes is an octet string; string is Unicode text, UTF-8 encoded (RFC 3629); f64 is an IEEE 754-2019 binary64; i8 … u64 are the fixed-width integers (see intType); secret-bytes is bytes whose value is secret: a language may wrap them in its own secret type, but in the contract they are bytes. T? as a parameter is an optional input: the argument may be absent, written null."
     },
     "returnType": {
       "enum": [
@@ -171,13 +355,30 @@
         "bytes?",
         "string",
         "string?",
-        "i32",
-        "u32",
         "bool",
+        "bool?",
+        "f64",
+        "f64?",
         "secret-bytes",
-        "secret-bytes?"
+        "secret-bytes?",
+        "i8",
+        "i8?",
+        "i16",
+        "i16?",
+        "i32",
+        "i32?",
+        "i64",
+        "i64?",
+        "u8",
+        "u8?",
+        "u16",
+        "u16?",
+        "u32",
+        "u32?",
+        "u64",
+        "u64?"
       ],
-      "description": "As paramType; secret-bytes? is a Secret<u8[]> or null, read with expose()."
+      "description": "A result's type, from the types of paramType. T? as a result is a refusing return: the function declines this input and returns no value, written null."
     },
     "requirement": {
       "type": "object",
@@ -244,11 +445,10 @@
       "additionalProperties": false,
       "properties": {
         "name": {
-          "type": "string",
-          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+          "$ref": "#/$defs/ident"
         },
         "module": {
-          "type": "string",
+          "$ref": "#/$defs/modulePath",
           "description": "Only for a reference function from another module."
         },
         "params": {
@@ -258,11 +458,13 @@
             "additionalProperties": false,
             "properties": {
               "name": {
-                "type": "string",
-                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+                "$ref": "#/$defs/ident"
               },
               "type": {
                 "$ref": "#/$defs/paramType"
+              },
+              "names": {
+                "$ref": "#/$defs/nameOverrides"
               }
             },
             "required": ["name", "type"]
@@ -270,6 +472,9 @@
         },
         "returns": {
           "$ref": "#/$defs/returnType"
+        },
+        "names": {
+          "$ref": "#/$defs/nameOverrides"
         }
       },
       "required": ["name", "params", "returns"]
@@ -283,11 +488,14 @@
             "hex": {
               "type": "string",
               "pattern": "^(?:[0-9a-f]{2})*$",
-              "description": "Lowercase hex, exactly as the RFC prints the bytes (separators removed)."
+              "description": "Lowercase base16 (RFC 4648 §8), exactly as the spec prints the bytes (separators removed)."
             },
             "repeat": {
               "type": "integer",
               "minimum": 1
+            },
+            "label": {
+              "$ref": "#/$defs/label"
             },
             "unchecked": {
               "type": "string",
@@ -302,6 +510,9 @@
           "properties": {
             "ascii": {
               "type": "string"
+            },
+            "label": {
+              "$ref": "#/$defs/label"
             },
             "unchecked": {
               "type": "string"
@@ -329,19 +540,37 @@
           "additionalProperties": false,
           "properties": {
             "int": {
-              "type": "integer"
+              "$ref": "#/$defs/intValue"
             },
             "label": {
-              "type": "string",
-              "minLength": 1,
-              "pattern": "[A-Za-z]",
-              "description": "The name the RFC prints right before the value (`L = 42`, `Block Count: 1`); fidelity checks the pair. Without one the int is unchecked and reported as a warning."
+              "$ref": "#/$defs/label",
+              "description": "The name the spec prints right before the value (`L = 42`, `Block Count: 1`); fidelity checks the pair. Without one the int is unchecked and reported as a warning."
             },
             "unchecked": {
               "type": "string"
             }
           },
           "required": ["int"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "A binary64 value. `f64` is its text; `bits`, when given, states its encoding, and must be the encoding `f64` converts to.",
+          "properties": {
+            "f64": {
+              "$ref": "#/$defs/f64Text"
+            },
+            "bits": {
+              "$ref": "#/$defs/f64Bits"
+            },
+            "label": {
+              "$ref": "#/$defs/label"
+            },
+            "unchecked": {
+              "type": "string"
+            }
+          },
+          "required": ["f64"]
         },
         {
           "type": "object",
@@ -361,7 +590,8 @@
               "const": true
             }
           },
-          "required": ["null"]
+          "required": ["null"],
+          "description": "The absent value of a T?: a refusing return as a result, an absent argument as an optional input."
         },
         {
           "type": "object",
@@ -422,6 +652,9 @@
                 "zeros",
                 "fill",
                 "flipBit",
+                "xor",
+                "bitAnd",
+                "bitOr",
                 "unwrap",
                 "isNull",
                 "notNull",
@@ -457,7 +690,7 @@
             }
           },
           "required": ["op", "args"],
-          "description": "len(bytes)->i32; concat(bytes,bytes); slice(bytes,from,to) clamped; zeros(n); fill(byte,n); flipBit(bytes,bit); unwrap(bytes?)->bytes (a null fails the sample); isNull/notNull(bytes?); + - * % on i32; le64(i32)->8 bytes; comparisons; == != on i32, bool or bytes/bytes?/null; and/or (2+), not, implies; strLen(string)->i32; strConcat(string,string); lower/upper(string) (ASCII only); utf8(string)->bytes; ascii(bytes)->string? (null when any byte >= 0x80); charAt(string,i32)->string (\"\" out of range); unwrap/isNull/notNull also take string?; == != also on string/string?/null."
+          "description": "len(bytes)->i32; concat(bytes,bytes); slice(bytes,from,to) clamped; zeros(n); fill(byte,n); flipBit(bytes,bit); xor/bitAnd/bitOr(bytes,bytes) bytewise, the shorter read as zeros past its end; unwrap(bytes?)->bytes (a null fails the sample); isNull/notNull(bytes?); + - * % on i32; le64(i32)->8 bytes; comparisons; == != on i32, bool or bytes/bytes?/null; and/or (2+), not, implies; strLen(string)->i32; strConcat(string,string); lower/upper(string) (ASCII only); utf8(string)->bytes; ascii(bytes)->string? (null when any byte >= 0x80); charAt(string,i32)->string (\"\" out of range); unwrap/isNull/notNull also take string?; == != also on string/string?/null."
         },
         {
           "type": "object",
@@ -529,6 +762,9 @@
         },
         "expect": {
           "$ref": "#/$defs/literal"
+        },
+        "tolerance": {
+          "$ref": "#/$defs/tolerance"
         }
       },
       "required": [
@@ -575,13 +811,34 @@
                     "type": "string"
                   },
                   "type": {
-                    "const": "i32"
+                    "$ref": "#/$defs/intType"
                   },
                   "min": {
-                    "type": "integer"
+                    "$ref": "#/$defs/intValue"
                   },
                   "max": {
-                    "type": "integer"
+                    "$ref": "#/$defs/intValue"
+                  }
+                },
+                "required": ["name", "type", "min", "max"],
+                "description": "An integer variable of one width, min..max inclusive, both in that width's range."
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "An f64 variable, min..max inclusive. The schema records it; vector does not sample over f64 yet and refuses such a property.",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "f64"
+                  },
+                  "min": {
+                    "$ref": "#/$defs/f64Text"
+                  },
+                  "max": {
+                    "$ref": "#/$defs/f64Text"
                   }
                 },
                 "required": ["name", "type", "min", "max"]
@@ -727,6 +984,59 @@
             }
           },
           "required": ["spec"]
+        }
+      ]
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "[A-Za-z]",
+      "description": "The name the spec prints right before the value (`Key = 00:01:…`, `L = 42`); fidelity checks the pair."
+    },
+    "tolerance": {
+      "description": "How far an f64 result may be from `expect`: `abs`, an absolute difference as decimal text, or `ulps`, a count of binary64 units in the last place. It must come from the spec: `quote` is the sentence that states it, in `section` (of `source`, default the main one), checked like a requirement's quote. Without a tolerance an f64 expect is compared bit for bit (IEEE 754-2019 §3.4 encodings), so NaN equals a NaN of the same bits.",
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "abs": {
+              "type": "string",
+              "pattern": "^(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$"
+            },
+            "source": {
+              "$ref": "#/$defs/id"
+            },
+            "section": {
+              "$ref": "#/$defs/section"
+            },
+            "quote": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": ["abs", "section", "quote"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ulps": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "source": {
+              "$ref": "#/$defs/id"
+            },
+            "section": {
+              "$ref": "#/$defs/section"
+            },
+            "quote": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": ["ulps", "section", "quote"]
         }
       ]
     }
