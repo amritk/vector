@@ -4,6 +4,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import {
   copyFileSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -12,7 +13,9 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { rfcMain } from "../src/rfc/cli.ts";
+import type { Clause, FnSig, RfcContract } from "../src/rfc/contract.ts";
 import { extract } from "../src/rfc/extract.ts";
+import { runGates } from "../src/rfc/gates.ts";
 import {
   LABELLED_MESSAGE,
   isLiteralError,
@@ -196,18 +199,6 @@ describe("the main-source keyword", () => {
     const plain = BASE.replace(KEY, "<keyword>vector-maintenance</keyword>");
     expect(namesMainRfc(parseV3(plain, "x.xml"))).toBe(false);
   });
-
-  test("the spec's own BCP 14 text is refused in main mode", () => {
-    const xml = variant(
-      sub(
-        "</section>\n  </middle>",
-        `<t anchor="R-OWN">A frame <bcp14>MUST</bcp14> be short.</t></section>\n  </middle>`,
-      ),
-    );
-    expect(messages(xml).join("\n")).toContain(
-      "R-OWN, a BCP 14 paragraph, is the spec's own text, but the main source is RFC9990",
-    );
-  });
 });
 
 describe("the spec's own text in main mode", () => {
@@ -224,6 +215,16 @@ describe("the spec's own text in main mode", () => {
     return { refusals: r.refusals, line };
   };
   for (const [why, extra, message] of [
+    [
+      "an anchored BCP 14 paragraph",
+      `<t anchor="R-OWN">A frame <bcp14>MUST</bcp14> be short.</t>`,
+      `R-OWN, a BCP 14 paragraph, ${OWN}`,
+    ],
+    [
+      "an unanchored BCP 14 paragraph with no Untested:",
+      "<t>A frame <bcp14>MUST</bcp14> be short.</t>",
+      `this BCP 14 sentence ${OWN}: "A frame MUST be short."`,
+    ],
     [
       "a Definition: paragraph",
       `<t anchor="D-FRAME">Definition: a frame is a length octet and data.</t>`,
@@ -409,6 +410,10 @@ export function frame(data: u8[]): u8[] | null`;
       "// Module: nish/mini/len",
       "//module nish/mini/len",
       "// module: nish/a nish/b",
+      "/// module: nish/mini/len",
+      "/* Module: nish/mini/len */",
+      "/* module nish/mini/len */",
+      "/** MODULE: nish/mini/len */",
     ].map(
       (line) =>
         [
@@ -417,6 +422,11 @@ export function frame(data: u8[]): u8[] | null`;
           `a module line is \`// module: nish/<path>\`, one module, not \`${line}\``,
         ] as const,
     ),
+    [
+      "a module line inside a signature",
+      "// module: nish/mini/frame\nexport function frame(\n// module: nish/mini/len\ndata: u8[]): u8[] | null",
+      "a module line goes between signatures, on its own line; move it out of this one",
+    ],
     [
       "a module line before the previous signature's ;",
       `${IFACE}\n// module: nish/mini/len\n;`,
@@ -436,6 +446,147 @@ export function frame(data: u8[]): u8[] | null`;
     test(`${why} is refused`, () => {
       expect(messages(withIface(code))).toContain(message);
     });
+});
+
+describe("clauses test the module under test", () => {
+  const IFACE = `// module: nish/mini/frame
+export function frame(data: u8[]): u8[] | null`;
+  const REF = `${IFACE}\n// module: nish/mini/ref\nexport function g(data: u8[]): u8[] | null`;
+  const ASSERT = "unwrap(frame(data)).length === data.length + 1";
+  const END = "</section>\n  </middle>";
+  const VECTORS = (call: string) =>
+    `<table><thead><tr><th>Id</th><th>Call</th><th>Expected</th><th>Covers</th><th>Source</th><th>Title</th></tr></thead><tbody><tr><td>V1</td><td><tt>${call}(data = 00)</tt></td><td><tt>result = 0100</tt></td><td>R-PREFIX</td><td>${PREFIX_XREF}</td><td>one octet</td></tr></tbody></table>`;
+  /** The refusals of `xml`, and the 1-based line holding `needle`. */
+  const refusedAt = (xml: string, needle: string) => {
+    const r = run(xml);
+    if (!("refusals" in r)) throw new Error("expected refusals");
+    const line = xml.split("\n").findIndex((l) => l.includes(needle)) + 1;
+    return { refusals: r.refusals, line };
+  };
+
+  test("a property whose assertion calls only reference functions is refused", () => {
+    const xml = variant((x) =>
+      sub(
+        ASSERT,
+        "unwrap(g(data)).length === data.length + 1",
+      )(sub(IFACE, REF)(x)),
+    );
+    const { refusals, line } = refusedAt(xml, "P-PREFIX covers");
+    expect(refusals).toContainEqual(
+      expect.objectContaining({
+        file: "specs/mini-frame.xml",
+        line,
+        message:
+          "property P-PREFIX's assertion calls only reference functions (g); call a function of nish/mini/frame, the module under test",
+      }),
+    );
+  });
+
+  test("a property that also calls a function under test passes", () => {
+    const c = contract(
+      variant((x) =>
+        sub(
+          ASSERT,
+          "unwrap(frame(data)).length === unwrap(g(data)).length",
+        )(sub(IFACE, REF)(x)),
+      ),
+    );
+    expect(c.functions.map((f) => [f.name, f.module])).toEqual([
+      ["frame", undefined],
+      ["g", "nish/mini/ref"],
+    ]);
+  });
+
+  test("a vector whose Call is a reference function is refused", () => {
+    const xml = variant((x) =>
+      sub(END, `${VECTORS("g")}${END}`)(sub(IFACE, REF)(x)),
+    );
+    const { refusals, line } = refusedAt(xml, "<tt>g(data = 00)</tt>");
+    expect(refusals).toContainEqual(
+      expect.objectContaining({
+        file: "specs/mini-frame.xml",
+        line,
+        message:
+          "Call: g is a reference function of nish/mini/ref; a vector tests nish/mini/frame, the module under test, so call one of its functions",
+      }),
+    );
+  });
+
+  describe("spec check refuses a hand-written contract that", () => {
+    const base = () =>
+      JSON.parse(read(`${FIX}/contracts/mini-frame.json`)) as RfcContract;
+    const coverage = (c: RfcContract) =>
+      runGates(c)
+        .issues.filter((i) => i.gate === "coverage")
+        .map(({ at, message }) => ({ at, message }));
+    const G: FnSig = {
+      name: "g",
+      module: "nish/mini/ref",
+      params: [{ name: "data", type: "bytes" }],
+      returns: "bytes?",
+    };
+    /** `e` with every call to frame made a call to g. */
+    const toG = (e: unknown): unknown =>
+      Array.isArray(e)
+        ? e.map(toG)
+        : e && typeof e === "object"
+          ? Object.fromEntries(
+              Object.entries(e).map(([k, v]) => [
+                k,
+                k === "call" && v === "frame" ? "g" : toG(v),
+              ]),
+            )
+          : e;
+
+    test("passes as committed", () => {
+      expect(coverage(base())).toEqual([]);
+    });
+
+    test("tests a property only through a reference function", () => {
+      const c = base();
+      c.functions.push(G);
+      c.clauses[0] = toG(c.clauses[0]) as Clause;
+      expect(coverage(c)).toEqual([
+        {
+          at: "P-PREFIX",
+          message:
+            "the assertion calls only reference functions (g), none of nish/mini/frame, the module under test, so it checks nothing here",
+        },
+      ]);
+    });
+
+    test("calls a reference function from a vector", () => {
+      const c = base();
+      c.functions.push(G);
+      c.clauses.push({
+        kind: "vector",
+        id: "V1",
+        title: "one octet",
+        covers: ["R-PREFIX"],
+        source: { cite: { section: "2" } },
+        call: "g",
+        args: [{ hex: "00", label: "data" }],
+        expect: { hex: "0100", label: "result" },
+      });
+      expect(coverage(c)).toEqual([
+        {
+          at: "V1",
+          message:
+            "calls g, a reference function, not a function of nish/mini/frame, the module under test, so it checks nothing here",
+        },
+      ]);
+    });
+
+    test("declares no function of the module under test", () => {
+      const c = base();
+      c.functions = [{ ...c.functions[0], module: "nish/mini/ref" }];
+      expect(coverage(c)).toContainEqual({
+        at: "functions",
+        message:
+          "nish/mini/frame, the module under test, declares no function, so no clause can test it",
+      });
+    });
+  });
 });
 
 describe("a label that starts with a digit", () => {
@@ -510,7 +661,7 @@ describe("spec check --spec <profile>.xml", () => {
 
   test("a profile of another contract is refused", async () => {
     const other = fixture("mini-frame-excluded").spec;
-    const r = await cli(["check", c, "--spec", other]);
+    const r = await cli(["check", c, "--spec", other, "--run-sources"]);
     expect(r.code).not.toBe(0);
     expect(r.out).toContain(
       `${other} is the profile of contract "mini-frame-excluded" (docName "draft-mini-frame-excluded-00"), not of mini-frame`,
@@ -521,7 +672,7 @@ describe("spec check --spec <profile>.xml", () => {
     const d = mkdtempSync(join(tmpdir(), "profile-check-"));
     try {
       for (const dir of ["specs", "contracts", "rfcs"])
-        Bun.spawnSync(["mkdir", "-p", join(d, dir)]);
+        mkdirSync(join(d, dir), { recursive: true });
       const s = join(d, "specs/mini-frame.xml");
       const k = join(d, "contracts/mini-frame.json");
       copyFileSync(
@@ -536,7 +687,7 @@ describe("spec check --spec <profile>.xml", () => {
           "</blockquote>\n      <t>Note: one octet.</t>\n      <sourcecode",
         ),
       );
-      const r = await cli(["check", k, "--spec", s]);
+      const r = await cli(["check", k, "--spec", s, "--run-sources"]);
       expect(r.code).not.toBe(0);
       expect(r.out).toContain(
         `${k} is not what ${s} states; run: vector spec extract ${s} -o ${k}`,

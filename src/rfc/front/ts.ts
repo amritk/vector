@@ -210,14 +210,33 @@ function lex(source: string, subset: string): Tok[] {
 /** A cursor over the tokens that skips comments unless asked for them. */
 class Cursor {
   private i = 0;
-  constructor(private readonly toks: Tok[]) {}
+  /**
+   * `iface`: the tokens are a ts-interface, where a module line skipped here,
+   * inside a signature, would leave the functions after it in the module
+   * before it, so it is refused.
+   */
+  constructor(
+    private readonly toks: Tok[],
+    private readonly iface = false,
+  ) {}
 
   /** The next token, comments included. */
   raw(): Tok {
     return this.toks[this.i];
   }
   peek(): Tok {
-    while (this.toks[this.i].kind === "comment") this.i++;
+    for (
+      let t = this.toks[this.i];
+      t.kind === "comment";
+      t = this.toks[this.i]
+    ) {
+      if (this.iface && moduleLine(t))
+        throw new Refusal(
+          "a module line goes between signatures, on its own line; move it out of this one",
+          at(t),
+        );
+      this.i++;
+    }
     return this.toks[this.i];
   }
   /** The next token past any comments, which stay unread. */
@@ -324,7 +343,7 @@ function parseInterface(text: string): {
   functions: FnSig[];
   lines: number[];
 } {
-  const c = new Cursor(lex(text, IFACE));
+  const c = new Cursor(lex(text, IFACE), true);
   const head = c.raw();
   const m =
     head.kind === "comment" && head.lineComment
@@ -441,8 +460,9 @@ function parseInterface(text: string): {
 /**
  * The module a `// module: nish/<path>` comment names, or undefined for any
  * other comment. Refuses a comment meant as one that is not: a block comment,
- * or a line comment that starts `module:` or `module nish/` but does not
- * parse, so the functions after it never silently keep the module above.
+ * or a comment of any style or case that starts `module:` or `module nish/`
+ * but does not parse, so the functions after it never silently keep the
+ * module above.
  */
 function moduleLine(t: Tok): RegExpMatchArray | undefined {
   const r = t.value.match(/^\s*module:\s*(\S+)\s*$/);
@@ -452,9 +472,13 @@ function moduleLine(t: Tok): RegExpMatchArray | undefined {
       at(t),
     );
   if (r) return r;
-  if (t.lineComment && /^\s*module(?:\s*:|\s+nish\/)/i.test(t.value))
+  // A comment of any style or case whose text, past leading `/` and `*`, starts
+  // `module:` or `module nish/` was meant as a module line; passing over it
+  // would leave its functions in the module before it.
+  const body = t.value.replace(/^[\s/*]*/, "");
+  if (/^module(?:\s*:|\s+nish\/)/i.test(body))
     throw new Refusal(
-      `a module line is \`// module: nish/<path>\`, one module, not \`//${t.value}\``,
+      `a module line is \`// module: nish/<path>\`, one module, not \`${t.lineComment ? `//${t.value}` : `/*${t.value}*/`}\``,
       at(t),
     );
   return undefined;

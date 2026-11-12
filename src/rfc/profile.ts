@@ -872,6 +872,11 @@ export function profileToContract(
           callC.loc,
           `"${pc.call}" is not a function of the ts-interface block`,
         );
+      else if (fn.module !== undefined)
+        refuse(
+          callC.loc,
+          `Call: ${pc.call} is a reference function of ${fn.module}; a vector tests ${module}, the module under test, so call one of its functions`,
+        );
       else if (pe && !isLiteralError(pe)) {
         settled = settleVector(fn, pc.args, pe);
         if (Array.isArray(settled))
@@ -1024,11 +1029,20 @@ export function profileToContract(
         q.loc,
         `${q.id} is ${q.level}, but no clause covers it; cover it with a vector or a property, or follow it with an Untested: paragraph`,
       );
+  const targets = new Set(
+    functions.filter((f) => f.module === undefined).map((f) => f.name),
+  );
   properties.forEach((k, i) => {
-    if (callsIn(k.assert).size === 0)
+    const calls = callsIn(k.assert);
+    if (calls.size === 0)
       refuse(
         propertyLocs[i],
         `property ${k.id}'s assertion calls none of the functions under test, so it checks nothing`,
+      );
+    else if (![...calls].some((f) => targets.has(f)))
+      refuse(
+        propertyLocs[i],
+        `property ${k.id}'s assertion calls only reference functions (${[...calls].sort().join(", ")}); call a function of ${module}, the module under test`,
       );
   });
   if (refusals.length > 0) return sorted();
