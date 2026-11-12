@@ -656,6 +656,7 @@ describe("spec check --spec <profile>.xml", () => {
     for (const extra of [["--spec", here(`${FIX}/rfcs/rfc9990.xml`)], []]) {
       const r = await cli(["check", c, ...extra]);
       expect(r.out).toContain("CONTRACT_VALID");
+      expect(r.code).toBe(0);
     }
   });
 
