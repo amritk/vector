@@ -1,8 +1,8 @@
 // A contract's sources, read from disk: each declared source's file, found
 // as sourceFile finds it and judged as sourcePathProblem judges it, then read
 // by the reader its form needs — RFC XML v3 (xmlv3.ts) or an RFC's plain text
-// (spectext.ts). vector never touches the network: an RFC
-// found nowhere is an error that says how to fetch it.
+// (spectext.ts). vector never touches the network: an RFC found nowhere is an
+// error that says how to fetch it.
 
 import {
   type RfcContract,

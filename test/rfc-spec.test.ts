@@ -317,6 +317,83 @@ describe("a spec contract", () => {
     ]);
   });
 
+  // The bytes de ad be ef split across two blocks: a cite or command vector
+  // binds one printed value, so each split is refused, never joined.
+  const SPLIT = [
+    '[fidelity] V-CITE.args[0]: 4-byte value is not printed in §3 ("Test Vectors")',
+    '[fidelity] V-CITE.expect: the string "deadbeef" is not printed in §3 ("Test Vectors")',
+    '[fidelity] V-CMD.args[0]: 4-byte value is not printed in §3 ("Test Vectors")',
+  ];
+  const ROW =
+    "<tr><td>[de ad be ef]</td><td><tt>deadbeef</tt></td></tr></tbody></table>";
+  const splitRuns = (d: RfcDocument) =>
+    messages(
+      runGates(hexContract(), { docs: docs(d), commands: passed("V-CMD") }),
+    );
+
+  // Bytes split across two table cells, rows, code blocks or paragraphs.
+  const SPLITS: [string, string][] = [
+    ["two cells", "<tr><td>de ad</td><td>be ef</td></tr></tbody></table>"],
+    [
+      "two rows",
+      "<tr><td>de ad</td><td></td></tr><tr><td>be ef</td><td></td></tr></tbody></table>",
+    ],
+    [
+      "two artworks",
+      `<tr><td>x</td><td>x</td></tr></tbody></table>\n${art("de ad")}\n${art("be ef")}`,
+    ],
+    [
+      "two sourcecodes",
+      "<tr><td>x</td><td>x</td></tr></tbody></table>\n<sourcecode>de ad</sourcecode>\n<sourcecode>be ef</sourcecode>",
+    ],
+    [
+      "two paragraphs",
+      "<tr><td>x</td><td>x</td></tr></tbody></table>\n<t>de ad</t>\n<t>be ef</t>",
+    ],
+  ];
+  test.each(SPLITS)("bytes split across %s are never one value", (_, body) => {
+    expect(splitRuns(read(SPEC.replace(ROW, body)))).toEqual(SPLIT);
+  });
+
+  test("in RFC text, bytes split by a line of text are never one value", () => {
+    const rfc = (vectors: string) =>
+      parseDocument(
+        [
+          "Internet Engineering Task Force (IETF)                         A. Author",
+          "Request for Comments: 9999                                      May 2026",
+          "Category: Informational",
+          "",
+          "                              Hex Encoding",
+          "",
+          "1.  Introduction",
+          "",
+          '   The key words "MUST" and "MAY" in this document are to be',
+          "   interpreted as described in BCP 14.",
+          "",
+          "2.  Encoding",
+          "",
+          "   An encoder MUST emit two lowercase digits per byte.",
+          "",
+          "2.1.  Decoding",
+          "",
+          '   A decoder MUST return null for a string of odd length: "abc"',
+          "   decodes to null.",
+          "",
+          "3.  Test Vectors",
+          "",
+          vectors,
+          "\f",
+        ].join("\n"),
+      );
+    const rfcSplit = SPLIT.map((m) => m.replace("in §3", "in RFC §3"));
+    // A blank line does not end a value (a dump survives a page break) ...
+    expect(splitRuns(rfc("   de ad\n\n   be ef"))).toEqual(
+      rfcSplit.slice(1, 2),
+    );
+    // ... a line of text does.
+    expect(splitRuns(rfc("   de ad\n\n   and\n\n   be ef"))).toEqual(rfcSplit);
+  });
+
   test("an exclusion accounts for a MUST, and must quote the section", () => {
     const c = hexContract();
     c.requirements = c.requirements.filter((r) => r.id !== "R-ODD");
