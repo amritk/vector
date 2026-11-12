@@ -346,12 +346,7 @@ function parseInterface(text: string): {
   let from = m[1];
   for (;;) {
     for (let t = c.raw(); t.kind === "comment"; t = c.raw()) {
-      const r = t.value.match(/^\s*module:\s*(\S+)\s*$/);
-      if (r && !t.lineComment)
-        throw new Refusal(
-          `a module line is a line comment; write \`// module: ${r[1]}\``,
-          at(t),
-        );
+      const r = moduleLine(t);
       if (r) {
         if (!nishModuleFile(r[1]))
           throw new Refusal(
@@ -409,8 +404,19 @@ function parseInterface(text: string): {
         `a ts-interface declares signatures only; remove the body of \`${name.text}\``,
         at(body),
       );
-    // A `;`, with comments before it, ends the signature.
-    if (body.kind === "punct" && body.text === ";") c.next();
+    // A `;`, with comments before it, ends the signature; a module line
+    // there would be read past, so it goes after the `;`.
+    if (body.kind === "punct" && body.text === ";") {
+      for (let t = c.raw(); t.kind === "comment"; t = c.raw()) {
+        if (moduleLine(t))
+          throw new Refusal(
+            `end \`${name.text}\` with its \`;\` before this module line`,
+            at(t),
+          );
+        c.skipRaw();
+      }
+      c.next();
+    }
     functions.push({
       name: name.text,
       ...(from === m[1] ? {} : { module: from }),
@@ -425,6 +431,28 @@ function parseInterface(text: string): {
       at(c.peek()),
     );
   return { module: m[1], functions, lines };
+}
+
+/**
+ * The module a `// module: nish/<path>` comment names, or undefined for any
+ * other comment. Refuses a comment meant as one that is not: a block comment,
+ * or a line comment that starts with `module` but does not parse, so the
+ * functions after it never silently keep the module above.
+ */
+function moduleLine(t: Tok): RegExpMatchArray | undefined {
+  const r = t.value.match(/^\s*module:\s*(\S+)\s*$/);
+  if (r && !t.lineComment)
+    throw new Refusal(
+      `a module line is a line comment; write \`// module: ${r[1]}\``,
+      at(t),
+    );
+  if (r) return r;
+  if (t.lineComment && /^\s*module\b/i.test(t.value))
+    throw new Refusal(
+      `a module line is \`// module: nish/<path>\`, one module, not \`//${t.value}\``,
+      at(t),
+    );
+  return undefined;
 }
 
 function sigType(c: Cursor, result: boolean): SigTy {

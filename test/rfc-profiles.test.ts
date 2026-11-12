@@ -1,15 +1,27 @@
 // RFC profile specs: a spec whose main source is an RFC, named by the
 // front-matter keyword vector-main-RFC<N>, and the syntax extensions the two
 // committed profiles (RFC 5869, RFC 8439) need.
-import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { describe, expect, spyOn, test } from "bun:test";
+import {
+  copyFileSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { rfcMain } from "../src/rfc/cli.ts";
 import { extract } from "../src/rfc/extract.ts";
 import {
   LABELLED_MESSAGE,
   isLiteralError,
   parseLiteral,
 } from "../src/rfc/literals.ts";
-import { type RfcResolver, profileToContract } from "../src/rfc/profile.ts";
+import {
+  type RfcResolver,
+  namesMainRfc,
+  profileToContract,
+} from "../src/rfc/profile.ts";
 import { parseRfc } from "../src/rfc/rfctext.ts";
 import { parseV3 } from "../src/rfc/xmlv3.ts";
 
@@ -159,9 +171,29 @@ describe("the main-source keyword", () => {
         "<blockquote><t>The implementation <bcp14>MUST</bcp14> zero the key after use.</t></blockquote></section>\n  </middle>",
       ),
     );
-    expect(messages(xml).join("\n")).toContain(
-      "this BCP 14 sentence is the spec's own text, but the main source is RFC9990",
+    const r = run(xml);
+    if (!("refusals" in r)) throw new Error("expected refusals");
+    const line = xml
+      .split("\n")
+      .findIndex((l) => l.includes("zero the key after use"));
+    expect(r.refusals).toContainEqual(
+      expect.objectContaining({
+        file: "specs/mini-frame.xml",
+        line: line + 1,
+        message:
+          'this BCP 14 sentence is the spec\'s own text, but the main source is RFC9990; quote the RFC in a blockquote ending {{Section N of RFC9990}}: "The implementation MUST zero the key after use."',
+      }),
     );
+  });
+
+  test("a key that only starts like vector-main is not a main key", () => {
+    const xml = variant(
+      sub(KEY, `${KEY}<keyword>vector-maintenance</keyword>`),
+    );
+    expect(contract(xml).source.rfc).toBe(9990);
+    expect(namesMainRfc(parseV3(BASE, "x.xml"))).toBe(true);
+    const plain = BASE.replace(KEY, "<keyword>vector-maintenance</keyword>");
+    expect(namesMainRfc(parseV3(plain, "x.xml"))).toBe(false);
   });
 
   test("the spec's own BCP 14 text is refused in main mode", () => {
@@ -212,6 +244,23 @@ describe("an excluded RFC blockquote", () => {
       );
     expect(messages(xml)).toContain(
       "this Untested: paragraph excludes nothing; it must directly follow the requirement or BCP 14 paragraph it excludes",
+    );
+  });
+
+  test("an unanchored blockquote with no BCP 14 keyword is refused", () => {
+    const xml = excluded.replace(
+      "A sender MUST NOT frame more than 255 octets.",
+      "A sender frames octets.",
+    );
+    expect(messages(xml)).toContain(
+      "an excluded blockquote holds no BCP 14 keyword, so it excludes nothing; anchor it to exclude a definition",
+    );
+  });
+
+  test("an excluded blockquote that does not end in its section xref is refused", () => {
+    const xml = excluded.replace(`255 octets. ${PREFIX_XREF}`, "255 octets.");
+    expect(messages(xml)).toContain(
+      "an excluded blockquote must be <t> paragraphs, the last ending with {{Section N of RFCx}}",
     );
   });
 });
@@ -279,6 +328,23 @@ export function frame(data: u8[]): u8[] | null`;
       `${IFACE}\n/* module: nish/mini/len */\nexport function len(data: u8[]): i32`,
       "a module line is a line comment; write `// module: nish/mini/len`",
     ],
+    ...[
+      "// Module: nish/mini/len",
+      "//module nish/mini/len",
+      "// module: nish/a nish/b",
+    ].map(
+      (line) =>
+        [
+          `the near-miss \`${line}\``,
+          `${IFACE}\n${line}\nexport function len(data: u8[]): i32`,
+          `a module line is \`// module: nish/<path>\`, one module, not \`${line}\``,
+        ] as const,
+    ),
+    [
+      "a module line before the previous signature's ;",
+      `${IFACE}\n// module: nish/mini/len\n;`,
+      "end `frame` with its `;` before this module line",
+    ],
     [
       "the same module twice in a row",
       `${IFACE}\n// module: nish/mini/len\n// module: nish/mini/len\nexport function len(data: u8[]): i32`,
@@ -330,4 +396,69 @@ describe("the RFC profiles", () => {
       expect(parsed.source.rfc).toBe(Number(name.slice(3, 7)));
       expect(parsed.$schema).toBe("../schemas/rfc-contract.json");
     });
+});
+
+/** Runs the CLI, capturing what it prints. */
+async function cli(argv: string[]) {
+  const out: string[] = [];
+  const log = spyOn(console, "log").mockImplementation((...a) => {
+    out.push(a.join(" "));
+  });
+  const error = spyOn(console, "error").mockImplementation((...a) => {
+    out.push(a.join(" "));
+  });
+  try {
+    return { code: await rfcMain(argv), out: out.join("\n") };
+  } finally {
+    log.mockRestore();
+    error.mockRestore();
+  }
+}
+
+describe("spec check --spec <profile>.xml", () => {
+  const { spec, contract: c } = fixture("mini-frame");
+
+  test("the profile that extracts to the contract passes", async () => {
+    const r = await cli(["check", c, "--spec", spec]);
+    expect(r.out).toContain("CONTRACT_VALID");
+    expect(r.code).toBe(0);
+  });
+
+  test("the RFC itself, or no --spec, also passes", async () => {
+    for (const extra of [["--spec", here(`${FIX}/rfcs/rfc9990.xml`)], []]) {
+      const r = await cli(["check", c, ...extra]);
+      expect(r.out).toContain("CONTRACT_VALID");
+    }
+  });
+
+  test("a profile of another contract is refused", async () => {
+    const other = fixture("mini-frame-excluded").spec;
+    const r = await cli(["check", c, "--spec", other]);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain(
+      `${other} is the profile of contract "mini-frame-excluded" (docName "draft-mini-frame-excluded-00"), not of mini-frame`,
+    );
+  });
+
+  test("a profile that extracts to something else is refused", async () => {
+    const d = mkdtempSync(join(tmpdir(), "profile-check-"));
+    for (const dir of ["specs", "contracts", "rfcs"])
+      Bun.spawnSync(["mkdir", "-p", join(d, dir)]);
+    const s = join(d, "specs/mini-frame.xml");
+    const k = join(d, "contracts/mini-frame.json");
+    copyFileSync(here(`${FIX}/rfcs/rfc9990.xml`), join(d, "rfcs/rfc9990.xml"));
+    copyFileSync(c, k);
+    writeFileSync(
+      s,
+      BASE.replace(
+        "</blockquote>\n      <sourcecode",
+        "</blockquote>\n      <t>Note: one octet.</t>\n      <sourcecode",
+      ),
+    );
+    const r = await cli(["check", k, "--spec", s]);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain(
+      `${k} is not what ${s} states; run: vector spec extract ${s} -o ${k}`,
+    );
+  });
 });

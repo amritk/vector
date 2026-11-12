@@ -103,7 +103,7 @@ const NOTE = "Note: ";
 export const MAIN_KEY = "vector-main-";
 const MAIN_KEY_RE = /^vector-main-RFC([1-9][0-9]*)$/;
 /** A keyword meant as the main-source key, spelt right or not. */
-const MAIN_KEY_LIKE = /^vector[-_\s]*main/i;
+const MAIN_KEY_LIKE = /^vector[-_\s]*main(?:[-_\s]|rfc|$)/i;
 const RFC_TARGET_RE = /^RFC([0-9]+)$/;
 // The reader's keyword rule: a keyword is not inside a word or a quote, and
 // longest first, so `MUST NOT` is not `MUST`; `NOT RECOMMENDED` is `SHOULD NOT`.
@@ -227,6 +227,18 @@ interface Quoted {
   loc: Loc;
 }
 
+/** The front-matter keywords meant as the main-source key, spelt right or not. */
+function mainKeys(doc: V3Document): XmlNode[] {
+  const front = elements(doc.root).find((n) => n.name === "front");
+  return (front ? elements(front) : []).filter(
+    (n) => n.name === "keyword" && MAIN_KEY_LIKE.test(plainText(n).trim()),
+  );
+}
+
+/** Whether `doc` is a profile that names an RFC main source, spelt right or not. */
+export const namesMainRfc = (doc: V3Document): boolean =>
+  mainKeys(doc).length > 0;
+
 export function profileToContract(
   doc: V3Document,
   xmlPath: string,
@@ -305,10 +317,7 @@ export function profileToContract(
   };
 
   // -- the main source: the spec, or the RFC its vector-main-RFC<N> names.
-  const front = elements(doc.root).find((n) => n.name === "front");
-  const keys = (front ? elements(front) : []).filter(
-    (n) => n.name === "keyword" && MAIN_KEY_LIKE.test(plainText(n).trim()),
-  );
+  const keys = mainKeys(doc);
   const normativeRfcs = new Set(
     descendants(doc.root)
       .filter(
@@ -570,6 +579,15 @@ export function profileToContract(
     const levels = levelsOf(
       [...quote.matchAll(KEYWORD_RE)].map((m) => ({ level: levelOf(m[1]) })),
     );
+    // An unanchored exclusion exists to exclude a BCP 14 sentence, as the
+    // unanchored <t> form does; one with no keyword excludes nothing.
+    if (anchor === undefined && levels.length === 0) {
+      refuse(
+        n.loc,
+        `${what} holds no BCP 14 keyword, so it excludes nothing; anchor it to exclude a definition`,
+      );
+      return null;
+    }
     // An exclusion records no level, so it may quote a sentence with two.
     if (levels.length > 1 && !excluded) {
       refuse(

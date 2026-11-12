@@ -18,7 +18,8 @@ normative:
 
 A profile of RFC 5869 for nish/crypto/hkdf: HKDF instantiated with
 SHA-256, so HashLen is 32. Every requirement quotes RFC 5869, the main
-source; every BCP 14 sentence of RFC 5869 is tested or excluded here.
+source; every binding sentence of RFC 5869 (MUST, MUST NOT, SHALL, SHALL
+NOT, REQUIRED) is tested or excluded here.
 
 --- middle
 

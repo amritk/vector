@@ -15,6 +15,7 @@ import {
   type Locator,
   type Refusal,
   locate,
+  namesMainRfc,
   profileToContract,
   whereOf,
 } from "./profile.ts";
@@ -360,6 +361,46 @@ export function extract(xmlPath: string, contractPath: string): ExtractResult {
       refusals: gateRefusals(issues, locator, survivorsPath(contractPath)),
     };
   return { text: canonicalJson(full) };
+}
+
+/**
+ * For `spec check --spec <specPath>` on a contract whose main source is an
+ * RFC: undefined when `specPath` is not a profile naming an RFC main source
+ * (it is then the main source's own text), else why the contract at
+ * `contractPath` is not the one that profile states ([] when it is). The RFC
+ * is still read from the contract's recorded file. Throws as extract does.
+ */
+export function profileProblems(
+  specPath: string,
+  contractPath: string,
+): string[] | undefined {
+  if (!specPath.endsWith(".xml")) return undefined;
+  let doc: V3Document;
+  try {
+    doc = loadSource({ id: "spec", path: specPath }, contractPath, specPath)
+      .doc as V3Document;
+  } catch {
+    // Not a profile extract could read; loadSources reports it as the text.
+    return undefined;
+  }
+  if (!("root" in doc) || !namesMainRfc(doc)) return undefined;
+  const name = basename(contractPath).replace(/\.json$/, "");
+  const names = doc.docName?.match(/^draft-(.+)-[0-9]{2}$/)?.[1];
+  if (names !== name)
+    return [
+      `${specPath} is the profile of contract "${names ?? ""}" (docName "${doc.docName ?? ""}"), not of ${name}`,
+    ];
+  const r = extract(specPath, contractPath);
+  if ("refusals" in r)
+    return [`${specPath} does not extract: ${r.refusals.join("; ")}`];
+  const now = existsSync(contractPath)
+    ? readFileSync(contractPath, "utf8")
+    : "";
+  if (r.text !== now)
+    return [
+      `${contractPath} is not what ${specPath} states; run: vector spec extract ${specPath} -o ${contractPath}`,
+    ];
+  return [];
 }
 
 /** Marks a last line that has no newline; JSON text holds no NUL. */

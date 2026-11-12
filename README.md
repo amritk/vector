@@ -190,7 +190,7 @@ and is merged in verbatim.
 |---|---|---|
 | `contract` | `docname: draft-<name>-00` in the front matter; `<name>` must be the file's basename | `<rfc docName="draft-<name>-00">` |
 | `source.rfc`, an RFC as the main source | `keyword: [vector-main-RFC<N>]` in the front matter, with RFC<N> under `normative:` | `<keyword>vector-main-RFC<N></keyword>` in `<front>` |
-| `target.module`, the signatures | one `~~~ ts-interface` block, first line `// module: nish/<path>`, then `export function f(…): T` or `export const f = (…): T` lines; after a later `// module: nish/<other>` line, reference functions (`module`) that properties may call | `<sourcecode type="ts-interface">` |
+| `target.module`, the signatures | one `~~~ ts-interface` block, first line `// module: nish/<path>`, then `export function f(…): T` or `export const f = (…): T` lines; after a later `// module: nish/<other>` line, reference functions (`module`) that properties may call. A module line is a line comment of one module after the previous signature's `;`: a block comment, or a line comment starting with `module` that is not `// module: nish/<path>`, is refused | `<sourcecode type="ts-interface">` |
 | a requirement (`MUST` … `MAY`) | a paragraph holding one BCP 14 sentence, at one level, then `{: #R-ID}` on the next line | `<t anchor="R-ID">` with `<bcp14>` |
 | a requirement (`DEFINITION`) | a paragraph starting `Definition: `, with no BCP 14 keyword, then `{: #R-ID}` | `<t anchor="R-ID">Definition: …</t>` |
 | a requirement quoting an RFC | a blockquote whose last line is `{{Section N of RFCx}}`, then `{: #R-ID gi="blockquote"}` | `<blockquote anchor="R-ID">`, the `<xref section>` last |
@@ -238,8 +238,11 @@ Rules the profile enforces:
   RFC may be `.xml` or `.txt`
   ([`test/fixtures/rfc-main/`](test/fixtures/rfc-main/) has both);
   `specs/rfc5869-hkdf-sha256.md` and `specs/rfc8439-chacha20-poly1305.md` are
-  the committed profiles. `spec check --spec` gives the main source's text, so
-  for these specs pass the RFC (`--spec rfcs/rfc<N>.txt`) or leave it out.
+  the committed profiles. `spec check --spec` takes the profile itself
+  (`--spec specs/<name>.xml`): the RFC is still read from its recorded file,
+  and the contract is valid only if it is exactly what the profile extracts
+  to; a profile whose `docName` names another contract is refused.
+  `--spec rfcs/rfc<N>.txt`, or no `--spec`, checks against the RFC alone.
 - **Vectors.** Call and Expected are each a single code span. Covers lists
   requirement ids, comma-separated, with no repeats. Title is required. The
   Source cell says where the expected value comes from:

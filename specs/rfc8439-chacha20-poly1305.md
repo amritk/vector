@@ -19,7 +19,8 @@ normative:
 A profile of RFC 8439 for nish/crypto/chacha20poly1305: the ChaCha20
 block and stream functions, Poly1305, its key generation and the
 AEAD_CHACHA20_POLY1305 construction. Every requirement quotes RFC 8439, the
-main source; every BCP 14 sentence of RFC 8439 is tested or excluded here.
+main source; every binding sentence of RFC 8439 (MUST, MUST NOT, SHALL, SHALL
+NOT, REQUIRED) is tested or excluded here.
 
 --- middle
 
@@ -28,8 +29,8 @@ main source; every BCP 14 sentence of RFC 8439 is tested or excluded here.
 {::boilerplate bcp14-tagged}
 
 nish/crypto/chacha20poly1305 exports each building block of RFC 8439 as well
-as the AEAD, so the properties can state the AEAD in terms of them. Every
-function returns null on input it refuses.
+as the AEAD, so the properties can state the AEAD in terms of them. Each
+returns `u8[] | null`; the properties test null only where they say so.
 
 # Interface
 

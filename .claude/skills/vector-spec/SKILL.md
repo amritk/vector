@@ -109,7 +109,11 @@ Add `| null` to `u8[]` or `string`, and to `Secret<u8[]>` as a result only.
 
 A property may compare the module with another nish module (HKDF with
 HMAC). Declare that module's functions after a second `// module:` line,
-below the module under test's own; they are reference functions, not exports:
+below the module under test's own; they are reference functions, not exports.
+A module line is exactly `// module: nish/<path>`, one module, after the
+previous signature's `;`; a block comment, or a line comment starting with
+`module` that does not parse (`// Module: …`, `//module …`, two modules), is
+refused:
 
 ````
 ~~~ ts-interface
@@ -188,8 +192,10 @@ Untested: an obligation on the caller: a pure function cannot see its other invo
 Every requirement must then be RFC text: a `Definition:` paragraph, a BCP 14
 sentence of the spec's own, and a vector Source naming a section of the spec
 are refused. `specs/rfc5869-hkdf-sha256.md` and
-`specs/rfc8439-chacha20-poly1305.md` are worked examples. `spec check --spec`
-takes the main source's text, so for such a spec pass the RFC or leave it out.
+`specs/rfc8439-chacha20-poly1305.md` are worked examples. Check such a
+contract with `spec check <contract.json> --spec specs/<name>.xml`: the RFC is
+read from its recorded file, and the contract must be exactly what the profile
+extracts to.
 
 **One vector table** has exactly this header:
 
