@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rfc version="3" number="9990" docName="draft-mini-frame-00" category="std" ipr="trust200902">
+  <front>
+    <title>Mini Framing</title>
+  </front>
+  <middle>
+    <section anchor="intro">
+      <name>Introduction</name>
+      <t>Mini Framing prefixes a run of octets with its length.</t>
+    </section>
+    <section anchor="framing">
+      <name>Framing</name>
+      <t>A sender <bcp14>MUST</bcp14> prefix each frame with its length in one octet.</t>
+      <t>A sender <bcp14>MUST NOT</bcp14> frame more than 255 octets.</t>
+      <t>A receiver <bcp14>MAY</bcp14> log a frame.</t>
+    </section>
+  </middle>
+</rfc>

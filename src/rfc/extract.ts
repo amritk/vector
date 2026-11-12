@@ -15,6 +15,7 @@ import {
   type Locator,
   type Refusal,
   locate,
+  namesMainRfc,
   profileToContract,
   whereOf,
 } from "./profile.ts";
@@ -36,9 +37,9 @@ import { type V3Document, XmlRefusal } from "./xmlv3.ts";
  *
  *   source        title, main, sha256
  *   sources[]     id, rfc, path, file, sha256
- *   requirements  id, source, section, level, quote
+ *   requirements  id, source, section, level, quote, note
  *   exclusions    source, section, quote, reason
- *   functions     name, params, returns
+ *   functions     name, module, params, returns
  *   clauses       vector:   kind, id, title, covers, source, section, call, args, expect
  *                 property: kind, id, title, covers, forall, where, assert
  */
@@ -307,6 +308,11 @@ export function extract(xmlPath: string, contractPath: string): ExtractResult {
   if ("refusals" in read) return { refusals: read.refusals.map(refusalLine) };
 
   const { contract, locator } = read;
+  // An RFC main source is what the contract says the module implements, so
+  // its hash, not the spec's, is the source's.
+  const mainRfc = contract.source.rfc;
+  const main =
+    mainRfc === undefined ? spec : (rfcs.get(mainRfc) as LoadedSource);
   const survivors = readSurvivors(contractPath);
   const here = dirname(contractPath);
   // The gates read each source as it was read here: the spec and every RFC.
@@ -314,7 +320,7 @@ export function extract(xmlPath: string, contractPath: string): ExtractResult {
   const full = ordered({
     $schema: posix(relative(here, join(VECTOR_ROOT, SCHEMA))),
     ...contract,
-    source: { ...contract.source, sha256: spec.sha256 },
+    source: { ...contract.source, sha256: main.sha256 },
     sources: contract.sources?.map((d) => {
       if (d.rfc === undefined) {
         // The spec itself, by its path from where the contract is written.
@@ -323,18 +329,78 @@ export function extract(xmlPath: string, contractPath: string): ExtractResult {
       }
       const got = rfcs.get(d.rfc) as LoadedSource;
       docs.set(d.id, got.doc);
-      return rfcEntry(got, contractPath);
+      const entry = rfcEntry(got, contractPath);
+      if (d.rfc !== mainRfc) return entry;
+      // The main RFC is named by its file alone, as RFC contracts always have.
+      const { path: _, ...named } = entry;
+      return named;
     }),
     ...(survivors ? { allowSurvivors: survivors } : {}),
   }) as unknown as RfcContract;
 
   // The gates `spec check` runs, but the source commands' and the module's.
-  const { issues } = runGates(full, { docs });
+  const { issues: found } = runGates(full, { docs });
+  // A sentence of an RFC main source the spec leaves out is refused at the
+  // keyword that names the RFC, saying where in the RFC it is.
+  const issues =
+    mainRfc === undefined
+      ? found
+      : found.map((i) =>
+          i.gate !== "completeness"
+            ? i
+            : {
+                ...i,
+                at: "source.main",
+                message: i.at.startsWith("§")
+                  ? `Section ${i.at.slice(1)} of RFC${mainRfc}: ${i.message}`
+                  : `RFC${mainRfc}: ${i.message}`,
+              },
+        );
   if (issues.length > 0)
     return {
       refusals: gateRefusals(issues, locator, survivorsPath(contractPath)),
     };
   return { text: canonicalJson(full) };
+}
+
+/**
+ * For `spec check --spec <specPath>` on a contract whose main source is an
+ * RFC: undefined when `specPath` is not a profile naming an RFC main source
+ * (it is then the main source's own text), else why the contract at
+ * `contractPath` is not the one that profile states ([] when it is). The RFC
+ * is still read from the contract's recorded file. Throws as extract does.
+ */
+export function profileProblems(
+  specPath: string,
+  contractPath: string,
+): string[] | undefined {
+  if (!specPath.endsWith(".xml")) return undefined;
+  let doc: V3Document;
+  try {
+    doc = loadSource({ id: "spec", path: specPath }, contractPath, specPath)
+      .doc as V3Document;
+  } catch {
+    // Not a profile extract could read; loadSources reports it as the text.
+    return undefined;
+  }
+  if (!("root" in doc) || !namesMainRfc(doc)) return undefined;
+  const name = basename(contractPath).replace(/\.json$/, "");
+  const names = doc.docName?.match(/^draft-(.+)-[0-9]{2}$/)?.[1];
+  if (names !== name)
+    return [
+      `${specPath} is the profile of contract "${names ?? ""}" (docName "${doc.docName ?? ""}"), not of ${name}`,
+    ];
+  const r = extract(specPath, contractPath);
+  if ("refusals" in r)
+    return [`${specPath} does not extract: ${r.refusals.join("; ")}`];
+  const now = existsSync(contractPath)
+    ? readFileSync(contractPath, "utf8")
+    : "";
+  if (r.text !== now)
+    return [
+      `${contractPath} is not what ${specPath} states; run: vector spec extract ${specPath} -o ${contractPath}`,
+    ];
+  return [];
 }
 
 /** Marks a last line that has no newline; JSON text holds no NUL. */

@@ -210,15 +210,40 @@ function lex(source: string, subset: string): Tok[] {
 /** A cursor over the tokens that skips comments unless asked for them. */
 class Cursor {
   private i = 0;
-  constructor(private readonly toks: Tok[]) {}
+  /**
+   * `iface`: the tokens are a ts-interface, where a module line skipped here,
+   * inside a signature, would leave the functions after it in the module
+   * before it, so it is refused.
+   */
+  constructor(
+    private readonly toks: Tok[],
+    private readonly iface = false,
+  ) {}
 
   /** The next token, comments included. */
   raw(): Tok {
     return this.toks[this.i];
   }
   peek(): Tok {
-    while (this.toks[this.i].kind === "comment") this.i++;
+    for (
+      let t = this.toks[this.i];
+      t.kind === "comment";
+      t = this.toks[this.i]
+    ) {
+      if (this.iface && moduleLine(t))
+        throw new Refusal(
+          "a module line goes between signatures, on its own line; move it out of this one",
+          at(t),
+        );
+      this.i++;
+    }
     return this.toks[this.i];
+  }
+  /** The next token past any comments, which stay unread. */
+  look(): Tok {
+    let j = this.i;
+    while (this.toks[j].kind === "comment") j++;
+    return this.toks[j];
   }
   next(): Tok {
     const t = this.peek();
@@ -318,7 +343,7 @@ function parseInterface(text: string): {
   functions: FnSig[];
   lines: number[];
 } {
-  const c = new Cursor(lex(text, IFACE));
+  const c = new Cursor(lex(text, IFACE), true);
   const head = c.raw();
   const m =
     head.kind === "comment" && head.lineComment
@@ -334,7 +359,39 @@ function parseInterface(text: string): {
   c.skipRaw();
   const functions: FnSig[] = [];
   const lines: number[] = [];
-  while (c.peek().kind !== "eof") {
+  // A later `// module: nish/<other>` line: the functions after it are
+  // reference functions of that module, which properties call but the test
+  // does not test. Any other comment is skipped.
+  let from = m[1];
+  for (;;) {
+    for (let t = c.raw(); t.kind === "comment"; t = c.raw()) {
+      const r = moduleLine(t);
+      if (r) {
+        if (!nishModuleFile(r[1]))
+          throw new Refusal(
+            `\`${r[1]}\` is not a nish module; write nish/<path>`,
+            at(t),
+          );
+        if (r[1] === from)
+          throw new Refusal(
+            `the functions above are already from ${r[1]}`,
+            at(t),
+          );
+        if (r[1] === m[1])
+          throw new Refusal(
+            `${m[1]} is the module under test; declare its functions first, before any \`// module:\` line`,
+            at(t),
+          );
+        if (from === m[1] && functions.length === 0)
+          throw new Refusal(
+            `${m[1]}, the module under test, declares no function; declare its functions before \`// module: ${r[1]}\``,
+            at(t),
+          );
+        from = r[1];
+      }
+      c.skipRaw();
+    }
+    if (c.peek().kind === "eof") break;
     c.expect("export");
     const isConst = c.eat("const");
     if (!isConst) c.expect("function");
@@ -364,14 +421,32 @@ function parseInterface(text: string): {
     c.expect(")");
     c.expect(":");
     const returns = sigType(c, true);
-    const body = c.peek();
+    // Look past comments without reading them: a `// module:` line may follow.
+    const body = c.look();
     if (body.text === "=>" || body.text === "{")
       throw new Refusal(
         `a ts-interface declares signatures only; remove the body of \`${name.text}\``,
         at(body),
       );
-    c.eat(";");
-    functions.push({ name: name.text, params, returns });
+    // A `;`, with comments before it, ends the signature; a module line
+    // there would be read past, so it goes after the `;`.
+    if (body.kind === "punct" && body.text === ";") {
+      for (let t = c.raw(); t.kind === "comment"; t = c.raw()) {
+        if (moduleLine(t))
+          throw new Refusal(
+            `end \`${name.text}\` with its \`;\` before this module line`,
+            at(t),
+          );
+        c.skipRaw();
+      }
+      c.next();
+    }
+    functions.push({
+      name: name.text,
+      ...(from === m[1] ? {} : { module: from }),
+      params,
+      returns,
+    });
     lines.push(name.line);
   }
   if (functions.length === 0)
@@ -380,6 +455,33 @@ function parseInterface(text: string): {
       at(c.peek()),
     );
   return { module: m[1], functions, lines };
+}
+
+/**
+ * The module a `// module: nish/<path>` comment names, or undefined for any
+ * other comment. Refuses a comment meant as one that is not: a block comment,
+ * or a comment of any style or case that starts `module:` or `module nish/`
+ * but does not parse, so the functions after it never silently keep the
+ * module above.
+ */
+function moduleLine(t: Tok): RegExpMatchArray | undefined {
+  const r = t.value.match(/^\s*module:\s*(\S+)\s*$/);
+  if (r && !t.lineComment)
+    throw new Refusal(
+      `a module line is a line comment; write \`// module: ${r[1]}\``,
+      at(t),
+    );
+  if (r) return r;
+  // A comment of any style or case whose text, past leading `/` and `*`, starts
+  // `module:` or `module nish/` was meant as a module line; passing over it
+  // would leave its functions in the module before it.
+  const body = t.value.replace(/^[\s/*]*/, "");
+  if (/^module(?:\s*:|\s+nish\/)/i.test(body))
+    throw new Refusal(
+      `a module line is \`// module: nish/<path>\`, one module, not \`${t.lineComment ? `//${t.value}` : `/*${t.value}*/`}\``,
+      at(t),
+    );
+  return undefined;
 }
 
 function sigType(c: Cursor, result: boolean): SigTy {

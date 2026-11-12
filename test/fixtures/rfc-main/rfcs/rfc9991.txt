@@ -1,0 +1,23 @@
+Independent Submission                                        V. Authors
+Request for Comments: 9991                                        vector
+Category: Informational                                    November 2026
+
+
+                          Mini Framing in Text
+
+1.  Introduction
+
+   Mini Framing prefixes a run of octets with its length.
+
+2.  Framing
+
+   A sender MUST prefix each frame with its length in one octet.  A
+   sender MUST NOT frame more than 255 octets.  A receiver MAY log a
+   frame.
+
+
+
+
+
+Authors                       Informational                     [Page 1]
+

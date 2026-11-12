@@ -1,0 +1,128 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "mini-frame",
+  "source": {
+    "rfc": 9990,
+    "title": "Mini Framing profile",
+    "sha256": "e1568cf2e2978072395883fccd2c48c796a2d96456b15b6333ff2ec6d318dfe1"
+  },
+  "sources": [
+    {
+      "id": "rfc9990",
+      "rfc": 9990,
+      "file": "rfcs/rfc9990.xml",
+      "sha256": "e1568cf2e2978072395883fccd2c48c796a2d96456b15b6333ff2ec6d318dfe1"
+    }
+  ],
+  "target": {
+    "module": "nish/mini/frame"
+  },
+  "requirements": [
+    {
+      "id": "R-PREFIX",
+      "section": "2",
+      "level": "MUST",
+      "quote": "A sender MUST prefix each frame with its length in one octet."
+    },
+    {
+      "id": "R-LIMIT",
+      "section": "2",
+      "level": "MUST NOT",
+      "quote": "A sender MUST NOT frame more than 255 octets."
+    }
+  ],
+  "functions": [
+    {
+      "name": "frame",
+      "params": [
+        {
+          "name": "data",
+          "type": "bytes"
+        }
+      ],
+      "returns": "bytes?"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "property",
+      "id": "P-PREFIX",
+      "title": "a frame is one length octet, then the data",
+      "covers": ["R-PREFIX"],
+      "forall": [
+        {
+          "name": "data",
+          "type": "bytes",
+          "minLen": 0,
+          "maxLen": 255
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "op": "len",
+            "args": [
+              {
+                "op": "unwrap",
+                "args": [
+                  {
+                    "call": "frame",
+                    "args": [
+                      {
+                        "var": "data"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "+",
+            "args": [
+              {
+                "op": "len",
+                "args": [
+                  {
+                    "var": "data"
+                  }
+                ]
+              },
+              {
+                "int": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-LIMIT",
+      "title": "more than 255 octets is no frame",
+      "covers": ["R-LIMIT"],
+      "forall": [
+        {
+          "name": "data",
+          "type": "bytes",
+          "minLen": 256,
+          "maxLen": 300
+        }
+      ],
+      "assert": {
+        "op": "isNull",
+        "args": [
+          {
+            "call": "frame",
+            "args": [
+              {
+                "var": "data"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
