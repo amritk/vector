@@ -433,6 +433,68 @@ Interface types are `u8[]`, `string`, `i32`, `u32`, `boolean` and
 `Secret<u8[]>`. `u8[]` and `string` may be `| null`, and `Secret<u8[]>` may be
 `| null` as a return type only.
 
+**The contract's vocabulary.** The contract schema
+([`schemas/rfc-contract.json`](schemas/rfc-contract.json)) names every type
+and literal in no language's terms, and
+[`src/rfc/vocab.ts`](src/rfc/vocab.ts) exports the same lists. The schema is
+wider than what the profile reads today: it holds everything a spec can say,
+and each language drops what it cannot express. What vector does not yet do
+is marked *not yet*.
+
+| Contract type | ts-interface spelling | Means |
+|---|---|---|
+| `bytes` | `u8[]` | an octet string, written as lowercase hex (RFC 4648 §8) |
+| `string` | `string` | a Unicode string, UTF-8 (RFC 3629) |
+| `bool` | `boolean` | true or false |
+| `secret-bytes` | `Secret<u8[]>` | bytes whose value is secret; a language may wrap them, but in the contract they are bytes |
+| `i8` … `i64`, `u8` … `u64` | `i8` … `i64`, `u8` … `u64` | fixed-width integers, as C11 §7.20.1.1 `intN_t`/`uintN_t`; `+ - *` wrap modulo 2^N |
+| `f64` | `f64` | an IEEE 754-2019 binary64 value |
+| `B?` | `B \| null` | see below; any type may take it |
+
+The profile reads only the spellings of the first paragraph: `i8`, `i16`,
+`i64`, `u8`, `u16`, `u64` and `f64`, and `| null` on `boolean`, an integer or
+`f64`, are *not yet* read.
+
+`B?` means one of two things, by position, and its absent value is written
+`null` either way:
+
+- **refusing return**: as a return type, the function declines this input and
+  returns no value (`hexDecode("0") === null`);
+- **optional input**: as a parameter type, the argument may be absent.
+
+**Literals in the contract.** Beyond the profile's literals above:
+
+- **`{"int": …}`** is a JSON integer up to ±(2^53−1); a wider value, such as a
+  `u64` or `i64` near its bound, is a decimal string (`{"int":
+  "18446744073709551615"}`), as RFC 7493 §2.2 and RFC 8259 §6 recommend.
+- **`{"f64": "0.1"}`** is decimal text, read to binary64 with roundTiesToEven
+  (IEEE 754-2019 §5.12.2, §4.3.1), or `NaN`, `Infinity`, `-Infinity`; `-0` is
+  negative zero. `bits`, when given, is the binary64 encoding as 16
+  lowercase hex digits, big-endian (§3.4), and must be the one the text
+  converts to; for `NaN` it fixes the payload.
+- **A vector's `tolerance`** says how close an f64 result must be: `{"ulps":
+  n}` units in the last place, or `{"abs": "1e-9"}` (a decimal string, so it
+  is not itself rounded), with the `section` and `quote` of the source that
+  allows it. Without one an f64 result is compared bit for bit, so a NaN
+  equals a NaN of the same bits.
+
+The profile has no spelling for an f64 literal or a tolerance yet, and vector
+does *not yet* sample a `forall` over `f64`: the schema records such a domain
+(`{"type": "f64", "min": "-1.5", "max": "Infinity"}`, bounds as f64 text) and
+vector refuses the property. A `forall` integer may be any of `i8` … `u64`,
+with the same wide-integer strings for bounds; the profile reads only `i32`.
+
+**Modules and names.** `target.module` and a reference function's `module`
+are a neutral path: two or more lowercase segments joined by `/`
+(`nish/crypto/hkdf`), each a path segment of RFC 3986 §3.3 limited to
+`[a-z][a-z0-9_]*`. A language derives its own module name from the path; where
+its rule gives the wrong one, `target.modules` overrides it per language
+(`{"java": "org.example.Hkdf"}`). Likewise `names` on a function or a
+parameter overrides its name per language (`{"rust": "expand"}`). The
+languages are `rust`, `ruby`, `zig`, `go`, `cpp`, `csharp`, `c`, `java`,
+`kotlin`, `python`, `typescript`, `php`, `swift` and `dart`. The profile has
+no spelling for an override *yet*; the schema carries them.
+
 **ts-property blocks** are a small, total subset of TypeScript:
 
 ```ts
