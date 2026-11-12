@@ -1,8 +1,8 @@
 // A contract's sources, read from disk: each declared source's file, found
 // as sourceFile finds it and judged as sourcePathProblem judges it, then read
-// by the reader its form needs — RFC XML v3 (xmlv3.ts), or an RFC's plain text
-// or a markdown spec (spectext.ts). vector never touches the network: an RFC
-// found nowhere is an error that says how to fetch it.
+// by the reader its form needs — RFC XML v3 (xmlv3.ts) or an RFC's plain text
+// (spectext.ts). vector never touches the network: an RFC found nowhere is an
+// error that says how to fetch it.
 
 import {
   type RfcContract,
@@ -77,7 +77,7 @@ export interface LoadedSource {
 
 /**
  * A source's document, by its form: RFC XML v3 if the file is .xml, else an
- * RFC's text or a markdown spec. The name, not a sniff of the text, decides,
+ * RFC's plain text. The name, not a sniff of the text, decides,
  * so the reader a file gets is plain from its name. A refusal names the file.
  */
 export function readDocument(

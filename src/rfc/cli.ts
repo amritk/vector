@@ -1,5 +1,5 @@
 // `vector spec …` (alias `vector rfc …`) — spec → contract → Nish test. A spec
-// is an RFC's plain text or a markdown document with numbered headings.
+// is RFC XML v3 or an RFC's plain text.
 //
 //   vector spec check   <contract.json>   gates + Z3 domains; exit 0 when valid
 //   vector spec emit    <contract.json> -o <main.ts>
@@ -59,7 +59,7 @@ export const RFC_USAGE = `Usage: vector spec check <contract.json> [options]
        (vector rfc … is the same command)
 
 Options:
-  --spec <file>       the main source's text, an RFC or a markdown spec (--rfc is the same)
+  --spec <file>       the main source's text, RFC XML v3 or RFC plain text (--rfc is the same)
                       (default: the source's path, relative to the contract, or
                       rfcs/rfc<N>.xml, else rfc<N>.txt, next to the contract
                       or in vector)

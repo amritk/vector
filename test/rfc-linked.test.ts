@@ -38,10 +38,6 @@ const FIXTURE = linked as unknown as RfcContract;
 const clone = (): RfcContract => JSON.parse(JSON.stringify(FIXTURE));
 const RFC8707 = readFileSync(join(VECTOR_ROOT, "rfcs/rfc8707.xml"), "utf8");
 const RFC4648 = readFileSync(join(VECTOR_ROOT, "rfcs/rfc4648.txt"), "utf8");
-const SPEC = readFileSync(
-  join(VECTOR_ROOT, "test/fixtures/legacy/example-hex.md"),
-  "utf8",
-);
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -232,15 +228,15 @@ describe("loading a source", () => {
 
   test("the name decides the reader: .xml is RFC XML, and only .xml", () => {
     expect("normative" in readDocument("x.xml", RFC8707)).toBe(true);
-    expect("normative" in readDocument("x.md", SPEC)).toBe(false);
+    expect("normative" in readDocument("x.txt", RFC4648)).toBe(false);
     expect(() => readDocument("x.txt", RFC8707)).toThrow(
       /^x\.txt: not a specification/,
     );
   });
 
   test("a refusal names the file", () => {
-    expect(() => readDocument("bad.md", "no headings here\n")).toThrow(
-      /^bad\.md: /,
+    expect(() => readDocument("bad.txt", "no headings here\n")).toThrow(
+      /^bad\.txt: /,
     );
     expect(() => readDocument("bad.xml", "<rfc><middle>")).toThrow(
       /^bad\.xml:\d+: /,
@@ -249,8 +245,8 @@ describe("loading a source", () => {
 
   test("a source it cannot open", () => {
     const c = join(tmp(), "c.json");
-    expect(() => loadSource({ id: "x", path: "gone.md" }, c)).toThrow(
-      `cannot read ${join(dirname(c), "gone.md")}`,
+    expect(() => loadSource({ id: "x", path: "gone.txt" }, c)).toThrow(
+      `cannot read ${join(dirname(c), "gone.txt")}`,
     );
   });
 
@@ -302,8 +298,8 @@ describe("loading a source", () => {
     );
     // Not for a source other than the main one.
     c.source.main = "spec";
-    c.sources.push({ id: "spec", path: "spec.md" });
-    write(d, "contracts/spec.md", SPEC);
+    c.sources.push({ id: "spec", path: "spec.txt" });
+    write(d, "contracts/spec.txt", RFC4648);
     let message = "";
     try {
       loadSources(c, contract);

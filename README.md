@@ -1,21 +1,171 @@
 # vector — formally verified functions, written in Claude Code
 
-Turn a casual natural-language request into a **formally verified** TypeScript
-program. vector itself never calls a model: Claude Code (the bundled skills, on
-your Claude subscription) writes the spec plan and program, and vector judges
-them. No API key.
+vector is a judge for code a model writes. It does two jobs, and it never
+calls a model itself. Claude Code, through the bundled skills and your Claude
+subscription, does the writing. vector checks it, so you need no API key.
 
-Inspired by Dijkstra's EWD249 — *"testing can show the presence of
-bugs, but never their absence"* — vector never treats generated code as a black
-box: an SMT solver (Z3) **proves** every postcondition holds for **all** inputs
-before a single line of code is emitted. If a contract can't be proven, the code
-is withheld.
+1. **Verified functions.** Claude Code turns a request such as "convert USD to
+   EUR at 0.91, and throw on negatives" into a contract and a program. The Z3
+   solver then **proves** that every postcondition holds for **all** inputs.
+   Only proven code is written out as TypeScript.
+2. **Spec conformance.** You write a spec for a nish module, or for the RFC it
+   implements, in kramdown-rfc markdown. vector reads a **contract** out of it.
+   Every quote is checked against the RFC it cites, every test vector says
+   where its expected value comes from, and every MUST is tested or
+   explicitly excluded. Then vector compiles the contract to a Nish test.
 
-It also turns **specs into conformance contracts** for nish's crypto. A spec is
-written in kramdown-rfc markdown, and `vector spec extract` reads the
-contract out of it: requirements checked verbatim against the RFCs they quote,
-test vectors, and properties sampled at solver-chosen boundaries, compiled to a
-Nish test. See [RFC → contract → Nish test](#rfc--contract--nish-test).
+The idea comes from Dijkstra's EWD249: *"testing can show the presence of
+bugs, but never their absence"*.
+
+## One of each file
+
+The examples below are real excerpts from this repository.
+
+### Verified functions
+
+**1. SpecPlan** (`test/fixtures/currency-spec.json`). This is the formal
+contract: axioms, and the units that must satisfy them.
+
+```json
+{
+  "programName": "usd_to_eur_converter",
+  "axioms": [
+    { "id": "AX1", "kind": "pre", "statement": "The USD amount must be non-negative (throws if amount < 0)." },
+    { "id": "AX2", "kind": "post", "statement": "For all amount >= 0, the result equals amount times 0.91." },
+    { "id": "AX-RATE", "kind": "pre", "statement": "The exchange rate applied must be strictly positive." },
+    { "id": "AX2a", "kind": "post", "statement": "Applying a rate to an amount yields amount times rate." },
+    …
+  ],
+  "units": [
+    { "name": "applyRate", "layer": 1, "purpose": "Multiply an amount by a positive exchange rate.",
+      "params": [{ "name": "amount", "type": "Real" }, { "name": "rate", "type": "Real" }],
+      "returnType": "Real", "relevantAxiomIds": ["AX-RATE", "AX2a"] },
+    …
+  ]
+}
+```
+
+**2. Program** (`test/fixtures/currency.json`). This is the implementation
+and its contract in vector-lang, a small expression AST that Z3 can reason
+about. The excerpt is one entry of the file's `functions` list, without its
+`purpose`.
+
+```json
+{ "programName": "usd_to_eur_converter", "functions": [
+{
+  "name": "applyRate", "layer": 1,
+  "params": [{ "name": "amount", "type": "Real" }, { "name": "rate", "type": "Real" }],
+  "returnType": "Real",
+  "requires": [{ "axiomId": "AX-RATE",
+    "expr": { "kind": "binop", "op": ">", "left": { "kind": "var", "name": "rate" }, "right": { "kind": "num", "value": "0" } } }],
+  "ensures": [{ "axiomId": "AX2a",
+    "expr": { "kind": "binop", "op": "==", "left": { "kind": "var", "name": "result" },
+              "right": { "kind": "binop", "op": "*", "left": { "kind": "var", "name": "amount" }, "right": { "kind": "var", "name": "rate" } } } }],
+  "body": { "kind": "binop", "op": "*", "left": { "kind": "var", "name": "amount" }, "right": { "kind": "var", "name": "rate" } }
+}, … ] }
+```
+
+**3. Proven TypeScript**, written by
+`vector --verify test/fixtures/currency-spec.json test/fixtures/currency.json --emit converter.ts` only
+once Z3 has proven every contract.
+
+```ts
+/**
+ * Multiply an amount by a positive exchange rate.
+ * Layer 1 — Hoare triple proven by Z3:
+ *   requires AX-RATE: rate > 0
+ *   ensures  AX2a: result == amount * rate
+ */
+export function applyRate(amount: number, rate: number): number {
+  if (!Number.isFinite(amount)) {
+    throw new RangeError("domain violated: amount must be a finite number");
+  }
+  if (!Number.isFinite(rate)) {
+    throw new RangeError("domain violated: rate must be a finite number");
+  }
+  if (!(rate > 0)) {
+    throw new RangeError("requires violated [AX-RATE]: rate > 0");
+  }
+  return amount * rate;
+}
+```
+
+### Spec conformance
+
+**4. Spec** (`specs/example-hex.md`). This is kramdown-rfc markdown. Each
+requirement is a BCP 14 sentence with an id. Properties and a table of test
+vectors cover the requirements.
+
+````markdown
+## Length
+
+hexEncode MUST return exactly two characters per input byte.
+{: #R-ENC-LEN}
+
+~~~ ts-property
+// P-ENC-LEN covers R-ENC-LEN — two characters per byte
+forall (b: u8[] /* 0..64 */) => hexEncode(b).length === 2 * b.length
+~~~
+
+…
+
+# Test Vectors
+
+| Id | Call | Expected | Covers | Source | Title |
+|----|------|----------|--------|--------|-------|
+| V5 | `hexEncode([00 0f f0 ff])` | `"000ff0ff"` | R-ENC-LEN, R-ENC-DIGITS, R-ENC-ONLY | `python3 -c 'print(bytes([0,15,240,255]).hex())'` | every nibble boundary, encoded high nibble first in lowercase |
+````
+
+**5. Spec XML** (`specs/example-hex.xml`). `scripts/build-spec.sh` builds it
+from the markdown with kramdown-rfc and xml2rfc. vector reads this file, not
+the markdown.
+
+```xml
+<section anchor="length">
+  <name>Length</name>
+  <t anchor="R-ENC-LEN">hexEncode <bcp14>MUST</bcp14> return exactly two characters per input byte.</t>
+  <sourcecode type="ts-property"><![CDATA[
+// P-ENC-LEN covers R-ENC-LEN — two characters per byte
+forall (b: u8[] /* 0..64 */) => hexEncode(b).length === 2 * b.length
+]]></sourcecode>
+</section>
+```
+
+**6. Contract** (`contracts/example-hex.json`), written by
+`vector spec extract specs/example-hex.xml -o contracts/example-hex.json`.
+It holds every requirement quoted verbatim, every vector with its source,
+and every property.
+
+```json
+{
+  "kind": "vector",
+  "id": "V5",
+  "title": "every nibble boundary, encoded high nibble first in lowercase",
+  "covers": ["R-ENC-LEN", "R-ENC-DIGITS", "R-ENC-ONLY"],
+  "source": { "command": "python3 -c 'print(bytes([0,15,240,255]).hex())'" },
+  "section": "6",
+  "call": "hexEncode",
+  "args": [{ "hex": "000ff0ff" }],
+  "expect": { "str": "000ff0ff" }
+}
+```
+
+**7. Nish test**, written by
+`vector spec emit contracts/example-hex.json -o hex_test.ts`. Each check names
+its clause, and quotes the requirements it covers.
+
+```ts
+/**
+ * every nibble boundary, encoded high nibble first in lowercase
+ *
+ * R-ENC-LEN — example-hex §3.1, MUST:
+ *   hexEncode MUST return exactly two characters per input byte.
+ * ...
+ */
+const clause_V5 = (t: Suite): boolean => t.eqStr("[V5] every nibble boundary, encoded high nibble first in lowercase (R-ENC-LEN, R-ENC-DIGITS, R-ENC-ONLY)", hexEncode(unhex("000ff0ff")), "000ff0ff");
+```
+
+## How a run goes
 
 ```
 prompt ─▶ Architect ─▶ formal axioms + a layered decomposition   (the SpecPlan)
@@ -24,15 +174,19 @@ prompt ─▶ Architect ─▶ formal axioms + a layered decomposition   (the Sp
        ─▶ emit      ─▶ runnable TypeScript + a "Dijkstra Dashboard"
 ```
 
-Claude Code plays Architect and Generator; it only ever *proposes* a structured
-artifact, and a theorem prover holds the veto (`vector --verify`). When Z3 finds
-a counterexample it flows back as structured feedback and Claude repairs the
-program in context, then re-verifies. **Unproven code is never emitted.**
+Claude Code plays Architect and Generator. It only ever *proposes* a
+structured artifact, and a theorem prover holds the veto
+(`vector --verify`). When Z3 finds a counterexample, the counterexample goes
+back to Claude as structured feedback. Claude repairs the program in context
+and verifies it again. **Unproven code is never emitted.** For specs, see
+[RFC → contract → Nish test](#rfc--contract--nish-test).
 
 ---
 
 ## Contents
 
+- [One of each file](#one-of-each-file)
+- [How a run goes](#how-a-run-goes)
 - [RFC → contract → Nish test](#rfc--contract--nish-test)
   - [Writing a spec (kramdown-rfc)](#writing-a-spec-kramdown-rfc)
 - [The idea](#the-idea)
@@ -359,11 +513,10 @@ for them, so `exports` fails on any changed export no clause tests.
 ### Specs, sources and provenance
 
 `extract` writes a contract from a kramdown-rfc spec. A contract can also cite
-documents vector reads as they are: RFC XML v3 (`.xml`), an RFC's plain text
-(with its `Request for Comments: N` header and form feeds), or a markdown
-document with numbered headings (`## 3. Encoding` is section `3`,
-`## Appendix A. Vectors` is `A`). Anything else is refused. These are what
-`check --spec` and the linked RFCs are read as.
+documents vector reads as they are. A source is RFC XML v3 (`.xml`) or an
+RFC's plain text (with its `Request for Comments: N` header and form feeds).
+Anything else is refused. These are what `check --spec` and the linked RFCs
+are read as.
 
 A contract may cite several documents:
 
@@ -1298,7 +1451,7 @@ src/
   rfc/              spec → contract → Nish test: profile.ts (kramdown-rfc
                     XML → contract), literals.ts, contract.ts (format, typing),
                     rfctext.ts (sections, hex, BCP 14 sentences), spectext.ts
-                    (markdown specs, format detection), gates.ts,
+                    (RFC plain text, hidden-text check), gates.ts,
                     sample.ts (Z3 boundaries), emit-nish.ts, run.ts, report.ts,
                     cli.ts (`vector spec`)
 contracts/          RFC contracts (RFC 5869 HKDF, RFC 8439 ChaCha20-Poly1305), extracted from specs/ with the RFC as main source

@@ -17,23 +17,35 @@ export interface RfcSection {
   /** Only the section's own lines, up to its first subsection. */
   ownLines: string[];
   /**
-   * The lines hex runs are read from, when they differ from `lines` (the
-   * markdown reader adds each bracketed byte list on a line of its own).
+   * The lines hex runs are read from, when they differ from `lines` (the XML
+   * reader adds each bracketed byte list on a line of its own, and splits a
+   * line holding blocks of its own, such as a table cell, at each block).
    */
   hexLines?: string[];
   /**
+   * The section prints a bracketed byte list such as "[de ad be ef]" (XML),
+   * so its bare digit pairs under no name are bytes on purpose.
+   */
+  printsByteList?: boolean;
+  /**
+   * Where each block (a paragraph, a table cell, a code block) starts, as
+   * indexes into `hexLines ?? lines`, when the reader knows them (XML): a
+   * value never runs across a block boundary.
+   */
+  blockStarts?: number[];
+  /**
    * `lines` with code, table cells and blockquotes blanked out, when the
-   * reader knows them (markdown); only prose states a vector's result.
+   * reader knows them (XML); only prose states a vector's result.
    */
   proseLines?: string[];
   /**
    * Per line of `lines`, the line exactly as written when it is code (a
-   * fenced block or an indented code line), else null. Markdown only.
+   * `<sourcecode>` or `<artwork>` line), else null. XML only.
    */
   codeLines?: (string | null)[];
   /**
-   * Per line of `lines`, its inline code spans (`` `abc` ``), whose backticks
-   * the line itself drops: each is a value printed whole. Markdown only.
+   * Per line of `lines`, its inline code spans (`<tt>abc</tt>`), whose tags
+   * the line itself drops: each is a value printed whole. XML only.
    */
   spanLines?: string[][];
 }
@@ -42,13 +54,11 @@ export interface RfcDocument {
   number: number | null;
   sections: Map<string, RfcSection>;
   /**
-   * Text outside every numbered section (a markdown spec's unnumbered
-   * headings and preamble). Its normative sentences cannot be cited, so the
-   * completeness gate refuses any it holds.
+   * Text outside every numbered section (unnumbered sections, such as a
+   * kramdown-rfc spec's unnumbered headings). Its normative sentences cannot
+   * be cited, so the completeness gate refuses any it holds.
    */
   loose?: RfcSection;
-  /** A markdown spec's lines exactly as written (line ends normalized). */
-  source?: string[];
 }
 
 // A page break in the .txt rendering: a footer line ending "[Page N]", a form
@@ -109,7 +119,7 @@ export function sectionText(sec: RfcSection): string {
 
 /** The section's lines, each whitespace-collapsed, still one per line. */
 /**
- * Per line of `sectionLines`, the inline code spans printed on it (markdown;
+ * Per line of `sectionLines`, the inline code spans printed on it (XML;
  * none for an RFC), normalized like the line.
  */
 export function sectionSpans(sec: RfcSection): string[][] {
@@ -167,7 +177,7 @@ export interface HexValue {
 // "Plaintext::", or a short heading-like line with no colon ("The ChaCha20
 // Key", RFC 8439 A.5) that does not end a sentence.
 const LABEL_LINE_RE = /^\s*(?:o\s+)?([^\s:=][^:=]{0,79}?)\s*[:=]+\s*$/;
-// Never a line holding brackets or quotes: in a markdown spec that is the
+// Never a line holding brackets or quotes: in a spec that is the
 // line a byte list ("hexEncode([00 0f])") was read from, not its name.
 const SHORT_LABEL_RE = /^\s*([A-Za-z][^:=()[\]"'`]{0,39}?)\s*$/;
 const labelLine = (line: string): string | null => {
@@ -195,14 +205,17 @@ const labelBefore = (text: string): string =>
  * own first line ("Key =  0b0b…"), whose run the lines below continue.
  * Lines of bare digit pairs with no hex letter and no 0x or colons are a
  * decimal number, not bytes, and are left out, unless printed under a name
- * that does not call them a number, or in a markdown spec, under no name ("Data:" over "4869205468657265" is hex;
- * "Input scalar as a number (base 10):" over "31029842492115040904…" is not).
+ * that does not call them a number, or, in a section printing a byte list,
+ * under no name ("Data:" over "4869205468657265" is hex; "Input scalar as a
+ * number (base 10):" over "31029842492115040904…" is not). A value never runs
+ * across a block boundary (`blockStarts`).
  */
 export function hexValues(sec: RfcSection): HexValue[] {
   const values: HexValue[] = [];
-  // A markdown spec prints bytes on purpose (a byte list, a code block, a
-  // cell): there only a name calling them a number makes digits decimal.
-  const markdown = sec.hexLines !== undefined;
+  // A section printing a byte list prints bytes on purpose: there only a
+  // name calling them a number makes digits decimal.
+  const onPurpose = sec.printsByteList === true;
+  const blockStarts = new Set(sec.blockStarts);
   let cur = "";
   let label: string | null = null;
   // Every line of the current value was bare digit pairs.
@@ -215,7 +228,7 @@ export function hexValues(sec: RfcSection): HexValue[] {
     const decimal =
       bareOnly &&
       /^[0-9]+$/.test(cur) &&
-      ((label === null && !markdown) ||
+      ((label === null && !onPurpose) ||
         (label !== null && DECIMAL_LABEL_RE.test(label)));
     if (cur && !decimal) values.push({ hex: cur, label });
     cur = "";
@@ -230,7 +243,9 @@ export function hexValues(sec: RfcSection): HexValue[] {
       pending = null;
     } else if (!bare) bareOnly = false;
   };
-  for (const rawLine of sec.hexLines ?? sec.lines) {
+  for (const [i, rawLine] of (sec.hexLines ?? sec.lines).entries()) {
+    // A block boundary ends a value; the name above it still names the next.
+    if (blockStarts.has(i)) flush();
     const aside = rawLine.match(ASIDE_RE);
     const line =
       aside && !/^[0-9a-fA-F:\s]+$/.test(aside[1])
