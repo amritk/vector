@@ -334,7 +334,36 @@ function parseInterface(text: string): {
   c.skipRaw();
   const functions: FnSig[] = [];
   const lines: number[] = [];
-  while (c.peek().kind !== "eof") {
+  // A later `// module: nish/<other>` line: the functions after it are
+  // reference functions of that module, which properties call but the test
+  // does not test. Any other comment is skipped.
+  let from = m[1];
+  for (;;) {
+    for (let t = c.raw(); t.kind === "comment"; t = c.raw()) {
+      const r = t.lineComment
+        ? t.value.match(/^\s*module:\s*(\S+)\s*$/)
+        : null;
+      if (r) {
+        if (!nishModuleFile(r[1]))
+          throw new Refusal(
+            `\`${r[1]}\` is not a nish module; write nish/<path>`,
+            at(t),
+          );
+        if (r[1] === from)
+          throw new Refusal(
+            `the functions above are already from ${r[1]}`,
+            at(t),
+          );
+        if (r[1] === m[1])
+          throw new Refusal(
+            `${m[1]} is the module under test; declare its functions first, before any \`// module:\` line`,
+            at(t),
+          );
+        from = r[1];
+      }
+      c.skipRaw();
+    }
+    if (c.peek().kind === "eof") break;
     c.expect("export");
     const isConst = c.eat("const");
     if (!isConst) c.expect("function");
@@ -371,7 +400,12 @@ function parseInterface(text: string): {
         at(body),
       );
     c.eat(";");
-    functions.push({ name: name.text, params, returns });
+    functions.push({
+      name: name.text,
+      params,
+      returns,
+      ...(from === m[1] ? {} : { module: from }),
+    });
     lines.push(name.line);
   }
   if (functions.length === 0)
