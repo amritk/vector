@@ -336,11 +336,10 @@ for them, so `exports` fails on any changed export no clause tests.
 ### Specs, sources and provenance
 
 `extract` writes a contract from a kramdown-rfc spec. A contract can also cite
-documents vector reads as they are: RFC XML v3 (`.xml`), an RFC's plain text
-(with its `Request for Comments: N` header and form feeds), or a markdown
-document with numbered headings (`## 3. Encoding` is section `3`,
-`## Appendix A. Vectors` is `A`). Anything else is refused. These are what
-`check --spec` and the linked RFCs are read as.
+documents vector reads as they are. A source is RFC XML v3 (`.xml`) or an
+RFC's plain text (with its `Request for Comments: N` header and form feeds).
+Anything else is refused. These are what `check --spec` and the linked RFCs
+are read as.
 
 A contract may cite several documents:
 
@@ -1275,7 +1274,7 @@ src/
   rfc/              spec → contract → Nish test: profile.ts (kramdown-rfc
                     XML → contract), literals.ts, contract.ts (format, typing),
                     rfctext.ts (sections, hex, BCP 14 sentences), spectext.ts
-                    (markdown specs, format detection), gates.ts,
+                    (RFC plain text, hidden-text check), gates.ts,
                     sample.ts (Z3 boundaries), emit-nish.ts, run.ts, report.ts,
                     cli.ts (`vector spec`)
 contracts/          RFC contracts (RFC 5869 HKDF, RFC 8439 ChaCha20-Poly1305)

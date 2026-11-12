@@ -22,65 +22,80 @@ import { type SourceRun, runGates } from "../src/rfc/gates.ts";
 import { renderReport, reportJson } from "../src/rfc/report.ts";
 import {
   type RfcDocument,
-  hexRuns,
   hexValues,
   intLabelled,
   intRounds,
-  normativeSentences,
   parseRfc,
   sectionLines,
-  sectionText,
 } from "../src/rfc/rfctext.ts";
 import { runNishTest, runSourceCommands } from "../src/rfc/run.ts";
 import {
   LOOSE_SECTION,
-  detectFormat,
   hiddenText,
   parseDocument,
-  parseMarkdownSpec,
 } from "../src/rfc/spectext.ts";
+import { parseV3 } from "../src/rfc/xmlv3.ts";
 
-// Markdown specs, multi-document contracts and vector provenance. Every gate
+// Spec contracts, multi-document contracts and vector provenance. Every gate
 // here has a refusing test next to its passing one.
 
-/** A small markdown spec: BCP 14 boilerplate, numbered sections, a table, a fence, inline code. */
-const SPEC = `# Hex Encoding
+/** A paragraph's text with `code` as <tt> and each BCP 14 keyword tagged. */
+const kw = (s: string): string =>
+  s
+    .replace(/`([^`]*)`/g, "<tt>$1</tt>")
+    .replace(
+      /\b(MUST NOT|MUST|SHALL NOT|SHALL|REQUIRED|SHOULD NOT|SHOULD|MAY)\b/g,
+      "<bcp14>$1</bcp14>",
+    );
+/** A numbered section of RFC XML v3. */
+const sec = (name: string, body: string): string =>
+  `<section><name>${name}</name>\n${body}\n</section>`;
+/** Artwork: its lines kept as printed. */
+const art = (s: string): string => `<artwork><![CDATA[\n${s}\n]]></artwork>`;
 
-## 1. Introduction
-
-The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
-"SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
-"OPTIONAL" in this document are to be interpreted as described in
-BCP 14 [RFC2119] [RFC8174] when, and only when, they appear in all
-capitals, as shown here.
-
-## 2. Encoding
-
-An encoder MUST emit two lowercase digits per byte.
-
-### 2.1. Decoding
-
-A decoder MUST return null for a string of odd length: \`abc\` decodes
-to null.
-
-## Notes
-
-\`\`\`text
-# not a heading
-\`\`\`
-
-## 3. Test Vectors
-
-| bytes | \`toHex\` |
-|-------|---------|
-| [de ad be ef] | \`deadbeef\` |
-
-## Appendix A. Sizes
-
-Block Count: 4
+/**
+ * A small RFC XML v3 spec: BCP 14 boilerplate, numbered sections, a table, a
+ * code block, inline code; `extra` sections follow Test Vectors.
+ */
+const spec = (extra = ""): string => `<?xml version="1.0" encoding="utf-8"?>
+<rfc version="3" docName="draft-hex-00">
+<front><title>Hex Encoding</title></front>
+<middle>
+<section anchor="intro"><name>Introduction</name>
+<t>The key words "<bcp14>MUST</bcp14>", "<bcp14>MUST NOT</bcp14>", "<bcp14>REQUIRED</bcp14>", "<bcp14>SHALL</bcp14>", "<bcp14>SHALL NOT</bcp14>",
+"<bcp14>SHOULD</bcp14>", "<bcp14>SHOULD NOT</bcp14>", "<bcp14>RECOMMENDED</bcp14>", "<bcp14>NOT RECOMMENDED</bcp14>", "<bcp14>MAY</bcp14>", and
+"<bcp14>OPTIONAL</bcp14>" in this document are to be interpreted as described in
+BCP 14 when, and only when, they appear in all
+capitals, as shown here.</t>
+</section>
+<section anchor="encoding"><name>Encoding</name>
+<t>An encoder <bcp14>MUST</bcp14> emit two lowercase digits per byte.</t>
+<section anchor="decoding"><name>Decoding</name>
+<t>A decoder <bcp14>MUST</bcp14> return null for a string of odd length: <tt>abc</tt> decodes
+to null.</t>
+</section>
+</section>
+<section anchor="vectors"><name>Test Vectors</name>
+<table><thead><tr><th>bytes</th><th><tt>toHex</tt></th></tr></thead>
+<tbody><tr><td>[de ad be ef]</td><td><tt>deadbeef</tt></td></tr></tbody></table>
+</section>
+${extra}
+<section numbered="false" anchor="notes"><name>Notes</name>
+<sourcecode type="text"># not a heading</sourcecode>
+</section>
+</middle>
+<back>
+<section anchor="sizes"><name>Sizes</name>
+<t>Block Count: 4</t>
+</section>
+</back>
+</rfc>
 `;
+const SPEC = spec();
+const read = (xml: string): RfcDocument => parseV3(xml, "hex.xml");
 
-const rfc5869 = parseRfc(readFileSync("rfcs/rfc5869.txt", "utf8"));
+const RFC5869_TEXT = readFileSync("rfcs/rfc5869.txt", "utf8");
+const rfc5869 = parseRfc(RFC5869_TEXT);
 const hkdf = hkdfContract as unknown as RfcContract;
 const clone = <T>(x: T): T => structuredClone(x);
 const vec = (c: RfcContract, id: string) =>
@@ -89,9 +104,9 @@ const vec = (c: RfcContract, id: string) =>
 /** A contract for the spec above: one vector of each provenance. */
 function hexContract(): RfcContract {
   return {
-    contract: "hex-md",
+    contract: "hex-xml",
     source: { title: "Hex Encoding", main: "hex" },
-    sources: [{ id: "hex", path: "hex.md" }],
+    sources: [{ id: "hex", path: "hex.xml" }],
     target: { module: "nish/encoding/hex" },
     functions: [
       {
@@ -156,7 +171,7 @@ function hexContract(): RfcContract {
   } as RfcContract;
 }
 
-const doc = parseMarkdownSpec(SPEC);
+const doc = read(SPEC);
 const section = (id: string) => {
   const s = doc.sections.get(id);
   if (!s) throw new Error(`no section ${id}`);
@@ -173,557 +188,55 @@ const GENERIC = (id: string, word = "null") =>
   `does not state the expected result: ${id} does not require "${word}" as the result (an affirmative MUST, SHALL or REQUIRED to, a result verb, then "${word}")`;
 
 describe("reading a spec", () => {
-  test("detects an RFC and a markdown spec", () => {
-    expect(detectFormat(readFileSync("rfcs/rfc5869.txt", "utf8"))).toBe("rfc");
-    expect(detectFormat(SPEC)).toBe("markdown");
-    expect(parseDocument(SPEC).number).toBeNull();
-    expect(parseDocument(readFileSync("rfcs/rfc5869.txt", "utf8")).number).toBe(
-      5869,
-    );
+  test("reads an RFC's plain text, and refuses XML handed to it", () => {
+    expect(parseDocument(RFC5869_TEXT).number).toBe(5869);
+    expect(() => parseDocument(SPEC)).toThrow("not a specification");
   });
 
   test("refuses a text that is neither", () => {
-    expect(() => detectFormat("just some prose\nwith no headings")).toThrow(
-      "not a specification",
+    expect(() => parseDocument("just some prose\nwith no headings")).toThrow(
+      "nor RFC XML v3 (a .xml file)",
     );
     // A Request-for-Comments line without page breaks is not an RFC either.
     expect(() =>
-      detectFormat("Request for Comments: 1\nno form feeds"),
+      parseDocument("Request for Comments: 1\nno form feeds"),
     ).toThrow("not a specification");
   });
 
   // #26: what the gates read must be what a reviewer sees.
   test("refuses a keyword hidden from the completeness gate", () => {
-    const extra = (line: string) =>
-      `${SPEC}\n## 9. Extra\n\nhexEncode ${line} pad its output.\n`;
+    const extra = (word: string) =>
+      `${RFC5869_TEXT}\nhexEncode ${word} pad its output.\n`;
     for (const [hidden, why] of [
-      ["M&#85;ST", 'character reference &#85; renders as "U"'],
-      ["M&#x55;ST", "character reference &#x55; renders"],
-      ["M&#8203;UST", "renders as invisible U+200B"],
-      ["M&zwj;UST", "character reference &zwj;: write the character itself"],
-      ["M\u200bUST", "invisible character U+200B"],
-      ["MU\u034fST", "invisible character U+034F"],
-      ["MUS\u0422", '"MUS\u0422" reads as MUST'],
-      ["\u0405HALL", "reads as SHALL"],
-      ["\uff2dUST", "reads as MUST"],
-      ["MU\u0301ST", "reads as MUST"],
+      ["M​UST", "invisible character U+200B"],
+      ["MU͏ST", "invisible character U+034F"],
+      ["MUSТ", '"MUSТ" reads as MUST'],
+      ["ЅHALL", "reads as SHALL"],
+      ["ＭUST", "reads as MUST"],
+      ["MÚST", "reads as MUST"],
       // Letters of another script beside ASCII ones, whatever the script.
-      ["M\u054dST", '"M\u054dST" reads as MUST'],
-      ["MU\ua4e2T", "reads as MUST"],
-      ["\ua4df\ua4f4\ua4e2\ua4d4", "reads as MUST"],
-      // Markup inside the word, which a renderer shows whole.
-      ["M*U*ST", '"M*U*ST" renders as MUST but markup splits it'],
-      ["M**U**ST", "renders as MUST"],
-      ["M<span>U</span>ST", "renders as MUST"],
-      ["MUS<i></i>T", "renders as MUST"],
-      ["SHA<!-- -->LL", "renders as SHALL"],
-      ["M`U`ST", "renders as MUST"],
+      ["MՍST", '"MՍST" reads as MUST'],
+      ["MUꓢT", "reads as MUST"],
+      ["ꓟꓴꓢꓔ", "reads as MUST"],
     ])
       expect(() => parseDocument(extra(hidden)), hidden).toThrow(why);
   });
 
-  test("ordinary text and markup escapes still read", () => {
-    const ok = `${SPEC}\n## 9. Extra\n\nA &amp; B, &lt;T&gt;, &quot;q&quot;, caf\u00e9, \u0394x, &#169;, \u0414\u041e\u041c\u0410, **MUST**, <b>SHALL</b>, \`MUST\`, S_HALL, x*y*z.\n`;
-    expect(hiddenText(ok, "markdown")).toEqual([]);
+  test("ordinary text still reads", () => {
+    const ok = `${RFC5869_TEXT}\nA café, Δx, &#169;, ДОМА, S_HALL, x*y*z, M&#85;ST.\n`;
+    expect(hiddenText(ok)).toEqual([]);
     expect(() => parseDocument(ok)).not.toThrow();
     // A leading byte-order mark is an encoding marker.
-    expect(hiddenText(`\ufeff${SPEC}`, "markdown")).toEqual([]);
-    // An RFC is plain text: a reference there reads as itself.
-    expect(hiddenText("M&#85;ST", "rfc")).toEqual([]);
+    expect(hiddenText(`﻿${RFC5869_TEXT}`)).toEqual([]);
     for (const f of [
       "rfcs/rfc4648.txt",
       "rfcs/rfc5869.txt",
       "rfcs/rfc8439.txt",
     ])
-      expect(hiddenText(readFileSync(f, "utf8"), "rfc"), f).toEqual([]);
-    expect(
-      hiddenText(
-        readFileSync("test/fixtures/legacy/example-hex.md", "utf8"),
-        "markdown",
-      ),
-    ).toEqual([]);
+      expect(hiddenText(readFileSync(f, "utf8")), f).toEqual([]);
   });
 
-  test("numbered headings are sections; a section includes its subsections", () => {
-    expect([...doc.sections.keys()]).toEqual(["1", "2", "2.1", "3", "A"]);
-    expect(doc.sections.get("2")?.title).toBe("Encoding");
-    expect(doc.sections.get("A")?.title).toBe("Sizes");
-    const two = section("2");
-    expect(sectionText(two)).toContain("A decoder MUST return null");
-    // Its own text stops at 2.1, and the unnumbered "Notes" ends both.
-    expect(two.ownLines.join("\n")).not.toContain("decoder");
-    expect(sectionText(two)).not.toContain("not a heading");
-  });
-
-  test("text under an unnumbered heading is loose; code in a fence is kept verbatim", () => {
-    expect(doc.loose?.id).toBe(LOOSE_SECTION);
-    const loose = doc.loose?.lines.join("\n") ?? "";
-    expect(loose).toContain("Hex Encoding");
-    expect(loose).toContain("# not a heading");
-    expect(loose).not.toContain("```");
-    expect(doc.sections.has("not a heading")).toBe(false);
-  });
-
-  test("table cells are lines, inline code loses its backticks, byte lists are hex", () => {
-    const three = section("3");
-    expect(three.lines).toContain("deadbeef");
-    expect(three.lines).toContain("toHex");
-    expect(three.lines.join("\n")).not.toContain("|");
-    expect(three.lines.join("\n")).not.toContain("---");
-    expect(hexRuns(three)).toContain("deadbeef");
-    expect(sectionText(section("2.1"))).toContain("abc decodes to null");
-  });
-
-  test("an escaped pipe stays in its cell; a fence closes only on its own kind", () => {
-    const d = parseMarkdownSpec(
-      "## 1. T\n\n| a \\| b | c |\n\n~~~\n```\n# x\n~~~\n\n## 2. U\n",
-    );
-    expect(d.sections.get("1")?.lines).toContain("a | b");
-    expect(d.sections.get("1")?.lines).toContain("# x");
-    expect(d.sections.get("1")?.lines).toContain("```");
-    expect([...d.sections.keys()]).toEqual(["1", "2"]);
-  });
-
-  test("the BCP 14 paragraph is not normative; every other MUST is", () => {
-    const found = normativeSentences(doc).map((n) => n.section);
-    expect(found).toEqual(["2", "2.1"]);
-    expect(sectionText(section("1"))).not.toContain("BCP 14");
-  });
-
-  test("only the BCP 14 sentence is dropped; a MUST in its paragraph stays", () => {
-    const d = parseMarkdownSpec(
-      "## 1. Rules\nKeys MUST be 32 bytes.\nThe key words in this document are to be interpreted as described in BCP 14.\n",
-    );
-    expect(normativeSentences(d)).toEqual([
-      {
-        section: "1",
-        keyword: "MUST",
-        at: 14,
-        sentence: "Rules Keys MUST be 32 bytes.",
-      },
-    ]);
-    expect(sectionText(d.sections.get("1") as never)).not.toContain("BCP 14");
-    // Any wording of the boilerplate, and a keyword after the reference in
-    // the same sentence is not swallowed with it.
-    const as = parseMarkdownSpec(
-      "## 1. Rules\nThe key words MUST and MAY are to be interpreted as in\nBCP 14 (RFC 2119) when in capitals, and a key MUST be 32 bytes.\n",
-    );
-    expect(normativeSentences(as).map((n) => n.keyword)).toEqual(["MUST"]);
-    expect(sectionText(as.sections.get("1") as never)).toContain(
-      "MUST be 32 bytes",
-    );
-  });
-
-  test("two cells or two rows of a table are never one hex run", () => {
-    const d = parseMarkdownSpec(
-      "## 1. Vectors\n\n| in |\n|----|\n| 01 |\n| 02 |\n\n| ab | cd |\n",
-    );
-    const runs = hexRuns(d.sections.get("1") as never);
-    expect(runs).toEqual(["01", "02", "ab", "cd"]);
-    // So a cite vector whose bytes are split across cells or rows is refused.
-    const split = parseMarkdownSpec(
-      SPEC.replace(
-        "| [de ad be ef] | `deadbeef` |",
-        "| de | ad |\n| be | ef |",
-      ),
-    );
-    const r = runGates(hexContract(), {
-      docs: docs(split),
-      commands: passed("V-CMD"),
-    });
-    expect(
-      messages(r).filter((m) => m.startsWith("[fidelity] V-CITE.args")),
-    ).toEqual([
-      '[fidelity] V-CITE.args[0]: 4-byte value is not printed in §3 ("Test Vectors")',
-    ]);
-    // A hex dump in an RFC still reads across its lines.
-    expect(hexRuns(rfc5869.sections.get("A.1") as never).join(" ")).toContain(
-      "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
-    );
-  });
-
-  test("a fence opens only without a backtick in its info string, and closes bare", () => {
-    const d = parseMarkdownSpec(
-      "## 1. T\n\n```a ` b\n\n## 2. U\n\n```text\n## 9. X\n``` not a close\n## 8. Y\n````\n\n## 3. V\n",
-    );
-    expect([...d.sections.keys()]).toEqual(["1", "2", "3"]);
-    expect(d.sections.get("2")?.lines).toContain("## 9. X");
-    expect(d.sections.get("2")?.lines).toContain("``` not a close");
-  });
-
-  test("an HTML comment is dropped, a heading inside it included", () => {
-    const d = parseMarkdownSpec(
-      "## 1. T\n\nKeep <!-- drop --> this.\n<!--\n## 2. Hidden\nKeys MUST be hidden.\n-->\n## 3. V\n",
-    );
-    expect([...d.sections.keys()]).toEqual(["1", "3"]);
-    expect(sectionText(d.sections.get("1") as never)).toContain("Keep this.");
-    expect(sectionText(d.sections.get("1") as never)).not.toContain("drop");
-    expect(normativeSentences(d)).toEqual([]);
-  });
-
-  test("a shell script's # comment is not a markdown spec", () => {
-    expect(() =>
-      detectFormat("#!/bin/sh\n# build the thing\necho hi\n"),
-    ).toThrow("numbered # headings");
-    expect(detectFormat("# Title\n\n## 1. Intro\n")).toBe("markdown");
-  });
-
-  test("reads the real hex spec: its sections, every MUST, nothing in the preamble", () => {
-    const hex = parseDocument(
-      readFileSync("test/fixtures/legacy/example-hex.md", "utf8"),
-    );
-    expect([...hex.sections.keys()]).toEqual([
-      "1",
-      "2",
-      "3",
-      "3.1",
-      "3.2",
-      "4",
-      "4.1",
-      "4.2",
-      "4.3",
-      "4.4",
-      "5",
-      "6",
-    ]);
-    const found = normativeSentences(hex).map((n) => [
-      n.section,
-      n.keyword,
-      n.sentence,
-    ]);
-    const musts: [string, string, string][] = [
-      [
-        "3.1",
-        "MUST",
-        "hexEncode MUST return exactly two characters per input byte.",
-      ],
-      [
-        "3.2",
-        "MUST",
-        "Each byte MUST be written high nibble first, using the digits 0-9 and a-f.",
-      ],
-      [
-        "3.2",
-        "MUST NOT",
-        "hexEncode MUST NOT emit uppercase digits, separators or a prefix.",
-      ],
-      [
-        "4.1",
-        "MUST",
-        "hexDecode MUST accept the digits 0-9, a-f and A-F, in any mix of case.",
-      ],
-      [
-        "4.2",
-        "MUST",
-        'hexDecode MUST return null when the text has an odd length or contains any other character, including whitespace and a "0x" prefix.',
-      ],
-      [
-        "4.3",
-        "MUST",
-        "hexDecode of the empty string MUST return an empty array, not null.",
-      ],
-      ["4.4", "MUST", "For all bytes b, hexDecode(hexEncode(b)) MUST equal b."],
-      [
-        "5",
-        "MUST NOT",
-        "hexDecode MUST NOT index a table by the value of a digit, so that its running time depends only on the length of its input.",
-      ],
-    ];
-    expect(found).toHaveLength(musts.length);
-    musts.forEach(([sec, kw, sentence], i) => {
-      expect(found[i][0]).toBe(sec);
-      expect(found[i][1]).toBe(kw);
-      // The first sentence of a section carries its heading's title.
-      expect(found[i][2].endsWith(sentence)).toBe(true);
-    });
-    expect(found.some(([sec]) => sec === LOOSE_SECTION)).toBe(false);
-    expect(hex.loose?.lines.join(" ")).not.toContain("BCP 14");
-  });
-
-  test("a sentence that only mentions key words keeps its MUST", () => {
-    const d = parseMarkdownSpec(
-      "## 1. Rules\n\nThe key words in the header MUST be sorted, see BCP 14.\n",
-    );
-    expect(normativeSentences(d).map((n) => n.keyword)).toEqual(["MUST"]);
-    expect(sectionText(d.sections.get("1") as never)).toContain(
-      "MUST be sorted, see BCP 14.",
-    );
-    // A keyword after the list, before the reference, is not swallowed.
-    const mid = parseMarkdownSpec(
-      "## 1. Rules\n\nThe key words MUST and MAY are to be interpreted, and keys MUST be sorted, as in BCP 14.\n",
-    );
-    expect(normativeSentences(mid).map((n) => n.keyword)).toEqual([
-      "MUST",
-      "MUST",
-    ]);
-    // The boilerplate itself, its list emphasised, is still dropped.
-    const em = parseMarkdownSpec(
-      "## 1. Rules\n\nThe key words **MUST**, _MUST NOT_ and __MAY__ are to be interpreted as in BCP 14.\n",
-    );
-    expect(normativeSentences(em)).toEqual([]);
-  });
-
-  test("emphasised keywords are keywords: _MUST_, __MUST__, _MUST NOT_", () => {
-    const d = parseMarkdownSpec(
-      "## 1. Rules\n\nImplementations __MUST__ reject this. Others _MUST NOT_ accept it. A key _MUST_ be 32 bytes. *SHALL* and **REQUIRED** too.\n",
-    );
-    expect(normativeSentences(d).map((n) => n.keyword)).toEqual([
-      "MUST",
-      "MUST NOT",
-      "MUST",
-      "SHALL",
-      "REQUIRED",
-    ]);
-    // A longer word that holds one is not a keyword; a quoted one is not.
-    const not = parseMarkdownSpec(
-      '## 1. Rules\n\nMUSTARD and REQUIREDS, and "MUST" in quotes.\n',
-    );
-    expect(normativeSentences(not)).toEqual([]);
-  });
-
-  test("an HTML comment opener in inline or indented code is text", () => {
-    const d = parseMarkdownSpec(
-      "## 1. A\n\nUse `<!--` to open.\n\n## 2. B\n\nIt MUST do x.\n",
-    );
-    expect([...d.sections.keys()]).toEqual(["1", "2"]);
-    expect(normativeSentences(d).map((n) => n.section)).toEqual(["2"]);
-    expect(sectionText(d.sections.get("1") as never)).toContain(
-      "Use <!-- to open.",
-    );
-    const indented = parseMarkdownSpec(
-      "## 1. A\n\n    <!-- in code\n\n## 2. B\n\nIt MUST do x.\n",
-    );
-    expect([...indented.sections.keys()]).toEqual(["1", "2"]);
-    expect(normativeSentences(indented).map((n) => n.section)).toEqual(["2"]);
-  });
-
-  test("empty and escaped comment openers hide nothing", () => {
-    for (const opener of ["<!-->", "<!--->", "\\<!--"]) {
-      const d = parseMarkdownSpec(
-        `## 1. A\n\nSee ${opener} here.\n\nIt MUST do x.\n\n<!-- later -->\n`,
-      );
-      expect([opener, normativeSentences(d).map((n) => n.sentence)]).toEqual([
-        opener,
-        ["It MUST do x."],
-      ]);
-    }
-  });
-
-  test("dropping the BCP 14 sentence from a table cell keeps the cell break", () => {
-    const d = parseMarkdownSpec(
-      "## 1. A\n\n| a | b |\n|---|---|\n| The key words MUST and MAY are to be interpreted as in BCP 14. ab | cd |\n",
-    );
-    expect(hexRuns(d.sections.get("1") as never)).toEqual(["ab", "cd"]);
-  });
-
-  test("an unterminated comment or fence is refused, never read to the end", () => {
-    expect(() =>
-      parseMarkdownSpec("## 1. A\n\n<!-- open\n\n## 2. B\n\nIt MUST do x.\n"),
-    ).toThrow('line 3: HTML comment "<!--" is never closed');
-    expect(() =>
-      parseMarkdownSpec("## 1. A\n\n```\ncode\n\n## 2. B\n\nIt MUST do x.\n"),
-    ).toThrow("line 3: code fence is never closed");
-    expect(() =>
-      parseMarkdownSpec("## 1. A\n\n~~~\n```\n## 2. B\n```\n"),
-    ).toThrow("line 3: code fence is never closed");
-    expect(() => parseMarkdownSpec("## 1. A\n\n```js <!--\nx\n```\n")).toThrow(
-      "line 3: a code fence and an HTML comment open on one line",
-    );
-    // A section heading given twice would leave the second's text in none.
-    expect(() =>
-      parseMarkdownSpec("## 1. A\n\nx\n\n## 1. A again\n\nIt MUST do x.\n"),
-    ).toThrow("section 1 has two headings");
-  });
-
-  test("hex runs end at a fence and at a paragraph break", () => {
-    const d = parseMarkdownSpec(
-      "## 1. V\n\n```\n00 01\n```\n\n```\n02 03\n```\n\naabbccdd\n\n11223344\n",
-    );
-    expect(hexRuns(d.sections.get("1") as never)).toEqual([
-      "0001",
-      "0203",
-      "aabbccdd",
-      "11223344",
-    ]);
-    // Adjacent fences, with no blank line between them, still do not join.
-    const adjacent = parseMarkdownSpec(
-      "## 1. V\n\n```\n00 01\n```\n~~~\n02 03\n~~~\n",
-    );
-    expect(hexRuns(adjacent.sections.get("1") as never)).toEqual([
-      "0001",
-      "0203",
-    ]);
-    // A dump in one fence, or one paragraph, is still one value.
-    const one = parseMarkdownSpec("## 1. V\n\n```\n00 01\n02 03\n```\n");
-    expect(hexRuns(one.sections.get("1") as never)).toEqual(["00010203"]);
-    // So a cite vector spanning two fences or two paragraphs is refused.
-    const split = parseMarkdownSpec(
-      SPEC.replace(
-        "| [de ad be ef] | `deadbeef` |",
-        "| x |\n\n```\nde ad\n```\n\n```\nbe ef\n```\n\ndead\n\nbeef\n",
-      ),
-    );
-    expect(
-      messages(
-        runGates(hexContract(), {
-          docs: docs(split),
-          commands: passed("V-CMD"),
-        }),
-      ),
-    ).toEqual([
-      '[fidelity] V-CITE.args[0]: 4-byte value is not printed in §3 ("Test Vectors")',
-      '[fidelity] V-CITE.expect: the string "deadbeef" is not printed in §3 ("Test Vectors")',
-      '[fidelity] V-CMD.args[0]: 4-byte value is not printed in §3 ("Test Vectors")',
-    ]);
-  });
-
-  // Every construct the reader handles, next to every other (and itself):
-  // the sections, the normative sentences and the hex runs must be exactly
-  // each construct's own, so no construct's boundary swallows, drops or
-  // glues its neighbour's text.
-  describe("every construct next to every other", () => {
-    interface Block {
-      name: string;
-      md: (slot: number) => string;
-      sections: (slot: number) => string[];
-      keywords: string[];
-      hex: string[];
-    }
-    const none = () => [];
-    const blocks: Block[] = [
-      {
-        name: "code span",
-        md: () =>
-          "Write `<!--` or `## 9. x` or ``a ` b`` here; a reader MUST keep this.\na1a1",
-        sections: none,
-        keywords: ["MUST"],
-        hex: ["a1a1"],
-      },
-      {
-        name: "backtick fence",
-        md: () => "```text\n## 9. Not a heading\n<!-- not a comment\nb2b2\n```",
-        sections: none,
-        keywords: [],
-        hex: ["b2b2"],
-      },
-      {
-        name: "tilde fence",
-        md: () => "~~~\n```\nc3c3\n~~~",
-        sections: none,
-        keywords: [],
-        hex: ["c3c3"],
-      },
-      {
-        name: "indented code",
-        md: () => "    <!-- kept -->\n    d4d4",
-        sections: none,
-        keywords: [],
-        hex: ["d4d4"],
-      },
-      {
-        name: "table",
-        md: () => "| e5e5 | f6f6 |\n|---|---|\n| a7 | Cells MUST split |",
-        sections: none,
-        keywords: ["MUST"],
-        hex: ["e5e5", "f6f6", "a7"],
-      },
-      {
-        name: "one-line comment",
-        md: () => "<!-- ## 9. Hidden: it MUST vanish, 0909 -->",
-        sections: none,
-        keywords: [],
-        hex: [],
-      },
-      {
-        name: "inline comment",
-        md: () => "Before <!-- it MUST vanish --> after, which SHALL stay.",
-        sections: none,
-        keywords: ["SHALL"],
-        hex: [],
-      },
-      {
-        name: "multi-line comment",
-        md: () => "<!--\n## 8. Hidden\nIt MUST vanish.\n0808\n-->",
-        sections: none,
-        keywords: [],
-        hex: [],
-      },
-      {
-        name: "emphasis",
-        md: () =>
-          "Implementations _MUST_ reject; others __MUST NOT__ accept; **SHALL** too.\nb8b8",
-        sections: none,
-        keywords: ["MUST", "MUST NOT", "SHALL"],
-        hex: ["b8b8"],
-      },
-      {
-        name: "heading",
-        md: (slot) => `### 1.${slot + 1}. Sub\nc9c9`,
-        sections: (slot) => [`1.${slot + 1}`],
-        keywords: [],
-        hex: ["c9c9"],
-      },
-      {
-        name: "BCP 14 boilerplate",
-        md: () =>
-          "The key words MUST and MAY are to be interpreted as in BCP 14.",
-        sections: none,
-        keywords: [],
-        hex: [],
-      },
-      {
-        name: "blank line",
-        md: () => "",
-        sections: none,
-        keywords: [],
-        hex: [],
-      },
-    ];
-    const cases = blocks.flatMap((a) => blocks.map((b) => [a, b] as const));
-    test.each(cases.map(([a, b]) => [a.name, b.name, a, b]))(
-      "%s, then %s",
-      (_a, _b, a, b) => {
-        const md = `# Spec\n\n## 1. One\n\n${a.md(0)}\n${b.md(1)}\n\n## 2. Two\n\nIt MUST do x.\n`;
-        const d = parseMarkdownSpec(md);
-        expect([...d.sections.keys()]).toEqual([
-          "1",
-          ...a.sections(0),
-          ...b.sections(1),
-          "2",
-        ]);
-        const found = normativeSentences(d);
-        expect(found.map((n) => n.keyword)).toEqual([
-          ...a.keywords,
-          ...b.keywords,
-          "MUST",
-        ]);
-        expect(found.some((n) => n.section === LOOSE_SECTION)).toBe(false);
-        expect(found.filter((n) => n.section === "2")).toHaveLength(1);
-        expect(found[found.length - 1].sentence).toBe("Two It MUST do x.");
-        expect(hexRuns(d.sections.get("1") as never)).toEqual([
-          ...a.hex,
-          ...b.hex,
-        ]);
-      },
-    );
-    // Each construct's unterminated form, after every construct, is refused.
-    const open = [
-      ["<!-- never closed", "HTML comment"],
-      ["```\nnever closed", "code fence"],
-      ["~~~\nnever closed", "code fence"],
-    ] as const;
-    test.each(
-      blocks.flatMap((a) => open.map(([md, what]) => [a.name, what, a, md])),
-    )("%s, then an unterminated %s", (_a, what, a, md) => {
-      expect(() =>
-        parseMarkdownSpec(
-          `## 1. One\n\n${a.md(0)}\n${md}\n\n## 2. Two\n\nIt MUST do x.\n`,
-        ),
-      ).toThrow(`${what}`);
-    });
-  });
-
-  test("a labelled int in a markdown section", () => {
+  test("a labelled int in an appendix", () => {
     const a = section("A");
     expect(intLabelled(sectionLines(a), "Block Count", 4)).toBe(true);
     expect(intLabelled(sectionLines(a), "Block Count", 5)).toBe(false);
@@ -737,7 +250,7 @@ describe("reading a spec", () => {
   });
 });
 
-describe("a markdown contract", () => {
+describe("a spec contract", () => {
   test("passes every gate when the commands ran and agreed", () => {
     const c = hexContract();
     expect(validateContractShape(c)).toEqual([]);
@@ -750,8 +263,11 @@ describe("a markdown contract", () => {
   });
 
   test("refuses a MUST outside every numbered section", () => {
-    const d = parseMarkdownSpec(
-      SPEC.replace("## Notes\n", "## Notes\n\nImplementations MUST be fast.\n"),
+    const d = read(
+      SPEC.replace(
+        "<name>Notes</name>",
+        "<name>Notes</name>\n<t>Implementations <bcp14>MUST</bcp14> be fast.</t>",
+      ),
     );
     const r = runGates(hexContract(), {
       docs: docs(d),
@@ -759,7 +275,7 @@ describe("a markdown contract", () => {
     });
     expect(r.ok).toBe(false);
     expect(messages(r)).toEqual([
-      `[completeness] ${LOOSE_SECTION}: MUST sentence is outside every numbered section, so it can be neither a requirement nor an exclusion: "Hex Encoding Notes Implementations MUST be fast."`,
+      `[completeness] ${LOOSE_SECTION}: MUST sentence is outside every numbered section, so it can be neither a requirement nor an exclusion: "Implementations MUST be fast."`,
     ]);
   });
 
@@ -771,11 +287,11 @@ describe("a markdown contract", () => {
     for (const k of c.clauses) k.covers = ["R-LOWER"];
     const r = runGates(c, { docs: docs(), commands: passed("V-CMD") });
     expect(messages(r)).toEqual([
-      '[completeness] §2.1: MUST sentence is neither a requirement nor an exclusion: "Decoding A decoder MUST return null for a string of odd length: abc decodes to null."',
+      '[completeness] §2.1: MUST sentence is neither a requirement nor an exclusion: "A decoder MUST return null for a string of odd length: abc decodes to null."',
     ]);
   });
 
-  test("refuses a quote or value the cited markdown section does not print", () => {
+  test("refuses a quote or value the cited section does not print", () => {
     const c = hexContract();
     c.requirements[0].quote = "An encoder MUST emit uppercase digits.";
     vec(c, "V-CITE").args = [{ hex: "cafe" }];
@@ -786,7 +302,7 @@ describe("a markdown contract", () => {
       '[fidelity] V-CITE.args[0]: 2-byte value is not printed in §3 ("Test Vectors")',
       '[fidelity] V-CITE.expect: the string "cafe" is not printed in §3 ("Test Vectors")',
       // The completeness gate now finds §2's MUST unquoted.
-      '[completeness] §2: MUST sentence is neither a requirement nor an exclusion: "Encoding An encoder MUST emit two lowercase digits per byte."',
+      '[completeness] §2: MUST sentence is neither a requirement nor an exclusion: "An encoder MUST emit two lowercase digits per byte."',
     ]);
   });
 
@@ -830,7 +346,7 @@ describe("a markdown contract", () => {
     );
   });
 
-  test("refuses a section the markdown spec does not have", () => {
+  test("refuses a section the spec does not have", () => {
     const c = hexContract();
     vec(c, "V-CITE").source = { cite: { section: "9" } };
     const r = runGates(c, { docs: docs(), commands: passed("V-CMD") });
@@ -866,8 +382,8 @@ describe("contract sources", () => {
       sources: unknown[];
     };
     c.sources = [
-      { id: "hex", path: "hex.md" },
-      { id: "hex", path: "again.md" },
+      { id: "hex", path: "hex.xml" },
+      { id: "hex", path: "again.xml" },
       { id: "bare" },
     ];
     c.source.main = "other";
@@ -910,8 +426,8 @@ describe("contract sources", () => {
     );
     const bad = shape({
       sources: [
-        "hex.md",
-        { id: "has space", path: "hex.md" },
+        "hex.xml",
+        { id: "has space", path: "hex.xml" },
         { id: "hex", rfc: 1.5, path: "" },
       ],
     });
@@ -931,7 +447,7 @@ describe("contract sources", () => {
   function twoSources(): RfcContract {
     const c = hexContract();
     c.sources = [
-      { id: "hex", path: "hex.md" },
+      { id: "hex", path: "hex.xml" },
       { id: "rfc5869", rfc: 5869 },
     ];
     c.functions.push(clone(hkdf.functions[0]));
@@ -999,96 +515,76 @@ describe("contract sources", () => {
 // #24/#25: a vector's values are whole printed values, named by the label
 // they are printed under, and from one test case.
 describe("vector values are whole, named and from one test case", () => {
-  const MAC = `${SPEC}
-## 4. MAC Vectors
-
-### 4.1. Case 1
-
-\`\`\`
-Key  = 0b0b0b0b0b0b0b0b
+  const MAC = spec(
+    [
+      sec(
+        "MAC Vectors",
+        sec(
+          "Case 1",
+          art(`Key  = 0b0b0b0b0b0b0b0b
        0b0b0b0b         (12 bytes)
 Data = 4869205468657265 ("Hi There")
-MAC  = b0344c61d8db38535ca8afceaf0bf12b
-\`\`\`
-
-### 4.2. Case 2
-
-\`\`\`
-Key  = 4a656665
+MAC  = b0344c61d8db38535ca8afceaf0bf12b`),
+        ) +
+          sec(
+            "Case 2",
+            art(`Key  = 4a656665
 Data = 7768617420646f2079612077616e7420
-MAC  = 5bdcc146bf60754e6a042426089575c7
-\`\`\`
-
-## 5. Base64
-
-BASE64("f") = "Zg=="
-
-BASE64("fo") = "Zm8="
-
-## 6. Extract
-
-### 6.1. Case 1
-
-\`\`\`
-Salt = 00010203
+MAC  = 5bdcc146bf60754e6a042426089575c7`),
+          ),
+      ),
+      sec(
+        "Base64",
+        '<t>BASE64("f") = "Zg=="</t>\n<t>BASE64("fo") = "Zm8="</t>',
+      ),
+      sec(
+        "Extract",
+        sec(
+          "Case 1",
+          art(`Salt = 00010203
 IKM  = 0b0b0b0b
-PRK  = 11111111
-\`\`\`
-
-### 6.2. Case 2
-
-\`\`\`
-Salt = (0 octets)
+PRK  = 11111111`),
+        ) +
+          sec(
+            "Case 2",
+            art(`Salt = (0 octets)
 IKM  = 0c0c0c0c
-PRK  = 22222222
-\`\`\`
-
-### 6.3. Case 3
-
-\`\`\`
-Salt = 0d0d0d0d
+PRK  = 22222222`),
+          ) +
+          sec(
+            "Case 3",
+            art(`Salt = 0d0d0d0d
 IKM  = 0e0e0e0e
-PRK  = 33333333
-\`\`\`
-
-## 7. Decode
-
-### 7.1. First
-
-Input: \`abab\`
-
-Output = abab
-
-### 7.2. Second
-
-Input: \`cdcd\`
-
-Output = cdcd
-
-## 8. Variants
-
-\`\`\`
-Key          = 0b0b0b0b
+PRK  = 33333333`),
+          ),
+      ),
+      sec(
+        "Decode",
+        sec("First", "<t>Input: <tt>abab</tt></t>\n<t>Output = abab</t>") +
+          sec("Second", "<t>Input: <tt>cdcd</tt></t>\n<t>Output = cdcd</t>"),
+      ),
+      sec(
+        "Variants",
+        art(`Key          = 0b0b0b0b
 Data         = 4869205468657265
 HMAC-SHA-256 = b0344c61d8db38535ca8afceaf0bf12b
-HMAC-SHA-512 = 87aa7cdea5ef619d4ff0b4241a1d6cb0
-\`\`\`
-
-## 9. Numbered cases
-
-\`\`\`
-Input1  = 0c0c0c0c
+HMAC-SHA-512 = 87aa7cdea5ef619d4ff0b4241a1d6cb0`),
+      ),
+      sec(
+        "Numbered cases",
+        art(`Input1  = 0c0c0c0c
 Output1 = 1d1d1d1d
 Input2  = 0e0e0e0e
-Output2 = 2f2f2f2f
-\`\`\`
-`;
+Output2 = 2f2f2f2f`),
+      ),
+    ].join("\n"),
+  );
   const KEY1 = "0b0b0b0b0b0b0b0b0b0b0b0b";
   const DATA1 = "4869205468657265";
   const MAC1 = "b0344c61d8db38535ca8afceaf0bf12b";
   const DATA2 = "7768617420646f2079612077616e7420";
   const MAC2 = "5bdcc146bf60754e6a042426089575c7";
-  const macDoc = parseMarkdownSpec(MAC);
+  const macDoc = read(MAC);
   type Lit = VectorClause["expect"];
   /** The hex contract plus one vector `V` citing `section`. */
   const gate = (section: string, call: string, args: Lit[], out: Lit) => {
@@ -1375,6 +871,38 @@ describe("reading values from RFC text", () => {
   });
 });
 
+/**
+ * A probe's text as RFC XML v3: "> " a blockquote, "| " a table, a ``` fence
+ * source code, _x_ and **x** emphasis; otherwise paragraphs.
+ */
+const xmlOf = (text: string): string => {
+  if (text.startsWith("> "))
+    return `<blockquote><t>${kw(text.slice(2))}</t></blockquote>`;
+  if (text.startsWith("| ")) {
+    const cells = (row: string, tag: string) =>
+      `<tr>${row
+        .split("|")
+        .slice(1, -1)
+        .map((c) => `<${tag}>${kw(c.trim())}</${tag}>`)
+        .join("")}</tr>`;
+    const [head, , ...rows] = text.split("\n");
+    return `<table><thead>${cells(head, "th")}</thead><tbody>${rows.map((r) => cells(r, "td")).join("")}</tbody></table>`;
+  }
+  if (text.startsWith("```")) {
+    const lines = text.split("\n");
+    return `<sourcecode type="${lines[0].slice(3)}">${lines.slice(1, -1).join("\n")}</sourcecode>`;
+  }
+  return text
+    .split("\n\n")
+    .map(
+      (p) =>
+        `<t>${kw(p)
+          .replace(/\b_(\w+)_\b/g, "<em>$1</em>")
+          .replace(/\*\*(\w+)\*\*/g, "<strong>$1</strong>")}</t>`,
+    )
+    .join("\n");
+};
+
 describe("vector provenance", () => {
   test("refuses a vector with no source", () => {
     const c = hexContract();
@@ -1431,11 +959,11 @@ describe("vector provenance", () => {
   });
 
   test("a spec source must say the null it expects", () => {
-    const d = parseMarkdownSpec(
+    const d = read(
       SPEC.replace(
-        "A decoder MUST return null for a string of odd length: `abc` decodes\nto null.",
-        "A decoder MUST return null for a string of odd length: `abc` decodes\nto nothing.",
-      ).replace(/return null/, "refuse"),
+        "<bcp14>MUST</bcp14> return null for a string of odd length: <tt>abc</tt> decodes\nto null.",
+        "<bcp14>MUST</bcp14> refuse for a string of odd length: <tt>abc</tt> decodes\nto nothing.",
+      ),
     );
     const c = hexContract();
     c.requirements[1].quote =
@@ -1491,10 +1019,10 @@ describe("vector provenance", () => {
     });
     for (const v of ["V-BOOL-SPEC", "V-BOOL-CITE"])
       vec(c, v).covers.push("R-ISHEX");
-    const onePolarity = parseMarkdownSpec(
+    const onePolarity = read(
       SPEC.replace(
         "to null.",
-        "to null. isHex MUST be False for it. It is True never.",
+        "to null. isHex <bcp14>MUST</bcp14> be False for it. It is True never.",
       ),
     );
     expect(
@@ -1504,10 +1032,10 @@ describe("vector provenance", () => {
     ).toEqual([
       `[fidelity] V-BOOL-CITE.expect: §2.1 ("Decoding") ${GENERIC("R-ODD", "true")}; ${GENERIC("R-ISHEX", "true").replace("does not state the expected result: ", "")}`,
     ]);
-    const stated = parseMarkdownSpec(
+    const stated = read(
       SPEC.replace(
         "to null.",
-        "to null. isHex MUST be False for it. It MUST return true for abcd.",
+        "to null. isHex <bcp14>MUST</bcp14> be False for it. It <bcp14>MUST</bcp14> return true for abcd.",
       ),
     );
     c.requirements.push({
@@ -1527,7 +1055,7 @@ describe("vector provenance", () => {
     // Unset: the sentence is only section text, and the vector covers R-ODD,
     // a requirement elsewhere (§2.1).
     const probe = (sentence: string, bool?: boolean, quote?: string) => {
-      const d = parseMarkdownSpec(`${SPEC}\n## 4. Probe\n\n${sentence}\n`);
+      const d = read(spec(sec("Probe", xmlOf(sentence))));
       const c = hexContract();
       const v = vec(c, "V-SPEC");
       v.source = { spec: "4" };
@@ -1536,8 +1064,11 @@ describe("vector provenance", () => {
           id: "R-PROBE",
           section: "4",
           level: "MUST",
-          // The markdown reader drops inline-code backticks.
-          quote: quote.replaceAll("`", ""),
+          // Inline code and emphasis read as their text.
+          quote: quote
+            .replaceAll("`", "")
+            .replace(/\b_(\w+)_\b/g, "$1")
+            .replace(/\*\*(\w+)\*\*/g, "$1"),
         });
         v.covers.push("R-PROBE");
       }
@@ -1765,7 +1296,8 @@ describe("vector provenance", () => {
           'offers an alternative right after "null" ("/"), so "null" is not the whole result',
         ),
       ],
-      ...["-", "\u2010", "\u2011", "\u2013", "\u2212"].map(
+      // U+2011 is not here: the XML reader reads it as "-".
+      ...["-", "\u2010", "\u2013", "\u2212"].map(
         (h): [string, string, string[]] => [
           `f MUST return null${h}terminated strings.`,
           `f MUST return null${h}terminated strings.`,
@@ -1832,8 +1364,13 @@ describe("vector provenance", () => {
     // A vector covering a different requirement of the same section is
     // refused: the stating requirement must be one it covers.
     {
-      const d = parseMarkdownSpec(
-        `${SPEC}\n## 4. Probe\n\nf MUST return null on odd input. f MUST emit hex.\n`,
+      const d = read(
+        spec(
+          sec(
+            "Probe",
+            xmlOf("f MUST return null on odd input. f MUST emit hex."),
+          ),
+        ),
       );
       const c = hexContract();
       c.requirements.push(
@@ -1962,8 +1499,9 @@ describe("vector provenance", () => {
   });
 
   test("the hex spec's §4.2 still states null for V7 to V9", () => {
-    const hex = parseDocument(
-      readFileSync("test/fixtures/legacy/example-hex.md", "utf8"),
+    const hex = parseV3(
+      readFileSync("specs/example-hex.xml", "utf8"),
+      "example-hex.xml",
     );
     const c = hexContract();
     c.requirements = [
@@ -2131,7 +1669,9 @@ describe("vector provenance", () => {
     const c = hexContract();
     const gates = runGates(c, { docs: docs() });
     const notRun = renderReport({ contract: c, gates });
-    expect(notRun).toContain("hex-md · hex (Hex Encoding) · nish/encoding/hex");
+    expect(notRun).toContain(
+      "hex-xml · hex (Hex Encoding) · nish/encoding/hex",
+    );
     expect(notRun).toContain("Vector sources run");
     expect(notRun).toMatch(/· +V-CMD/);
     expect(notRun).toContain("$ printf deadbeef");
@@ -2180,7 +1720,7 @@ describe("vector spec (the command)", () => {
   let errSpy: ReturnType<typeof spyOn>;
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "vector-spec-"));
-    writeFileSync(join(dir, "hex.md"), SPEC);
+    writeFileSync(join(dir, "hex.xml"), SPEC);
     writeFileSync(join(dir, "hex.json"), JSON.stringify(hexContract()));
     out = [];
     err = [];
@@ -2198,13 +1738,13 @@ describe("vector spec (the command)", () => {
   const contract = () => join(dir, "hex.json");
 
   test("spec check refuses the hidden keyword with its line", async () => {
-    const p = join(dir, "hidden.md");
-    writeFileSync(p, `${SPEC}\n## 9. Extra\n\nhexEncode M&#85;ST pad.\n`);
+    const p = join(dir, "hidden.txt");
+    writeFileSync(p, `${RFC5869_TEXT}\nhexEncode M\u200bUST pad.\n`);
     expect(await rfcMain(["check", contract(), "--spec", p])).toBe(2);
-    expect(err.join("\n")).toMatch(/line \d+: character reference &#85;/);
+    expect(err.join("\n")).toMatch(/line \d+: invisible character U\+200B/);
   });
 
-  test("checks a markdown contract, running its commands with --run-sources", async () => {
+  test("checks a spec contract, running its commands with --run-sources", async () => {
     expect(
       await rfcMain(["check", contract(), "--run-sources", "--json"]),
     ).toBe(0);
@@ -2238,7 +1778,7 @@ describe("vector spec (the command)", () => {
     expect(err.join("\n")).toContain("vector rfc … is the same command");
   });
 
-  test("emit writes the nish test for a markdown contract", async () => {
+  test("emit writes the nish test for a spec contract", async () => {
     const file = join(dir, "main.ts");
     expect(await rfcMain(["emit", contract(), "-o", file])).toBe(0);
     expect(readFileSync(file, "utf8")).toContain(
@@ -2262,12 +1802,12 @@ describe("vector spec (the command)", () => {
   });
 
   test("--spec gives the main source's text; --rfc is the same", async () => {
-    const other = join(dir, "other.md");
+    const other = join(dir, "other.xml");
     writeFileSync(other, SPEC.replace("deadbeef", "cafe"));
     expect(await rfcMain(["check", contract(), "--spec", other])).toBe(1);
     expect(out.join("\n")).toContain('the string "deadbeef" is not printed');
     expect(
-      await rfcMain(["check", contract(), "--rfc", join(dir, "hex.md")]),
+      await rfcMain(["check", contract(), "--rfc", join(dir, "hex.xml")]),
     ).toBe(0);
   });
 
@@ -2279,7 +1819,7 @@ describe("vector spec (the command)", () => {
 
   test("refuses a spec it cannot read or that is not a spec", async () => {
     expect(
-      await rfcMain(["check", contract(), "--spec", join(dir, "missing.md")]),
+      await rfcMain(["check", contract(), "--spec", join(dir, "missing.xml")]),
     ).toBe(2);
     expect(err.join("\n")).toContain("cannot read");
     const prose = join(dir, "prose.txt");
@@ -2291,7 +1831,7 @@ describe("vector spec (the command)", () => {
   test("refuses a contract whose RFC is found nowhere, saying how to fetch it", async () => {
     const c = hexContract();
     c.sources = [
-      { id: "hex", path: "hex.md" },
+      { id: "hex", path: "hex.xml" },
       { id: "rfc9999", rfc: 9999 },
     ];
     writeFileSync(contract(), JSON.stringify(c));
@@ -2318,26 +1858,26 @@ describe("vector spec (the command)", () => {
     };
 
     test("beside the contract, or in specs/ or rfcs/ beside its directory", async () => {
-      put("proj/contracts/hex.md");
-      put("proj/specs/hex.md");
-      put("proj/rfcs/sub/hex.md");
-      expect(await rfcMain(["check", at("hex.md")])).toBe(0);
-      expect(await rfcMain(["check", at("../specs/hex.md")])).toBe(0);
-      expect(await rfcMain(["check", at("../rfcs/sub/hex.md")])).toBe(0);
+      put("proj/contracts/hex.xml");
+      put("proj/specs/hex.xml");
+      put("proj/rfcs/sub/hex.xml");
+      expect(await rfcMain(["check", at("hex.xml")])).toBe(0);
+      expect(await rfcMain(["check", at("../specs/hex.xml")])).toBe(0);
+      expect(await rfcMain(["check", at("../rfcs/sub/hex.xml")])).toBe(0);
     });
 
     for (const [why, file, path] of [
-      ["above the contract", "secret.md", "../../secret.md"],
-      ["in a hidden directory", "proj/.git/hex.md", "../.git/hex.md"],
+      ["above the contract", "secret.xml", "../../secret.xml"],
+      ["in a hidden directory", "proj/.git/hex.xml", "../.git/hex.xml"],
       [
         "in a hidden directory beside it",
-        "proj/contracts/.ssh/hex.md",
-        ".ssh/hex.md",
+        "proj/contracts/.ssh/hex.xml",
+        ".ssh/hex.xml",
       ],
       [
         "under specs/ but hidden",
-        "proj/specs/.env/hex.md",
-        "../specs/.env/hex.md",
+        "proj/specs/.env/hex.xml",
+        "../specs/.env/hex.xml",
       ],
     ] as const)
       test(`refuses a file ${why}, without reading it`, async () => {
@@ -2350,23 +1890,23 @@ describe("vector spec (the command)", () => {
       });
 
     test("a symlink beside the contract is judged by where it leads", async () => {
-      put("outside/hex.md");
+      put("outside/hex.xml");
       mkdirSync(join(dir, "proj/contracts"), { recursive: true });
       symlinkSync(
-        join(dir, "outside/hex.md"),
-        join(dir, "proj/contracts/hex.md"),
+        join(dir, "outside/hex.xml"),
+        join(dir, "proj/contracts/hex.xml"),
       );
-      expect(await rfcMain(["check", at("hex.md")])).toBe(2);
+      expect(await rfcMain(["check", at("hex.xml")])).toBe(2);
       expect(err.join("\n")).toContain("which is not spec text");
     });
 
     test("a symlinked specs/ is no root: it could lead anywhere", async () => {
-      put("outside/hex.md");
+      put("outside/hex.xml");
       mkdirSync(join(dir, "proj"), { recursive: true });
       symlinkSync(join(dir, "outside"), join(dir, "proj/specs"));
-      expect(await rfcMain(["check", at("../specs/hex.md")])).toBe(2);
+      expect(await rfcMain(["check", at("../specs/hex.xml")])).toBe(2);
       expect(err.join("\n")).toContain(
-        "source hex is ../specs/hex.md, which is not spec text",
+        "source hex is ../specs/hex.xml, which is not spec text",
       );
       expect(out.join("\n")).not.toContain("deadbeef");
     });
@@ -2394,13 +1934,13 @@ describe("vector spec (the command)", () => {
     });
 
     test("--spec names the file the user chose, wherever it is", async () => {
-      put("outside/hex.md");
+      put("outside/hex.xml");
       expect(
         await rfcMain([
           "check",
-          at("../../outside/hex.md"),
+          at("../../outside/hex.xml"),
           "--spec",
-          join(dir, "outside/hex.md"),
+          join(dir, "outside/hex.xml"),
         ]),
       ).toBe(0);
     });
