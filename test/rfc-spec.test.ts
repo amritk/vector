@@ -350,9 +350,64 @@ describe("a spec contract", () => {
       "two paragraphs",
       "<tr><td>x</td><td>x</td></tr></tbody></table>\n<t>de ad</t>\n<t>be ef</t>",
     ],
+    // Blocks nested in one cell, or in a v2 <list>, read as one line of text
+    // but never as one value.
+    [
+      "two paragraphs in one cell",
+      "<tr><td><t>de ad</t><t>be ef</t></td><td></td></tr></tbody></table>",
+    ],
+    [
+      "two list items in one cell",
+      "<tr><td><ul><li>de ad</li><li>be ef</li></ul></td><td></td></tr></tbody></table>",
+    ],
+    [
+      "text and code in one cell",
+      `<tr><td>de ad${art("be ef")}</td><td></td></tr></tbody></table>`,
+    ],
+    [
+      "two items of a v2 list",
+      "<tr><td>x</td><td>x</td></tr></tbody></table>\n<list><t>de ad</t><t>be ef</t></list>",
+    ],
+    [
+      "two items of a v2 list in a paragraph",
+      "<tr><td>x</td><td>x</td></tr></tbody></table>\n<t>Bytes:<list><t>de ad</t><t>be ef</t></list></t>",
+    ],
   ];
   test.each(SPLITS)("bytes split across %s are never one value", (_, body) => {
     expect(splitRuns(read(SPEC.replace(ROW, body)))).toEqual(SPLIT);
+  });
+
+  // One value printed over two lines of one block, or around inline code,
+  // stays one value: a block boundary splits, nothing else does.
+  const WHOLE: [string, string][] = [
+    [
+      "a paragraph",
+      "<tr><td>x</td><td>x</td></tr></tbody></table>\n<t>de ad\nbe ef</t>",
+    ],
+    [
+      "a table cell",
+      "<tr><td>de ad\n be ef</td><td></td></tr></tbody></table>",
+    ],
+    [
+      "a sourcecode",
+      "<tr><td>x</td><td>x</td></tr></tbody></table>\n<sourcecode>de ad\nbe ef</sourcecode>",
+    ],
+    [
+      "an artwork",
+      `<tr><td>x</td><td>x</td></tr></tbody></table>\n${art("de ad\nbe ef")}`,
+    ],
+    [
+      "a paragraph with inline code",
+      "<tr><td>x</td><td>x</td></tr></tbody></table>\n<t>de ad <tt>be ef</tt></t>",
+    ],
+  ];
+  test.each(WHOLE)("bytes printed whole in %s are one value", (_, body) => {
+    const runs = splitRuns(read(SPEC.replace(ROW, body)));
+    expect(runs).not.toContain(SPLIT[0]);
+    expect(runs).not.toContain(SPLIT[2]);
+    expect(
+      runs.filter((m) => m.includes("the value is printed in §3")),
+    ).toHaveLength(2);
   });
 
   test("in RFC text, bytes split by a line of text are never one value", () => {

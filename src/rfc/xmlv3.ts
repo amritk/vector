@@ -1,6 +1,6 @@
 // Reading an RFC in its XML v3 source form (RFC 7991), as xml2rfc renders it
 // and as kramdown-rfc writes it, into the RfcDocument the gates already read
-// from the .txt rendering and from markdown. No dependency and no network:
+// from the .txt rendering. No dependency and no network:
 // the tokenizer below is the whole XML reader.
 //
 // The document is untrusted input, so the reader is narrow on purpose:
@@ -41,7 +41,7 @@
 // 2.1; `<back>` sections A, B, A.1. Every `<section>` takes a place in the
 // count (so the numbers equal the pn xml2rfc writes); a numbered="false"
 // section and everything under it shows no number, and its text is the
-// document's `loose` section, like a markdown spec's unnumbered headings.
+// document's `loose` section, like an unnumbered heading in kramdown-rfc.
 // `<references>`, the abstract, notes and boilerplate are not sections here.
 //
 // The plain-text rule (plainText, and every line of every section):
@@ -746,6 +746,11 @@ interface Line {
   text: string;
   /** The line starts a block: a paragraph, a table cell or a code block. */
   block: boolean;
+  /**
+   * The line as hexValues reads it, when it holds blocks of its own (a table
+   * cell or a v2 `<t>` holding paragraphs, lists or code): one entry a block.
+   */
+  parts?: HexPart[];
   prose: boolean;
   code: string | null;
   spans: string[];
@@ -753,8 +758,53 @@ interface Line {
 
 type Normative = V3Document["normative"][number];
 
+/** A line, or one block of a line, as hexValues reads it. */
+interface HexPart {
+  text: string;
+  /** A block starts here: a value never runs into it. */
+  block: boolean;
+}
+
+const holdsBlocks = (n: XmlNode): boolean =>
+  n.children.some((c) => isElement(c) && !INLINE.has(c.name));
+
+/**
+ * The blocks inside `n` as hexValues reads them: each run of text one entry,
+ * each code block one entry a line, each table cell one entry.
+ */
+function hexParts(n: XmlNode): HexPart[] {
+  if (n.name === "sourcecode" || n.name === "artwork") {
+    return codeOf(n)
+      .text.split("\n")
+      .map((text, i) => ({ text, block: i === 0 }));
+  }
+  if (!holdsBlocks(n)) {
+    const text = plainText(n);
+    return text === "" ? [] : [{ text, block: true }];
+  }
+  const out: HexPart[] = [];
+  let run: (XmlNode | XmlText)[] = [];
+  const flush = (): void => {
+    out.push(
+      ...hexParts({ name: "span", attrs: {}, children: run, loc: n.loc }),
+    );
+    run = [];
+  };
+  for (const c of n.children) {
+    if (!isElement(c) || INLINE.has(c.name)) {
+      run.push(c);
+      continue;
+    }
+    flush();
+    out.push(...hexParts(c));
+  }
+  flush();
+  return out;
+}
+
 // Elements holding either running text or further blocks.
 const CONTAINERS = new Set([
+  "list",
   "ul",
   "ol",
   "dl",
@@ -823,6 +873,7 @@ class Builder {
           out.push({
             text: c.text,
             block: true,
+            ...(holdsBlocks(node) ? { parts: hexParts(node) } : {}),
             prose: false,
             code: null,
             spans: c.code,
@@ -831,10 +882,7 @@ class Builder {
       }
       return;
     }
-    const hasBlocks =
-      CONTAINERS.has(n.name) &&
-      n.children.some((c) => isElement(c) && !INLINE.has(c.name));
-    if (hasBlocks) {
+    if (CONTAINERS.has(n.name) && holdsBlocks(n)) {
       const inner = prose && n.name !== "blockquote";
       for (const c of n.children) this.block(c, id, inner, here, out);
       return;
@@ -855,6 +903,7 @@ class Builder {
     out.push({
       text,
       block: true,
+      ...(isElement(n) && holdsBlocks(n) ? { parts: hexParts(n) } : {}),
       prose,
       code: null,
       spans: isElement(n) ? codeSpans(n) : [],
@@ -996,13 +1045,16 @@ function toSection(
   all: Line[],
 ): RfcSection {
   const lists = all.some((l) => BYTE_LIST_RE.test(l.text));
-  // Each line as hexValues reads it, with its byte lists when the section
-  // prints one, and where each block starts among them.
+  // Each line as hexValues reads it: a line holding blocks one entry a block,
+  // with its byte lists when the section prints one, and where each block
+  // starts among them.
   const hex: string[] = [];
   const blockStarts: number[] = [];
   for (const l of all) {
-    if (l.block) blockStarts.push(hex.length);
-    hex.push(l.text, ...(lists ? byteLists(l.text) : []));
+    for (const p of l.parts ?? [l]) {
+      if (p.block) blockStarts.push(hex.length);
+      hex.push(p.text, ...(lists ? byteLists(p.text) : []));
+    }
   }
   return {
     id,
@@ -1012,14 +1064,15 @@ function toSection(
     proseLines: all.map((l) => (l.prose ? l.text : "")),
     codeLines: all.map((l) => l.code),
     spanLines: all.map((l) => l.spans),
-    ...(lists ? { hexLines: hex } : {}),
+    ...(lists || all.some((l) => l.parts) ? { hexLines: hex } : {}),
+    ...(lists ? { printsByteList: true } : {}),
     // A value never runs across a block: two cells, rows, code blocks or
     // paragraphs are never read as one value.
     blockStarts,
   };
 }
 
-// A byte list such as "[00 0f f0 ff]", as spectext.ts reads one in markdown.
+// A byte list such as "[00 0f f0 ff]", as a spec prints one in its prose.
 const BYTE_LIST = String.raw`\[([0-9a-fA-F]{2}(?:[ ,]+[0-9a-fA-F]{2})*)\]`;
 const BYTE_LIST_RE = new RegExp(BYTE_LIST);
 const BYTE_LISTS_RE = new RegExp(BYTE_LIST, "g");
@@ -1027,8 +1080,8 @@ const BYTE_LISTS_RE = new RegExp(BYTE_LIST, "g");
 /**
  * Each byte list in a line, as a hex-run line fenced by breaks ("--" is never
  * hex), so the fidelity gate sees bytes a spec prints in a list. A section
- * that prints one gets hexLines, which also makes hexValues read its bare
- * digits under no name as hex; a section with none (every RFC's) does not.
+ * that prints one is marked printsByteList, which makes hexValues read its
+ * bare digits under no name as hex; a section with none (every RFC's) is not.
  */
 function byteLists(text: string): string[] {
   return [...text.matchAll(BYTE_LISTS_RE)].flatMap((m) => [

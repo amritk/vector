@@ -18,9 +18,15 @@ export interface RfcSection {
   ownLines: string[];
   /**
    * The lines hex runs are read from, when they differ from `lines` (the XML
-   * reader adds each bracketed byte list on a line of its own).
+   * reader adds each bracketed byte list on a line of its own, and splits a
+   * line holding blocks of its own, such as a table cell, at each block).
    */
   hexLines?: string[];
+  /**
+   * The section prints a bracketed byte list such as "[de ad be ef]" (XML),
+   * so its bare digit pairs under no name are bytes on purpose.
+   */
+  printsByteList?: boolean;
   /**
    * Where each block (a paragraph, a table cell, a code block) starts, as
    * indexes into `hexLines ?? lines`, when the reader knows them (XML): a
@@ -29,17 +35,17 @@ export interface RfcSection {
   blockStarts?: number[];
   /**
    * `lines` with code, table cells and blockquotes blanked out, when the
-   * reader knows them (markdown); only prose states a vector's result.
+   * reader knows them (XML); only prose states a vector's result.
    */
   proseLines?: string[];
   /**
    * Per line of `lines`, the line exactly as written when it is code (a
-   * fenced block or an indented code line), else null. Markdown only.
+   * `<sourcecode>` or `<artwork>` line), else null. XML only.
    */
   codeLines?: (string | null)[];
   /**
-   * Per line of `lines`, its inline code spans (`` `abc` ``), whose backticks
-   * the line itself drops: each is a value printed whole. Markdown only.
+   * Per line of `lines`, its inline code spans (`<tt>abc</tt>`), whose tags
+   * the line itself drops: each is a value printed whole. XML only.
    */
   spanLines?: string[][];
 }
@@ -48,13 +54,11 @@ export interface RfcDocument {
   number: number | null;
   sections: Map<string, RfcSection>;
   /**
-   * Text outside every numbered section (a markdown spec's unnumbered
-   * headings and preamble). Its normative sentences cannot be cited, so the
+   * Text outside every numbered section (unnumbered sections, such as a
+   * kramdown-rfc spec's unnumbered headings). Its normative sentences cannot be cited, so the
    * completeness gate refuses any it holds.
    */
   loose?: RfcSection;
-  /** A markdown spec's lines exactly as written (line ends normalized). */
-  source?: string[];
 }
 
 // A page break in the .txt rendering: a footer line ending "[Page N]", a form
@@ -115,7 +119,7 @@ export function sectionText(sec: RfcSection): string {
 
 /** The section's lines, each whitespace-collapsed, still one per line. */
 /**
- * Per line of `sectionLines`, the inline code spans printed on it (markdown;
+ * Per line of `sectionLines`, the inline code spans printed on it (XML;
  * none for an RFC), normalized like the line.
  */
 export function sectionSpans(sec: RfcSection): string[][] {
@@ -173,7 +177,7 @@ export interface HexValue {
 // "Plaintext::", or a short heading-like line with no colon ("The ChaCha20
 // Key", RFC 8439 A.5) that does not end a sentence.
 const LABEL_LINE_RE = /^\s*(?:o\s+)?([^\s:=][^:=]{0,79}?)\s*[:=]+\s*$/;
-// Never a line holding brackets or quotes: in a markdown spec that is the
+// Never a line holding brackets or quotes: in a spec that is the
 // line a byte list ("hexEncode([00 0f])") was read from, not its name.
 const SHORT_LABEL_RE = /^\s*([A-Za-z][^:=()[\]"'`]{0,39}?)\s*$/;
 const labelLine = (line: string): string | null => {
@@ -210,7 +214,7 @@ export function hexValues(sec: RfcSection): HexValue[] {
   const values: HexValue[] = [];
   // A section printing a byte list prints bytes on purpose: there only a
   // name calling them a number makes digits decimal.
-  const onPurpose = sec.hexLines !== undefined;
+  const onPurpose = sec.printsByteList === true;
   const blockStarts = new Set(sec.blockStarts);
   let cur = "";
   let label: string | null = null;
