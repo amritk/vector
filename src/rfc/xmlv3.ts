@@ -744,6 +744,8 @@ function cellNodes(table: XmlNode): { node: XmlNode; header: boolean }[][] {
 
 interface Line {
   text: string;
+  /** The line starts a block: a paragraph, a table cell or a code block. */
+  block: boolean;
   prose: boolean;
   code: string | null;
   spans: string[];
@@ -797,9 +799,17 @@ class Builder {
     const here = n.attrs.anchor ?? anchor;
     if (n.name === "iref" || n.name === "cref") return;
     if (n.name === "sourcecode" || n.name === "artwork") {
-      for (const l of codeOf(n).text.split("\n")) {
-        out.push({ text: l, prose: false, code: l, spans: [] });
-      }
+      codeOf(n)
+        .text.split("\n")
+        .forEach((l, i) => {
+          out.push({
+            text: l,
+            block: i === 0,
+            prose: false,
+            code: l,
+            spans: [],
+          });
+        });
       return;
     }
     if (n.name === "table" || n.name === "texttable") {
@@ -810,7 +820,13 @@ class Builder {
         for (const { node, header } of row) {
           const c = cell(node, header);
           this.normativeIn(node, id, here, out.length);
-          out.push({ text: c.text, prose: false, code: null, spans: c.code });
+          out.push({
+            text: c.text,
+            block: true,
+            prose: false,
+            code: null,
+            spans: c.code,
+          });
         }
       }
       return;
@@ -838,6 +854,7 @@ class Builder {
     if (isElement(n)) this.normativeIn(n, id, anchor, out.length);
     out.push({
       text,
+      block: true,
       prose,
       code: null,
       spans: isElement(n) ? codeSpans(n) : [],
@@ -978,6 +995,15 @@ function toSection(
   own: Line[],
   all: Line[],
 ): RfcSection {
+  const lists = all.some((l) => BYTE_LIST_RE.test(l.text));
+  // Each line as hexValues reads it, with its byte lists when the section
+  // prints one, and where each block starts among them.
+  const hex: string[] = [];
+  const blockStarts: number[] = [];
+  for (const l of all) {
+    if (l.block) blockStarts.push(hex.length);
+    hex.push(l.text, ...(lists ? byteLists(l.text) : []));
+  }
   return {
     id,
     title,
@@ -986,9 +1012,10 @@ function toSection(
     proseLines: all.map((l) => (l.prose ? l.text : "")),
     codeLines: all.map((l) => l.code),
     spanLines: all.map((l) => l.spans),
-    ...(all.some((l) => BYTE_LIST_RE.test(l.text))
-      ? { hexLines: all.flatMap((l) => [l.text, ...byteLists(l.text)]) }
-      : {}),
+    ...(lists ? { hexLines: hex } : {}),
+    // A value never runs across a block: two cells, rows, code blocks or
+    // paragraphs are never read as one value.
+    blockStarts,
   };
 }
 
@@ -1000,8 +1027,8 @@ const BYTE_LISTS_RE = new RegExp(BYTE_LIST, "g");
 /**
  * Each byte list in a line, as a hex-run line fenced by breaks ("--" is never
  * hex), so the fidelity gate sees bytes a spec prints in a list. A section
- * that prints one gets hexLines, which also makes hexValues read it as a
- * markdown spec does; a section with none (every RFC's) is read as before.
+ * that prints one gets hexLines, which also makes hexValues read its bare
+ * digits under no name as hex; a section with none (every RFC's) does not.
  */
 function byteLists(text: string): string[] {
   return [...text.matchAll(BYTE_LISTS_RE)].flatMap((m) => [

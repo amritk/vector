@@ -17,10 +17,16 @@ export interface RfcSection {
   /** Only the section's own lines, up to its first subsection. */
   ownLines: string[];
   /**
-   * The lines hex runs are read from, when they differ from `lines` (the
-   * markdown reader adds each bracketed byte list on a line of its own).
+   * The lines hex runs are read from, when they differ from `lines` (the XML
+   * reader adds each bracketed byte list on a line of its own).
    */
   hexLines?: string[];
+  /**
+   * Where each block (a paragraph, a table cell, a code block) starts, as
+   * indexes into `hexLines ?? lines`, when the reader knows them (XML): a
+   * value never runs across a block boundary.
+   */
+  blockStarts?: number[];
   /**
    * `lines` with code, table cells and blockquotes blanked out, when the
    * reader knows them (markdown); only prose states a vector's result.
@@ -195,14 +201,17 @@ const labelBefore = (text: string): string =>
  * own first line ("Key =  0b0b…"), whose run the lines below continue.
  * Lines of bare digit pairs with no hex letter and no 0x or colons are a
  * decimal number, not bytes, and are left out, unless printed under a name
- * that does not call them a number, or in a markdown spec, under no name ("Data:" over "4869205468657265" is hex;
- * "Input scalar as a number (base 10):" over "31029842492115040904…" is not).
+ * that does not call them a number, or, in a section printing a byte list,
+ * under no name ("Data:" over "4869205468657265" is hex; "Input scalar as a
+ * number (base 10):" over "31029842492115040904…" is not). A value never runs
+ * across a block boundary (`blockStarts`).
  */
 export function hexValues(sec: RfcSection): HexValue[] {
   const values: HexValue[] = [];
-  // A markdown spec prints bytes on purpose (a byte list, a code block, a
-  // cell): there only a name calling them a number makes digits decimal.
-  const markdown = sec.hexLines !== undefined;
+  // A section printing a byte list prints bytes on purpose: there only a
+  // name calling them a number makes digits decimal.
+  const onPurpose = sec.hexLines !== undefined;
+  const blockStarts = new Set(sec.blockStarts);
   let cur = "";
   let label: string | null = null;
   // Every line of the current value was bare digit pairs.
@@ -215,7 +224,7 @@ export function hexValues(sec: RfcSection): HexValue[] {
     const decimal =
       bareOnly &&
       /^[0-9]+$/.test(cur) &&
-      ((label === null && !markdown) ||
+      ((label === null && !onPurpose) ||
         (label !== null && DECIMAL_LABEL_RE.test(label)));
     if (cur && !decimal) values.push({ hex: cur, label });
     cur = "";
@@ -230,7 +239,9 @@ export function hexValues(sec: RfcSection): HexValue[] {
       pending = null;
     } else if (!bare) bareOnly = false;
   };
-  for (const rawLine of sec.hexLines ?? sec.lines) {
+  for (const [i, rawLine] of (sec.hexLines ?? sec.lines).entries()) {
+    // A block boundary ends a value; the name above it still names the next.
+    if (blockStarts.has(i)) flush();
     const aside = rawLine.match(ASIDE_RE);
     const line =
       aside && !/^[0-9a-fA-F:\s]+$/.test(aside[1])
