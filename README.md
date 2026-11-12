@@ -189,11 +189,13 @@ and is merged in verbatim.
 | Contract field | Markdown | XML |
 |---|---|---|
 | `contract` | `docname: draft-<name>-00` in the front matter; `<name>` must be the file's basename | `<rfc docName="draft-<name>-00">` |
-| `target.module`, the signatures | one `~~~ ts-interface` block, first line `// module: nish/<path>`, then `export function f(…): T` or `export const f = (…): T` lines | `<sourcecode type="ts-interface">` |
+| `source.rfc`, an RFC as the main source | `keyword: [vector-main-RFC<N>]` in the front matter, with RFC<N> under `normative:` | `<keyword>vector-main-RFC<N></keyword>` in `<front>` |
+| `target.module`, the signatures | one `~~~ ts-interface` block, first line `// module: nish/<path>`, then `export function f(…): T` or `export const f = (…): T` lines; after a later `// module: nish/<other>` line, reference functions (`module`) that properties may call | `<sourcecode type="ts-interface">` |
 | a requirement (`MUST` … `MAY`) | a paragraph holding one BCP 14 sentence, at one level, then `{: #R-ID}` on the next line | `<t anchor="R-ID">` with `<bcp14>` |
 | a requirement (`DEFINITION`) | a paragraph starting `Definition: `, with no BCP 14 keyword, then `{: #R-ID}` | `<t anchor="R-ID">Definition: …</t>` |
 | a requirement quoting an RFC | a blockquote whose last line is `{{Section N of RFCx}}`, then `{: #R-ID gi="blockquote"}` | `<blockquote anchor="R-ID">`, the `<xref section>` last |
-| an exclusion | a paragraph starting `Untested: ` right after a requirement, or after an unanchored BCP 14 paragraph | the next sibling `<t>Untested: …</t>` |
+| an exclusion | a paragraph starting `Untested: ` right after a requirement, an unanchored BCP 14 paragraph, or an unanchored RFC blockquote (`{: gi="blockquote"}`) | the next sibling `<t>Untested: …</t>` |
+| a requirement's `note` | a paragraph starting `Note: ` right after the requirement | the next sibling `<t>Note: …</t>` |
 | a property | a `~~~ ts-property` block (see below) | `<sourcecode type="ts-property">` |
 | the vectors | one table, header exactly `Id \| Call \| Expected \| Covers \| Source \| Title` | `<table>` |
 | a requirement's or vector's `section` | the enclosing numbered section (`--- back` gives appendices A, B, …) | the section number `xml2rfc` gives |
@@ -219,7 +221,25 @@ Rules the profile enforces:
   the rest of the
   paragraph and is kept whole, including `Checked by: …`. The
   `{::boilerplate bcp14-tagged}` key-words paragraph is skipped. Put it first
-  in `# Introduction`.
+  in `# Introduction`. A `Note: ` paragraph that follows no requirement is
+  refused.
+- **An RFC as the main source.** The front-matter keyword
+  `vector-main-RFC<N>` makes RFC N the spec's main source: the contract takes the RFC
+  form, `source.rfc` is N, `source.sha256` is the RFC's, and the spec is not a
+  `sources[]` entry. Completeness then runs over the RFC: every `MUST`, `MUST NOT`,
+  `SHALL`, `SHALL NOT` and `REQUIRED` sentence of RFC N must be quoted in a
+  requirement or in an excluded blockquote, and a miss names the RFC section
+  (`Section 2 of RFC9990: MUST NOT sentence is neither a requirement nor an
+  exclusion`). Everything a requirement holds must be RFC text, so a
+  `Definition:` paragraph, an anchored BCP 14 paragraph, an excluded
+  paragraph, a vector Source naming a section of the spec, and any BCP 14
+  sentence of the spec's own are refused. A spec has one key; a misspelt key,
+  an RFC not under `normative:`, and an RFC nothing cites are refused. The
+  RFC may be `.xml` or `.txt`
+  ([`test/fixtures/rfc-main/`](test/fixtures/rfc-main/) has both);
+  `specs/rfc5869-hkdf-sha256.md` and `specs/rfc8439-chacha20-poly1305.md` are
+  the committed profiles. `spec check --spec` gives the main source's text, so
+  for these specs pass the RFC (`--spec rfcs/rfc<N>.txt`) or leave it out.
 - **Vectors.** Call and Expected are each a single code span. Covers lists
   requirement ids, comma-separated, with no repeats. Title is required. The
   Source cell says where the expected value comes from:
@@ -245,7 +265,7 @@ Rules the profile enforces:
 | `[]`, `(empty)` | empty bytes |
 | `null`, `true`, `false` | themselves |
 | `42`, `-1` | a decimal integer, in range for the parameter (`i32`, or `u32` 0..4294967295) |
-| `Key = 0b0b0b` | labelled bytes: lowercase hex pairs, no spaces; the label is the name the cited section prints the value under |
+| `Key = 0b0b0b` | labelled bytes: lowercase hex pairs, no spaces; the label is the name the cited section prints the value under. A label may be several words, and its first word may start with digits joined to a letter (`32-bit fixed-common part = 07000000`); a bare number is not a label |
 | `L = 42` | a labelled decimal integer, checked against the cited section's "L = 42". Where the parameter (or return) type is `i32` or `u32` it is the int; anywhere else digits that are also hex pairs (`42`) are labelled bytes, and digits with a leading zero are never an int: `L = 00` is bytes, and `L = 042` (not whole hex pairs) is refused |
 | `22 × 0b`, `22 x 0b`, `IKM = 22 × 0b` | a run of bytes written that many times (`{hex, repeat}`), as RFCs print runs; optionally labelled. `22×0b` also reads. The count is at least 1, the run lowercase hex pairs, and the expansion at most 65536 bytes |
 | `concat([00], Key = ff)` | the parts joined, all bytes; one level (`concat` does not nest), at least one part. `‖` is refused |
@@ -1278,7 +1298,7 @@ src/
                     (markdown specs, format detection), gates.ts,
                     sample.ts (Z3 boundaries), emit-nish.ts, run.ts, report.ts,
                     cli.ts (`vector spec`)
-contracts/          RFC contracts (RFC 5869 HKDF, RFC 8439 ChaCha20-Poly1305)
+contracts/          RFC contracts (RFC 5869 HKDF, RFC 8439 ChaCha20-Poly1305), extracted from specs/ with the RFC as main source
 rfcs/               the RFCs, as XML (`rfc<N>.xml`) or plain text (`rfc<N>.txt`), unmodified, as rfc-editor.org serves them
 test/               bun test suites + fixtures
 .claude/skills/vector/

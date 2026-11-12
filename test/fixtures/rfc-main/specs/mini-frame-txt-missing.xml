@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rfc version="3" docName="draft-mini-frame-txt-missing-00">
+  <front>
+    <title>Mini Framing profile</title>
+    <keyword>vector-main-RFC9991</keyword>
+  </front>
+  <middle>
+    <section anchor="interface">
+      <name>Interface</name>
+      <sourcecode type="ts-interface"><![CDATA[
+// module: nish/mini/frame
+export function frame(data: u8[]): u8[] | null
+]]></sourcecode>
+    </section>
+    <section anchor="framing">
+      <name>Framing</name>
+      <blockquote anchor="R-PREFIX">
+        <t>A sender MUST prefix each frame with its length in one octet. <xref section="2" sectionFormat="of" target="RFC9991"/></t>
+      </blockquote>
+      <sourcecode type="ts-property"><![CDATA[
+// P-PREFIX covers R-PREFIX — a frame is one length octet, then the data
+forall (data: u8[] /* 0..255 */) => unwrap(frame(data)).length === data.length + 1
+]]></sourcecode>
+    </section>
+  </middle>
+  <back>
+    <references>
+      <name>Normative References</name>
+      <reference anchor="RFC9991"><front><title>Mini Framing</title></front><seriesInfo name="RFC" value="9991"/></reference>
+    </references>
+  </back>
+</rfc>

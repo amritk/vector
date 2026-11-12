@@ -1,0 +1,102 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "mini-frame-excluded",
+  "source": {
+    "rfc": 9990,
+    "title": "Mini Framing profile",
+    "sha256": "e1568cf2e2978072395883fccd2c48c796a2d96456b15b6333ff2ec6d318dfe1"
+  },
+  "sources": [
+    {
+      "id": "rfc9990",
+      "rfc": 9990,
+      "file": "rfcs/rfc9990.xml",
+      "sha256": "e1568cf2e2978072395883fccd2c48c796a2d96456b15b6333ff2ec6d318dfe1"
+    }
+  ],
+  "target": {
+    "module": "nish/mini/frame"
+  },
+  "requirements": [
+    {
+      "id": "R-PREFIX",
+      "section": "2",
+      "level": "MUST",
+      "quote": "A sender MUST prefix each frame with its length in one octet."
+    }
+  ],
+  "exclusions": [
+    {
+      "section": "2",
+      "quote": "A sender MUST NOT frame more than 255 octets.",
+      "reason": "the fixture leaves the limit out."
+    }
+  ],
+  "functions": [
+    {
+      "name": "frame",
+      "params": [
+        {
+          "name": "data",
+          "type": "bytes"
+        }
+      ],
+      "returns": "bytes?"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "property",
+      "id": "P-PREFIX",
+      "title": "a frame is one length octet, then the data",
+      "covers": ["R-PREFIX"],
+      "forall": [
+        {
+          "name": "data",
+          "type": "bytes",
+          "minLen": 0,
+          "maxLen": 255
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "op": "len",
+            "args": [
+              {
+                "op": "unwrap",
+                "args": [
+                  {
+                    "call": "frame",
+                    "args": [
+                      {
+                        "var": "data"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "+",
+            "args": [
+              {
+                "op": "len",
+                "args": [
+                  {
+                    "var": "data"
+                  }
+                ]
+              },
+              {
+                "int": 1
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

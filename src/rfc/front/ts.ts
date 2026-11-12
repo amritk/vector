@@ -220,6 +220,12 @@ class Cursor {
     while (this.toks[this.i].kind === "comment") this.i++;
     return this.toks[this.i];
   }
+  /** The next token past any comments, which stay unread. */
+  look(): Tok {
+    let j = this.i;
+    while (this.toks[j].kind === "comment") j++;
+    return this.toks[j];
+  }
   next(): Tok {
     const t = this.peek();
     if (t.kind !== "eof") this.i++;
@@ -340,9 +346,12 @@ function parseInterface(text: string): {
   let from = m[1];
   for (;;) {
     for (let t = c.raw(); t.kind === "comment"; t = c.raw()) {
-      const r = t.lineComment
-        ? t.value.match(/^\s*module:\s*(\S+)\s*$/)
-        : null;
+      const r = t.value.match(/^\s*module:\s*(\S+)\s*$/);
+      if (r && !t.lineComment)
+        throw new Refusal(
+          `a module line is a line comment; write \`// module: ${r[1]}\``,
+          at(t),
+        );
       if (r) {
         if (!nishModuleFile(r[1]))
           throw new Refusal(
@@ -393,18 +402,20 @@ function parseInterface(text: string): {
     c.expect(")");
     c.expect(":");
     const returns = sigType(c, true);
-    const body = c.peek();
+    // Look past comments without reading them: a `// module:` line may follow.
+    const body = c.look();
     if (body.text === "=>" || body.text === "{")
       throw new Refusal(
         `a ts-interface declares signatures only; remove the body of \`${name.text}\``,
         at(body),
       );
-    c.eat(";");
+    // A `;`, with comments before it, ends the signature.
+    if (body.kind === "punct" && body.text === ";") c.next();
     functions.push({
       name: name.text,
+      ...(from === m[1] ? {} : { module: from }),
       params,
       returns,
-      ...(from === m[1] ? {} : { module: from }),
     });
     lines.push(name.line);
   }
