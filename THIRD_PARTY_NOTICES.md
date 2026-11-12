@@ -167,17 +167,21 @@ an excerpt covered by the IETF Trust Legal Provisions above.
 
 vector commits fetched BibXML in two places:
 
-- `.refcache/reference.RFC.2119.xml`, `.refcache/reference.RFC.4648.xml` and
-  `.refcache/reference.RFC.8174.xml` are the `<reference>`s kramdown-rfc
+- `.refcache/reference.RFC.2119.xml`, `.refcache/reference.RFC.4648.xml`,
+  `.refcache/reference.RFC.5869.xml`, `.refcache/reference.RFC.8174.xml` and
+  `.refcache/reference.RFC.8439.xml` are the `<reference>`s kramdown-rfc
   fetched from bib.ietf.org when it built `specs/*.xml`, kept unedited so a
   rebuild needs no network.
-- Each built spec XML (`specs/example-hex.xml`) embeds those `<reference>`s in
-  its back matter, as kramdown-rfc wrote them.
+- Each built spec XML (`specs/example-hex.xml`,
+  `specs/rfc5869-hkdf-sha256.xml`, `specs/rfc8439-chacha20-poly1305.xml`)
+  embeds those `<reference>`s in its back matter, as kramdown-rfc wrote them.
 
 Each holds the bibliographic metadata listed above and the cited RFC's
 abstract, and is redistributed under the IETF Trust Legal Provisions that
 cover the RFC it describes. The `test/fixtures/xmlv3/` fixture uses a
-hand-written stub in place of fetched BibXML. A `<reference>` committed in a
+hand-written stub in place of fetched BibXML. The `test/fixtures/rfc-main/`
+fixture's RFC 9990 and RFC 9991 are not IETF documents: vector wrote them, and
+their `<reference>`s, as test input, under vector's license. A `<reference>` committed in a
 published RFC's own XML (its back matter, as in `rfcs/rfc8707.xml`) is part of
 that document and is redistributed with it under the same terms.
 

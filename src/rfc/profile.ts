@@ -9,11 +9,17 @@
 //   requirement   a `<t anchor>` holding one BCP 14 sentence, or one starting
 //                 `Definition: `, or a `<blockquote anchor>` quoting an RFC
 //                 and ending with `{{Section N of RFCx}}`
-//   exclusion     a requirement followed by a `<t>` starting `Untested: `
+//   exclusion     a requirement followed by a `<t>` starting `Untested: `,
+//                 or an unanchored paragraph or blockquote followed by one
+//   note          a `<t>` starting `Note: ` directly after a requirement
+//   main source   the spec itself, or the RFC a `keyword` vector-main-RFC<N>
+//                 in `<front>` names; it must be under `normative:` and cited
 //   property      a `ts-property` block, read by the front end of its language
 //   vector        a row of a table headed Id | Call | Expected | Covers | Source | Title
 //
-// Every BCP 14 sentence must be a requirement or an exclusion, every xref to
+// Every BCP 14 sentence must be a requirement or an exclusion (with an RFC
+// main source: every binding sentence of that RFC, which the completeness
+// gate checks at extract), every xref to
 // an RFC must have a `<reference>`, and every section cited must exist in
 // the RFC the resolver returns. A refusal names the markdown line where the
 // XML carries kramdown-rfc's `<?line N?>`, else the XML line. That line can
@@ -92,6 +98,12 @@ const VECTOR_NAMES = new Set(VECTOR_HEADER.map((h) => h.toLowerCase()));
 
 const DEFINITION = "Definition: ";
 const UNTESTED = "Untested: ";
+const NOTE = "Note: ";
+/** The front-matter keyword that names an RFC main source. */
+export const MAIN_KEY = "vector-main-";
+const MAIN_KEY_RE = /^vector-main-RFC([1-9][0-9]*)$/;
+/** A keyword meant as the main-source key, spelt right or not. */
+const MAIN_KEY_LIKE = /^vector[-_\s]*main(?:[-_\s]|rfc|$)/i;
 const RFC_TARGET_RE = /^RFC([0-9]+)$/;
 // The reader's keyword rule: a keyword is not inside a word or a quote, and
 // longest first, so `MUST NOT` is not `MUST`; `NOT RECOMMENDED` is `SHOULD NOT`.
@@ -210,8 +222,22 @@ interface Quoted {
   level: Level;
   /** For a blockquote: the RFC quoted. */
   cite?: { rfc: number; section: string };
+  /** A `Note: ` paragraph after it. */
+  note?: string;
   loc: Loc;
 }
+
+/** The front-matter keywords meant as the main-source key, spelt right or not. */
+function mainKeys(doc: V3Document): XmlNode[] {
+  const front = elements(doc.root).find((n) => n.name === "front");
+  return (front ? elements(front) : []).filter(
+    (n) => n.name === "keyword" && MAIN_KEY_LIKE.test(plainText(n).trim()),
+  );
+}
+
+/** Whether `doc` is a profile that names an RFC main source, spelt right or not. */
+export const namesMainRfc = (doc: V3Document): boolean =>
+  mainKeys(doc).length > 0;
 
 export function profileToContract(
   doc: V3Document,
@@ -289,6 +315,49 @@ export function profileToContract(
     }
     return n;
   };
+
+  // -- the main source: the spec, or the RFC its vector-main-RFC<N> names.
+  const keys = mainKeys(doc);
+  const normativeRfcs = new Set(
+    descendants(doc.root)
+      .filter(
+        (r) =>
+          r.name === "references" &&
+          elements(r).some(
+            (c) =>
+              c.name === "name" &&
+              plainText(c).trim() === "Normative References",
+          ),
+      )
+      .flatMap((r) => descendants(r))
+      .filter((r) => r.name === "reference")
+      .map((r) => referenced.get(r.attrs.anchor ?? "")),
+  );
+  let mainRfc: number | undefined;
+  const mainKey = keys[0];
+  for (const k of keys.slice(1))
+    refuse(
+      k.loc,
+      `a spec has one main source; keyword ${plainText(k).trim()} names a second`,
+    );
+  if (mainKey) {
+    const text = plainText(mainKey).trim();
+    const n = Number(text.match(MAIN_KEY_RE)?.[1] ?? Number.NaN);
+    if (Number.isNaN(n))
+      refuse(
+        mainKey.loc,
+        `the main-source keyword is ${MAIN_KEY}RFC<N>, not ${text}`,
+      );
+    else if (!normativeRfcs.has(n))
+      refuse(
+        mainKey.loc,
+        `${text} names RFC${n}, which is not a normative reference; list it under normative:`,
+      );
+    else mainRfc = n;
+  }
+  /** Why a construct that quotes the spec itself is refused in main mode. */
+  const ownText = (what: string) =>
+    `${what} is the spec's own text, but the main source is RFC${mainRfc}; quote the RFC in a blockquote ending {{Section N of RFC${mainRfc}}}`;
 
   // -- contract: docName and the file name agree.
   const base = (xmlPath.split("/").pop() ?? "").replace(/\.xml$/, "");
@@ -405,17 +474,27 @@ export function profileToContract(
   ];
   const isUntested = (n: XmlNode | undefined): n is XmlNode =>
     n?.name === "t" && plainText(n).startsWith(UNTESTED);
+  const isNote = (n: XmlNode | undefined): n is XmlNode =>
+    n?.name === "t" && plainText(n).startsWith(NOTE);
 
-  /** A requirement; null when refused; undefined when the block is none. */
+  /**
+   * A requirement, or with `excluded` an exclusion; null when refused;
+   * undefined when the block is none.
+   */
   const readBlock = (
     n: XmlNode,
     section: string,
+    excluded: boolean,
   ): Quoted | null | undefined => {
     const anchor = n.attrs.anchor;
     if (n.name === "t") {
       const text = plainText(n);
       const found = entriesUnder(n);
       if (text.startsWith(DEFINITION)) {
+        if (mainRfc !== undefined) {
+          refuse(n.loc, ownText("a Definition: paragraph"));
+          return null;
+        }
         if (anchor === undefined) {
           refuse(n.loc, "a Definition: paragraph needs an anchor");
           return null;
@@ -437,6 +516,10 @@ export function profileToContract(
         };
       }
       if (anchor === undefined || found.length === 0) return undefined;
+      if (mainRfc !== undefined) {
+        refuse(n.loc, ownText(`${anchor}, a BCP 14 paragraph,`));
+        return null;
+      }
       const sentences = [...new Set(found.map((e) => e.sentence))];
       if (sentences.length > 1) {
         refuse(
@@ -461,7 +544,10 @@ export function profileToContract(
         loc: n.loc,
       };
     }
-    if (anchor === undefined) return undefined;
+    // An unanchored blockquote is an exclusion or nothing.
+    if (anchor === undefined && !excluded) return undefined;
+    const what =
+      anchor === undefined ? "an excluded blockquote" : `blockquote ${anchor}`;
     const ts = elements(n);
     const last = ts[ts.length - 1];
     const lastKids = last?.children.filter(
@@ -477,7 +563,7 @@ export function profileToContract(
     ) {
       refuse(
         n.loc,
-        `blockquote ${anchor} must be <t> paragraphs, the last ending with {{Section N of RFCx}}`,
+        `${what} must be <t> paragraphs, the last ending with {{Section N of RFCx}}`,
       );
       return null;
     }
@@ -493,15 +579,25 @@ export function profileToContract(
     const levels = levelsOf(
       [...quote.matchAll(KEYWORD_RE)].map((m) => ({ level: levelOf(m[1]) })),
     );
-    if (levels.length > 1) {
+    // An unanchored exclusion exists to exclude a BCP 14 sentence, as the
+    // unanchored <t> form does; one with no keyword excludes nothing.
+    if (anchor === undefined && levels.length === 0) {
       refuse(
         n.loc,
-        `blockquote ${anchor} holds more than one BCP 14 level (${levels.join(", ")}); quote one level per requirement`,
+        `${what} holds no BCP 14 keyword, so it excludes nothing; anchor it to exclude a definition`,
+      );
+      return null;
+    }
+    // An exclusion records no level, so it may quote a sentence with two.
+    if (levels.length > 1 && !excluded) {
+      refuse(
+        n.loc,
+        `${what} holds more than one BCP 14 level (${levels.join(", ")}); quote one level per requirement`,
       );
       return null;
     }
     return {
-      id: anchor,
+      id: anchor ?? "",
       section: x.attrs.section,
       quote,
       level: levels[0] ?? "DEFINITION",
@@ -510,6 +606,8 @@ export function profileToContract(
     };
   };
   const tables: { node: XmlNode; section: string }[] = [];
+  /** BCP 14 sentences in unanchored blockquotes with no Untested: after. */
+  const unclaimed = new Set<Loc>();
   const blocks = (parent: XmlNode, section: string) => {
     const kids = elements(parent).filter(
       (c) => c.name !== "name" && c.name !== "section",
@@ -526,17 +624,30 @@ export function profileToContract(
         return;
       }
       if (used.has(n)) return;
-      // An anchored block is a requirement or refused as one, never both.
-      if (n.attrs.anchor !== undefined)
-        for (const l of bcp14Under(n)) handled.add(l);
       const next = kids[i + 1];
-      const q = readBlock(n, section);
+      // An anchored block, or an unanchored blockquote with an Untested:
+      // paragraph after it, is a requirement or exclusion or refused as one.
+      if (
+        n.attrs.anchor !== undefined ||
+        (n.name === "blockquote" && isUntested(next))
+      )
+        for (const l of bcp14Under(n)) handled.add(l);
+      const q = readBlock(n, section, isUntested(next));
       if (q === undefined) {
+        // An unanchored blockquote with no Untested: after it quotes the RFC
+        // but neither requires nor excludes what it quotes.
+        if (n.name === "blockquote")
+          for (const l of bcp14Under(n)) unclaimed.add(l);
         // An unanchored BCP 14 paragraph excluded by the paragraph after it.
         if (n.name !== "t" || !isUntested(next)) return;
         const found = entriesUnder(n);
         if (found.length === 0) return;
         used.add(next);
+        if (mainRfc !== undefined) {
+          for (const l of bcp14Under(n)) handled.add(l);
+          refuse(n.loc, ownText("an excluded paragraph"));
+          return;
+        }
         for (const l of bcp14Under(n)) handled.add(l);
         for (const l of bcp14Under(next)) handled.add(l);
         if (section === LOOSE_SECTION) {
@@ -575,7 +686,8 @@ export function profileToContract(
         for (const l of bcp14Under(untested)) handled.add(l);
       }
       if (q === null) return;
-      if (!ID_RE.test(q.id)) {
+      // An excluded blockquote needs no anchor; an anchor it has is checked.
+      if (!(untested && q.id === "") && !ID_RE.test(q.id)) {
         refuse(
           n.loc,
           `requirement id "${q.id}" is not letters, digits, ".", "_" and "-", starting with a letter or digit`,
@@ -595,24 +707,39 @@ export function profileToContract(
         return;
       }
       if (untested) {
+        const name = q.id ? `${q.id}'s` : "the";
         const reason = plainText(untested).slice(UNTESTED.length);
-        checkText(untested.loc, `${q.id}'s Untested: reason`, reason);
+        checkText(untested.loc, `${name} Untested: reason`, reason);
         exclusions.push({ ...q, reason });
-      } else requirements.push(q);
+        return;
+      }
+      if (isNote(next)) {
+        used.add(next);
+        q.note = plainText(next).slice(NOTE.length);
+        checkText(next.loc, `${q.id}'s note`, q.note);
+      }
+      requirements.push(q);
     });
-    for (const n of kids)
-      if (isUntested(n) && !used.has(n))
-        refuse(
-          n.loc,
-          "this Untested: paragraph excludes nothing; it must directly follow the requirement or BCP 14 paragraph it excludes",
-        );
+    for (const n of kids) {
+      if (used.has(n)) continue;
+      const why = isUntested(n)
+        ? "this Untested: paragraph excludes nothing; it must directly follow the requirement or BCP 14 paragraph it excludes"
+        : isNote(n)
+          ? "this Note: paragraph notes nothing; it must directly follow the requirement it notes"
+          : undefined;
+      if (why) refuse(n.loc, why);
+    }
   };
   for (const s of sections) blocks(s.node, s.id);
   for (const e of doc.normative) {
     if (handled.has(e.loc)) continue;
     refuse(
       e.loc,
-      `BCP 14 sentence has no anchor and no Untested: paragraph after it: "${e.sentence}"`,
+      mainRfc === undefined
+        ? `BCP 14 sentence has no anchor and no Untested: paragraph after it: "${e.sentence}"`
+        : unclaimed.has(e.loc)
+          ? `this BCP 14 sentence is an RFC quote with no anchor and no Untested: paragraph; anchor the blockquote to require it, or follow it with Untested: to exclude it: "${e.sentence}"`
+          : `${ownText("this BCP 14 sentence")}: "${e.sentence}"`,
     );
   }
 
@@ -745,6 +872,11 @@ export function profileToContract(
           callC.loc,
           `"${pc.call}" is not a function of the ts-interface block`,
         );
+      else if (fn.module !== undefined)
+        refuse(
+          callC.loc,
+          `Call: ${pc.call} is a reference function of ${fn.module}; a vector tests ${module}, the module under test, so call one of its functions`,
+        );
       else if (pe && !isLiteralError(pe)) {
         settled = settleVector(fn, pc.args, pe);
         if (Array.isArray(settled))
@@ -814,7 +946,9 @@ export function profileToContract(
         const n = citedRfc(el);
         if (n === null) return null;
         cited.add(n);
-        return { cite: { source: rfcId(n), section } };
+        return {
+          cite: n === mainRfc ? { section } : { source: rfcId(n), section },
+        };
       }
       const num = doc.sectionByAnchor.get(target);
       if (num === undefined) {
@@ -822,6 +956,10 @@ export function profileToContract(
           el.loc,
           `Source names "${target}", which is no numbered section`,
         );
+        return null;
+      }
+      if (mainRfc !== undefined) {
+        refuse(el.loc, ownText(`Source ${target}, a section of the spec,`));
         return null;
       }
       const isSpec = expect !== null && ("null" in expect || "bool" in expect);
@@ -891,26 +1029,47 @@ export function profileToContract(
         q.loc,
         `${q.id} is ${q.level}, but no clause covers it; cover it with a vector or a property, or follow it with an Untested: paragraph`,
       );
+  const targets = new Set(
+    functions.filter((f) => f.module === undefined).map((f) => f.name),
+  );
   properties.forEach((k, i) => {
-    if (callsIn(k.assert).size === 0)
+    const calls = callsIn(k.assert);
+    if (calls.size === 0)
       refuse(
         propertyLocs[i],
         `property ${k.id}'s assertion calls none of the functions under test, so it checks nothing`,
       );
+    else if (![...calls].some((f) => targets.has(f)))
+      refuse(
+        propertyLocs[i],
+        `property ${k.id}'s assertion calls only reference functions (${[...calls].sort().join(", ")}); call a function of ${module}, the module under test`,
+      );
   });
   if (refusals.length > 0) return sorted();
 
+  if (mainRfc !== undefined && !cited.has(mainRfc) && mainKey)
+    refuse(
+      mainKey.loc,
+      `RFC${mainRfc} is the main source, but nothing cites it; quote it in a requirement`,
+    );
+  if (refusals.length > 0) return sorted();
+
   const sources: SourceDecl[] = [
-    { id: contract, path: `../specs/${contract}.xml` },
+    ...(mainRfc === undefined
+      ? [{ id: contract, path: `../specs/${contract}.xml` }]
+      : []),
     ...[...cited].sort((a, b) => a - b).map((n) => ({ id: rfcId(n), rfc: n })),
   ];
-  const from = (q: Quoted) => (q.cite ? { source: rfcId(q.cite.rfc) } : {});
+  // What the main source says is in it, so names no source.
+  const from = (q: Quoted) =>
+    q.cite && q.cite.rfc !== mainRfc ? { source: rfcId(q.cite.rfc) } : {};
   const out = (q: Quoted): Requirement => ({
     id: q.id,
     ...from(q),
     section: q.section,
     level: q.level,
     quote: q.quote,
+    ...(q.note === undefined ? {} : { note: q.note }),
   });
   const excl = (q: Quoted & { reason: string }): Exclusion => ({
     ...from(q),
@@ -922,11 +1081,18 @@ export function profileToContract(
   const clauseLocs = [...vectorLocs, ...propertyLocs];
   const result: RfcContract = {
     contract,
-    source: { title: doc.title, main: contract },
+    // An RFC main source takes the form RFC contracts have always had: the
+    // RFC's number on source, its entry first in sources.
+    source:
+      mainRfc === undefined
+        ? { title: doc.title, main: contract }
+        : { rfc: mainRfc, title: doc.title },
     sources,
     target: { module },
     requirements: requirements.map(out),
-    exclusions: exclusions.map(excl),
+    ...(mainRfc !== undefined && exclusions.length === 0
+      ? {}
+      : { exclusions: exclusions.map(excl) }),
     functions,
     clauses,
   };
@@ -955,6 +1121,7 @@ export function profileToContract(
     at[key] = w.line;
     if (w.file !== root.file) files[key] = w.file;
   };
+  if (mainKey) put("source.main", mainKey.loc);
   for (const q of requirements) put(q.id, q.loc);
   for (const q of exclusions) put(`exclusion §${q.section}`, q.loc);
   clauses.forEach((k, i) => put(k.id, clauseLocs[i]));

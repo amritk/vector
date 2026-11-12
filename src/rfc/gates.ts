@@ -42,6 +42,7 @@ import {
   declaredSources,
   literalBytes,
   sourceOf,
+  targetFunctions,
   typeOf,
   typeOfLiteral,
   validateContractShape,
@@ -321,14 +322,42 @@ function checkCoverage(
   // holds (or fails) whatever the implementation does, so it would "cover" a
   // requirement for free. This is a floor, not a measure of strength: a weak
   // assertion that does call a function is `spec mutate`'s to find.
+  // The functions under test are target.module's. A clause that calls only
+  // reference functions (another module, such as HMAC under HKDF) tests that
+  // module, not this one, so it covers nothing here either.
+  const targets = targetFunctions(c);
+  const known = new Set(c.functions.map((f) => f.name));
+  if (targets.size === 0) {
+    issues.push({
+      gate: "coverage",
+      at: "functions",
+      message: `${c.target.module}, the module under test, declares no function, so no clause can test it`,
+    });
+  }
   for (const k of c.clauses) {
-    if (k.kind !== "property") continue;
-    if (callsIn(k.assert).size === 0) {
+    if (k.kind === "vector") {
+      if (known.has(k.call) && !targets.has(k.call)) {
+        issues.push({
+          gate: "coverage",
+          at: k.id,
+          message: `calls ${k.call}, a reference function, not a function of ${c.target.module}, the module under test, so it checks nothing here`,
+        });
+      }
+      continue;
+    }
+    const calls = callsIn(k.assert);
+    if (calls.size === 0) {
       issues.push({
         gate: "coverage",
         at: k.id,
         message:
           "the assertion calls none of the functions under test, so it holds whatever the implementation does and checks nothing",
+      });
+    } else if (![...calls].some((f) => targets.has(f))) {
+      issues.push({
+        gate: "coverage",
+        at: k.id,
+        message: `the assertion calls only reference functions (${[...calls].sort().join(", ")}), none of ${c.target.module}, the module under test, so it checks nothing here`,
       });
     }
   }

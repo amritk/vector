@@ -58,7 +58,13 @@ const STRING_RE = /^"(?:[^"\\\n]|\\.)*"/;
 const INT = "(?:0|-?[1-9][0-9]*)";
 const INT_RE = new RegExp(`^${INT}(?![0-9A-Za-z_])`);
 const WORD_RE = /^(null|true|false)(?![0-9A-Za-z_])/;
-const LABEL_RE = /^([A-Za-z][A-Za-z0-9_-]*(?: [A-Za-z0-9_-]+)*) = /;
+/**
+ * `Label = `: words of letters, digits, `_` and `-`. The first word starts
+ * with a letter, or with digits then a letter (`32-bit fixed-common part`,
+ * as RFC 8439 prints it), so `22 × 0b` and `42` stay a run and an int.
+ */
+const LABEL_RE =
+  /^((?:[A-Za-z]|[0-9]+-?[A-Za-z])[A-Za-z0-9_-]*(?: [A-Za-z0-9_-]+)*) = /;
 const HEX_RE = /^(?:[0-9a-f]{2})+$/;
 /** A whole text that is a decimal integer: `L = 42]` is not one. */
 const INT_TEXT_RE = new RegExp(`^${INT}$`);
@@ -176,13 +182,6 @@ class Reader {
         ? { kind: "null" }
         : { kind: "bool", value: word[1] === "true" };
     }
-    const run = this.repeat();
-    if (run) return run;
-    const int = rest.match(INT_RE);
-    if (int) {
-      this.i += int[0].length;
-      return { kind: "int", value: Number(int[0]) };
-    }
     const lab = rest.match(LABEL_RE);
     if (lab) {
       this.i += lab[0].length;
@@ -201,6 +200,13 @@ class Reader {
         value: Number(text),
         ...(isHex ? { hex: text } : {}),
       };
+    }
+    const run = this.repeat();
+    if (run) return run;
+    const int = rest.match(INT_RE);
+    if (int) {
+      this.i += int[0].length;
+      return { kind: "int", value: Number(int[0]) };
     }
     if (rest.startsWith("‖"))
       throw new Fail("`‖` is not a literal; write concat(a, b)", at);

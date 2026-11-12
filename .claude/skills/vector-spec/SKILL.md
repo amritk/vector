@@ -107,6 +107,28 @@ export function hexDecode(text: string): u8[] | null
 The types are `u8[]`, `string`, `i32`, `u32`, `boolean` and `Secret<u8[]>`.
 Add `| null` to `u8[]` or `string`, and to `Secret<u8[]>` as a result only.
 
+A property may compare the module with another nish module (HKDF with
+HMAC). Declare that module's functions after a second `// module:` line,
+below the module under test's own, which declares at least one function;
+they are reference functions, not exports. A reference function only helps
+check the module under test: a vector's Call must name a function of the module
+under test, and a property's assertion must call at least one, so a clause that
+calls only reference functions is refused. A module line is exactly
+`// module: nish/<path>`, one module, after the previous signature. A comment of any style or case whose text starts `module:` or
+`module nish/` but is not that (`// Module: …`, `//module nish/…`,
+`/* module: … */`, `/// module: …`, two modules) is refused, and so is a module
+line inside a signature. Other comments, such as `// module-level helper`, are
+skipped:
+
+````
+~~~ ts-interface
+// module: nish/crypto/hkdf
+export const hkdfExtractSha256 = (salt: u8[], ikm: u8[]): u8[]
+// module: nish/crypto/hmac
+export const hmacSha256 = (key: u8[], data: u8[]): u8[]
+~~~
+````
+
 **Requirements: one BCP 14 sentence per anchored paragraph,** at one level,
 with the anchor on the next line. `X MUST a. Y MUST b.` under one anchor is
 refused: give each sentence its own anchor. In an unnumbered section, a
@@ -146,6 +168,40 @@ hexDecode MUST NOT index a table by the value of a digit.
 Untested: timing is not observable from a unit test. Checked by: code review.
 ```
 
+A `Note: ` paragraph right after a requirement is kept as its `note`: say
+there how the module honours a sentence the RFC words loosely. A `Note:` that
+follows no requirement is refused.
+
+**A profile of one RFC.** When the spec checks a module against one RFC, make
+the RFC the main source with the front-matter keyword `vector-main-RFC<N>`
+(and RFC N under `normative:`):
+
+```yaml
+keyword:
+  - vector-main-RFC5869
+```
+
+Completeness then runs over the RFC, not the spec: every `MUST`, `MUST NOT`,
+`SHALL`, `SHALL NOT` and `REQUIRED` sentence of RFC N must be quoted in an
+anchored blockquote or in an excluded one. Exclude an RFC sentence by quoting
+it in an unanchored blockquote followed by `Untested:`:
+
+```
+> Words 13-15 are a nonce, which MUST not be repeated for the same key.
+> {{Section 2.3 of RFC8439}}
+{: gi="blockquote"}
+
+Untested: an obligation on the caller: a pure function cannot see its other invocations
+```
+
+Every requirement must then be RFC text: a `Definition:` paragraph, a BCP 14
+sentence of the spec's own, and a vector Source naming a section of the spec
+are refused. `specs/rfc5869-hkdf-sha256.md` and
+`specs/rfc8439-chacha20-poly1305.md` are worked examples. Check such a
+contract with `spec check <contract.json> --spec specs/<name>.xml`: the RFC is
+read from its recorded file, and the contract must be exactly what the profile
+extracts to.
+
 **One vector table** has exactly this header:
 
 ```
@@ -164,7 +220,8 @@ Untested: timing is not observable from a unit test. Checked by: code review.
   - `null`, `true`, `false`.
   - Decimal integers.
   - `Key = 0b0b0b`: labelled bytes. Use the label the cited section prints
-    the value under.
+    the value under, several words if it does; the first word may start with
+    digits joined to a letter (`32-bit fixed-common part = 07000000`).
   - `concat(a, b, …)`: one level, all parts bytes. Never `‖`.
 - **Source** says where the expected value comes from:
   - `{{Section N of RFCx}}`: the value is printed there. Prefer this.

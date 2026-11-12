@@ -22,7 +22,12 @@ import { dirname, join, resolve } from "node:path";
 import { type RfcContract, validateContractShape } from "./contract.ts";
 import { emitNishTest, sha256, staleReason } from "./emit-nish.ts";
 import { exportsCheck, moduleDiff, renderExports } from "./exports.ts";
-import { defaultContractPath, extract, unifiedDiff } from "./extract.ts";
+import {
+  defaultContractPath,
+  extract,
+  profileProblems,
+  unifiedDiff,
+} from "./extract.ts";
 import { SIDECAR_SUFFIX, frozenCheck, renderFrozen } from "./frozen.ts";
 import { type GateIssue, type SourceRun, runGates } from "./gates.ts";
 import { MutationRunError, runMutants } from "./mutate.ts";
@@ -284,7 +289,20 @@ async function checkContract(a: RfcArgs): Promise<ContractReport> {
   const read: GateIssue[] = [];
   let docs = new Map<string, RfcDocument>();
   if (shaped) {
-    const got = loadSources(input as RfcContract, a.contract, a.rfc);
+    // A profile given for a contract whose main source is an RFC is not that
+    // RFC's text: the RFC is read from its file, and the profile must state
+    // exactly this contract.
+    const profile =
+      a.rfc !== undefined && maybe.source?.rfc !== undefined
+        ? profileProblems(a.rfc, a.contract)
+        : undefined;
+    for (const message of profile ?? [])
+      read.push({ gate: "fidelity", at: "source", message });
+    const got = loadSources(
+      input as RfcContract,
+      a.contract,
+      profile === undefined ? a.rfc : undefined,
+    );
     docs = got.docs;
     for (const [id, message] of got.problems)
       read.push({ gate: "fidelity", at: `sources.${id}`, message });

@@ -101,3 +101,17 @@ would shift every number after it.
 - Pin `date:` in the front matter (`build-spec.sh` refuses a spec without one);
   otherwise `<date>` is the build day and every rebuild drifts.
 - `numbered="false"` on a heading is an IAL on the next line: `{: numbered="false"}`.
+
+### RFC profile constructs
+
+The constructs the RFC profiles (`specs/rfc5869-hkdf-sha256.md`,
+`specs/rfc8439-chacha20-poly1305.md`) add, as those specs built them with the
+same tools:
+
+| Row | Markdown | XML | Survived |
+|---|---|---|---|
+| main-source key | `keyword:`⏎`  - vector-main-RFC5869` in the front matter | `<keyword>vector-main-RFC5869</keyword>` in `<front>` | yes |
+| excluded RFC blockquote | `> Words 13-15 are a nonce, which MUST not be repeated for the same key.`⏎`> {{Section 2.3 of RFC8439}}`⏎`{: gi="blockquote"}`, a blank line, then `Untested: …` | `<blockquote>`⏎`<t>Words 13-15 are a nonce, which <bcp14>MUST</bcp14> not be repeated for the same key.`⏎`<xref section="2.3" sectionFormat="of" target="RFC8439"/></t>`⏎`</blockquote>` followed by the sibling `<t>Untested: …</t>` | yes. Without `gi="blockquote"` it becomes `<ul empty="true">`, as for an anchored one. kramdown-rfc tags the quote's capital keywords `<bcp14>` |
+| note | `Note: The RFC states the bound; …` right after `{: #R-L gi="blockquote"}` | the sibling `<t>Note: The RFC states the bound; …</t>` | yes |
+| reference module | a later `// module: nish/crypto/hmac` line in `~~~ ts-interface` | unchanged inside CDATA | yes |
+| digit-start label | `` `concat(32-bit fixed-common part = 07000000, IV = 4041424344454647)` `` in a Call cell | `<tt>…concat(32-bit fixed-common part = 07000000, IV = 4041424344454647)…</tt>` | yes |
