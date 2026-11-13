@@ -3,6 +3,8 @@
  * output collected. Every child vector starts goes through `runProcess`.
  */
 
+import { utf8Bytes } from "./hex"
+
 /** What a child process did: its exit status and everything it wrote. */
 export class ProcessResult {
   /** The exit status, or 128 plus the signal that ended it. */
@@ -24,14 +26,6 @@ export class ProcessResult {
     this.stdout = stdout
     this.stderr = stderr
   }
-}
-
-const processBytes = (text: string): u8[] => {
-  const out: u8[] = new Array<u8>(text.length)
-  for (let i = 0; i < toI32(text.length); i++) {
-    out[i] = toU8(text.charCodeAt(i))
-  }
-  return out
 }
 
 /**
@@ -56,7 +50,7 @@ export const runProcess = (argv: string[], stdin: string, timeoutMs: i32): Resul
   }
   const out: u8[] = []
   const err: u8[] = []
-  const status = spawnPiped(argv, processBytes(stdin), out, err)
+  const status = spawnPiped(argv, utf8Bytes(stdin), out, err)
   if (status === -2) {
     return Err(`${argv[0]} wrote more than 16 MiB`)
   }

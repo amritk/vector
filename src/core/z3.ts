@@ -44,7 +44,9 @@ export const resolveZ3 = (): Result<string, string> => {
     }
     return Ok(fromEnv)
   }
-  const self = realpathSync(process.argv[0])
+  // argv[0] is the name as typed: a bare `vector` found on PATH does not
+  // resolve, so ask the kernel for the running binary first (Linux).
+  const self = realpathSync("/proc/self/exe") ?? realpathSync(process.argv[0])
   if (self !== null) {
     const beside = joinPath(dirname(dirname(self)), ".z3/z3")
     if (isExecutableSync(beside)) {

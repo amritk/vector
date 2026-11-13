@@ -235,9 +235,23 @@ export const parseModel = (answer: QueryAnswer, text: string): i32 => {
 }
 
 const smtMarker = (stdout: string, from: i32): i32 => {
-  const rest = stdout.slice(from)
-  const at = toI32(rest.indexOf("@@Q"))
-  return at < 0 ? -1 : from + at
+  const n = toI32(stdout.length)
+  for (let i = from; i + 2 < n; i++) {
+    if (stdout.charCodeAt(i) === 64 && stdout.charCodeAt(i + 1) === 64 && stdout.charCodeAt(i + 2) === 81) {
+      return i
+    }
+  }
+  return -1
+}
+
+const smtLineEnd = (stdout: string, from: i32): i32 => {
+  const n = toI32(stdout.length)
+  for (let i = from; i < n; i++) {
+    if (stdout.charCodeAt(i) === 10) {
+      return i
+    }
+  }
+  return -1
 }
 
 /**
@@ -264,11 +278,11 @@ export const parseZ3Output = (stdout: string, queryCount: i32): QueryAnswer[] =>
     ) {
       digitsEnd = digitsEnd + 1
     }
-    const lineEnd = toI32(stdout.slice(at).indexOf("\n"))
+    const lineEnd = smtLineEnd(stdout, at)
     if (lineEnd < 0) {
       return answers
     }
-    const bodyStart = at + lineEnd + 1
+    const bodyStart = lineEnd + 1
     const next = smtMarker(stdout, bodyStart)
     const body = stdout.slice(bodyStart, next < 0 ? toI32(stdout.length) : next)
     if (digitsEnd > at + 3) {
