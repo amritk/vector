@@ -344,15 +344,18 @@ RFC's plain text (with its `Request for Comments: N` header and form feeds);
 anything else is refused. `.xml` sources are read everywhere a source is: by
 extract, check, emit, run, mutate and frozen.
 
-- **Linked RFCs** (`{"id": "rfc4648", "rfc": 4648}`) are looked up beside the
-  contract, then in `../rfcs/`, then in vector's own `rfcs/` (in the directory
-  above `dist/vector`; the current directory's for a binary installed outside
-  a `dist/`). That rule is the same for every command that reads a
-  contract (`check`, `emit`, `run`, `mutate`), whatever directory you run it
-  from. At each
-  place `rfc<N>.xml` is read, and preferred over `rfc<N>.txt`, when it exists. Once a contract
-  records a source's `file`, that name wins, and its recorded `sha256` must
-  still match.
+- **Linked RFCs** (`{"id": "rfc4648", "rfc": 4648}`) are looked up in four
+  places, nearest first, the same for every command (`extract`, `check`,
+  `emit`, `run`, `mutate`):
+  1. beside the contract;
+  2. the contract's `../rfcs/`;
+  3. the `rfcs/` of vector's install root, the directory above the binary's
+     own (`<root>/dist/vector` reads `<root>/rfcs/`);
+  4. the current directory's `rfcs/`.
+
+  At each place `rfc<N>.xml` is read, and preferred over `rfc<N>.txt`, when it
+  exists. Once a contract records a source's `file`, that name wins, and its
+  recorded `sha256` must still match.
 - **A missing RFC** exits 2 with the command that fetches its plain text,
   `curl -sSfL -o rfcs/rfc<N>.txt https://www.rfc-editor.org/rfc/rfc<N>.txt`.
   The `.txt` works for every RFC; drop in `rfc<N>.xml` too and it is read
@@ -360,9 +363,10 @@ extract, check, emit, run, mutate and frozen.
 - **Paths are input from anyone.** Every command that reads a contract
   (`check`, `emit`, `run`, `mutate`) requires a `sources[].path` to lead,
   symlinks followed, to a file beside the contract or under a `specs/` or
-  `rfcs/` beside the contract's directory, its parent or its grandparent (or
-  in vector's own `rfcs/` above), with no hidden directory (`.git`, `.ssh`, `.env`) on the way. Anything else
-  is a usage error before the file is read. `--spec` is not limited: that
+  `rfcs/` beside the contract's directory, its parent or its grandparent, or
+  in the install root or the current directory, with no hidden directory
+  (`.git`, `.ssh`, `.env`) on the way. Anything else is a usage error before
+  the file is read. `--spec` is not limited: that
   path comes from you.
 
 ## When z3 fails

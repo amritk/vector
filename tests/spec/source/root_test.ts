@@ -8,7 +8,7 @@
 import { Suite } from "nish/testing"
 import { joinPath, makeTempDir, mkdirAll } from "../../../src/core/fs"
 import { runProcess } from "../../../src/core/process"
-import { sourceInstallRoot } from "../../../src/spec/source/path"
+import { sourceInstallRoot, sourceRootOf } from "../../../src/spec/source/path"
 
 /** A contract whose RFC, rfcs/rfc5869.txt, is only at the install root. */
 const ROOT_TEST_CONTRACT: string = "contracts/rfc5869-hkdf-sha256.json"
@@ -22,8 +22,10 @@ const rootTestRun = (vector: string, dir: string, args: string): string => {
 /** check, emit and run find the RFC at the install root from another directory. */
 export const main = (): i32 => {
   const t = new Suite("spec/source root")
-  // This program is built outside a dist/, so its root is the current directory.
-  t.eqStr("a binary outside a dist/ reads from the current directory", sourceInstallRoot(), ".")
+  t.eqStr("dist/vector's root is the directory above dist/", sourceRootOf("/opt/vector/dist/vector"), "/opt/vector")
+  t.eqStr("a binary outside a dist/ has the same rule", sourceRootOf("/usr/local/bin/vector"), "/usr/local")
+  t.eqStr("an unknown binary reads from the current directory", sourceRootOf(null), ".")
+  t.ok("the running binary has a root", sourceInstallRoot() !== "")
   const vector = realpathSync("dist/vector")
   const dir = makeTempDir("vector-root-test-")
   if (vector === null) {

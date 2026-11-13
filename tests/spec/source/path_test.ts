@@ -68,9 +68,9 @@ export const main = (): i32 => {
   )
   t.ok("a plain name passes", sourceNameProblem("rfcs/rfc1.txt") === null)
   t.eqStr(
-    "the places, nearest first, XML first",
+    "the places, nearest first, XML first: beside, ../rfcs, the root's, the current directory's",
     sourceRfcPlaces(7, "/r/c/x.json", "/v").join(" "),
-    "/r/c/rfc7.xml /r/c/rfc7.txt /r/c/../rfcs/rfc7.xml /r/c/../rfcs/rfc7.txt /v/rfcs/rfc7.xml /v/rfcs/rfc7.txt",
+    "/r/c/rfc7.xml /r/c/rfc7.txt /r/c/../rfcs/rfc7.xml /r/c/../rfcs/rfc7.txt /v/rfcs/rfc7.xml /v/rfcs/rfc7.txt rfcs/rfc7.xml rfcs/rfc7.txt",
   )
   t.eqStr(
     "path is beside the contract",
@@ -115,11 +115,30 @@ export const main = (): i32 => {
   writeFileSync(joinPath(tmp, "elsewhere/rfc2.txt"), "elsewhere")
   const real = realpathSync(root) ?? root
   const realTmp = realpathSync(tmp) ?? tmp
+  // The tests run from the repository, whose rfcs/ is the fourth place.
+  const cwd = realpathSync(".") ?? "."
 
   t.eqStr(
     "the roots",
     sourceRoots(contract, root).join(" "),
-    `${real}/contracts ${real}/specs ${real}/rfcs ${realTmp}/specs ${realTmp}/rfcs`,
+    `${real}/contracts ${real}/specs ${real}/rfcs ${realTmp}/specs ${realTmp}/rfcs ${cwd}/specs ${cwd}/rfcs`,
+  )
+
+  // An RFC at only the third place (the root), then at only the fourth (the current directory).
+  const far = joinPath(tmp, "far/a/b")
+  const farRoot = joinPath(tmp, "far/root")
+  mkdirAll(far, 0o755).expect("mkdir")
+  mkdirAll(joinPath(farRoot, "rfcs"), 0o755).expect("mkdir")
+  writeFileSync(joinPath(farRoot, "rfcs/rfc77.txt"), "at the root")
+  t.eqStr(
+    "an RFC only at the root's rfcs/ is found there",
+    sourceCandidate(pathTestDecl(null, null, 77), joinPath(far, "c.json"), farRoot, pathTestBoth()).expect("ok"),
+    `${farRoot}/rfcs/rfc77.txt`,
+  )
+  t.eqStr(
+    "an RFC only in the current directory's rfcs/ is found there",
+    sourceCandidate(pathTestDecl(null, null, 4648), joinPath(far, "c.json"), farRoot, pathTestBoth()).expect("ok"),
+    "rfcs/rfc4648.txt",
   )
 
   // The implicit lookup.

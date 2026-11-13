@@ -4,15 +4,15 @@
  *
  * A source is located by its `path` (relative to the contract's directory)
  * or, for an RFC given by number, by looking for rfc<n>.xml then rfc<n>.txt
- * beside the contract, in ../rfcs, then in the root's rfcs/. The root is
- * where vector is installed (sourceInstallRoot), for every command, whatever
- * the current directory. Its `file` does
+ * beside the contract, in ../rfcs, in the root's rfcs/, then in the current
+ * directory's rfcs/. The root is where vector is installed
+ * (sourceInstallRoot); the order is the same for every command. Its `file` does
  * not locate it: it records which file was read (sourceLabel), and a check
  * refuses a contract whose `file` names another.
  *
  * A contract can come from anyone, so it may read only spec text: a file
- * beside it, or under specs/ or rfcs/ beside it, beside its parent, or in the
- * root, with no hidden directory below that and no specs/ or rfcs/ that is
+ * beside it, or under specs/ or rfcs/ beside it, beside its parent, in the
+ * root or in the current directory, with no hidden directory below that and no specs/ or rfcs/ that is
  * itself a symbolic link (which could lead anywhere). The file is judged after
  * every link is followed, opened, and judged again as the file the descriptor
  * holds, and its bytes come from that descriptor: a link swapped between the
@@ -26,21 +26,24 @@ import { charsFirstControl } from "../contract/chars"
 import { SourceDecl } from "../contract/types"
 
 /**
- * Where vector is installed, whose rfcs/ and specs/ sources are read from by
- * every command that reads a contract: the directory above the running
- * binary when that binary lives in a `dist/` (`<root>/dist/vector`), else the
- * current directory (a test program built elsewhere, say).
+ * The install root of a vector binary at `self`: the directory above the
+ * binary's own (`<root>/dist/vector` gives `<root>`, `/usr/local/bin/vector`
+ * gives `/usr/local`), else the current directory when the path is unknown.
+ *
+ * @param self the binary's real path, or null when it is unknown
+ * @returns the root
+ */
+export const sourceRootOf = (self: string | null): string => (self === null ? "." : dirname(dirname(self)))
+
+/**
+ * Where vector is installed, whose rfcs/, specs/ and schemas/ are read from by
+ * every command that reads a contract or extracts one (sourceRootOf the
+ * running binary), whatever the current directory.
  *
  * @returns the root
  */
-export const sourceInstallRoot = (): string => {
-  const self = realpathSync("/proc/self/exe") ?? realpathSync(process.argv[0])
-  if (self === null) {
-    return "."
-  }
-  const bin = dirname(self)
-  return basename(bin) === "dist" ? dirname(bin) : "."
-}
+export const sourceInstallRoot = (): string =>
+  sourceRootOf(realpathSync("/proc/self/exe") ?? realpathSync(process.argv[0]))
 
 /**
  * Where an RFC's plain text is fetched to (sourceFetchHint).
@@ -111,18 +114,19 @@ const sourceBelow = (dir: string, path: string): string | null => {
 
 /**
  * The places an RFC given only by number is looked for, nearest first: beside
- * the contract, in ../rfcs, then in the root's rfcs/; at each the XML before
+ * the contract, in ../rfcs, in the root's rfcs/, then in the current
+ * directory's rfcs/; at each the XML before
  * the plain text, since the XML is an RFC's definitive form.
  *
  * @param n the RFC's number
  * @param contractPath the contract's own path
- * @param root the root whose rfcs/ is searched last
+ * @param root the root whose rfcs/ is searched third
  * @returns the candidate paths, in the order they are tried
  */
 export const sourceRfcPlaces = (n: i32, contractPath: string, root: string): string[] => {
   const here = dirname(contractPath)
   const out: string[] = []
-  for (const d of [here, joinPath(here, "../rfcs"), joinPath(root, "rfcs")]) {
+  for (const d of [here, joinPath(here, "../rfcs"), joinPath(root, "rfcs"), "rfcs"]) {
     out.push(joinPath(d, `rfc${n}.xml`))
     out.push(joinPath(d, `rfc${n}.txt`))
   }
@@ -149,7 +153,7 @@ const sourceReadable = (path: string, exts: string[]): boolean => {
  *
  * @param decl the source
  * @param contractPath the contract's own path
- * @param root the root whose rfcs/ is searched last
+ * @param root the root whose rfcs/ is searched third, before the current directory's
  * @param exts the extensions a reader is registered for, with their dots
  * @returns `Ok` with the path to read, or `Err` when a name is refused
  *   (sourceNameProblem), the RFC is on disk nowhere, or it names nothing
@@ -212,7 +216,7 @@ export const sourceCandidate = (
 /**
  * The directories a contract may read spec text under: its own (real)
  * directory, and specs/ and rfcs/ of that directory's parent, of its
- * grandparent, and of the root, leaving out any specs/ or rfcs/ that is a
+ * grandparent, of the root and of the current directory, leaving out any specs/ or rfcs/ that is a
  * symbolic link.
  *
  * @param contractPath the contract's own path
@@ -222,7 +226,7 @@ export const sourceCandidate = (
 export const sourceRoots = (contractPath: string, root: string): string[] => {
   const here = sourceHere(contractPath)
   const out: string[] = [here]
-  for (const r of [joinPath(here, ".."), joinPath(here, "../.."), root]) {
+  for (const r of [joinPath(here, ".."), joinPath(here, "../.."), root, "."]) {
     const real = realpathSync(r)
     if (real === null) {
       continue
@@ -267,7 +271,8 @@ export const sourcePathProblem = (
 
 /**
  * How a source's `file` names the file at `real`: its path under specs/ or
- * rfcs/ of the root or of the contract's directory or an ancestor, the
+ * rfcs/ of the root, of the current directory, or of the contract's directory
+ * or an ancestor, the
  * shortest such (rfcs/rfc4648.txt wherever the contract sits); else, for a
  * file below the contract's directory, its path from the directory holding
  * that one (contracts/x.txt).
@@ -280,9 +285,11 @@ export const sourcePathProblem = (
 export const sourceLabel = (real: string, contractPath: string, root: string): string | null => {
   const here = sourceHere(contractPath)
   const roots: string[] = []
-  const realRoot = realpathSync(root)
-  if (realRoot !== null) {
-    roots.push(realRoot)
+  for (const r of [root, "."]) {
+    const real = realpathSync(r)
+    if (real !== null && roots.indexOf(real) < 0) {
+      roots.push(real)
+    }
   }
   let d = here
   while (true) {

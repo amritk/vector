@@ -274,9 +274,9 @@ vector's, not JavaScript's. For example, `.slice` clamps, `a % 0` is 0, and
 allows copying an RFC whole. Extract's missing-RFC message gives the `curl`
 command, which fetches `rfc<N>.txt`; the `.txt` works for every RFC, and an
 `rfc<N>.xml` is read instead when present. The lookup goes nearest place
-first (beside the contract, `../rfcs/`, then a third `rfcs/`: vector's own
-for `check`, the current directory's for `emit`, `run` and `mutate`, so run
-those from the repository root), and at each place `.xml` before `.txt`. A `file` the
+first, the same for every command (beside the contract, `../rfcs/`, the
+`rfcs/` of vector's install root, the directory above the binary's own, then
+the current directory's `rfcs/`), and at each place `.xml` before `.txt`. A `file` the
 contract already records wins: adding an `.xml` later does not displace a
 recorded `.txt`, and `check` and `frozen` verify the recorded bytes.
 
