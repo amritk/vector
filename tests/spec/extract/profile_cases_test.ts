@@ -1193,7 +1193,7 @@ const profileCasesTestVectors = (t: Suite, all: ProfileCasesTestRfcs): void => {
   profileCasesTestRefused(
     t,
     all,
-    "Call and Expected cells that do not parse, with columns",
+    "Call and Expected cells that do not parse, with their columns in the XML",
     profileCasesTestSpec(
       profileCasesTestSec(
         PROFILE_CASES_REQ +
@@ -1202,15 +1202,18 @@ const profileCasesTestVectors = (t: Suite, all: ProfileCasesTestRfcs): void => {
             profileCasesTestVectorId("V3", 'nope("66")', '"f"'),
             profileCasesTestVectorId("V4", "hexDecode", '"f"'),
             profileCasesTestVectorId("V5", 'hexEncode(concat([00], "é"))', '"00"'),
+            profileCasesTestVectorId("V6", "hexDecode(&quot;66&quot;, [0 x 0b])", '"f"'),
           ]),
         "",
       ),
     ),
     [
-      "8:1 Expected: `‖` is not a literal; write concat(a, b)",
+      "8:57 Expected: `‖` is not a literal; write concat(a, b)",
       `9 "nope" is not a function of the ts-interface block`,
-      "10:1 Call: a call is `name(args...)`",
+      "10:24 Call: a call is `name(args...)`",
       `11 Call: a quoted string is printable ASCII, tab, LF and CR only; "\\u00e9" is not`,
+      // A reference before the fault: the cell's text is not the XML's, so no column.
+      `12 Call: ${PROFILE_CASES_BYTES_HINT}`,
     ],
   )
   profileCasesTestRefused(
@@ -1258,8 +1261,8 @@ const profileCasesTestVectors = (t: Suite, all: ProfileCasesTestRfcs): void => {
       "12 Call: argument 1 of hexDecode (text) is string, not bytes",
       "13 Call: argument 1 of hexDecode (text) is string, not an int -1",
       "14 Call: hexDecode takes 1 argument(s), not 0",
-      `15:11 Call: ${PROFILE_CASES_LABELLED}`,
-      "16:11 Call: not a literal",
+      `15:34 Call: ${PROFILE_CASES_LABELLED}`,
+      "16:34 Call: not a literal",
       "17 Expected: hexEncode returns string, not bytes",
       "18 Expected: isHex returns bool, not an int -1",
     ],
@@ -1272,7 +1275,7 @@ const profileCasesTestVectors = (t: Suite, all: ProfileCasesTestRfcs): void => {
       PROFILE_CASES_REQ,
       profileCasesTestTable([profileCasesTestVector("hexEncode([00  0f])", '"000f"')]),
     ]),
-    [`10:11 Call: ${PROFILE_CASES_BYTES_HINT}`],
+    [`10:34 Call: ${PROFILE_CASES_BYTES_HINT}`],
   )
   profileCasesTestRefused(
     t,

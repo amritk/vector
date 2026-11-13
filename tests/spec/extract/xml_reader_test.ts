@@ -8,6 +8,8 @@ import {
   xmlAttr,
   xmlChild,
   xmlElements,
+  xmlErrorAt,
+  xmlErrorSee,
   xmlParse,
 } from "../../../src/spec/xml/reader"
 
@@ -66,6 +68,38 @@ const xmlReaderTestTree = (t: Suite): void => {
   const title: XmlNode | null = front === null ? null : xmlChild(front, "title")
   const text: XmlNode | null = title === null ? null : title.first
   t.eqStr("character references resolve", text === null ? "<none>" : text.text, "T AB")
+  t.ok("an element's column", front !== null && front.col === 3)
+  t.ok("text with references is not verbatim", text !== null && text.col === 17 && !text.verbatim)
+}
+
+/** Character data is verbatim when the XML holds its text as is, from its column on. */
+const xmlReaderTestVerbatim = (t: Suite): void => {
+  const root = xmlReaderTestRoot(t, "<rfc>\n  <tt>a(b)</tt><tt><![CDATA[c]]></tt><tt>d&lt;</tt>\n</rfc>")
+  if (root === null) {
+    return
+  }
+  const got = xmlElements(root).map((n: XmlNode): string => {
+    const k = n.first
+    return k === null ? "<none>" : `${k.text}@${k.line}:${k.col} ${k.verbatim}`
+  })
+  t.eqStr("plain, CDATA, a reference", got.join(", "), "a(b)@2:7 true, c@2:20 false, d<@2:42 false")
+}
+
+/** An error at a node takes its line and mark and no column; a second node rides along to be printed. */
+const xmlReaderTestErrorAt = (t: Suite): void => {
+  const a = new XmlNode("a", 7, 30, 5, 1)
+  a.col = 4
+  const b = new XmlNode("b", 9, 30, 5, 2)
+  const e = xmlErrorAt(a, "why")
+  t.eqStr("at the node", `${e.line}:${e.col} md=${e.mdLine} mark=${e.markLine} ${e.message}`, "7:0 md=30 mark=5 why")
+  t.ok("no second node", e.see === null)
+  const s = xmlErrorSee(a, "opened at", b)
+  const see = s.see
+  t.eqStr(
+    "with a second node",
+    see !== null ? `${s.line} ${s.message} ${see.name}:${see.line}` : "none",
+    "7 opened at b:9",
+  )
 }
 
 /** kramdown-rfc's `<?line N?>` names the markdown line of what follows. */
@@ -286,6 +320,8 @@ const xmlReaderTestPrefixes = (t: Suite): void => {
 export const main = (): i32 => {
   const t = new Suite("spec/extract xml reader")
   xmlReaderTestTree(t)
+  xmlReaderTestVerbatim(t)
+  xmlReaderTestErrorAt(t)
   xmlReaderTestLines(t)
   xmlReaderTestRefusals(t)
   xmlReaderTestEntityCap(t)

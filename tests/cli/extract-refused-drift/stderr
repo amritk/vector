@@ -1,0 +1,1 @@
+vector: tests/fixtures/profile/profile-drift.md:21 (tests/fixtures/profile/profile-drift.xml:253): BCP 14 sentence has no anchor and no Untested: paragraph after it: "The decoder MUST NOT allocate twice."

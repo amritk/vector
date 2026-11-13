@@ -128,6 +128,14 @@ const extractTestTree = (t: Suite, readers: SourceReaders): void => {
     extractTestOutcome(extractContract(spec, out, tmp, readers)),
     `${spec}:2 malformed XML: </rfc> closes <a>, opened at ${spec}:2`,
   )
+  const md = joinPath(tmp, "specs/mini-frame.md")
+  writeFileSync(md, extractTestLines(10))
+  writeFileSync(spec, "<rfc>\n<?line 5?>\n<a>\n</rfc>")
+  t.eqStr(
+    "with its markdown beside it, both places in the markdown's numbering",
+    extractTestOutcome(extractContract(spec, out, tmp, readers)),
+    `${md}:5 (${spec}:4) malformed XML: </rfc> closes <a>, opened at ${md}:5 (${spec}:3)`,
+  )
 }
 
 /** `l1`..`ln`, a line each. */

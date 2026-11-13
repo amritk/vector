@@ -1,0 +1,1 @@
+vector: tests/fixtures/profile/profile-col.xml:144:29: Call: bytes are lowercase hex pairs in brackets, at most one space apart: [00 0f], or [] for none

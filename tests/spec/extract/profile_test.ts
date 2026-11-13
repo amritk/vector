@@ -73,6 +73,12 @@ const profileTestWhere = (t: Suite): void => {
     `${r.file}:${r.line} ${r.exactFile}:${r.exactLine}:${r.col} ${r.message}`,
     "a.md:40 a.xml:20:7 why",
   )
+  t.eqI32(
+    "an XML column does not go on a markdown line alone",
+    profileRefusalAt(profileWhere(15, 40, 15, "a.xml", md), 7, "why").col,
+    0,
+  )
+  t.eqI32("it goes on the XML line", profileRefusalAt(profileWhere(15, 40, 15, "a.xml", null), 7, "why").col, 7)
 }
 
 /** A markdown file's record counts its lines, with or without a final newline. */

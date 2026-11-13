@@ -85,7 +85,7 @@ export class ProfileRefusal {
   /** Why the profile was refused. */
   message: string
   /** The XML file when `line` is only the last `<?line?>` mark's markdown line; "" otherwise. */
-  exactFile = ""
+  exactFile: string
   /** The XML line the refusal is on, when `exactFile` is set; 0 otherwise. */
   exactLine: i32 = 0
   /**
@@ -97,6 +97,7 @@ export class ProfileRefusal {
    * @param message why
    */
   constructor(file: string, line: i32, col: i32, message: string) {
+    this.exactFile = ""
     this.file = file
     this.line = line
     this.col = col
@@ -111,9 +112,11 @@ export class ProfileWhere {
   /** The 1-based line. */
   line: i32
   /** The XML file when `line` is only the last `<?line?>` mark's markdown line; "" when `line` is exact. */
-  exactFile = ""
+  exactFile: string
   /** The XML line the place is on, when `exactFile` is set; 0 otherwise. */
   exactLine: i32 = 0
+  /** Whether `line` is a markdown line standing alone, which an XML column does not fit. */
+  mdOnly: boolean
   /**
    * Makes a place.
    *
@@ -121,6 +124,8 @@ export class ProfileWhere {
    * @param line the line
    */
   constructor(file: string, line: i32) {
+    this.mdOnly = false
+    this.exactFile = ""
     this.file = file
     this.line = line
   }
@@ -378,6 +383,8 @@ export const profileWhere = (
   if (line !== markLine) {
     w.exactFile = xmlPath
     w.exactLine = line
+  } else {
+    w.mdOnly = true
   }
   return w
 }
@@ -392,15 +399,16 @@ export const profileWhere = (
 export const profileWhereText = (w: ProfileWhere): string => diagPlace(w.file, w.line, 0, w.exactFile, w.exactLine)
 
 /**
- * Makes a refusal at a place.
+ * Makes a refusal at a place. The column counts along the XML line, so it
+ * is dropped when the place is a markdown line alone.
  *
  * @param w the place
- * @param col the column, or 0
+ * @param col the 1-based column on the XML line, or 0
  * @param message why
  * @returns the refusal
  */
 export const profileRefusalAt = (w: ProfileWhere, col: i32, message: string): ProfileRefusal => {
-  const r = new ProfileRefusal(w.file, w.line, col, message)
+  const r = new ProfileRefusal(w.file, w.line, w.mdOnly ? 0 : col, message)
   r.exactFile = w.exactFile
   r.exactLine = w.exactLine
   return r
@@ -1423,6 +1431,21 @@ const profileCodeCell = (c: ProfileContext, td: XmlNode): string | null => {
   return null
 }
 
+/**
+ * Refuses a code cell at column `col` of its text: at that column of the XML
+ * when the cell's text is written there as is, on one line up to it, and at
+ * the cell with no column otherwise.
+ */
+const profileRefuseInCell = (c: ProfileContext, td: XmlNode, message: string, col: i32): void => {
+  const tt = profileOnly(td)
+  const t: XmlNode | null = tt !== null ? tt.first : null
+  if (col > 0 && t !== null && t.next === null && t.verbatim && t.text.substring(0, col - 1).indexOf("\n") < 0) {
+    profileRefuseAt(c, profileLocOf(t), message, t.col + col - 1)
+  } else {
+    profileRefuseAt(c, profileLocOf(td), message, 0)
+  }
+}
+
 const profileReadRow = (c: ProfileContext, cells: XmlNode[], section: string, tr: XmlNode): Clause | null => {
   const width = profileVectorHeader().length
   if (cells.length !== width) {
@@ -1455,7 +1478,7 @@ const profileReadRow = (c: ProfileContext, cells: XmlNode[], section: string, tr
   if (callText !== null) {
     const pc = literalsParseCall(callText)
     if (pc.isErr()) {
-      profileRefuseAt(c, profileLocOf(callC), `Call: ${pc.error.message}`, pc.error.col)
+      profileRefuseInCell(c, callC, `Call: ${pc.error.message}`, pc.error.col)
     } else {
       call = pc.value
     }
@@ -1464,7 +1487,7 @@ const profileReadRow = (c: ProfileContext, cells: XmlNode[], section: string, tr
   if (expText !== null) {
     const pe = literalsParse(expText)
     if (pe.isErr()) {
-      profileRefuseAt(c, profileLocOf(expC), `Expected: ${pe.error.message}`, pe.error.col)
+      profileRefuseInCell(c, expC, `Expected: ${pe.error.message}`, pe.error.col)
     } else {
       expected = pe.value
     }

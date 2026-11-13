@@ -29,12 +29,16 @@ The document is untrusted input, so the reader is narrow on purpose:
 Every refusal is an XmlError with its XML line and column and, after a
 `<?line N?>`, its markdown line. Nothing here panics.
 
-Lines. After a `<?line N?>` processing instruction (kramdown-rfc writes one
-at the start of each `--- middle` / `--- back` part, N being the markdown
-line of that marker), a node's markdown line is N plus the XML lines since
-that instruction. A signed `<?line -N?>` or `<?line +N?>` is, as in
-kramdown-rfc, a correction to every later unsigned N; it moves no line by
-itself. N has at most 9 digits.
+Lines. A `<?line N?>` processing instruction (kramdown-rfc writes one at
+the start of the abstract and of each `--- middle` / `--- back` part) says
+that the XML line it stands on is markdown line N. Each node and refusal
+carries the last such mark before it: its N (`mdLine`) and the XML line it
+stands on (`markLine`). The markdown line is known exactly only on the
+mark's own line; below it, kramdown-rfc's XML no longer follows the
+markdown line for line (a table, a list or a heading takes a different
+number of lines in each), so nothing is extrapolated. A signed
+`<?line -N?>` or `<?line +N?>` is, as in kramdown-rfc, a correction to
+every later unsigned N; it moves no line by itself. N has at most 9 digits.
 
 Generated from [src/spec/xml/reader.ts](https://github.com/amritk/vector/blob/main/src/spec/xml/reader.ts).
 
@@ -46,6 +50,8 @@ Generated from [src/spec/xml/reader.ts](https://github.com/amritk/vector/blob/ma
 - [`XML_MAX_ENTITIES`](#xml_max_entities)
 - [`XmlNode`](#xmlnode)
 - [`XmlError`](#xmlerror)
+- [`xmlErrorAt`](#xmlerrorat)
+- [`xmlErrorSee`](#xmlerrorsee)
 - [`xmlAttr`](#xmlattr)
 - [`xmlParse`](#xmlparse)
 - [`xmlChild`](#xmlchild)
@@ -106,7 +112,13 @@ class XmlNode
 Makes a node.
 
 ```ts
-new XmlNode(name: string, line: i32, mdLine: i32, id: i32): XmlNode
+new XmlNode(
+  name: string,
+  line: i32,
+  mdLine: i32,
+  markLine: i32,
+  id: i32,
+): XmlNode
 ```
 
 <scalar-field name="name" type="string" required>
@@ -123,7 +135,13 @@ its XML line
 
 <scalar-field name="mdLine" type="i32" required>
 
-its markdown line, or -1
+the last mark's markdown line, or -1
+
+</scalar-field>
+
+<scalar-field name="markLine" type="i32" required>
+
+the XML line of that mark, or 0
 
 </scalar-field>
 
@@ -147,6 +165,14 @@ The attributes' values, at the same index as `attrNames`.
 
 ```ts
 attrValues: string[]
+```
+
+#### XmlNode.col
+
+The 1-based column it starts at, on `line`.
+
+```ts
+col: i32
 ```
 
 #### XmlNode.first
@@ -181,9 +207,17 @@ The 1-based XML line it starts on.
 line: i32
 ```
 
+#### XmlNode.markLine
+
+The XML line that `<?line N?>` stands on; 0 when none. `mdLine` is this node's own markdown line only when `line` is this one.
+
+```ts
+markLine: i32
+```
+
 #### XmlNode.mdLine
 
-The markdown line, from the nearest `<?line N?>` before it; -1 when none.
+The markdown line of the last `<?line N?>` at or before it; -1 when none.
 
 ```ts
 mdLine: i32
@@ -221,6 +255,14 @@ Character data's text, references resolved; "" for an element.
 text: string
 ```
 
+#### XmlNode.verbatim
+
+Whether character data is written in the XML as its text, character for character from `col`, no reference or CDATA section changing it.
+
+```ts
+verbatim: boolean
+```
+
 ### XmlError
 
 Why the reader refused its input, and where.
@@ -234,7 +276,13 @@ class XmlError
 Makes an error.
 
 ```ts
-new XmlError(line: i32, col: i32, mdLine: i32, message: string): XmlError
+new XmlError(
+  line: i32,
+  col: i32,
+  mdLine: i32,
+  markLine: i32,
+  message: string,
+): XmlError
 ```
 
 <scalar-field name="line" type="i32" required>
@@ -245,13 +293,19 @@ the XML line
 
 <scalar-field name="col" type="i32" required>
 
-the byte column
+the byte column, or 0
 
 </scalar-field>
 
 <scalar-field name="mdLine" type="i32" required>
 
-the markdown line, or -1
+the last mark's markdown line, or -1
+
+</scalar-field>
+
+<scalar-field name="markLine" type="i32" required>
+
+the XML line of that mark, or 0
 
 </scalar-field>
 
@@ -277,9 +331,17 @@ The 1-based XML line.
 line: i32
 ```
 
+#### XmlError.markLine
+
+The XML line that `<?line N?>` stands on; 0 when none.
+
+```ts
+markLine: i32
+```
+
 #### XmlError.mdLine
 
-The markdown line, after a `<?line N?>`; -1 when none.
+The markdown line of the last `<?line N?>` at or before it; -1 when none.
 
 ```ts
 mdLine: i32
@@ -287,11 +349,78 @@ mdLine: i32
 
 #### XmlError.message
 
-Why the input was refused.
+Why the input was refused. When `see` is set, the message ends where that node's place is to be printed.
 
 ```ts
 message: string
 ```
+
+#### XmlError.see
+
+A second node the message is about, such as an anchor's first use; null when none.
+
+```ts
+see: XmlNode | null
+```
+
+### xmlErrorAt
+
+Makes an error at a node, with no column.
+
+```ts
+function xmlErrorAt(n: XmlNode, message: string): XmlError
+```
+
+<scalar-field name="n" type="XmlNode" required>
+
+the node the error is about
+
+</scalar-field>
+
+<scalar-field name="message" type="string" required>
+
+what is wrong
+
+</scalar-field>
+
+<scalar-field name="returns" type="XmlError">
+
+the error, at the node's line and mark
+
+</scalar-field>
+
+### xmlErrorSee
+
+Makes an error about two nodes: the message ends where the second one's
+place is to be printed, in the same file and numbering as the first's.
+
+```ts
+function xmlErrorSee(n: XmlNode, message: string, see: XmlNode): XmlError
+```
+
+<scalar-field name="n" type="XmlNode" required>
+
+the node the error is about
+
+</scalar-field>
+
+<scalar-field name="message" type="string" required>
+
+what is wrong, up to the second node's place
+
+</scalar-field>
+
+<scalar-field name="see" type="XmlNode" required>
+
+the second node
+
+</scalar-field>
+
+<scalar-field name="returns" type="XmlError">
+
+the error, at `n`
+
+</scalar-field>
 
 ### xmlAttr
 

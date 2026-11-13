@@ -76,6 +76,10 @@ export class XmlNode {
   markLine: i32
   /** A number unique in its document, for keying a node in a Map. */
   id: i32
+  /** The 1-based column it starts at, on `line`. */
+  col: i32 = 0
+  /** Whether character data is written in the XML as its text, character for character from `col`, no reference or CDATA section changing it. */
+  verbatim: boolean
   /**
    * Makes a node.
    *
@@ -86,6 +90,7 @@ export class XmlNode {
    * @param id its number in the document
    */
   constructor(name: string, line: i32, mdLine: i32, markLine: i32, id: i32) {
+    this.verbatim = false
     this.name = name
     this.text = ""
     this.attrNames = []
@@ -231,7 +236,9 @@ const xmlErrAt = (r: XmlReader, message: string, at: i32): XmlError => {
 const xmlNodeAt = (r: XmlReader, name: string, at: i32): XmlNode => {
   const line = xmlLineOf(r, at)
   r.ids = r.ids + 1
-  return new XmlNode(name, line, xmlMarkMd(r), r.piLine, r.ids)
+  const n = new XmlNode(name, line, xmlMarkMd(r), r.piLine, r.ids)
+  n.col = at - r.lineStarts[line - 1] + 1
+  return n
 }
 
 /** Appends `kid` to `parent`'s children. */
@@ -690,8 +697,12 @@ const xmlStartTag = (r: XmlReader, node: XmlNode, at: i32): Result<boolean, XmlE
  */
 const xmlCloseText = (r: XmlReader): XmlNode | null => {
   const t = r.piecesNode
-  if (t !== null && r.pieces.length > 1) {
-    t.text = r.pieces.join("")
+  if (t !== null) {
+    if (r.pieces.length > 1) {
+      t.text = r.pieces.join("")
+    }
+    const at = r.lineStarts[t.line - 1] + t.col - 1
+    t.verbatim = r.src.substring(at, at + t.text.length) === t.text
   }
   r.piecesNode = null
   r.pieces = []

@@ -27,7 +27,7 @@ export class Diagnostic {
   /** The 1-based column, or 0 when the problem names none. */
   col: i32 = 0
   /** The file `exactLine` is in, when `line` only comes near the problem; "" otherwise. */
-  exactFile = ""
+  exactFile: string
   /** The 1-based line in `exactFile` the problem is on; 0 when `exactFile` is "". */
   exactLine: i32 = 0
 
@@ -40,6 +40,7 @@ export class Diagnostic {
    * @param code the exit code it implies, `EXIT_REFUSED` or `EXIT_USAGE`
    */
   constructor(file: string, line: i32, message: string, code: i32) {
+    this.exactFile = ""
     this.file = file
     this.line = line
     this.message = message

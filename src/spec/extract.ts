@@ -373,14 +373,12 @@ export const extractContract = (
   if (parsed.isErr()) {
     const e = parsed.error
     const w = profileWhere(e.line, e.mdLine, e.markLine, xmlPath, md)
-    // The column counts along the XML line, so it goes only where that line is printed.
-    const col = w.file === xmlPath || w.exactFile !== "" ? e.col : 0
     const see = e.see
     const message =
       see !== null
         ? `${e.message} ${profileWhereText(profileWhere(see.line, see.mdLine, see.markLine, xmlPath, md))}`
         : e.message
-    out.refusals.push(profileRefusalAt(w, col, message))
+    out.refusals.push(profileRefusalAt(w, e.col, message))
     return out
   }
   const doc = parsed.value

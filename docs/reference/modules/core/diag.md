@@ -19,6 +19,8 @@ Generated from [src/core/diag.ts](https://github.com/amritk/vector/blob/main/src
 - [`Diagnostic`](#diagnostic)
 - [`usageError`](#usageerror)
 - [`refusal`](#refusal)
+- [`refusalAt`](#refusalat)
+- [`diagPlace`](#diagplace)
 - [`formatDiagnostic`](#formatdiagnostic)
 - [`report`](#report)
 
@@ -102,6 +104,30 @@ the exit code it implies, `EXIT_REFUSED` or `EXIT_USAGE`
 code: i32
 ```
 
+#### Diagnostic.col
+
+The 1-based column, or 0 when the problem names none.
+
+```ts
+col: i32
+```
+
+#### Diagnostic.exactFile
+
+The file `exactLine` is in, when `line` only comes near the problem; "" otherwise.
+
+```ts
+exactFile: string
+```
+
+#### Diagnostic.exactLine
+
+The 1-based line in `exactFile` the problem is on; 0 when `exactFile` is "".
+
+```ts
+exactLine: i32
+```
+
 #### Diagnostic.file
 
 The file (or other source) the problem is in; empty when there is none.
@@ -178,9 +204,120 @@ a diagnostic with code `EXIT_REFUSED`
 
 </scalar-field>
 
+### refusalAt
+
+Makes a refusal at a column, or at a line that only comes near the problem
+together with the line it is exactly on, which exits 1.
+
+```ts
+function refusalAt(
+  file: string,
+  line: i32,
+  col: i32,
+  exactFile: string,
+  exactLine: i32,
+  message: string,
+): Diagnostic
+```
+
+<scalar-field name="file" type="string" required>
+
+the file the refusal is about, or "" for none
+
+</scalar-field>
+
+<scalar-field name="line" type="i32" required>
+
+the 1-based line, or 0 for none
+
+</scalar-field>
+
+<scalar-field name="col" type="i32" required>
+
+the 1-based column, or 0 for none
+
+</scalar-field>
+
+<scalar-field name="exactFile" type="string" required>
+
+the file `exactLine` is in, or "" when `line` is exact
+
+</scalar-field>
+
+<scalar-field name="exactLine" type="i32" required>
+
+the line the problem is exactly on, in `exactFile`
+
+</scalar-field>
+
+<scalar-field name="message" type="string" required>
+
+the text shown to the user
+
+</scalar-field>
+
+<scalar-field name="returns" type="Diagnostic">
+
+a diagnostic with code `EXIT_REFUSED`
+
+</scalar-field>
+
+### diagPlace
+
+Formats a place as `file`, `file:line` or `file:line:col`; when the line
+only comes near it, as `file:line (exactFile:exactLine)`, the column going
+with the exact line.
+
+```ts
+function diagPlace(
+  file: string,
+  line: i32,
+  col: i32,
+  exactFile: string,
+  exactLine: i32,
+): string
+```
+
+<scalar-field name="file" type="string" required>
+
+the file, or "" for none
+
+</scalar-field>
+
+<scalar-field name="line" type="i32" required>
+
+the 1-based line, or 0 for none
+
+</scalar-field>
+
+<scalar-field name="col" type="i32" required>
+
+the 1-based column, or 0 for none
+
+</scalar-field>
+
+<scalar-field name="exactFile" type="string" required>
+
+the file `exactLine` is in, or "" when `line` is exact
+
+</scalar-field>
+
+<scalar-field name="exactLine" type="i32" required>
+
+the line the place is exactly on, in `exactFile`
+
+</scalar-field>
+
+<scalar-field name="returns" type="string">
+
+the place, or "" when there is no file
+
+</scalar-field>
+
 ### formatDiagnostic
 
-Formats a diagnostic as `vector: file:line: message`, dropping the parts it lacks.
+Formats a diagnostic as `vector: place: message` (see `diagPlace`),
+dropping the place when there is none.
 
 ```ts
 function formatDiagnostic(d: Diagnostic): string
