@@ -548,7 +548,7 @@ const extractCasesTestGate = (x: ExtractCasesTestCtx): void => {
   t.ok(`${name}: no contract written`, readFileSyncOrNull(tr.out) === null)
 }
 
-/** A solver that cannot run is a tool failure: exit 2 with its message, and no refusal. */
+/** A solver that cannot run is a tool failure: exit 2 with its message, no refusal, nothing written and no diff. */
 const extractCasesTestZ3 = (x: ExtractCasesTestCtx): void => {
   const r = extractCasesTestRun(
     x,
@@ -560,6 +560,32 @@ const extractCasesTestZ3 = (x: ExtractCasesTestCtx): void => {
     "vector: spec extract: VECTOR_Z3 is /nonexistent, which is not a file",
   ])
   x.t.eqStr("a solver that cannot run: nothing on stdout", r.stdout, "")
+  const made = makeTempDir("vector-extract-z3-")
+  if (made.isErr()) {
+    x.t.fail("a temp dir", made.error)
+    return
+  }
+  const out = joinPath(made.value, "example-hex.json")
+  const o = extractCasesTestRun(
+    x,
+    ["/usr/bin/env", "VECTOR_Z3=/nonexistent", x.vector, "spec"],
+    ["extract", "specs/example-hex.xml", "-o", out],
+  )
+  x.t.eqLines("a solver that cannot run, with -o: exit 2", extractCasesTestErr(o), [
+    "exit 2",
+    "vector: spec extract: VECTOR_Z3 is /nonexistent, which is not a file",
+  ])
+  x.t.ok("a solver that cannot run, with -o: nothing written", readFileSyncOrNull(out) === null)
+  const c = extractCasesTestRun(
+    x,
+    ["/usr/bin/env", "VECTOR_Z3=/nonexistent", x.vector, "spec"],
+    ["extract", "specs/example-hex.xml", "-o", "contracts/example-hex.json", "--check"],
+  )
+  x.t.eqLines("a solver that cannot run, with --check: exit 2", extractCasesTestErr(c), [
+    "exit 2",
+    "vector: spec extract: VECTOR_Z3 is /nonexistent, which is not a file",
+  ])
+  x.t.eqStr("a solver that cannot run, with --check: no diff", c.stdout, "")
 }
 
 /** Each committed contract is what its spec states, and two extracts are the same bytes. */

@@ -1,7 +1,17 @@
 import { Suite } from "nish/testing"
 import { replaceAll } from "nish/text"
 import { joinPath, makeTempDir, mkdirAll } from "../../../src/core/fs"
-import { CheckFinding, CheckNote, CheckReport, SampleTable } from "../../../src/spec/check"
+import {
+  CheckContext,
+  CheckFinding,
+  CheckNote,
+  CheckReport,
+  SampleTable,
+  checkAddReader,
+  checkContractWith,
+  checkGates,
+} from "../../../src/spec/check"
+import { contractLoad } from "../../../src/spec/contract/contract"
 import {
   ExtractOutcome,
   extractContract,
@@ -11,6 +21,7 @@ import {
 } from "../../../src/spec/extract"
 import { ProfileLocator } from "../../../src/spec/profile/profile"
 import { SourceReaders } from "../../../src/spec/source/load"
+import { xmlRead } from "../../../src/spec/xml/doc"
 
 /** A gate's note, and the finding the report carries for it. */
 const extractGatesTestIssue = (
@@ -155,6 +166,53 @@ const extractGatesTestMini = (t: Suite, readers: SourceReaders): void => {
   t.ok("no contract written", readFileSyncOrNull(out) === null)
 }
 
+/**
+ * A source the gates cannot read: extract-mini's contract, as extract makes
+ * it, checked in a repo that holds the spec but not RFC 4648. The sources gate says nothing citing
+ * it can be checked, once, and extract places it at the spec's root, line 1.
+ * (Through extract itself the profile reads every source first, from the same
+ * places, so a source it cannot read is its error before any gate runs.)
+ */
+const extractGatesTestSources = (t: Suite, readers: SourceReaders): void => {
+  const d = extractGatesTestTree(t, readFileSyncOrNull("tests/fixtures/extract/extract-mini.xml") ?? "")
+  const away = makeTempDir("vector-extract-sources-")
+  if (d === null || away.isErr()) {
+    return
+  }
+  const xml = joinPath(d, "specs/extract-mini.xml")
+  const o = extractContract(xml, joinPath(d, "contracts/extract-mini.json"), d, readers)
+  t.eqStr("the fixture extracts", o.errors.join("; "), "")
+  for (const sub of ["specs", "contracts"]) {
+    mkdirAll(joinPath(away.value, sub), 0o755).expect(sub)
+  }
+  writeFileSync(joinPath(away.value, "specs/extract-mini.xml"), readFileSyncOrNull(xml) ?? "")
+  const lone = joinPath(away.value, "contracts/extract-mini.json")
+  const c = contractLoad(o.text, lone)
+  if (c.isErr()) {
+    t.fail("its contract loads", c.error.join("; "))
+    return
+  }
+  const check = new CheckContext(lone, away.value)
+  checkAddReader(check, ".xml", xmlRead).expect("the xml reader")
+  const report = checkContractWith(check, c.value, checkGates())
+  const sources = report.findings.filter((f: CheckFinding): boolean => f.message.startsWith("sources: "))
+  t.eqI32("a source not there is one finding", sources.length, 1)
+  t.ok(
+    "it says nothing citing it can be checked",
+    sources.length === 1 && sources[0].message.endsWith(", so nothing citing it can be checked"),
+  )
+  const locator = new ProfileLocator(xml, 1)
+  locator.at.set("source.main", 5)
+  const rows = extractGateRefusals(report, check.notes, locator, `${lone}.survivors.json`, c.value.source.rfc)
+    .filter((r): boolean => r.message.indexOf("sources: ") >= 0)
+    .map((r): string => `${r.file === xml ? "spec" : r.file}:${r.line}: ${r.message}`)
+  t.eqStr(
+    "it lands once, at the spec's root",
+    rows.join("\n"),
+    "spec:1: fidelity: sources: source rfc4648: ../rfcs/rfc4648.txt: no such file, so nothing citing it can be checked",
+  )
+}
+
 /** `p<i>` for i in 1..n, a line each. */
 const extractGatesTestLines = (p: string, n: i32): string => {
   const out: string[] = []
@@ -182,6 +240,7 @@ export const main = (): i32 => {
     t.fail("the readers register", readers.error)
   } else {
     extractGatesTestMini(t, readers.value)
+    extractGatesTestSources(t, readers.value)
   }
   return t.done()
 }
