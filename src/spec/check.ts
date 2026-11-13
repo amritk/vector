@@ -18,6 +18,7 @@
 
 import { contractShapeErrors } from "./contract/shape"
 import { Contract, Literal } from "./contract/types"
+import { gateCompleteness } from "./gates/completeness"
 import { gateCoverage } from "./gates/coverage"
 import { gateFidelity } from "./gates/fidelity"
 import { gateIds } from "./gates/ids"
@@ -284,6 +285,7 @@ export const checkGates = (): CheckGateEntry[] => [
   new CheckGateEntry("typing", gateTyping, false),
   new CheckGateEntry("coverage", gateCoverage, false),
   new CheckGateEntry("fidelity", gateFidelity, false),
+  new CheckGateEntry("completeness", gateCompleteness, false),
 ]
 
 /**
