@@ -230,8 +230,10 @@ Beyond the profile's literals:
   true.
 
 The profile spells a tolerance as a [`Tolerance:` paragraph](#tolerances).
-vector does *not yet* sample a `forall` over `f64`: the schema records such a domain (`{"type":
-"f64", "min": "-1.5", "max": "Infinity"}`) and vector refuses the property. A
+
+A `forall` over `f64` is *not yet* sampled: the schema records such a
+domain (`{"type": "f64", "min": "-1.5", "max": "Infinity"}`) and vector
+refuses the property. A
 `forall` integer may be any of `i8` … `u64`, with the same wide-integer
 strings for bounds. The sampler takes each type's minimum and maximum, and Z3
 solves over bit-vectors of its width, so `+ - * %` wrap as the evaluator's

@@ -1,5 +1,5 @@
 import { Suite } from "nish/testing"
-import { replaceAll } from "nish/text"
+import { replaceAll, split } from "nish/text"
 import { joinPath, makeTempDir, mkdirAll } from "../../../src/core/fs"
 import { SampleTable } from "../../../src/spec/check"
 import { contractLoad } from "../../../src/spec/contract/contract"
@@ -228,6 +228,17 @@ const profileTolTestRefusals = (t: Suite, xml: string): void => {
       "V2 abs tiny,",
       `94 V2's abs tolerance is a decimal greater than 0 as an f64, like 1e-9, not "tiny"`,
     ],
+    ["abs NaN", "V2 abs NaN,", `94 V2's abs tolerance is a decimal greater than 0 as an f64, like 1e-9, not "NaN"`],
+    [
+      "abs Infinity",
+      "V2 abs Infinity,",
+      `94 V2's abs tolerance is a decimal greater than 0 as an f64, like 1e-9, not "Infinity"`,
+    ],
+    [
+      "abs +1e-9",
+      "V2 abs +1e-9,",
+      `94 V2's abs tolerance is a decimal greater than 0 as an f64, like 1e-9, not "+1e-9"`,
+    ],
     ["abs 1e400", "V2 abs 1e400,", `94 V2's abs tolerance must be finite, but "1e400" rounds to Infinity`],
     [
       "abs 1e-400",
@@ -314,6 +325,12 @@ const profileTolTestRefusals = (t: Suite, xml: string): void => {
   )
 }
 
+/** The 1-based line of `xml` that holds `marker`, or 0 when none does. */
+const profileTolTestLine = (xml: string, marker: string): i32 => {
+  const at = xml.indexOf(marker)
+  return at < 0 ? 0 : split(xml.substring(0, at), "\n").length
+}
+
 /** The profile's tolerance spelling, end to end and refused. */
 export const main = (): i32 => {
   const t = new Suite("spec/extract profile tolerance")
@@ -321,6 +338,13 @@ export const main = (): i32 => {
   t.ok("the fixture holds V1's tolerance", xml.indexOf(PROFILE_TOL_V1) > 0)
   t.ok("the fixture holds V2's tolerance", xml.indexOf(PROFILE_TOL_V2) > 0)
   t.eqStr("the fixture reads", profileTolTestRead(xml), "ok")
+  // The refusal cases name these fixture lines: V1's and V2's Tolerance:
+  // paragraphs, and R-HALF, where a stray one is planted.
+  t.eqStr(
+    "the refusal cases' fixture lines",
+    `${profileTolTestLine(xml, PROFILE_TOL_V1)} ${profileTolTestLine(xml, PROFILE_TOL_V2)} ${profileTolTestLine(xml, '<t anchor="R-HALF">')}`,
+    "93 94 53",
+  )
   const readers = extractReaders()
   if (readers.isErr()) {
     t.fail("the readers register", readers.error)

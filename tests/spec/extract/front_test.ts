@@ -475,7 +475,7 @@ const frontTestRefusals = (t: Suite, fns: FnSig[]): void => {
     ],
     [`${h}forall (b: u8[]) => true`, "`b` needs a bounds comment, like /* 0..64 */", ")"],
     [`${h}forall (b: u8[] // 0..1\n) => true`, "`b` needs a bounds comment, like /* 0..64 */", "// 0"],
-    [`${h}forall (b: u8[] /* 64 */) => true`, "the bounds of `b` must read `lo..hi`, like /* 0..64 */", "/*"],
+    [`${h}forall (b: u8[] /* 64 */) => true`, "the bounds of `b` (u8[]) must read `lo..hi`, like /* 0..64 */", "/*"],
     [`${h}forall (b: u8[] /* 0..4 hexdigit */) => true`, "an alphabet applies only to string variables, not `b`", "/*"],
     [`${h}forall (i: i32 /* 0..1 "a" */) => true`, "an alphabet applies only to string variables, not `i`", "/*"],
     [
@@ -489,10 +489,14 @@ const frontTestRefusals = (t: Suite, fns: FnSig[]): void => {
       "/*",
     ],
     [`${h}forall (a: u8 /* 0..256 */) => true`, "the bounds of `a` (u8) must satisfy 0 <= lo <= hi <= 255", "/*"],
-    [`${h}forall (b: u8[] /* 0..4097 */) => true`, "the length bounds of `b` must satisfy 0 <= lo <= hi <= 4096", "/*"],
+    [
+      `${h}forall (b: u8[] /* 0..4097 */) => true`,
+      "the length bounds of `b` (u8[]) must satisfy 0 <= lo <= hi <= 4096",
+      "/*",
+    ],
     [
       `${h}forall (s: string /* -1..2 digit */) => true`,
-      "the length bounds of `s` must satisfy 0 <= lo <= hi <= 4096",
+      "the length bounds of `s` (string) must satisfy 0 <= lo <= hi <= 4096",
       "/*",
     ],
     [

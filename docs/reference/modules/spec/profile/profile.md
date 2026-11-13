@@ -20,6 +20,8 @@ clock, the same contract or the same refusals for the same input.
                 in `<front>` names; it must be under `normative:` and cited
   property      a `ts-property` block, read by its front end
   vector        a row of a table headed Id | Call | Expected | Covers | Source | Title
+  tolerance     a `<t>` directly after the vector table (or another one)
+                reading `Tolerance: V1 ulps 1, <xref>: "quote"`, or `abs 1e-9`
 
 Every BCP 14 sentence must be a requirement or an exclusion, every xref to
 an RFC must have a `<reference>`, and every section cited must exist in
