@@ -14,6 +14,21 @@ pub fn add_i64(a: i64, b: i64) -> i64 {
     a.wrapping_add(b)
 }
 
+/// a + b, wrapping to 32 bits.
+pub fn add_i32(a: i32, b: i32) -> i32 {
+    a.wrapping_add(b)
+}
+
+/// a - b, wrapping to 32 bits.
+pub fn sub_i32(a: i32, b: i32) -> i32 {
+    a.wrapping_sub(b)
+}
+
+/// a * b, wrapping to 32 bits.
+pub fn mul_i32(a: i32, b: i32) -> i32 {
+    a.wrapping_mul(b)
+}
+
 /// x sign-extended to 64 bits, as 8 little-endian bytes.
 pub fn le_bytes(x: i32) -> [u8; 8] {
     (x as i64).to_le_bytes()

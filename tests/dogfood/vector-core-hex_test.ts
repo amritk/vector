@@ -10,6 +10,7 @@
 
 import { Suite } from "nish/testing";
 import { sha256Hex, toHex } from "../../src/core/hex";
+import { wrappingMul } from "nish:unsafe";
 
 /** The bytes a lowercase hex string spells. */
 const unhex = (hex: string): u8[] => {
@@ -168,7 +169,7 @@ const clause_P_HEX_LEN = (t: Suite): boolean => {
   ];
   for (let i: i32 = 0; i < 29; i += 1) {
     const v_b: u8[] = unhex(table_b[i]);
-    const holds: boolean = (toI32(toHex(v_b).length) === (2 * toI32(v_b.length)));
+    const holds: boolean = (toI32(toHex(v_b).length) === wrappingMul(2, toI32(v_b.length)));
     if (!holds) {
       return t.fail("[P-HEX-LEN] two characters per byte (R-HEX-LEN)", `sample ${i + 1} of 29 (len(b) = ${toI32(v_b.length)}): the assertion is false`);
     }

@@ -14,6 +14,27 @@ def add_i64(a, b):
     return s - (1 << 64) if s >= 1 << 63 else s
 
 
+def _i32(x):
+    """x wrapped to 32 bits, two's complement."""
+    s = x & 0xFFFFFFFF
+    return s - (1 << 32) if s >= 1 << 31 else s
+
+
+def add_i32(a, b):
+    """a + b, wrapping to 32 bits."""
+    return _i32(a + b)
+
+
+def sub_i32(a, b):
+    """a - b, wrapping to 32 bits."""
+    return _i32(a - b)
+
+
+def mul_i32(a, b):
+    """a * b, wrapping to 32 bits."""
+    return _i32(a * b)
+
+
 def le_bytes(x):
     """x sign-extended to 64 bits, as 8 little-endian bytes."""
     return (x & 0xFFFFFFFFFFFFFFFF).to_bytes(8, "little")
