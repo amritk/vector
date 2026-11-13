@@ -44,11 +44,11 @@ import {
 
 /** Why a block was refused; line and column (1-based) count from the block's first line. */
 export class FrontRefusal {
-  /** What is wrong, and how to fix it. */
+  /** What is wrong. */
   message: string
   /** The 1-based line, counted from the block's first line. */
   line: i32
-  /** The 1-based column, in UTF-16 units; 0 when the refusal names none. */
+  /** The 1-based column, in UTF-16 units. */
   col: i32
   /**
    * Makes a refusal.

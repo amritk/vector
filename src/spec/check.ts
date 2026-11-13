@@ -119,7 +119,7 @@ export class CheckSourceRun {
   command: string
   /** "pass", "fail" or "not run". */
   outcome: string
-  /** What the command printed, or why it failed; "" when it passed. */
+  /** What went wrong: a mismatch, a timeout or a bad exit; "" when it passed or was not run. */
   detail: string
   /**
    * Makes a result.
@@ -263,7 +263,7 @@ export class CheckGateEntry {
 export class CheckFinding {
   /** The name of the gate that found it. */
   gate: string
-  /** What the gate found, and how to fix it. */
+  /** What the gate found. */
   message: string
   /**
    * Makes a finding.

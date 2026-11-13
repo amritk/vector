@@ -51,7 +51,7 @@ export class XmlText {
 export class XmlNormative {
   /** The section's number; "" for an unnumbered section. */
   section: string
-  /** The BCP 14 keyword the markup names, or `DEFINITION`. */
+  /** The BCP 14 keyword the markup names; NOT RECOMMENDED is stored as SHOULD NOT. */
   level: string
   /** The sentence's text. */
   sentence: string
@@ -555,7 +555,7 @@ export const xmlPlainTextOfNodes = (t: XmlText, nodes: XmlNode[]): string => xml
 export class XmlCode {
   /** Its type attribute; null when it has none. */
   type: string | null
-  /** The block's text, as written. */
+  /** The block's character data, without its opening and closing blank lines or its trailing whitespace. */
   text: string
   /** The XML line its text starts on. */
   line: i32

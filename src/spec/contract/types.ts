@@ -147,7 +147,7 @@ export class ContractSource {
   rfc: i32 = -1
   /** The id of the main entry of `sources`; null when `rfc` is given. */
   main: string | null = null
-  /** The sha256 of the main source file, which `spec frozen` checks. */
+  /** The sha256 of the main source file, which every load of the sources checks. */
   sha256: string | null = null
   /** Starts with no title or main source. */
   constructor() {
@@ -381,7 +381,7 @@ export class Clause {
   source: VectorSource | null = null
   /** The main-source section printing a vector's args. */
   section: string | null = null
-  /** The function the clause calls. */
+  /** The function a vector calls. */
   call: string
   /** A vector's arguments. */
   args: Literal[]

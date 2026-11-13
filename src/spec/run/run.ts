@@ -16,7 +16,7 @@ import { emitQuote } from "../emit/lit"
 export enum RunOutcome {
   /** The clause ran and held. */
   Pass = 0,
-  /** The clause was left out on purpose. */
+  /** A property with no samples, which the emitted test skips. */
   Skip = 1,
   /** The clause could not be run. */
   NotRun = 2,
