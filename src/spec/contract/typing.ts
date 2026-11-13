@@ -85,8 +85,13 @@ export const typeAssignable = (from: string, to: string): boolean => {
   return to === "u32" && from === "i32"
 }
 
-/** The integer type under `t` (`u8?` is u8), or null. */
-const typingIntBase = (t: string): string | null => {
+/**
+ * The integer type under a value type: `u8?` is u8.
+ *
+ * @param t a value type, or `null`
+ * @returns the integer type, or null when `t` is not an integer type
+ */
+export const typeIntBase = (t: string): string | null => {
   if (t === "null") {
     return null
   }
@@ -146,7 +151,7 @@ export const typeOfLiteral = (lit: Literal): string => {
  */
 export const typeLiteralFits = (lit: Literal, ty: string): boolean => {
   if (lit.kind === LitKind.Int) {
-    const int = typingIntBase(ty)
+    const int = typeIntBase(ty)
     return int !== null && vocabFitsInt(lit.text, int)
   }
   return typeAssignable(typeOfLiteral(lit), ty)
@@ -246,7 +251,7 @@ const typingCall = (e: Expr, env: TypeEnv, at: string, errors: string[]): string
     const t = typeOf(a, env, `${at}.args[${i}]`, errors)
     const p = sig.params[i]
     const want = vocabValueType(p.type)
-    const wantInt = typingIntBase(want)
+    const wantInt = typeIntBase(want)
     if (t === null) {
       ok = false
     } else if (typingIsIntLit(a) && wantInt !== null) {
@@ -367,7 +372,7 @@ const typingOp = (e: Expr, env: TypeEnv, at: string, errors: string[]): string |
   if (o.ts.length === 2) {
     for (let i = 0; i < 2; i++) {
       const j = 1 - i
-      const other = typingIntBase(o.ts[j])
+      const other = typeIntBase(o.ts[j])
       if (typingIsIntLit(e.args[i]) && other !== null && e.args[j].kind !== ExprKind.Lit) {
         const v = typingIntText(e.args[i])
         if (!vocabFitsInt(v, other)) {
