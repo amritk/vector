@@ -15,7 +15,7 @@ const formsStr = (s: string): Literal => new Literal(LitKind.Str, s)
 
 /**
  * Hand-picked samples for every property of the forms contract: a zero
- * divisor, an i64 sum that wraps, a negative le64, equal-length bytes, and
+ * divisor, i64 and i32 arithmetic that wraps, a negative le64, equal-length bytes, and
  * strings that need escaping, control characters included (no contract can
  * hold one, so only a sample reaches the `\u00XX` escape).
  */
@@ -26,6 +26,9 @@ const formsSamples = (): SampleTable => {
   checkAddSample(t, new Sample("P-MOD", [formsInt("50"), formsInt("-5")], "the largest"))
   checkAddSample(t, new Sample("P-WRAP", [formsInt("9223372036854775807"), formsInt("1")], "wraps up"))
   checkAddSample(t, new Sample("P-WRAP", [formsInt("-9223372036854775808"), formsInt("-1")], "wraps down"))
+  checkAddSample(t, new Sample("P-WRAP32", [formsInt("2147483647"), formsInt("1")], "+ wraps up"))
+  checkAddSample(t, new Sample("P-WRAP32", [formsInt("-2147483648"), formsInt("1")], "- wraps down"))
+  checkAddSample(t, new Sample("P-WRAP32", [formsInt("65536"), formsInt("65536")], "* wraps to 0"))
   checkAddSample(t, new Sample("P-LE64", [formsInt("-2")], "every byte set"))
   checkAddSample(t, new Sample("P-LE64", [formsInt("2147483647")], "i32's maximum"))
   checkAddSample(t, new Sample("P-BITS", [formsHex("0f"), formsHex("f1")], "by hand"))
@@ -58,7 +61,7 @@ const formsEmit = (c: Contract): string => {
 
 /**
  * Checks the text emitted for every form a contract can use — integer
- * remainders, wrapping i64, le64, bitwise bytes, let and unwrap, nulls,
+ * remainders, wrapping i32 and i64, le64, bitwise bytes, let and unwrap, nulls,
  * binary64 comparisons, secrets — then compiles and runs it with the pinned
  * nish against tests/spec/emit/fixtures/forms.ts.
  */
@@ -74,12 +77,16 @@ export const main = (): i32 => {
   // mod-zero: % is remI32, which answers 0 for a zero (or -1) divisor.
   t.ok("remI32 is defined once", formsCount(p, "const remI32 = ") === 1)
   t.contains("a zero divisor is remI32's", p, "remI32(idI32(v_x), 0) === 0")
-  t.contains("a computed divisor too", p, "remI32(v_x, (v_y * v_y))")
+  t.contains("a computed divisor too", p, "remI32(v_x, wrappingMul(v_y, v_y))")
   t.ok("% is never written bare", p.indexOf("v_x %") < 0 && p.indexOf("v_y %") < 0)
 
-  // i64 wraps through nish:unsafe.
+  // i64 and i32 + - * wrap through nish:unsafe, as the sampler does.
   t.contains("i64 + wraps", p, "(addI64(v_a, v_b) === wrappingAdd(v_a, v_b))")
-  t.contains("nish:unsafe is imported", p, 'import { wrappingAdd } from "nish:unsafe";')
+  t.contains("i32 + wraps", p, "(addI32(v_a, v_b) === wrappingAdd(v_a, v_b))")
+  t.contains("i32 - wraps", p, "(subI32(v_a, v_b) === wrappingSub(v_a, v_b))")
+  t.contains("i32 * wraps", p, "(mulI32(v_a, v_b) === wrappingMul(v_a, v_b))")
+  t.ok("i32 * is never written bare", p.indexOf("v_y * v_y") < 0 && p.indexOf("v_a * v_b") < 0)
+  t.contains("nish:unsafe is imported", p, 'import { wrappingAdd, wrappingMul, wrappingSub } from "nish:unsafe";')
   t.contains("i64's maximum is built exactly", p, "(toI64(2147483647) * 4294967296 + 4294967295)")
 
   // rfc-bitwise: xor, bitAnd and bitOr are one helper, chosen by its third argument.
@@ -106,6 +113,11 @@ export const main = (): i32 => {
     "P-WRAP's rows",
     p,
     "const table_a: i64[] = [(toI64(2147483647) * 4294967296 + 4294967295), (toI64(-2147483648) * 4294967296 + 0)];\n  const table_b: i64[] = [toI64(1), toI64(-1)];\n",
+  )
+  t.contains(
+    "P-WRAP32's rows",
+    p,
+    "const table_a: i32[] = [2147483647, -2147483648, 65536];\n  const table_b: i32[] = [1, 1, 65536];\n",
   )
   t.contains("P-LE64's rows", p, "const table_x: i32[] = [-2, 2147483647];\n")
   t.contains(
@@ -159,7 +171,7 @@ const formsWithout = (t: Suite, c: Contract): void => {
   t.ok("example-hex emits", plain.isOk())
   t.ok("no % means no remI32", text.indexOf("remI32") < 0)
   t.ok("no secret means no nish:secret", text.indexOf("nish:secret") < 0)
-  t.ok("no i64 + means no nish:unsafe", text.indexOf("nish:unsafe") < 0)
+  t.ok("no sampled + - * means no nish:unsafe", text.indexOf("nish:unsafe") < 0)
 
   c.clauses[0].id = "P-a"
   c.clauses[1].id = "P_a"

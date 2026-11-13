@@ -404,12 +404,13 @@ const emitOp = (ctx: EmitContext, e: Expr, want: string | null): string => {
   }
   if (op === "+" || op === "-" || op === "*") {
     const t = emitOperands(ctx, e)
-    if (t === "i64") {
-      // Signed overflow panics in Nish; the contract wraps, so i64 goes
-      // through nish:unsafe's two's-complement wrap.
+    if (t === "i32" || t === "i64") {
+      // Signed overflow panics in Nish; the contract wraps, as evalPure and
+      // the sampler do, so i32 and i64 go through nish:unsafe's
+      // two's-complement wrap. The unsigned words already wrap.
       const w = op === "+" ? "wrappingAdd" : op === "-" ? "wrappingSub" : "wrappingMul"
       emitAddOnce(ctx.unsafeNames, w)
-      return `${w}(${emitArg(ctx, e, 0, t)}, ${emitArg(ctx, e, 1, t)})`
+      return emitConv(`${w}(${emitArg(ctx, e, 0, t)}, ${emitArg(ctx, e, 1, t)})`, emitTypeOf(ctx, e), want)
     }
     return emitConv(`(${emitArg(ctx, e, 0, t)} ${op} ${emitArg(ctx, e, 1, t)})`, emitTypeOf(ctx, e), want)
   }
