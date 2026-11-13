@@ -1,0 +1,1860 @@
+{
+  "contracts": {
+    "example-hex": {
+      "rust": {
+        "module": "nish::hex",
+        "functions": {
+          "hexEncode": {
+            "name": "hex_encode",
+            "qualified": "nish::hex::hex_encode",
+            "params": {
+              "bytes": "bytes"
+            }
+          },
+          "hexDecode": {
+            "name": "hex_decode",
+            "qualified": "nish::hex::hex_decode",
+            "params": {
+              "text": "text"
+            }
+          }
+        }
+      },
+      "ruby": {
+        "module": "Nish::Hex",
+        "functions": {
+          "hexEncode": {
+            "name": "hex_encode",
+            "qualified": "Nish::Hex.hex_encode",
+            "params": {
+              "bytes": "bytes"
+            }
+          },
+          "hexDecode": {
+            "name": "hex_decode",
+            "qualified": "Nish::Hex.hex_decode",
+            "params": {
+              "text": "text"
+            }
+          }
+        }
+      },
+      "zig": {
+        "module": "nish/hex.zig",
+        "functions": {
+          "hexEncode": {
+            "name": "hexEncode",
+            "qualified": "hex.hexEncode",
+            "params": {
+              "bytes": "bytes"
+            }
+          },
+          "hexDecode": {
+            "name": "hexDecode",
+            "qualified": "hex.hexDecode",
+            "params": {
+              "text": "text"
+            }
+          }
+        }
+      },
+      "go": {
+        "module": "nish/hex",
+        "functions": {
+          "hexEncode": {
+            "name": "HexEncode",
+            "qualified": "hex.HexEncode",
+            "params": {
+              "bytes": "bytes"
+            }
+          },
+          "hexDecode": {
+            "name": "HexDecode",
+            "qualified": "hex.HexDecode",
+            "params": {
+              "text": "text"
+            }
+          }
+        }
+      },
+      "cpp": {
+        "module": "nish::hex",
+        "functions": {
+          "hexEncode": {
+            "name": "hex_encode",
+            "qualified": "nish::hex::hex_encode",
+            "params": {
+              "bytes": "bytes"
+            }
+          },
+          "hexDecode": {
+            "name": "hex_decode",
+            "qualified": "nish::hex::hex_decode",
+            "params": {
+              "text": "text"
+            }
+          }
+        }
+      },
+      "csharp": {
+        "module": "Nish.Hex",
+        "functions": {
+          "hexEncode": {
+            "name": "HexEncode",
+            "qualified": "Nish.Hex.HexEncode",
+            "params": {
+              "bytes": "bytes"
+            }
+          },
+          "hexDecode": {
+            "name": "HexDecode",
+            "qualified": "Nish.Hex.HexDecode",
+            "params": {
+              "text": "text"
+            }
+          }
+        }
+      },
+      "c": {
+        "module": "nish/hex.h",
+        "functions": {
+          "hexEncode": {
+            "name": "hex_encode",
+            "qualified": "nish_hex_hex_encode",
+            "params": {
+              "bytes": "bytes"
+            }
+          },
+          "hexDecode": {
+            "name": "hex_decode",
+            "qualified": "nish_hex_hex_decode",
+            "params": {
+              "text": "text"
+            }
+          }
+        }
+      },
+      "java": {
+        "module": "nish.Hex",
+        "functions": {
+          "hexEncode": {
+            "name": "hexEncode",
+            "qualified": "nish.Hex.hexEncode",
+            "params": {
+              "bytes": "bytes"
+            }
+          },
+          "hexDecode": {
+            "name": "hexDecode",
+            "qualified": "nish.Hex.hexDecode",
+            "params": {
+              "text": "text"
+            }
+          }
+        }
+      },
+      "kotlin": {
+        "module": "nish.Hex",
+        "functions": {
+          "hexEncode": {
+            "name": "hexEncode",
+            "qualified": "nish.Hex.hexEncode",
+            "params": {
+              "bytes": "bytes"
+            }
+          },
+          "hexDecode": {
+            "name": "hexDecode",
+            "qualified": "nish.Hex.hexDecode",
+            "params": {
+              "text": "text"
+            }
+          }
+        }
+      },
+      "python": {
+        "module": "nish.hex",
+        "functions": {
+          "hexEncode": {
+            "name": "hex_encode",
+            "qualified": "nish.hex.hex_encode",
+            "params": {
+              "bytes": "bytes"
+            }
+          },
+          "hexDecode": {
+            "name": "hex_decode",
+            "qualified": "nish.hex.hex_decode",
+            "params": {
+              "text": "text"
+            }
+          }
+        }
+      },
+      "typescript": {
+        "module": "nish/hex",
+        "functions": {
+          "hexEncode": {
+            "name": "hexEncode",
+            "qualified": "hex.hexEncode",
+            "params": {
+              "bytes": "bytes"
+            }
+          },
+          "hexDecode": {
+            "name": "hexDecode",
+            "qualified": "hex.hexDecode",
+            "params": {
+              "text": "text"
+            }
+          }
+        }
+      },
+      "php": {
+        "module": "Nish\\Hex",
+        "functions": {
+          "hexEncode": {
+            "name": "hexEncode",
+            "qualified": "\\Nish\\Hex::hexEncode",
+            "params": {
+              "bytes": "bytes"
+            }
+          },
+          "hexDecode": {
+            "name": "hexDecode",
+            "qualified": "\\Nish\\Hex::hexDecode",
+            "params": {
+              "text": "text"
+            }
+          }
+        }
+      },
+      "swift": {
+        "module": "NishHex",
+        "functions": {
+          "hexEncode": {
+            "name": "hexEncode",
+            "qualified": "NishHex.hexEncode",
+            "params": {
+              "bytes": "bytes"
+            }
+          },
+          "hexDecode": {
+            "name": "hexDecode",
+            "qualified": "NishHex.hexDecode",
+            "params": {
+              "text": "text"
+            }
+          }
+        }
+      },
+      "dart": {
+        "module": "package:nish/hex.dart",
+        "functions": {
+          "hexEncode": {
+            "name": "hexEncode",
+            "qualified": "hex.hexEncode",
+            "params": {
+              "bytes": "bytes"
+            }
+          },
+          "hexDecode": {
+            "name": "hexDecode",
+            "qualified": "hex.hexDecode",
+            "params": {
+              "text": "text"
+            }
+          }
+        }
+      }
+    },
+    "rfc5869-hkdf-sha256": {
+      "rust": {
+        "module": "nish::crypto::hkdf",
+        "functions": {
+          "hkdfExtractSha256": {
+            "name": "hkdf_extract_sha256",
+            "qualified": "nish::crypto::hkdf::hkdf_extract_sha256",
+            "params": {
+              "salt": "salt",
+              "ikm": "ikm"
+            }
+          },
+          "hkdfExpandSha256": {
+            "name": "hkdf_expand_sha256",
+            "qualified": "nish::crypto::hkdf::hkdf_expand_sha256",
+            "params": {
+              "prk": "prk",
+              "info": "info",
+              "length": "length"
+            }
+          },
+          "hmacSha256": {
+            "name": "hmac_sha256",
+            "module": "nish::crypto::hmac",
+            "qualified": "nish::crypto::hmac::hmac_sha256",
+            "params": {
+              "key": "key",
+              "data": "data"
+            }
+          }
+        }
+      },
+      "ruby": {
+        "module": "Nish::Crypto::Hkdf",
+        "functions": {
+          "hkdfExtractSha256": {
+            "name": "hkdf_extract_sha256",
+            "qualified": "Nish::Crypto::Hkdf.hkdf_extract_sha256",
+            "params": {
+              "salt": "salt",
+              "ikm": "ikm"
+            }
+          },
+          "hkdfExpandSha256": {
+            "name": "hkdf_expand_sha256",
+            "qualified": "Nish::Crypto::Hkdf.hkdf_expand_sha256",
+            "params": {
+              "prk": "prk",
+              "info": "info",
+              "length": "length"
+            }
+          },
+          "hmacSha256": {
+            "name": "hmac_sha256",
+            "module": "Nish::Crypto::Hmac",
+            "qualified": "Nish::Crypto::Hmac.hmac_sha256",
+            "params": {
+              "key": "key",
+              "data": "data"
+            }
+          }
+        }
+      },
+      "zig": {
+        "module": "nish/crypto/hkdf.zig",
+        "functions": {
+          "hkdfExtractSha256": {
+            "name": "hkdfExtractSha256",
+            "qualified": "hkdf.hkdfExtractSha256",
+            "params": {
+              "salt": "salt",
+              "ikm": "ikm"
+            }
+          },
+          "hkdfExpandSha256": {
+            "name": "hkdfExpandSha256",
+            "qualified": "hkdf.hkdfExpandSha256",
+            "params": {
+              "prk": "prk",
+              "info": "info",
+              "length": "length"
+            }
+          },
+          "hmacSha256": {
+            "name": "hmacSha256",
+            "module": "nish/crypto/hmac.zig",
+            "qualified": "hmac.hmacSha256",
+            "params": {
+              "key": "key",
+              "data": "data"
+            }
+          }
+        }
+      },
+      "go": {
+        "module": "nish/crypto/hkdf",
+        "functions": {
+          "hkdfExtractSha256": {
+            "name": "HkdfExtractSha256",
+            "qualified": "hkdf.HkdfExtractSha256",
+            "params": {
+              "salt": "salt",
+              "ikm": "ikm"
+            }
+          },
+          "hkdfExpandSha256": {
+            "name": "HkdfExpandSha256",
+            "qualified": "hkdf.HkdfExpandSha256",
+            "params": {
+              "prk": "prk",
+              "info": "info",
+              "length": "length"
+            }
+          },
+          "hmacSha256": {
+            "name": "HmacSha256",
+            "module": "nish/crypto/hmac",
+            "qualified": "hmac.HmacSha256",
+            "params": {
+              "key": "key",
+              "data": "data"
+            }
+          }
+        }
+      },
+      "cpp": {
+        "module": "nish::crypto::hkdf",
+        "functions": {
+          "hkdfExtractSha256": {
+            "name": "hkdf_extract_sha256",
+            "qualified": "nish::crypto::hkdf::hkdf_extract_sha256",
+            "params": {
+              "salt": "salt",
+              "ikm": "ikm"
+            }
+          },
+          "hkdfExpandSha256": {
+            "name": "hkdf_expand_sha256",
+            "qualified": "nish::crypto::hkdf::hkdf_expand_sha256",
+            "params": {
+              "prk": "prk",
+              "info": "info",
+              "length": "length"
+            }
+          },
+          "hmacSha256": {
+            "name": "hmac_sha256",
+            "module": "nish::crypto::hmac",
+            "qualified": "nish::crypto::hmac::hmac_sha256",
+            "params": {
+              "key": "key",
+              "data": "data"
+            }
+          }
+        }
+      },
+      "csharp": {
+        "module": "Nish.Crypto.Hkdf",
+        "functions": {
+          "hkdfExtractSha256": {
+            "name": "HkdfExtractSha256",
+            "qualified": "Nish.Crypto.Hkdf.HkdfExtractSha256",
+            "params": {
+              "salt": "salt",
+              "ikm": "ikm"
+            }
+          },
+          "hkdfExpandSha256": {
+            "name": "HkdfExpandSha256",
+            "qualified": "Nish.Crypto.Hkdf.HkdfExpandSha256",
+            "params": {
+              "prk": "prk",
+              "info": "info",
+              "length": "length"
+            }
+          },
+          "hmacSha256": {
+            "name": "HmacSha256",
+            "module": "Nish.Crypto.Hmac",
+            "qualified": "Nish.Crypto.Hmac.HmacSha256",
+            "params": {
+              "key": "key",
+              "data": "data"
+            }
+          }
+        }
+      },
+      "c": {
+        "module": "nish/crypto/hkdf.h",
+        "functions": {
+          "hkdfExtractSha256": {
+            "name": "hkdf_extract_sha256",
+            "qualified": "nish_crypto_hkdf_hkdf_extract_sha256",
+            "params": {
+              "salt": "salt",
+              "ikm": "ikm"
+            }
+          },
+          "hkdfExpandSha256": {
+            "name": "hkdf_expand_sha256",
+            "qualified": "nish_crypto_hkdf_hkdf_expand_sha256",
+            "params": {
+              "prk": "prk",
+              "info": "info",
+              "length": "length"
+            }
+          },
+          "hmacSha256": {
+            "name": "hmac_sha256",
+            "module": "nish/crypto/hmac.h",
+            "qualified": "nish_crypto_hmac_hmac_sha256",
+            "params": {
+              "key": "key",
+              "data": "data"
+            }
+          }
+        }
+      },
+      "java": {
+        "module": "nish.crypto.Hkdf",
+        "functions": {
+          "hkdfExtractSha256": {
+            "name": "hkdfExtractSha256",
+            "qualified": "nish.crypto.Hkdf.hkdfExtractSha256",
+            "params": {
+              "salt": "salt",
+              "ikm": "ikm"
+            }
+          },
+          "hkdfExpandSha256": {
+            "name": "hkdfExpandSha256",
+            "qualified": "nish.crypto.Hkdf.hkdfExpandSha256",
+            "params": {
+              "prk": "prk",
+              "info": "info",
+              "length": "length"
+            }
+          },
+          "hmacSha256": {
+            "name": "hmacSha256",
+            "module": "nish.crypto.Hmac",
+            "qualified": "nish.crypto.Hmac.hmacSha256",
+            "params": {
+              "key": "key",
+              "data": "data"
+            }
+          }
+        }
+      },
+      "kotlin": {
+        "module": "nish.crypto.Hkdf",
+        "functions": {
+          "hkdfExtractSha256": {
+            "name": "hkdfExtractSha256",
+            "qualified": "nish.crypto.Hkdf.hkdfExtractSha256",
+            "params": {
+              "salt": "salt",
+              "ikm": "ikm"
+            }
+          },
+          "hkdfExpandSha256": {
+            "name": "hkdfExpandSha256",
+            "qualified": "nish.crypto.Hkdf.hkdfExpandSha256",
+            "params": {
+              "prk": "prk",
+              "info": "info",
+              "length": "length"
+            }
+          },
+          "hmacSha256": {
+            "name": "hmacSha256",
+            "module": "nish.crypto.Hmac",
+            "qualified": "nish.crypto.Hmac.hmacSha256",
+            "params": {
+              "key": "key",
+              "data": "data"
+            }
+          }
+        }
+      },
+      "python": {
+        "module": "nish.crypto.hkdf",
+        "functions": {
+          "hkdfExtractSha256": {
+            "name": "hkdf_extract_sha256",
+            "qualified": "nish.crypto.hkdf.hkdf_extract_sha256",
+            "params": {
+              "salt": "salt",
+              "ikm": "ikm"
+            }
+          },
+          "hkdfExpandSha256": {
+            "name": "hkdf_expand_sha256",
+            "qualified": "nish.crypto.hkdf.hkdf_expand_sha256",
+            "params": {
+              "prk": "prk",
+              "info": "info",
+              "length": "length"
+            }
+          },
+          "hmacSha256": {
+            "name": "hmac_sha256",
+            "module": "nish.crypto.hmac",
+            "qualified": "nish.crypto.hmac.hmac_sha256",
+            "params": {
+              "key": "key",
+              "data": "data"
+            }
+          }
+        }
+      },
+      "typescript": {
+        "module": "nish/crypto/hkdf",
+        "functions": {
+          "hkdfExtractSha256": {
+            "name": "hkdfExtractSha256",
+            "qualified": "hkdf.hkdfExtractSha256",
+            "params": {
+              "salt": "salt",
+              "ikm": "ikm"
+            }
+          },
+          "hkdfExpandSha256": {
+            "name": "hkdfExpandSha256",
+            "qualified": "hkdf.hkdfExpandSha256",
+            "params": {
+              "prk": "prk",
+              "info": "info",
+              "length": "length"
+            }
+          },
+          "hmacSha256": {
+            "name": "hmacSha256",
+            "module": "nish/crypto/hmac",
+            "qualified": "hmac.hmacSha256",
+            "params": {
+              "key": "key",
+              "data": "data"
+            }
+          }
+        }
+      },
+      "php": {
+        "module": "Nish\\Crypto\\Hkdf",
+        "functions": {
+          "hkdfExtractSha256": {
+            "name": "hkdfExtractSha256",
+            "qualified": "\\Nish\\Crypto\\Hkdf::hkdfExtractSha256",
+            "params": {
+              "salt": "salt",
+              "ikm": "ikm"
+            }
+          },
+          "hkdfExpandSha256": {
+            "name": "hkdfExpandSha256",
+            "qualified": "\\Nish\\Crypto\\Hkdf::hkdfExpandSha256",
+            "params": {
+              "prk": "prk",
+              "info": "info",
+              "length": "length"
+            }
+          },
+          "hmacSha256": {
+            "name": "hmacSha256",
+            "module": "Nish\\Crypto\\Hmac",
+            "qualified": "\\Nish\\Crypto\\Hmac::hmacSha256",
+            "params": {
+              "key": "key",
+              "data": "data"
+            }
+          }
+        }
+      },
+      "swift": {
+        "module": "NishCryptoHkdf",
+        "functions": {
+          "hkdfExtractSha256": {
+            "name": "hkdfExtractSha256",
+            "qualified": "NishCryptoHkdf.hkdfExtractSha256",
+            "params": {
+              "salt": "salt",
+              "ikm": "ikm"
+            }
+          },
+          "hkdfExpandSha256": {
+            "name": "hkdfExpandSha256",
+            "qualified": "NishCryptoHkdf.hkdfExpandSha256",
+            "params": {
+              "prk": "prk",
+              "info": "info",
+              "length": "length"
+            }
+          },
+          "hmacSha256": {
+            "name": "hmacSha256",
+            "module": "NishCryptoHmac",
+            "qualified": "NishCryptoHmac.hmacSha256",
+            "params": {
+              "key": "key",
+              "data": "data"
+            }
+          }
+        }
+      },
+      "dart": {
+        "module": "package:nish/crypto/hkdf.dart",
+        "functions": {
+          "hkdfExtractSha256": {
+            "name": "hkdfExtractSha256",
+            "qualified": "hkdf.hkdfExtractSha256",
+            "params": {
+              "salt": "salt",
+              "ikm": "ikm"
+            }
+          },
+          "hkdfExpandSha256": {
+            "name": "hkdfExpandSha256",
+            "qualified": "hkdf.hkdfExpandSha256",
+            "params": {
+              "prk": "prk",
+              "info": "info",
+              "length": "length"
+            }
+          },
+          "hmacSha256": {
+            "name": "hmacSha256",
+            "module": "package:nish/crypto/hmac.dart",
+            "qualified": "hmac.hmacSha256",
+            "params": {
+              "key": "key",
+              "data": "data"
+            }
+          }
+        }
+      }
+    },
+    "rfc8439-chacha20-poly1305": {
+      "rust": {
+        "module": "nish::crypto::chacha20poly1305",
+        "functions": {
+          "chacha20Block": {
+            "name": "chacha20_block",
+            "qualified": "nish::crypto::chacha20poly1305::chacha20_block",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20": {
+            "name": "chacha20",
+            "qualified": "nish::crypto::chacha20poly1305::chacha20",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce",
+              "data": "data"
+            }
+          },
+          "poly1305": {
+            "name": "poly1305",
+            "qualified": "nish::crypto::chacha20poly1305::poly1305",
+            "params": {
+              "key": "key",
+              "msg": "msg"
+            }
+          },
+          "poly1305KeyGen": {
+            "name": "poly1305_key_gen",
+            "qualified": "nish::crypto::chacha20poly1305::poly1305_key_gen",
+            "params": {
+              "key": "key",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20Poly1305Seal": {
+            "name": "chacha20_poly1305_seal",
+            "qualified": "nish::crypto::chacha20poly1305::chacha20_poly1305_seal",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "plaintext": "plaintext"
+            }
+          },
+          "chacha20Poly1305Open": {
+            "name": "chacha20_poly1305_open",
+            "qualified": "nish::crypto::chacha20poly1305::chacha20_poly1305_open",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "sealed": "sealed"
+            }
+          }
+        }
+      },
+      "ruby": {
+        "module": "Nish::Crypto::Chacha20poly1305",
+        "functions": {
+          "chacha20Block": {
+            "name": "chacha20_block",
+            "qualified": "Nish::Crypto::Chacha20poly1305.chacha20_block",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20": {
+            "name": "chacha20",
+            "qualified": "Nish::Crypto::Chacha20poly1305.chacha20",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce",
+              "data": "data"
+            }
+          },
+          "poly1305": {
+            "name": "poly1305",
+            "qualified": "Nish::Crypto::Chacha20poly1305.poly1305",
+            "params": {
+              "key": "key",
+              "msg": "msg"
+            }
+          },
+          "poly1305KeyGen": {
+            "name": "poly1305_key_gen",
+            "qualified": "Nish::Crypto::Chacha20poly1305.poly1305_key_gen",
+            "params": {
+              "key": "key",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20Poly1305Seal": {
+            "name": "chacha20_poly1305_seal",
+            "qualified": "Nish::Crypto::Chacha20poly1305.chacha20_poly1305_seal",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "plaintext": "plaintext"
+            }
+          },
+          "chacha20Poly1305Open": {
+            "name": "chacha20_poly1305_open",
+            "qualified": "Nish::Crypto::Chacha20poly1305.chacha20_poly1305_open",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "sealed": "sealed"
+            }
+          }
+        }
+      },
+      "zig": {
+        "module": "nish/crypto/chacha20poly1305.zig",
+        "functions": {
+          "chacha20Block": {
+            "name": "chacha20Block",
+            "qualified": "chacha20poly1305.chacha20Block",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20": {
+            "name": "chacha20",
+            "qualified": "chacha20poly1305.chacha20",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce",
+              "data": "data"
+            }
+          },
+          "poly1305": {
+            "name": "poly1305",
+            "qualified": "chacha20poly1305.poly1305",
+            "params": {
+              "key": "key",
+              "msg": "msg"
+            }
+          },
+          "poly1305KeyGen": {
+            "name": "poly1305KeyGen",
+            "qualified": "chacha20poly1305.poly1305KeyGen",
+            "params": {
+              "key": "key",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20Poly1305Seal": {
+            "name": "chacha20Poly1305Seal",
+            "qualified": "chacha20poly1305.chacha20Poly1305Seal",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "plaintext": "plaintext"
+            }
+          },
+          "chacha20Poly1305Open": {
+            "name": "chacha20Poly1305Open",
+            "qualified": "chacha20poly1305.chacha20Poly1305Open",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "sealed": "sealed"
+            }
+          }
+        }
+      },
+      "go": {
+        "module": "nish/crypto/chacha20poly1305",
+        "functions": {
+          "chacha20Block": {
+            "name": "Chacha20Block",
+            "qualified": "chacha20poly1305.Chacha20Block",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20": {
+            "name": "Chacha20",
+            "qualified": "chacha20poly1305.Chacha20",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce",
+              "data": "data"
+            }
+          },
+          "poly1305": {
+            "name": "Poly1305",
+            "qualified": "chacha20poly1305.Poly1305",
+            "params": {
+              "key": "key",
+              "msg": "msg"
+            }
+          },
+          "poly1305KeyGen": {
+            "name": "Poly1305KeyGen",
+            "qualified": "chacha20poly1305.Poly1305KeyGen",
+            "params": {
+              "key": "key",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20Poly1305Seal": {
+            "name": "Chacha20Poly1305Seal",
+            "qualified": "chacha20poly1305.Chacha20Poly1305Seal",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "plaintext": "plaintext"
+            }
+          },
+          "chacha20Poly1305Open": {
+            "name": "Chacha20Poly1305Open",
+            "qualified": "chacha20poly1305.Chacha20Poly1305Open",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "sealed": "sealed"
+            }
+          }
+        }
+      },
+      "cpp": {
+        "module": "nish::crypto::chacha20poly1305",
+        "functions": {
+          "chacha20Block": {
+            "name": "chacha20_block",
+            "qualified": "nish::crypto::chacha20poly1305::chacha20_block",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20": {
+            "name": "chacha20",
+            "qualified": "nish::crypto::chacha20poly1305::chacha20",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce",
+              "data": "data"
+            }
+          },
+          "poly1305": {
+            "name": "poly1305",
+            "qualified": "nish::crypto::chacha20poly1305::poly1305",
+            "params": {
+              "key": "key",
+              "msg": "msg"
+            }
+          },
+          "poly1305KeyGen": {
+            "name": "poly1305_key_gen",
+            "qualified": "nish::crypto::chacha20poly1305::poly1305_key_gen",
+            "params": {
+              "key": "key",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20Poly1305Seal": {
+            "name": "chacha20_poly1305_seal",
+            "qualified": "nish::crypto::chacha20poly1305::chacha20_poly1305_seal",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "plaintext": "plaintext"
+            }
+          },
+          "chacha20Poly1305Open": {
+            "name": "chacha20_poly1305_open",
+            "qualified": "nish::crypto::chacha20poly1305::chacha20_poly1305_open",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "sealed": "sealed"
+            }
+          }
+        }
+      },
+      "csharp": {
+        "module": "Nish.Crypto.Chacha20poly1305",
+        "functions": {
+          "chacha20Block": {
+            "name": "Chacha20Block",
+            "qualified": "Nish.Crypto.Chacha20poly1305.Chacha20Block",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20": {
+            "name": "Chacha20",
+            "qualified": "Nish.Crypto.Chacha20poly1305.Chacha20",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce",
+              "data": "data"
+            }
+          },
+          "poly1305": {
+            "name": "Poly1305",
+            "qualified": "Nish.Crypto.Chacha20poly1305.Poly1305",
+            "params": {
+              "key": "key",
+              "msg": "msg"
+            }
+          },
+          "poly1305KeyGen": {
+            "name": "Poly1305KeyGen",
+            "qualified": "Nish.Crypto.Chacha20poly1305.Poly1305KeyGen",
+            "params": {
+              "key": "key",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20Poly1305Seal": {
+            "name": "Chacha20Poly1305Seal",
+            "qualified": "Nish.Crypto.Chacha20poly1305.Chacha20Poly1305Seal",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "plaintext": "plaintext"
+            }
+          },
+          "chacha20Poly1305Open": {
+            "name": "Chacha20Poly1305Open",
+            "qualified": "Nish.Crypto.Chacha20poly1305.Chacha20Poly1305Open",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "sealed": "sealed"
+            }
+          }
+        }
+      },
+      "c": {
+        "module": "nish/crypto/chacha20poly1305.h",
+        "functions": {
+          "chacha20Block": {
+            "name": "chacha20_block",
+            "qualified": "nish_crypto_chacha20poly1305_chacha20_block",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20": {
+            "name": "chacha20",
+            "qualified": "nish_crypto_chacha20poly1305_chacha20",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce",
+              "data": "data"
+            }
+          },
+          "poly1305": {
+            "name": "poly1305",
+            "qualified": "nish_crypto_chacha20poly1305_poly1305",
+            "params": {
+              "key": "key",
+              "msg": "msg"
+            }
+          },
+          "poly1305KeyGen": {
+            "name": "poly1305_key_gen",
+            "qualified": "nish_crypto_chacha20poly1305_poly1305_key_gen",
+            "params": {
+              "key": "key",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20Poly1305Seal": {
+            "name": "chacha20_poly1305_seal",
+            "qualified": "nish_crypto_chacha20poly1305_chacha20_poly1305_seal",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "plaintext": "plaintext"
+            }
+          },
+          "chacha20Poly1305Open": {
+            "name": "chacha20_poly1305_open",
+            "qualified": "nish_crypto_chacha20poly1305_chacha20_poly1305_open",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "sealed": "sealed"
+            }
+          }
+        }
+      },
+      "java": {
+        "module": "nish.crypto.Chacha20poly1305",
+        "functions": {
+          "chacha20Block": {
+            "name": "chacha20Block",
+            "qualified": "nish.crypto.Chacha20poly1305.chacha20Block",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20": {
+            "name": "chacha20",
+            "qualified": "nish.crypto.Chacha20poly1305.chacha20",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce",
+              "data": "data"
+            }
+          },
+          "poly1305": {
+            "name": "poly1305",
+            "qualified": "nish.crypto.Chacha20poly1305.poly1305",
+            "params": {
+              "key": "key",
+              "msg": "msg"
+            }
+          },
+          "poly1305KeyGen": {
+            "name": "poly1305KeyGen",
+            "qualified": "nish.crypto.Chacha20poly1305.poly1305KeyGen",
+            "params": {
+              "key": "key",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20Poly1305Seal": {
+            "name": "chacha20Poly1305Seal",
+            "qualified": "nish.crypto.Chacha20poly1305.chacha20Poly1305Seal",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "plaintext": "plaintext"
+            }
+          },
+          "chacha20Poly1305Open": {
+            "name": "chacha20Poly1305Open",
+            "qualified": "nish.crypto.Chacha20poly1305.chacha20Poly1305Open",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "sealed": "sealed"
+            }
+          }
+        }
+      },
+      "kotlin": {
+        "module": "nish.crypto.Chacha20poly1305",
+        "functions": {
+          "chacha20Block": {
+            "name": "chacha20Block",
+            "qualified": "nish.crypto.Chacha20poly1305.chacha20Block",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20": {
+            "name": "chacha20",
+            "qualified": "nish.crypto.Chacha20poly1305.chacha20",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce",
+              "data": "data"
+            }
+          },
+          "poly1305": {
+            "name": "poly1305",
+            "qualified": "nish.crypto.Chacha20poly1305.poly1305",
+            "params": {
+              "key": "key",
+              "msg": "msg"
+            }
+          },
+          "poly1305KeyGen": {
+            "name": "poly1305KeyGen",
+            "qualified": "nish.crypto.Chacha20poly1305.poly1305KeyGen",
+            "params": {
+              "key": "key",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20Poly1305Seal": {
+            "name": "chacha20Poly1305Seal",
+            "qualified": "nish.crypto.Chacha20poly1305.chacha20Poly1305Seal",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "plaintext": "plaintext"
+            }
+          },
+          "chacha20Poly1305Open": {
+            "name": "chacha20Poly1305Open",
+            "qualified": "nish.crypto.Chacha20poly1305.chacha20Poly1305Open",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "sealed": "sealed"
+            }
+          }
+        }
+      },
+      "python": {
+        "module": "nish.crypto.chacha20poly1305",
+        "functions": {
+          "chacha20Block": {
+            "name": "chacha20_block",
+            "qualified": "nish.crypto.chacha20poly1305.chacha20_block",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20": {
+            "name": "chacha20",
+            "qualified": "nish.crypto.chacha20poly1305.chacha20",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce",
+              "data": "data"
+            }
+          },
+          "poly1305": {
+            "name": "poly1305",
+            "qualified": "nish.crypto.chacha20poly1305.poly1305",
+            "params": {
+              "key": "key",
+              "msg": "msg"
+            }
+          },
+          "poly1305KeyGen": {
+            "name": "poly1305_key_gen",
+            "qualified": "nish.crypto.chacha20poly1305.poly1305_key_gen",
+            "params": {
+              "key": "key",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20Poly1305Seal": {
+            "name": "chacha20_poly1305_seal",
+            "qualified": "nish.crypto.chacha20poly1305.chacha20_poly1305_seal",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "plaintext": "plaintext"
+            }
+          },
+          "chacha20Poly1305Open": {
+            "name": "chacha20_poly1305_open",
+            "qualified": "nish.crypto.chacha20poly1305.chacha20_poly1305_open",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "sealed": "sealed"
+            }
+          }
+        }
+      },
+      "typescript": {
+        "module": "nish/crypto/chacha20poly1305",
+        "functions": {
+          "chacha20Block": {
+            "name": "chacha20Block",
+            "qualified": "chacha20poly1305.chacha20Block",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20": {
+            "name": "chacha20",
+            "qualified": "chacha20poly1305.chacha20",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce",
+              "data": "data"
+            }
+          },
+          "poly1305": {
+            "name": "poly1305",
+            "qualified": "chacha20poly1305.poly1305",
+            "params": {
+              "key": "key",
+              "msg": "msg"
+            }
+          },
+          "poly1305KeyGen": {
+            "name": "poly1305KeyGen",
+            "qualified": "chacha20poly1305.poly1305KeyGen",
+            "params": {
+              "key": "key",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20Poly1305Seal": {
+            "name": "chacha20Poly1305Seal",
+            "qualified": "chacha20poly1305.chacha20Poly1305Seal",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "plaintext": "plaintext"
+            }
+          },
+          "chacha20Poly1305Open": {
+            "name": "chacha20Poly1305Open",
+            "qualified": "chacha20poly1305.chacha20Poly1305Open",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "sealed": "sealed"
+            }
+          }
+        }
+      },
+      "php": {
+        "module": "Nish\\Crypto\\Chacha20poly1305",
+        "functions": {
+          "chacha20Block": {
+            "name": "chacha20Block",
+            "qualified": "\\Nish\\Crypto\\Chacha20poly1305::chacha20Block",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20": {
+            "name": "chacha20",
+            "qualified": "\\Nish\\Crypto\\Chacha20poly1305::chacha20",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce",
+              "data": "data"
+            }
+          },
+          "poly1305": {
+            "name": "poly1305",
+            "qualified": "\\Nish\\Crypto\\Chacha20poly1305::poly1305",
+            "params": {
+              "key": "key",
+              "msg": "msg"
+            }
+          },
+          "poly1305KeyGen": {
+            "name": "poly1305KeyGen",
+            "qualified": "\\Nish\\Crypto\\Chacha20poly1305::poly1305KeyGen",
+            "params": {
+              "key": "key",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20Poly1305Seal": {
+            "name": "chacha20Poly1305Seal",
+            "qualified": "\\Nish\\Crypto\\Chacha20poly1305::chacha20Poly1305Seal",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "plaintext": "plaintext"
+            }
+          },
+          "chacha20Poly1305Open": {
+            "name": "chacha20Poly1305Open",
+            "qualified": "\\Nish\\Crypto\\Chacha20poly1305::chacha20Poly1305Open",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "sealed": "sealed"
+            }
+          }
+        }
+      },
+      "swift": {
+        "module": "NishCryptoChacha20poly1305",
+        "functions": {
+          "chacha20Block": {
+            "name": "chacha20Block",
+            "qualified": "NishCryptoChacha20poly1305.chacha20Block",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20": {
+            "name": "chacha20",
+            "qualified": "NishCryptoChacha20poly1305.chacha20",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce",
+              "data": "data"
+            }
+          },
+          "poly1305": {
+            "name": "poly1305",
+            "qualified": "NishCryptoChacha20poly1305.poly1305",
+            "params": {
+              "key": "key",
+              "msg": "msg"
+            }
+          },
+          "poly1305KeyGen": {
+            "name": "poly1305KeyGen",
+            "qualified": "NishCryptoChacha20poly1305.poly1305KeyGen",
+            "params": {
+              "key": "key",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20Poly1305Seal": {
+            "name": "chacha20Poly1305Seal",
+            "qualified": "NishCryptoChacha20poly1305.chacha20Poly1305Seal",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "plaintext": "plaintext"
+            }
+          },
+          "chacha20Poly1305Open": {
+            "name": "chacha20Poly1305Open",
+            "qualified": "NishCryptoChacha20poly1305.chacha20Poly1305Open",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "sealed": "sealed"
+            }
+          }
+        }
+      },
+      "dart": {
+        "module": "package:nish/crypto/chacha20poly1305.dart",
+        "functions": {
+          "chacha20Block": {
+            "name": "chacha20Block",
+            "qualified": "chacha20poly1305.chacha20Block",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20": {
+            "name": "chacha20",
+            "qualified": "chacha20poly1305.chacha20",
+            "params": {
+              "key": "key",
+              "counter": "counter",
+              "nonce": "nonce",
+              "data": "data"
+            }
+          },
+          "poly1305": {
+            "name": "poly1305",
+            "qualified": "chacha20poly1305.poly1305",
+            "params": {
+              "key": "key",
+              "msg": "msg"
+            }
+          },
+          "poly1305KeyGen": {
+            "name": "poly1305KeyGen",
+            "qualified": "chacha20poly1305.poly1305KeyGen",
+            "params": {
+              "key": "key",
+              "nonce": "nonce"
+            }
+          },
+          "chacha20Poly1305Seal": {
+            "name": "chacha20Poly1305Seal",
+            "qualified": "chacha20poly1305.chacha20Poly1305Seal",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "plaintext": "plaintext"
+            }
+          },
+          "chacha20Poly1305Open": {
+            "name": "chacha20Poly1305Open",
+            "qualified": "chacha20poly1305.chacha20Poly1305Open",
+            "params": {
+              "key": "key",
+              "nonce": "nonce",
+              "aad": "aad",
+              "sealed": "sealed"
+            }
+          }
+        }
+      }
+    }
+  },
+  "rules": {
+    "rust": {
+      "parseHTTPRequest": {
+        "function": "parse_http_request",
+        "param": "parse_http_request"
+      },
+      "userId": {
+        "function": "user_id",
+        "param": "user_id"
+      },
+      "utf8Decode": {
+        "function": "utf8_decode",
+        "param": "utf8_decode"
+      },
+      "readIOStream": {
+        "function": "read_io_stream",
+        "param": "read_io_stream"
+      },
+      "x25519_publicKey": {
+        "function": "x25519_public_key",
+        "param": "x25519_public_key"
+      }
+    },
+    "ruby": {
+      "parseHTTPRequest": {
+        "function": "parse_http_request",
+        "param": "parse_http_request"
+      },
+      "userId": {
+        "function": "user_id",
+        "param": "user_id"
+      },
+      "utf8Decode": {
+        "function": "utf8_decode",
+        "param": "utf8_decode"
+      },
+      "readIOStream": {
+        "function": "read_io_stream",
+        "param": "read_io_stream"
+      },
+      "x25519_publicKey": {
+        "function": "x25519_public_key",
+        "param": "x25519_public_key"
+      }
+    },
+    "zig": {
+      "parseHTTPRequest": {
+        "function": "parseHttpRequest",
+        "param": "parse_http_request"
+      },
+      "userId": {
+        "function": "userId",
+        "param": "user_id"
+      },
+      "utf8Decode": {
+        "function": "utf8Decode",
+        "param": "utf8_decode"
+      },
+      "readIOStream": {
+        "function": "readIoStream",
+        "param": "read_io_stream"
+      },
+      "x25519_publicKey": {
+        "function": "x25519PublicKey",
+        "param": "x25519_public_key"
+      }
+    },
+    "go": {
+      "parseHTTPRequest": {
+        "function": "ParseHTTPRequest",
+        "param": "parseHTTPRequest"
+      },
+      "userId": {
+        "function": "UserID",
+        "param": "userID"
+      },
+      "utf8Decode": {
+        "function": "UTF8Decode",
+        "param": "utf8Decode"
+      },
+      "readIOStream": {
+        "function": "ReadIOStream",
+        "param": "readIOStream"
+      },
+      "x25519_publicKey": {
+        "function": "X25519PublicKey",
+        "param": "x25519PublicKey"
+      }
+    },
+    "cpp": {
+      "parseHTTPRequest": {
+        "function": "parse_http_request",
+        "param": "parse_http_request"
+      },
+      "userId": {
+        "function": "user_id",
+        "param": "user_id"
+      },
+      "utf8Decode": {
+        "function": "utf8_decode",
+        "param": "utf8_decode"
+      },
+      "readIOStream": {
+        "function": "read_io_stream",
+        "param": "read_io_stream"
+      },
+      "x25519_publicKey": {
+        "function": "x25519_public_key",
+        "param": "x25519_public_key"
+      }
+    },
+    "csharp": {
+      "parseHTTPRequest": {
+        "function": "ParseHttpRequest",
+        "param": "parseHttpRequest"
+      },
+      "userId": {
+        "function": "UserId",
+        "param": "userId"
+      },
+      "utf8Decode": {
+        "function": "Utf8Decode",
+        "param": "utf8Decode"
+      },
+      "readIOStream": {
+        "function": "ReadIOStream",
+        "param": "readIOStream"
+      },
+      "x25519_publicKey": {
+        "function": "X25519PublicKey",
+        "param": "x25519PublicKey"
+      }
+    },
+    "c": {
+      "parseHTTPRequest": {
+        "function": "parse_http_request",
+        "param": "parse_http_request"
+      },
+      "userId": {
+        "function": "user_id",
+        "param": "user_id"
+      },
+      "utf8Decode": {
+        "function": "utf8_decode",
+        "param": "utf8_decode"
+      },
+      "readIOStream": {
+        "function": "read_io_stream",
+        "param": "read_io_stream"
+      },
+      "x25519_publicKey": {
+        "function": "x25519_public_key",
+        "param": "x25519_public_key"
+      }
+    },
+    "java": {
+      "parseHTTPRequest": {
+        "function": "parseHttpRequest",
+        "param": "parseHttpRequest"
+      },
+      "userId": {
+        "function": "userId",
+        "param": "userId"
+      },
+      "utf8Decode": {
+        "function": "utf8Decode",
+        "param": "utf8Decode"
+      },
+      "readIOStream": {
+        "function": "readIoStream",
+        "param": "readIoStream"
+      },
+      "x25519_publicKey": {
+        "function": "x25519PublicKey",
+        "param": "x25519PublicKey"
+      }
+    },
+    "kotlin": {
+      "parseHTTPRequest": {
+        "function": "parseHttpRequest",
+        "param": "parseHttpRequest"
+      },
+      "userId": {
+        "function": "userId",
+        "param": "userId"
+      },
+      "utf8Decode": {
+        "function": "utf8Decode",
+        "param": "utf8Decode"
+      },
+      "readIOStream": {
+        "function": "readIOStream",
+        "param": "readIOStream"
+      },
+      "x25519_publicKey": {
+        "function": "x25519PublicKey",
+        "param": "x25519PublicKey"
+      }
+    },
+    "python": {
+      "parseHTTPRequest": {
+        "function": "parse_http_request",
+        "param": "parse_http_request"
+      },
+      "userId": {
+        "function": "user_id",
+        "param": "user_id"
+      },
+      "utf8Decode": {
+        "function": "utf8_decode",
+        "param": "utf8_decode"
+      },
+      "readIOStream": {
+        "function": "read_io_stream",
+        "param": "read_io_stream"
+      },
+      "x25519_publicKey": {
+        "function": "x25519_public_key",
+        "param": "x25519_public_key"
+      }
+    },
+    "typescript": {
+      "parseHTTPRequest": {
+        "function": "parseHTTPRequest",
+        "param": "parseHTTPRequest"
+      },
+      "userId": {
+        "function": "userId",
+        "param": "userId"
+      },
+      "utf8Decode": {
+        "function": "utf8Decode",
+        "param": "utf8Decode"
+      },
+      "readIOStream": {
+        "function": "readIOStream",
+        "param": "readIOStream"
+      },
+      "x25519_publicKey": {
+        "function": "x25519PublicKey",
+        "param": "x25519PublicKey"
+      }
+    },
+    "php": {
+      "parseHTTPRequest": {
+        "function": "parseHTTPRequest",
+        "param": "parseHTTPRequest"
+      },
+      "userId": {
+        "function": "userId",
+        "param": "userId"
+      },
+      "utf8Decode": {
+        "function": "utf8Decode",
+        "param": "utf8Decode"
+      },
+      "readIOStream": {
+        "function": "readIOStream",
+        "param": "readIOStream"
+      },
+      "x25519_publicKey": {
+        "function": "x25519PublicKey",
+        "param": "x25519PublicKey"
+      }
+    },
+    "swift": {
+      "parseHTTPRequest": {
+        "function": "parseHTTPRequest",
+        "param": "parseHTTPRequest"
+      },
+      "userId": {
+        "function": "userId",
+        "param": "userId"
+      },
+      "utf8Decode": {
+        "function": "utf8Decode",
+        "param": "utf8Decode"
+      },
+      "readIOStream": {
+        "function": "readIOStream",
+        "param": "readIOStream"
+      },
+      "x25519_publicKey": {
+        "function": "x25519PublicKey",
+        "param": "x25519PublicKey"
+      }
+    },
+    "dart": {
+      "parseHTTPRequest": {
+        "function": "parseHttpRequest",
+        "param": "parseHttpRequest"
+      },
+      "userId": {
+        "function": "userId",
+        "param": "userId"
+      },
+      "utf8Decode": {
+        "function": "utf8Decode",
+        "param": "utf8Decode"
+      },
+      "readIOStream": {
+        "function": "readIOStream",
+        "param": "readIOStream"
+      },
+      "x25519_publicKey": {
+        "function": "x25519PublicKey",
+        "param": "x25519PublicKey"
+      }
+    }
+  }
+}

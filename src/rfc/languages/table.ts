@@ -174,3 +174,11 @@ export const pascalSegment = (segment: string): string =>
 /** The last `/`-separated part of `path`, without an extension: the binding an import of it gets. */
 export const basename = (path: string): string =>
   (path.split("/").pop() as string).replace(/\.[a-z]+$/, "");
+
+/** A dotted package of the leading segments and a class for the last: `nish/crypto/hkdf` → `nish.crypto.Hkdf`. */
+export const packageClass = (module: string): string => {
+  const s = segments(module);
+  return [...s.slice(0, -1), pascalSegment(s[s.length - 1] as string)].join(
+    ".",
+  );
+};

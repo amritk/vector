@@ -1,4 +1,4 @@
-import { type LanguageTable, camel, pascalSegment, segments } from "./table.ts";
+import { type LanguageTable, camel, packageClass } from "./table.ts";
 
 export const java: LanguageTable = {
   id: "java",
@@ -74,12 +74,7 @@ export const java: LanguageTable = {
   },
   module: {
     form: "class",
-    apply: (m) => {
-      const s = segments(m);
-      return [...s.slice(0, -1), pascalSegment(s[s.length - 1] as string)].join(
-        ".",
-      );
-    },
+    apply: packageClass,
     qualify: (m, n) => `${m}.${n}`,
     note: "a final class of static methods named for the last segment, in a package of the others (JLS §7.4, package names lowercase): nish/crypto/hkdf → class Hkdf in package nish.crypto",
   },

@@ -67,7 +67,10 @@ export const c: LanguageTable = {
     },
     bool: { spelling: "true" },
     null: { spelling: "NULL" },
-    concat: { spelling: "the joined bytes, written as one array" },
+    concat: {
+      spelling: "(const uint8_t[]){0x0b, 0x61}",
+      note: "no concatenation of arrays; the joined bytes are written as one array",
+    },
   },
   module: {
     form: "header-prefix",

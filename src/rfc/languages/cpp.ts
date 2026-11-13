@@ -64,7 +64,10 @@ export const cpp: LanguageTable = {
     },
     bool: { spelling: "true" },
     null: { spelling: "std::nullopt" },
-    concat: { spelling: "the joined bytes, written as one array" },
+    concat: {
+      spelling: "std::array<std::uint8_t, 2>{0x0b, 0x61}",
+      note: "no array concatenation in a literal; the joined bytes are written as one array",
+    },
   },
   module: {
     form: "namespace",

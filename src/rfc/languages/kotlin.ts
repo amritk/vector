@@ -1,4 +1,4 @@
-import { type LanguageTable, camel, pascalSegment, segments } from "./table.ts";
+import { type LanguageTable, camel, packageClass } from "./table.ts";
 
 export const kotlin: LanguageTable = {
   id: "kotlin",
@@ -62,12 +62,7 @@ export const kotlin: LanguageTable = {
   },
   module: {
     form: "class",
-    apply: (m) => {
-      const s = segments(m);
-      return [...s.slice(0, -1), pascalSegment(s[s.length - 1] as string)].join(
-        ".",
-      );
-    },
+    apply: packageClass,
     qualify: (m, n) => `${m}.${n}`,
     note: "an object named for the last segment, in a package of the others (Coding Conventions, Names for packages and classes): nish/crypto/hkdf → object Hkdf in package nish.crypto",
   },

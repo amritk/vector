@@ -1,5 +1,9 @@
 import { type LanguageTable, camel, pascalSegment } from "./table.ts";
 
+/** The note on each integer width the type does not state. */
+const WIDTH =
+  "a 64-bit build is assumed; the width is the implementation's to check";
+
 export const php: LanguageTable = {
   id: "php",
   title: "PHP",
@@ -21,14 +25,14 @@ export const php: LanguageTable = {
     },
     i8: {
       spelling: "int",
-      note: "a 64-bit build is assumed; the width is the implementation's to check",
+      note: WIDTH,
     },
-    i16: { spelling: "int", note: "as i8" },
-    i32: { spelling: "int", note: "as i8" },
+    i16: { spelling: "int", note: WIDTH },
+    i32: { spelling: "int", note: WIDTH },
     i64: { spelling: "int", note: "exact on a 64-bit build (PHP_INT_SIZE 8)" },
-    u8: { spelling: "int", note: "as i8" },
-    u16: { spelling: "int", note: "as i8" },
-    u32: { spelling: "int", note: "as i8" },
+    u8: { spelling: "int", note: WIDTH },
+    u16: { spelling: "int", note: WIDTH },
+    u32: { spelling: "int", note: WIDTH },
     u64: {
       unsupported:
         "PHP int is signed 64-bit and a value above PHP_INT_MAX becomes float, losing precision; no native type holds 2^63..2^64-1 (GMP would, as an object)",

@@ -1,5 +1,8 @@
 import { type LanguageTable, basename, camel } from "./table.ts";
 
+/** The note on each integer width the type does not state. */
+const WIDTH = "the width is the implementation's to check";
+
 export const dart: LanguageTable = {
   id: "dart",
   title: "Dart",
@@ -19,16 +22,16 @@ export const dart: LanguageTable = {
       spelling: "Uint8List",
       note: "no secret type; secrecy is dropped (fillRange can wipe a copy)",
     },
-    i8: { spelling: "int", note: "the width is the implementation's to check" },
-    i16: { spelling: "int", note: "as i8" },
-    i32: { spelling: "int", note: "as i8" },
+    i8: { spelling: "int", note: WIDTH },
+    i16: { spelling: "int", note: WIDTH },
+    i32: { spelling: "int", note: WIDTH },
     i64: {
       spelling: "int",
       note: "exact on native; on the web int is a JavaScript number, exact only to 2^53",
     },
-    u8: { spelling: "int", note: "as i8" },
-    u16: { spelling: "int", note: "as i8" },
-    u32: { spelling: "int", note: "as i8" },
+    u8: { spelling: "int", note: WIDTH },
+    u16: { spelling: "int", note: WIDTH },
+    u32: { spelling: "int", note: WIDTH },
     u64: {
       spelling: "BigInt",
       note: "int is signed 64-bit, so the upper half of u64 needs BigInt",
