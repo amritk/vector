@@ -138,12 +138,17 @@ export const main = (): i32 => {
     textTestNums(gateSentenceSpan("o A MUST be X; o B MUST be Y.", [], 4)),
     "2,13,14",
   )
-  for (const abbr of ["e.g.", "i.e.", "etc.", "vs.", "cf.", "Fig.", "Sec."]) {
+  for (const abbr of ["e.g.", "i.e.", "etc.", "vs.", "cf.", "Fig.", "Sec.", "et al.", "a.k.a.", "E.G.", "FIG."]) {
     const text = `One. A MUST hold ${abbr} Then MUST go. Two.`
     const whole = `A MUST hold ${abbr} Then MUST go.`
     t.eqStr(`${abbr} does not end a sentence, from its start side`, gateSentenceAt(text, [], 7), whole)
     t.eqStr(`nor ${abbr} from its end side`, gateSentenceAt(text, [], text.indexOf("Then") + 6), whole)
   }
+  t.eqStr(
+    "et al. inside a sentence",
+    gateSentenceAt("One. Smith et al. propose that clients MUST retry. Next.", [], 10),
+    "Smith et al. propose that clients MUST retry.",
+  )
   t.eqStr("the last sentence stops before its terminator", textTestNums(gateSentenceSpan('Go "now."', [], 1)), "0,7,9")
   t.eqStr("a byte list inside a call", gateByteLists("hexEncode([00 0f f0 ff])").join("|"), "000ff0ff")
   t.eqStr("commas, upper case, two lists", gateByteLists("[0A, FF] and [01]").join("|"), "0aff|01")

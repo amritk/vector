@@ -512,8 +512,8 @@ export const gateF64Printed = (lines: string, label: string): string[] => {
   return out
 }
 
-/** Abbreviations whose period does not end a sentence, each between bars. */
-const GATE_ABBREVIATIONS: string = "|e.g|E.g|i.e|I.e|etc|vs|cf|Cf|Fig|Sec|"
+/** Abbreviations whose period does not end a sentence, lowercase, each between bars; matched ignoring case. */
+const GATE_ABBREVIATIONS: string = "|e.g|i.e|etc|vs|cf|fig|sec|al|a.k.a|"
 
 /** The length of a list bullet (`o `, `* `, `- `) at an offset, or 0. */
 const gateBulletLen = (text: string, at: i32): i32 => {
@@ -531,7 +531,7 @@ const gateAbbreviationEnds = (text: string, at: i32): boolean => {
     }
     j = j - 1
   }
-  return j + 1 < at && GATE_ABBREVIATIONS.indexOf(`|${text.substring(j + 1, at)}|`) >= 0
+  return j + 1 < at && GATE_ABBREVIATIONS.indexOf(`|${asciiLower(text.substring(j + 1, at))}|`) >= 0
 }
 
 /**
@@ -588,8 +588,9 @@ const gateTerminatorStart = (text: string, start: i32, end: i32): i32 => {
  * terminator and any closing quote end, and where the next sentence starts
  * (after any list bullet). A paragraph's end always breaks. Within one, a
  * sentence ends at `.`, `?`, `."` or `.”` before a space, except a period
- * that ends an abbreviation (e.g., i.e., etc., vs., cf., Fig., Sec.): an
- * identifier such as `hexDecode` may start the next sentence. A list item
+ * that ends an abbreviation (e.g., i.e., etc., vs., cf., Fig., Sec., et
+ * al., a.k.a., case ignored): an identifier such as `hexDecode` may start
+ * the next sentence. A list item
  * ends before its bullet, and a `;` or `:` before a bullet ends the item
  * before it.
  *
