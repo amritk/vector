@@ -13,6 +13,11 @@ import { RunRequest, runCommand, runFindRoot, runFormat } from "../../../src/spe
 import { RunResult, runDisposeScratch, runMakeScratch, runTest } from "../../../src/spec/run/run"
 
 const GOLDEN: string = "tests/spec/emit/golden/example-hex.golden"
+/**
+ * A contract `vector spec check` passes, for the cases that go through the
+ * command's path, which refuses whatever check refuses.
+ */
+const CHECKED: string = "contracts/rfc5869-hkdf-sha256.json"
 const REGENERATE: string = "vector spec emit contracts/example-hex.json -o tests/spec/emit/golden/example-hex.golden"
 
 const hex = (h: string): Literal => new Literal(LitKind.Hex, h)
@@ -57,10 +62,7 @@ export const main = (): i32 => {
   const t = new Suite("spec/emit command")
   const dir = makeTempDir("vector-command-test-").expect("a scratch directory")
 
-  t.ok(
-    "example-hex emits through the command's path",
-    emitContractFile("contracts/example-hex.json", REGENERATE).isOk(),
-  )
+  t.ok("a contract check passes emits through the command's path", emitContractFile(CHECKED, null).isOk())
   const program = commandGolden()
   t.ok("example-hex emits with fixed samples", program !== "")
   if ((getenv("VECTOR_UPDATE_GOLDEN") ?? "") === "1") {
@@ -77,29 +79,25 @@ export const main = (): i32 => {
   t.ok("no diagnostics is still a failure", emitReportAll(none) === EXIT_USAGE)
   t.ok("a write into a missing directory fails", emitWriteFile(`${dir}/no/such/x.ts`, "x").isErr())
 
-  t.ok("emit without -o is a usage error", emitCommand("contracts/example-hex.json", null) === EXIT_USAGE)
+  t.ok("emit without -o is a usage error", emitCommand(CHECKED, null) === EXIT_USAGE)
   t.ok("emit of a missing contract exits 2", emitCommand("contracts/none.json", `${dir}/x.ts`) === EXIT_USAGE)
   t.ok("emit of a bad contract exits 1", emitCommand(bad, `${dir}/x.ts`) === EXIT_REFUSED)
   const out = `${dir}/main.ts`
-  t.ok("emit writes the test and exits 0", emitCommand("contracts/example-hex.json", out) === 0)
-  const sha = sha256Hex(readFileSyncOrNull("contracts/example-hex.json") ?? "")
+  t.ok("emit writes the test and exits 0", emitCommand(CHECKED, out) === 0)
+  const sha = sha256Hex(readFileSyncOrNull(CHECKED) ?? "")
   t.contains(
     "the written test is the contract's",
     readFileSyncOrNull(out) ?? "",
     `\n// vector-contract-sha256: ${sha}\n`,
   )
-  t.contains(
-    "and says how it was made",
-    readFileSyncOrNull(out) ?? "",
-    `//   vector spec emit contracts/example-hex.json -o ${out}.\n`,
-  )
+  t.contains("and says how it was made", readFileSyncOrNull(out) ?? "", `//   vector spec emit ${CHECKED} -o ${out}.\n`)
 
   t.ok("a missing nish root is an error", runFindRoot("tests/no-such-dir").isErr())
   t.ok("a given nish root is used", runFindRoot("tests").isOk())
-  const badFormat = new RunRequest("contracts/example-hex.json")
+  const badFormat = new RunRequest(CHECKED)
   badFormat.format = "yaml"
   t.ok("an unknown format exits 2", runCommand(badFormat) === EXIT_USAGE)
-  const noRoot = new RunRequest("contracts/example-hex.json")
+  const noRoot = new RunRequest(CHECKED)
   noRoot.nishRoot = "tests/no-such-dir"
   t.ok("no nish root exits 2", runCommand(noRoot) === EXIT_USAGE)
   const refused = new RunRequest(bad)
@@ -113,22 +111,22 @@ export const main = (): i32 => {
     t.skip("a run against the pinned nish", "no .nish/ install: run bash scripts/fetch-nish.sh")
     return finish(t, dir)
   }
-  // This case needs a nish without nish/hex, so that the test cannot
+  // A contract check passes, run end to end: SATISFIED, which exits 0, with
+  // the emitted test kept where -o says.
+  const live = new RunRequest(CHECKED)
+  live.nishRoot = ".nish"
+  live.out = `${dir}/kept.ts`
+  live.format = "json"
+  t.ok("a test that holds exits 0", runCommand(live) === 0)
+  t.ok("-o keeps the test", readFileSyncOrNull(`${dir}/kept.ts`) !== null)
+  // The example-hex golden needs a nish without nish/hex, so that it cannot
   // compile; a pin that ships it skips the case instead of failing it.
   if (readFileSyncOrNull(".nish/std/hex.ts") !== null) {
     t.skip("a test that does not compile", "the pinned nish ships nish/hex")
     return finish(t, dir)
   }
-  // The test cannot compile: an ERROR, which exits 1, with the emitted test
-  // kept where -o says.
-  const live = new RunRequest("contracts/example-hex.json")
-  live.nishRoot = ".nish"
-  live.out = `${dir}/kept.ts`
-  live.format = "json"
-  t.ok("a test that does not compile exits 1", runCommand(live) === EXIT_REFUSED)
-  t.ok("-o keeps the test", readFileSyncOrNull(`${dir}/kept.ts`) !== null)
   const report = commandLiveReport()
-  t.contains("the report says ERROR", report, "ERROR: example-hex (exit 1)")
+  t.contains("a test that does not compile is an ERROR", report, "ERROR: example-hex (exit 1)")
   t.contains("and why: nish/hex is missing", report, "'nish/hex' is not part of the standard library")
   return finish(t, dir)
 }

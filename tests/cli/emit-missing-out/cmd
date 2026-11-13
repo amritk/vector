@@ -1,1 +1,1 @@
-vector spec emit contracts/example-hex.json
+vector spec emit contracts/rfc5869-hkdf-sha256.json

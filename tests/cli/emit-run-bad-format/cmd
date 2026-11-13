@@ -1,1 +1,1 @@
-vector spec run contracts/example-hex.json --format xml
+vector spec run contracts/rfc5869-hkdf-sha256.json --format xml

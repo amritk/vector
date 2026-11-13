@@ -1,1 +1,1 @@
-vector spec run contracts/example-hex.json --nish-root tests/no-such-dir
+vector spec run contracts/rfc5869-hkdf-sha256.json --nish-root tests/no-such-dir

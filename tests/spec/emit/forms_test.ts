@@ -1,5 +1,5 @@
 import { Suite } from "nish/testing"
-import { Sample, SampleTable, checkAddSample } from "../../../src/spec/check"
+import { CheckContext, Sample, SampleTable, checkAddSample, checkContract, checkPassed } from "../../../src/spec/check"
 import { contractLoadFile } from "../../../src/spec/contract/contract"
 import { Contract, LitKind, Literal } from "../../../src/spec/contract/types"
 import { EmitOptions, emitProgram } from "../../../src/spec/emit/emit"
@@ -183,17 +183,34 @@ const formsWithout = (t: Suite, c: Contract): void => {
   }
 }
 
-/** rfc-spec: each RFC contract emits, its header naming the command that regenerates it. */
+/**
+ * rfc-spec: each RFC contract emits exactly when `vector spec check` passes
+ * it, its header naming the command that regenerates it; one check refuses
+ * is refused by emit with check's own findings.
+ */
 const formsSpecs = (t: Suite): void => {
   for (const name of ["rfc5869-hkdf-sha256", "rfc8439-chacha20-poly1305"]) {
     const path = `contracts/${name}.json`
     const cmd = `vector spec emit ${path} -o ${name}.ts`
+    const c = contractLoadFile(path).expect(`load ${name}`)
+    const passed = checkPassed(checkContract(new CheckContext(path, "."), c))
     const e = emitContractFile(path, cmd)
-    t.ok(`${name} emits`, e.isOk())
+    t.ok(`${name} emits when check passes it`, e.isOk() === passed)
     if (e.isOk()) {
       t.contains(`${name}'s header`, e.value.program, `//   ${cmd}.\n`)
+    } else {
+      t.ok(`${name} is refused with check's findings`, e.error.length > 0 && e.error[0].file === path)
     }
   }
+  t.ok(
+    "rfc5869-hkdf-sha256 passes check",
+    checkPassed(
+      checkContract(
+        new CheckContext("contracts/rfc5869-hkdf-sha256.json", "."),
+        contractLoadFile("contracts/rfc5869-hkdf-sha256.json").expect("load rfc5869"),
+      ),
+    ),
+  )
 }
 
 /** The forms program compiled and run with the pinned nish against the fixture module: SATISFIED. */
