@@ -1,0 +1,4 @@
+spec mutate std/hex.ts against HEAD: FAILED
+
+problems:
+  ✗ tests/cli/pr-exports-ok/std/hex.ts cannot be read: is tests/cli/pr-exports-ok the nish checkout?

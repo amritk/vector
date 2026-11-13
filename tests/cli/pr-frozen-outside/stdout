@@ -1,0 +1,6 @@
+spec frozen against HEAD: FAILED
+
+  ✗ contract ../c.json
+
+problems:
+  ✗ ../c.json: a contract path may not climb with ..: give it from the repository's top

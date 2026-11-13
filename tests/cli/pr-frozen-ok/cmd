@@ -1,0 +1,1 @@
+vector spec frozen --base HEAD contracts/rfc5869-hkdf-sha256.json

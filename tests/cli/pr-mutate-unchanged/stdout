@@ -1,0 +1,4 @@
+spec mutate std/hex.ts against HEAD: FAILED
+
+problems:
+  ✗ no mutants: the change adds no line of std/hex.ts that can be mutated
