@@ -16,7 +16,7 @@
  */
 
 import { replaceAll, splitLines, splitWhitespace, trim, trimEnd } from "nish/text"
-import { hiddenText } from "./hidden"
+import { hiddenProblem, hiddenText } from "./hidden"
 
 /** One numbered section of an RFC. */
 export class RfcSection {
@@ -298,11 +298,9 @@ export const rfcRead = (text: string, file: string): Result<RfcDocument, string>
       `${file}: not an RFC's plain text: it needs a "Request for Comments: N" header and the form feeds of its page breaks`,
     )
   }
-  const hidden = hiddenText(text)
-  if (hidden.length > 0) {
-    const shown = hidden.slice(0, hidden.length > 5 ? 5 : hidden.length)
-    const more = hidden.length > 5 ? ` (and ${hidden.length - 5} more)` : ""
-    return Err(`${file}: text a reader cannot see as the gates read it: ${shown.join("; ")}${more}`)
+  const hidden = hiddenProblem(text, file)
+  if (hidden !== null) {
+    return Err(hidden)
   }
   return Ok(doc)
 }
@@ -387,10 +385,46 @@ class RfcHexReader {
   }
 }
 
-/** Whether a label calls its value a number printed in base 10. */
+/** Whether the byte at `i` of `s` is an ASCII letter or digit; false outside `s`. */
+const rfcWordByte = (s: string, i: i32): boolean => {
+  if (i < 0 || i >= s.length) {
+    return false
+  }
+  const c = s.charCodeAt(i)
+  return (c >= 0x30 && c <= 0x39) || (c >= 0x61 && c <= 0x7a) || (c >= 0x41 && c <= 0x5a)
+}
+
+/** Whether lower-case `l` holds `word` as a whole word: no letter or digit on either side. */
+const rfcHasWord = (l: string, word: string): boolean => {
+  let from = 0
+  while (from <= l.length) {
+    const at = l.indexOf(word, from)
+    if (at < 0) {
+      return false
+    }
+    if (!rfcWordByte(l, at - 1) && !rfcWordByte(l, at + word.length)) {
+      return true
+    }
+    from = at + 1
+  }
+  return false
+}
+
+/**
+ * Whether a label calls its value a number printed in base 10: the whole word
+ * decimal, number or integer, or base 10 (also base-10, base10). "Numbered"
+ * and "integers" do not count, so a hex run they label is kept.
+ */
 const rfcDecimalLabel = (label: string): boolean => {
   const l = rfcLower(label)
-  return l.indexOf("decimal") >= 0 || l.indexOf("base 10") >= 0 || l.indexOf("number") >= 0 || l.indexOf("integer") >= 0
+  return (
+    rfcHasWord(l, "decimal") ||
+    rfcHasWord(l, "number") ||
+    rfcHasWord(l, "integer") ||
+    rfcHasWord(l, "base 10") ||
+    rfcHasWord(l, "base-10") ||
+    rfcHasWord(l, "base10")
+  )
 }
 
 /** Ends the current value: kept unless it is an unnamed (or number-named) run of bare digits. */

@@ -416,7 +416,9 @@ const writeFormat = (n: WriteNode, indent: string, used: i32): string => {
 
 /**
  * Writes a contract as canonical JSON: the bytes a committed contract holds,
- * so reading one and writing it back reproduces the file.
+ * so reading one and writing it back reproduces the file. Write only a
+ * contract that passed the shape check (`contractLoad` gives one): the writer
+ * prints values as they are and judges none of them.
  *
  * @param c the contract to write
  * @returns the JSON text, with a trailing newline

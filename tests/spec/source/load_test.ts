@@ -4,8 +4,20 @@ import { sha256Hex } from "../../../src/core/hex"
 import { runProcess } from "../../../src/core/process"
 import { charsFromCodePoint } from "../../../src/spec/contract/chars"
 import { Contract, SourceDecl } from "../../../src/spec/contract/types"
-import { sourceDecls, sourceFind, sourceLoad, sourceMainId } from "../../../src/spec/source/load"
-import { sourceFetchHint } from "../../../src/spec/source/path"
+import {
+  SourceReaders,
+  sourceDecls,
+  sourceFind,
+  sourceLoad,
+  sourceLoadWith,
+  sourceMainId,
+  sourceReaderFor,
+  sourceReadersAdd,
+  sourceReadersDefault,
+  sourceRecordedProblem,
+} from "../../../src/spec/source/load"
+import { SourceRead, sourceFetchHint } from "../../../src/spec/source/path"
+import { RfcDocument, rfcRead } from "../../../src/spec/source/rfc"
 
 /** The plain text of a one-section RFC numbered `n`. */
 const loadTestRfc = (n: i32, body: string): string => `Request for Comments: ${n}\n\f\n1.  Introduction\n\n   ${body}\n`
@@ -31,6 +43,15 @@ const loadTestDecl = (id: string, rfc: i32, file: string | null, path: string | 
 /** The problems of a load, joined by " | ". */
 const loadTestProblems = (c: Contract, contractPath: string, root: string): string =>
   sourceLoad(c, contractPath, root).problems.join(" | ")
+
+/** A second reader, for the test registry: the text reader under another extension, as a function of its own. */
+const loadTestOtherReader = (text: string, name: string): Result<RfcDocument, string> => rfcRead(text, name)
+
+/** The ids and RFC numbers of a contract's declarations. */
+const loadTestDecls = (c: Contract): string =>
+  sourceDecls(c)
+    .map((d: SourceDecl): string => `${d.id}:${d.rfc}`)
+    .join(" ")
 
 /** Loading a contract's sources: found, confined, pinned and read. */
 export const main = (): i32 => {
@@ -70,24 +91,91 @@ export const main = (): i32 => {
   t.eqStr(
     "the main pin differs",
     loadTestProblems(c, contractPath, root),
-    `source rfc9999: ${root}/rfcs/rfc9999.txt has SHA-256 ${sha256Hex(rfc)}, but the contract pins ${sha256Hex("other")}: the source changed`,
+    `source rfc9999 (rfcs/rfc9999.txt) has SHA-256 ${sha256Hex(rfc)}, but the contract pins ${sha256Hex("other")}: the source changed`,
+  )
+  c.source.sha256 = null
+  const pinned = loadTestContract(-1)
+  pinned.source.main = "notes"
+  const pinnedDecl = loadTestDecl("notes", 8888, null, "notes.txt")
+  pinnedDecl.sha256 = sha256Hex("x")
+  pinned.sources = [pinnedDecl]
+  t.eqStr(
+    "a declaration's own pin differs",
+    loadTestProblems(pinned, contractPath, root),
+    `source notes (contracts/notes.txt) has SHA-256 ${sha256Hex(loadTestRfc(8888, "Notes."))}, but the contract pins ${sha256Hex("x")}: the source changed`,
   )
 
-  // Missing, wrong and hidden.
+  // The implicit main source sits beside the declared ones.
+  const both = loadTestContract(9999)
+  both.sources = [loadTestDecl("notes", -1, null, "notes.txt")]
+  t.eqStr("source.rfc is declared alongside sources", loadTestDecls(both), "rfc9999:9999 notes:-1")
+  t.eqStr("and loads", loadTestProblems(both, contractPath, root), "")
+  t.ok("the main source is the RFC", sourceFind(sourceLoad(both, contractPath, root), null) !== null)
+  both.sources = [loadTestDecl("rfc9999", 9999, "rfcs/rfc9999.txt", null), loadTestDecl("notes", -1, null, "notes.txt")]
+  t.eqStr("not twice when declared by id", loadTestDecls(both), "rfc9999:9999 notes:-1")
+  both.source.main = "notes"
+  both.sources = [loadTestDecl("notes", -1, null, "notes.txt")]
+  t.eqStr("not when source.main picks another", loadTestDecls(both), "notes:-1")
+
+  // The file a source records.
+  const elsewhere = loadTestContract(-1)
+  elsewhere.sources = [loadTestDecl("other", 9999, "rfcs/other.txt", null)]
   t.eqStr(
-    "a missing RFC says how to fetch it",
-    loadTestProblems(loadTestContract(1234), contractPath, root),
-    `rfc1234 not found; fetch it: ${sourceFetchHint(1234)}`,
+    "file names another file",
+    loadTestProblems(elsewhere, contractPath, root),
+    "source other was read from rfcs/rfc9999.txt, but its file is rfcs/other.txt",
   )
+  const read = new SourceRead("/x/y.txt", "t", sha256Hex("t"))
+  t.eqStr(
+    "a file no label can name",
+    sourceRecordedProblem(loadTestDecl("s", -1, "rfcs/y.txt", null), null, read, null) ?? "",
+    "source s was read from /x/y.txt, which its file cannot name: it is under no specs/ or rfcs/ of the contract's repo or of the root, nor beside the contract",
+  )
+  t.ok(
+    "the file recorded",
+    sourceRecordedProblem(loadTestDecl("s", -1, "rfcs/y.txt", null), sha256Hex("t"), read, "rfcs/y.txt") === null,
+  )
+  t.ok(
+    "no file, no label needed",
+    sourceRecordedProblem(loadTestDecl("s", -1, null, "y.txt"), null, read, null) === null,
+  )
+
+  // Readers, by extension.
+  writeFileSync(joinPath(root, "contracts/spec.xml"), loadTestRfc(5555, "XML."))
+  writeFileSync(joinPath(root, "contracts/README"), loadTestRfc(5555, "None."))
+  const xml = loadTestContract(-1)
+  xml.sources = [loadTestDecl("x", -1, null, "spec.xml"), loadTestDecl("bare", -1, null, "README")]
+  t.eqStr(
+    "no reader for .xml, nor for no extension",
+    loadTestProblems(xml, contractPath, root),
+    [
+      "source x: contracts/spec.xml is a .xml file, and no reader is registered for it: give the source's plain text (.txt)",
+      "source bare: contracts/README is a file without an extension, and no reader is registered for it: give the source's plain text (.txt)",
+    ].join(" | "),
+  )
+  const readers = sourceReadersDefault()
+  t.ok(
+    "the default reads .txt",
+    sourceReaderFor(readers, "a/b.txt") !== null && sourceReaderFor(readers, "a.b/c") === null,
+  )
+  sourceReadersAdd(readers, ".xml", loadTestOtherReader)
+  t.ok("a registered reader is found", sourceReaderFor(readers, "rfc1.xml") !== null)
+  const withXml = sourceLoadWith(xml, contractPath, root, readers)
+  const x = sourceFind(withXml, "x")
+  t.ok("a registered reader reads", x !== null && x.doc.number === 5555 && x.label === "contracts/spec.xml")
+  sourceReadersAdd(readers, ".xml", rfcRead)
+  t.ok("adding again replaces", readers.entries.length === 2)
+
+  // Each refusal, with its reason.
   const many = loadTestContract(-1)
   many.source.main = "notes"
   many.sources = [
     loadTestDecl("notes", -1, null, "notes.txt"),
-    loadTestDecl("wrong", 1111, "contracts/notes.txt", null),
+    loadTestDecl("wrong", 1111, null, "notes.txt"),
     loadTestDecl("hidden", 7777, null, null),
     loadTestDecl("escape", -1, null, "../../outside.txt"),
     loadTestDecl("abs", -1, `${tmp}/outside.txt`, null),
-    loadTestDecl("gone", -1, "rfcs/none.txt", null),
+    loadTestDecl("gone", -1, null, "none.txt"),
   ]
   t.eqStr("main id from source.main", sourceMainId(many), "notes")
   const got = sourceLoad(many, contractPath, root)
@@ -97,11 +185,11 @@ export const main = (): i32 => {
     "each problem",
     got.problems.join("\n"),
     [
-      `source wrong: ${root}/contracts/notes.txt is RFC 8888, not RFC 1111`,
-      `source hidden: ${root}/rfcs/rfc7777.txt: text a reader cannot see as the gates read it: line 5: invisible character U+200B: remove it`,
-      `source escape: ${root}/contracts/../../outside.txt: resolves to ${realpathSync(tmp) ?? tmp}/outside.txt, outside the repository ${realpathSync(root) ?? root}; a source is read only from inside it`,
+      "source wrong: contracts/notes.txt is RFC 8888, not RFC 1111",
+      "source hidden: rfcs/rfc7777.txt: text a reader cannot see as the gates read it: line 5: invisible character U+200B: remove it",
+      "source escape is ../../outside.txt, which is not spec text: a contract may read sources only beside it or under specs/ or rfcs/, and not in a hidden directory or through a symlinked specs/ or rfcs/",
       `source abs: file: an absolute path, ${tmp}/outside.txt: give it relative to the contract`,
-      `source gone: ${root}/rfcs/none.txt: no such file`,
+      "source gone: none.txt: no such file",
     ].join("\n"),
   )
   runProcess(["rm", "-rf", tmp], "", 5000).expect("rm")

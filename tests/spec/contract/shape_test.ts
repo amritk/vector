@@ -350,6 +350,51 @@ export const main = (): i32 => {
   ).length
   t.ok("two errors are both reported", many === 2 && both === 2)
 
+  // The reader refuses values the schema does not allow, each with its reason.
+  const v = `{"str": "00"}`
+  const tol = `"expect": {"f64": "1", "bits": "3ff0000000000000"}, "tolerance": `
+  const neg: string[] = [
+    v,
+    `{"int": 9007199254740992}`,
+    "read: clauses[0].expect.int: an integer within ±(2^53−1), or a decimal string for one beyond it (RFC 7493 §2.2)",
+    v,
+    `{"int": "42"}`,
+    'read: clauses[0].expect.int: "42" fits in ±(2^53−1), so it is written as a JSON integer, not a string (RFC 7493 §2.2)',
+    v,
+    `{"f64": 0.1}`,
+    "read: clauses[0].expect.f64: a string",
+    v,
+    `{"f64": "1", "bits": "3ff0"}`,
+    "clauses[0].expect.bits: the binary64 encoding as 16 lowercase hex digits (IEEE 754-2019 §3.4)",
+    `"expect": {"str": "00"}`,
+    `${tol}{"ulps": -1, "section": "2", "quote": "q"}`,
+    "read: clauses[0].tolerance.ulps: an integer in 0..9007199254740991",
+    `"expect": {"str": "00"}`,
+    `${tol}{"abs": "1", "ulps": 1, "section": "2", "quote": "q"}`,
+    'read: clauses[0].tolerance: an object with one of "abs" or "ulps"',
+    `"quote": "Q"`,
+    `"quote": ""`,
+    "requirements[0].quote: a non-empty string",
+    `"module": "nish/hex"`,
+    `"module": "nish"`,
+    "contract.target.module: a module path <root>/<segment>/…, lowercase [a-z][a-z0-9_]* segments (RFC 3986 §3.3)",
+    `"type": "u8"`,
+    `"type": "i128"`,
+    'read: clauses[1].forall[0].type: an integer type (i8 i16 i32 i64 u8 u16 u32 u64), "f64", "bytes" or "string"',
+    `"returns": "string"`,
+    `"returns": "u64??"`,
+    "functions[0].returns: one of bytes bytes? string string? bool bool? f64 f64? secret-bytes secret-bytes? i8 i8? i16 i16? i32 i32? i64 i64? u8 u8? u16 u16? u32 u32? u64 u64?",
+    `"target": {"module": "nish/hex"}`,
+    `"target": {"module": "nish/hex", "lang": "x"}`,
+    'read: contract.target: unknown field "lang"',
+    `"min": 0, "max": 255`,
+    `"min": 0, "max": 255, "ulps": 1`,
+    'read: clauses[1].forall[0]: unknown field "ulps"',
+  ]
+  for (let i = 0; i + 2 < neg.length; i += 3) {
+    t.eqStr(`refused: ${neg[i + 1]}`, shapeErrorsOf(neg[i], neg[i + 1]).join(" | "), neg[i + 2])
+  }
+
   // The helpers.
   t.eqStr("nish module file", shapeNishModuleFile("nish/crypto/hkdf") ?? "", "std/crypto/hkdf.ts")
   t.ok("a module outside nish has no file", shapeNishModuleFile("go/hex") === null)

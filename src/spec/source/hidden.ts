@@ -13,7 +13,8 @@
  * standing in for one of the keyword's).
  */
 
-import { charsCodePointAt, charsName, charsSequenceLength } from "../contract/chars"
+import { Regex, RegexMatch, regexCompile } from "nish/regex"
+import { charsCodePointAt, charsFromCodePoint, charsName, charsSequenceLength } from "../contract/chars"
 
 /** [lo, hi] pairs: the format characters (Cf) and the blank code points. */
 const hiddenInvisibleTable = (): i32[] => [
@@ -23,9 +24,6 @@ const hiddenInvisibleTable = (): i32[] => [
   0x110cd, 0x110cd, 0x13430, 0x1343f, 0x1bca0, 0x1bca3, 0x1d173, 0x1d17a, 0xe0001, 0xe0001, 0xe0020, 0xe007f, 0xe0100,
   0xe01ef,
 ]
-
-/** [lo, hi] pairs: combining marks, which a reader sees on the letter before. */
-const hiddenMarksTable = (): i32[] => [0x0300, 0x036f, 0x1ab0, 0x1aff, 0x1dc0, 0x1dff, 0x20d0, 0x20ff, 0xfe20, 0xfe2f]
 
 /** Pairs of a code point and the ASCII capital it renders as. */
 const hiddenLookalikeTable = (): i32[] => [
@@ -93,68 +91,111 @@ export const hiddenAsciiLetterOf = (cp: i32): i32 => {
   return -1
 }
 
-/** Whether a code point may stand inside a word: an ASCII letter or digit, or anything non-ASCII. */
-const hiddenIsWordChar = (cp: i32): boolean =>
-  (cp >= 48 && cp <= 57) || (cp >= 65 && cp <= 90) || (cp >= 97 && cp <= 122) || cp >= 0x80
+/** The patterns a text is read with, compiled once per call. */
+class HiddenPatterns {
+  /** A word: a run of letters, digits and marks of any script. */
+  word: Regex
+  /** One combining mark, the whole string. */
+  mark: Regex
+  /** One letter, the whole string. */
+  letter: Regex
+  constructor(word: Regex, mark: Regex, letter: Regex) {
+    this.word = word
+    this.mark = mark
+    this.letter = letter
+  }
+}
+
+/** Compiles the patterns; an error names the one that failed. */
+const hiddenPatterns = (): Result<HiddenPatterns, string> => {
+  const word = regexCompile("[\\p{L}\\p{N}\\p{M}]+", "").orReturn()
+  const mark = regexCompile("^\\p{M}$", "").orReturn()
+  const letter = regexCompile("^\\p{L}$", "").orReturn()
+  return Ok(new HiddenPatterns(word, mark, letter))
+}
 
 /**
- * The keyword a word copies, judged on its code points with invisible ones
- * and marks dropped (`marked` says a mark was): every letter reads as the
- * keyword's, or is non-ASCII where the keyword's letter is (an Armenian Se
- * for the U of MUST), with at least one ASCII capital.
+ * The keyword a word copies, if it copies one. The word is folded first:
+ * invisible characters dropped, marks dropped (`marked` says one was), and
+ * each character read as the ASCII letter it looks like. It copies a keyword
+ * when the folded word is the keyword, or when it has an ASCII capital and a
+ * non-ASCII character and every character either is the keyword's or is a
+ * non-ASCII letter standing in for it (an Armenian Se for the U of MUST).
  */
-const hiddenSpoofs = (cps: i32[], marked: boolean): string | null => {
-  let ascii = !marked
-  let capital = false
-  for (const cp of cps) {
-    if (cp >= 0x80) {
-      ascii = false
+const hiddenSpoofs = (p: HiddenPatterns, word: string): string | null => {
+  const folded: i32[] = []
+  let marked = false
+  let ascii = true
+  let i = 0
+  while (i < word.length) {
+    const cp = charsCodePointAt(word, i)
+    const n = charsSequenceLength(word, i)
+    if (!hiddenIsInvisible(cp)) {
+      if (cp >= 0x80 && p.mark.test(word.substring(i, i + n))) {
+        marked = true
+      } else {
+        if (cp >= 0x80) {
+          ascii = false
+        }
+        const f = hiddenAsciiLetterOf(cp)
+        folded.push(f >= 0 ? f : cp)
+      }
     }
+    i += n
+  }
+  if (ascii && !marked) {
+    return null
+  }
+  let capital = false
+  let foreign = false
+  for (const cp of folded) {
     if (cp >= 65 && cp <= 90) {
       capital = true
     }
-  }
-  if (ascii) {
-    return null
+    if (cp >= 0x80) {
+      foreign = true
+    }
   }
   for (const k of hiddenKeywordsTable()) {
-    if (k.length !== cps.length) {
+    if (k.length !== folded.length) {
       continue
     }
-    let folded = true
-    let spoof = capital
-    for (let i = 0; i < cps.length; i++) {
-      const want = k.charCodeAt(i)
-      if (hiddenAsciiLetterOf(cps[i]) !== want) {
-        folded = false
-        if (cps[i] < 0x80) {
-          spoof = false
+    let same = true
+    let standIn = capital && foreign
+    for (let j = 0; j < folded.length; j++) {
+      const cp = folded[j]
+      if (cp !== k.charCodeAt(j)) {
+        same = false
+        if (cp < 0x80 || !p.letter.test(charsFromCodePoint(cp))) {
+          standIn = false
         }
       }
     }
-    if (folded || spoof) {
+    if (same || standIn) {
       return k
     }
   }
   return null
 }
 
-/** Records a word that spoofs a keyword, if `cps` is one. */
-const hiddenCheckWord = (cps: i32[], marked: boolean, word: string, line: i32, out: string[]): void => {
-  if (cps.length === 0) {
-    return
+/** The line of byte `at`, counting the newlines from `from` (on line `line`). */
+const hiddenLineAt = (text: string, from: i32, at: i32, line: i32): i32 => {
+  let n = line
+  for (let i = from; i < at; i++) {
+    if (text.charCodeAt(i) === 10) {
+      n = n + 1
+    }
   }
-  const k = hiddenSpoofs(cps, marked)
-  if (k !== null) {
-    out.push(`line ${line}: "${word}" reads as ${k} but is not spelled in ASCII: write ${k}`)
-  }
+  return n
 }
 
 /**
  * Why a text would read differently to a reviewer than to the gates, one
  * entry per spot: each invisible character, and each word that reads as a
- * binding keyword without being spelled in ASCII. A byte-order mark at the
- * very start is an encoding marker and passes.
+ * binding keyword without being spelled in ASCII. A word is a run of letters,
+ * digits and combining marks of any script, so a no-break space or a curly
+ * quote ends one. A byte-order mark at the very start is an encoding marker
+ * and passes.
  *
  * @param text the source's text
  * @returns `line N: …` entries; empty when the text reads the same
@@ -162,40 +203,54 @@ const hiddenCheckWord = (cps: i32[], marked: boolean, word: string, line: i32, o
 export const hiddenText = (text: string): string[] => {
   const out: string[] = []
   let line = 1
-  let cps: i32[] = []
-  let inWord = false
-  let marked = false
-  let wordStart = 0
   let i = 0
   while (i < text.length) {
     const cp = charsCodePointAt(text, i)
-    const n = charsSequenceLength(text, i)
     if (hiddenIsInvisible(cp) && !(i === 0 && cp === 0xfeff)) {
       out.push(`line ${line}: invisible character ${charsName(cp)}: remove it`)
     }
-    if (hiddenIsWordChar(cp)) {
-      if (!inWord) {
-        inWord = true
-        wordStart = i
-      }
-      if (cp >= 0x300 && hiddenInRanges(hiddenMarksTable(), cp)) {
-        marked = true
-      } else if (!hiddenIsInvisible(cp)) {
-        cps.push(cp)
-      }
-    } else if (inWord) {
-      hiddenCheckWord(cps, marked, text.substring(wordStart, i), line, out)
-      cps = []
-      inWord = false
-      marked = false
-    }
     if (cp === 10) {
-      line++
+      line = line + 1
     }
-    i += n
+    i += charsSequenceLength(text, i)
   }
-  if (inWord) {
-    hiddenCheckWord(cps, marked, text.substring(wordStart, text.length), line, out)
+  const compiled = hiddenPatterns()
+  if (compiled.isErr()) {
+    out.push(`line 1: the words could not be read (${compiled.error}): nothing is trusted`)
+    return out
+  }
+  const p = compiled.value
+  const m = new RegexMatch()
+  let from = 0
+  let at = 0
+  line = 1
+  while (from < text.length && p.word.exec(text, from, m)) {
+    line = hiddenLineAt(text, at, m.start(), line)
+    at = m.start()
+    const word = text.substring(m.start(), m.end())
+    const k = hiddenSpoofs(p, word)
+    if (k !== null) {
+      out.push(`line ${line}: "${word}" reads as ${k} but is not spelled in ASCII: write ${k}`)
+    }
+    from = m.end() > m.start() ? m.end() : m.start() + 1
   }
   return out
+}
+
+/**
+ * The refusal of a source whose text hides what it says (hiddenText): its
+ * first five spots, then a count of the rest.
+ *
+ * @param text the source's text
+ * @param name the source's name, which starts the message
+ * @returns the refusal, or null when the text reads the same to both
+ */
+export const hiddenProblem = (text: string, name: string): string | null => {
+  const hidden = hiddenText(text)
+  if (hidden.length === 0) {
+    return null
+  }
+  const shown = hidden.slice(0, hidden.length > 5 ? 5 : hidden.length)
+  const more = hidden.length > 5 ? ` (and ${hidden.length - 5} more)` : ""
+  return `${name}: text a reader cannot see as the gates read it: ${shown.join("; ")}${more}`
 }

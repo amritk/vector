@@ -24,16 +24,23 @@ export const contractF64Bits = (x: f64): string => {
  * The binary64 whose encoding is `hex`.
  *
  * @param hex 16 lowercase hex digits
- * @returns the value they encode
+ * @returns the value they encode, or `Err` when `hex` is not 16 lowercase hex digits
  */
-export const contractF64FromBits = (hex: string): f64 => {
+export const contractF64FromBits = (hex: string): Result<f64, string> => {
+  if (hex.length !== 16) {
+    return Err(`"${hex}" is not 16 lowercase hex digits`)
+  }
   let bits: i64 = 0
   for (let i = 0; i < hex.length; i++) {
     const c = hex.charCodeAt(i)
-    const v = c <= 0x39 ? c - 0x30 : c - 0x61 + 10
+    const digit = c >= 0x30 && c <= 0x39
+    if (!digit && !(c >= 0x61 && c <= 0x66)) {
+      return Err(`"${hex}" is not 16 lowercase hex digits`)
+    }
+    const v = digit ? c - 0x30 : c - 0x61 + 10
     bits = (bits << 4) | toI64(v)
   }
-  return bitsToF64(bits)
+  return Ok(bitsToF64(bits))
 }
 
 /**

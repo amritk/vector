@@ -78,7 +78,7 @@ export class CheckContext {
   root: string
   /** The contract being checked; checkContract sets it before the first gate. */
   contract: Contract
-  /** The samples gates choose for the generated test. */
+  /** The samples gates choose for the generated test; each run starts a new table. */
   samples: SampleTable
   /**
    * Makes a context.
@@ -174,7 +174,8 @@ export const checkGates = (): CheckGateEntry[] => [new CheckGateEntry("shape", c
 /**
  * Runs the given gates over a contract, in order, collecting every finding.
  * A blocking gate that finds anything stops the gates after it, which the
- * report lists as skipped.
+ * report lists as skipped. Each run starts with an empty sample table, so a
+ * context reused across contracts never carries one's samples into another.
  *
  * @param ctx the check's context
  * @param contract the contract
@@ -183,6 +184,7 @@ export const checkGates = (): CheckGateEntry[] => [new CheckGateEntry("shape", c
  */
 export const checkContractWith = (ctx: CheckContext, contract: Contract, gates: CheckGateEntry[]): CheckReport => {
   ctx.contract = contract
+  ctx.samples = new SampleTable()
   const report = new CheckReport(ctx.samples)
   let stopped = false
   for (const g of gates) {

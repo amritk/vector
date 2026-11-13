@@ -6,8 +6,10 @@
  * contract whose structure (`spec/contract/read`) and values
  * (`spec/contract/shape`) are already checked, so the stage reads the model's
  * fields without checking them again. A stage that judges a contract further
- * (coverage, quotes, solver bounds) is a gate: a top-level function taking a
- * `CheckContext` and the contract, registered in `spec/check`. Expressions
+ * (coverage, quotes, solver bounds) is a gate: a top-level `CheckGate`,
+ * `(ctx: CheckContext) => string[]`, reading the contract from `ctx.contract`
+ * and returning one message per finding, registered in `checkGates` of
+ * `spec/check` after the blocking shape gate. Expressions
  * are typed with `typeOf` from `spec/contract/typing`, and a contract is
  * written back with `contractWrite` from `spec/contract/write`, byte for byte
  * as `contracts/*.json` are.

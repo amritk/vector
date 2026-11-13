@@ -47,22 +47,29 @@ export const main = (): i32 => {
   const ctx = new CheckContext("contracts/c1.json", ".")
   const good = checkTestContract(CHECK_TEST_BASE)
 
-  // The registry.
+  // The registry: other stages add gates after it, so only its head is fixed.
   const gates = checkGates()
-  t.ok("only the shape gate is registered", gates.length === 1 && gates[0].name === "shape" && gates[0].blocking)
+  t.ok("the shape gate runs first, and blocks", gates.length >= 1 && gates[0].name === "shape" && gates[0].blocking)
   ctx.contract = good
   t.ok("it runs the shape check", checkShapeGate(ctx).length === 0)
+  const shapeOnly: CheckGateEntry[] = [new CheckGateEntry("shape", checkShapeGate, true)]
 
   // A passing contract.
-  const ok = checkContract(ctx, good)
+  const ok = checkContractWith(ctx, good, shapeOnly)
   t.ok("a valid contract passes", checkPassed(ok))
   t.eqStr("the shape gate ran", ok.ran.join(","), "shape")
 
-  // A shape error is reported under the gate's name.
+  // A shape error is reported under the gate's name, and stops every registered gate after it.
   const bad = checkTestContract(replaceAll(CHECK_TEST_BASE, '"c1"', '"-c1"'))
-  const r = checkContract(ctx, bad)
+  const r = checkContractWith(ctx, bad, shapeOnly)
   t.ok("a malformed contract fails", !checkPassed(r))
   t.eqStr("its finding", checkLines(r).join("\n"), "shape: contract.contract: an id ([A-Za-z0-9._-])")
+  const all = checkContract(ctx, bad)
+  t.eqStr(
+    "checkContract stops at shape",
+    `${all.ran.join(",")} ${all.skipped.length + 1 === gates.length}`,
+    "shape true",
+  )
 
   // A blocking gate with a finding stops the gates after it; others do not.
   const chain: CheckGateEntry[] = [
@@ -84,5 +91,8 @@ export const main = (): i32 => {
   const ps = checkSamplesOf(sampled.samples, "P1")
   t.ok("the sample is in the report", ps.length === 1 && ps[0].why === "min of x" && ps[0].args[0].text === "0")
   t.ok("by clause", checkSamplesOf(sampled.samples, "P2").length === 0)
+  const again = checkContractWith(sctx, good, [new CheckGateEntry("sample", checkTestSamples, false)])
+  t.eqStr("a second run starts a new table", `${checkSamplesOf(again.samples, "P1").length}`, "1")
+  t.eqStr("the first report keeps its own", `${checkSamplesOf(sampled.samples, "P1").length}`, "1")
   return t.done()
 }

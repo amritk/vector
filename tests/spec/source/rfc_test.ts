@@ -86,6 +86,12 @@ const rfcTestSection = (doc: RfcDocument, id: string): RfcSection => {
   return s
 }
 
+/** The values of a one-section RFC whose only value is bare digits under `label`. */
+const rfcTestLabelled = (label: string): string => {
+  const text = `Request for Comments: 1\n\f\n1.  Intro\n\n   ${label}:\n   1234\n`
+  return rfcTestValues(rfcTestSection(rfcParse(text), "1"))
+}
+
 /** Reading an RFC's text: sections, page furniture, quotes and printed hex. */
 export const main = (): i32 => {
   const t = new Suite("spec/source rfc")
@@ -149,6 +155,14 @@ export const main = (): i32 => {
   t.ok("the decimal is not hex", !rfcHexPrinted(two, "3102984249"))
   t.ok("the empty value", rfcHexPrinted(two, ""))
   t.ok("printed in a subsection", rfcHexPrinted(two, "e10bff") && rfcHexPrinted(two, "6d656e74"))
+
+  // Which labels call bare digits a decimal number: whole words only.
+  t.eqStr("(base-10) is decimal", rfcTestLabelled("Value (base-10)"), "")
+  t.eqStr("base10 is decimal", rfcTestLabelled("Value base10"), "")
+  t.eqStr("Integer is decimal", rfcTestLabelled("Integer"), "")
+  t.eqStr("Numbered is not decimal", rfcTestLabelled("Numbered"), "Numbered=1234")
+  t.eqStr("integers is not decimal", rfcTestLabelled("Some integers"), "Some integers=1234")
+  t.eqStr("base 100 is not decimal", rfcTestLabelled("In base 100"), "In base 100=1234")
 
   // Reading refuses what is not an RFC, and what hides text.
   t.ok("an RFC reads", rfcRead(rfcTestText(), "r.txt").isOk())

@@ -1,6 +1,6 @@
 import { Suite } from "nish/testing"
 import { charsFromCodePoint, charsName } from "../../../src/spec/contract/chars"
-import { hiddenAsciiLetterOf, hiddenIsInvisible, hiddenText } from "../../../src/spec/source/hidden"
+import { hiddenAsciiLetterOf, hiddenIsInvisible, hiddenProblem, hiddenText } from "../../../src/spec/source/hidden"
 
 /** A string of the given code points. */
 const hiddenTestOf = (cps: i32[]): string => {
@@ -108,6 +108,89 @@ export const main = (): i32 => {
   )
   t.ok("an ASCII word that is not a keyword passes", hiddenText(`MAST M${charsFromCodePoint(0xdc)}STER`).length === 0)
   t.eqStr("two problems, two entries", `${hiddenText(`${cyrillicT}\n${charsFromCodePoint(0x200b)}`).length}`, "2")
+
+  // A word ends at a no-break space or a quote, so neither hides a spoof.
+  t.eqStr(
+    "a spoof after a no-break space",
+    hiddenTestOne(`it${charsFromCodePoint(0xa0)}${cyrillicT} be`),
+    `line 1: "${cyrillicT}" reads as MUST but is not spelled in ASCII: write MUST`,
+  )
+  t.eqStr(
+    "a spoof inside curly quotes",
+    hiddenTestOne(`${charsFromCodePoint(0x201c)}${cyrillicT}${charsFromCodePoint(0x201d)}`),
+    `line 1: "${cyrillicT}" reads as MUST but is not spelled in ASCII: write MUST`,
+  )
+  t.eqStr(
+    "a spoof on line 2, after a quote",
+    hiddenTestOne(`a\n'${cyrillicT}'`),
+    `line 2: "${cyrillicT}" reads as MUST but is not spelled in ASCII: write MUST`,
+  )
+  // Any combining mark, not only the common blocks.
+  const titlo = `M${charsFromCodePoint(0x483)}UST`
+  t.eqStr(
+    "a Cyrillic combining titlo",
+    hiddenTestOne(titlo),
+    `line 1: "${titlo}" reads as MUST but is not spelled in ASCII: write MUST`,
+  )
+  const sign = `MUS${charsFromCodePoint(0x94d)}T`
+  t.eqStr(
+    "a Devanagari virama",
+    hiddenTestOne(sign),
+    `line 1: "${sign}" reads as MUST but is not spelled in ASCII: write MUST`,
+  )
+  // The cases of the earlier implementation.
+  const spoofs: string[] = [
+    hiddenTestOf([0x405, 72, 65, 76, 76]),
+    hiddenTestOf([0xff2d, 85, 83, 84]),
+    hiddenTestOf([77, 0xda, 83, 84]),
+    hiddenTestOf([77, 0x54d, 83, 84]),
+    hiddenTestOf([77, 85, 0xa4e2, 84]),
+    hiddenTestOf([0xa4df, 0xa4f4, 0xa4e2, 0xa4d4]),
+  ]
+  for (const w of spoofs) {
+    const k = w === spoofs[0] ? "SHALL" : "MUST"
+    t.eqStr(`${w} is refused`, hiddenTestOne(w), `line 1: "${w}" reads as ${k} but is not spelled in ASCII: write ${k}`)
+  }
+  t.eqStr(
+    "a zero-width space splitting MUST is one problem",
+    hiddenTestOne(`M${charsFromCodePoint(0x200b)}UST`),
+    "line 1: invisible character U+200B: remove it",
+  )
+  t.eqStr(
+    "a grapheme joiner inside MUST is one problem",
+    hiddenTestOne(`MU${charsFromCodePoint(0x34f)}ST`),
+    "line 1: invisible character U+034F: remove it",
+  )
+  const ordinary = `A caf${charsFromCodePoint(0xe9)}, ${charsFromCodePoint(0x394)}x, &#169;, ${hiddenTestOf([0x414, 0x41e, 0x41c, 0x410])}, S_HALL, x*y*z, M&#85;ST.`
+  t.eqStr("ordinary text still reads", hiddenTestOne(ordinary), "0 problems: ")
+  t.eqStr(
+    "a non-ASCII word of the right length without a stand-in passes",
+    hiddenTestOne(hiddenTestOf([77, 85, 0x2163, 84])),
+    "0 problems: ",
+  )
+
+  // The RFCs the repository reads pass as they are.
+  for (const f of ["rfcs/rfc4648.txt", "rfcs/rfc5869.txt", "rfcs/rfc8439.txt"]) {
+    const text = readFileSyncOrNull(f)
+    t.ok(`${f} is read`, text !== null)
+    if (text !== null) {
+      t.eqStr(`${f} hides nothing`, hiddenTestOne(text), "0 problems: ")
+    }
+  }
+
+  // The refusal of a whole text.
+  t.ok("nothing hidden, no problem", hiddenProblem("It MUST work.", "a.txt") === null)
+  t.eqStr(
+    "one spot",
+    hiddenProblem(`It ${cyrillicT}.`, "a.txt") ?? "",
+    `a.txt: text a reader cannot see as the gates read it: line 1: "${cyrillicT}" reads as MUST but is not spelled in ASCII: write MUST`,
+  )
+  const zw = charsFromCodePoint(0x200b)
+  t.eqStr(
+    "five spots, then a count",
+    hiddenProblem(`${zw}\n${zw}\n${zw}\n${zw}\n${zw}\n${zw}\n${zw}`, "b.txt") ?? "",
+    "b.txt: text a reader cannot see as the gates read it: line 1: invisible character U+200B: remove it; line 2: invisible character U+200B: remove it; line 3: invisible character U+200B: remove it; line 4: invisible character U+200B: remove it; line 5: invisible character U+200B: remove it (and 2 more)",
+  )
 
   // The letters a code point reads as.
   t.ok("ASCII letters read as themselves", hiddenAsciiLetterOf(65) === 65 && hiddenAsciiLetterOf(122) === 122)

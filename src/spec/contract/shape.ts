@@ -325,7 +325,8 @@ const shapeF64Literal = (s: ShapeContext, lit: Literal, at: string): void => {
   }
   const x = contractF64Parse(text)
   if (contractF64IsNaN(x)) {
-    if (!contractF64IsNaN(contractF64FromBits(bits))) {
+    const decoded = contractF64FromBits(bits)
+    if (decoded.isErr() || !contractF64IsNaN(decoded.value)) {
       shapeFail(s, `${at}.bits`, `${bits} is not a NaN encoding`)
     }
     return
