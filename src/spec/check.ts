@@ -19,6 +19,7 @@
 import { contractShapeErrors } from "./contract/shape"
 import { Contract, Literal } from "./contract/types"
 import { gateIds } from "./gates/ids"
+import { gateTyping } from "./gates/typing"
 import { SourceSet } from "./source/load"
 
 /** One sampled input of a property: the values its variables take, and why. */
@@ -278,6 +279,7 @@ export const checkShapeGate = (ctx: CheckContext): string[] => contractShapeErro
 export const checkGates = (): CheckGateEntry[] => [
   new CheckGateEntry("shape", checkShapeGate, true),
   new CheckGateEntry("ids", gateIds, true),
+  new CheckGateEntry("typing", gateTyping, false),
 ]
 
 /**
