@@ -26,6 +26,7 @@ becomes in the XML.
 | a requirement's `note` | a paragraph starting `Note: ` right after the requirement | the next sibling `<t>Note: …</t>` |
 | a property | a `~~~ ts-property` block (see [Properties](#properties)) | `<sourcecode type="ts-property">` |
 | the vectors | one table, header exactly `Id \| Call \| Expected \| Covers \| Source \| Title` | `<table>` |
+| a vector's `tolerance` | a paragraph `Tolerance: V1 ulps 1, {{Section N of RFCx}}: "quote"` (or `abs 1e-9`) right after the vector table or another `Tolerance:` paragraph (see [Tolerances](#tolerances)) | the next sibling `<t>Tolerance: …</t>` |
 | a requirement's or vector's `section` | the enclosing numbered section (`--- back` gives appendices A, B, …) | the section number `xml2rfc` gives |
 
 ### Signatures
@@ -115,6 +116,36 @@ where the expected value comes from:
 The Call cell is `f(arg, …)`: as many arguments as `f` has parameters, each
 of its parameter's type. The Expected cell must be of `f`'s return type.
 
+### Tolerances
+
+An `f64` result is compared bit for bit unless its vector has a tolerance.
+Give one in a paragraph of its own, in a run directly after the vector
+table, one paragraph per vector:
+
+```md
+Tolerance: V1 ulps 1, {{Section 5 of RFC9999}}: "the result is correctly rounded to within 1 ulp"
+
+Tolerance: V2 abs 1e-9, {{accuracy}}: "within 1e-9 of half its argument"
+```
+
+- The words before the citation are the vector's id, the kind and the
+  value, then a comma. The kind is `ulps`, a whole number from 1 to
+  9007199254740991 units in the last place, or `abs`, a decimal greater than
+  0 (`1e-9`, `0.5`) that stays finite as an f64.
+- The citation is the section that allows the tolerance: `{{Section N of
+  RFCx}}`, or `{{anchor}}` for a numbered section of this spec, but not the
+  section holding the table (the quote would be found in the `Tolerance:`
+  paragraph itself). In a spec whose main source is an RFC, only the RFC can
+  be cited.
+- After the citation comes `: ` and the sentence that allows it, in double
+  quotes. It must appear in the cited section; extract's fidelity gate
+  refuses it at the paragraph's line otherwise.
+- The vector must be in the table, have one tolerance at most, and call a
+  function that returns `f64`.
+
+A `Tolerance:` paragraph anywhere else, or after a table that is not the
+vector table, is refused.
+
 ### The whole spec
 
 - At least one requirement, and at least one vector row or property.
@@ -198,8 +229,8 @@ Beyond the profile's literals:
   is IEEE 754-2019 equality (§5.11): `NaN == NaN` is false and `-0 == 0` is
   true.
 
-The profile has no spelling for a tolerance *yet*, and vector does *not yet*
-sample a `forall` over `f64`: the schema records such a domain (`{"type":
+The profile spells a tolerance as a [`Tolerance:` paragraph](#tolerances).
+vector does *not yet* sample a `forall` over `f64`: the schema records such a domain (`{"type":
 "f64", "min": "-1.5", "max": "Infinity"}`) and vector refuses the property. A
 `forall` integer may be any of `i8` … `u64`, with the same wide-integer
 strings for bounds. The sampler takes each type's minimum and maximum, and Z3

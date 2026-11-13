@@ -29,7 +29,7 @@
 import { split } from "nish/text"
 import { diagPlace } from "../../core/diag"
 import { charsFirstControl, charsIsAbs, charsIsId, charsIsSection } from "../contract/chars"
-import { contractF64Overflows } from "../contract/f64"
+import { contractF64Overflows, contractF64Parse } from "../contract/f64"
 import {
   RawCall,
   RawLiteral,
@@ -1513,20 +1513,6 @@ const profileUlps = (s: string): i64 => {
   return n
 }
 
-/** Whether decimal text is zero: no digit but 0 before any exponent. */
-const profileIsZero = (s: string): boolean => {
-  for (let i = 0; i < s.length; i++) {
-    const ch = s.charCodeAt(i)
-    if (ch === 0x65 || ch === 0x45) {
-      return true
-    }
-    if (ch >= 0x31 && ch <= 0x39) {
-      return false
-    }
-  }
-  return true
-}
-
 /**
  * The bound a Tolerance: paragraph states before its citation, `V1 ulps 1,`
  * or `V1 abs 1e-9,`, into `t`; the vector id, or null when refused.
@@ -1551,8 +1537,8 @@ const profileToleranceBound = (c: ProfileContext, p: XmlNode, head: string, t: T
     return id
   }
   if (kind === "abs") {
-    if (!charsIsAbs(value) || profileIsZero(value)) {
-      profileRefuse(c, p, `${id}'s abs tolerance is a decimal greater than 0, like 1e-9, not "${value}"`)
+    if (!charsIsAbs(value) || !(contractF64Parse(value) > 0)) {
+      profileRefuse(c, p, `${id}'s abs tolerance is a decimal greater than 0 as an f64, like 1e-9, not "${value}"`)
       return null
     }
     if (contractF64Overflows(value)) {
@@ -1567,7 +1553,7 @@ const profileToleranceBound = (c: ProfileContext, p: XmlNode, head: string, t: T
 }
 
 /** The section a tolerance cites, into `t`; false when refused. */
-const profileToleranceCite = (c: ProfileContext, p: XmlNode, x: XmlNode, section: string, t: Tolerance): boolean => {
+const profileToleranceCite = (c: ProfileContext, x: XmlNode, section: string, t: Tolerance): boolean => {
   const target = xmlAttr(x, "target") ?? ""
   const cited = xmlAttr(x, "section")
   if (cited !== null) {
@@ -1651,7 +1637,7 @@ const profileReadTolerance = (
   }
   t.quote = tail.substring(3, tail.length - 1)
   profileCheckText(c, profileLocOf(p), `${id}'s tolerance quote`, t.quote)
-  if (!profileToleranceCite(c, p, x, section, t)) {
+  if (!profileToleranceCite(c, x, section, t)) {
     return
   }
   if (!rowIds.has(id)) {
