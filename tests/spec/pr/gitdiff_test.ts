@@ -267,6 +267,17 @@ export const main = (): i32 => {
     gitdiffTestNames("export const a = x < y, z > w\n"),
     "SPLIT",
   )
+  t.eqStr(
+    "an initialiser between the angles makes them comparisons, so two names",
+    gitdiffTestNames("export const a = b < c, d = e > (f)\n"),
+    "MANY",
+  )
+  t.eqStr(
+    "an operator between the angles is not type arguments",
+    gitdiffTestNames("export const a = x < y, z + w > (v)\n"),
+    "SPLIT",
+  )
+  t.eqStr("nested type arguments closing with >>", gitdiffTestNames("export const a = f<A<B>>(x)\n"), "a")
   t.eqStr("an angle that never closes", gitdiffTestNames("export const a = new Foo<x, b = 2\n"), "SPLIT")
   t.eqStr("a comma in a template's substitution", gitdiffTestNames("export const a = `${x, y}`, b = 1\n"), "MANY")
   t.eqStr("a template alone is one name", gitdiffTestNames("export const a = `${f(x, y)}`\n"), "a")

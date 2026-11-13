@@ -256,6 +256,7 @@ compiler at all: its `bin/nish` is the npm launcher, and there is no
 `libexec/nish` or `build/seed`. Build one in the checkout, then give
 `--nish build/nish`:
 
+<!-- illustrative -->
 ```sh
 cd ../nish
 bash scripts/fetch-seed.sh && npm run build
@@ -268,7 +269,7 @@ Pointing `--nish` at another install, such as vector's own
 copy, and fails the check above. Run against an unbuilt checkout, mutate says
 so and stops:
 
-<!-- exit 2 -->
+<!-- illustrative -->
 ```sh
 ./dist/vector spec mutate contracts/rfc5869-hkdf-sha256.json --nish-root ../nish --nish libexec/nish --base HEAD
 ```
