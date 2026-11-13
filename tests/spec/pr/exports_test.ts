@@ -118,14 +118,41 @@ export const main = (): i32 => {
     exportsTestChanges(exportsDiff("/** a */\nexport const a = 1\n", "/** b */\nexport const a = 1\n")),
     "",
   )
+  t.eqStr(
+    "an added export * is unnamed",
+    exportsTestChanges(exportsDiff("", "export * from './a'\n")),
+    "unnamed export * from './a'",
+  )
+  t.eqStr(
+    "an export * the base already had is no change",
+    exportsTestChanges(exportsDiff("export * from './a'\n", "export * from './a'\n")),
+    "",
+  )
+  t.eqStr(
+    "a re-export from another module is unnamed",
+    exportsTestChanges(exportsDiff("", "export { a } from './a'\n")),
+    "unnamed export { a } from './a'",
+  )
+  t.eqStr(
+    "a local list resolves each name",
+    exportsTestChanges(exportsDiff("", "const a = 1\nfunction b() {\n}\nexport { a, b as c }\n")),
+    "added a, added c",
+  )
   const c = contractLoad(EXPORTS_TEST_CONTRACT, "c")
   if (c.isErr()) {
     t.fail("the contract loads", c.error.join("\n"))
     return t.done()
   }
+  const u = new PrReport("exports", "t")
+  exportsJudge(u, c.value, [new ExportsChange("export * from './a'", "unnamed", "line 3: an export it cannot name")])
+  t.eqStr(
+    "an unnamed export is refused",
+    exportsTestReport(u),
+    "line 3: an export it cannot name: give it a declaration of its own the contract can test, since the gate refuses what it cannot name || ",
+  )
   t.eqStr("tested names", exportsTested(c.value).join(","), "enc")
   const r = new PrReport("exports", "t")
-  exportsJudge(r, c.value, [new ExportsChange("enc", "added"), new ExportsChange("x", "changed")])
+  exportsJudge(r, c.value, [new ExportsChange("enc", "added", ""), new ExportsChange("x", "changed", "")])
   t.eqStr(
     "judging",
     exportsTestReport(r),

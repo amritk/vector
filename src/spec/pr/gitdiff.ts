@@ -375,6 +375,8 @@ export class GitdiffExport {
   line: i32
   /** Its declaration, up to the next top-level line, without trailing blank lines. */
   body: string
+  /** Why the scanner cannot name or resolve it; "" when it can. */
+  problem: string
 
   /**
    * Makes an export.
@@ -382,11 +384,13 @@ export class GitdiffExport {
    * @param name the name it exports
    * @param line the line it starts on
    * @param body its declaration's text
+   * @param problem why it cannot be named or resolved, or ""
    */
-  constructor(name: string, line: i32, body: string) {
+  constructor(name: string, line: i32, body: string, problem: string) {
     this.name = name
     this.line = line
     this.body = body
+    this.problem = problem
   }
 }
 
@@ -403,45 +407,95 @@ const gitdiffIdent = (text: string): string => {
   return text.substring(0, i)
 }
 
-/** The keywords between `export` and the name it declares. */
-const gitdiffDeclWords = (): string[] => [
-  "default ",
-  "declare ",
-  "abstract ",
-  "async ",
+/** The modifiers that may stand between `export` and a declaration's keyword. */
+const gitdiffModifiers = (): string[] => ["declare ", "abstract ", "async "]
+
+/** The keywords that declare one name, the name following. */
+const gitdiffKinds = (): string[] => [
+  "const enum ",
   "const ",
   "let ",
   "var ",
-  "function* ",
-  "function ",
   "class ",
   "enum ",
   "type ",
   "interface ",
+  "namespace ",
+  "module ",
 ]
 
-/**
- * The name a top-level `export` line declares.
- *
- * @param line a line of the module
- * @returns the name, or "" when the line declares none (a re-export, or not an export)
- */
-export const gitdiffExportName = (line: string): string => {
-  if (!line.startsWith("export ")) {
-    return ""
+/** `text` without the spaces it starts with. */
+const gitdiffTrimStart = (text: string): string => {
+  let i = 0
+  while (i < text.length && text.charCodeAt(i) === 0x20) {
+    i = i + 1
   }
-  let rest = line.substring(7)
+  return text.substring(i)
+}
+
+/**
+ * The name a declaration declares, `export` already taken off: "" when it is
+ * not one declaration of one name.
+ */
+const gitdiffDeclName = (decl: string): string => {
+  let rest = decl
   let moved = true
   while (moved) {
     moved = false
-    for (const w of gitdiffDeclWords()) {
+    for (const w of gitdiffModifiers()) {
       if (rest.startsWith(w)) {
-        rest = rest.substring(w.length)
+        rest = gitdiffTrimStart(rest.substring(w.length))
         moved = true
       }
     }
   }
-  return gitdiffIdent(rest)
+  if (rest.startsWith("function") && !(rest.length > 8 && gitdiffIdentChar(rest.charCodeAt(8)))) {
+    rest = gitdiffTrimStart(rest.substring(8))
+    if (rest.startsWith("*")) {
+      rest = gitdiffTrimStart(rest.substring(1))
+    }
+    return gitdiffIdent(rest)
+  }
+  for (const k of gitdiffKinds()) {
+    if (rest.startsWith(k)) {
+      return gitdiffIdent(gitdiffTrimStart(rest.substring(k.length)))
+    }
+  }
+  return ""
+}
+
+/** Whether a line starts with the word `export`. */
+const gitdiffIsExport = (line: string): boolean =>
+  line.startsWith("export") && (line.length === 6 || !gitdiffIdentChar(line.charCodeAt(6)))
+
+/** Whether an export line opens a braced list: `export {` or `export type {`. */
+const gitdiffIsList = (line: string): boolean => {
+  const rest = gitdiffTrimStart(line.substring(6))
+  return rest.startsWith("{") || (rest.startsWith("type") && gitdiffTrimStart(rest.substring(4)).startsWith("{"))
+}
+
+/**
+ * The name a top-level `export` line declares: `default` for a default
+ * export, the declared name for a declaration.
+ *
+ * @param line a line of the module
+ * @returns the name; "" when the line is not an export; `Err` for an export
+ *   it cannot name (a braced list, `export *`, `export import`, `export =`),
+ *   which names no declaration to compare
+ */
+export const gitdiffExportName = (line: string): Result<string, string> => {
+  if (!gitdiffIsExport(line)) {
+    return Ok("")
+  }
+  const rest = gitdiffTrimStart(line.substring(6))
+  if (rest.startsWith("default") && !(rest.length > 7 && gitdiffIdentChar(rest.charCodeAt(7)))) {
+    return Ok("default")
+  }
+  const name = gitdiffDeclName(rest)
+  if (name.length === 0) {
+    return Err(`an export it cannot name: ${trim(line)}`)
+  }
+  return Ok(name)
 }
 
 /** Whether a line starts at the top level: not blank, not indented, not a closing bracket. */
@@ -453,10 +507,109 @@ const gitdiffTopLevel = (line: string): boolean => {
   return c !== 0x20 && c !== 0x09 && c !== 0x7d && c !== 0x29 && c !== 0x5d
 }
 
+/** The index after the last line of the item starting at `i`: the next top-level line. */
+const gitdiffItemEnd = (lines: string[], i: i32): i32 => {
+  let j = i + 1
+  while (j < lines.length && !gitdiffTopLevel(lines[j])) {
+    j = j + 1
+  }
+  return j
+}
+
+/** Lines `i` up to `j`, without the blank lines they end with. */
+const gitdiffItemText = (lines: string[], i: i32, j: i32): string => {
+  let end = j
+  while (end > i + 1 && trim(lines[end - 1]).length === 0) {
+    end = end - 1
+  }
+  const body: string[] = []
+  for (let k = i; k < end; k++) {
+    body.push(lines[k])
+  }
+  return body.join("\n")
+}
+
+/** The text of the top-level declaration of `name`, exported or not; null when there is none. */
+const gitdiffDeclText = (lines: string[], name: string): string | null => {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (!gitdiffTopLevel(line)) {
+      continue
+    }
+    const decl = gitdiffIsExport(line) ? gitdiffTrimStart(line.substring(6)) : line
+    if (gitdiffDeclName(decl) === name) {
+      return gitdiffItemText(lines, toI32(i), gitdiffItemEnd(lines, toI32(i)))
+    }
+  }
+  return null
+}
+
+/**
+ * The exports of a braced list, `export { a, b as c }`, each resolved to the
+ * module's own declaration of the name it exports. A list that re-exports
+ * from another module, or names a declaration the module lacks, is one the
+ * scanner cannot resolve.
+ */
+const gitdiffListExports = (lines: string[], at: i32, statement: string, out: GitdiffExport[]): void => {
+  const open = statement.indexOf("{")
+  const close = statement.indexOf("}")
+  if (close < open) {
+    out.push(new GitdiffExport("", at + 1, statement, `an export list it cannot read: ${trim(statement)}`))
+    return
+  }
+  const tail = trim(statement.substring(close + 1))
+  if (tail.length > 0 && tail !== ";") {
+    out.push(
+      new GitdiffExport("", at + 1, statement, `a re-export from another module it cannot resolve: ${trim(statement)}`),
+    )
+    return
+  }
+  for (const raw of split(statement.substring(open + 1, close), ",")) {
+    let entry = trim(raw)
+    if (entry.length === 0) {
+      continue
+    }
+    if (entry.startsWith("type ")) {
+      entry = trim(entry.substring(5))
+    }
+    const local = gitdiffIdent(entry)
+    const as = trim(entry.substring(local.length))
+    let name = local
+    if (as.startsWith("as ")) {
+      name = gitdiffIdent(trim(as.substring(3)))
+    } else if (as.length > 0) {
+      name = ""
+    }
+    const decl: string | null = local.length > 0 && name.length > 0 ? gitdiffDeclText(lines, local) : null
+    if (decl === null) {
+      out.push(new GitdiffExport("", at + 1, statement, `an export it cannot resolve to a declaration: ${entry}`))
+    } else {
+      out.push(new GitdiffExport(name, at + 1, `${entry}\n${decl}`, ""))
+    }
+  }
+}
+
+/** Adds `e` to `out`, joining it to an earlier export of the same name (an overload). */
+const gitdiffAddExport = (out: GitdiffExport[], e: GitdiffExport): void => {
+  if (e.name.length > 0) {
+    for (const o of out) {
+      if (o.name === e.name) {
+        o.body = `${o.body}\n${e.body}`
+        return
+      }
+    }
+  }
+  out.push(e)
+}
+
 /**
  * The exports a module declares, each with its declaration's text: from its
  * `export` line to the line before the next top-level line that is not a
- * closing bracket, so a doc comment above the next declaration is not part of it.
+ * closing bracket, so a doc comment above the next declaration is not part of
+ * it. Declarations of one name (overloads) are joined into one export. A
+ * braced list names each entry, with the text of the declaration it exports.
+ * An export the scanner cannot name or resolve is kept with an empty name and
+ * its `problem`, so a change that adds one can be refused.
  *
  * @param text the module's source
  * @returns the exports, in the order they are declared
@@ -464,27 +617,26 @@ const gitdiffTopLevel = (line: string): boolean => {
 export const gitdiffExports = (text: string): GitdiffExport[] => {
   const lines = splitLines(text)
   const out: GitdiffExport[] = []
-  let i = 0
+  let i: i32 = 0
   while (i < lines.length) {
-    const name = gitdiffExportName(lines[i])
-    if (name.length === 0) {
+    const line = lines[i]
+    if (!gitdiffIsExport(line)) {
       i = i + 1
-    } else {
-      let j = i + 1
-      while (j < lines.length && !gitdiffTopLevel(lines[j])) {
-        j = j + 1
-      }
-      let end = j
-      while (end > i + 1 && trim(lines[end - 1]).length === 0) {
-        end = end - 1
-      }
-      const body: string[] = []
-      for (let k = i; k < end; k++) {
-        body.push(lines[k])
-      }
-      out.push(new GitdiffExport(name, toI32(i) + 1, body.join("\n")))
-      i = j
+      continue
     }
+    const j = gitdiffItemEnd(lines, i)
+    const statement = gitdiffItemText(lines, i, j)
+    if (gitdiffIsList(line)) {
+      gitdiffListExports(lines, i, statement, out)
+    } else {
+      const name = gitdiffExportName(line)
+      if (name.isErr()) {
+        out.push(new GitdiffExport("", i + 1, statement, name.error))
+      } else {
+        gitdiffAddExport(out, new GitdiffExport(name.value, i + 1, statement, ""))
+      }
+    }
+    i = j
   }
   return out
 }

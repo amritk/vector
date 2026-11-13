@@ -4,10 +4,12 @@
  * in its `outOfScope` with a reason, so no new surface lands untested. An
  * export is compared by its declaration's text (gitdiffExports) between the
  * fork point from the base and the work tree. Deleting an export the contract
- * tests fails too: its test can no longer build.
+ * tests fails too: its test can no longer build. A change that adds an export
+ * the scanner cannot name or resolve (`export *`, a re-export from another
+ * module) fails closed.
  */
 
-import { trim } from "nish/text"
+import { splitLines, trim } from "nish/text"
 import { contractLoadFile } from "../contract/contract"
 import { shapeNishModuleFile } from "../contract/shape"
 import { Contract } from "../contract/types"
@@ -16,20 +18,24 @@ import { PrReport } from "./report"
 
 /** One export the change added, changed or deleted. */
 export class ExportsChange {
-  /** The name it exports. */
+  /** The name it exports; for an unnamed export, the line that declares it. */
   name: string
-  /** "added", "changed" or "deleted". */
+  /** "added", "changed", "deleted", or "unnamed" for an export the scanner cannot name or resolve. */
   kind: string
+  /** For an unnamed export, where it is and why it cannot be named; "" otherwise. */
+  why: string
 
   /**
    * Makes a change.
    *
    * @param name the name it exports
-   * @param kind "added", "changed" or "deleted"
+   * @param kind "added", "changed", "deleted" or "unnamed"
+   * @param why where an unnamed export is and why it cannot be named, or ""
    */
-  constructor(name: string, kind: string) {
+  constructor(name: string, kind: string, why: string) {
     this.name = name
     this.kind = kind
+    this.why = why
   }
 }
 
@@ -43,10 +49,21 @@ const exportsFind = (list: GitdiffExport[], name: string): GitdiffExport | null 
   return null
 }
 
+/** Whether `list` has an unnamed export whose text is `body`. */
+const exportsHasUnnamed = (list: GitdiffExport[], body: string): boolean => {
+  for (const e of list) {
+    if (e.name.length === 0 && e.body === body) {
+      return true
+    }
+  }
+  return false
+}
+
 /**
  * The exports that differ between two versions of a module: added and
  * changed in the order the new text declares them, then the deleted in the
- * order the old one did.
+ * order the old one did. An export the scanner cannot name or resolve is
+ * "unnamed" unless the old text has it word for word.
  *
  * @param before the module at the fork point; "" when it did not exist
  * @param after the module now; "" when it is gone
@@ -58,21 +75,28 @@ export const exportsDiff = (before: string, after: string): ExportsChange[] => {
   const out: ExportsChange[] = []
   const seen = new Set<string>()
   for (const e of now) {
+    if (e.name.length === 0) {
+      if (!exportsHasUnnamed(old, e.body)) {
+        const first = trim(splitLines(e.body)[0])
+        out.push(new ExportsChange(first, "unnamed", `line ${e.line}: ${e.problem}`))
+      }
+      continue
+    }
     if (seen.has(e.name)) {
       continue
     }
     seen.add(e.name)
     const was = exportsFind(old, e.name)
     if (was === null) {
-      out.push(new ExportsChange(e.name, "added"))
+      out.push(new ExportsChange(e.name, "added", ""))
     } else if (was.body !== e.body) {
-      out.push(new ExportsChange(e.name, "changed"))
+      out.push(new ExportsChange(e.name, "changed", ""))
     }
   }
   for (const e of old) {
-    if (!seen.has(e.name)) {
+    if (e.name.length > 0 && !seen.has(e.name)) {
       seen.add(e.name)
-      out.push(new ExportsChange(e.name, "deleted"))
+      out.push(new ExportsChange(e.name, "deleted", ""))
     }
   }
   return out
@@ -119,6 +143,13 @@ const exportsOutOfScope = (c: Contract, name: string): string | null => {
 export const exportsJudge = (r: PrReport, c: Contract, changes: ExportsChange[]): void => {
   const tested = exportsTested(c)
   for (const ch of changes) {
+    if (ch.kind === "unnamed") {
+      r.items.push(`unnamed ${ch.name}`)
+      r.problems.push(
+        `${ch.why}: give it a declaration of its own the contract can test, since the gate refuses what it cannot name`,
+      )
+      continue
+    }
     const isTested = tested.indexOf(ch.name) >= 0
     const reason = exportsOutOfScope(c, ch.name)
     r.items.push(`${ch.kind} ${ch.name}${isTested ? " (tested)" : ""}`)

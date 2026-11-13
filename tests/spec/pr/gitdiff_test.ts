@@ -1,5 +1,6 @@
 import { Suite } from "nish/testing"
 import {
+  GitdiffExport,
   gitdiffBaseProblem,
   gitdiffChanged,
   gitdiffChangedPaths,
@@ -15,6 +16,20 @@ import {
   gitdiffTouches,
 } from "../../../src/spec/pr/gitdiff"
 import { prTestCommit, prTestGit, prTestRemove, prTestRepo, prTestWrite } from "./repo"
+
+/** What gitdiffExportName gives: the name, or "ERR" when it refuses. */
+const gitdiffTestName = (line: string): string => {
+  const r = gitdiffExportName(line)
+  return r.isOk() ? r.value : "ERR"
+}
+
+/** Each export as `name:line:body`, or `:line:problem` when unnamed, joined by "|". */
+const gitdiffTestList = (list: GitdiffExport[]): string =>
+  list
+    .map((e: GitdiffExport): string =>
+      e.name.length > 0 ? `${e.name}:${e.line}:${e.body}` : `:${e.line}:${e.problem}`,
+    )
+    .join("|")
 
 /** The ranges of a file, as text. */
 const gitdiffTestRanges = (r: i32[]): string => {
@@ -98,11 +113,51 @@ export const main = (): i32 => {
     t.ok("a line outside is not", !gitdiffTouches(p.value[0], 4))
   }
   t.ok("a quoted path is refused", gitdiffParse('diff --git a/x b/x\n--- "a/\\tx"\n+++ b/x\n').isErr())
-  t.eqStr("export const", gitdiffExportName("export const fooBar = (): i32 => 1"), "fooBar")
-  t.eqStr("export async function", gitdiffExportName("export async function go() {"), "go")
-  t.eqStr("export class", gitdiffExportName("export class Box {"), "Box")
-  t.eqStr("a re-export names none", gitdiffExportName("export { a } from './a'"), "")
-  t.eqStr("not an export", gitdiffExportName("const x = 1"), "")
+  t.eqStr("export const", gitdiffTestName("export const fooBar = (): i32 => 1"), "fooBar")
+  t.eqStr("export async function", gitdiffTestName("export async function go() {"), "go")
+  t.eqStr("export class", gitdiffTestName("export class Box {"), "Box")
+  t.eqStr("export function *g", gitdiffTestName("export function *gen() {"), "gen")
+  t.eqStr("export function * g", gitdiffTestName("export function * gen() {"), "gen")
+  t.eqStr("export namespace", gitdiffTestName("export namespace Space {"), "Space")
+  t.eqStr("export const enum", gitdiffTestName("export const enum E {"), "E")
+  t.eqStr("export default", gitdiffTestName("export default class Box {"), "default")
+  t.eqStr("a const named module", gitdiffTestName("export const module = 1"), "module")
+  t.eqStr("a braced list is not one name", gitdiffTestName("export { a } from './a'"), "ERR")
+  t.eqStr("export * is refused", gitdiffTestName("export * from './a'"), "ERR")
+  t.eqStr("export import is refused", gitdiffTestName("export import X = Y.Z"), "ERR")
+  t.eqStr("export = is refused", gitdiffTestName("export = x"), "ERR")
+  t.eqStr("not an export", gitdiffTestName("const x = 1"), "")
+  t.eqStr("a name that starts with export is not one", gitdiffTestName("exported(1)"), "")
+  t.eqStr(
+    "a local list resolves each name",
+    gitdiffTestList(gitdiffExports("const a = 1\nfunction b() {\n}\nexport { a, b as c }\n")),
+    "a:4:a\nconst a = 1|c:4:b as c\nfunction b() {\n}",
+  )
+  t.eqStr(
+    "a multi-line list resolves each name",
+    gitdiffTestList(gitdiffExports("const a = 1\nexport {\n  a,\n}\n")),
+    "a:2:a\nconst a = 1",
+  )
+  t.eqStr(
+    "a re-export from another module is refused",
+    gitdiffTestList(gitdiffExports("export { a } from './a'\n")),
+    ":1:a re-export from another module it cannot resolve: export { a } from './a'",
+  )
+  t.eqStr(
+    "a list naming a missing declaration is refused",
+    gitdiffTestList(gitdiffExports("export { nope }\n")),
+    ":1:an export it cannot resolve to a declaration: nope",
+  )
+  t.eqStr(
+    "export * is kept as unnamed",
+    gitdiffTestList(gitdiffExports("export * from './a'\n")),
+    ":1:an export it cannot name: export * from './a'",
+  )
+  t.eqStr(
+    "overloads join into one export",
+    gitdiffTestList(gitdiffExports("export function f(a: i32): i32\nexport function f(a: string): i32\n")),
+    "f:1:export function f(a: i32): i32\nexport function f(a: string): i32",
+  )
   const ex = gitdiffExports(
     "import x\n\n/** a */\nexport const a = (): i32 => {\n  return 1\n}\n\n/** b */\nexport const b = 2\nconst c = 3\n",
   )
