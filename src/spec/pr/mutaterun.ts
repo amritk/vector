@@ -103,7 +103,9 @@ class MutaterunSlot {
 }
 
 /**
- * The argv that runs `argv` with its output, both streams, in `log`. Where
+ * The argv that runs `argv` with its output, both streams, in `log`, with
+ * colour off (`NO_COLOR`, and no `FORCE_COLOR` or `CLICOLOR_FORCE`) so a
+ * diagnostic reads as plain text. Where
  * `setsid` exists the step leads a process group of its own, so a timeout
  * kills what it started too; setsid execs in place, keeping the pid.
  */
@@ -111,7 +113,7 @@ const mutaterunLogged = (log: string, argv: string[]): string[] => {
   const out: string[] = [
     "sh",
     "-c",
-    'out=$1; shift; if command -v setsid >/dev/null 2>&1; then exec setsid "$@" >"$out" 2>&1; fi; exec "$@" >"$out" 2>&1',
+    'out=$1; shift; unset FORCE_COLOR CLICOLOR_FORCE; NO_COLOR=1; export NO_COLOR; if command -v setsid >/dev/null 2>&1; then exec setsid "$@" >"$out" 2>&1; fi; exec "$@" >"$out" 2>&1',
     "sh",
     log,
   ]
@@ -191,7 +193,7 @@ const mutaterunBaseline = (run: MutateRun, dir: string, limitMs: i32): Result<Mu
   }
   if (build.status !== 0) {
     const log = readFileSyncOrNull(joinPath(dir, "mutant.log")) ?? ""
-    if (!mutaterunRefused(run, log)) {
+    if (!mutaterunRefused(run, dir, log)) {
       return Err(
         `the unmutated module's build exits ${build.status} with no error located in ${run.file}: ${mutaterunLogTail(dir)}`,
       )
@@ -237,7 +239,7 @@ const mutaterunCanary = (run: MutateRun, dir: string, text: string, limitMs: i32
     )
   }
   const log = readFileSyncOrNull(joinPath(dir, "mutant.log")) ?? ""
-  if (!mutaterunRefused(run, log)) {
+  if (!mutaterunRefused(run, dir, log)) {
     return Err(
       `the canary build (the module made unparseable) exits ${b.status} with no error located in ${run.file}: ${mutaterunLogTail(dir)}`,
     )
@@ -349,25 +351,84 @@ const mutaterunDiagnosticPath = (line: string): string => {
   return ""
 }
 
+/** `text` without its terminal escapes: CSI sequences (`ESC [ … final`) and two-byte `ESC x`. */
+const mutaterunPlain = (text: string): string => {
+  if (text.indexOf("\x1b") < 0) {
+    return text
+  }
+  const out: string[] = []
+  let from = 0
+  let i = 0
+  while (i < text.length) {
+    if (text.charCodeAt(i) !== 0x1b) {
+      i = i + 1
+      continue
+    }
+    out.push(text.substring(from, i))
+    let j = i + 1
+    if (j < text.length && text.charCodeAt(j) === 0x5b) {
+      j = j + 1
+      while (j < text.length && (text.charCodeAt(j) < 0x40 || text.charCodeAt(j) > 0x7e)) {
+        j = j + 1
+      }
+    }
+    i = j < text.length ? j + 1 : j
+    from = i
+  }
+  out.push(text.substring(from))
+  return out.join("")
+}
+
+/** `path` without leading `./` segments. */
+const mutaterunUndot = (path: string): string => {
+  let p = path
+  while (p.startsWith("./")) {
+    p = p.substring(2)
+  }
+  return p
+}
+
+/**
+ * Whether a log line is one of the compiler's tallies: `N error(s)`, or
+ * `...and N more error(s)` when it stops listing them.
+ */
+const mutaterunTally = (line: string): boolean => {
+  const rest = line.startsWith("...and ") ? line.substring(7) : line
+  const sp = rest.indexOf(" ")
+  if (sp <= 0 || !mutaterunDigits(rest, 0, sp)) {
+    return false
+  }
+  const tail = line.startsWith("...and ") ? rest.substring(sp + 1) : `more ${rest.substring(sp + 1)}`
+  return tail === "more error" || tail === "more errors"
+}
+
+/**
+ * Whether a diagnostic's path names the mutated module or the test: the
+ * module as the compiler prints it, from the root (`std/m.ts`) or under the
+ * copy `dir`, and the test as given; both without leading `./`, compared
+ * exactly.
+ */
+const mutaterunOwnPath = (run: MutateRun, dir: string, path: string): boolean => {
+  const p = mutaterunUndot(path)
+  const file = mutaterunUndot(run.file)
+  return p === file || p === `${dir}/${file}` || p === mutaterunUndot(run.test)
+}
+
 /**
  * Whether a failed build's log is the compiler refusing the mutant: some
  * line is an error diagnostic, and every unindented line that mentions an
- * error is one located in the mutated module or the test. Anything else,
- * a crash, a kill or a full disk, is not the mutant's doing.
+ * error is one located in the mutated module or the test, or a tally of
+ * them. Colour escapes are stripped first. Anything else, a crash, a kill
+ * or a full disk, is not the mutant's doing.
  */
-const mutaterunRefused = (run: MutateRun, log: string): boolean => {
+const mutaterunRefused = (run: MutateRun, dir: string, log: string): boolean => {
   let located = false
-  for (const line of splitLines(log)) {
+  for (const line of splitLines(mutaterunPlain(log))) {
     const c = line.length > 0 ? line.charCodeAt(0) : 0x20
-    const count = line.endsWith(" error") || line.endsWith(" errors")
-    if (c === 0x20 || c === 0x09 || line.indexOf("error") < 0) {
+    if (c === 0x20 || c === 0x09 || line.indexOf("error") < 0 || mutaterunTally(line)) {
       continue
     }
-    if (count && mutaterunDigits(line, 0, line.indexOf(" "))) {
-      continue
-    }
-    const path = mutaterunDiagnosticPath(line)
-    if (path !== run.file && !path.endsWith(`/${run.file}`) && path !== run.test) {
+    if (!mutaterunOwnPath(run, dir, mutaterunDiagnosticPath(line))) {
       return false
     }
     located = true
@@ -392,7 +453,7 @@ const mutaterunExited = (
     const log = readFileSyncOrNull(joinPath(slot.dir, "mutant.log")) ?? ""
     const tail = mutaterunLogTail(slot.dir)
     mutaterunSettle(slot, mutants, MUTATE_STILLBORN)
-    if (mutaterunRefused(run, log)) {
+    if (mutaterunRefused(run, slot.dir, log)) {
       return new MutaterunStep(1, "")
     }
     return new MutaterunStep(

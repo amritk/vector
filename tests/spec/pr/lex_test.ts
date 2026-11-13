@@ -7,6 +7,8 @@ import {
   LEX_TEMPLATE,
   LexToken,
   lexEnds,
+  lexInfix,
+  lexNoEnd,
   lexStatements,
   lexTokens,
 } from "../../../src/spec/pr/lex"
@@ -52,8 +54,78 @@ const lexTestKinds = (text: string): string => {
   return out
 }
 
+/**
+ * Every reserved and infix word as a member name, generated: before `/`
+ * after `.` and `?.`, at a line's end, and before `as`; each must lex and
+ * split as the member it is.
+ */
+const lexTestMembers = (t: Suite): void => {
+  const words: string[] = []
+  for (const w of lexNoEnd()) {
+    words.push(w)
+  }
+  for (const w of lexInfix()) {
+    words.push(w)
+  }
+  for (const w of words) {
+    t.eqStr(
+      `o.${w} / 2 divides`,
+      lexTestStatements(`export const a = o.${w} / 2\nconst b = o?.${w} / 2\n`),
+      `export const a = o.${w} / 2|const b = o?.${w} / 2`,
+    )
+    t.eqStr(
+      `o.${w} ends a line`,
+      lexTestStatements(`export const a = o.${w}\nconst b = 1\nexport const c = p?.${w}\n[1].f()\n`),
+      `export const a = o.${w}|const b = 1|export const c = p?.${w}\n[1].f()`,
+    )
+    t.eqStr(
+      `o.${w} as T is a cast`,
+      lexTestStatements(`export const a = o.${w} as T\nconst b = 1\n`),
+      `export const a = o.${w} as T|const b = 1`,
+    )
+  }
+  const pins = [
+    ["a union continues", "export type R = A<B>\n| C\nconst h = 1\n", "export type R = A<B>\n| C|const h = 1"],
+    [
+      "an annotation's = continues",
+      "export const m: Map<K,V>\n= new Map()\nconst h = 1\n",
+      "export const m: Map<K,V>\n= new Map()|const h = 1",
+    ],
+    ["a call's type arguments", "export const y = f<T>\n(x)\nconst h = 1\n", "export const y = f<T>\n(x)|const h = 1"],
+    [
+      "an arrow after a return type",
+      "export const g = (): Promise<T> =>\n x\nconst h = 1\n",
+      "export const g = (): Promise<T> =>\n x|const h = 1",
+    ],
+    [
+      "a / after a cast's closing > divides",
+      "export const z = q as Y<Z>\n/ 2\nconst h = 1\n",
+      "export const z = q as Y<Z>\n/ 2|const h = 1",
+    ],
+    ["nested closes", "export type S = A<B<C<D>>>\nconst h = 1\n", "export type S = A<B<C<D>>>|const h = 1"],
+    ["an unsigned shift", "export const s = a >>> 2\nconst h = 1\n", "export const s = a >>> 2|const h = 1"],
+    [
+      "a conditional type across lines",
+      "export type K<T> = T extends A\n ? B\n : C\nconst h = 1\n",
+      "export type K<T> = T extends A\n ? B\n : C|const h = 1",
+    ],
+    [
+      "a type predicate's is on its own line",
+      "export const isA = (x: X): x\n  is A => {\n  return x\n}\nconst h = 1\n",
+      "export const isA = (x: X): x\n  is A => {\n  return x\n}|const h = 1",
+    ],
+    ["2 * from ends at the line", "export const w = 2 * from\nconst h = 1\n", "export const w = 2 * from|const h = 1"],
+    ["export * as", 'export * as ns from "m"\nconst h = 1\n', 'export * as ns from "m"|const h = 1'],
+  ]
+  for (const p of pins) {
+    t.eqStr(p[0], lexTestStatements(p[1]), p[2])
+  }
+  t.ok("the generated words include default and from", words.indexOf("default") >= 0 && words.indexOf("from") >= 0)
+}
+
 export const main = (): i32 => {
   const t = new Suite("spec/pr lex")
+  lexTestMembers(t)
   t.eqStr("kinds", lexTestKinds("a = 1 + 'x' + `y`"), "ipnpspt")
   t.eqStr("a bracket's depth is the depth outside it", lexTestTokens("f(a, [b])"), "f@0 (@0 a@1 ,@1 [@1 b@2 ]@1 )@0")
   t.eqStr(

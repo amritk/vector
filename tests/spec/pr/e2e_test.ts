@@ -37,21 +37,22 @@ const E2E_TEST_HEX: string = "/** Encodes. */\nexport const enc = (b: string): s
  * another repository: its exit status and standard output, with `dir` shown
  * as `<repo>`.
  */
-const e2eTestRun = (dir: string, args: string[]): string => {
+const e2eTestRun = (dir: string, args: string[]): string => e2eTestRunWith(dir, [], args)
+
+/**
+ * Runs `dist/vector` as e2eTestRun does, with the variables `env`
+ * (`NAME=value`) set after the clearing.
+ */
+const e2eTestRunWith = (dir: string, env: string[], args: string[]): string => {
   const self = gitdiffTop(".")
   if (self.isErr()) {
     return `cannot find vector's checkout: ${self.error}`
   }
-  const argv: string[] = [
-    "env",
-    "-u",
-    "GIT_DIR",
-    "-u",
-    "GIT_WORK_TREE",
-    "-u",
-    "GIT_INDEX_FILE",
-    `${self.value}/dist/vector`,
-  ]
+  const argv: string[] = ["env", "-u", "GIT_DIR", "-u", "GIT_WORK_TREE", "-u", "GIT_INDEX_FILE"]
+  for (const e of env) {
+    argv.push(e)
+  }
+  argv.push(`${self.value}/dist/vector`)
   for (const a of args) {
     argv.push(a)
   }
@@ -89,9 +90,31 @@ const e2eTestFrozen = (t: Suite, dir: string): Result<boolean, string> => {
     "exit 1\nspec frozen against main: FAILED\n\n  ✗ contract contracts/bad.json\n  implementation src/x.ts\n\nproblems:\n  ✗ contracts/bad.json: source rfc4648 (rfcs/rfc4648.txt) has SHA-256 20be475fef2752375647b5ee6dcbefdc61110ae85127921ced8b7a27f89f1178, but the contract pins 00cf257b010dc944bc7d9a6fa1d4380aed315e8a4b32d646e8b4c94773be2318: the source changed\n",
   )
   prTestWrite(dir, "specs/s.md", "s\n").orReturn()
+  prTestWrite(dir, ".git/global", `[core]\n\texcludesFile = ${dir}/.git/global-ignore\n`).orReturn()
+  prTestWrite(dir, ".git/global-ignore", "*.md\n").orReturn()
   t.eqStr(
     "frozen refuses a change to both sides",
     e2eTestRun(dir, ["spec", "frozen", "--base", "main", "--repo", dir, "contracts/c.json"]),
+    "exit 1\nspec frozen against main: FAILED\n\n  ✓ contract contracts/c.json\n  spec specs/s.md\n  implementation src/x.ts\n\nproblems:\n  ✗ the change touches the spec side (specs/s.md) and the implementation (src/x.ts): change them in separate PRs\n",
+  )
+  t.eqStr(
+    "frozen reads the repository named, whatever git's variables say",
+    e2eTestRunWith(
+      dir,
+      [
+        `GIT_DIR=${dir}/nowhere`,
+        "GIT_WORK_TREE=/",
+        `GIT_INDEX_FILE=${dir}/nowhere-index`,
+        "GIT_EXTERNAL_DIFF=false",
+        "GIT_PREFIX=src/",
+        "GIT_CONFIG_PARAMETERS='diff.noprefix'='true'",
+        "GIT_CONFIG_COUNT=1",
+        "GIT_CONFIG_KEY_0=status.showUntrackedFiles",
+        "GIT_CONFIG_VALUE_0=no",
+        `GIT_CONFIG_GLOBAL=${dir}/.git/global`,
+      ],
+      ["spec", "frozen", "--base", "main", "--repo", dir, "contracts/c.json"],
+    ),
     "exit 1\nspec frozen against main: FAILED\n\n  ✓ contract contracts/c.json\n  spec specs/s.md\n  implementation src/x.ts\n\nproblems:\n  ✗ the change touches the spec side (specs/s.md) and the implementation (src/x.ts): change them in separate PRs\n",
   )
   return Ok(true)

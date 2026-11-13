@@ -40,7 +40,9 @@ export const gitdiffBaseProblem = (base: string): string | null => {
 
 /**
  * The variables that would point git at another repository than the one
- * named, cleared for every git call: a hook or a CI step may have set them.
+ * named, or change what it prints (added config, an external diff, a
+ * prefix), cleared for every git call: a hook or a CI step may have set them.
+ * Without GIT_CONFIG_COUNT git ignores every GIT_CONFIG_KEY_n.
  */
 const gitdiffUnset = (): string[] => [
   "GIT_DIR",
@@ -51,6 +53,12 @@ const gitdiffUnset = (): string[] => [
   "GIT_COMMON_DIR",
   "GIT_CEILING_DIRECTORIES",
   "GIT_NAMESPACE",
+  "GIT_PREFIX",
+  "GIT_CONFIG",
+  "GIT_CONFIG_PARAMETERS",
+  "GIT_CONFIG_COUNT",
+  "GIT_EXTERNAL_DIFF",
+  "GIT_DIFF_OPTS",
 ]
 
 /** `text` without its one final line break, as git ends a single-line answer. */
@@ -63,8 +71,10 @@ const gitdiffLine = (text: string): string => {
  * Runs git in `repo` and returns what it printed. Pathspecs are literal, so
  * a path holding `*` or `:(` names that file, never a pattern. The GIT_*
  * variables that redirect git (GIT_DIR, GIT_WORK_TREE and the like) are
- * cleared and the system config is skipped, so `repo` alone says which
- * repository is read.
+ * cleared, as are those that add config or an external diff, and the
+ * system and global configs are skipped (a global core.excludesFile would
+ * hide untracked files), so `repo` alone says which repository is read and
+ * how.
  *
  * @param repo the repository's directory
  * @param args git's arguments, after `-C <repo> --literal-pathspecs`
@@ -76,7 +86,7 @@ export const gitdiffGit = (repo: string, args: string[]): Result<string, string>
     argv.push("-u")
     argv.push(v)
   }
-  for (const a of ["GIT_CONFIG_NOSYSTEM=1", "git", "-C", repo, "--literal-pathspecs"]) {
+  for (const a of ["GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "git", "-C", repo, "--literal-pathspecs"]) {
     argv.push(a)
   }
   for (const a of args) {

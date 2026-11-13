@@ -113,9 +113,12 @@ const lexDigit = (c: i32): boolean => c >= 0x30 && c <= 0x39
 /**
  * The reserved words after which an expression cannot have ended. A
  * contextual keyword (`type`, `from`, `as`, `async`, `of`, ...) is not one:
- * it may name a variable, so a `/` after it divides.
+ * it may name a variable, so a `/` after it divides. After `.` or `?.` none
+ * of them is a keyword: `o.default` is a member.
+ *
+ * @returns the words
  */
-const lexNoEnd = (): string[] => [
+export const lexNoEnd = (): string[] => [
   "export",
   "default",
   "const",
@@ -146,8 +149,12 @@ const lexNoEnd = (): string[] => [
 /** The contextual keywords that go before a type and need it: `keyof T`. */
 const lexTypePrefix = (): string[] => ["keyof", "unique", "readonly", "infer", "asserts"]
 
-/** The contextual keywords that go between two operands: `x as T`, `a from "m"`. */
-const lexInfix = (): string[] => ["as", "satisfies", "is", "from", "of"]
+/**
+ * The contextual keywords that go between two operands: `x as T`, `a from "m"`.
+ *
+ * @returns the words
+ */
+export const lexInfix = (): string[] => ["as", "satisfies", "is", "from", "of"]
 
 /** The punctuation of more than one character, longest first. */
 const lexLongPunct = (): string[] => [
@@ -200,6 +207,17 @@ export const lexEnds = (t: LexToken | null): boolean => {
   }
   return t.text === ")" || t.text === "]" || t.text === "}" || t.text === "++" || t.text === "--"
 }
+
+/**
+ * Whether token `i` is a member name: an identifier right after `.` or `?.`.
+ * Any word there, a reserved one included (`o.default`), names a property,
+ * so an expression can end at it.
+ */
+const lexMember = (tokens: LexToken[], i: i32): boolean =>
+  i > 0 &&
+  tokens[i].kind === LEX_IDENT &&
+  tokens[i - 1].kind === LEX_PUNCT &&
+  (tokens[i - 1].text === "." || tokens[i - 1].text === "?.")
 
 /** The last token so far, or null. */
 const lexLast = (s: LexState): LexToken | null => (s.tokens.length > 0 ? s.tokens[s.tokens.length - 1] : null)
@@ -375,7 +393,11 @@ const lexStep = (s: LexState): Result<i32, string> => {
   if (c === 0x29 || c === 0x5d || c === 0x7d) {
     return lexClose(s, c)
   }
-  if (c === 0x2f && !lexEnds(lexLast(s))) {
+  // After a member name (`o.default`) or a `>` (a type's close, `as Y<Z> / 2`, or
+  // a comparison) a `/` divides: Nish has no regular expression to start there.
+  const last = lexLast(s)
+  const angle = last !== null && last.kind === LEX_PUNCT && last.text === ">"
+  if (c === 0x2f && !lexEnds(last) && !angle && !lexMember(s.tokens, toI32(s.tokens.length) - 1)) {
     return Err(`line ${line}: a regular expression literal, which Nish does not have`)
   }
   if (c === 0x5c) {
@@ -424,7 +446,7 @@ const lexContinues = (t: LexToken): boolean => {
     return true
   }
   if (t.kind === LEX_IDENT) {
-    return ["as", "satisfies", "instanceof", "in", "extends", "implements"].indexOf(t.text) >= 0
+    return ["as", "satisfies", "is", "instanceof", "in", "extends", "implements"].indexOf(t.text) >= 0
   }
   return false
 }
@@ -456,7 +478,7 @@ class LexTypes {
 
 /** Whether the token before `i` ends an expression, a type's closing `>` included. */
 const lexEndsBefore = (tokens: LexToken[], closes: boolean[], i: i32): boolean =>
-  i > 0 && (lexEnds(tokens[i - 1]) || closes[i - 1])
+  i > 0 && (lexEnds(tokens[i - 1]) || closes[i - 1] || lexMember(tokens, i - 1))
 
 /** Whether the contextual keyword at `i` is used between two operands (`x as T`), not as a name. */
 const lexIsInfix = (tokens: LexToken[], closes: boolean[], i: i32): boolean => {
@@ -468,7 +490,18 @@ const lexIsInfix = (tokens: LexToken[], closes: boolean[], i: i32): boolean => {
   if (b !== null && b.kind === LEX_PUNCT && (b.text === "." || b.text === "?.")) {
     return false
   }
-  return lexEndsBefore(tokens, closes, i) || (b !== null && b.kind === LEX_PUNCT && b.text === "*")
+  if (lexEndsBefore(tokens, closes, i)) {
+    return true
+  }
+  const kw: LexToken | null = i > 1 ? tokens[i - 2] : null
+  return (
+    b !== null &&
+    b.kind === LEX_PUNCT &&
+    b.text === "*" &&
+    kw !== null &&
+    kw.kind === LEX_IDENT &&
+    (kw.text === "import" || kw.text === "export")
+  )
 }
 
 /**
@@ -479,7 +512,7 @@ const lexIsInfix = (tokens: LexToken[], closes: boolean[], i: i32): boolean => {
  */
 const lexEndsLine = (tokens: LexToken[], closes: boolean[], typed: boolean[], i: i32): boolean => {
   const t = tokens[i]
-  if (closes[i]) {
+  if (closes[i] || lexMember(tokens, i)) {
     return true
   }
   if (t.kind === LEX_IDENT && typed[i] && lexTypePrefix().indexOf(t.text) >= 0) {
