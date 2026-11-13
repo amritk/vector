@@ -113,8 +113,14 @@ export const main = (): i32 => {
     t.skip("a run against the pinned nish", "no .nish/ install: run bash scripts/fetch-nish.sh")
     return finish(t, dir)
   }
-  // The pinned nish has no nish/hex, so the test cannot compile: an ERROR,
-  // which exits 1, with the emitted test kept where -o says.
+  // This case needs a nish without nish/hex, so that the test cannot
+  // compile; a pin that ships it skips the case instead of failing it.
+  if (readFileSyncOrNull(".nish/std/hex.ts") !== null) {
+    t.skip("a test that does not compile", "the pinned nish ships nish/hex")
+    return finish(t, dir)
+  }
+  // The test cannot compile: an ERROR, which exits 1, with the emitted test
+  // kept where -o says.
   const live = new RunRequest("contracts/example-hex.json")
   live.nishRoot = ".nish"
   live.out = `${dir}/kept.ts`
@@ -123,7 +129,7 @@ export const main = (): i32 => {
   t.ok("-o keeps the test", readFileSyncOrNull(`${dir}/kept.ts`) !== null)
   const report = commandLiveReport()
   t.contains("the report says ERROR", report, "ERROR: example-hex (exit 1)")
-  t.contains("and why: the pinned nish has no nish/hex", report, "'nish/hex' is not part of the standard library")
+  t.contains("and why: nish/hex is missing", report, "'nish/hex' is not part of the standard library")
   return finish(t, dir)
 }
 

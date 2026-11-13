@@ -744,8 +744,9 @@ const emitTypeRefusal = (at: string, t: string): string | null => {
 /**
  * What in a contract Nish cannot express, found before any output: a
  * module outside nish/, an i8 or i16, a nullable bool, integer or f64 (Nish
- * has `T | null` only on a reference type), an f64 forall variable, and two
- * clause ids that make the same function name.
+ * has `T | null` only on a reference type), an f64 forall variable, two
+ * clause ids that make the same function name, and a clause check or
+ * `plain_` wrapper whose name a contract function already has.
  *
  * @param c the contract
  * @returns one message per refusal; empty when Nish can express it all
@@ -789,6 +790,26 @@ export const emitRefusals = (c: Contract): string[] => {
       } else if (v.type === "i8" || v.type === "i16") {
         out.push(`${k.id}: ${v.name} is ${v.type}: ${EMIT_NO_SMALL_INT}`)
       }
+    }
+  }
+  // The test defines clause_* and plain_* functions beside the contract's
+  // own: none may take a name a contract function already has.
+  const names: string[] = []
+  for (const f of c.functions) {
+    names.push(f.name)
+  }
+  for (const f of c.functions) {
+    let secret = emitIsSecret(f.returns)
+    for (const p of f.params) {
+      secret = secret || emitIsSecret(p.type)
+    }
+    if (secret && names.indexOf(`plain_${f.name}`) >= 0) {
+      out.push(`${f.name}: its wrapper would be plain_${f.name}, which is a contract function's name`)
+    }
+  }
+  for (let i = 0; i < fns.length; i++) {
+    if (names.indexOf(fns[i]) >= 0) {
+      out.push(`${c.clauses[i].id}: its check would be ${fns[i]}, which is a contract function's name`)
     }
   }
   return out

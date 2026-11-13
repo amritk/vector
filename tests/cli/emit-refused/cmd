@@ -1,1 +1,1 @@
-vector spec emit tests/cli/emit-refused/contract.json -o /tmp/vector-emit-refused-golden.ts
+vector spec emit tests/cli/emit-refused/contract.json -o dist/emit-refused-golden.ts

@@ -99,9 +99,31 @@ export const main = (): i32 => {
   t.contains("a null string vector", p, 'strOrNull(nonEmpty("")), "null")')
   t.contains("a null bytes vector", p, 'hexOrNull(nonEmptyB(unhex(""))), "null")')
 
+  // Every sample row, in order: a dropped or reordered row fails here.
+  t.contains("P-MOD's rows", p, "const table_x: i32[] = [-7, -7, 50];\n  const table_y: i32[] = [0, 3, -5];\n")
+  t.contains("P-MOD's three rows run", p, "for (let i: i32 = 0; i < 3; i += 1) {\n    const v_x: i32 = table_x[i];")
+  t.contains(
+    "P-WRAP's rows",
+    p,
+    "const table_a: i64[] = [(toI64(2147483647) * 4294967296 + 4294967295), (toI64(-2147483648) * 4294967296 + 0)];\n  const table_b: i64[] = [toI64(1), toI64(-1)];\n",
+  )
+  t.contains("P-LE64's rows", p, "const table_x: i32[] = [-2, 2147483647];\n")
+  t.contains(
+    "P-BITS's rows",
+    p,
+    'const table_a: string[] = [\n    "0f",\n    "",\n  ];\n  const table_b: string[] = [\n    "f1",\n    "",\n  ];\n',
+  )
   // Strings are quoted, control characters as \u00XX.
-  t.contains("a sample with quotes", p, '"a\\"\\\\\\t",')
-  t.contains("a sample with control characters", p, '"\\u0001\\u007f",')
+  t.contains(
+    "P-LET's rows",
+    p,
+    'const table_s: string[] = [\n    "",\n    "a\\"\\\\\\t",\n    "\\u0001\\u007f",\n  ];\n',
+  )
+  t.contains(
+    "P-UNWRAP-B's row",
+    p,
+    'clause_P_UNWRAP_B = (t: Suite): boolean => {\n  const table_a: string[] = [\n    "00",\n  ];\n',
+  )
   t.contains("a vector string", p, 'nonEmpty("q\\"\\\\\\t\\n\\r~")')
 
   // binary64: bit-exact unless the vector gives a tolerance.
@@ -126,7 +148,10 @@ export const main = (): i32 => {
   return t.done()
 }
 
-/** A program that needs no helper has none, and clause ids that clash are refused. */
+/**
+ * A program that needs no helper has none; clause ids that clash, and
+ * contract functions named like a check or wrapper, are refused.
+ */
 const formsWithout = (t: Suite, c: Contract): void => {
   const hex = contractLoadFile("contracts/example-hex.json").expect("load example-hex")
   const plain = emitProgram(hex, new SampleTable(), new EmitOptions("0"))
@@ -142,6 +167,19 @@ const formsWithout = (t: Suite, c: Contract): void => {
   t.ok("two clause ids that make one function name are refused", clash.isErr())
   if (clash.isErr()) {
     t.contains("and the refusal names both", clash.error.join("\n"), "P_a: its check would be clause_P_a")
+  }
+
+  // The names the test defines beside the contract's functions: a function
+  // already called plain_keep or clause_P_MOD would collide with them.
+  const named = contractLoadFile(FORMS).expect("reload the forms contract")
+  named.functions[0].name = "plain_keep"
+  named.functions[1].name = "clause_P_MOD"
+  const taken = emitProgram(named, new SampleTable(), new EmitOptions("0"))
+  t.ok("a contract function's name the test would define is refused", taken.isErr())
+  if (taken.isErr()) {
+    const why = taken.error.join("\n")
+    t.contains("the wrapper's", why, "keep: its wrapper would be plain_keep, which is a contract function's name")
+    t.contains("the check's", why, "P-MOD: its check would be clause_P_MOD, which is a contract function's name")
   }
 }
 

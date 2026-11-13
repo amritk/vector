@@ -1,1 +1,1 @@
-vector spec emit contracts/example-hex.json -o /tmp/vector-emit-ok-golden.ts
+vector spec emit contracts/example-hex.json -o dist/emit-ok-golden.ts

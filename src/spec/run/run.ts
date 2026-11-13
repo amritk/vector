@@ -480,6 +480,27 @@ const runCopy = (from: string, to: string): Result<boolean, string> => {
  */
 export const runDisposeScratch = (s: RunScratch): Result<boolean, string> => runRemove(s.dir)
 
+/**
+ * Refuses an override whose directory is reached through a symlink: each
+ * part of `rel`'s directory that exists must resolve to itself under `base`,
+ * so creating or writing below it stays inside the scratch.
+ */
+const runCheckInside = (base: string, rel: string): Result<boolean, string> => {
+  let at = rel.indexOf("/")
+  while (at >= 0) {
+    const full = joinPath(base, rel.substring(0, at))
+    if (lstatOwnerModeSync(full) < 0) {
+      return Ok(true)
+    }
+    const real = realpathSync(full)
+    if (real === null || real !== full) {
+      return Err(`scratch: ${rel.substring(0, at)} is a symlink, which override ${rel} would write through`)
+    }
+    at = rel.indexOf("/", at + 1)
+  }
+  return Ok(true)
+}
+
 const runFillScratch = (
   s: RunScratch,
   nishRoot: string,
@@ -496,22 +517,22 @@ const runFillScratch = (
       runCopy(joinPath(seed, e), joinPath(s.dir, e)).orReturn()
     }
   }
-  // Symlinks are copied as links, so one in std/ would let an override
-  // write through to the real library: refuse any.
-  const std = joinPath(s.dir, "std")
-  runCopy(joinPath(nishRoot, "std"), std).orReturn()
-  const links = runProcess(["find", std, "-type", "l"], "", 120000).orReturn()
-  if (links.status !== 0) {
-    return Err(`cannot look for symlinks in ${std}: ${links.stderr}`)
-  }
-  if (links.stdout.length > 0) {
-    return Err(`${joinPath(nishRoot, "std")} is or holds a symlink, which an override could write through`)
+  // std/ is copied with its symlinks kept as links. A link nothing writes
+  // through is harmless; an override must not write through one.
+  runCopy(joinPath(nishRoot, "std"), joinPath(s.dir, "std")).orReturn()
+  const base = realpathSync(s.dir)
+  if (base === null) {
+    return Err(`cannot resolve ${s.dir}`)
   }
   for (let i = 0; i < paths.length; i++) {
-    const target = joinPath(s.dir, paths[i])
+    runCheckInside(base, paths[i]).orReturn()
+    const target = joinPath(base, paths[i])
     const parent = target.substring(0, target.length - basename(target).length - 1)
     mkdirAll(parent, 0o755).orReturn()
-    const n = writeFileSyncMode(target, texts[i], 0o644)
+    // The file itself may be a link: remove it (never what it points at),
+    // then create the file afresh, refusing to follow anything in its place.
+    unlinkSync(target)
+    const n = createFileExclusiveSync(target, texts[i], 0o644)
     if (n < 0) {
       return Err(`cannot write ${target} (errno ${-n})`)
     }
@@ -524,7 +545,9 @@ const runFillScratch = (
  * without its std, the root's own `std/`, and the overrides written over it.
  * `nish run` resolves `nish/…` imports to the std beside its binary, so a
  * test run with the scratch's compiler sees the overridden library and
- * nothing else does. A `std/` that is or holds a symlink is refused.
+ * nothing else does. An override reached through a symlink in `std/` is
+ * refused; a link on the overridden file itself is replaced, never written
+ * through, and every other link is left as it is.
  *
  * @param nishRoot a nish install or checkout
  * @param paths where each override goes, relative and under `std/`
@@ -685,7 +708,9 @@ export const runFormatText = (r: RunResult): string[] => {
 
 /**
  * A run's result as a markdown section for a PR comment: the verdict, then a
- * table of the requirements and their outcomes, then each failure.
+ * table of the requirements and their outcomes, then each failure. What the
+ * module printed goes only inside code spans, escaped by runEscape (which
+ * leaves no backtick), so it cannot add links, HTML or table cells.
  *
  * @param r the result
  * @returns the markdown
@@ -698,14 +723,14 @@ export const runFormatMarkdown = (r: RunResult): string => {
   for (const k of r.clauses) {
     if (k.outcome === RunOutcome.Fail) {
       out.push("")
-      out.push(`- \`${runEscape(k.line)}\`${k.detail.length > 0 ? `: ${runEscape(k.detail)}` : ""}`)
+      out.push(`- \`${runEscape(k.line)}\`${k.detail.length > 0 ? `: \`${runEscape(k.detail)}\`` : ""}`)
     }
   }
   if (r.integrity.length > 0) {
     out.push("")
     out.push("The transcript cannot be trusted:")
     for (const m of r.integrity) {
-      out.push(`- ${runEscape(m)}`)
+      out.push(`- \`${runEscape(m)}\``)
     }
   }
   return `${out.join("\n")}\n`

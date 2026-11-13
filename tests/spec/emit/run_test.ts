@@ -1,5 +1,7 @@
 import { Suite } from "nish/testing"
 import { replaceAll } from "nish/text"
+import { makeTempDir } from "../../../src/core/fs"
+import { runProcess } from "../../../src/core/process"
 import { Sample, SampleTable, checkAddSample } from "../../../src/spec/check"
 import { contractLoadFile } from "../../../src/spec/contract/contract"
 import { Contract, LitKind, Literal } from "../../../src/spec/contract/types"
@@ -7,6 +9,7 @@ import { EmitOptions, emitProgram } from "../../../src/spec/emit/emit"
 import {
   RunClause,
   RunOutcome,
+  RunResult,
   runDisposeScratch,
   runEscape,
   runFormatJson,
@@ -127,6 +130,9 @@ export const main = (): i32 => {
   )
   t.ok("an override outside std/ is refused", runMakeScratch(".nish", ["bin/nish"], ["x"]).isErr())
   t.ok("a directory with no compiler is not a seed", runSeedOf("tests").isErr())
+  runTestTail(t, c)
+  runTestLinks(t)
+  runTestMarkdown(t)
 
   const program = emitProgram(c, hexSamples(), new EmitOptions("ab"))
   t.ok("example-hex emits with every property sampled", program.isOk())
@@ -158,4 +164,86 @@ export const main = (): i32 => {
   }
   t.ok("the scratch install is removed", runDisposeScratch(s).isOk() && !isDirectorySync(s.dir))
   return t.done()
+}
+
+/** Runs a shell line, failing loudly: test setup only. */
+const runTestSh = (line: string): void => {
+  const r = runProcess(["sh", "-c", line], "", 10000).expect("run sh")
+  if (r.status !== 0) {
+    console.log(`sh -c ${line}: ${r.stderr}`)
+  }
+}
+
+/** A run that prints past 64 KiB keeps its last 64 KiB, cut at a line's start. */
+const runTestTail = (t: Suite, c: Contract): void => {
+  const dir = makeTempDir("vector-tail-").expect("a temp dir")
+  const fake = `${dir}/nish`
+  runTestSh(`printf '#!/bin/sh\\nseq 1 20000\\n' > ${fake} && chmod 755 ${fake}`)
+  const lines: string[] = []
+  for (let i = 1; i <= 20000; i++) {
+    lines.push(`${i}`)
+  }
+  const full = `${lines.join("\n")}\n`
+  const ran = runTest(c, "", fake, 10000)
+  t.ok("a fake compiler runs", ran.isOk())
+  if (ran.isOk()) {
+    const kept = ran.value.stdout
+    t.ok("the output was longer than what is kept", full.length > 65536)
+    t.ok("at most 64 KiB is kept", kept.length <= 65536)
+    t.ok("no more than a line short of it", kept.length > 65536 - 6)
+    t.ok("its end", kept.endsWith("\n19999\n20000\n"))
+    t.eqStr("whole lines from a line's start", full.substring(full.length - kept.length - 1, full.length), `\n${kept}`)
+  }
+  runTestSh(`rm -rf ${dir}`)
+}
+
+/**
+ * A scratch keeps a nish std's symlinks, replaces a link an override names,
+ * and refuses an override reached through a linked directory.
+ */
+const runTestLinks = (t: Suite): void => {
+  const dir = makeTempDir("vector-links-").expect("a temp dir")
+  runTestSh(
+    `mkdir -p ${dir}/root/libexec ${dir}/root/std ${dir}/out ${dir}/other && printf '#!/bin/sh\\n' > ${dir}/root/libexec/nish && chmod 755 ${dir}/root/libexec/nish && printf real > ${dir}/out/a.ts && ln -s ${dir}/out/a.ts ${dir}/root/std/link.ts && ln -s ${dir}/out ${dir}/root/std/sub && mkdir -p ${dir}/other/libexec && cp ${dir}/root/libexec/nish ${dir}/other/libexec/nish && ln -s ${dir}/root/std ${dir}/other/std`,
+  )
+  const plain = runMakeScratch(`${dir}/root`, [], [])
+  t.ok("a std holding symlinks no override uses is accepted", plain.isOk())
+  if (plain.isOk()) {
+    runDisposeScratch(plain.value).expect("dispose")
+  }
+  const over = runMakeScratch(`${dir}/root`, ["std/link.ts"], ["new"])
+  t.ok("an override of a linked file is accepted", over.isOk())
+  if (over.isOk()) {
+    t.eqStr("the scratch holds the override", readFileSyncOrNull(`${over.value.dir}/std/link.ts`) ?? "", "new")
+    runDisposeScratch(over.value).expect("dispose")
+  }
+  t.eqStr("and the link's target is untouched", readFileSyncOrNull(`${dir}/out/a.ts`) ?? "", "real")
+  const through = runMakeScratch(`${dir}/root`, ["std/sub/x.ts"], ["x"])
+  t.ok("an override under a linked directory is refused", through.isErr())
+  if (through.isErr()) {
+    t.contains(
+      "naming the link",
+      through.error,
+      "std/sub is a symlink, which override std/sub/x.ts would write through",
+    )
+  }
+  t.ok("and writes nothing through it", readFileSyncOrNull(`${dir}/out/x.ts`) === null)
+  const linkedStd = runMakeScratch(`${dir}/other`, ["std/y.ts"], ["y"])
+  t.ok("an override when std/ itself is a link is refused", linkedStd.isErr())
+  t.ok("and writes nothing through it either", readFileSyncOrNull(`${dir}/root/std/y.ts`) === null)
+  runTestSh(`rm -rf ${dir}`)
+}
+
+/** What the module printed reaches markdown only inside code spans. */
+const runTestMarkdown = (t: Suite): void => {
+  const r = new RunResult("example-hex", 1, "", "")
+  r.integrity.push("a line [x](https://e.example) <b>|# `q`")
+  const k = new RunClause("P-X")
+  k.outcome = RunOutcome.Fail
+  k.line = "FAIL [P-X] <i>"
+  k.detail = "[y](https://e.example) | `z`"
+  r.clauses.push(k)
+  const md = runFormatMarkdown(r)
+  t.contains("an integrity message is a code span", md, "- `a line [x](https://e.example) <b>|# 'q'`\n")
+  t.contains("so is a failure's detail", md, "- `FAIL [P-X] <i>`: `[y](https://e.example) | 'z'`\n")
 }
