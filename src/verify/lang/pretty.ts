@@ -5,7 +5,7 @@
  * parentheses precedence needs.
  */
 
-import { EXPR_BINOP, EXPR_BOOL, EXPR_CALL, EXPR_ITE, EXPR_NUM, EXPR_UNOP, EXPR_VAR, Expr } from "./ast"
+import { EXPR_BINOP, EXPR_BOOL, EXPR_CALL, EXPR_ITE, EXPR_NUM, EXPR_UNOP, EXPR_VAR, LangExpr } from "./ast"
 
 // `!` and unary `-` bind tighter than every infix operator, as in JS.
 const PRETTY_PREC_UNARY: i32 = 8
@@ -51,7 +51,7 @@ const prettyToken = (op: string, ts: boolean): string => {
 
 const prettyWrap = (text: string, prec: i32, parentPrec: i32): string => (prec < parentPrec ? `(${text})` : text)
 
-const prettyRender = (e: Expr, parentPrec: i32, ts: boolean): string => {
+const prettyRender = (e: LangExpr, parentPrec: i32, ts: boolean): string => {
   if (e.kind === EXPR_NUM) {
     return e.value.startsWith("-") && parentPrec >= PRETTY_PREC_ATOM ? `(${e.value})` : e.value
   }
@@ -79,8 +79,8 @@ const prettyRender = (e: Expr, parentPrec: i32, ts: boolean): string => {
     }
     if (ts && e.op === "implies") {
       // TypeScript has no implication: `a ⇒ b` is `!a || b`.
-      const not = new Expr(EXPR_UNOP, "not", "", "", [l])
-      return prettyRender(new Expr(EXPR_BINOP, "or", "", "", [not, r]), parentPrec, ts)
+      const not = new LangExpr(EXPR_UNOP, "not", "", "", [l])
+      return prettyRender(new LangExpr(EXPR_BINOP, "or", "", "", [not, r]), parentPrec, ts)
     }
     const prec = prettyPrec(e.op)
     const rightAssoc = e.op === "implies"
@@ -107,7 +107,7 @@ const prettyRender = (e: Expr, parentPrec: i32, ts: boolean): string => {
  * @param e the expression
  * @returns its text, such as `result >= 0 ∧ result <= amount`
  */
-export const prettyMath = (e: Expr): string => prettyRender(e, 0, false)
+export const prettyMath = (e: LangExpr): string => prettyRender(e, 0, false)
 
 /**
  * Renders an expression as TypeScript, for emitted code.
@@ -115,4 +115,4 @@ export const prettyMath = (e: Expr): string => prettyRender(e, 0, false)
  * @param e the expression
  * @returns its text, such as `result >= 0 && result <= amount`
  */
-export const prettyTs = (e: Expr): string => prettyRender(e, 0, true)
+export const prettyTs = (e: LangExpr): string => prettyRender(e, 0, true)
