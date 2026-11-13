@@ -1,0 +1,1 @@
+vector spec check --format yaml contracts/rfc5869-hkdf-sha256.json

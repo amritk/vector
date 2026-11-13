@@ -1,0 +1,845 @@
+{
+  "contract": "forms",
+  "source": {
+    "rfc": 9999,
+    "title": "Every form the emitter writes",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "target": {
+    "module": "nish/forms"
+  },
+  "requirements": [
+    {
+      "id": "R-ALL",
+      "section": "1",
+      "level": "MUST",
+      "quote": "Every form MUST round-trip."
+    }
+  ],
+  "functions": [
+    {
+      "name": "idI32",
+      "params": [
+        {
+          "name": "x",
+          "type": "i32"
+        }
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "addI64",
+      "params": [
+        {
+          "name": "a",
+          "type": "i64"
+        },
+        {
+          "name": "b",
+          "type": "i64"
+        }
+      ],
+      "returns": "i64"
+    },
+    {
+      "name": "leBytes",
+      "params": [
+        {
+          "name": "x",
+          "type": "i32"
+        }
+      ],
+      "returns": "bytes"
+    },
+    {
+      "name": "xorB",
+      "params": [
+        {
+          "name": "a",
+          "type": "bytes"
+        },
+        {
+          "name": "b",
+          "type": "bytes"
+        }
+      ],
+      "returns": "bytes"
+    },
+    {
+      "name": "nonEmpty",
+      "params": [
+        {
+          "name": "s",
+          "type": "string"
+        }
+      ],
+      "returns": "string?"
+    },
+    {
+      "name": "nonEmptyB",
+      "params": [
+        {
+          "name": "a",
+          "type": "bytes"
+        }
+      ],
+      "returns": "bytes?"
+    },
+    {
+      "name": "half",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "returns": "f64"
+    },
+    {
+      "name": "isMax",
+      "params": [
+        {
+          "name": "x",
+          "type": "u64"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "keep",
+      "params": [
+        {
+          "name": "k",
+          "type": "secret-bytes"
+        },
+        {
+          "name": "u",
+          "type": "bytes"
+        }
+      ],
+      "returns": "secret-bytes?"
+    },
+    {
+      "name": "keepBase",
+      "params": [
+        {
+          "name": "k",
+          "type": "secret-bytes?"
+        }
+      ],
+      "returns": "bytes?"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "property",
+      "id": "P-MOD",
+      "title": "P-MOD holds",
+      "covers": ["R-ALL"],
+      "forall": [
+        {
+          "name": "x",
+          "type": "i32",
+          "min": -50,
+          "max": 50
+        },
+        {
+          "name": "y",
+          "type": "i32",
+          "min": -5,
+          "max": 5
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "%",
+                "args": [
+                  {
+                    "call": "idI32",
+                    "args": [
+                      {
+                        "var": "x"
+                      }
+                    ]
+                  },
+                  {
+                    "int": 0
+                  }
+                ]
+              },
+              {
+                "int": 0
+              }
+            ]
+          },
+          {
+            "op": "implies",
+            "args": [
+              {
+                "op": "!=",
+                "args": [
+                  {
+                    "var": "y"
+                  },
+                  {
+                    "int": 0
+                  }
+                ]
+              },
+              {
+                "op": "<",
+                "args": [
+                  {
+                    "op": "%",
+                    "args": [
+                      {
+                        "var": "x"
+                      },
+                      {
+                        "op": "*",
+                        "args": [
+                          {
+                            "var": "y"
+                          },
+                          {
+                            "var": "y"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "op": "*",
+                    "args": [
+                      {
+                        "var": "y"
+                      },
+                      {
+                        "var": "y"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-WRAP",
+      "title": "P-WRAP holds",
+      "covers": ["R-ALL"],
+      "forall": [
+        {
+          "name": "a",
+          "type": "i64",
+          "min": "-9223372036854775808",
+          "max": "9223372036854775807"
+        },
+        {
+          "name": "b",
+          "type": "i64",
+          "min": "-9223372036854775808",
+          "max": "9223372036854775807"
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "addI64",
+            "args": [
+              {
+                "var": "a"
+              },
+              {
+                "var": "b"
+              }
+            ]
+          },
+          {
+            "op": "+",
+            "args": [
+              {
+                "var": "a"
+              },
+              {
+                "var": "b"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-LE64",
+      "title": "P-LE64 holds",
+      "covers": ["R-ALL"],
+      "forall": [
+        {
+          "name": "x",
+          "type": "i32",
+          "min": -2147483648,
+          "max": 2147483647
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "leBytes",
+            "args": [
+              {
+                "var": "x"
+              }
+            ]
+          },
+          {
+            "op": "le64",
+            "args": [
+              {
+                "var": "x"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-BITS",
+      "title": "P-BITS holds",
+      "covers": ["R-ALL"],
+      "forall": [
+        {
+          "name": "a",
+          "type": "bytes",
+          "minLen": 0,
+          "maxLen": 8
+        },
+        {
+          "name": "b",
+          "type": "bytes",
+          "minLen": 0,
+          "maxLen": 8
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "xor",
+                "args": [
+                  {
+                    "call": "xorB",
+                    "args": [
+                      {
+                        "var": "a"
+                      },
+                      {
+                        "var": "b"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "var": "a"
+              }
+            ]
+          },
+          {
+            "op": "and",
+            "args": [
+              {
+                "op": "==",
+                "args": [
+                  {
+                    "op": "bitAnd",
+                    "args": [
+                      {
+                        "var": "a"
+                      },
+                      {
+                        "var": "b"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "bitAnd",
+                    "args": [
+                      {
+                        "var": "b"
+                      },
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "==",
+                "args": [
+                  {
+                    "op": "bitOr",
+                    "args": [
+                      {
+                        "var": "a"
+                      },
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "a"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "where": {
+        "op": "==",
+        "args": [
+          {
+            "op": "len",
+            "args": [
+              {
+                "var": "a"
+              }
+            ]
+          },
+          {
+            "op": "len",
+            "args": [
+              {
+                "var": "b"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-LET",
+      "title": "P-LET holds",
+      "covers": ["R-ALL"],
+      "forall": [
+        {
+          "name": "s",
+          "type": "string",
+          "minLen": 0,
+          "maxLen": 4,
+          "alphabet": ["a", "\"", "\\", "\t"]
+        }
+      ],
+      "assert": {
+        "let": [
+          {
+            "name": "r",
+            "value": {
+              "call": "nonEmpty",
+              "args": [
+                {
+                  "var": "s"
+                }
+              ]
+            }
+          }
+        ],
+        "in": {
+          "op": "and",
+          "args": [
+            {
+              "op": "implies",
+              "args": [
+                {
+                  "op": "==",
+                  "args": [
+                    {
+                      "op": "strLen",
+                      "args": [
+                        {
+                          "var": "s"
+                        }
+                      ]
+                    },
+                    {
+                      "int": 0
+                    }
+                  ]
+                },
+                {
+                  "op": "isNull",
+                  "args": [
+                    {
+                      "var": "r"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "op": "implies",
+              "args": [
+                {
+                  "op": "notNull",
+                  "args": [
+                    {
+                      "var": "r"
+                    }
+                  ]
+                },
+                {
+                  "op": "==",
+                  "args": [
+                    {
+                      "op": "unwrap",
+                      "args": [
+                        {
+                          "var": "r"
+                        }
+                      ]
+                    },
+                    {
+                      "var": "s"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-UNWRAP-B",
+      "title": "P-UNWRAP-B holds",
+      "covers": ["R-ALL"],
+      "forall": [
+        {
+          "name": "a",
+          "type": "bytes",
+          "minLen": 1,
+          "maxLen": 4
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "op": "unwrap",
+            "args": [
+              {
+                "call": "nonEmptyB",
+                "args": [
+                  {
+                    "var": "a"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "var": "a"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-STR",
+      "title": "V-STR: nonEmpty",
+      "covers": ["R-ALL"],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "nonEmpty",
+      "args": [
+        {
+          "str": "q\"\\\t\n\r~"
+        }
+      ],
+      "expect": {
+        "str": "q\"\\\t\n\r~"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-NULL-STR",
+      "title": "V-NULL-STR: nonEmpty",
+      "covers": ["R-ALL"],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "nonEmpty",
+      "args": [
+        {
+          "str": ""
+        }
+      ],
+      "expect": {
+        "null": true
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-NULL-B",
+      "title": "V-NULL-B: nonEmptyB",
+      "covers": ["R-ALL"],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "nonEmptyB",
+      "args": [
+        {
+          "hex": ""
+        }
+      ],
+      "expect": {
+        "null": true
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-B",
+      "title": "V-B: nonEmptyB",
+      "covers": ["R-ALL"],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "nonEmptyB",
+      "args": [
+        {
+          "hex": "00ff"
+        }
+      ],
+      "expect": {
+        "hex": "00ff"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-F64-EXACT",
+      "title": "V-F64-EXACT: half",
+      "covers": ["R-ALL"],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "half",
+      "args": [
+        {
+          "f64": "1"
+        }
+      ],
+      "expect": {
+        "f64": "0.5"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-F64-NEG0",
+      "title": "V-F64-NEG0: half",
+      "covers": ["R-ALL"],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "half",
+      "args": [
+        {
+          "f64": "-0"
+        }
+      ],
+      "expect": {
+        "f64": "-0"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-F64-ABS",
+      "title": "V-F64-ABS: half",
+      "covers": ["R-ALL"],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "half",
+      "args": [
+        {
+          "f64": "0.3"
+        }
+      ],
+      "expect": {
+        "f64": "0.15"
+      },
+      "tolerance": {
+        "abs": "1e-12",
+        "section": "1",
+        "quote": "Every form MUST round-trip."
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-F64-ULPS",
+      "title": "V-F64-ULPS: half",
+      "covers": ["R-ALL"],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "half",
+      "args": [
+        {
+          "f64": "0.7"
+        }
+      ],
+      "expect": {
+        "f64": "0.35"
+      },
+      "tolerance": {
+        "ulps": 1,
+        "section": "1",
+        "quote": "Every form MUST round-trip."
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-U64",
+      "title": "V-U64: isMax",
+      "covers": ["R-ALL"],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "isMax",
+      "args": [
+        {
+          "int": "18446744073709551615"
+        }
+      ],
+      "expect": {
+        "bool": true
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-I64-MIN",
+      "title": "V-I64-MIN: addI64",
+      "covers": ["R-ALL"],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "addI64",
+      "args": [
+        {
+          "int": "-9223372036854775808"
+        },
+        {
+          "int": -1
+        }
+      ],
+      "expect": {
+        "int": "9223372036854775807"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-SECRET",
+      "title": "V-SECRET: keep",
+      "covers": ["R-ALL"],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "keep",
+      "args": [
+        {
+          "hex": "a546"
+        },
+        {
+          "hex": "e6db"
+        }
+      ],
+      "expect": {
+        "hex": "a546"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-SECRET-BASE",
+      "title": "V-SECRET-BASE: keepBase",
+      "covers": ["R-ALL"],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "keepBase",
+      "args": [
+        {
+          "hex": "7707"
+        }
+      ],
+      "expect": {
+        "hex": "7707"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-SECRET-NULL",
+      "title": "V-SECRET-NULL: keepBase",
+      "covers": ["R-ALL"],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "keepBase",
+      "args": [
+        {
+          "null": true
+        }
+      ],
+      "expect": {
+        "null": true
+      }
+    }
+  ]
+}
