@@ -31,9 +31,27 @@ const e2eTestContract = (sha: string): string => `{
 /** The module at the base. */
 const E2E_TEST_HEX: string = "/** Encodes. */\nexport const enc = (b: string): string => b\n"
 
-/** Runs `dist/vector` with `args`: its exit status and standard output, with `dir` shown as `<repo>`. */
+/**
+ * Runs vector's own `dist/vector`, found from the top of the checkout the
+ * test runs in, with `args`, clearing the variables that would point git at
+ * another repository: its exit status and standard output, with `dir` shown
+ * as `<repo>`.
+ */
 const e2eTestRun = (dir: string, args: string[]): string => {
-  const argv: string[] = ["dist/vector"]
+  const self = gitdiffTop(".")
+  if (self.isErr()) {
+    return `cannot find vector's checkout: ${self.error}`
+  }
+  const argv: string[] = [
+    "env",
+    "-u",
+    "GIT_DIR",
+    "-u",
+    "GIT_WORK_TREE",
+    "-u",
+    "GIT_INDEX_FILE",
+    `${self.value}/dist/vector`,
+  ]
   for (const a of args) {
     argv.push(a)
   }
@@ -112,6 +130,12 @@ const e2eTestModule = (t: Suite, dir: string): Result<boolean, string> => {
     "exports refuses an untested export",
     e2eTestRun(dir, ["spec", "exports", "--base", "main", "--nish-root", root, contract]),
     "exit 1\nspec exports of std/hex.ts against main: FAILED\n\n  added fresh\n\nproblems:\n  ✗ export fresh is added, but the contract neither tests it nor lists it in outOfScope with a reason\n",
+  )
+  prTestWrite(dir, "nish/std/hex.ts", `${E2E_TEST_HEX}export const pair = f<A, B>(x)\n`).orReturn()
+  t.eqStr(
+    "exports refuses an export it cannot split, naming its line",
+    e2eTestRun(dir, ["spec", "exports", "--base", "main", "--nish-root", root, contract]),
+    "exit 1\nspec exports of std/hex.ts against main: FAILED\n\n  unnamed export const pair = f<A, B>(x)\n\nproblems:\n  ✗ line 3: an export it cannot split into names: export const pair = f<A, B>(x): a comma or an angle bracket it cannot place, so it may declare more than one name: give it a declaration of its own the contract can test, since the gate refuses what it cannot name\n",
   )
   return Ok(true)
 }
