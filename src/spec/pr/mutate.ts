@@ -14,6 +14,7 @@
 import { splitLines, trim } from "nish/text"
 import { AllowedSurvivor } from "../contract/types"
 import { GitdiffFile, gitdiffTouches } from "./gitdiff"
+import { LEX_STRING, LEX_TEMPLATE, lexTokens } from "./lex"
 import { PrReport } from "./report"
 
 /** Not run yet. */
@@ -182,10 +183,93 @@ const mutateNullUnion = (s: string, i: i32): boolean =>
 const mutateSplice = (s: string, i: i32, len: i32, by: string): string =>
   `${s.substring(0, i)}${by}${s.substring(i + len)}`
 
+/** A character of no token: a space or a line break between tokens. */
+const MUTATE_BLANK: i32 = 0
+/** A character of an identifier, a number or punctuation: code a mutant may change. */
+const MUTATE_CODE: i32 = 1
+/** A character of a string or of template text, its quotes and `${`/`}` included. */
+const MUTATE_TEXT: i32 = 2
+/** A character of a comment. */
+const MUTATE_COMMENT: i32 = 3
+
+/** Marks `[from, to)` of `kinds` as `kind`. */
+const mutateMark = (kinds: i32[], from: i32, to: i32, kind: i32): void => {
+  for (let i = from; i < to; i++) {
+    kinds[i] = kind
+  }
+}
+
+/** Marks the comments in `[from, to)`, a gap between tokens, which the lexer read as only spaces and comments. */
+const mutateMarkComments = (text: string, kinds: i32[], from: i32, to: i32): void => {
+  let i = from
+  while (i < to) {
+    if (text.charCodeAt(i) === 47 && mutateAt(text, i + 1) === 47) {
+      const nl = text.indexOf("\n", i)
+      const end = nl < 0 || toI32(nl) > to ? to : toI32(nl)
+      mutateMark(kinds, i, end, MUTATE_COMMENT)
+      i = end
+    } else if (text.charCodeAt(i) === 47 && mutateAt(text, i + 1) === 42) {
+      const close = text.indexOf("*/", i + 2)
+      const end = close < 0 || toI32(close) + 2 > to ? to : toI32(close) + 2
+      mutateMark(kinds, i, end, MUTATE_COMMENT)
+      i = end
+    } else {
+      i++
+    }
+  }
+}
+
+/**
+ * What each character of a module's lines is, as the lexer (lexTokens) reads
+ * the whole module: so a string, a template literal or a comment that spans
+ * lines, or a `/*` opened mid-line, is never taken for code.
+ *
+ * @param text the module
+ * @returns per line (splitLines), one entry per character and one more for
+ *   the line break after it: 1 for code, 2 for a string or template text, 3
+ *   for a comment, 0 for a space between tokens; or `Err` naming the line
+ *   the lexer cannot read
+ */
+export const mutateCode = (text: string): Result<i32[][], string> => {
+  const tokens = lexTokens(text).orReturn()
+  const kinds: i32[] = []
+  for (let i = 0; i <= text.length; i++) {
+    kinds.push(MUTATE_BLANK)
+  }
+  let gap: i32 = 0
+  for (const t of tokens) {
+    mutateMarkComments(text, kinds, gap, t.start)
+    const textual = t.kind === LEX_STRING || t.kind === LEX_TEMPLATE
+    mutateMark(kinds, t.start, t.end, textual ? MUTATE_TEXT : MUTATE_CODE)
+    gap = t.end
+  }
+  mutateMarkComments(text, kinds, gap, toI32(text.length))
+  const out: i32[][] = []
+  let start: i32 = 0
+  for (const line of splitLines(text)) {
+    out.push(kinds.slice(start, start + toI32(line.length) + 1))
+    start = start + toI32(line.length) + 1
+  }
+  return Ok(out)
+}
+
 /** The mutants of one statement-level line: deleting it, or returning null. */
-const mutateWholeLine = (text: string, line: i32, out: MutateMutant[]): void => {
-  const t = trim(text)
-  const indent = text.substring(0, text.indexOf(t))
+const mutateWholeLine = (text: string, line: i32, kinds: i32[], out: MutateMutant[]): void => {
+  let first = 0
+  while (first < text.length && kinds[first] === MUTATE_BLANK) {
+    first++
+  }
+  let last = toI32(text.length)
+  while (last > first && (kinds[last - 1] === MUTATE_BLANK || kinds[last - 1] === MUTATE_COMMENT)) {
+    last--
+  }
+  // The line must start in code and end outside every string, template and
+  // block comment, or deleting it would cut one open.
+  if (first >= text.length || kinds[first] !== MUTATE_CODE || kinds[text.length] !== MUTATE_BLANK) {
+    return
+  }
+  const t = trim(text.substring(first, last))
+  const indent = text.substring(0, first)
   const open =
     t.endsWith("{") || t.endsWith("(") || t.endsWith(",") || t.endsWith("[") || t.endsWith("=>") || t.endsWith("=")
   if (open || t.startsWith("}")) {
@@ -210,41 +294,27 @@ const mutateWholeLine = (text: string, line: i32, out: MutateMutant[]): void => 
 
 /**
  * The mutants of one line of a module: each operator, literal and statement
- * it can change, left to right, skipping strings and comments.
+ * it can change, left to right, in code only: never in a string, template
+ * text or a comment.
  *
  * @param text the line
  * @param line its number, from 1
+ * @param kinds what each of its characters is, and its line break (mutateCode)
  * @returns its mutants
  */
-export const mutateLine = (text: string, line: i32): MutateMutant[] => {
+export const mutateLine = (text: string, line: i32, kinds: i32[]): MutateMutant[] => {
   const out: MutateMutant[] = []
   const t = trim(text)
-  if (t.length === 0 || t.startsWith("//") || t.startsWith("*") || t.startsWith("/*") || t.startsWith("import ")) {
+  if (t.length === 0 || t.startsWith("import ")) {
     return out
   }
   const swaps = mutateSwaps()
-  let quote = -1
   let i = 0
   while (i < text.length) {
     const c = text.charCodeAt(i)
-    if (quote >= 0) {
-      if (c === 92) {
-        i += 2
-        continue
-      }
-      if (c === quote) {
-        quote = -1
-      }
+    if (kinds[i] !== MUTATE_CODE) {
       i++
       continue
-    }
-    if (c === 34 || c === 39 || c === 96) {
-      quote = c
-      i++
-      continue
-    }
-    if (c === 47 && mutateAt(text, i + 1) === 47) {
-      break
     }
     let swapped = false
     for (let k = 0; k < swaps.length; k += 3) {
@@ -291,44 +361,33 @@ export const mutateLine = (text: string, line: i32): MutateMutant[] => {
     }
     i++
   }
-  mutateWholeLine(text, line, out)
+  mutateWholeLine(text, line, kinds, out)
   return out
 }
 
 /**
- * The mutants of a module's lines that a change added.
+ * The mutants of a module's lines that a change added. Where code is comes
+ * from the lexer (mutateCode), so no mutant lands in a string, a template
+ * literal or a comment, however many lines it spans.
  *
  * @param text the module now
  * @param changed the module's changes since the base (gitdiffChanged)
- * @returns the mutants, in the module's order
+ * @returns the mutants, in the module's order, or `Err` naming the line the
+ *   lexer cannot read
  */
-export const mutateSites = (text: string, changed: GitdiffFile): MutateMutant[] => {
+export const mutateSites = (text: string, changed: GitdiffFile): Result<MutateMutant[], string> => {
   const out: MutateMutant[] = []
   const lines = splitLines(text)
-  let inBlock = false
+  const kinds = mutateCode(text).orReturn()
   for (let i = 0; i < lines.length; i++) {
-    const t = trim(lines[i])
-    const wasBlock = inBlock
-    if (!inBlock && t.startsWith("/*")) {
-      inBlock = true
-    }
-    if (inBlock) {
-      if (t.indexOf("*/") >= 0) {
-        inBlock = false
-      }
-      continue
-    }
-    if (wasBlock) {
-      continue
-    }
     const n = toI32(i) + 1
     if (gitdiffTouches(changed, n)) {
-      for (const m of mutateLine(lines[i], n)) {
+      for (const m of mutateLine(lines[i], n, kinds[i])) {
         out.push(m)
       }
     }
   }
-  return out
+  return Ok(out)
 }
 
 /**

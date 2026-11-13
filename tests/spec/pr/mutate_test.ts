@@ -12,6 +12,7 @@ import {
   MUTATE_TIMED_OUT,
   MutateMutant,
   mutateApply,
+  mutateCode,
   mutateJudge,
   mutateLine,
   mutateOutcomeName,
@@ -29,6 +30,33 @@ const mutateTestList = (ms: MutateMutant[]): string => {
     out.push(`${m.id}=${m.after}`)
   }
   return out.join(" | ")
+}
+
+/**
+ * The mutants of one line, its characters read by the lexer; a line that
+ * opens a block is lexed with the `}` that closes it on the next line.
+ */
+const mutateTestLine = (text: string, line: i32): MutateMutant[] => {
+  const kinds = mutateCode(text.endsWith("{") ? `${text}\n}` : text)
+  if (kinds.isErr()) {
+    panic(`${text}: ${kinds.error}`)
+  }
+  return mutateLine(text, line, kinds.value[0])
+}
+
+/** The mutants of a line the lexer cannot read alone, every character of it taken as code. */
+const mutateTestRaw = (text: string): MutateMutant[] => {
+  const kinds: i32[] = []
+  for (let i = 0; i <= text.length; i++) {
+    kinds.push(i < text.length ? 1 : 0)
+  }
+  return mutateLine(text, 1, kinds)
+}
+
+/** The mutants of a module's changed lines, or the lexer's refusal. */
+const mutateTestSites = (text: string, changed: GitdiffFile): string => {
+  const r = mutateSites(text, changed)
+  return r.isErr() ? `Err ${r.error}` : mutateTestList(r.value)
 }
 
 /**
@@ -402,59 +430,81 @@ export const main = (): i32 => {
   const t = new Suite("spec/pr mutate")
   t.eqStr(
     "relational and logical",
-    mutateTestList(mutateLine("  if (a < b && c >= d) {", 7)),
+    mutateTestList(mutateTestLine("  if (a < b && c >= d) {", 7)),
     "7:9:relational=  if (a <= b && c >= d) { | 7:13:logical=  if (a < b || c >= d) { | 7:18:relational=  if (a < b && c > d) {",
   )
-  t.eqStr("equality", mutateTestList(mutateLine("x === y", 1)), "1:3:relational=x !== y | 1:1:delete-statement=")
-  t.eqStr("arrows and generics are not operators", mutateTestList(mutateLine("const f = (): Set<i32> => g", 1)), "")
-  t.eqStr("drop a not", mutateTestList(mutateLine("  if (!ok) {", 1)), "1:7:drop-not=  if (ok) {")
+  t.eqStr("equality", mutateTestList(mutateTestLine("x === y", 1)), "1:3:relational=x !== y | 1:1:delete-statement=")
+  t.eqStr("arrows and generics are not operators", mutateTestList(mutateTestLine("const f = (): Set<i32> => g", 1)), "")
+  t.eqStr("drop a not", mutateTestList(mutateTestLine("  if (!ok) {", 1)), "1:7:drop-not=  if (ok) {")
   t.eqStr(
     "!= is not a not, but swaps to ==",
-    mutateTestList(mutateLine("  if (a != b) {", 1)),
+    mutateTestList(mutateTestLine("  if (a != b) {", 1)),
     "1:9:relational=  if (a == b) {",
   )
   t.eqStr(
     "arithmetic swaps",
-    mutateTestList(mutateLine("x = a * b / c % d", 1)),
+    mutateTestList(mutateTestLine("x = a * b / c % d", 1)),
     "1:7:arithmetic=x = a / b / c % d | 1:11:arithmetic=x = a * b * c % d | 1:15:arithmetic=x = a * b / c * d | 1:1:delete-statement=",
   )
   t.eqStr(
     "bitwise swaps, shifts before relations",
-    mutateTestList(mutateLine("y = a << 2 & b ^ c | d >> 1", 1)),
+    mutateTestList(mutateTestLine("y = a << 2 & b ^ c | d >> 1", 1)),
     "1:7:bitwise=y = a >> 2 & b ^ c | d >> 1 | 1:10:int:+1=y = a << 3 & b ^ c | d >> 1 | 1:10:int:-1=y = a << 1 & b ^ c | d >> 1 | 1:12:bitwise=y = a << 2 | b ^ c | d >> 1 | 1:16:bitwise=y = a << 2 & b & c | d >> 1 | 1:20:bitwise=y = a << 2 & b ^ c & d >> 1 | 1:24:bitwise=y = a << 2 & b ^ c | d << 1 | 1:27:int:+1=y = a << 2 & b ^ c | d >> 2 | 1:27:int:-1=y = a << 2 & b ^ c | d >> 0 | 1:1:delete-statement=",
   )
-  t.eqStr("a union with null is a type, not an or", mutateTestList(mutateLine("  let p: P | null = q", 1)), "")
+  t.eqStr("a union with null is a type, not an or", mutateTestList(mutateTestLine("  let p: P | null = q", 1)), "")
   t.eqStr(
     "an integer, both ways",
-    mutateTestList(mutateLine("  return n + 10", 2)),
+    mutateTestList(mutateTestLine("  return n + 10", 2)),
     "2:12:arithmetic=  return n - 10 | 2:14:int:+1=  return n + 11 | 2:14:int:-1=  return n + 9 | 2:3:return-null=  return null",
   )
   t.eqStr(
     "no ints inside names, hex or decimals",
-    mutateTestList(mutateLine("const x2 = 0x1f + 1.5 + 3n", 1)),
+    mutateTestList(mutateTestLine("const x2 = 0x1f + 1.5 + 3n", 1)),
     "1:17:arithmetic=const x2 = 0x1f - 1.5 + 3n | 1:23:arithmetic=const x2 = 0x1f + 1.5 - 3n",
   )
   t.eqStr(
     "strings are skipped",
-    mutateTestList(mutateLine("  log(\"a < b\", `1 && 2`, '!x')", 1)),
+    mutateTestList(mutateTestLine("  log(\"a < b\", `1 && 2`, '!x')", 1)),
     "1:3:delete-statement=",
   )
-  t.eqStr("comments are skipped", mutateTestList(mutateLine("  x // a < b 3", 1)), "1:3:delete-statement=")
-  t.eqStr("a comment line has none", mutateTestList(mutateLine("  // if (a < b)", 1)), "")
-  t.eqStr("an import has none", mutateTestList(mutateLine('import { a } from "b"', 1)), "")
-  t.eqStr("return null is left", mutateTestList(mutateLine("  return null", 1)), "")
-  t.eqStr("an open statement is not deleted", mutateTestList(mutateLine("  foo(", 1)), "")
-  t.eqStr("a closing brace has none", mutateTestList(mutateLine("  }", 1)), "")
+  t.eqStr("comments are skipped", mutateTestList(mutateTestLine("  x // a < b 3", 1)), "1:3:delete-statement=")
+  t.eqStr("a comment line has none", mutateTestList(mutateTestLine("  // if (a < b)", 1)), "")
+  t.eqStr("an import has none", mutateTestList(mutateTestLine('import { a } from "b"', 1)), "")
+  t.eqStr("return null is left", mutateTestList(mutateTestLine("  return null", 1)), "")
+  t.eqStr("an open statement is not deleted", mutateTestList(mutateTestRaw("  foo(")), "")
+  t.eqStr("a closing brace has none", mutateTestList(mutateTestRaw("  }")), "")
   t.eqStr(
     "a declaration is not deleted",
-    mutateTestList(mutateLine("  let i = 0", 1)),
+    mutateTestList(mutateTestLine("  let i = 0", 1)),
     "1:11:int:+1=  let i = 1 | 1:11:int:-1=  let i = -1",
   )
   const text = "/**\n * a < b\n */\nconst a = 1\nconst b = 2\nconst c = 3\n"
   t.eqStr(
     "only changed lines, never a block comment",
-    mutateTestList(mutateSites(text, mutateTestChanged(2, 5))),
+    mutateTestSites(text, mutateTestChanged(2, 5)),
     "4:11:int:+1=const a = 2 | 4:11:int:-1=const a = 0 | 5:11:int:+1=const b = 3 | 5:11:int:-1=const b = 1",
+  )
+  const tpl = "const s = `a\n  x < y\n  return 1\n${n + 1}`\nconst z = 2\n"
+  t.eqStr(
+    "no mutant inside a multi-line template literal, only in its ${}",
+    mutateTestSites(tpl, mutateTestChanged(1, 5)),
+    "4:5:arithmetic=${n - 1}` | 4:7:int:+1=${n + 2}` | 4:7:int:-1=${n + 0}` | 5:11:int:+1=const z = 3 | 5:11:int:-1=const z = 1",
+  )
+  const mid = "const a = 1 /* b < c\n  return 3\n  d */ + 4\nconst e = 5\n"
+  t.eqStr(
+    "no mutant after a mid-line /* until its */",
+    mutateTestSites(mid, mutateTestChanged(1, 4)),
+    "1:11:int:+1=const a = 2 /* b < c | 1:11:int:-1=const a = 0 /* b < c | 3:8:arithmetic=  d */ - 4 | 3:10:int:+1=  d */ + 5 | 3:10:int:-1=  d */ + 3 | 4:11:int:+1=const e = 6 | 4:11:int:-1=const e = 4",
+  )
+  t.eqStr(
+    "a line that ends inside a string is not deleted",
+    mutateTestSites("f('a\\\nb')\ng()\n", mutateTestChanged(1, 3)),
+    "3:1:delete-statement=",
+  )
+  t.eqStr(
+    "a module the lexer cannot read is refused",
+    mutateTestSites("const a = (1\n", mutateTestChanged(1, 1)),
+    "Err line 1: a `(` that never closes",
   )
   const all: MutateMutant[] = []
   for (let i = 1; i <= 10; i++) {

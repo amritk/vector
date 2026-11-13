@@ -1,0 +1,1 @@
+vector: spec mutate: the compiler tests/cli/pr-mutate-unbuilt-nish/root/bin/nish is the npm launcher, not a compiler: tests/cli/pr-mutate-unbuilt-nish/root is a nish checkout with no build/nish. Build one there with `bash scripts/fetch-seed.sh && npm run build`, or `NISH_BOOTSTRAP=<an installed nish> npm run build`, then give --nish build/nish

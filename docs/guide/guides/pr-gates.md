@@ -251,8 +251,32 @@ path, so it fails this check:
 vector: spec mutate: the compiler bin/nish builds the test even with std/crypto/hkdf.ts made unparseable in the copy, so it does not read the copy (an installed wrapper that execs another install by absolute path?): give a --nish that builds from the checkout it sits in
 ```
 
-Give `--nish libexec/nish` for an install, or use a real nish checkout, whose
-`bin/nish` builds from the checkout it sits in.
+Give `--nish libexec/nish` for an install. A `git clone` of nish has no
+compiler at all: its `bin/nish` is the npm launcher, and there is no
+`libexec/nish` or `build/seed`. Build one in the checkout, then give
+`--nish build/nish`:
+
+<!-- illustrative -->
+```sh
+cd ../nish
+bash scripts/fetch-seed.sh && npm run build
+# or, with no release download, seed it from a nish you already have:
+NISH_BOOTSTRAP=/path/to/vector/.nish/libexec/nish npm run build
+```
+
+Pointing `--nish` at another install, such as vector's own
+`.nish/libexec/nish`, does not work: it builds from its own install, not the
+copy, and fails the check above. Run against an unbuilt checkout, mutate says
+so and stops:
+
+<!-- illustrative -->
+```sh
+./dist/vector spec mutate contracts/rfc5869-hkdf-sha256.json --nish-root ../nish --nish libexec/nish --base HEAD
+```
+
+```text
+vector: spec mutate: the compiler ../nish/libexec/nish is not an executable file: ../nish is a nish checkout with no build/nish. Build one there with `bash scripts/fetch-seed.sh && npm run build`, or `NISH_BOOTSTRAP=<an installed nish> npm run build`, then give --nish build/nish
+```
 
 ### Survivors
 

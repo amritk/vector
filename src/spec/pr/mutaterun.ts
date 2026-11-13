@@ -658,6 +658,31 @@ const mutaterunEmit = (contractPath: string, r: PrReport): Result<string | null,
 }
 
 /**
+ * Whether `root` is a nish source checkout that has not been built: it has the
+ * bootstrap script and the npm launcher, and no `build/nish`. Such a checkout
+ * has no compiler that reads it, which a bare "not an executable file" hides.
+ */
+const mutaterunUnbuilt = (root: string): Result<boolean, string> => {
+  const r = runProcess(
+    [
+      "test",
+      "-f",
+      joinPath(root, "scripts/bootstrap.sh"),
+      "-a",
+      "-f",
+      joinPath(root, "bin/launcher.js"),
+      "-a",
+      "!",
+      "-e",
+      joinPath(root, "build/nish"),
+    ],
+    "",
+    MUTATERUN_MIN_TIMEOUT_MS,
+  ).orReturn()
+  return Ok(r.status === 0)
+}
+
+/**
  * Mutates the lines a change added to a contract's target module, in the
  * nish checkout at `run.nishRoot`, and runs the test against each mutant.
  *
@@ -666,7 +691,8 @@ const mutaterunEmit = (contractPath: string, r: PrReport): Result<string | null,
  * @param run where and how to run the test: its `file` is filled in from the contract
  * @param max the most mutants to run; 0 or less runs all
  * @returns the report, or `Err` when the contract cannot be read, its target
- *   is outside nish, git fails or the runner cannot work
+ *   is outside nish, the root is a nish checkout with no compiler built, the
+ *   module cannot be lexed, git fails or the runner cannot work
  */
 export const mutateCheck = (contractPath: string, base: string, run: MutateRun, max: i32): Result<PrReport, string> => {
   const loaded = contractLoadFile(contractPath)
@@ -684,9 +710,26 @@ export const mutateCheck = (contractPath: string, base: string, run: MutateRun, 
   if (text === null) {
     return Err(`${run.nishRoot}/${file} cannot be read: is ${run.nishRoot} the nish checkout?`)
   }
+  const compiler = joinPath(run.nishRoot, run.nish)
+  const status = runProcess(["test", "-f", compiler, "-a", "-x", compiler], "", MUTATERUN_MIN_TIMEOUT_MS).orReturn()
+  const runnable = status.status === 0
+  const launcher = run.nish === "bin/nish" || run.nish === "./bin/nish"
+  if ((!runnable || launcher) && mutaterunUnbuilt(run.nishRoot).orReturn()) {
+    const what = runnable ? "is the npm launcher, not a compiler" : "is not an executable file"
+    return Err(
+      `the compiler ${compiler} ${what}: ${run.nishRoot} is a nish checkout with no build/nish. Build one there with \`bash scripts/fetch-seed.sh && npm run build\`, or \`NISH_BOOTSTRAP=<an installed nish> npm run build\`, then give --nish build/nish`,
+    )
+  }
   const prefix = gitdiffPrefix(run.nishRoot).orReturn()
   const changed = gitdiffChanged(run.nishRoot, base, [`${prefix}${file}`]).orReturn()
-  const all: MutateMutant[] = changed.length > 0 ? mutateSites(text, changed[0]) : []
+  let all: MutateMutant[] = []
+  if (changed.length > 0) {
+    const sites = mutateSites(text, changed[0])
+    if (sites.isErr()) {
+      return Err(`${run.nishRoot}/${file} cannot be mutated: ${sites.error}`)
+    }
+    all = sites.value
+  }
   const mutants = mutatePick(all, max)
   const dropped = toI32(all.length) - toI32(mutants.length)
   const allow = c.allowSurvivors ?? []
@@ -703,9 +746,7 @@ export const mutateCheck = (contractPath: string, base: string, run: MutateRun, 
   } else if (realpathSync(run.test) === null) {
     return Err(`the test ${run.test} cannot be read`)
   }
-  const compiler = joinPath(run.nishRoot, run.nish)
-  const runnable = runProcess(["test", "-f", compiler, "-a", "-x", compiler], "", MUTATERUN_MIN_TIMEOUT_MS).orReturn()
-  if (runnable.status !== 0) {
+  if (!runnable) {
     return Err(`the compiler ${compiler} is not an executable file`)
   }
   const baseline = mutateRunAll(run, text, mutants).orReturn()

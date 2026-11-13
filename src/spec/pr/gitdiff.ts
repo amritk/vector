@@ -8,7 +8,17 @@
 
 import { split, splitLines, trim } from "nish/text"
 import { runProcess } from "../../core/process"
-import { LEX_IDENT, LEX_PUNCT, LexSpan, LexToken, lexStatements, lexTokens } from "./lex"
+import {
+  LEX_IDENT,
+  LEX_NUMBER,
+  LEX_PUNCT,
+  LEX_STRING,
+  LEX_TEMPLATE,
+  LexSpan,
+  LexToken,
+  lexStatements,
+  lexTokens,
+} from "./lex"
 
 /** How long one git call may take, in milliseconds. */
 export const GITDIFF_TIMEOUT_MS: i32 = 60000
@@ -540,6 +550,56 @@ const gitdiffTypeChain = (toks: LexToken[], valueStart: i32, at: i32): boolean =
 }
 
 /**
+ * Whether the `<` at `at` opens a call's type arguments in a value: it
+ * follows a name (`f<` or `ns.f<`), and its matching `>` is followed at once
+ * by `(`, with only names, `.`, `,`, `|`, `&`, `=>`, nested angle brackets
+ * and bracketed groups between. A number, a string, an `=` or any other
+ * operator in between reads it as a comparison instead, as does a `>` that
+ * never comes, so `x < 1, y > (z)` is still a statement it cannot split.
+ */
+const gitdiffCallTypeArgs = (toks: LexToken[], valueStart: i32, at: i32, to: i32): boolean => {
+  if (at - 1 < valueStart || toks[at - 1].kind !== LEX_IDENT || toks[at - 1].depth !== 0) {
+    return false
+  }
+  let nest = 0
+  for (let i = at; i < to; i++) {
+    const t = toks[i]
+    if (t.depth > toks[at].depth || (t.kind === LEX_PUNCT && (t.text === "(" || t.text === "[" || t.text === "{"))) {
+      if (t.kind === LEX_STRING || t.kind === LEX_NUMBER || t.kind === LEX_TEMPLATE) {
+        return false
+      }
+      continue
+    }
+    if (t.kind === LEX_IDENT) {
+      continue
+    }
+    if (t.kind !== LEX_PUNCT) {
+      return false
+    }
+    if (t.text === "<") {
+      nest++
+    } else if (t.text === ">") {
+      nest--
+      if (nest === 0) {
+        return gitdiffIsPunct(toks, i + 1, to, "(")
+      }
+    } else if (
+      t.text !== "," &&
+      t.text !== "." &&
+      t.text !== "|" &&
+      t.text !== "&" &&
+      t.text !== "=>" &&
+      t.text !== ")" &&
+      t.text !== "]" &&
+      t.text !== "}"
+    ) {
+      return false
+    }
+  }
+  return false
+}
+
+/**
  * Whether the token at `close` is the `)` ending an arrow's parameters at the
  * head of a value: `(…)`, `async (…)`, `<T>(…)` or `async <T>(…)`, so a `:`
  * after it starts the arrow's return type rather than a ternary's other arm.
@@ -579,7 +639,8 @@ const gitdiffNextDeclarator = (toks: LexToken[], at: i32, to: i32): boolean => {
  * `from` after the keyword to `to`. A top-level `,` outside angle brackets
  * starts the next declarator. Before a declarator's `=`, `<` and `>` pair as
  * a type's brackets; after it `<` is an operator (`i < 3`) unless it opens the
- * value (a generic arrow), follows a type's name (gitdiffTypeChain), or is in
+ * value (a generic arrow), follows a type's name (gitdiffTypeChain), opens a
+ * call's type arguments (gitdiffCallTypeArgs: `f<T, U>(x)`), or is in
  * an arrow's return type: a `:` right after a top-level `)`, which must reach
  * its `=>` with no `=` or top-level `,` on the way. A `,` not followed by a
  * declarator, an angle bracket that never closes, or a return type that never
@@ -603,7 +664,13 @@ const gitdiffDeclarators = (toks: LexToken[], from: i32, to: i32): GitdiffDecl =
       const t = toks[i]
       if (t.depth === 0 && t.kind === LEX_PUNCT) {
         const typeAngle = !inValue || returnType || angle > 0
-        if (t.text === "<" && (typeAngle || i === valueStart || gitdiffTypeChain(toks, valueStart, i))) {
+        if (
+          t.text === "<" &&
+          (typeAngle ||
+            i === valueStart ||
+            gitdiffTypeChain(toks, valueStart, i) ||
+            gitdiffCallTypeArgs(toks, valueStart, i, to))
+        ) {
           angle++
         } else if (t.text === ">" && angle > 0) {
           angle--
