@@ -1,5 +1,5 @@
 /**
- * `cli/spec-emit` — `vector spec emit`: emit the Nish test a contract implies.
+ * `cli/spec-emit` — `vector spec emit`: emit the test a contract implies.
  *
  * The command itself is `emitCommand` in `spec/emit/file`; this file declares its
  * flags and hands them over.
@@ -25,6 +25,10 @@ export class SpecEmitCommand {
   formatFlag: i32
   /** The repeatable `--package <name>=<dir>` flag. */
   packageFlag: i32
+  /** The `--lang <id>` flag. */
+  langFlag: i32
+  /** The `--harness <h>` flag. */
+  harnessFlag: i32
   /** The `<contract.json>` argument. */
   contractJsonArg: i32
 
@@ -35,7 +39,7 @@ export class SpecEmitCommand {
    * @param parent the handle to declare it under (`ROOT` or the `spec` group)
    */
   constructor(cli: Cli, parent: i32) {
-    const handle = cli.command(parent, "emit", SPEC_EMIT_ID, "Emit the Nish test a contract implies")
+    const handle = cli.command(parent, "emit", SPEC_EMIT_ID, "Emit the test a contract implies")
     this.outFlag = cli.flag(handle, "-o, --out <main.ts>", "where to write the test")
     this.specFlag = cli.flag(
       handle,
@@ -48,9 +52,15 @@ export class SpecEmitCommand {
     this.packageFlag = cli.flag(
       handle,
       "--package <pkg>",
-      "a package of your own, <name>=<dir>: modules <name>/<path> are <dir>/<path>.ts (repeatable)",
+      "a package of your own, <name>=<dir>: modules <name>/<path> are <dir>/<path>.ts, .py in python (repeatable)",
     )
     cli.repeatable(this.packageFlag)
+    this.langFlag = cli.flag(handle, "--lang <id>", "the test's language: nish (default) or python")
+    this.harnessFlag = cli.flag(
+      handle,
+      "--harness <h>",
+      "standalone (default), or the test framework the test plugs into: pytest for python",
+    )
     this.contractJsonArg = cli.argument(handle, "<contract.json>", "the contract")
   }
 
@@ -63,7 +73,13 @@ export class SpecEmitCommand {
    * @returns the exit code
    */
   run(r: ParseResult): i32 {
-    return emitCommand(r.positional(this.contractJsonArg) ?? "", r.value(this.outFlag), r.values(this.packageFlag))
+    return emitCommand(
+      r.positional(this.contractJsonArg) ?? "",
+      r.value(this.outFlag),
+      r.values(this.packageFlag),
+      r.value(this.langFlag),
+      r.value(this.harnessFlag),
+    )
   }
 }
 

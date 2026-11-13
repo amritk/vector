@@ -1,0 +1,1 @@
+vector spec emit contracts/vector-core-hex.json --lang rust -o dist/emit-lang-golden.rs

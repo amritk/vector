@@ -1,6 +1,7 @@
 /**
- * `spec/run/command` — `vector spec run`: emit a contract's test, run it with
- * a nish install, and report the verdict per requirement.
+ * `spec/run/command` — `vector spec run`: emit a contract's test, run it (with
+ * a nish install, or the language's own interpreter), and report the verdict
+ * per requirement.
  */
 
 import { EXIT_PASS, EXIT_REFUSED, report, usageError } from "../../core/diag"
@@ -9,6 +10,7 @@ import { runProcess } from "../../core/process"
 import { Contract } from "../contract/types"
 import { emitContractFile, emitReportAll, emitWriteFile } from "../emit/file"
 import { emitPackageFlags, emitParsePackages } from "../emit/packages"
+import { EmitTarget, emitTargetExt, emitTargetFlags, emitTargetParse } from "../emit/target"
 import {
   RunResult,
   runDisposeScratch,
@@ -16,6 +18,7 @@ import {
   runFormatMarkdown,
   runFormatText,
   runMakeScratch,
+  runTestCommand,
   runTestFile,
 } from "./run"
 
@@ -36,6 +39,10 @@ export class RunRequest {
   format: string
   /** The `--package <name>=<dir>` flags' values. */
   packages: string[]
+  /** The `--lang` flag, or null for nish. */
+  lang: string | null = null
+  /** The `--harness` flag, or null for the language's default. */
+  harness: string | null = null
 
   /**
    * Makes a request with every option at its default.
@@ -78,8 +85,22 @@ const runInScratch = (c: Contract, file: string, root: string): Result<RunResult
   return ran
 }
 
-/** The test at `file` run by `--nish` as it is, else in a scratch copy of the nish root. */
-const runWith = (req: RunRequest, c: Contract, file: string): Result<RunResult, string> => {
+/**
+ * The interpreter a Python test runs with: `VECTOR_PYTHON`, else `python3`.
+ *
+ * @returns the command
+ */
+export const runPython = (): string => getenv("VECTOR_PYTHON") ?? "python3"
+
+/**
+ * The test at `file` run in its language: Python by `runPython`, writing no
+ * bytecode beside the modules it loads; Nish by
+ * `--nish` as it is, else in a scratch copy of the nish root.
+ */
+const runWith = (req: RunRequest, target: EmitTarget, c: Contract, file: string): Result<RunResult, string> => {
+  if (target.lang === "python") {
+    return runTestCommand(c, [runPython(), "-B", file], RUN_TIMEOUT_MS)
+  }
   const nish = req.nish
   if (nish !== null) {
     return runTestFile(c, file, nish, RUN_TIMEOUT_MS)
@@ -104,15 +125,15 @@ const runDropTemp = (dir: string | null): void => {
  * directory, and runs it from there, so its imports of your own modules
  * resolve from where it is.
  */
-const runEmitAndRun = (req: RunRequest, tempDir: string | null, file: string): i32 => {
-  const packages = emitParsePackages(req.packages)
+const runEmitAndRun = (req: RunRequest, target: EmitTarget, tempDir: string | null, file: string): i32 => {
+  const packages = emitParsePackages(req.packages, target.lang)
   if (packages.isErr()) {
     return report(usageError(`spec run: ${packages.error}`))
   }
   // A test kept with -o names how to regenerate it, as `spec emit -o` writes it.
-  const regenerate: string | null =
-    tempDir === null ? `vector spec emit ${req.contractPath}${emitPackageFlags(packages.value)} -o ${file}` : null
-  const emitted = emitContractFile(req.contractPath, regenerate, packages.value, dirname(file))
+  const flags = `${emitTargetFlags(target)}${emitPackageFlags(packages.value)}`
+  const regenerate: string | null = tempDir === null ? `vector spec emit ${req.contractPath}${flags} -o ${file}` : null
+  const emitted = emitContractFile(req.contractPath, regenerate, packages.value, dirname(file), target)
   if (emitted.isErr()) {
     return emitReportAll(emitted.error)
   }
@@ -128,7 +149,7 @@ const runEmitAndRun = (req: RunRequest, tempDir: string | null, file: string): i
       return report(usageError(`spec run: cannot write ${file} (errno ${-n})`))
     }
   }
-  const ran = runWith(req, e.contract, file)
+  const ran = runWith(req, target, e.contract, file)
   if (ran.isErr()) {
     return report(usageError(`spec run: ${ran.error}`))
   }
@@ -154,8 +175,8 @@ export const runFormat = (r: RunResult, format: string): string => {
 }
 
 /**
- * `vector spec run`: emits the contract's test, runs it against a nish
- * install, and prints the verdict. Exits 0 when SATISFIED, 1 when VIOLATED
+ * `vector spec run`: emits the contract's test in the language `--lang`
+ * names, runs it (a Nish test against a nish install), and prints the verdict. Exits 0 when SATISFIED, 1 when VIOLATED
  * or ERROR or the contract is refused, and 2 for bad usage or an I/O failure.
  *
  * @param req what was asked
@@ -165,15 +186,20 @@ export const runCommand = (req: RunRequest): i32 => {
   if (req.format !== "text" && req.format !== "markdown" && req.format !== "json") {
     return report(usageError(`spec run: --format must be text, markdown or json, not ${req.format}`))
   }
+  const target = emitTargetParse(req.lang, req.harness)
+  if (target.isErr()) {
+    return report(usageError(`spec run: ${target.error}`))
+  }
   const out = req.out
   if (out !== null) {
-    return runEmitAndRun(req, null, out)
+    return runEmitAndRun(req, target.value, null, out)
   }
   const temp = makeTempDir("vector-run-")
   if (temp.isErr()) {
     return report(usageError(`spec run: ${temp.error}`))
   }
-  const code = runEmitAndRun(req, temp.value, joinPath(temp.value, "main.ts"))
+  const main = joinPath(temp.value, `main${emitTargetExt(target.value.lang)}`)
+  const code = runEmitAndRun(req, target.value, temp.value, main)
   runDropTemp(temp.value)
   return code
 }

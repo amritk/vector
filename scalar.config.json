@@ -452,6 +452,16 @@
                     "title": "spec/emit/packages",
                     "filepath": "docs/reference/modules/spec/emit/packages.md"
                   },
+                  "/spec-emit-python": {
+                    "type": "page",
+                    "title": "spec/emit/python",
+                    "filepath": "docs/reference/modules/spec/emit/python.md"
+                  },
+                  "/spec-emit-target": {
+                    "type": "page",
+                    "title": "spec/emit/target",
+                    "filepath": "docs/reference/modules/spec/emit/target.md"
+                  },
                   "/spec-extract": {
                     "type": "page",
                     "title": "spec/extract",

@@ -10,6 +10,7 @@ import { LitKind, Literal } from "../../../src/spec/contract/types"
 import { EmitOptions, emitProgram } from "../../../src/spec/emit/emit"
 import { EmitFile, emitCommand, emitContractFile, emitReportAll, emitWriteFile } from "../../../src/spec/emit/file"
 import { EmitPackages } from "../../../src/spec/emit/packages"
+import { EmitTarget } from "../../../src/spec/emit/target"
 import { RunRequest, runCommand, runFindRoot, runFormat } from "../../../src/spec/run/command"
 import { RunResult, runDisposeScratch, runMakeScratch, runTest } from "../../../src/spec/run/run"
 
@@ -67,7 +68,7 @@ export const main = (): i32 => {
 
   t.ok(
     "a contract check passes emits through the command's path",
-    emitContractFile(CHECKED, null, new EmitPackages(), ".").isOk(),
+    emitContractFile(CHECKED, null, new EmitPackages(), ".", new EmitTarget("nish", "standalone")).isOk(),
   )
   const program = commandGolden()
   t.ok("example-hex emits with fixed samples", program !== "")
@@ -78,24 +79,29 @@ export const main = (): i32 => {
 
   t.ok(
     "an unreadable contract is a usage error",
-    codeOf(emitContractFile("contracts/none.json", null, new EmitPackages(), ".")) === EXIT_USAGE,
+    codeOf(
+      emitContractFile("contracts/none.json", null, new EmitPackages(), ".", new EmitTarget("nish", "standalone")),
+    ) === EXIT_USAGE,
   )
   const bad = `${dir}/bad.json`
   t.ok("a bad contract is written", emitWriteFile(bad, `{"contract": 1}`).isOk())
   t.ok(
     "a contract that does not load is refused",
-    codeOf(emitContractFile(bad, null, new EmitPackages(), ".")) === EXIT_REFUSED,
+    codeOf(emitContractFile(bad, null, new EmitPackages(), ".", new EmitTarget("nish", "standalone"))) === EXIT_REFUSED,
   )
   t.ok("the worst code wins", emitReportAll([refusal("x", 0, "a"), usageError("b")]) === EXIT_USAGE)
   const none: Diagnostic[] = []
   t.ok("no diagnostics is still a failure", emitReportAll(none) === EXIT_USAGE)
   t.ok("a write into a missing directory fails", emitWriteFile(`${dir}/no/such/x.ts`, "x").isErr())
 
-  t.ok("emit without -o is a usage error", emitCommand(CHECKED, null, []) === EXIT_USAGE)
-  t.ok("emit of a missing contract exits 2", emitCommand("contracts/none.json", `${dir}/x.ts`, []) === EXIT_USAGE)
-  t.ok("emit of a bad contract exits 1", emitCommand(bad, `${dir}/x.ts`, []) === EXIT_REFUSED)
+  t.ok("emit without -o is a usage error", emitCommand(CHECKED, null, [], null, null) === EXIT_USAGE)
+  t.ok(
+    "emit of a missing contract exits 2",
+    emitCommand("contracts/none.json", `${dir}/x.ts`, [], null, null) === EXIT_USAGE,
+  )
+  t.ok("emit of a bad contract exits 1", emitCommand(bad, `${dir}/x.ts`, [], null, null) === EXIT_REFUSED)
   const out = `${dir}/main.ts`
-  t.ok("emit writes the test and exits 0", emitCommand(CHECKED, out, []) === 0)
+  t.ok("emit writes the test and exits 0", emitCommand(CHECKED, out, [], null, null) === 0)
   const sha = sha256Hex(readFileSyncOrNull(CHECKED) ?? "")
   t.contains(
     "the written test is the contract's",

@@ -12,12 +12,14 @@ import { Contract } from "../contract/types"
 import { sourceInstallRoot } from "../source/path"
 import { EmitOptions, emitProgram } from "./emit"
 import { EmitPackages, emitPackageFlags, emitParsePackages, emitResolveModules } from "./packages"
+import { emitPyProgram } from "./python"
+import { EmitTarget, emitTargetExt, emitTargetFlags, emitTargetParse } from "./target"
 
 /** A contract and the test emitted for it. */
 export class EmitFile {
   /** The contract, loaded and checked. */
   contract: Contract
-  /** The test's Nish source. */
+  /** The test's source, in the target's language. */
   program: string
 
   /**
@@ -40,7 +42,8 @@ const emitRefuseAll = (path: string, messages: string[]): Diagnostic[] =>
  * Reads a contract file, checks it, and emits its test. An unreadable file,
  * or a tool the check needs (z3) that failed, is a usage error (exit 2), alone
  * and with no refusals; a contract that does not load, fails its check, or
- * that Nish cannot express is refused (exit 1), one diagnostic per reason.
+ * that the target's language cannot express is refused (exit 1), one
+ * diagnostic per reason.
  * A module `--package` maps to a file that does not exist is a usage error.
  *
  * @param path the contract file
@@ -48,6 +51,7 @@ const emitRefuseAll = (path: string, messages: string[]): Diagnostic[] =>
  * @param packages where the modules of your own project live
  * @param fromDir the directory the test will be written in, which its imports
  *   of those modules are relative to
+ * @param target the language and harness to emit the test for
  * @returns the contract and its test, or every diagnostic
  */
 export const emitContractFile = (
@@ -55,6 +59,7 @@ export const emitContractFile = (
   regenerate: string | null,
   packages: EmitPackages,
   fromDir: string,
+  target: EmitTarget,
 ): Result<EmitFile, Diagnostic[]> => {
   const text = readFileSyncOrNull(path)
   if (text === null) {
@@ -76,11 +81,14 @@ export const emitContractFile = (
   }
   const opts = new EmitOptions(sha256Hex(text))
   opts.regenerate = regenerate
-  const placed = emitResolveModules(packages, c, fromDir, opts)
+  const placed = emitResolveModules(packages, c, fromDir, opts, emitTargetExt(target.lang))
   if (placed.isErr()) {
     return Err([usageError(placed.error)])
   }
-  const program = emitProgram(c, checked.samples, opts)
+  const program =
+    target.lang === "python"
+      ? emitPyProgram(c, checked.samples, opts, target.harness)
+      : emitProgram(c, checked.samples, opts)
   if (program.isErr()) {
     return Err(emitRefuseAll(path, program.error))
   }
@@ -136,27 +144,40 @@ export const emitReportAll = (ds: Diagnostic[]): i32 => {
 }
 
 /**
- * `vector spec emit <contract.json> -o <main.ts>`: emits the contract's test
- * and writes it. Exits 0 when written, 1 when the contract is refused, and 2
+ * `vector spec emit <contract.json> -o <test>`: emits the contract's test,
+ * in the language `--lang` names, and writes it. Exits 0 when written, 1 when the contract is refused, and 2
  * for bad usage, a file that cannot be read or written, or a tool (z3) that
  * failed.
  *
  * @param path the contract file
  * @param out where to write the test; null is a usage error
  * @param packageFlags the `--package <name>=<dir>` flags' values
+ * @param lang the `--lang` flag, or null for nish
+ * @param harness the `--harness` flag, or null for the language's default
  * @returns the exit code
  */
-export const emitCommand = (path: string, out: string | null, packageFlags: string[]): i32 => {
+export const emitCommand = (
+  path: string,
+  out: string | null,
+  packageFlags: string[],
+  lang: string | null,
+  harness: string | null,
+): i32 => {
   if (out === null) {
     return report(usageError("spec emit: -o <main.ts> is required"))
   }
-  const packages = emitParsePackages(packageFlags)
+  const target = emitTargetParse(lang, harness)
+  if (target.isErr()) {
+    return report(usageError(`spec emit: ${target.error}`))
+  }
+  const t = target.value
+  const packages = emitParsePackages(packageFlags, t.lang)
   if (packages.isErr()) {
     return report(usageError(`spec emit: ${packages.error}`))
   }
   const m = packages.value
-  const regenerate = `vector spec emit ${path}${emitPackageFlags(m)} -o ${out}`
-  const emitted = emitContractFile(path, regenerate, m, dirname(out))
+  const regenerate = `vector spec emit ${path}${emitTargetFlags(t)}${emitPackageFlags(m)} -o ${out}`
+  const emitted = emitContractFile(path, regenerate, m, dirname(out), t)
   if (emitted.isErr()) {
     return emitReportAll(emitted.error)
   }

@@ -27,7 +27,9 @@ Generated from [src/spec/emit/emit.ts](https://github.com/amritk/vector/blob/mai
 - [`emitTestName`](#emittestname)
 - [`emitClauseFn`](#emitclausefn)
 - [`emitWrap`](#emitwrap)
+- [`emitClauseLines`](#emitclauselines)
 - [`emitRefusals`](#emitrefusals)
+- [`emitHeaderLines`](#emitheaderlines)
 - [`emitProgram`](#emitprogram)
 
 ## Declarations
@@ -194,6 +196,35 @@ the lines
 
 </scalar-field>
 
+### emitClauseLines
+
+The text above a clause's check, one comment line each with no comment
+marker: its title, then each covered requirement, a blank line before it,
+named with its source and level and its quote wrapped at 72 characters
+under it. Each language puts its own marker in front.
+
+```ts
+function emitClauseLines(c: Contract, k: Clause): string[]
+```
+
+<scalar-field name="c" type="Contract" required>
+
+the contract
+
+</scalar-field>
+
+<scalar-field name="k" type="Clause" required>
+
+the clause
+
+</scalar-field>
+
+<scalar-field name="returns" type="string[]">
+
+the lines, "" for a blank one (the title, first, is never one)
+
+</scalar-field>
+
 ### emitRefusals
 
 What in a contract Nish cannot express, found before any output: a
@@ -221,6 +252,34 @@ the modules outside nish/ that `--package` places
 <scalar-field name="returns" type="string[]">
 
 one message per refusal; empty when Nish can express it all
+
+</scalar-field>
+
+### emitHeaderLines
+
+The header every emitted test opens with, one comment line each with no
+comment marker: what generated it from which contract, how to regenerate
+it, how its checks are named, and the contract's sha256 last.
+
+```ts
+function emitHeaderLines(c: Contract, opts: EmitOptions): string[]
+```
+
+<scalar-field name="c" type="Contract" required>
+
+the contract
+
+</scalar-field>
+
+<scalar-field name="opts" type="EmitOptions" required>
+
+the regenerate command and the sha256
+
+</scalar-field>
+
+<scalar-field name="returns" type="string[]">
+
+the lines, "" for a blank one
 
 </scalar-field>
 

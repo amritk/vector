@@ -1,0 +1,1 @@
+vector: spec run: --harness junit: python tests run standalone or pytest

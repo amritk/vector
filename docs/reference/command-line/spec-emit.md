@@ -2,7 +2,7 @@
 
 # vector spec emit
 
-Emit the Nish test a contract implies.
+Emit the test a contract implies.
 
 ## Usage
 
@@ -52,7 +52,19 @@ text (default), markdown (a PR comment) or json
 
 <scalar-field name="--package" type="&lt;pkg&gt;">
 
-a package of your own, &lt;name&gt;=&lt;dir&gt;: modules &lt;name&gt;/&lt;path&gt; are &lt;dir&gt;/&lt;path&gt;.ts (repeatable) May be given more than once.
+a package of your own, &lt;name&gt;=&lt;dir&gt;: modules &lt;name&gt;/&lt;path&gt; are &lt;dir&gt;/&lt;path&gt;.ts, .py in python (repeatable) May be given more than once.
+
+</scalar-field>
+
+<scalar-field name="--lang" type="&lt;id&gt;">
+
+the test's language: nish (default) or python
+
+</scalar-field>
+
+<scalar-field name="--harness" type="&lt;h&gt;">
+
+standalone (default), or the test framework the test plugs into: pytest for python
 
 </scalar-field>
 

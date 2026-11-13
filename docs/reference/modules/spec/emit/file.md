@@ -55,7 +55,7 @@ contract: Contract
 
 #### EmitFile.program
 
-The test's Nish source.
+The test's source, in the target's language.
 
 ```ts
 program: string
@@ -66,7 +66,8 @@ program: string
 Reads a contract file, checks it, and emits its test. An unreadable file,
 or a tool the check needs (z3) that failed, is a usage error (exit 2), alone
 and with no refusals; a contract that does not load, fails its check, or
-that Nish cannot express is refused (exit 1), one diagnostic per reason.
+that the target's language cannot express is refused (exit 1), one
+diagnostic per reason.
 A module `--package` maps to a file that does not exist is a usage error.
 
 ```ts
@@ -75,6 +76,7 @@ function emitContractFile(
   regenerate: string | null,
   packages: EmitPackages,
   fromDir: string,
+  target: EmitTarget,
 ): Result<EmitFile, Diagnostic[]>
 ```
 
@@ -100,6 +102,12 @@ where the modules of your own project live
 
 the directory the test will be written in, which its imports
   of those modules are relative to
+
+</scalar-field>
+
+<scalar-field name="target" type="EmitTarget" required>
+
+the language and harness to emit the test for
 
 </scalar-field>
 
@@ -158,8 +166,8 @@ the highest of their codes; 2 when there are none
 
 ### emitCommand
 
-`vector spec emit <contract.json> -o <main.ts>`: emits the contract's test
-and writes it. Exits 0 when written, 1 when the contract is refused, and 2
+`vector spec emit <contract.json> -o <test>`: emits the contract's test,
+in the language `--lang` names, and writes it. Exits 0 when written, 1 when the contract is refused, and 2
 for bad usage, a file that cannot be read or written, or a tool (z3) that
 failed.
 
@@ -168,6 +176,8 @@ function emitCommand(
   path: string,
   out: string | null,
   packageFlags: string[],
+  lang: string | null,
+  harness: string | null,
 ): i32
 ```
 
@@ -186,6 +196,18 @@ where to write the test; null is a usage error
 <scalar-field name="packageFlags" type="string[]" required>
 
 the `--package <name>=<dir>` flags' values
+
+</scalar-field>
+
+<scalar-field name="lang" type="string | null" required>
+
+the `--lang` flag, or null for nish
+
+</scalar-field>
+
+<scalar-field name="harness" type="string | null" required>
+
+the `--harness` flag, or null for the language's default
 
 </scalar-field>
 

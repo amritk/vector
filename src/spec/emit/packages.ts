@@ -4,7 +4,8 @@
  *
  * A contract names a module `<name>/<path>`; mapping the package `<name>` to
  * `<dir>` makes that the file `<dir>/<path>.ts`, which the test imports by its
- * relative path from the directory the test is written in.
+ * relative path from the directory the test is written in. A test in another
+ * language reads `<dir>/<path>` with that language's extension (`.py`).
  */
 
 import { joinPath, relativePath } from "../../core/fs"
@@ -45,13 +46,16 @@ const emitPathPartsOk = (path: string): boolean => {
 
 /**
  * Reads the `--package` flags, each `<name>=<dir>`. A name is a module path's
- * leading parts (`vector`, `acme/util`); `nish` is nish's own and cannot be
- * mapped, and no name may be given twice.
+ * leading parts (`vector`, `acme/util`), and no name may be given twice. For
+ * a Nish test `nish` is nish's own and cannot be mapped; a test in another
+ * language maps it like any package, to that language's port of nish's
+ * modules.
  *
  * @param flags the flags' values, in order
+ * @param lang the test's language
  * @returns the map, or why a flag is malformed
  */
-export const emitParsePackages = (flags: string[]): Result<EmitPackages, string> => {
+export const emitParsePackages = (flags: string[], lang: string): Result<EmitPackages, string> => {
   const m = new EmitPackages()
   for (const f of flags) {
     const eq = f.indexOf("=")
@@ -63,7 +67,7 @@ export const emitParsePackages = (flags: string[]): Result<EmitPackages, string>
     if (!emitPathPartsOk(name)) {
       return Err(`--package ${f}: ${name} is not a package name (parts joined by /, none empty, . or ..)`)
     }
-    if (name === "nish" || name.startsWith("nish/")) {
+    if (lang === "nish" && (name === "nish" || name.startsWith("nish/"))) {
       return Err(`--package ${f}: nish/ modules are nish's own; give --nish-root to test them`)
     }
     if (m.names.indexOf(name) >= 0) {
@@ -76,14 +80,15 @@ export const emitParsePackages = (flags: string[]): Result<EmitPackages, string>
 }
 
 /**
- * The file a module of your own project lives in: `<dir>/<path>.ts` for the
+ * The file a module of your own project lives in: `<dir>/<path><ext>` for the
  * longest mapped package `<name>` that the module `<name>/<path>` starts with.
  *
  * @param m the map
  * @param module a contract's module path
+ * @param ext the source file's extension in the test's language, such as `.ts`
  * @returns its file, or null when no package maps it or its path is malformed
  */
-export const emitModuleFile = (m: EmitPackages, module: string): string | null => {
+export const emitModuleFile = (m: EmitPackages, module: string, ext: string): string | null => {
   let best = -1
   for (let i = 0; i < m.names.length; i++) {
     const n = m.names[i]
@@ -98,7 +103,7 @@ export const emitModuleFile = (m: EmitPackages, module: string): string | null =
   if (!emitPathPartsOk(rest)) {
     return null
   }
-  return joinPath(m.dirs[best], `${rest}.ts`)
+  return joinPath(m.dirs[best], `${rest}${ext}`)
 }
 
 /**
@@ -121,12 +126,14 @@ export const emitContractModules = (c: Contract): string[] => {
 /**
  * Fills in how the test imports each of the contract's modules that a
  * package places: the relative path from `fromDir` to its file, without
- * `.ts`. A module no package places is left for `emitRefusals` to refuse.
+ * its extension. A module no package places is left for the emitter: Nish
+ * refuses it, and other languages import it by its module path.
  *
  * @param m the map
  * @param c the contract
  * @param fromDir the directory the test is written in; it must exist
  * @param opts where the imports go: `localModules` and `localImports`
+ * @param ext the source file's extension in the test's language, such as `.ts`
  * @returns true, or why a placed module's file or `fromDir` does not resolve
  */
 export const emitResolveModules = (
@@ -134,6 +141,7 @@ export const emitResolveModules = (
   c: Contract,
   fromDir: string,
   opts: EmitOptions,
+  ext: string,
 ): Result<boolean, string> => {
   if (m.names.length === 0) {
     return Ok(true)
@@ -143,16 +151,16 @@ export const emitResolveModules = (
     return Err(`${fromDir}: the test's directory does not exist`)
   }
   for (const mod of emitContractModules(c)) {
-    const file = emitModuleFile(m, mod)
+    const file = emitModuleFile(m, mod, ext)
     if (file === null) {
       continue
     }
     const real = realpathSync(file)
-    if (real === null || !real.endsWith(".ts")) {
+    if (real === null || !real.endsWith(ext)) {
       return Err(`${mod}: --package places it at ${file}, which does not exist`)
     }
     opts.localModules.push(mod)
-    opts.localImports.push(relativePath(from, real.substring(0, real.length - 3)))
+    opts.localImports.push(relativePath(from, real.substring(0, real.length - ext.length)))
   }
   return Ok(true)
 }

@@ -27,6 +27,7 @@ Generated from [src/spec/run/run.ts](https://github.com/amritk/vector/blob/main/
 - [`runMakeScratch`](#runmakescratch)
 - [`runTest`](#runtest)
 - [`runTestFile`](#runtestfile)
+- [`runTestCommand`](#runtestcommand)
 - [`runEscape`](#runescape)
 - [`runFormatText`](#runformattext)
 - [`runFormatMarkdown`](#runformatmarkdown)
@@ -649,6 +650,43 @@ the most milliseconds the build and run may take
 <scalar-field name="returns" type="Result&lt;RunResult, string&gt;">
 
 the result, or `Err` when the compiler could not be started
+
+</scalar-field>
+
+### runTestCommand
+
+Runs an emitted test with the command that runs it in its language, a fresh
+nonce appended as its last argument, and judges what it printed.
+
+```ts
+function runTestCommand(
+  c: Contract,
+  argv: string[],
+  timeoutMs: i32,
+): Result<RunResult, string>
+```
+
+<scalar-field name="c" type="Contract" required>
+
+the contract the test was emitted from
+
+</scalar-field>
+
+<scalar-field name="argv" type="string[]" required>
+
+the command: `nish run <file>`, `python3 <file>`, ...
+
+</scalar-field>
+
+<scalar-field name="timeoutMs" type="i32" required>
+
+the most milliseconds the build and run may take
+
+</scalar-field>
+
+<scalar-field name="returns" type="Result&lt;RunResult, string&gt;">
+
+the result, or `Err` when the command could not be started
 
 </scalar-field>
 

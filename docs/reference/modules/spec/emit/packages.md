@@ -7,7 +7,8 @@ own project live, so a test can import a module outside nish/.
 
 A contract names a module `<name>/<path>`; mapping the package `<name>` to
 `<dir>` makes that the file `<dir>/<path>.ts`, which the test imports by its
-relative path from the directory the test is written in.
+relative path from the directory the test is written in. A test in another
+language reads `<dir>/<path>` with that language's extension (`.py`).
 
 Generated from [src/spec/emit/packages.ts](https://github.com/amritk/vector/blob/main/src/spec/emit/packages.ts).
 
@@ -57,16 +58,27 @@ names: string[]
 ### emitParsePackages
 
 Reads the `--package` flags, each `<name>=<dir>`. A name is a module path's
-leading parts (`vector`, `acme/util`); `nish` is nish's own and cannot be
-mapped, and no name may be given twice.
+leading parts (`vector`, `acme/util`), and no name may be given twice. For
+a Nish test `nish` is nish's own and cannot be mapped; a test in another
+language maps it like any package, to that language's port of nish's
+modules.
 
 ```ts
-function emitParsePackages(flags: string[]): Result<EmitPackages, string>
+function emitParsePackages(
+  flags: string[],
+  lang: string,
+): Result<EmitPackages, string>
 ```
 
 <scalar-field name="flags" type="string[]" required>
 
 the flags' values, in order
+
+</scalar-field>
+
+<scalar-field name="lang" type="string" required>
+
+the test's language
 
 </scalar-field>
 
@@ -78,11 +90,15 @@ the map, or why a flag is malformed
 
 ### emitModuleFile
 
-The file a module of your own project lives in: `<dir>/<path>.ts` for the
+The file a module of your own project lives in: `<dir>/<path><ext>` for the
 longest mapped package `<name>` that the module `<name>/<path>` starts with.
 
 ```ts
-function emitModuleFile(m: EmitPackages, module: string): string | null
+function emitModuleFile(
+  m: EmitPackages,
+  module: string,
+  ext: string,
+): string | null
 ```
 
 <scalar-field name="m" type="EmitPackages" required>
@@ -94,6 +110,12 @@ the map
 <scalar-field name="module" type="string" required>
 
 a contract's module path
+
+</scalar-field>
+
+<scalar-field name="ext" type="string" required>
+
+the source file's extension in the test's language, such as `.ts`
 
 </scalar-field>
 
@@ -127,7 +149,8 @@ the module paths
 
 Fills in how the test imports each of the contract's modules that a
 package places: the relative path from `fromDir` to its file, without
-`.ts`. A module no package places is left for `emitRefusals` to refuse.
+its extension. A module no package places is left for the emitter: Nish
+refuses it, and other languages import it by its module path.
 
 ```ts
 function emitResolveModules(
@@ -135,6 +158,7 @@ function emitResolveModules(
   c: Contract,
   fromDir: string,
   opts: EmitOptions,
+  ext: string,
 ): Result<boolean, string>
 ```
 
@@ -159,6 +183,12 @@ the directory the test is written in; it must exist
 <scalar-field name="opts" type="EmitOptions" required>
 
 where the imports go: `localModules` and `localImports`
+
+</scalar-field>
+
+<scalar-field name="ext" type="string" required>
+
+the source file's extension in the test's language, such as `.ts`
 
 </scalar-field>
 

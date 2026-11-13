@@ -20,8 +20,8 @@ vector -v, --version | -h, --help
 | `vector spec` | Turn a spec into a contract and a test, and gate changes on it |
 | [`vector spec extract`](command-line/spec-extract.md) | Extract a contract from a kramdown-rfc spec's XML |
 | [`vector spec check`](command-line/spec-check.md) | Check a contract's quotes and vectors against its source |
-| [`vector spec emit`](command-line/spec-emit.md) | Emit the Nish test a contract implies |
-| [`vector spec run`](command-line/spec-run.md) | Emit a contract's Nish test and run it |
+| [`vector spec emit`](command-line/spec-emit.md) | Emit the test a contract implies |
+| [`vector spec run`](command-line/spec-run.md) | Emit a contract's test and run it |
 | [`vector spec frozen`](command-line/spec-frozen.md) | Refuse a change that edits a frozen contract |
 | [`vector spec stale`](command-line/spec-stale.md) | Refuse a generated test that no longer matches its contract |
 | [`vector spec exports`](command-line/spec-exports.md) | Refuse a new export its contract does not cover |

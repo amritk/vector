@@ -1,0 +1,1 @@
+vector spec emit contracts/vector-core-hex.json --lang cobol -o dist/emit-lang-golden.py

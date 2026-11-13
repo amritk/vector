@@ -1,0 +1,1 @@
+vector: spec emit: --lang rust: vector has no emitter for rust yet (it has: nish, python)

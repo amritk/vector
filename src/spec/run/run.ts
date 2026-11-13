@@ -618,9 +618,26 @@ export const runTest = (c: Contract, source: string, nishBin: string, timeoutMs:
  * @param timeoutMs the most milliseconds the build and run may take
  * @returns the result, or `Err` when the compiler could not be started
  */
-export const runTestFile = (c: Contract, file: string, nishBin: string, timeoutMs: i32): Result<RunResult, string> => {
+export const runTestFile = (c: Contract, file: string, nishBin: string, timeoutMs: i32): Result<RunResult, string> =>
+  runTestCommand(c, [nishBin, "run", file], timeoutMs)
+
+/**
+ * Runs an emitted test with the command that runs it in its language, a fresh
+ * nonce appended as its last argument, and judges what it printed.
+ *
+ * @param c the contract the test was emitted from
+ * @param argv the command: `nish run <file>`, `python3 <file>`, ...
+ * @param timeoutMs the most milliseconds the build and run may take
+ * @returns the result, or `Err` when the command could not be started
+ */
+export const runTestCommand = (c: Contract, argv: string[], timeoutMs: i32): Result<RunResult, string> => {
   const nonce = runNonce()
-  const p = runProcess([nishBin, "run", file, nonce], "", timeoutMs).orReturn()
+  const cmd: string[] = []
+  for (const a of argv) {
+    cmd.push(a)
+  }
+  cmd.push(nonce)
+  const p = runProcess(cmd, "", timeoutMs).orReturn()
   const out = new RunResult(c.contract, p.status, runKeepTail(p.stdout), runKeepTail(p.stderr))
   if (p.timedOut) {
     out.integrity.push(`the test did not finish within ${timeoutMs} ms`)

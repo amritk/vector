@@ -2,7 +2,7 @@
 
 # cli/spec-emit
 
-`cli/spec-emit` — `vector spec emit`: emit the Nish test a contract implies.
+`cli/spec-emit` — `vector spec emit`: emit the test a contract implies.
 
 The command itself is `emitCommand` in `spec/emit/file`; this file declares its
 flags and hands them over.
@@ -69,6 +69,22 @@ The `--format <f>` flag.
 
 ```ts
 formatFlag: i32
+```
+
+#### SpecEmitCommand.harnessFlag
+
+The `--harness <h>` flag.
+
+```ts
+harnessFlag: i32
+```
+
+#### SpecEmitCommand.langFlag
+
+The `--lang <id>` flag.
+
+```ts
+langFlag: i32
 ```
 
 #### SpecEmitCommand.nishFlag

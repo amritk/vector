@@ -2,7 +2,7 @@
 
 # cli/spec-run
 
-`cli/spec-run` — `vector spec run`: emit a contract's Nish test and run it.
+`cli/spec-run` — `vector spec run`: emit a contract's test and run it.
 
 The command itself is `runCommand` in `spec/run/command`; this file declares its
 flags and hands them over.
@@ -69,6 +69,22 @@ The `--format <f>` flag.
 
 ```ts
 formatFlag: i32
+```
+
+#### SpecRunCommand.harnessFlag
+
+The `--harness <h>` flag.
+
+```ts
+harnessFlag: i32
+```
+
+#### SpecRunCommand.langFlag
+
+The `--lang <id>` flag.
+
+```ts
+langFlag: i32
 ```
 
 #### SpecRunCommand.nishFlag

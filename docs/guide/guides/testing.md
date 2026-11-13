@@ -1,10 +1,12 @@
 # Testing an implementation
 
-A checked contract implies a Nish test: its vectors, and its properties at
+A checked contract implies a test: its vectors, and its properties at
 samples z3 chose on the domain's boundaries. `vector spec emit` writes that
-test, and `vector spec run` emits it and runs it against a nish checkout. This
-page uses the RFC 5869 contract and nish's own `std/crypto/hkdf.ts`; [From a
-spec to a contract](spec-to-contract.md) covers how the contract is made.
+test, and `vector spec run` emits it and runs it: a Nish test against a nish
+checkout, and a test in [another language](#other-languages) by its own
+tooling. This page uses the RFC 5869 contract and nish's own
+`std/crypto/hkdf.ts`; [From a spec to a contract](spec-to-contract.md)
+covers how the contract is made.
 
 ## Emit the test
 
@@ -120,6 +122,94 @@ contract with `--run-sources` and `--module`, runs `spec stale`, and reruns
 the test's regenerate command. A test that changes is left regenerated and
 reported, so a change to the emitter shows up in a diff of the tests it
 writes.
+
+## Other languages
+
+A contract is not tied to Nish: the same checks run against a port of the
+module in another language. `--lang <id>` picks the language the test is
+written in, and `--harness <h>` the framework that runs it:
+
+| Language | `--lang` | Harnesses | Runs with |
+| --- | --- | --- | --- |
+| Nish | `nish` (the default) | `standalone` | the nish root (see [Run it](#run-it)) |
+| Python | `python` | `standalone` (the default), `pytest` | `VECTOR_PYTHON`, else `python3` |
+
+The other languages vector has a naming table for (`rust`, `ruby`, `zig`,
+`go`, `cpp`, `csharp`, `c`, `java`, `kotlin`, `typescript`, `php`, `swift`
+and `dart`) have no emitter yet, and `--lang` says so (exit 2):
+
+<!-- exit 2 -->
+```sh
+./dist/vector spec emit contracts/vector-core-hex.json --lang rust -o hex_test.rs
+```
+
+```text
+vector: spec emit: --lang rust: vector has no emitter for rust yet (it has: nish, python)
+```
+
+A function is called by its name in the language, from the contract's
+language table: a contract's `toHex` is Python's `to_hex`, unless the contract
+names it for Python itself. A name the language cannot use, such as a
+keyword, or two functions that would share one name, is refused (exit 1).
+
+`--package <name>=<dir>` places modules the same way, with the language's
+extension: `vector/core/hex` is `<dir>/core/hex.py`, loaded by its path
+relative to the test. A `nish/` module has no Python file of its own, so a
+Python port of one is mapped like any package. `tests/fixtures/python/`
+holds the ports vector checks its Python tests against:
+
+```sh
+./dist/vector spec run contracts/vector-core-hex.json --lang python --package vector=tests/fixtures/python/vector
+```
+
+```text
+SATISFIED: vector-core-hex (exit 0)
+  pass  R-HEX-LEN
+  pass  R-HEX-DIGITS
+  pass  R-SHA256
+```
+
+A Python test needs no nish root. vector runs it with `python3 -B`, so it
+writes no bytecode beside your modules; set `VECTOR_PYTHON` to run it with
+another interpreter. The verdict, the transcript and its `vector-done` line
+are the same as a Nish test's, and so are its failures:
+
+<!-- exit 1 -->
+```sh
+./dist/vector spec run contracts/vector-core-hex.json --lang python --package vector=tests/fixtures/python/broken/vector
+```
+
+```text
+VIOLATED: vector-core-hex (exit 1)
+  fail  R-HEX-LEN
+  fail  R-HEX-DIGITS
+  pass  R-SHA256
+FAIL  [V2] every nibble boundary, high nibble first, lowercase (R-HEX-LEN, R-HEX-DIGITS)
+      expected "000f10ff", got "000F10FF"
+…
+```
+
+Every test is a standalone program, which is how `spec run` runs it. With
+`--harness pytest` the file also holds a `test_<clause>` function for each
+clause, so pytest collects it with the rest of your suite, and a failing
+clause fails with the same detail the transcript prints:
+
+```sh
+./dist/vector spec emit contracts/vector-core-hex.json --lang python --harness pytest --package vector=src/py -o tests/test_hex.py
+pytest tests/test_hex.py
+```
+
+The regenerate line in the test's header keeps `--lang` and `--harness`
+when they are not the defaults. A harness the language has not is bad usage:
+
+<!-- exit 2 -->
+```sh
+./dist/vector spec run contracts/vector-core-hex.json --lang python --harness junit
+```
+
+```text
+vector: spec run: --harness junit: python tests run standalone or pytest
+```
 
 ## Run it
 

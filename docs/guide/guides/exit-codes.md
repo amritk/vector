@@ -22,7 +22,7 @@ output: `vector spec check … | tail` exits with `tail`'s status, 0.
 | `spec extract` | written, or up to date with `--check` | refusals, or a difference with `--check` | bad usage, an unreadable file, a missing RFC, a z3 failure |
 | `spec check` | `CONTRACT_VALID` | `INVALID` | bad usage, an unreadable file, a missing RFC, a z3 failure |
 | `spec emit` | written | the contract does not check | bad usage, an unwritable `-o`, a z3 failure |
-| `spec run` | `SATISFIED` | `VIOLATED`, `ERROR`, or the contract does not check | bad usage, no nish, a z3 failure |
+| `spec run` | `SATISFIED` | `VIOLATED`, `ERROR`, or the contract does not check | bad usage, no nish for a Nish test, a z3 failure |
 | `spec frozen` | OK | both sides touched, or a source changed | bad usage, a git failure |
 | `spec stale` | OK | stale, or no marker line | bad usage, an unreadable file |
 | `spec exports` | OK | an export the contract does not cover | bad usage (`--nish-root` is required), a git failure |
