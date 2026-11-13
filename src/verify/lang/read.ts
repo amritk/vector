@@ -486,8 +486,8 @@ class LangReader {
       const where = this.whereOf(u, "units", i)
       this.extras(u, ["name", "layer", "purpose", "params", "returnType", "relevantAxiomIds"], where)
       this.header(u, where)
-      this.params(this.doc.get(u, "params"), `${where}/params`)
-      const unit = new PlanUnit(this.str(u, "name") ?? "")
+      const unit = new PlanUnit(this.str(u, "name") ?? "", this.layer(u), this.str(u, "returnType") ?? "")
+      unit.params = this.params(this.doc.get(u, "params"), `${where}/params`)
       const ids = this.doc.get(u, "relevantAxiomIds")
       let ok = this.doc.kind(ids) === JSON_VALUE_ARRAY
       if (ok) {

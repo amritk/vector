@@ -1,13 +1,23 @@
 /**
  * `cli/verify` — `vector verify`: prove a program meets its spec plan.
  *
- * The handler reads both files, checks their shape, and reports every error.
+ * The handler reads both files and runs the whole gate (`verify/verify`).
+ * PROVEN exits 0; REFUTED, UNKNOWN and INVALID exit 1; a z3 failure exits 2.
+ * `--emit` writes the TypeScript only when the program is proven.
  */
 
 import { Cli, ParseResult } from "nish/cli-args"
-import { EXIT_PASS, EXIT_REFUSED, report, usageError } from "../core/diag"
+import { EXIT_PASS, EXIT_REFUSED, EXIT_USAGE, report, usageError } from "../core/diag"
 import { newJsonDocument, readJsonFile } from "../core/json"
-import { readProgram, readSpecPlan } from "../verify/lang/read"
+import { outJsonRender } from "../verify/emit/outjson"
+import {
+  OUTCOME_ERROR,
+  OUTCOME_INVALID,
+  OUTCOME_PROVEN,
+  VerifyOutcome,
+  verifyOutcomeJson,
+  verifySpecAndProgram,
+} from "../verify/verify"
 
 /** The id `vector verify` is parsed to. */
 export const VERIFY_ID: i32 = 1
@@ -56,18 +66,70 @@ export class VerifyCommand {
     if (programRoot.isErr()) {
       return report(usageError(`verify: ${programRoot.error}`))
     }
-    const errors: string[] = []
-    readSpecPlan(specDoc, specRoot.value, errors)
-    readProgram(programDoc, programRoot.value, errors)
-    if (errors.length > 0) {
-      console.error("Validation failed:")
-      for (const e of errors) {
-        console.error(`  ✘ ${e}`)
+    const outcome = verifySpecAndProgram(
+      specDoc,
+      specRoot.value,
+      programDoc,
+      programRoot.value,
+      `verify: ${programPath}`,
+    )
+    const emitPath = r.value(this.emitFlag) ?? ""
+    if (outcome.status === OUTCOME_PROVEN && emitPath !== "") {
+      const written = writeFileSyncMode(emitPath, outcome.emittedCode, 0o644)
+      if (written < 0) {
+        return report(usageError(`verify: ${emitPath}: cannot write file (errno ${-written})`))
       }
-      return EXIT_REFUSED
     }
-    return EXIT_PASS
+    if (r.flag(this.jsonFlag)) {
+      console.log(outJsonRender(verifyOutcomeJson(outcome)))
+    } else {
+      verifyPrintText(outcome, emitPath)
+    }
+    if (outcome.status === OUTCOME_PROVEN) {
+      return EXIT_PASS
+    }
+    if (outcome.status === OUTCOME_ERROR) {
+      return EXIT_USAGE
+    }
+    return EXIT_REFUSED
   }
+}
+
+const verifyPrintStyle = (outcome: VerifyOutcome): void => {
+  if (outcome.styleWarnings.length === 0) {
+    return
+  }
+  console.log("\n── STYLE (advisory — does not affect the proof) ───────────────────\n")
+  for (const w of outcome.styleWarnings) {
+    console.log(`  ⚠ ${w.fn} ${w.axiomId}: ${w.property}`)
+    console.log(`    ${w.hint}\n`)
+  }
+}
+
+const verifyPrintText = (outcome: VerifyOutcome, emitPath: string): void => {
+  if (outcome.status === OUTCOME_INVALID) {
+    console.error("Validation failed:")
+    for (const e of outcome.errors) {
+      console.error(`  ✘ ${e}`)
+    }
+    return
+  }
+  if (outcome.status === OUTCOME_ERROR) {
+    console.error(`Solver error: ${outcome.message}`)
+    return
+  }
+  console.log(outcome.dashboard)
+  verifyPrintStyle(outcome)
+  if (outcome.status === OUTCOME_PROVEN) {
+    console.log("\n── EMITTED TYPESCRIPT ─────────────────────────────────────────────\n")
+    console.log(outcome.emittedCode)
+    if (emitPath !== "") {
+      console.log(`(written to ${emitPath})`)
+    }
+    return
+  }
+  console.log("\n── FEEDBACK (repair and re-verify) ────────────────────\n")
+  console.log(outcome.feedback)
 }
 
 /**

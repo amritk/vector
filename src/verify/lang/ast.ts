@@ -177,16 +177,27 @@ export class Axiom {
 export class PlanUnit {
   /** The function's name. */
   name: string
+  /** Its planned layer. */
+  layer: i32
+  /** Its planned parameters. */
+  params: Param[]
+  /** Its planned return type. */
+  returnType: string
   /** The axioms it must enforce. */
   relevantAxiomIds: string[]
 
   /**
-   * Makes a planned unit.
+   * Makes a planned unit with no parameters or axioms; the reader fills them in.
    *
    * @param name the function's name
+   * @param layer its layer
+   * @param returnType `Real`, `Int` or `Bool`
    */
-  constructor(name: string) {
+  constructor(name: string, layer: i32, returnType: string) {
     this.name = name
+    this.layer = layer
+    this.params = []
+    this.returnType = returnType
     this.relevantAxiomIds = []
   }
 }
