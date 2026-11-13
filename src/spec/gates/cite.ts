@@ -9,7 +9,7 @@ import { jsonStringifyString } from "nish/json"
 import { CheckContext } from "../check"
 import { Citation, Clause, Contract, FnSig } from "../contract/types"
 import { hiddenText } from "../source/hidden"
-import { LoadedSource, SourceSet, sourceFind, sourceLoad } from "../source/load"
+import { LoadedSource, SourceSet, sourceFind, sourceLoadWith } from "../source/load"
 import { RfcSection, rfcNormalize, rfcSection, rfcSectionText } from "../source/rfc"
 import { gateIssue } from "./note"
 
@@ -28,7 +28,7 @@ export const gateSources = (ctx: CheckContext, out: string[], gate: string): Sou
   if (have !== null) {
     return have
   }
-  const set = sourceLoad(ctx.contract, ctx.contractPath, ctx.root)
+  const set = sourceLoadWith(ctx.contract, ctx.contractPath, ctx.root, ctx.readers)
   for (const p of set.problems) {
     gateIssue(ctx, out, gate, "sources", `${p}, so nothing citing it can be checked`)
   }

@@ -8,9 +8,10 @@
  * subsection for a quote of its own. Every value of a cited vector is
  * printed whole in its section, under the label the contract gives it, and
  * all of them as one test case: on one line, or from one round of repeated
- * labels, with the expected value not also an input. A value printed for one
- * of several variants ("HMAC-SHA-256" beside "HMAC-SHA-512") must be the one
- * the called function names. An expected null, true or false must be stated
+ * labels, with the expected value not also an input. A byte list such as
+ * `[00 0f f0 ff]` is a whole printed value, as `hexEncode([00 0f f0 ff])`
+ * prints one. A value printed for one of several variants ("HMAC-SHA-256"
+ * beside "HMAC-SHA-512") must be the one the called function names. An expected null, true or false must be stated
  * by a covered requirement (gateStatesResult).
  */
 
@@ -25,7 +26,7 @@ import { HexValue, RfcSection, rfcHexValues, rfcNormalize, rfcSectionText } from
 import { gateArgsAt, gateCitedSection, gatePlace, gateQuoteMissing, gateSources } from "./cite"
 import { gateIssue, gateWarn } from "./note"
 import { gateResultWord, gateStatesResult } from "./result"
-import { gateF64Printed, gateIntLabelCount, gateIntRounds, gateLines, gateTextLines } from "./text"
+import { gateByteLists, gateF64Printed, gateIntLabelCount, gateIntRounds, gateLines, gateTextLines } from "./text"
 
 /** Where one literal of a vector was found: under a label, or on lines. */
 class GateBound {
@@ -69,6 +70,11 @@ class GateLits {
     this.where = where
     this.inSection = `${where} ("${sec.title}")`
     this.values = rfcHexValues(sec)
+    for (const line of sec.lines) {
+      for (const hex of gateByteLists(line)) {
+        this.values.push(new HexValue(hex, null))
+      }
+    }
     this.text = rfcSectionText(sec)
     this.lines = gateLines(sec.lines)
     this.bounds = []
