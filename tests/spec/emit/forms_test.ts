@@ -171,7 +171,7 @@ const formsWithout = (t: Suite, c: Contract): void => {
   t.ok("example-hex emits", plain.isOk())
   t.ok("no % means no remI32", text.indexOf("remI32") < 0)
   t.ok("no secret means no nish:secret", text.indexOf("nish:secret") < 0)
-  t.ok("no i64 + means no nish:unsafe", text.indexOf("nish:unsafe") < 0)
+  t.ok("no sampled + - * means no nish:unsafe", text.indexOf("nish:unsafe") < 0)
 
   c.clauses[0].id = "P-a"
   c.clauses[1].id = "P_a"
