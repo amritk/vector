@@ -55,7 +55,7 @@ the **numeric core**, offer that core, and don't force the rest through.
 3. **Verify (the veto).** Run:
 
    ```bash
-   bun run vector --verify /tmp/vector-spec.json /tmp/vector-program.json --json
+   vector verify /tmp/vector-spec.json /tmp/vector-program.json --json
    ```
 
    No API key is needed — this stage is pure Z3 + validators. Parse the JSON
@@ -63,7 +63,7 @@ the **numeric core**, offer that core, and don't force the rest through.
 
    - **`PROVEN`** → success. The result carries `dashboard` and `emittedCode`.
      Show the user the dashboard and the proven TypeScript (or write it out with
-     `--emit <file>` in a non-`--json` run). Done.
+     `--emit <file>`, which works with or without `--json`). Done.
    - **`REFUTED` / `UNKNOWN`** → read `feedback` and `items[]` (each has the
      `function`, `axiomId`, `property`, `issue`, a concrete `counterexample`,
      and a `hint`). Repair the **program** minimally — keep every clause that
@@ -74,6 +74,11 @@ the **numeric core**, offer that core, and don't force the rest through.
      sometimes the spec — and re-verify. This costs no solver time.
    - **`ERROR`** → solver infrastructure failure (`message`). Report it; don't
      loop.
+
+   The exit status agrees: `0` only for `PROVEN`; `1` for `REFUTED`,
+   `UNKNOWN`, `INVALID` and `ERROR`, so a script never mistakes an
+   unverified run for a pass; `2` for bad usage, an unreadable input file, or
+   an `--emit` file that cannot be written.
 
 4. **Bound the retries.** Give up after ~4 repair attempts and report the last
    `feedback` honestly rather than presenting unproven code. If Z3 keeps
@@ -87,24 +92,40 @@ already has a proven `program.json`, don't make them re-review — prove the
 regeneration behavior-preserving:
 
 ```bash
-bun run vector --diff <old-program.json> <new-program.json> --json
+vector diff <old-program.json> <new-program.json> --json
 ```
 
-- **`EQUIVALENT`** → report that behavior is provably unchanged for all
-  inputs; nothing to review.
+- **`EQUIVALENT`** → report that every shared function was proven equal over
+  exact rationals, then agreed on every sampled float64 input, assuming both
+  versions pass `vector verify`. Float64 agreement is sampled, not proven.
+  A pair whose versions share no input over the reals (`"vacuous": true` in
+  the JSON) is EQUIVALENT with nothing run in float64; that rests entirely on
+  both versions passing `vector verify`, so say so.
 - **`DIFFERENT`** → relay each witness verbatim (input → old vs new result;
-  domain narrowed/widened; removed functions; signature changes) and confirm
-  the deltas match what the user intended. The witnesses are the entire
-  behavioral change — never summarize them away.
-- **`UNDECIDED`** → equivalence wasn't proven (usually nonlinear arithmetic);
-  restate the bodies linearly and re-run. Do not report it as equivalent.
+  domain narrowed/widened; float64 deltas, where a pair equal over the reals
+  returns different doubles or throws in one version only; removed functions;
+  signature changes) and confirm the deltas match what the user intended. The
+  witnesses are the entire behavioral change — never summarize them away.
+- **`UNDECIDED`** → equivalence wasn't proven: z3 answered unknown (usually
+  nonlinear arithmetic; restate the bodies linearly and re-run), or a pair is
+  equal over the reals but no float64 input in the shared domain could be run
+  (`float64Unsampled` in the JSON; the domain is too thin for any double, so
+  test inside it by hand). Do not report it as equivalent. Each entry of
+  `matched` in the JSON carries its own `status`, with float64 folded in;
+  `equivalentOverReals` is the rational result alone.
+
+Float64 results compare as `Object.is` does: `NaN` equals `NaN`, and `-0`
+differs from `0`, so `-x` and `0 - x` differ at `x = 0`.
+
+`vector diff` exits `0` for `EQUIVALENT`, `1` for `DIFFERENT` or `UNDECIDED`,
+and `2` for `INVALID`, `ERROR`, bad usage or an unreadable file.
 
 ## Contract style (advisory)
 
-`--verify` may return `styleWarnings` for **definitional** ensures —
+`vector verify` may return `styleWarnings` for **definitional** ensures —
 `result == <formula>`, the algorithm restated as spec. Prefer property-shaped
 axioms the user could have written in a ticket (bounds, monotonicity,
-conservation, error behavior) and let `--diff` carry behavior between
+conservation, error behavior) and let `vector diff` carry behavior between
 regenerations; keep a definitional clause only when the formula itself is the
 requirement (a regulated fee, a fixed published rate). Warnings never block a
 proof — surface them to the user instead of silently rewriting the spec.
@@ -115,6 +136,10 @@ proof — surface them to the user instead of silently rewriting the spec.
   entire point of vector.
 - **Never edit the engine to make a proof pass.** If something can't be proven,
   the spec or the program is wrong, not the solver.
+- **Division and call hazards are checked conservatively.** Only an `ite`
+  narrows the path a hazard is checked on; `and`, `or` and `implies` do not,
+  even though the emitted code short-circuits. So `x != 0 and 1 / x > 0` is
+  reported as a division hazard: guard with an `ite` or a `requires` instead.
 - **Never force a proof through by tightening `requires`.** Contradictory
   preconditions are caught as *vacuous*; a `PROVEN` over an empty input region
   proves nothing.
@@ -130,10 +155,14 @@ proof — surface them to the user instead of silently rewriting the spec.
 For a rendered dashboard + emitted file instead of machine JSON:
 
 ```bash
-bun run vector --verify /tmp/vector-spec.json /tmp/vector-program.json --emit converter.ts
+vector verify /tmp/vector-spec.json /tmp/vector-program.json --emit converter.ts
 ```
+
+`--emit` writes the file only when the status is `PROVEN`. On any other
+status it writes nothing, and an existing file at that path is left exactly as
+it was, so a previously proven file is never replaced by unproven code.
 
 ## Reference example
 
-`test/fixtures/currency-spec.json` + `test/fixtures/currency.json` are a spec +
+`tests/fixtures/currency-spec.json` + `tests/fixtures/currency.json` are a spec +
 program pair that proves clean — mirror their structure for a first artifact.

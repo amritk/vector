@@ -1,0 +1,12 @@
+── VECTOR DIFF ─────────────────────────────────────────
+ old: diffcase   new: diffcase
+ Solver: Z3 4.16.0 (native)
+ Status: UNDECIDED
+
+ ? f(x: Real): Real — equal over the reals, but UNDECIDED in float64
+     float64: no sampled input reached the shared domain; nothing was compared
+
+ No difference was found, but equivalence was not proven.
+ - No float64 sample reached a shared domain; test inside it by hand.
+ (Proven over exact rationals, then compared on sampled float64 inputs;
+  assumes both versions pass vector verify.)

@@ -2,7 +2,7 @@
 
 This is the knowledge vector's two LLM roles used to carry before they became
 *you*. When the skill runs, you play both roles; the deterministic engine
-(`vector --verify`) plays the theorem prover. Read this once, then emit the two JSON
+(`vector verify`) plays the theorem prover. Read this once, then emit the two JSON
 artifacts. The authoritative shapes are `schemas/spec-plan.json` and
 `schemas/program.json` — this manual is the intent behind them.
 
@@ -82,7 +82,7 @@ clauses, or refuted with a concrete counterexample.
 
 ## Repairing on feedback
 
-`vector --verify … --json` returns `status` plus, when not PROVEN, a `feedback`
+`vector verify … --json` returns `status` plus, when not PROVEN, a `feedback`
 string and a structured `items[]` array. Each item names the `function`, the
 `axiomId`, the `property`, the `issue`, an optional `counterexample`, and a
 `hint`. The `issue` is one of:
@@ -114,5 +114,5 @@ SpecPlan axioms: `AX1` pre (`amount >= 0`), `AX2` post
 `applyRate(amount, rate)` with `AX-RATE` pre (`rate > 0`) and `AX2a` post
 (`result == amount * rate`). Two units: `applyRate` (layer 1) and `usdToEur`
 (layer 2) calling it with the literal rate `"0.91"`. See
-`test/fixtures/currency-spec.json` and `test/fixtures/currency.json` for the
+`tests/fixtures/currency-spec.json` and `tests/fixtures/currency.json` for the
 exact JSON that proves.

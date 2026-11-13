@@ -1,0 +1,1 @@
+vector diff tests/fixtures/currency.json tests/fixtures/currency-spec.json

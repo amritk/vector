@@ -1,0 +1,21 @@
+── VECTOR DIFF ─────────────────────────────────────────
+ old: usd_to_eur_converter   new: usd_to_eur_converter
+ Solver: Z3 4.16.0 (native)
+ Status: DIFFERENT
+
+ ✓ applyRate(value: Real, rate: Real): Real — EQUIVALENT for all inputs
+     note:   param renamed amount → value
+     contract: + ensures result == value * rate
+     contract: − ensures result == amount * rate
+ ✘ usdToEur(amount: Real): Real — BEHAVIOR DIFFERS
+     value:  at amount = 100 → old = 91, new = 92
+     domain: amount = 0 was accepted, now REJECTED
+     contract: + requires amount > 0
+     contract: − requires amount >= 0
+     contract: + ensures result == amount * 0.92
+     contract: − ensures result == amount * 0.91
+
+ Review each listed delta against the change you intended —
+ the witnesses above are the entire behavioral change.
+ (Proven over exact rationals, then compared on sampled float64 inputs;
+  assumes both versions pass vector verify.)

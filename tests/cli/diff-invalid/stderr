@@ -1,0 +1,4 @@
+Validation failed:
+  ✘ new program: program: unknown property "axioms"
+  ✘ new program: program: unknown property "units"
+  ✘ new program: functions must be a non-empty array
