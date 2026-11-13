@@ -11,7 +11,7 @@ jobs:
   conventional:
     runs-on: ubuntu-latest
     steps:
-      - name: The title is a conventional commit, `type(scope): imperative`
+      - name: 'The title is a conventional commit, `type(scope): imperative`'
         env:
           TITLE: ${{ github.event.pull_request.title }}
         run: |
