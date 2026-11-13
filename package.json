@@ -1,30 +1,22 @@
 {
   "name": "vector",
   "version": "0.1.0",
-  "description": "vector — a deterministic judge: prove a spec plan and program with Z3 and emit TypeScript, and check implementations against spec and RFC contracts. It never calls a model; authoring is done in Claude Code.",
+  "description": "vector — a deterministic judge: prove a spec plan and program with Z3, and check implementations against spec and RFC contracts. Written in Nish; it never calls a model.",
   "license": "MIT",
+  "private": true,
   "type": "module",
-  "main": "src/verify.ts",
-  "bin": {
-    "vector": "./src/cli.ts"
-  },
   "scripts": {
-    "vector": "bun src/cli.ts",
-    "dev": "bun src/cli.ts",
-    "build": "bun scripts/build-binary.ts",
-    "fetch-z3": "bun scripts/fetch-z3.ts",
-    "typecheck": "tsc --noEmit",
-    "test": "bun test",
-    "coverage": "bun scripts/coverage.ts",
-    "generate:schemas": "mjst --schema-dir schemas --out-dir src/generated --strict",
-    "format": "biome check . --write",
-    "lint": "biome check ."
+    "fetch-nish": "bash scripts/fetch-nish.sh",
+    "fetch-z3": "bash scripts/fetch-z3.sh",
+    "build": "mkdir -p dist && .nish/bin/nish src/main.ts --link dist/vector",
+    "test": "node tests/run.mjs",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "tested-exports": "node scripts/tested-exports.mjs"
   },
   "devDependencies": {
-    "@amritk/helpers": "^0.12.0",
-    "@amritk/mjst": "^0.9.0",
-    "@biomejs/biome": "^1.8.3",
-    "bun-types": "^1.1.6",
-    "typescript": "^5.5.3"
+    "@biomejs/biome": "1.8.3",
+    "typedoc": "0.28.20",
+    "typescript": "5.9.3"
   }
 }

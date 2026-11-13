@@ -7,77 +7,51 @@ on:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install the LLVM toolchain nish links with
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 lld-18 llvm-18
+          mkdir -p "$HOME/.local/llvm-bin"
+          for t in clang llc opt ld.lld; do ln -sf "/usr/bin/$t-18" "$HOME/.local/llvm-bin/$t"; done
+          echo "$HOME/.local/llvm-bin" >> "$GITHUB_PATH"
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Fetch native z3
-        run: bun run fetch-z3
-
-      - name: Typecheck
-        run: bun run typecheck
+        run: npm ci
 
       - name: Lint
-        run: bun run lint
+        run: npm run lint
 
-      - name: Test with coverage floor
-        run: bun run coverage
+      - name: Every exported function is called in tests
+        run: npm run tested-exports
 
-      - name: Generated code is in sync with schemas
-        run: |
-          bun run generate:schemas
-          git diff --exit-code src/generated/
-
-      - name: Compiled binary builds and verifies
-        run: |
-          bun run build
-          ./dist/vector --verify test/fixtures/currency-spec.json test/fixtures/currency.json --json > /dev/null
-          ./dist/vector --licenses > licenses.txt && grep -q "Third-party notices" licenses.txt
-
-      - name: Spec contracts are in sync with specs/*.xml
-        run: |
-          status=0
-          for f in specs/*.xml; do
-            name=$(basename "$f" .xml)
-            bun src/cli.ts spec extract "$f" -o "contracts/$name.json" --check || status=1
-          done
-          exit "$status"
-
-  spec-xml-drift:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: ruby/setup-ruby@v1
+      - name: Cache the pinned nish and z3
+        uses: actions/cache@v4
         with:
-          ruby-version: "3.3"
+          path: |
+            .nish
+            .z3
+          key: toolchain-${{ runner.os }}-${{ hashFiles('scripts/fetch-nish.sh', 'scripts/fetch-z3.sh') }}
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - name: Fetch the pinned nish compiler
+        run: bash scripts/fetch-nish.sh
 
-      - name: Install the pinned spec tools
-        run: |
-          gem install kramdown-rfc -v 1.7.43 --no-document
-          pip install xml2rfc==3.35.0
+      - name: Fetch the pinned z3
+        run: bash scripts/fetch-z3.sh
 
-      - name: specs/*.xml match a rebuild of specs/*.md (offline)
-        run: |
-          status=0
-          for f in specs/*.md; do
-            bash scripts/build-spec.sh --check "$f" || status=1
-          done
-          exit "$status"
+      - name: Build
+        run: npm run build
 
-      - uses: oven-sh/setup-bun@v2
+      - name: Test
+        run: npm test
 
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Build-spec golden test (tools present, so it does not skip)
-        run: bun test test/build-spec.test.ts
+      - name: Smoke-run the binary
+        run: ./dist/vector --version

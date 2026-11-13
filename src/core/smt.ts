@@ -1,0 +1,353 @@
+/**
+ * `core/smt` — reading what z3 prints: s-expressions, the numerals in a model,
+ * and a whole run's output split into one answer per query by the
+ * `(echo "@@Q<i>")` markers the script writes before each `(check-sat)`.
+ */
+
+import { indexOfAny, trim } from "nish/text"
+
+/** One s-expression: an atom, or a list of s-expressions. */
+export class Sexp {
+  /** The atom's text; empty for a list. */
+  atom: string
+  /** Whether this is a list rather than an atom. */
+  isList: boolean
+  /** The list's items; empty for an atom. */
+  items: Sexp[]
+
+  /**
+   * Makes an s-expression; `sexpAtom` and `sexpList` are the usual way.
+   *
+   * @param atom the atom's text, or "" for a list
+   * @param isList whether this is a list
+   * @param items the list's items
+   */
+  constructor(atom: string, isList: boolean, items: Sexp[]) {
+    this.atom = atom
+    this.isList = isList
+    this.items = items
+  }
+}
+
+const smtIsSpace = (c: i32): boolean => c === 32 || c === 9 || c === 10 || c === 13
+
+// Splits SMT-LIB2 text into `(`, `)` and atoms. A string literal ("…", with
+// `""` for a quote inside it) and a quoted symbol (|…|) are each one atom,
+// delimiters kept, so a paren inside either does not count. A `;` comment runs
+// to the end of the line and is dropped. An unclosed string or quoted symbol
+// runs to the end of the text.
+const smtTokens = (text: string): string[] => {
+  const out: string[] = []
+  const n = toI32(text.length)
+  let i = 0
+  while (i < n) {
+    const c = text.charCodeAt(i)
+    if (smtIsSpace(c)) {
+      i = i + 1
+    } else if (c === 59) {
+      while (i < n && text.charCodeAt(i) !== 10) {
+        i = i + 1
+      }
+    } else if (c === 40 || c === 41) {
+      out.push(text.slice(i, i + 1))
+      i = i + 1
+    } else if (c === 34) {
+      const start = i
+      i = i + 1
+      while (i < n) {
+        if (text.charCodeAt(i) === 34) {
+          if (i + 1 < n && text.charCodeAt(i + 1) === 34) {
+            i = i + 2
+            continue
+          }
+          i = i + 1
+          break
+        }
+        i = i + 1
+      }
+      out.push(text.slice(start, i))
+    } else if (c === 124) {
+      const start = i
+      i = i + 1
+      while (i < n && text.charCodeAt(i) !== 124) {
+        i = i + 1
+      }
+      i = Math.min(i + 1, n)
+      out.push(text.slice(start, i))
+    } else {
+      const start = i
+      while (i < n) {
+        const d = text.charCodeAt(i)
+        if (smtIsSpace(d) || d === 40 || d === 41 || d === 34 || d === 124 || d === 59) break
+        i = i + 1
+      }
+      out.push(text.slice(start, i))
+    }
+  }
+  return out
+}
+
+class SmtReader {
+  tokens: string[]
+  pos: i32
+
+  constructor(tokens: string[]) {
+    this.tokens = tokens
+    this.pos = 0
+  }
+
+  read(): Sexp | null {
+    if (this.pos >= toI32(this.tokens.length)) {
+      return null
+    }
+    const tok = this.tokens[this.pos]
+    this.pos = this.pos + 1
+    if (tok === ")") {
+      return null
+    }
+    if (tok !== "(") {
+      return new Sexp(tok, false, [])
+    }
+    const items: Sexp[] = []
+    while (this.pos < toI32(this.tokens.length) && this.tokens[this.pos] !== ")") {
+      const child = this.read()
+      if (child === null) {
+        return null
+      }
+      items.push(child)
+    }
+    if (this.pos >= toI32(this.tokens.length)) {
+      return null
+    }
+    this.pos = this.pos + 1
+    return new Sexp("", true, items)
+  }
+}
+
+/**
+ * Parses the first complete s-expression in `text`.
+ *
+ * @param text z3 output, such as a `get-value` answer
+ * @returns the s-expression, or null when the text is empty, truncated or unbalanced
+ */
+export const parseSexp = (text: string): Sexp | null => new SmtReader(smtTokens(text)).read()
+
+/**
+ * Canonicalizes an atomic numeral: `3.0` becomes `3`; anything else is returned trimmed.
+ *
+ * @param value one atom of z3 output
+ * @returns the canonical text
+ */
+export const normalizeValue = (value: string): string => {
+  const v = trim(value)
+  const dot = toI32(v.indexOf("."))
+  if (dot <= 0) {
+    return v
+  }
+  let i = v.charCodeAt(0) === 45 ? 1 : 0
+  if (i === dot) {
+    return v
+  }
+  while (i < dot) {
+    const c = v.charCodeAt(i)
+    if (c < 48 || c > 57) {
+      return v
+    }
+    i = i + 1
+  }
+  let j = dot + 1
+  if (j === toI32(v.length)) {
+    return v
+  }
+  while (j < toI32(v.length)) {
+    if (v.charCodeAt(j) !== 48) {
+      return v
+    }
+    j = j + 1
+  }
+  return v.slice(0, dot)
+}
+
+/**
+ * Renders a model value the way vector shows it: `(- x)` as `-x`, `(/ a b)`
+ * as `a/b`, integral reals without `.0`, and anything else (a `root-obj`) as
+ * its text.
+ *
+ * @param v a value from a `get-value` answer
+ * @returns the rendered value
+ */
+export const renderSexp = (v: Sexp): string => {
+  if (!v.isList) {
+    return normalizeValue(v.atom)
+  }
+  if (v.items.length === 2 && !v.items[0].isList && v.items[0].atom === "-") {
+    return `-${renderSexp(v.items[1])}`
+  }
+  if (v.items.length === 3 && !v.items[0].isList && v.items[0].atom === "/") {
+    return `${renderSexp(v.items[1])}/${renderSexp(v.items[2])}`
+  }
+  const parts: string[] = []
+  for (const item of v.items) {
+    parts.push(renderSexp(item))
+  }
+  return `(${parts.join(" ")})`
+}
+
+const smtIsIdentifier = (s: string): boolean => {
+  if (s.length === 0) {
+    return false
+  }
+  for (let i = 0; i < toI32(s.length); i++) {
+    const c = s.charCodeAt(i)
+    const letter = (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95
+    if (!letter && !(i > 0 && c >= 48 && c <= 57)) {
+      return false
+    }
+  }
+  return true
+}
+
+/** z3's verdict on one query, and the model when it is `sat`. */
+export class QueryAnswer {
+  /** `sat`, `unsat` or `unknown`. */
+  result: string
+  /** The model's variable names, in the order z3 printed them. */
+  names: string[]
+  /** The rendered value of each name, at the same index. */
+  values: string[]
+
+  /**
+   * Makes an answer with an empty model.
+   *
+   * @param result `sat`, `unsat` or `unknown`
+   */
+  constructor(result: string) {
+    this.result = result
+    this.names = []
+    this.values = []
+  }
+
+  /**
+   * The model's value for a variable.
+   *
+   * @param name the variable
+   * @returns its rendered value, or null when the model does not name it
+   */
+  value(name: string): string | null {
+    const i = toI32(this.names.indexOf(name))
+    return i < 0 ? null : this.values[i]
+  }
+}
+
+/**
+ * Reads a `get-value` answer, `((x 0.0) (y (/ 1 2)))`, into `answer`'s model.
+ * Only names in `[A-Za-z_][A-Za-z0-9_]*` are read: any other pair, such as a
+ * `|quoted name|`, is skipped without a word, so a caller must mangle its
+ * variable names into that alphabet.
+ *
+ * @param answer the answer to fill
+ * @param text the text after the verdict line
+ * @returns how many variables were read
+ */
+export const parseModel = (answer: QueryAnswer, text: string): i32 => {
+  const sexp = parseSexp(text)
+  if (sexp === null || !sexp.isList) {
+    return 0
+  }
+  let count = 0
+  for (const pair of sexp.items) {
+    if (pair.isList && pair.items.length === 2 && !pair.items[0].isList && smtIsIdentifier(pair.items[0].atom)) {
+      answer.names.push(pair.items[0].atom)
+      answer.values.push(renderSexp(pair.items[1]))
+      count = count + 1
+    }
+  }
+  return count
+}
+
+// The next `@@Q` at the start of a line, so that text inside a model value or
+// an error message is never read as a marker.
+const smtMarker = (stdout: string, from: i32): i32 => {
+  const n = toI32(stdout.length)
+  for (let at = indexOfAny(stdout, "@", from); at >= 0 && at + 2 < n; at = indexOfAny(stdout, "@", at + 1)) {
+    const lineStart = at === 0 || stdout.charCodeAt(at - 1) === 10
+    if (lineStart && stdout.charCodeAt(at + 1) === 64 && stdout.charCodeAt(at + 2) === 81) {
+      return at
+    }
+  }
+  return -1
+}
+
+/**
+ * Every line of z3's output that starts with `(error`, in order. z3 prints
+ * one for each command it rejects and carries on, so an assertion it dropped
+ * (an undeclared symbol, say) shows up only here: the line lands in the
+ * previous query's output, or before the first marker, and no verdict reflects it.
+ *
+ * @param stdout everything z3 printed
+ * @returns the error lines, without their newlines
+ */
+export const smtErrors = (stdout: string): string[] => {
+  const out: string[] = []
+  const n = toI32(stdout.length)
+  let start = 0
+  while (start < n) {
+    const nl = indexOfAny(stdout, "\n", start)
+    const end = nl < 0 ? n : nl
+    if (stdout.slice(start, end).startsWith("(error")) {
+      out.push(stdout.slice(start, end))
+    }
+    start = end + 1
+  }
+  return out
+}
+
+/**
+ * Splits z3's output into one answer per query, by the `@@Q<i>` markers, each
+ * at the start of a line. A
+ * query with no marker, or no verdict after it, is `unknown`; a marker naming
+ * no query is skipped.
+ *
+ * @param stdout everything z3 printed
+ * @param queryCount how many queries the script asked
+ * @returns `queryCount` answers, in query order
+ */
+export const parseZ3Output = (stdout: string, queryCount: i32): QueryAnswer[] => {
+  const answers: QueryAnswer[] = []
+  for (let i = 0; i < queryCount; i++) {
+    answers.push(new QueryAnswer("unknown"))
+  }
+  let at = smtMarker(stdout, 0)
+  while (at >= 0) {
+    let digitsEnd = at + 3
+    while (
+      digitsEnd < toI32(stdout.length) &&
+      stdout.charCodeAt(digitsEnd) >= 48 &&
+      stdout.charCodeAt(digitsEnd) <= 57
+    ) {
+      digitsEnd = digitsEnd + 1
+    }
+    const lineEnd = indexOfAny(stdout, "\n", at)
+    if (lineEnd < 0) {
+      return answers
+    }
+    const bodyStart = lineEnd + 1
+    const next = smtMarker(stdout, bodyStart)
+    const body = stdout.slice(bodyStart, next < 0 ? toI32(stdout.length) : next)
+    if (digitsEnd > at + 3) {
+      const qid = parseInt(stdout.slice(at + 3, digitsEnd))
+      if (qid < queryCount) {
+        const nl = toI32(body.indexOf("\n"))
+        const head = normalizeValue(nl < 0 ? body : body.slice(0, nl))
+        const result = head === "sat" || head === "unsat" ? head : "unknown"
+        const answer = new QueryAnswer(result)
+        if (result === "sat" && nl >= 0) {
+          parseModel(answer, body.slice(nl + 1))
+        }
+        answers[qid] = answer
+      }
+    }
+    at = next
+  }
+  return answers
+}

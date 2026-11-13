@@ -5,3 +5,4 @@ bun.lockb
 dist/
 .z3/
 coverage/
+.nish/
