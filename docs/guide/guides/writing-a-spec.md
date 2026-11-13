@@ -217,9 +217,10 @@ Nish lacks, and a target module outside `nish/`.
 - An f64 is its shortest round-tripping decimal, or, for `-0`, `NaN` and the
   infinities, its bits.
 - `i32` and `i64` `+ - *` are emitted as `wrappingAdd`, `wrappingSub` and
-  `wrappingMul` from `nish:unsafe`, so the test computes what the evaluator
-  and the sampler do, and a sample that overflows wraps instead of
-  panicking; `u64` operators already wrap.
+  `wrappingMul` from `nish:unsafe`, since Nish's signed operators panic on
+  overflow. `u8`, `u16`, `u32` and `u64` are emitted as plain operators,
+  which wrap in Nish. So for every integer type the test can hold, a sample
+  that overflows wraps, as it does in the evaluator and the sampler.
 
 ### Modules and names
 
