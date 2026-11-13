@@ -21,9 +21,9 @@ import {
   EXPR_NUM,
   EXPR_UNOP,
   EXPR_VAR,
-  Expr,
   FnUnit,
-  Param,
+  LangExpr,
+  LangParam,
   Program,
   programFunctionIndex,
 } from "../lang/ast"
@@ -246,7 +246,7 @@ const f64IsSafeInteger = (x: f64): boolean =>
 
 // The emitted code's domain guard: a Real is finite and an Int a safe integer.
 // Returns the guard broken, or "".
-const f64DomainViolation = (params: Param[], env: F64Env): string => {
+const f64DomainViolation = (params: LangParam[], env: F64Env): string => {
   for (const p of params) {
     const at = env.find(p.name)
     if (at < 0) {
@@ -268,7 +268,7 @@ const f64DomainViolation = (params: Param[], env: F64Env): string => {
 
 // Evaluates an expression the way the emitted JS would. A throw sets
 // `ctx.threw`, and the value returned with it means nothing.
-const f64Eval = (ctx: F64Ctx, e: Expr, env: F64Env): F64Val => {
+const f64Eval = (ctx: F64Ctx, e: LangExpr, env: F64Env): F64Val => {
   if (e.kind === EXPR_NUM) {
     return f64Num(parseFloat(e.value))
   }
@@ -512,21 +512,21 @@ const f64RandomMagnitude = (rand: F64Rng): f64 => {
   return sign * mantissa * Math.pow(parseFloat("10"), exp)
 }
 
-const f64PoolSize = (p: Param): i32 => {
+const f64PoolSize = (p: LangParam): i32 => {
   if (p.ty === "Bool") {
     return 2
   }
   return p.ty === "Int" ? toI32(f64IntPool().length) : toI32(f64RealPool().length)
 }
 
-const f64PoolValue = (p: Param, real: f64[], ints: f64[], k: i32): F64Val => {
+const f64PoolValue = (p: LangParam, real: f64[], ints: f64[], k: i32): F64Val => {
   if (p.ty === "Bool") {
     return f64Bool(k === 0)
   }
   return f64Num(p.ty === "Int" ? ints[k] : real[k])
 }
 
-const f64Samples = (params: Param[], rand: F64Rng): F64Env[] => {
+const f64Samples = (params: LangParam[], rand: F64Rng): F64Env[] => {
   const real = f64RealPool()
   const ints = f64IntPool()
   const out: F64Env[] = []
@@ -584,7 +584,7 @@ const f64Samples = (params: Param[], rand: F64Rng): F64Env[] => {
  */
 export const float64Samples = (fn: FnUnit): F64Env[] => f64Samples(fn.params, new F64Rng(1))
 
-const f64Literals = (e: Expr, out: f64[]): void => {
+const f64Literals = (e: LangExpr, out: f64[]): void => {
   if (e.kind === EXPR_NUM) {
     out.push(parseFloat(e.value))
   }
@@ -593,7 +593,7 @@ const f64Literals = (e: Expr, out: f64[]): void => {
   }
 }
 
-const f64ContainsCall = (e: Expr): boolean => {
+const f64ContainsCall = (e: LangExpr): boolean => {
   if (e.kind === EXPR_CALL) {
     return true
   }
@@ -710,7 +710,7 @@ const f64DenseValues = (literals: f64[], hasSeed: boolean, seed: f64, rand: F64R
 // while the others hold at a known-valid base, then random combinations of
 // dense values. Produced one environment at a time.
 class F64Dense {
-  params: Param[]
+  params: LangParam[]
   bases: F64Env[]
   dense: f64[][]
   rand: F64Rng
@@ -719,7 +719,7 @@ class F64Dense {
   val: i32
   combos: i32
 
-  constructor(params: Param[], literals: f64[], bases: F64Env[], seed: F64Env, rand: F64Rng) {
+  constructor(params: LangParam[], literals: f64[], bases: F64Env[], seed: F64Env, rand: F64Rng) {
     this.params = params
     this.bases = bases
     this.dense = []
@@ -822,7 +822,7 @@ export const float64ParseModel = (text: string): f64 => {
   return f64IsFinite(v) ? v : nan
 }
 
-const f64Input = (params: Param[], env: F64Env, result: string): Counterexample => {
+const f64Input = (params: LangParam[], env: F64Env, result: string): Counterexample => {
   const out = new Counterexample(result)
   for (const p of params) {
     const at = env.find(p.name)

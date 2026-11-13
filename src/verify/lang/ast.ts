@@ -21,7 +21,7 @@ export const EXPR_ITE: i32 = 6
 export const EXPR_CALL: i32 = 7
 
 /** One vector-lang expression. Which fields mean something depends on `kind`. */
-export class Expr {
+export class LangExpr {
   /** One of the `EXPR_*` kinds. */
   kind: i32
   /** The operator of a unop or binop; "" otherwise. */
@@ -31,7 +31,7 @@ export class Expr {
   /** A var's name, or the function a call names; "" otherwise. */
   name: string
   /** unop `[arg]`, binop `[left, right]`, ite `[cond, then, else]`, call arguments. */
-  args: Expr[]
+  args: LangExpr[]
   /** The type the checker gave a num literal, `Real` or `Int`; "" before checking. */
   numTy: string
 
@@ -44,7 +44,7 @@ export class Expr {
    * @param name the variable or callee, or ""
    * @param args the sub-expressions
    */
-  constructor(kind: i32, op: string, value: string, name: string, args: Expr[]) {
+  constructor(kind: i32, op: string, value: string, name: string, args: LangExpr[]) {
     this.kind = kind
     this.op = op
     this.value = value
@@ -55,11 +55,11 @@ export class Expr {
 }
 
 /** A requires or ensures clause: a boolean expression and the axiom it enforces. */
-export class Clause {
+export class LangClause {
   /** The spec-plan axiom this clause formalizes. */
   axiomId: string
   /** The boolean expression. */
-  expr: Expr
+  expr: LangExpr
 
   /**
    * Makes a clause.
@@ -67,14 +67,14 @@ export class Clause {
    * @param axiomId the axiom it formalizes
    * @param expr the boolean expression
    */
-  constructor(axiomId: string, expr: Expr) {
+  constructor(axiomId: string, expr: LangExpr) {
     this.axiomId = axiomId
     this.expr = expr
   }
 }
 
 /** A named, typed parameter. */
-export class Param {
+export class LangParam {
   /** The parameter's name. */
   name: string
   /** `Real`, `Int` or `Bool`. */
@@ -101,15 +101,15 @@ export class FnUnit {
   /** One line on what it is for. */
   purpose: string
   /** Its parameters, in order. */
-  params: Param[]
+  params: LangParam[]
   /** `Real`, `Int` or `Bool`. */
   returnType: string
   /** Its preconditions. */
-  requires: Clause[]
+  requires: LangClause[]
   /** Its postconditions, each mentioning `result`. */
-  ensures: Clause[]
+  ensures: LangClause[]
   /** The expression it returns. */
-  body: Expr
+  body: LangExpr
 
   /**
    * Makes a function with no parameters or clauses; the reader fills them in.
@@ -120,7 +120,7 @@ export class FnUnit {
    * @param returnType `Real`, `Int` or `Bool`
    * @param body the expression it returns
    */
-  constructor(name: string, layer: i32, purpose: string, returnType: string, body: Expr) {
+  constructor(name: string, layer: i32, purpose: string, returnType: string, body: LangExpr) {
     this.name = name
     this.layer = layer
     this.purpose = purpose
@@ -180,7 +180,7 @@ export class PlanUnit {
   /** Its planned layer. */
   layer: i32
   /** Its planned parameters. */
-  params: Param[]
+  params: LangParam[]
   /** Its planned return type. */
   returnType: string
   /** The axioms it must enforce. */

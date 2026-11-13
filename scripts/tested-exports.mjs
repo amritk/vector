@@ -12,6 +12,11 @@
 // name (every Nish test has its own `main`), so it counts as called when
 // tests/cli/ holds at least one golden case, which runs dist/vector.
 //
+// It also fails when two .ts files under src/ declare the same top-level name
+// (class, interface, enum, function, `const name = (…) =>` arrow or type
+// alias, exported or not), since Nish names are program-wide. Each clash is
+// printed with both file paths.
+//
 // It also fails when src/main.ts's VECTOR_VERSION differs from package.json's
 // version, which `vector --version` is meant to print.
 
@@ -93,6 +98,22 @@ for (const file of walk(join(root, "src")).filter((p) => p.endsWith(".ts"))) {
   }
 }
 
+const declRe =
+  /^(?:export\s+)?(?:declare\s+)?(?:(?:abstract\s+)?class|interface|enum|type|(?:async\s+)?function\*?)\s+([A-Za-z_$][\w$]*)|^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*(?:async\s*)?(?:<[^>]*>\s*)?(?:\(|[A-Za-z_$][\w$]*\s*=>)/gm;
+
+// name -> every file under src/ that declares it at the top level
+const declaredIn = new Map();
+for (const file of walk(join(root, "src")).filter((p) => p.endsWith(".ts"))) {
+  const rel = relative(root, file);
+  for (const m of codeOnly(readFileSync(file, "utf8")).matchAll(declRe)) {
+    const name = m[1] ?? m[2];
+    const files = declaredIn.get(name) ?? [];
+    if (!files.includes(rel)) files.push(rel);
+    declaredIn.set(name, files);
+  }
+}
+const clashes = [...declaredIn].filter(([, files]) => files.length > 1);
+
 const testText = walk(join(root, "tests"))
   .filter((p) => p.endsWith("_test.ts"))
   .map((p) => codeOnly(readFileSync(p, "utf8")))
@@ -124,6 +145,13 @@ if (exported.length === 0) {
 if (untested.length > 0) {
   console.error("exported functions no test calls by name:");
   for (const { name, where } of untested) console.error(`  ${where}  ${name}`);
+  failed = true;
+}
+
+if (clashes.length > 0) {
+  console.error("top-level names declared in more than one file under src/:");
+  for (const [name, files] of clashes)
+    console.error(`  ${name}  ${files.join("  ")}`);
   failed = true;
 }
 
