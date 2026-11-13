@@ -4,7 +4,8 @@ import { contractParse } from "../../../src/spec/contract/read"
 import { gateCompleteness } from "../../../src/spec/gates/completeness"
 import { gateWarnings } from "../../../src/spec/gates/note"
 import { LoadedSource, SourceSet } from "../../../src/spec/source/load"
-import { rfcParse } from "../../../src/spec/source/rfc"
+import { RfcDocument, rfcParse } from "../../../src/spec/source/rfc"
+import { xmlRead } from "../../../src/spec/xml/doc"
 
 /** A contract that quotes one MUST, excludes one, and leaves one out. */
 const COMPLETENESS_TEST_C: string = `{
@@ -166,16 +167,64 @@ const COMPLETENESS_TEST_PARAS_RFC: string = `Request for Comments: 9999
    It MUST hold.
 `
 
-/** A context with a contract and a hand-built source set holding one RFC. */
-const completenessTestWith = (contract: string, rfc: string): CheckContext => {
+/**
+ * A contract on an XML main source that quotes a BCP 14 sentence once, in
+ * section 1, where unmarked paragraphs repeat it before and after. An
+ * unmarked paragraph is a `<t>` whose keyword has no `<bcp14>` markup: the
+ * XML reader records no normative entry for it, but the gate reads the
+ * section's text, markup gone, so its MUST is a keyword use like any other.
+ * The one quote covers every verbatim copy (rfcOwnSpans finds each), while a
+ * paraphrase in section 1 and an unmarked sentence alone in section 2 are
+ * still refused.
+ */
+const COMPLETENESS_TEST_COPIES: string = `{
+  "contract": "c5",
+  "source": {"title": "T", "rfc": 9999},
+  "target": {"module": "nish/x"},
+  "requirements": [
+    {"id": "R-PAD", "section": "1", "level": "MUST", "quote": "A sender MUST pad the block."}
+  ],
+  "exclusions": [],
+  "functions": [{"name": "f", "params": [{"name": "a", "type": "bytes"}], "returns": "bytes"}],
+  "clauses": []
+}`
+
+/** The XML RFC the copies contract cites. */
+const COMPLETENESS_TEST_COPIES_XML: string = `<?xml version="1.0" encoding="UTF-8"?>
+<rfc number="9999" docName="draft-copies-00" category="std" ipr="trust200902" version="3">
+<front><title>Copies</title></front>
+<middle>
+<section anchor="pad"><name>Pad</name>
+<t>A sender MUST pad the block.</t>
+<t>A sender <bcp14>MUST</bcp14> pad the block.</t>
+<t>As said above, a sender MUST pad the block.</t>
+<t>A sender MUST pad the block.</t>
+</section>
+<section anchor="stop"><name>Stop</name>
+<t>A reader MUST stop.</t>
+</section>
+</middle>
+</rfc>
+`
+
+/** A context with a contract and a hand-built source set holding one read RFC. */
+const completenessTestDoc = (contract: string, file: string, doc: RfcDocument): CheckContext => {
   const ctx = new CheckContext("contracts/c1.json", ".")
   ctx.contract = contractParse(contract, "c1").expect("parse")
   const set = new SourceSet()
   set.main = "rfc9999"
-  set.sources.push(new LoadedSource("rfc9999", "r.txt", "r.txt", rfcParse(rfc)))
+  set.sources.push(new LoadedSource("rfc9999", file, file, doc))
   ctx.sources = set
   return ctx
 }
+
+/** A context with a contract and a source set holding one text RFC. */
+const completenessTestWith = (contract: string, rfc: string): CheckContext =>
+  completenessTestDoc(contract, "r.txt", rfcParse(rfc))
+
+/** A context with a contract and a source set holding one XML RFC. */
+const completenessTestXml = (contract: string, xml: string): CheckContext =>
+  completenessTestDoc(contract, "r.xml", xmlRead(xml, "r.xml").expect("xml"))
 
 /** A context with the contract and its source. */
 const completenessTestCtx = (): CheckContext => completenessTestWith(COMPLETENESS_TEST_C, COMPLETENESS_TEST_RFC)
@@ -297,6 +346,25 @@ export const main = (): i32 => {
   t.ok("paragraph findings", paras.length === 1)
   if (paras.length !== 1) {
     console.log(paras.join("\n"))
+  }
+  const copies = gateCompleteness(completenessTestXml(COMPLETENESS_TEST_COPIES, COMPLETENESS_TEST_COPIES_XML))
+  t.ok(
+    "an unmarked copy of a quoted sentence",
+    !copies.some((f: string): boolean => f.indexOf(`: "A sender MUST pad the block."`) >= 0),
+  )
+  t.ok(
+    "an unmarked paraphrase of a quoted sentence",
+    copies.indexOf(
+      `§1: MUST sentence is neither a requirement nor an exclusion: "As said above, a sender MUST pad the block."`,
+    ) >= 0,
+  )
+  t.ok(
+    "an unmarked sentence nothing quotes",
+    copies.indexOf(`§2: MUST sentence is neither a requirement nor an exclusion: "A reader MUST stop."`) >= 0,
+  )
+  t.ok("copies findings", copies.length === 2)
+  if (copies.length !== 2) {
+    console.log(copies.join("\n"))
   }
   return t.done()
 }
