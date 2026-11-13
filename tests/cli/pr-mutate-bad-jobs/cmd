@@ -1,0 +1,1 @@
+vector spec mutate --base main --nish-root . --test t.ts --jobs 0 c.json
