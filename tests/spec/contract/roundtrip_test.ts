@@ -4,25 +4,53 @@ import { newJsonDocument, parseJson } from "../../../src/core/json"
 import { contractFromJson, contractParse } from "../../../src/spec/contract/read"
 import { contractWrite } from "../../../src/spec/contract/write"
 
-/** The committed contracts, and nish's own when it is checked out beside vector. */
-const roundtripFiles = (): string[] => {
+/** The `*.json` contracts in `dir`, as paths, skipping survivor reports. */
+const roundtripIn = (dir: string): string[] => {
   const out: string[] = []
-  const names = readdirSync("contracts") ?? []
+  const names = readdirSync(dir) ?? []
   for (let i = 0; i < names.length; i++) {
     if (names[i].endsWith(".json") && !names[i].endsWith(".survivors.json")) {
-      out.push(`contracts/${names[i]}`)
+      out.push(`${dir}/${names[i]}`)
     }
-  }
-  if (readFileSyncOrNull("../nish/contracts/hex.json") !== null) {
-    out.push("../nish/contracts/hex.json")
   }
   return out
 }
 
-/** Each committed contract reads and writes back byte for byte. */
+/**
+ * Round-trips one contract by value: it loads clean, and load, write, load
+ * again gives an equal contract (compared as their canonical writes), with a
+ * second write that does not move.
+ */
+const roundtripByValue = (t: Suite, file: string): void => {
+  const text = readFileSyncOrNull(file)
+  if (text === null) {
+    t.fail(file, "cannot be read")
+    return
+  }
+  const first = contractParse(text, file)
+  if (first.isErr()) {
+    t.fail(`${file} loads with no shape errors`, first.error.join("\n"))
+    return
+  }
+  t.ok(`${file} loads with no shape errors`, true)
+  const w1 = contractWrite(first.value)
+  const second = contractParse(w1, file)
+  if (second.isErr()) {
+    t.fail(`${file} reloads after a write`, second.error.join("\n"))
+    return
+  }
+  const w2 = contractWrite(second.value)
+  t.ok(`${file} load, write, load gives an equal contract`, contractWrite(first.value) === contractWrite(second.value))
+  t.ok(`${file} writing twice is stable`, w2 === w1)
+}
+
+/**
+ * vector's own contracts are written by vector, so they round-trip byte for
+ * byte; a sibling nish's are hand-formatted, so only their value must survive.
+ */
 export const main = (): i32 => {
   const t = new Suite("spec/contract roundtrip")
-  const files = roundtripFiles()
+  const files = roundtripIn("contracts")
   t.ok("the committed contracts are found", files.length >= 3)
   for (let i = 0; i < files.length; i++) {
     const text = readFileSyncOrNull(files[i])
@@ -38,6 +66,11 @@ export const main = (): i32 => {
     const written = contractWrite(c.value)
     t.eqLines(`${files[i]} writes back line for line`, splitLines(written), splitLines(text))
     t.ok(`${files[i]} writes back byte for byte`, written === text)
+  }
+  // A foreign checkout's formatting is its own: compare by value, not by byte.
+  const foreign = roundtripIn("../nish/contracts")
+  for (let i = 0; i < foreign.length; i++) {
+    roundtripByValue(t, foreign[i])
   }
   // An already-parsed JSON value reads the same, and a wrong one says where.
   const doc = newJsonDocument()
