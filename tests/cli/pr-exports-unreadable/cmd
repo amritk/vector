@@ -1,0 +1,1 @@
+vector spec exports --base main --nish-root . tests/cli/pr-exports-unreadable/missing.json

@@ -1,12 +1,15 @@
 /**
  * `cli/spec-stale` — `vector spec stale`: refuse a generated test that no longer matches its contract.
  *
- * Only the command's shape is declared so far; its handler is a stub that
- * exits 2.
+ * The test's one `// vector-contract-sha256:` line must name the SHA-256 of
+ * the contract file's bytes (`spec/pr/stale`).
  */
 
 import { Cli, ParseResult } from "nish/cli-args"
 import { report, usageError } from "../core/diag"
+import { prCliFinish, prCliFormat } from "../spec/pr/cli"
+import { PrReport } from "../spec/pr/report"
+import { staleReason } from "../spec/pr/stale"
 
 /** The id `vector spec stale` is parsed to. */
 export const SPEC_STALE_ID: i32 = 8
@@ -39,13 +42,33 @@ export class SpecStaleCommand {
   }
 
   /**
-   * Runs the command.
+   * Runs the command: exit 0 when the test names the contract's bytes, 1 when
+   * not, 2 for bad usage or a file that cannot be read.
    *
-   * @param _r the parsed arguments (unread until the handler lands)
+   * @param r the parsed arguments
    * @returns the exit code
    */
-  run(_r: ParseResult): i32 {
-    return report(usageError("spec stale: not implemented yet"))
+  run(r: ParseResult): i32 {
+    const format = prCliFormat(r, this.formatFlag)
+    if (format.isErr()) {
+      return report(usageError(`spec stale: ${format.error}`))
+    }
+    const testPath = r.positional(this.testTsArg) ?? ""
+    const contractPath = r.positional(this.contractJsonArg) ?? ""
+    const test = readFileSyncOrNull(testPath)
+    if (test === null) {
+      return report(usageError(`spec stale: ${testPath}: cannot be read`))
+    }
+    const contract = readFileSyncOrNull(contractPath)
+    if (contract === null) {
+      return report(usageError(`spec stale: ${contractPath}: cannot be read`))
+    }
+    const out = new PrReport("stale", `spec stale ${testPath} against ${contractPath}`)
+    const reason = staleReason(test, contract)
+    if (reason !== null) {
+      out.problems.push(`${testPath}: ${reason}`)
+    }
+    return prCliFinish("spec stale", Ok(out), format.value)
   }
 }
 

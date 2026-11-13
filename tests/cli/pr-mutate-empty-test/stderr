@@ -1,0 +1,1 @@
+vector: spec mutate: --test takes a file; leave the flag out to emit the contract's test

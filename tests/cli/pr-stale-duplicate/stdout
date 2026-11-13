@@ -1,0 +1,4 @@
+spec stale tests/cli/pr-stale-duplicate/t.ts against tests/cli/pr-stale-ok/c.json: FAILED
+
+problems:
+  ✗ tests/cli/pr-stale-duplicate/t.ts: 2 vector-contract-sha256 lines: a test names one contract
