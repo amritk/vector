@@ -1,12 +1,13 @@
 /**
  * `cli/verify` — `vector verify`: prove a program meets its spec plan.
  *
- * Only the command's shape is declared so far; its handler is a stub that
- * exits 2.
+ * The handler reads both files, checks their shape, and reports every error.
  */
 
 import { Cli, ParseResult } from "nish/cli-args"
-import { report, usageError } from "../core/diag"
+import { EXIT_PASS, EXIT_REFUSED, report, usageError } from "../core/diag"
+import { newJsonDocument, readJsonFile } from "../core/json"
+import { readProgram, readSpecPlan } from "../verify/lang/read"
 
 /** The id `vector verify` is parsed to. */
 export const VERIFY_ID: i32 = 1
@@ -39,11 +40,33 @@ export class VerifyCommand {
   /**
    * Runs the command.
    *
-   * @param _r the parsed arguments (unread until the handler lands)
+   * @param r the parsed arguments
    * @returns the exit code
    */
-  run(_r: ParseResult): i32 {
-    return report(usageError("verify: not implemented yet"))
+  run(r: ParseResult): i32 {
+    const specPath = r.positional(this.specJsonArg) ?? ""
+    const programPath = r.positional(this.programJsonArg) ?? ""
+    const specDoc = newJsonDocument()
+    const specRoot = readJsonFile(specDoc, specPath)
+    if (specRoot.isErr()) {
+      return report(usageError(`verify: ${specRoot.error}`))
+    }
+    const programDoc = newJsonDocument()
+    const programRoot = readJsonFile(programDoc, programPath)
+    if (programRoot.isErr()) {
+      return report(usageError(`verify: ${programRoot.error}`))
+    }
+    const errors: string[] = []
+    readSpecPlan(specDoc, specRoot.value, errors)
+    readProgram(programDoc, programRoot.value, errors)
+    if (errors.length > 0) {
+      console.error("Validation failed:")
+      for (const e of errors) {
+        console.error(`  ✘ ${e}`)
+      }
+      return EXIT_REFUSED
+    }
+    return EXIT_PASS
   }
 }
 
