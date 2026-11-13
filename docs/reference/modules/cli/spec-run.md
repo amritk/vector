@@ -4,8 +4,8 @@
 
 `cli/spec-run` — `vector spec run`: emit a contract's Nish test and run it.
 
-Only the command's shape is declared so far; its handler is a stub that
-exits 2.
+The command itself is `runCommand` in `spec/run/command`; this file declares its
+flags and hands them over.
 
 Generated from [src/cli/spec-run.ts](https://github.com/amritk/vector/blob/main/src/cli/spec-run.ts).
 
@@ -105,15 +105,16 @@ specFlag: i32
 
 #### SpecRunCommand.run
 
-Runs the command.
+Runs the command. `--spec` is accepted and not read: the contract's
+quotes are `spec check`'s to verify.
 
 ```ts
-run(_r: ParseResult): i32
+run(r: ParseResult): i32
 ```
 
-<scalar-field name="_r" type="ParseResult" required>
+<scalar-field name="r" type="ParseResult" required>
 
-the parsed arguments (unread until the handler lands)
+the parsed arguments
 
 </scalar-field>
 

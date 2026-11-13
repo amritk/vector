@@ -4,8 +4,8 @@
 
 `cli/spec-frozen` — `vector spec frozen`: refuse a change that edits a frozen contract.
 
-Only the command's shape is declared so far; its handler is a stub that
-exits 2.
+A PR changes the spec side or the implementation, never both, and every
+contract checked still holds to the sources it pins (`spec/pr/frozen`).
 
 Generated from [src/cli/spec-frozen.ts](https://github.com/amritk/vector/blob/main/src/cli/spec-frozen.ts).
 
@@ -89,15 +89,16 @@ repoFlag: i32
 
 #### SpecFrozenCommand.run
 
-Runs the command.
+Runs the command: exit 0 when the change keeps to one side and every
+contract holds, 1 when not, 2 for bad usage or a git failure.
 
 ```ts
-run(_r: ParseResult): i32
+run(r: ParseResult): i32
 ```
 
-<scalar-field name="_r" type="ParseResult" required>
+<scalar-field name="r" type="ParseResult" required>
 
-the parsed arguments (unread until the handler lands)
+the parsed arguments
 
 </scalar-field>
 

@@ -4,8 +4,8 @@
 
 `cli/spec-exports` — `vector spec exports`: refuse a new export its contract does not cover.
 
-Only the command's shape is declared so far; its handler is a stub that
-exits 2.
+Every export the change adds to or changes in the contract's target module
+is one the contract tests or lists out of scope (`spec/pr/exports`).
 
 Generated from [src/cli/spec-exports.ts](https://github.com/amritk/vector/blob/main/src/cli/spec-exports.ts).
 
@@ -89,15 +89,16 @@ nishRootFlag: i32
 
 #### SpecExportsCommand.run
 
-Runs the command.
+Runs the command: exit 0 when every changed export is tested or out of
+scope, 1 when not, 2 for bad usage, an unreadable contract or a git failure.
 
 ```ts
-run(_r: ParseResult): i32
+run(r: ParseResult): i32
 ```
 
-<scalar-field name="_r" type="ParseResult" required>
+<scalar-field name="r" type="ParseResult" required>
 
-the parsed arguments (unread until the handler lands)
+the parsed arguments
 
 </scalar-field>
 

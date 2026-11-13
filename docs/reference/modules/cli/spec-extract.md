@@ -4,8 +4,10 @@
 
 `cli/spec-extract` — `vector spec extract`: extract a contract from a kramdown-rfc spec's XML.
 
-Only the command's shape is declared so far; its handler is a stub that
-exits 2.
+The contract goes to stdout, or to `-o`; with `--check` nothing is written,
+and a diff against `-o` exits 1. Refusals exit 1, each `file:line: message`
+at the markdown line when the `.md` is beside the spec; an input or RFC that
+cannot be read exits 2.
 
 Generated from [src/cli/spec-extract.ts](https://github.com/amritk/vector/blob/main/src/cli/spec-extract.ts).
 
@@ -84,12 +86,12 @@ specXmlArg: i32
 Runs the command.
 
 ```ts
-run(_r: ParseResult): i32
+run(r: ParseResult): i32
 ```
 
-<scalar-field name="_r" type="ParseResult" required>
+<scalar-field name="r" type="ParseResult" required>
 
-the parsed arguments (unread until the handler lands)
+the parsed arguments
 
 </scalar-field>
 

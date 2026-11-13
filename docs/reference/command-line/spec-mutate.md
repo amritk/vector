@@ -34,7 +34,13 @@ a nish checkout: finds the module and the compiler
 
 <scalar-field name="--nish" type="&lt;bin&gt;">
 
-the nish compiler (default: nish)
+the nish compiler, from --nish-root (default: bin/nish)
+
+</scalar-field>
+
+<scalar-field name="--test" type="&lt;file&gt;">
+
+the test program to run against each mutant (default: the contract's test, emitted as spec emit does)
 
 </scalar-field>
 

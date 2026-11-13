@@ -31,7 +31,7 @@ npm ci
 
 Both scripts are pinned and idempotent: run again, they report the version already installed and exit. `NISH_VERSION` overrides the compiler's pin, to try another release.
 
-vector runs `.z3/z3` unless `VECTOR_Z3` names another z3.
+vector runs the z3 that `VECTOR_Z3` names, if set; otherwise `.z3/z3` in the checkout it was built from, and failing that `z3` on your `PATH`. It never runs a z3 from the directory you run it in.
 
 ## Build
 
@@ -39,6 +39,23 @@ vector runs `.z3/z3` unless `VECTOR_Z3` names another z3.
 npm run build                # compiles src/main.ts to dist/vector
 ./dist/vector --version
 ./dist/vector --help
+```
+
+`--version` prints `vector 0.1.0`, and `--help` lists the commands:
+
+```text
+vector 0.1.0  Prove small programs correct, and hold implementations to their specs
+
+usage: vector <command> [flags]
+
+Commands
+  verify         Prove a program meets its spec plan
+  diff           Prove two programs equivalent, or show where they differ
+  spec           Turn a spec into a contract and a test, and gate changes on it
+
+Flags
+  -h, --help     show help
+  -v, --version  show the version
 ```
 
 `--help` after any command shows that command's flags and arguments; the [command-line reference](../../reference/command-line.md) lists them all.

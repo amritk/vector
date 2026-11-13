@@ -4,8 +4,15 @@
 
 `cli/verify` — `vector verify`: prove a program meets its spec plan.
 
-Only the command's shape is declared so far; its handler is a stub that
-exits 2.
+The handler reads both files and runs the whole gate (`verify/verify`).
+PROVEN exits 0. REFUTED, UNKNOWN, INVALID and ERROR (z3 failed or rejected
+the script) exit 1: none of them proved anything, so each refuses the
+program. Exit 2 is kept for bad usage, a file that cannot be read, and an
+`--emit` file that cannot be written. `--emit` writes the TypeScript only
+when the program is proven; on any other outcome it writes nothing and
+leaves an existing file as it was. The write goes to a temporary file
+beside the target, renamed over it, so a failed or interrupted write never
+leaves a truncated file behind.
 
 Generated from [src/cli/verify.ts](https://github.com/amritk/vector/blob/main/src/cli/verify.ts).
 
@@ -13,6 +20,7 @@ Generated from [src/cli/verify.ts](https://github.com/amritk/vector/blob/main/sr
 
 - [`VERIFY_ID`](#verify_id)
 - [`VerifyCommand`](#verifycommand)
+- [`verifyExitCode`](#verifyexitcode)
 - [`registerVerify`](#registerverify)
 
 ## Declarations
@@ -92,18 +100,40 @@ specJsonArg: i32
 Runs the command.
 
 ```ts
-run(_r: ParseResult): i32
+run(r: ParseResult): i32
 ```
 
-<scalar-field name="_r" type="ParseResult" required>
+<scalar-field name="r" type="ParseResult" required>
 
-the parsed arguments (unread until the handler lands)
+the parsed arguments
 
 </scalar-field>
 
 <scalar-field name="returns" type="i32">
 
 the exit code
+
+</scalar-field>
+
+### verifyExitCode
+
+The exit code for a verify outcome: 0 for PROVEN, 1 for everything else.
+ERROR is 1, not 2: z3 failing proved nothing, so the program is refused,
+the same as an UNKNOWN.
+
+```ts
+function verifyExitCode(status: string): i32
+```
+
+<scalar-field name="status" type="string" required>
+
+the outcome's status
+
+</scalar-field>
+
+<scalar-field name="returns" type="i32">
+
+`EXIT_PASS` or `EXIT_REFUSED`
 
 </scalar-field>
 

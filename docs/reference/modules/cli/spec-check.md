@@ -4,8 +4,12 @@
 
 `cli/spec-check` — `vector spec check`: check a contract's quotes and vectors against its source.
 
-Only the command's shape is declared so far; its handler is a stub that
-exits 2.
+It reads the contract, runs every gate (src/spec/check.ts) and prints the
+report as text, markdown or JSON. Exit 0 when every gate passed, 1 when one
+found something (a contract the schema refuses included: its structural
+errors are the shape gate's findings, in the same report), 2 for bad usage,
+a contract that cannot be read or is not JSON, or a tool (z3, a source
+command's shell) that failed.
 
 Generated from [src/cli/spec-check.ts](https://github.com/amritk/vector/blob/main/src/cli/spec-check.ts).
 
@@ -13,6 +17,10 @@ Generated from [src/cli/spec-check.ts](https://github.com/amritk/vector/blob/mai
 
 - [`SPEC_CHECK_ID`](#spec_check_id)
 - [`SpecCheckCommand`](#speccheckcommand)
+- [`specCheckRender`](#speccheckrender)
+- [`specCheckRoot`](#speccheckroot)
+- [`specCheckRepoTop`](#speccheckrepotop)
+- [`specCheckForeignWarning`](#speccheckforeignwarning)
 - [`registerSpecCheck`](#registerspeccheck)
 
 ## Declarations
@@ -116,18 +124,113 @@ specFlag: i32
 Runs the command.
 
 ```ts
-run(_r: ParseResult): i32
+run(r: ParseResult): i32
 ```
 
-<scalar-field name="_r" type="ParseResult" required>
+<scalar-field name="r" type="ParseResult" required>
 
-the parsed arguments (unread until the handler lands)
+the parsed arguments
 
 </scalar-field>
 
 <scalar-field name="returns" type="i32">
 
 the exit code
+
+</scalar-field>
+
+### specCheckRender
+
+The report in the context's format.
+
+```ts
+function specCheckRender(ctx: CheckContext, found: CheckReport): string
+```
+
+<scalar-field name="ctx" type="CheckContext" required>
+
+the check's context, after the gates ran
+
+</scalar-field>
+
+<scalar-field name="found" type="CheckReport" required>
+
+what they found
+
+</scalar-field>
+
+<scalar-field name="returns" type="string">
+
+the report's text
+
+</scalar-field>
+
+### specCheckRoot
+
+Where vector is installed, whose rfcs/ and specs/ sources are read from:
+the directory above the running binary's (`dist/vector`), else the current
+directory.
+
+```ts
+function specCheckRoot(): string
+```
+
+<scalar-field name="returns" type="string">
+
+the root
+
+</scalar-field>
+
+### specCheckRepoTop
+
+The top of the git repository the current directory is in.
+
+```ts
+function specCheckRepoTop(): string | null
+```
+
+<scalar-field name="returns" type="string | null">
+
+its path, or null outside one or without git
+
+</scalar-field>
+
+### specCheckForeignWarning
+
+The warning `--run-sources` prints before it runs commands from a contract
+outside the repository's contracts/: they run as the user, with the user's
+files and network, so it lists each one. None when the contract is inside
+it, or has no command.
+
+```ts
+function specCheckForeignWarning(
+  path: string,
+  c: Contract,
+  top: string | null,
+): string | null
+```
+
+<scalar-field name="path" type="string" required>
+
+the contract's path
+
+</scalar-field>
+
+<scalar-field name="c" type="Contract" required>
+
+the contract
+
+</scalar-field>
+
+<scalar-field name="top" type="string | null" required>
+
+the repository's top (specCheckRepoTop), or null outside one
+
+</scalar-field>
+
+<scalar-field name="returns" type="string | null">
+
+the warning, or null
 
 </scalar-field>
 

@@ -4,8 +4,9 @@
 
 `cli/diff` — `vector diff`: prove two programs equivalent, or show where they differ.
 
-Only the command's shape is declared so far; its handler is a stub that
-exits 2.
+The handler reads both files and runs the regeneration gate
+(`verify/equiv/diff`). EQUIVALENT exits 0; DIFFERENT and UNDECIDED exit 1;
+INVALID, an unreadable file and a z3 failure exit 2.
 
 Generated from [src/cli/diff.ts](https://github.com/amritk/vector/blob/main/src/cli/diff.ts).
 
@@ -13,6 +14,7 @@ Generated from [src/cli/diff.ts](https://github.com/amritk/vector/blob/main/src/
 
 - [`DIFF_ID`](#diff_id)
 - [`DiffCommand`](#diffcommand)
+- [`diffExitCode`](#diffexitcode)
 - [`registerDiff`](#registerdiff)
 
 ## Declarations
@@ -84,12 +86,34 @@ oldJsonArg: i32
 Runs the command.
 
 ```ts
-run(_r: ParseResult): i32
+run(r: ParseResult): i32
 ```
 
-<scalar-field name="_r" type="ParseResult" required>
+<scalar-field name="r" type="ParseResult" required>
 
-the parsed arguments (unread until the handler lands)
+the parsed arguments
+
+</scalar-field>
+
+<scalar-field name="returns" type="i32">
+
+the exit code
+
+</scalar-field>
+
+### diffExitCode
+
+The exit code for a diff status: 0 for EQUIVALENT, 1 for DIFFERENT and
+UNDECIDED, 2 for INVALID and ERROR (the inputs or the solver failed, so
+nothing was compared).
+
+```ts
+function diffExitCode(status: string): i32
+```
+
+<scalar-field name="status" type="string" required>
+
+one of the `DIFF_*` statuses
 
 </scalar-field>
 

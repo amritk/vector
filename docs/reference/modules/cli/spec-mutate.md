@@ -4,8 +4,9 @@
 
 `cli/spec-mutate` — `vector spec mutate`: mutate the changed lines and refuse mutants the test misses.
 
-Only the command's shape is declared so far; its handler is a stub that
-exits 2.
+The change's lines in the contract's target module are mutated, and the
+test must kill every mutant that builds (`spec/pr/mutate`, run by
+`spec/pr/mutaterun`).
 
 Generated from [src/cli/spec-mutate.ts](https://github.com/amritk/vector/blob/main/src/cli/spec-mutate.ts).
 
@@ -111,17 +112,28 @@ The `--nish-root <dir>` flag.
 nishRootFlag: i32
 ```
 
-#### SpecMutateCommand.run
+#### SpecMutateCommand.testFlag
 
-Runs the command.
+The `--test <file>` flag.
 
 ```ts
-run(_r: ParseResult): i32
+testFlag: i32
 ```
 
-<scalar-field name="_r" type="ParseResult" required>
+#### SpecMutateCommand.run
 
-the parsed arguments (unread until the handler lands)
+Runs the command: exit 0 when the test kills every mutant that builds or
+the contract allows the survivor, 1 when not, 2 for bad usage, an
+unreadable contract, module or test, a git failure, or a compiler that
+fails for a reason the mutant did not cause.
+
+```ts
+run(r: ParseResult): i32
+```
+
+<scalar-field name="r" type="ParseResult" required>
+
+the parsed arguments
 
 </scalar-field>
 

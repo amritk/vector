@@ -14,7 +14,7 @@ vector spec frozen [contracts...] [flags]
 
 <scalar-field name="[contracts...]">
 
-the contracts to check (default: every changed one)
+the contracts to check, from the repository's top (default: every contracts/*.json)
 
 </scalar-field>
 

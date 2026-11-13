@@ -4,8 +4,8 @@
 
 `cli/spec-stale` — `vector spec stale`: refuse a generated test that no longer matches its contract.
 
-Only the command's shape is declared so far; its handler is a stub that
-exits 2.
+The test's one `// vector-contract-sha256:` line must name the SHA-256 of
+the contract file's bytes (`spec/pr/stale`).
 
 Generated from [src/cli/spec-stale.ts](https://github.com/amritk/vector/blob/main/src/cli/spec-stale.ts).
 
@@ -81,15 +81,16 @@ testTsArg: i32
 
 #### SpecStaleCommand.run
 
-Runs the command.
+Runs the command: exit 0 when the test names the contract's bytes, 1 when
+not, 2 for bad usage or a file that cannot be read.
 
 ```ts
-run(_r: ParseResult): i32
+run(r: ParseResult): i32
 ```
 
-<scalar-field name="_r" type="ParseResult" required>
+<scalar-field name="r" type="ParseResult" required>
 
-the parsed arguments (unread until the handler lands)
+the parsed arguments
 
 </scalar-field>
 
