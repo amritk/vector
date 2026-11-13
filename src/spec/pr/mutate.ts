@@ -33,7 +33,7 @@ export class MutateMutant {
   line: i32
   /** Where on the line, from 1. */
   col: i32
-  /** The operator: relational, logical, drop-not, int, delete-statement or return-null. */
+  /** The operator: relational, logical, arithmetic, bitwise, drop-not, int, delete-statement or return-null. */
   op: string
   /** The line as the mutant has it. */
   after: string
@@ -92,25 +92,78 @@ const mutateAt = (s: string, i: i32): i32 => (i >= 0 && i < s.length ? s.charCod
 const mutateSpaced = (s: string, i: i32, op: string): boolean =>
   mutateAt(s, i - 1) === 32 && s.substring(i, i + op.length) === op && mutateAt(s, i + op.length) === 32
 
-/** The binary operators a mutant swaps, each followed by its replacement. */
+/**
+ * The binary operators a mutant swaps, as triples: the operator, its
+ * replacement and the mutant's name. Longer operators come first, so `<<` is
+ * not read as `<` and `===` not as `==`. The old mutate.ts had the relational
+ * and logical swaps; the arithmetic and bitwise ones are new.
+ */
 const mutateSwaps = (): string[] => [
   "===",
   "!==",
+  "relational",
   "!==",
   "===",
+  "relational",
+  "==",
+  "!=",
+  "relational",
+  "!=",
+  "==",
+  "relational",
+  "<<",
+  ">>",
+  "bitwise",
+  ">>",
+  "<<",
+  "bitwise",
   "<=",
   "<",
+  "relational",
   ">=",
   ">",
+  "relational",
   "<",
   "<=",
+  "relational",
   ">",
   ">=",
+  "relational",
   "&&",
   "||",
+  "logical",
   "||",
   "&&",
+  "logical",
+  "+",
+  "-",
+  "arithmetic",
+  "-",
+  "+",
+  "arithmetic",
+  "*",
+  "/",
+  "arithmetic",
+  "/",
+  "*",
+  "arithmetic",
+  "%",
+  "*",
+  "arithmetic",
+  "&",
+  "|",
+  "bitwise",
+  "|",
+  "&",
+  "bitwise",
+  "^",
+  "&",
+  "bitwise",
 ]
+
+/** Whether ` | ` at `i` joins a type with null, as `T | null` or `null | T` does: a type, not a bitwise or. */
+const mutateNullUnion = (s: string, i: i32): boolean =>
+  s.substring(i + 2, i + 6) === "null" || (i >= 5 && s.substring(i - 5, i - 1) === "null")
 
 /** The line with `len` chars at `i` replaced by `by`. */
 const mutateSplice = (s: string, i: i32, len: i32, by: string): string =>
@@ -181,11 +234,12 @@ export const mutateLine = (text: string, line: i32): MutateMutant[] => {
       break
     }
     let swapped = false
-    for (let k = 0; k < swaps.length; k += 2) {
+    for (let k = 0; k < swaps.length; k += 3) {
       const op = swaps[k]
       if (mutateSpaced(text, i, op)) {
-        const name = op === "&&" || op === "||" ? "logical" : "relational"
-        out.push(new MutateMutant(line, i + 1, name, "", mutateSplice(text, i, op.length, swaps[k + 1])))
+        if (op !== "|" || !mutateNullUnion(text, i)) {
+          out.push(new MutateMutant(line, i + 1, swaps[k + 2], "", mutateSplice(text, i, op.length, swaps[k + 1])))
+        }
         i += op.length
         swapped = true
         break
@@ -320,6 +374,7 @@ const mutateAllowed = (allow: AllowedSurvivor[], file: string, line: i32): Allow
  * @param mutants the mutants, each with its outcome
  * @param allow the survivors the contract allows
  * @param baseline why the test fails on the unmutated module, or null when it passes
+ * @param dropped mutants made but not run, as `--max` left out
  */
 export const mutateJudge = (
   r: PrReport,
@@ -327,6 +382,7 @@ export const mutateJudge = (
   mutants: MutateMutant[],
   allow: AllowedSurvivor[],
   baseline: string | null,
+  dropped: i32,
 ): void => {
   if (baseline !== null) {
     r.problems.push(`the test fails on the unmutated module, so it proves nothing: ${baseline}`)
@@ -336,12 +392,18 @@ export const mutateJudge = (
     r.problems.push(`no mutants: the change adds no line of ${file} that can be mutated`)
     return
   }
+  if (dropped > 0) {
+    r.notes.push(`${dropped} of ${toI32(mutants.length) + dropped} mutants were not run: --max kept ${mutants.length}`)
+  }
   let stillborn = 0
+  let timedOut = 0
   const used = new Set<string>()
   for (const m of mutants) {
     r.items.push(`${mutateOutcomeName(m.outcome)} ${file}:${m.line}:${m.col} ${m.op}: ${trim(m.after)}`)
     if (m.outcome === MUTATE_STILLBORN) {
       stillborn++
+    } else if (m.outcome === MUTATE_TIMED_OUT) {
+      timedOut++
     } else if (m.outcome === MUTATE_SURVIVED) {
       const a = mutateAllowed(allow, file, m.line)
       if (a !== null) {
@@ -359,9 +421,26 @@ export const mutateJudge = (
   if (stillborn === mutants.length) {
     r.problems.push("every mutant is stillborn: none builds, so the test met none of them")
   }
+  if (timedOut > 0) {
+    r.notes.push(`${timedOut} mutants ran past their time: a timeout counts as killed`)
+  }
+  const mutated = new Set<string>()
+  for (const m of mutants) {
+    if (m.outcome !== MUTATE_STILLBORN && m.outcome !== MUTATE_PENDING) {
+      mutated.add(`${m.line}`)
+    }
+  }
   for (const a of allow) {
     if (a.file === file && !used.has(`${a.line}`)) {
-      r.notes.push(`allowSurvivors ${a.file}:${a.line} matched no survivor this run`)
+      if (mutated.has(`${a.line}`)) {
+        r.problems.push(
+          `allowSurvivors ${a.file}:${a.line} is stale: the test killed every mutant of that line, so the allowance would only excuse whatever survives there next: remove it, or move it to the line it means`,
+        )
+      } else {
+        r.notes.push(
+          `STALE? allowSurvivors ${a.file}:${a.line} matched no survivor this run: no mutant of that line ran, so check it still names the line it means`,
+        )
+      }
     }
   }
 }

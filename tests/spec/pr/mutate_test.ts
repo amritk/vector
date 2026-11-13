@@ -110,7 +110,7 @@ const mutateTestRepo = (t: Suite): Result<boolean, string> => {
     t.eqStr(
       "the notes",
       r.value.notes.join(" | "),
-      "survivor std/m.ts:3 (3:29:int:+1) is allowed: k is a constant the spec leaves open | allowSurvivors std/m.ts:9 matched no survivor this run",
+      "survivor std/m.ts:3 (3:29:int:+1) is allowed: k is a constant the spec leaves open | 1 mutants ran past their time: a timeout counts as killed | STALE? allowSurvivors std/m.ts:9 matched no survivor this run: no mutant of that line ran, so check it still names the line it means",
     )
   }
   const one = mutateCheck(`${dir}/c.json`, "main", new MutateRun(root, "", "bin/nish", `${dir}/t.sh`, 1, 0), 2)
@@ -170,12 +170,15 @@ const mutateTestJudge = (t: Suite): void => {
   const b = new MutateMutant(3, 2, "int", "+1", "  k = 8")
   b.outcome = MUTATE_KILLED
   const r = new PrReport("mutate", "m")
-  mutateJudge(r, "std/m.ts", [a, b], allow, null)
+  mutateJudge(r, "std/m.ts", [a, b], allow, null, 0)
   t.eqStr(
-    "an unallowed survivor fails",
+    "an unallowed survivor fails, and an allowance whose line was all killed is stale",
     r.problems.join(" | "),
-    "survivor std/m.ts:4 (4:1:delete-statement): `` passes the test: behaviour no requirement pins down",
+    "survivor std/m.ts:4 (4:1:delete-statement): `` passes the test: behaviour no requirement pins down | allowSurvivors std/m.ts:3 is stale: the test killed every mutant of that line, so the allowance would only excuse whatever survives there next: remove it, or move it to the line it means",
   )
+  const rd = new PrReport("mutate", "t")
+  mutateJudge(rd, "std/m.ts", [b], [], null, 5)
+  t.eqStr("--max reports what it left out", rd.notes.join(" | "), "5 of 6 mutants were not run: --max kept 1")
   t.eqStr(
     "an item per mutant",
     r.items.join(" | "),
@@ -184,7 +187,7 @@ const mutateTestJudge = (t: Suite): void => {
   const s = new MutateMutant(4, 1, "delete-statement", "", "")
   s.outcome = MUTATE_STILLBORN
   const r2 = new PrReport("mutate", "m")
-  mutateJudge(r2, "std/m.ts", [s], allow, null)
+  mutateJudge(r2, "std/m.ts", [s], allow, null, 0)
   t.eqStr(
     "all stillborn fails",
     r2.problems.join(" | "),
@@ -192,17 +195,17 @@ const mutateTestJudge = (t: Suite): void => {
   )
   const p = new MutateMutant(4, 1, "delete-statement", "", "")
   const r3 = new PrReport("mutate", "m")
-  mutateJudge(r3, "std/m.ts", [p], allow, null)
+  mutateJudge(r3, "std/m.ts", [p], allow, null, 0)
   t.eqStr("a mutant not run fails", r3.problems.join(" | "), "mutant 4:1:delete-statement was not run")
   const r4 = new PrReport("mutate", "m")
-  mutateJudge(r4, "std/m.ts", [p], allow, "it exits 1")
+  mutateJudge(r4, "std/m.ts", [p], allow, "it exits 1", 0)
   t.eqStr(
     "a failing baseline fails alone",
     `${r4.problems.join(" | ")}|${r4.items.length}`,
     "the test fails on the unmutated module, so it proves nothing: it exits 1|0",
   )
   const r5 = new PrReport("mutate", "m")
-  mutateJudge(r5, "std/m.ts", [], allow, null)
+  mutateJudge(r5, "std/m.ts", [], allow, null, 0)
   t.eqStr(
     "no mutants fails",
     r5.problems.join(" | "),
@@ -221,13 +224,32 @@ export const main = (): i32 => {
   t.eqStr("equality", mutateTestList(mutateLine("x === y", 1)), "1:3:relational=x !== y | 1:1:delete-statement=")
   t.eqStr("arrows and generics are not operators", mutateTestList(mutateLine("const f = (): Set<i32> => g", 1)), "")
   t.eqStr("drop a not", mutateTestList(mutateLine("  if (!ok) {", 1)), "1:7:drop-not=  if (ok) {")
-  t.eqStr("!= is not a not", mutateTestList(mutateLine("  if (a != b) {", 1)), "")
+  t.eqStr(
+    "!= is not a not, but swaps to ==",
+    mutateTestList(mutateLine("  if (a != b) {", 1)),
+    "1:9:relational=  if (a == b) {",
+  )
+  t.eqStr(
+    "arithmetic swaps",
+    mutateTestList(mutateLine("x = a * b / c % d", 1)),
+    "1:7:arithmetic=x = a / b / c % d | 1:11:arithmetic=x = a * b * c % d | 1:15:arithmetic=x = a * b / c * d | 1:1:delete-statement=",
+  )
+  t.eqStr(
+    "bitwise swaps, shifts before relations",
+    mutateTestList(mutateLine("y = a << 2 & b ^ c | d >> 1", 1)),
+    "1:7:bitwise=y = a >> 2 & b ^ c | d >> 1 | 1:10:int:+1=y = a << 3 & b ^ c | d >> 1 | 1:10:int:-1=y = a << 1 & b ^ c | d >> 1 | 1:12:bitwise=y = a << 2 | b ^ c | d >> 1 | 1:16:bitwise=y = a << 2 & b & c | d >> 1 | 1:20:bitwise=y = a << 2 & b ^ c & d >> 1 | 1:24:bitwise=y = a << 2 & b ^ c | d << 1 | 1:27:int:+1=y = a << 2 & b ^ c | d >> 2 | 1:27:int:-1=y = a << 2 & b ^ c | d >> 0 | 1:1:delete-statement=",
+  )
+  t.eqStr("a union with null is a type, not an or", mutateTestList(mutateLine("  let p: P | null = q", 1)), "")
   t.eqStr(
     "an integer, both ways",
     mutateTestList(mutateLine("  return n + 10", 2)),
-    "2:14:int:+1=  return n + 11 | 2:14:int:-1=  return n + 9 | 2:3:return-null=  return null",
+    "2:12:arithmetic=  return n - 10 | 2:14:int:+1=  return n + 11 | 2:14:int:-1=  return n + 9 | 2:3:return-null=  return null",
   )
-  t.eqStr("no ints inside names, hex or decimals", mutateTestList(mutateLine("const x2 = 0x1f + 1.5 + 3n", 1)), "")
+  t.eqStr(
+    "no ints inside names, hex or decimals",
+    mutateTestList(mutateLine("const x2 = 0x1f + 1.5 + 3n", 1)),
+    "1:17:arithmetic=const x2 = 0x1f - 1.5 + 3n | 1:23:arithmetic=const x2 = 0x1f + 1.5 - 3n",
+  )
   t.eqStr(
     "strings are skipped",
     mutateTestList(mutateLine("  log(\"a < b\", `1 && 2`, '!x')", 1)),

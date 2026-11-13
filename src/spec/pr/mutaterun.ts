@@ -4,8 +4,9 @@
  * of its own (its .git left behind), so each copy's compiler builds against
  * its own std/ holding its own mutant. A mutant runs in two steps, both
  * timed: `<nish> <test> --link <bin>` builds the test against it, and a build
- * that fails makes it stillborn; then `<bin>` runs, and a nonzero exit kills
- * it. The test is given, not made here: generating it is `verify/emit`'s.
+ * that fails or runs past its time makes it stillborn; then `<bin>` runs, and
+ * a nonzero exit, or running past its time, kills it. Every copy runs the
+ * unmutated baseline first, so a broken copy cannot pass off as a kill. The test is given, not made here: generating it is `verify/emit`'s.
  */
 
 import { trim } from "nish/text"
@@ -54,7 +55,7 @@ export class MutateRun {
    * @param file the module, from the nish root ("" until the contract names it)
    * @param nish the compiler, from the nish root
    * @param test the test program, an absolute path
-   * @param jobs how many mutants run at once; below 1 is 1
+   * @param jobs how many mutants run at once; below 1 is 1, above the machine's CPUs is their count
    * @param timeoutMs the time limit per step; 0 or less to derive it from the baseline
    */
   constructor(nishRoot: string, file: string, nish: string, test: string, jobs: i32, timeoutMs: i32) {
@@ -62,7 +63,8 @@ export class MutateRun {
     this.file = file
     this.nish = nish
     this.test = test
-    this.jobs = jobs < 1 ? 1 : jobs
+    const cpus = availableParallelism()
+    this.jobs = jobs < 1 ? 1 : jobs > cpus ? cpus : jobs
     this.timeoutMs = timeoutMs
   }
 }
@@ -91,9 +93,19 @@ class MutaterunSlot {
   }
 }
 
-/** The argv that runs `argv` with its output, both streams, in `log`. */
+/**
+ * The argv that runs `argv` with its output, both streams, in `log`. Where
+ * `setsid` exists the step leads a process group of its own, so a timeout
+ * kills what it started too; setsid execs in place, keeping the pid.
+ */
 const mutaterunLogged = (log: string, argv: string[]): string[] => {
-  const out: string[] = ["sh", "-c", 'out=$1; shift; exec "$@" >"$out" 2>&1', "sh", log]
+  const out: string[] = [
+    "sh",
+    "-c",
+    'out=$1; shift; if command -v setsid >/dev/null 2>&1; then exec setsid "$@" >"$out" 2>&1; fi; exec "$@" >"$out" 2>&1',
+    "sh",
+    log,
+  ]
   for (const a of argv) {
     out.push(a)
   }
@@ -141,6 +153,7 @@ const mutaterunLogTail = (dir: string): string => {
  */
 const mutaterunBaseline = (run: MutateRun, dir: string, limitMs: i32): Result<i64, string> => {
   const start = monotonicNanos()
+  unlinkSync(joinPath(dir, "mutant.bin"))
   const build = runProcess(mutaterunBuildArgv(run, dir), "", limitMs).orReturn()
   if (build.timedOut || build.status !== 0) {
     return Err(`it does not build: ${mutaterunLogTail(dir)}`)
@@ -162,6 +175,9 @@ const mutaterunStart = (
   building: boolean,
   limitMs: i32,
 ): Result<boolean, string> => {
+  if (building) {
+    unlinkSync(joinPath(slot.dir, "mutant.bin"))
+  }
   const pid = spawn(argv)
   if (pid < 0) {
     return Err(`cannot start ${argv[0]} (errno ${-pid})`)
@@ -172,11 +188,59 @@ const mutaterunStart = (
   return Ok(true)
 }
 
+/** Kills a step and its process group, then reaps it. */
+const mutaterunKill = (pid: i32): void => {
+  const group = runProcess(["kill", "-9", "--", `-${pid}`], "", MUTATERUN_MIN_TIMEOUT_MS)
+  if (group.isErr() || group.value.status !== 0) {
+    kill(pid, 9)
+  }
+  waitPid(pid, 0)
+}
+
 /** Settles a mutant and frees its slot. */
 const mutaterunSettle = (slot: MutaterunSlot, mutants: MutateMutant[], outcome: i32): void => {
   mutants[slot.mutant].outcome = outcome
   slot.pid = 0
   slot.mutant = -1
+}
+
+/** What one step's exit did: how many mutants it settled (0 or 1), and why the run cannot go on, or "". */
+class MutaterunStep {
+  /** Mutants settled: 0 when the build passed and the test started. */
+  settled: i32
+  /** Why the run cannot go on, or "". */
+  failure: string
+
+  /**
+   * Makes a step's result.
+   *
+   * @param settled mutants settled
+   * @param failure why the run cannot go on, or ""
+   */
+  constructor(settled: i32, failure: string) {
+    this.settled = settled
+    this.failure = failure
+  }
+}
+
+/** Handles a slot's step exiting with `status`: a built mutant moves on to its test, anything else settles it. */
+const mutaterunExited = (
+  run: MutateRun,
+  slot: MutaterunSlot,
+  mutants: MutateMutant[],
+  status: i32,
+  limitMs: i32,
+): MutaterunStep => {
+  if (slot.building && status === 0) {
+    const started = mutaterunStart(slot, mutaterunTestArgv(slot.dir), false, limitMs)
+    if (started.isErr()) {
+      mutaterunSettle(slot, mutants, MUTATE_STILLBORN)
+      return new MutaterunStep(1, started.error)
+    }
+    return new MutaterunStep(0, "")
+  }
+  mutaterunSettle(slot, mutants, slot.building ? MUTATE_STILLBORN : status === 0 ? MUTATE_SURVIVED : MUTATE_KILLED)
+  return new MutaterunStep(1, "")
 }
 
 /** Runs every mutant over the slots, each settled by the end. */
@@ -215,17 +279,10 @@ const mutaterunLoop = (
       reaped = w[0] > 0
       for (const slot of slots) {
         if (reaped && slot.pid === w[0]) {
-          if (slot.building && w[1] === 0) {
-            const started = mutaterunStart(slot, mutaterunTestArgv(slot.dir), false, limitMs)
-            if (started.isErr()) {
-              failure = started.error
-              mutaterunSettle(slot, mutants, MUTATE_STILLBORN)
-              busy--
-            }
-          } else {
-            const outcome = slot.building ? MUTATE_STILLBORN : w[1] === 0 ? MUTATE_SURVIVED : MUTATE_KILLED
-            mutaterunSettle(slot, mutants, outcome)
-            busy--
+          const step = mutaterunExited(run, slot, mutants, w[1], limitMs)
+          busy -= step.settled
+          if (step.failure.length > 0) {
+            failure = step.failure
           }
         }
       }
@@ -233,10 +290,18 @@ const mutaterunLoop = (
     const now = monotonicNanos()
     for (const slot of slots) {
       if (slot.pid !== 0 && now > slot.deadline) {
-        kill(slot.pid, 9)
-        waitPid(slot.pid, 0)
-        mutaterunSettle(slot, mutants, MUTATE_TIMED_OUT)
-        busy--
+        const late = waitPid(slot.pid, 1)
+        if (late[0] === slot.pid) {
+          const step = mutaterunExited(run, slot, mutants, late[1], limitMs)
+          busy -= step.settled
+          if (step.failure.length > 0) {
+            failure = step.failure
+          }
+        } else {
+          mutaterunKill(slot.pid)
+          mutaterunSettle(slot, mutants, slot.building ? MUTATE_STILLBORN : MUTATE_TIMED_OUT)
+          busy--
+        }
       }
     }
     if (busy > 0) {
@@ -245,8 +310,7 @@ const mutaterunLoop = (
   }
   for (const slot of slots) {
     if (slot.pid !== 0) {
-      kill(slot.pid, 9)
-      waitPid(slot.pid, 0)
+      mutaterunKill(slot.pid)
       slot.pid = 0
     }
   }
@@ -269,13 +333,19 @@ const mutaterunIn = (
     slots.push(new MutaterunSlot(dir))
   }
   const first = run.timeoutMs > 0 ? run.timeoutMs : MUTATERUN_COPY_MS
-  const baseline = mutaterunBaseline(run, slots[0].dir, first)
-  if (baseline.isErr()) {
-    return Ok(baseline.error)
+  let slowest: i64 = 0
+  for (let i = 0; i < slots.length; i++) {
+    const baseline = mutaterunBaseline(run, slots[i].dir, first)
+    if (baseline.isErr()) {
+      return Ok(i > 0 ? `in copy ${i + 1} of ${slots.length}, ${baseline.error}` : baseline.error)
+    }
+    if (baseline.value > slowest) {
+      slowest = baseline.value
+    }
   }
   let limitMs = run.timeoutMs
   if (limitMs <= 0) {
-    const derived = baseline.value * toI64(3)
+    const derived = slowest * toI64(3)
     limitMs = derived > toI64(MUTATERUN_MIN_TIMEOUT_MS) ? toI32(derived) : MUTATERUN_MIN_TIMEOUT_MS
   }
   mutaterunLoop(run, text, mutants, slots, limitMs).orReturn()
@@ -338,13 +408,15 @@ export const mutateCheck = (contractPath: string, base: string, run: MutateRun, 
   }
   const prefix = trim(gitdiffGit(run.nishRoot, ["rev-parse", "--show-prefix"]).orReturn())
   const changed = gitdiffChanged(run.nishRoot, base, [`${prefix}${file}`]).orReturn()
-  const mutants: MutateMutant[] = changed.length > 0 ? mutatePick(mutateSites(text, changed[0]), max) : []
+  const all: MutateMutant[] = changed.length > 0 ? mutateSites(text, changed[0]) : []
+  const mutants = mutatePick(all, max)
+  const dropped = toI32(all.length) - toI32(mutants.length)
   const allow = c.allowSurvivors ?? []
   if (mutants.length === 0) {
-    mutateJudge(r, file, mutants, allow, null)
+    mutateJudge(r, file, mutants, allow, null, dropped)
     return Ok(r)
   }
   const baseline = mutateRunAll(run, text, mutants).orReturn()
-  mutateJudge(r, file, mutants, allow, baseline)
+  mutateJudge(r, file, mutants, allow, baseline, dropped)
   return Ok(r)
 }
