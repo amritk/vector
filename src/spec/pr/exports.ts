@@ -6,14 +6,14 @@
  * fork point from the base and the work tree. Deleting an export the contract
  * tests fails too: its test can no longer build. A change that adds an export
  * the scanner cannot name or resolve (`export *`, a re-export from another
- * module) fails closed.
+ * module, `export { a }` of an imported `a`) fails closed.
  */
 
 import { splitLines, trim } from "nish/text"
 import { contractLoadFile } from "../contract/contract"
 import { shapeNishModuleFile } from "../contract/shape"
 import { Contract } from "../contract/types"
-import { GitdiffExport, gitdiffExports, gitdiffForkPoint, gitdiffGit, gitdiffShow, gitdiffTop } from "./gitdiff"
+import { GitdiffExport, gitdiffExports, gitdiffForkPoint, gitdiffPrefix, gitdiffShow, gitdiffTop } from "./gitdiff"
 import { PrReport } from "./report"
 
 /** One export the change added, changed or deleted. */
@@ -193,7 +193,7 @@ export const exportsCheck = (contractPath: string, nishRoot: string, base: strin
     return Err(`${contractPath}: target.module ${c.target.module} is not a nish module (nish/<path>)`)
   }
   const fork = gitdiffForkPoint(nishRoot, base).orReturn()
-  const prefix = trim(gitdiffGit(nishRoot, ["rev-parse", "--show-prefix"]).orReturn())
+  const prefix = gitdiffPrefix(nishRoot).orReturn()
   const top = gitdiffTop(nishRoot).orReturn()
   const before = gitdiffShow(top, fork, `${prefix}${file}`).orReturn()
   const after = readFileSyncOrNull(`${nishRoot}/${file}`)

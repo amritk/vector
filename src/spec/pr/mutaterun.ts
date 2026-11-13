@@ -4,19 +4,21 @@
  * of its own (its .git left behind), so each copy's compiler builds against
  * its own std/ holding its own mutant. A mutant runs in two steps, both
  * timed: `<nish> <test> --link <bin>` builds the test against it, and a build
- * that fails or leaves no binary makes it stillborn, one that runs past its
- * time is counted apart (MUTATE_BUILD_TIMED_OUT); then `<bin>` runs, and
+ * the compiler refuses with an error located in the module or the test makes
+ * it stillborn, while any other failed build (a crash, a kill, a full disk,
+ * no binary) stops the run, as the tool's failure, not the mutant's; one
+ * that runs past its time is counted apart (MUTATE_BUILD_TIMED_OUT); then `<bin>` runs, and
  * a nonzero exit kills it, while running past its time is counted apart
  * (MUTATE_TIMED_OUT), as neither a kill nor a survival. Every copy runs the
  * unmutated baseline first, so a broken copy cannot pass off as a kill. The test is given, not made here: generating it is `verify/emit`'s.
  */
 
-import { trim } from "nish/text"
+import { splitLines, trim } from "nish/text"
 import { joinPath, makeTempDir, mkdirAll } from "../../core/fs"
 import { runProcess } from "../../core/process"
 import { contractLoadFile } from "../contract/contract"
 import { shapeNishModuleFile } from "../contract/shape"
-import { gitdiffChanged, gitdiffGit } from "./gitdiff"
+import { gitdiffChanged, gitdiffPrefix } from "./gitdiff"
 import {
   MUTATE_BUILD_TIMED_OUT,
   MUTATE_KILLED,
@@ -149,29 +151,60 @@ const mutaterunLogTail = (dir: string): string => {
   return t.length > 0 ? t : "(no output)"
 }
 
+/** What the unmutated module did: how long it took, or why the test refuses it. */
+class MutaterunBaseline {
+  /** How long the build and the run took, in milliseconds. */
+  ms: i64
+  /** Why the test fails on the unmutated module, or "" when it passes. */
+  refusal: string
+
+  /**
+   * Makes a baseline's result.
+   *
+   * @param ms how long both steps took
+   * @param refusal why the test fails there, or ""
+   */
+  constructor(ms: i64, refusal: string) {
+    this.ms = ms
+    this.refusal = refusal
+  }
+}
+
 /**
- * Builds and runs the test against the unmutated module, in `dir`.
+ * Builds and runs the test against the unmutated module, in `dir`. The
+ * compiler refusing the module or the test, or the test failing, refuses
+ * the change; a build that runs past its time, fails with no located error
+ * or writes no binary is the tool's failure.
  *
- * @returns how long both steps took, in milliseconds, or a reason the test fails there
+ * @returns how long both steps took or why the test refuses, or `Err` when the tool fails
  */
-const mutaterunBaseline = (run: MutateRun, dir: string, limitMs: i32): Result<i64, string> => {
+const mutaterunBaseline = (run: MutateRun, dir: string, limitMs: i32): Result<MutaterunBaseline, string> => {
   const start = monotonicNanos()
   unlinkSync(joinPath(dir, "mutant.bin"))
   const build = runProcess(mutaterunBuildArgv(run, dir), "", limitMs).orReturn()
-  if (build.timedOut || build.status !== 0) {
-    return Err(`it does not build: ${mutaterunLogTail(dir)}`)
+  if (build.timedOut) {
+    return Err(`the unmutated module's build ran past ${limitMs} ms: ${mutaterunLogTail(dir)}`)
+  }
+  if (build.status !== 0) {
+    const log = readFileSyncOrNull(joinPath(dir, "mutant.log")) ?? ""
+    if (!mutaterunRefused(run, log)) {
+      return Err(
+        `the unmutated module's build exits ${build.status} with no error located in ${run.file}: ${mutaterunLogTail(dir)}`,
+      )
+    }
+    return Ok(new MutaterunBaseline(0, `it does not build: ${mutaterunLogTail(dir)}`))
   }
   if (realpathSync(joinPath(dir, "mutant.bin")) === null) {
-    return Err(`its build exits 0 but writes no binary: ${mutaterunLogTail(dir)}`)
+    return Err(`the unmutated module's build exits 0 but writes no binary: ${mutaterunLogTail(dir)}`)
   }
   const test = runProcess(mutaterunTestArgv(dir), "", limitMs).orReturn()
   if (test.timedOut) {
-    return Err(`it ran past ${limitMs} ms`)
+    return Ok(new MutaterunBaseline(0, `it ran past ${limitMs} ms`))
   }
   if (test.status !== 0) {
-    return Err(`it exits ${test.status}: ${mutaterunLogTail(dir)}`)
+    return Ok(new MutaterunBaseline(0, `it exits ${test.status}: ${mutaterunLogTail(dir)}`))
   }
-  return Ok((monotonicNanos() - start) / toI64(1000000))
+  return Ok(new MutaterunBaseline((monotonicNanos() - start) / toI64(1000000), ""))
 }
 
 /** Starts the next step in a slot: `argv`, ending by `limitMs` from now. */
@@ -229,11 +262,105 @@ class MutaterunStep {
   }
 }
 
+/** Whether `text[from, to)` is one or more digits. */
+const mutaterunDigits = (text: string, from: i32, to: i32): boolean => {
+  if (to <= from) {
+    return false
+  }
+  for (let i = from; i < to; i++) {
+    const c = text.charCodeAt(i)
+    if (c < 0x30 || c > 0x39) {
+      return false
+    }
+  }
+  return true
+}
+
+/** Whether `text` is one or more lowercase letters. */
+const mutaterunWord = (text: string): boolean => {
+  if (text.length === 0) {
+    return false
+  }
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i)
+    if (c < 0x61 || c > 0x7a) {
+      return false
+    }
+  }
+  return true
+}
+
+/**
+ * The path of a compiler diagnostic line, `<path>:<line>:<col>: [word ]error: …`,
+ * or "" when the line is not one.
+ */
+const mutaterunDiagnosticPath = (line: string): string => {
+  let at = line.indexOf(":")
+  while (at > 0) {
+    const a = line.indexOf(":", at + 1)
+    const b = a < 0 ? -1 : line.indexOf(": ", a + 1)
+    if (a > 0 && b > 0 && mutaterunDigits(line, at + 1, a) && mutaterunDigits(line, a + 1, b)) {
+      const rest = line.substring(b + 2)
+      const e = rest.indexOf("error: ")
+      const before = e < 0 ? "" : rest.substring(0, e)
+      const word = before.length > 1 && before.endsWith(" ") && mutaterunWord(before.substring(0, before.length - 1))
+      return e === 0 || word ? line.substring(0, at) : ""
+    }
+    at = line.indexOf(":", at + 1)
+  }
+  return ""
+}
+
+/**
+ * Whether a failed build's log is the compiler refusing the mutant: some
+ * line is an error diagnostic, and every unindented line that mentions an
+ * error is one located in the mutated module or the test. Anything else,
+ * a crash, a kill or a full disk, is not the mutant's doing.
+ */
+const mutaterunRefused = (run: MutateRun, log: string): boolean => {
+  let located = false
+  for (const line of splitLines(log)) {
+    const c = line.length > 0 ? line.charCodeAt(0) : 0x20
+    const count = line.endsWith(" error") || line.endsWith(" errors")
+    if (c === 0x20 || c === 0x09 || line.indexOf("error") < 0) {
+      continue
+    }
+    if (count && mutaterunDigits(line, 0, line.indexOf(" "))) {
+      continue
+    }
+    const path = mutaterunDiagnosticPath(line)
+    if (path !== run.file && !path.endsWith(`/${run.file}`) && path !== run.test) {
+      return false
+    }
+    located = true
+  }
+  return located
+}
+
 /** Handles a slot's step exiting with `status`: a built mutant moves on to its test, anything else settles it. */
-const mutaterunExited = (slot: MutaterunSlot, mutants: MutateMutant[], status: i32, limitMs: i32): MutaterunStep => {
+const mutaterunExited = (
+  run: MutateRun,
+  slot: MutaterunSlot,
+  mutants: MutateMutant[],
+  status: i32,
+  limitMs: i32,
+): MutaterunStep => {
   if (slot.building && status === 0 && realpathSync(joinPath(slot.dir, "mutant.bin")) === null) {
+    const tail = mutaterunLogTail(slot.dir)
     mutaterunSettle(slot, mutants, MUTATE_STILLBORN)
-    return new MutaterunStep(1, "")
+    return new MutaterunStep(1, `a mutant's build exits 0 but writes no binary: ${tail}`)
+  }
+  if (slot.building && status !== 0) {
+    const log = readFileSyncOrNull(joinPath(slot.dir, "mutant.log")) ?? ""
+    const tail = mutaterunLogTail(slot.dir)
+    mutaterunSettle(slot, mutants, MUTATE_STILLBORN)
+    if (mutaterunRefused(run, log)) {
+      return new MutaterunStep(1, "")
+    }
+    return new MutaterunStep(
+      1,
+      `a mutant's build exits ${status} with no error located in ${run.file}, so the compiler failed, not the mutant: ${tail}`,
+    )
   }
   if (slot.building && status === 0) {
     const started = mutaterunStart(slot, mutaterunTestArgv(slot.dir), false, limitMs)
@@ -243,7 +370,7 @@ const mutaterunExited = (slot: MutaterunSlot, mutants: MutateMutant[], status: i
     }
     return new MutaterunStep(0, "")
   }
-  mutaterunSettle(slot, mutants, slot.building ? MUTATE_STILLBORN : status === 0 ? MUTATE_SURVIVED : MUTATE_KILLED)
+  mutaterunSettle(slot, mutants, status === 0 ? MUTATE_SURVIVED : MUTATE_KILLED)
   return new MutaterunStep(1, "")
 }
 
@@ -283,7 +410,7 @@ const mutaterunLoop = (
       reaped = w[0] > 0
       for (const slot of slots) {
         if (reaped && slot.pid === w[0]) {
-          const step = mutaterunExited(slot, mutants, w[1], limitMs)
+          const step = mutaterunExited(run, slot, mutants, w[1], limitMs)
           busy -= step.settled
           if (step.failure.length > 0) {
             failure = step.failure
@@ -296,7 +423,7 @@ const mutaterunLoop = (
       if (slot.pid !== 0 && now > slot.deadline) {
         const late = waitPid(slot.pid, 1)
         if (late[0] === slot.pid) {
-          const step = mutaterunExited(slot, mutants, late[1], limitMs)
+          const step = mutaterunExited(run, slot, mutants, late[1], limitMs)
           busy -= step.settled
           if (step.failure.length > 0) {
             failure = step.failure
@@ -339,12 +466,16 @@ const mutaterunIn = (
   const first = run.timeoutMs > 0 ? run.timeoutMs : MUTATERUN_COPY_MS
   let slowest: i64 = 0
   for (let i = 0; i < slots.length; i++) {
+    const where = i > 0 ? `in copy ${i + 1} of ${slots.length}, ` : ""
     const baseline = mutaterunBaseline(run, slots[i].dir, first)
     if (baseline.isErr()) {
-      return Ok(i > 0 ? `in copy ${i + 1} of ${slots.length}, ${baseline.error}` : baseline.error)
+      return Err(`${where}${baseline.error}`)
     }
-    if (baseline.value > slowest) {
-      slowest = baseline.value
+    if (baseline.value.refusal.length > 0) {
+      return Ok(`${where}${baseline.value.refusal}`)
+    }
+    if (baseline.value.ms > slowest) {
+      slowest = baseline.value.ms
     }
   }
   let limitMs = run.timeoutMs
@@ -366,7 +497,8 @@ const mutaterunIn = (
  * @param mutants the mutants to run, at least one
  * @returns `Ok(null)` when the test passed on the unmutated module and every
  *   mutant was run; `Ok(reason)` when it failed there, and no mutant was run;
- *   `Err` when the scratch copies cannot be made or a step cannot start
+ *   `Err` when the scratch copies cannot be made, a step cannot start, or a
+ *   build fails for the tool, not the module
  */
 export const mutateRunAll = (run: MutateRun, text: string, mutants: MutateMutant[]): Result<string | null, string> => {
   const passed: string | null = null
@@ -407,10 +539,9 @@ export const mutateCheck = (contractPath: string, base: string, run: MutateRun, 
   const r = new PrReport("mutate", `spec mutate ${file} against ${base}`)
   const text = readFileSyncOrNull(`${run.nishRoot}/${file}`)
   if (text === null) {
-    r.problems.push(`${run.nishRoot}/${file} cannot be read: is ${run.nishRoot} the nish checkout?`)
-    return Ok(r)
+    return Err(`${run.nishRoot}/${file} cannot be read: is ${run.nishRoot} the nish checkout?`)
   }
-  const prefix = trim(gitdiffGit(run.nishRoot, ["rev-parse", "--show-prefix"]).orReturn())
+  const prefix = gitdiffPrefix(run.nishRoot).orReturn()
   const changed = gitdiffChanged(run.nishRoot, base, [`${prefix}${file}`]).orReturn()
   const all: MutateMutant[] = changed.length > 0 ? mutateSites(text, changed[0]) : []
   const mutants = mutatePick(all, max)
@@ -419,6 +550,14 @@ export const mutateCheck = (contractPath: string, base: string, run: MutateRun, 
   if (mutants.length === 0) {
     mutateJudge(r, file, mutants, allow, null, dropped)
     return Ok(r)
+  }
+  if (realpathSync(run.test) === null) {
+    return Err(`the test ${run.test} cannot be read`)
+  }
+  const compiler = joinPath(run.nishRoot, run.nish)
+  const runnable = runProcess(["test", "-f", compiler, "-a", "-x", compiler], "", MUTATERUN_MIN_TIMEOUT_MS).orReturn()
+  if (runnable.status !== 0) {
+    return Err(`the compiler ${compiler} is not an executable file`)
   }
   const baseline = mutateRunAll(run, text, mutants).orReturn()
   mutateJudge(r, file, mutants, allow, baseline, dropped)

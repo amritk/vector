@@ -38,7 +38,7 @@ const mutateTestList = (ms: MutateMutant[]): string => {
 const MUTATE_TEST_NISH: string = `#!/bin/sh
 root=$(cd "$(dirname "$0")/.." && pwd)
 if grep -q 'return null' "$root/std/m.ts"; then
-  echo "refused" >&2
+  printf '%s/std/m.ts:5:3: error: refused\\n  5 |   return null\\n1 error\\n' "$root" >&2
   exit 1
 fi
 printf '#!/bin/sh\\ncd "%s" && exec sh "%s"\\n' "$root" "$1" > "$3"
@@ -163,30 +163,33 @@ const mutateTestRepo = (t: Suite): Result<boolean, string> => {
     new MutateRun(dir, "", "bin/nish", `${dir}/t.sh`, 1, MUTATE_TEST_CALM_MS),
     0,
   )
-  t.ok(
-    "a root without the module says so",
-    elsewhere.isOk() &&
-      elsewhere.value.problems.length === 1 &&
-      elsewhere.value.problems[0].indexOf("cannot be read") >= 0,
-  )
+  t.ok("a root without the module is an error", elsewhere.isErr() && elsewhere.error.indexOf("cannot be read") >= 0)
   prTestRemove(dir)
   return Ok(true)
 }
 
 /**
- * A stub compiler whose builds go wrong: it hangs on \`a <= b\`, exits 0
- * without a binary on \`=> 8\`, refuses "return null", and otherwise links.
+ * A stub compiler whose builds go wrong: it hangs on \`a <= b\`, refuses
+ * "return null" with an error located in the module, and otherwise links.
  */
 const MUTATE_TEST_ODD_NISH: string = `#!/bin/sh
 root=$(cd "$(dirname "$0")/.." && pwd)
 if grep -q 'a <= b' "$root/std/m.ts"; then
   exec sleep 600
 fi
-if grep -q '=> 8' "$root/std/m.ts"; then
-  exit 0
-fi
 if grep -q 'return null' "$root/std/m.ts"; then
+  echo "std/m.ts:5:3: error: refused" >&2
   exit 1
+fi
+printf '#!/bin/sh\\ncd "%s" && exec sh "%s"\\n' "$root" "$1" > "$3"
+chmod +x "$3"
+`
+
+/** A stub compiler that fails "return null" with \`what\` (shell), and otherwise links. */
+const mutateTestBadNish = (what: string): string => `#!/bin/sh
+root=$(cd "$(dirname "$0")/.." && pwd)
+if grep -q 'return null' "$root/std/m.ts"; then
+  ${what}
 fi
 printf '#!/bin/sh\\ncd "%s" && exec sh "%s"\\n' "$root" "$1" > "$3"
 chmod +x "$3"
@@ -214,26 +217,34 @@ const mutateTestWith = (nish: string): Result<PrReport, string> => {
   return r
 }
 
-/** Builds that hang, or exit 0 without a binary, for a mutant and for the baseline. */
+/** Builds that hang, are refused, or fail for the tool, for a mutant and for the baseline. */
 const mutateTestOddBuilds = (t: Suite): void => {
   const odd = mutateTestWith(MUTATE_TEST_ODD_NISH)
   t.eqStr(
-    "a hung build and a build without a binary",
+    "a hung build and a refused one",
     odd.isOk() ? `${odd.value.items.join(" | ")} || ${odd.value.problems.join(" | ")}` : odd.error,
     [
       "build timed out std/m.ts:2:50 relational: export const lt = (a: i32, b: i32): boolean => a <= b",
-      "stillborn std/m.ts:3:29 int: export const k = (): i32 => 8",
+      "survived std/m.ts:3:29 int: export const k = (): i32 => 8",
       "timed out std/m.ts:3:29 int: export const k = (): i32 => 6",
       "stillborn std/m.ts:5:3 return-null: return null || 1 of 4 mutant builds ran past their time, more than 10%: a survivor may hide among them, so run with fewer --jobs",
-      "every mutant that built ran its test past its time: the test settled none of them, so run with fewer --jobs",
+      "1 of 4 mutants ran their test past its time, more than 10%: a timeout is neither a kill nor a survival, so a survivor may hide among them: run with fewer --jobs",
     ].join(" | "),
   )
+  const bad = [
+    ["an unrelated failure", "echo 'out of memory' >&2; exit 1", "with no error located in std/m.ts"],
+    ["a kill by a signal", "kill -9 $$", "a mutant's build exits 137"],
+    ["an error in another module", "echo 'std/other.ts:1:1: error: x' >&2; exit 1", "with no error located"],
+    ["no binary", "exit 0", "a mutant's build exits 0 but writes no binary"],
+  ]
+  for (const b of bad) {
+    const r = mutateTestWith(mutateTestBadNish(b[1]))
+    t.ok(`${b[0]} is the tool's failure, not a stillborn mutant`, r.isErr() && r.error.indexOf(b[2]) >= 0)
+  }
   const empty = mutateTestWith(MUTATE_TEST_EMPTY_NISH)
   t.ok(
-    "a baseline build without a binary fails the check",
-    empty.isOk() &&
-      empty.value.problems.length === 1 &&
-      empty.value.problems[0].indexOf("its build exits 0 but writes no binary") >= 0,
+    "a baseline build without a binary is the tool's failure",
+    empty.isErr() && empty.error.indexOf("the unmutated module's build exits 0 but writes no binary") >= 0,
   )
 }
 

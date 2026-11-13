@@ -39,15 +39,46 @@ export const gitdiffBaseProblem = (base: string): string | null => {
 }
 
 /**
+ * The variables that would point git at another repository than the one
+ * named, cleared for every git call: a hook or a CI step may have set them.
+ */
+const gitdiffUnset = (): string[] => [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_COMMON_DIR",
+  "GIT_CEILING_DIRECTORIES",
+  "GIT_NAMESPACE",
+]
+
+/** `text` without its one final line break, as git ends a single-line answer. */
+const gitdiffLine = (text: string): string => {
+  const t = text.endsWith("\n") ? text.substring(0, text.length - 1) : text
+  return t.endsWith("\r") ? t.substring(0, t.length - 1) : t
+}
+
+/**
  * Runs git in `repo` and returns what it printed. Pathspecs are literal, so
- * a path holding `*` or `:(` names that file, never a pattern.
+ * a path holding `*` or `:(` names that file, never a pattern. The GIT_*
+ * variables that redirect git (GIT_DIR, GIT_WORK_TREE and the like) are
+ * cleared and the system config is skipped, so `repo` alone says which
+ * repository is read.
  *
  * @param repo the repository's directory
  * @param args git's arguments, after `-C <repo> --literal-pathspecs`
  * @returns its standard output, or `Err` naming the command and what git said
  */
 export const gitdiffGit = (repo: string, args: string[]): Result<string, string> => {
-  const argv: string[] = ["git", "-C", repo, "--literal-pathspecs"]
+  const argv: string[] = ["env"]
+  for (const v of gitdiffUnset()) {
+    argv.push("-u")
+    argv.push(v)
+  }
+  for (const a of ["GIT_CONFIG_NOSYSTEM=1", "git", "-C", repo, "--literal-pathspecs"]) {
+    argv.push(a)
+  }
   for (const a of args) {
     argv.push(a)
   }
@@ -70,8 +101,18 @@ export const gitdiffGit = (repo: string, args: string[]): Result<string, string>
  */
 export const gitdiffTop = (repo: string): Result<string, string> => {
   const out = gitdiffGit(repo, ["rev-parse", "--show-toplevel"]).orReturn()
-  return Ok(trim(out))
+  return Ok(gitdiffLine(out))
 }
+
+/**
+ * Where `repo` sits in its work tree, from the top: `std/` for a checkout's
+ * std directory, "" at the top.
+ *
+ * @param repo a directory inside the repository
+ * @returns the prefix, ending in `/` unless empty
+ */
+export const gitdiffPrefix = (repo: string): Result<string, string> =>
+  Ok(gitdiffLine(gitdiffGit(repo, ["rev-parse", "--show-prefix"]).orReturn()))
 
 /**
  * The commit the change forked from: the merge base of `base` and HEAD, so
@@ -86,8 +127,16 @@ export const gitdiffForkPoint = (repo: string, base: string): Result<string, str
   if (problem !== null) {
     return Err(problem)
   }
-  const out = gitdiffGit(repo, ["merge-base", "--end-of-options", base, "HEAD"]).orReturn()
-  return Ok(trim(out))
+  const out = gitdiffGit(repo, ["merge-base", "--end-of-options", base, "HEAD"])
+  if (out.isErr()) {
+    const shallow = gitdiffGit(repo, ["rev-parse", "--is-shallow-repository"])
+    const hint =
+      shallow.isOk() && gitdiffLine(shallow.value) === "true"
+        ? " (the clone is shallow, so the fork point may be missing: fetch the full history, such as actions/checkout's `fetch-depth: 0`)"
+        : ""
+    return Err(`${out.error}${hint}`)
+  }
+  return Ok(gitdiffLine(out.value))
 }
 
 /** One file a change touches, and the lines of it the change adds. */
@@ -668,7 +717,14 @@ const gitdiffListExports = (
       }
       const decl: string | null = name.length > 0 ? gitdiffDeclText(text, toks, spans, toks[s].text) : null
       if (decl === null) {
-        out.push(new GitdiffExport("", line, statement, `an export it cannot resolve to a declaration: ${entry}`))
+        out.push(
+          new GitdiffExport(
+            "",
+            line,
+            statement,
+            `an export it cannot resolve to a declaration in this module (an imported name is not followed): ${entry}`,
+          ),
+        )
       } else {
         out.push(new GitdiffExport(name, line, `${entry}\n${decl}`, ""))
       }

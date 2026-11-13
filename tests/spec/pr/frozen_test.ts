@@ -213,6 +213,21 @@ export const main = (): i32 => {
     t.fail("a repository", dir.error)
     return t.done()
   }
+  const top = gitdiffTop(dir.value)
+  const link = `${dir.value}-link`
+  const linked = runProcess(["ln", "-s", "--", dir.value, link], "", 10000)
+  if (top.isOk() && linked.isOk() && linked.value.status === 0) {
+    const via = frozenResolve(top.value, `${link}/contracts/c.json`)
+    t.eqStr(
+      "a path through a link to the top resolves",
+      via.isOk() ? via.value : via.error,
+      `${top.value}/contracts/c.json`,
+    )
+    const unlinked = runProcess(["rm", "-f", "--", link], "", 10000)
+    t.ok("the link is removed", unlinked.isOk())
+  } else {
+    t.fail("a link to the repository", top.isErr() ? top.error : "ln -s failed")
+  }
   const ran = frozenTestRepo(t, dir.value)
   if (ran.isErr()) {
     t.fail("the repository steps", ran.error)

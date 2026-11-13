@@ -107,10 +107,26 @@ const frozenUnlinked = (top: string, path: string): Result<string, string> => {
 }
 
 /**
+ * An absolute `given` that reaches the top through a link above it (as /tmp
+ * may be one on macOS, where git names the real directory), rewritten from
+ * the top; null when no leading directory of it is the top. Only what leads
+ * to the top is resolved: a link below it is still refused.
+ */
+const frozenUnderTop = (top: string, given: string): string | null => {
+  for (let at = given.indexOf("/", 1); at > 0; at = given.indexOf("/", at + 1)) {
+    const real = realpathSync(given.substring(0, at))
+    if (real !== null && real === top) {
+      return `${top}${given.substring(at)}`
+    }
+  }
+  return null
+}
+
+/**
  * A contract path as given, made absolute against the repository's top:
  * relative paths are read from the top, not the working directory, and no
  * path may leave it, through `..`, by being absolute elsewhere, or through a
- * symbolic link (the contract itself or a directory above it).
+ * symbolic link below the top (the contract itself or a directory above it).
  *
  * @param top the repository's top
  * @param given the path as given
@@ -123,10 +139,11 @@ export const frozenResolve = (top: string, given: string): Result<string, string
     }
   }
   if (given.startsWith("/")) {
-    if (!given.startsWith(`${top}/`)) {
+    const inside = given.startsWith(`${top}/`) ? given : frozenUnderTop(top, given)
+    if (inside === null) {
       return Err(`${given}: outside the repository at ${top}: the gate checks only its own contracts`)
     }
-    return frozenUnlinked(top, given)
+    return frozenUnlinked(top, inside)
   }
   return frozenUnlinked(top, `${top}/${given}`)
 }

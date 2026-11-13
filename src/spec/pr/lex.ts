@@ -110,7 +110,11 @@ const lexIdentChar = (c: i32): boolean => lexIdentStart(c) || (c >= 0x30 && c <=
 /** Whether `c` is a decimal digit. */
 const lexDigit = (c: i32): boolean => c >= 0x30 && c <= 0x39
 
-/** The keywords after which an expression cannot have ended. */
+/**
+ * The reserved words after which an expression cannot have ended. A
+ * contextual keyword (`type`, `from`, `as`, `async`, `of`, ...) is not one:
+ * it may name a variable, so a `/` after it divides.
+ */
 const lexNoEnd = (): string[] => [
   "export",
   "default",
@@ -120,24 +124,14 @@ const lexNoEnd = (): string[] => [
   "function",
   "class",
   "enum",
-  "type",
   "interface",
-  "namespace",
-  "module",
-  "declare",
-  "abstract",
-  "async",
   "new",
   "typeof",
-  "keyof",
   "extends",
   "implements",
-  "as",
-  "satisfies",
   "in",
   "instanceof",
   "import",
-  "from",
   "return",
   "throw",
   "case",
@@ -148,6 +142,12 @@ const lexNoEnd = (): string[] => [
   "await",
   "yield",
 ]
+
+/** The contextual keywords that go before a type and need it: `keyof T`. */
+const lexTypePrefix = (): string[] => ["keyof", "unique", "readonly", "infer", "asserts"]
+
+/** The contextual keywords that go between two operands: `x as T`, `a from "m"`. */
+const lexInfix = (): string[] => ["as", "satisfies", "is", "from", "of"]
 
 /** The punctuation of more than one character, longest first. */
 const lexLongPunct = (): string[] => [
@@ -179,8 +179,8 @@ const lexLongPunct = (): string[] => [
 ]
 
 /**
- * Whether an expression can have ended at `t`, so that a `/` after it divides
- * and a line break after it may end the statement.
+ * Whether an expression can have ended at `t`, so that a `/` after it
+ * divides. A contextual keyword can: it may be a variable's name.
  *
  * @param t the token, or null at the start
  * @returns whether it can end an expression
@@ -225,10 +225,12 @@ const lexString = (s: LexState): Result<i32, string> => {
       break
     }
     if (c === 0x5c && i + 1 < s.text.length) {
-      if (s.text.charCodeAt(i + 1) === 0x0a) {
+      const n = s.text.charCodeAt(i + 1)
+      const crlf = n === 0x0d && i + 2 < s.text.length && s.text.charCodeAt(i + 2) === 0x0a
+      if (n === 0x0a || crlf) {
         s.line = s.line + 1
       }
-      i = i + 2
+      i = crlf ? i + 3 : i + 2
     } else {
       i = i + 1
     }
@@ -257,7 +259,7 @@ const lexTemplate = (s: LexState, start: i32, line: i32): Result<i32, string> =>
       s.stackLines.push(s.line)
       return Ok(0)
     }
-    if (c === 0x0a) {
+    if (c === 0x0a || (c === 0x5c && i + 1 < s.text.length && s.text.charCodeAt(i + 1) === 0x0a)) {
       s.line = s.line + 1
     }
     i = c === 0x5c ? i + 2 : i + 1
@@ -427,39 +429,191 @@ const lexContinues = (t: LexToken): boolean => {
   return false
 }
 
+/** No type is being read at the top level. */
+const LEX_VALUE: i32 = 0
+/** A declaration's annotation, `x: T`: it ends at a top-level `=` or `,`. */
+const LEX_ANNOTATION: i32 = 1
+/** A return type or the type after `as`/`satisfies`: it also ends at `=>`, `{`, `?` and the logical operators. */
+const LEX_INLINE: i32 = 2
+/** A type alias, `type X<T> = U`: types to the statement's end. */
+const LEX_ALIAS: i32 = 3
+
+/** What the statement scanner knows of the current statement's top level. */
+class LexTypes {
+  /** LEX_VALUE, LEX_ANNOTATION, LEX_INLINE or LEX_ALIAS. */
+  mode: i32
+  /** The type-argument angles open in the current type. */
+  angles: i32
+  /** The `?` of conditionals still waiting for their `:`. */
+  questions: i32
+
+  constructor() {
+    this.mode = LEX_VALUE
+    this.angles = 0
+    this.questions = 0
+  }
+}
+
+/** Whether the token before `i` ends an expression, a type's closing `>` included. */
+const lexEndsBefore = (tokens: LexToken[], closes: boolean[], i: i32): boolean =>
+  i > 0 && (lexEnds(tokens[i - 1]) || closes[i - 1])
+
+/** Whether the contextual keyword at `i` is used between two operands (`x as T`), not as a name. */
+const lexIsInfix = (tokens: LexToken[], closes: boolean[], i: i32): boolean => {
+  const t = tokens[i]
+  if (t.kind !== LEX_IDENT || lexInfix().indexOf(t.text) < 0) {
+    return false
+  }
+  const b: LexToken | null = i > 0 ? tokens[i - 1] : null
+  if (b !== null && b.kind === LEX_PUNCT && (b.text === "." || b.text === "?.")) {
+    return false
+  }
+  return lexEndsBefore(tokens, closes, i) || (b !== null && b.kind === LEX_PUNCT && b.text === "*")
+}
+
+/**
+ * Whether the statement can end at the line break after token `i`: an
+ * expression or a type ended there. A type-prefix keyword in a type (`keyof`) and a
+ * contextual keyword used between operands (`x as`) cannot end one; used as
+ * a name (`= from`), the keyword can.
+ */
+const lexEndsLine = (tokens: LexToken[], closes: boolean[], typed: boolean[], i: i32): boolean => {
+  const t = tokens[i]
+  if (closes[i]) {
+    return true
+  }
+  if (t.kind === LEX_IDENT && typed[i] && lexTypePrefix().indexOf(t.text) >= 0) {
+    return false
+  }
+  if (t.kind === LEX_IDENT && lexInfix().indexOf(t.text) >= 0) {
+    return !lexIsInfix(tokens, closes, i)
+  }
+  return lexEnds(t)
+}
+
+/** Whether the top-level token at `i` starts a type alias: `type` then a name on its line, first in its statement but for `export` and `declare`. */
+const lexStartsAlias = (tokens: LexToken[], from: i32, i: i32): boolean => {
+  const t = tokens[i]
+  if (t.kind !== LEX_IDENT || t.text !== "type" || i + 1 >= tokens.length) {
+    return false
+  }
+  const n = tokens[i + 1]
+  if (n.kind !== LEX_IDENT || n.newline || n.depth !== 0) {
+    return false
+  }
+  for (let j = from; j < i; j++) {
+    if (tokens[j].kind !== LEX_IDENT || (tokens[j].text !== "export" && tokens[j].text !== "declare")) {
+      return false
+    }
+  }
+  return true
+}
+
+/** Follows a top-level token `i` through the statement's types, marking a `>` that closes type arguments. */
+const lexFollow = (tokens: LexToken[], closes: boolean[], from: i32, i: i32, ty: LexTypes): void => {
+  const t = tokens[i]
+  if (lexStartsAlias(tokens, from, i)) {
+    ty.mode = LEX_ALIAS
+    ty.angles = 0
+    return
+  }
+  if (lexIsInfix(tokens, closes, i) && (t.text === "as" || t.text === "satisfies") && ty.mode !== LEX_ALIAS) {
+    ty.mode = LEX_INLINE
+    ty.angles = 0
+    return
+  }
+  if (t.kind !== LEX_PUNCT) {
+    return
+  }
+  const p = t.text
+  if (ty.mode !== LEX_VALUE && p === "<") {
+    ty.angles = ty.angles + 1
+    return
+  }
+  if (ty.mode !== LEX_VALUE && p === ">" && ty.angles > 0) {
+    ty.angles = ty.angles - 1
+    closes[i] = true
+    return
+  }
+  if (p === "?") {
+    ty.questions = ty.questions + 1
+  }
+  if (p === ":" && ty.questions > 0) {
+    ty.questions = ty.questions - 1
+    if (ty.mode !== LEX_ALIAS && ty.angles === 0) {
+      ty.mode = LEX_VALUE
+    }
+    return
+  }
+  if (p === ":" && ty.mode !== LEX_ALIAS && ty.angles === 0) {
+    const b = tokens[i - 1]
+    ty.mode = b.kind === LEX_PUNCT && b.text === ")" ? LEX_INLINE : LEX_ANNOTATION
+    return
+  }
+  if (ty.mode === LEX_ALIAS || ty.angles > 0) {
+    return
+  }
+  const ends = p === "=" || p === "," || p === ";"
+  const inline = p === "=>" || p === "{" || p === "?" || p === "||" || p === "&&" || p === "??"
+  if (ends || (ty.mode === LEX_INLINE && inline)) {
+    ty.mode = LEX_VALUE
+  }
+}
+
 /**
  * The top-level statements of a module's tokens. A statement ends at a
  * top-level `;` (which it keeps), before a top-level `export` (not a member,
  * `.export`), or at a line break where the token before can end an
- * expression and the token after cannot go on with it, as automatic
- * semicolon insertion reads it. Where a line starts means nothing, and a line
- * may hold several statements.
+ * expression or a type and the token after cannot go on with it, as automatic
+ * semicolon insertion reads it. A `>` ends a type when it closes type
+ * arguments opened in a type position: an annotation (`x: T`), a return
+ * type, the type after `as` or `satisfies`, or a type alias. A contextual
+ * keyword used as a name (`= from`) ends an expression; used between operands
+ * (`x as`) or before a type (`keyof`), it does not. Where a line starts means
+ * nothing, and a line may hold several statements.
  *
  * @param tokens the module's tokens (lexTokens)
  * @returns the statements, in order
  */
 export const lexStatements = (tokens: LexToken[]): LexSpan[] => {
   const out: LexSpan[] = []
+  const closes: boolean[] = []
+  const typed: boolean[] = []
+  for (let i = 0; i < tokens.length; i++) {
+    closes.push(false)
+    typed.push(false)
+  }
+  let ty = new LexTypes()
   let from: i32 = 0
   for (let i: i32 = 0; i < tokens.length; i++) {
     const t = tokens[i]
-    if (t.depth !== 0 || i === from) {
-      if (i === from && t.depth === 0 && t.text === ";" && t.kind === LEX_PUNCT) {
+    if (t.depth !== 0) {
+      continue
+    }
+    if (i === from) {
+      if (t.text === ";" && t.kind === LEX_PUNCT) {
         from = i + 1
+        continue
       }
+      lexFollow(tokens, closes, from, i, ty)
+      typed[i] = ty.mode !== LEX_VALUE
       continue
     }
     const prev = tokens[i - 1]
     const member = prev.kind === LEX_PUNCT && (prev.text === "." || prev.text === "?.")
     const isExport = t.kind === LEX_IDENT && t.text === "export" && !member
-    const asi = t.newline && lexEnds(prev) && !lexContinues(t)
+    const asi = t.newline && lexEndsLine(tokens, closes, typed, i - 1) && !lexContinues(t)
     if (isExport || asi) {
       out.push(new LexSpan(from, i))
       from = i
+      ty = new LexTypes()
     }
+    lexFollow(tokens, closes, from, i, ty)
+    typed[i] = ty.mode !== LEX_VALUE
     if (t.kind === LEX_PUNCT && t.text === ";") {
       out.push(new LexSpan(from, i + 1))
       from = i + 1
+      ty = new LexTypes()
     }
   }
   if (from < tokens.length) {

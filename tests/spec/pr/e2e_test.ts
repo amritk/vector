@@ -61,7 +61,7 @@ const e2eTestRun = (dir: string, args: string[]): string => {
   }
   const top = gitdiffTop(dir)
   const out = top.isOk() ? replaceAll(r.value.stdout, top.value, "<repo>") : r.value.stdout
-  return `exit ${r.value.status}\n${replaceAll(out, dir, "<repo>")}${r.value.stderr}`
+  return `exit ${r.value.status}\n${replaceAll(out, dir, "<repo>")}${replaceAll(r.value.stderr, dir, "<repo>")}`
 }
 
 /** A repository whose main branch pins a contract on the RFC; the work branch changes it. */
@@ -121,9 +121,9 @@ const e2eTestModule = (t: Suite, dir: string): Result<boolean, string> => {
     "exit 1\nspec mutate std/hex.ts against main: FAILED\n\nproblems:\n  ✗ no mutants: the change adds no line of std/hex.ts that can be mutated\n",
   )
   t.eqStr(
-    "mutate refuses a root without the module",
+    "mutate fails for a root without the module",
     e2eTestRun(dir, ["spec", "mutate", "--base", "main", "--nish-root", dir, "--test", `${dir}/t.ts`, contract]),
-    "exit 1\nspec mutate std/hex.ts against main: FAILED\n\nproblems:\n  ✗ <repo>/std/hex.ts cannot be read: is <repo> the nish checkout?\n",
+    "exit 2\nvector: spec mutate: <repo>/std/hex.ts cannot be read: is <repo> the nish checkout?\n",
   )
   prTestWrite(dir, "nish/std/hex.ts", `${E2E_TEST_HEX}\n/** New. */\nexport const fresh = (): i32 => 1\n`).orReturn()
   t.eqStr(

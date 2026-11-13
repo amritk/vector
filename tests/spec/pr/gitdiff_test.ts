@@ -11,6 +11,7 @@ import {
   gitdiffGit,
   gitdiffHunk,
   gitdiffParse,
+  gitdiffPrefix,
   gitdiffShow,
   gitdiffTop,
   gitdiffTouches,
@@ -112,6 +113,10 @@ const gitdiffTestRepo = (t: Suite): Result<boolean, string> => {
     t.ok("a file the fork point lacks", none.isOk() && none.value === null)
   }
   t.ok("git failing is an error", gitdiffGit(dir, ["no-such-command"]).isErr())
+  const atTop = gitdiffPrefix(dir)
+  t.eqStr("the top's prefix is empty", atTop.isOk() ? atTop.value : "<err>", "")
+  const below = gitdiffPrefix(`${dir}/dir name`)
+  t.eqStr("a directory's prefix ends in a slash", below.isOk() ? below.value : "<err>", "dir name/")
   prTestRemove(dir)
   return Ok(true)
 }
@@ -181,7 +186,7 @@ export const main = (): i32 => {
   t.eqStr(
     "a list naming a missing declaration is refused",
     gitdiffTestList(gitdiffExports("export { nope }\n")),
-    ":1:an export it cannot resolve to a declaration: nope",
+    ":1:an export it cannot resolve to a declaration in this module (an imported name is not followed): nope",
   )
   t.eqStr(
     "export * is kept as unnamed",
@@ -267,6 +272,26 @@ export const main = (): i32 => {
     t.eqStr("a body runs to its closing brace", ex[0].body, "export const a = (): i32 => {\n  return 1\n}")
     t.ok("a line is recorded", ex[0].line === 4 && ex[1].line === 9)
   }
+  const probes = [
+    "export type R = Result<A, B>",
+    "export const m: Map<K, V> = new Map<K, V>()",
+    "export const a = x as Array<T>",
+    "export const a = from",
+    "export const a = type",
+    "export const a = of",
+    "export const a = f()",
+    "export const a = [1]",
+    "export const a = {}",
+    "export const a = 'x'",
+    "export const a = 1",
+    "export const a = i++",
+    "export const a = i--",
+  ]
+  for (const p of probes) {
+    const got = gitdiffExports(`${p}\nconst helper = from / 2\n`)
+    t.eqStr(`a helper after "${p}" is its own`, got.length === 1 ? got[0].body : "ERR", p)
+  }
+  t.eqStr("a lone export type is refused", gitdiffTestNames("export type\nR = 1\n"), "NAME")
   const r = gitdiffTestRepo(t)
   if (r.isErr()) {
     t.fail("the repository is built", r.error)

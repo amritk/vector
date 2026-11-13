@@ -124,5 +124,102 @@ export const main = (): i32 => {
     "m {\n  export const a = 1\n}",
   )
   t.eqStr("a column-0 line inside brackets goes on", lexTestStatements("f(\na,\nb)"), "f(\na,\nb)")
+  const words = [
+    "type",
+    "from",
+    "of",
+    "as",
+    "is",
+    "satisfies",
+    "keyof",
+    "unique",
+    "readonly",
+    "infer",
+    "asserts",
+    "get",
+    "set",
+    "async",
+    "declare",
+    "namespace",
+    "module",
+    "abstract",
+    "static",
+    "override",
+    "accessor",
+    "out",
+    "never",
+    "any",
+    "number",
+    "string",
+    "symbol",
+    "object",
+    "global",
+    "require",
+    "constructor",
+    "private",
+    "protected",
+    "public",
+    "package",
+    "let",
+    "yield",
+    "await",
+  ]
+  for (const w of words) {
+    if (w === "let" || w === "yield" || w === "await") {
+      continue
+    }
+    t.eqStr(`${w} as a value divides`, lexTestTokens(`a = ${w} / 2`), `a@0 =@0 ${w}@0 /@0 2@0`)
+    t.eqStr(
+      `${w} as a value ends a line`,
+      lexTestStatements(`const x = ${w}\nconst y = ${w} / 2`),
+      `const x = ${w}|const y = ${w} / 2`,
+    )
+  }
+  const enders = ["1", "'s'", "`t`", "f()", "a[0]", "{}", "i++", "i--", "true", "null", "this", "super.x"]
+  for (const e of enders) {
+    t.eqStr(`${e} ends a line`, lexTestStatements(`a = ${e}\nconst h = from / 2`), `a = ${e}|const h = from / 2`)
+  }
+  t.eqStr(
+    "a type's closing > ends a statement",
+    lexTestStatements("export type R = Result<A, B>\nconst helper = from / 2"),
+    "export type R = Result<A, B>|const helper = from / 2",
+  )
+  t.eqStr(
+    "a type's closing >> ends a statement",
+    lexTestStatements("type R = A<B<C>>\nconst h = 1"),
+    "type R = A<B<C>>|const h = 1",
+  )
+  t.eqStr(
+    "an annotation's closing > ends a statement",
+    lexTestStatements("const m: Map<K, V>\nconst h = 1"),
+    "const m: Map<K, V>|const h = 1",
+  )
+  t.eqStr(
+    "an as-type's closing > ends a statement",
+    lexTestStatements("const m = x as Array<T>\nconst h = 1"),
+    "const m = x as Array<T>|const h = 1",
+  )
+  t.eqStr("a comparison's > does not end one", lexTestStatements("a = b >\nc"), "a = b >\nc")
+  t.eqStr(
+    "a comparison after an annotation's = is a value",
+    lexTestStatements("const a: T = b < c, d = e >\nf"),
+    "const a: T = b < c, d = e >\nf",
+  )
+  t.eqStr(
+    "a conditional's : is not an annotation",
+    lexTestStatements("const a = b ? c : d < e, f = g >\nh"),
+    "const a = b ? c : d < e, f = g >\nh",
+  )
+  t.eqStr("as between operands goes on", lexTestStatements("const a = x as\nFoo"), "const a = x as\nFoo")
+  t.eqStr("keyof goes on", lexTestStatements("type K = keyof\nT"), "type K = keyof\nT")
+  t.eqStr(
+    "a function's return type closes at its body",
+    lexTestStatements("const f = (): Array<T> => {\n}\nconst g = 1"),
+    "const f = (): Array<T> => {\n}|const g = 1",
+  )
+  const tpl = lexTokens("`a\\\nb`\nx")
+  t.ok("a template's escaped line break counts", tpl.isOk() && tpl.value[1].line === 3)
+  const crlf = lexTokens("'a\\\r\nb'\r\nx")
+  t.ok("a string's CRLF continuation reads", crlf.isOk() && crlf.value[1].line === 3)
   return t.done()
 }

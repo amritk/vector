@@ -59,7 +59,8 @@ export class SpecMutateCommand {
   /**
    * Runs the command: exit 0 when the test kills every mutant that builds or
    * the contract allows the survivor, 1 when not, 2 for bad usage, an
-   * unreadable contract or a git failure.
+   * unreadable contract, module or test, a git failure, or a compiler that
+   * fails for a reason the mutant did not cause.
    *
    * @param r the parsed arguments
    * @returns the exit code
