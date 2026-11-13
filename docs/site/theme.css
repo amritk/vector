@@ -1,0 +1,59 @@
+/*
+  The vector docs theme: a placeholder palette, blue (#1f6feb) for links and
+  accents and green (#3fb950) for the mark's fleck, in a light and a dark mode.
+
+  Scalar reads a theme as CSS custom properties under .light-mode and
+  .dark-mode (the class on <body>). A theme file replaces the default preset
+  rather than layering on it, so every variable the preset sets is set here.
+*/
+
+:root,
+:host {
+  --scalar-text-decoration: underline;
+  --scalar-text-decoration-hover: underline;
+  --scalar-radius: 6px;
+  --scalar-radius-lg: 10px;
+  --scalar-radius-xl: 14px;
+}
+
+.light-mode {
+  --scalar-background-1: #ffffff;
+  --scalar-background-2: #f6f8fa;
+  --scalar-background-3: #eaeef2;
+  --scalar-background-accent: #ddf4ff;
+  --scalar-color-1: #1f2328;
+  --scalar-color-2: #59636e;
+  --scalar-color-3: #6e7781;
+  --scalar-color-accent: #0969da;
+  --scalar-border-color: #d1d9e0;
+  --scalar-color-green: #1a7f37;
+  --scalar-color-red: #d1242f;
+  --scalar-color-yellow: #9a6700;
+  --scalar-color-blue: #0969da;
+  --scalar-color-orange: #bc4c00;
+  --scalar-color-purple: #8250df;
+  --scalar-button-1: #0969da;
+  --scalar-button-1-color: #ffffff;
+  --scalar-button-1-hover: #0757ba;
+}
+
+.dark-mode {
+  --scalar-background-1: #0d1117;
+  --scalar-background-2: #151b23;
+  --scalar-background-3: #212830;
+  --scalar-background-accent: #0c2d6b;
+  --scalar-color-1: #f0f6fc;
+  --scalar-color-2: #9198a1;
+  --scalar-color-3: #8b949e;
+  --scalar-color-accent: #4493f8;
+  --scalar-border-color: #3d444d;
+  --scalar-color-green: #3fb950;
+  --scalar-color-red: #f85149;
+  --scalar-color-yellow: #d29922;
+  --scalar-color-blue: #4493f8;
+  --scalar-color-orange: #db6d28;
+  --scalar-color-purple: #ab7df8;
+  --scalar-button-1: #1f6feb;
+  --scalar-button-1-color: #ffffff;
+  --scalar-button-1-hover: #388bfd;
+}

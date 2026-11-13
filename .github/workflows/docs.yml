@@ -1,0 +1,35 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  docs:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Cache the pinned nish
+        uses: actions/cache@v4
+        with:
+          path: .nish
+          key: nish-${{ runner.os }}-${{ hashFiles('scripts/fetch-nish.sh') }}
+
+      - name: Fetch the pinned nish, whose std TypeDoc reads
+        run: bash scripts/fetch-nish.sh
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: The generated reference is up to date
+        run: node scripts/gen-reference.mjs --check
+
+      - name: Every link and anchor lands
+        run: node scripts/check-links.mjs

@@ -1,0 +1,269 @@
+{
+  "$schema": "https://registry.scalar.com/@scalar/schemas/config",
+  "scalar": "2.0.0",
+  "info": {
+    "title": "vector",
+    "description": "Prove small programs correct, and hold implementations to their specs: the guide and the reference."
+  },
+  "navigation": {
+    "header": [
+      {
+        "type": "link",
+        "title": "GitHub",
+        "icon": "phosphor/regular/github-logo",
+        "to": "https://github.com/amritk/vector",
+        "newTab": true
+      },
+      {
+        "type": "link",
+        "title": "Reference",
+        "icon": "phosphor/regular/book-open",
+        "to": "/reference"
+      }
+    ],
+    "routes": {
+      "/": {
+        "type": "group",
+        "title": "vector",
+        "children": {
+          "/": {
+            "type": "page",
+            "title": "vector",
+            "filepath": "docs/guide/index.md",
+            "showInSidebar": false,
+            "layout": {
+              "toc": false,
+              "pageTitle": false,
+              "pageActions": false,
+              "pageNav": false,
+              "lastUpdated": false,
+              "feedback": false,
+              "fullWidth": true,
+              "search": { "position": "header" },
+              "colorSchemeToggle": "header"
+            }
+          },
+          "/getting-started": {
+            "type": "group",
+            "title": "Getting started",
+            "icon": "phosphor/regular/rocket-launch",
+            "children": {
+              "/installation": {
+                "type": "page",
+                "title": "Installation",
+                "filepath": "docs/guide/getting-started/installation.md"
+              },
+              "/first-proof": {
+                "type": "page",
+                "title": "Your first proof",
+                "filepath": "docs/guide/getting-started/first-proof.md"
+              }
+            }
+          },
+          "/reference": {
+            "type": "group",
+            "title": "Reference",
+            "children": {
+              "/": {
+                "type": "page",
+                "title": "Overview",
+                "filepath": "docs/reference/index.md"
+              },
+              "/command-line": {
+                "type": "group",
+                "title": "Command line",
+                "children": {
+                  "/": {
+                    "type": "page",
+                    "title": "Overview",
+                    "filepath": "docs/reference/command-line.md"
+                  },
+                  "/verify": {
+                    "type": "page",
+                    "title": "vector verify",
+                    "filepath": "docs/reference/command-line/verify.md"
+                  },
+                  "/diff": {
+                    "type": "page",
+                    "title": "vector diff",
+                    "filepath": "docs/reference/command-line/diff.md"
+                  },
+                  "/spec-extract": {
+                    "type": "page",
+                    "title": "vector spec extract",
+                    "filepath": "docs/reference/command-line/spec-extract.md"
+                  },
+                  "/spec-check": {
+                    "type": "page",
+                    "title": "vector spec check",
+                    "filepath": "docs/reference/command-line/spec-check.md"
+                  },
+                  "/spec-emit": {
+                    "type": "page",
+                    "title": "vector spec emit",
+                    "filepath": "docs/reference/command-line/spec-emit.md"
+                  },
+                  "/spec-run": {
+                    "type": "page",
+                    "title": "vector spec run",
+                    "filepath": "docs/reference/command-line/spec-run.md"
+                  },
+                  "/spec-frozen": {
+                    "type": "page",
+                    "title": "vector spec frozen",
+                    "filepath": "docs/reference/command-line/spec-frozen.md"
+                  },
+                  "/spec-stale": {
+                    "type": "page",
+                    "title": "vector spec stale",
+                    "filepath": "docs/reference/command-line/spec-stale.md"
+                  },
+                  "/spec-exports": {
+                    "type": "page",
+                    "title": "vector spec exports",
+                    "filepath": "docs/reference/command-line/spec-exports.md"
+                  },
+                  "/spec-mutate": {
+                    "type": "page",
+                    "title": "vector spec mutate",
+                    "filepath": "docs/reference/command-line/spec-mutate.md"
+                  }
+                }
+              },
+              "/formats": {
+                "type": "group",
+                "title": "File formats",
+                "children": {
+                  "/program": {
+                    "type": "page",
+                    "title": "program.json",
+                    "filepath": "docs/reference/formats/program.md"
+                  },
+                  "/rfc-contract": {
+                    "type": "page",
+                    "title": "rfc-contract.json",
+                    "filepath": "docs/reference/formats/rfc-contract.md"
+                  },
+                  "/spec-plan": {
+                    "type": "page",
+                    "title": "spec-plan.json",
+                    "filepath": "docs/reference/formats/spec-plan.md"
+                  }
+                }
+              },
+              "/modules": {
+                "type": "group",
+                "title": "Modules",
+                "children": {
+                  "/cli-diff": {
+                    "type": "page",
+                    "title": "cli/diff",
+                    "filepath": "docs/reference/modules/cli/diff.md"
+                  },
+                  "/cli-spec-check": {
+                    "type": "page",
+                    "title": "cli/spec-check",
+                    "filepath": "docs/reference/modules/cli/spec-check.md"
+                  },
+                  "/cli-spec-emit": {
+                    "type": "page",
+                    "title": "cli/spec-emit",
+                    "filepath": "docs/reference/modules/cli/spec-emit.md"
+                  },
+                  "/cli-spec-exports": {
+                    "type": "page",
+                    "title": "cli/spec-exports",
+                    "filepath": "docs/reference/modules/cli/spec-exports.md"
+                  },
+                  "/cli-spec-extract": {
+                    "type": "page",
+                    "title": "cli/spec-extract",
+                    "filepath": "docs/reference/modules/cli/spec-extract.md"
+                  },
+                  "/cli-spec-frozen": {
+                    "type": "page",
+                    "title": "cli/spec-frozen",
+                    "filepath": "docs/reference/modules/cli/spec-frozen.md"
+                  },
+                  "/cli-spec-mutate": {
+                    "type": "page",
+                    "title": "cli/spec-mutate",
+                    "filepath": "docs/reference/modules/cli/spec-mutate.md"
+                  },
+                  "/cli-spec-run": {
+                    "type": "page",
+                    "title": "cli/spec-run",
+                    "filepath": "docs/reference/modules/cli/spec-run.md"
+                  },
+                  "/cli-spec-stale": {
+                    "type": "page",
+                    "title": "cli/spec-stale",
+                    "filepath": "docs/reference/modules/cli/spec-stale.md"
+                  },
+                  "/cli-verify": {
+                    "type": "page",
+                    "title": "cli/verify",
+                    "filepath": "docs/reference/modules/cli/verify.md"
+                  },
+                  "/core-diag": {
+                    "type": "page",
+                    "title": "core/diag",
+                    "filepath": "docs/reference/modules/core/diag.md"
+                  },
+                  "/core-fs": {
+                    "type": "page",
+                    "title": "core/fs",
+                    "filepath": "docs/reference/modules/core/fs.md"
+                  },
+                  "/core-hex": {
+                    "type": "page",
+                    "title": "core/hex",
+                    "filepath": "docs/reference/modules/core/hex.md"
+                  },
+                  "/core-json": {
+                    "type": "page",
+                    "title": "core/json",
+                    "filepath": "docs/reference/modules/core/json.md"
+                  },
+                  "/core-process": {
+                    "type": "page",
+                    "title": "core/process",
+                    "filepath": "docs/reference/modules/core/process.md"
+                  },
+                  "/core-smt": {
+                    "type": "page",
+                    "title": "core/smt",
+                    "filepath": "docs/reference/modules/core/smt.md"
+                  },
+                  "/core-z3": {
+                    "type": "page",
+                    "title": "core/z3",
+                    "filepath": "docs/reference/modules/core/z3.md"
+                  },
+                  "/main": {
+                    "type": "page",
+                    "title": "main",
+                    "filepath": "docs/reference/modules/main.md"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "assetsDir": "docs/site",
+  "siteConfig": {
+    "isPrivate": true,
+    "agent": { "enabled": false },
+    "theme": "docs/site/theme.css",
+    "logo": {
+      "lightMode": "docs/site/logo-light.svg",
+      "darkMode": "docs/site/logo-dark.svg"
+    },
+    "head": {
+      "links": [{ "rel": "icon", "type": "image/svg+xml", "href": "/mark.svg" }]
+    }
+  }
+}
