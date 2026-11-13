@@ -108,7 +108,9 @@ class XmlReader {
   src: string
   pos: i32
   lineStarts: i32[]
-  /** The N of the last unsigned `<?line N?>`, corrections applied; -1 before one. */
+  /** Whether an unsigned `<?line N?>` has been met. */
+  piSeen: boolean
+  /** The N of the last unsigned `<?line N?>`, corrections applied; a correction can take it below 1. */
   piN: i32
   /** The XML line that instruction stands on. */
   piLine: i32
@@ -122,6 +124,7 @@ class XmlReader {
     this.src = src
     this.pos = 0
     this.lineStarts = [0]
+    this.piSeen = false
     this.piN = -1
     this.piLine = 0
     this.correction = 0
@@ -148,7 +151,7 @@ const xmlLineOf = (r: XmlReader, at: i32): i32 => {
 
 /** The markdown line of XML line `line`, or -1 before any `<?line N?>`. */
 const xmlMdLineOf = (r: XmlReader, line: i32): i32 => {
-  if (r.piN < 0) {
+  if (!r.piSeen) {
     return -1
   }
   // A signed <?line -N?> can correct the count below the first line.
@@ -439,10 +442,16 @@ const xmlPi = (r: XmlReader): Result<boolean, XmlError> => {
   }
   const n = parseInt(digits)
   if (sign === 0) {
+    r.piSeen = true
     r.piN = n + r.correction
     r.piLine = xmlLineOf(r, at)
   } else {
-    r.correction = r.correction + sign * n
+    // Each N is at most 999999999 and so is the sum so far, so this add stays in i32; the cap keeps it there.
+    const sum = r.correction + sign * n
+    if (sum > 999999999 || sum < -999999999) {
+      return Err(xmlErrAt(r, `<?${trim(body)}?> corrects lines by more than 999999999 in all`, at))
+    }
+    r.correction = sum
   }
   return Ok(true)
 }

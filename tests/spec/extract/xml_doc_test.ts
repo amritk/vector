@@ -74,6 +74,16 @@ const xmlDocTestRefusals = (t: Suite): void => {
     "z.xml",
   )
   t.contains("hidden characters", hidden.isErr() ? hidden.error : "ok", "z.xml")
+  const long = xmlDocParse(
+    '<rfc number="1234567890"><back><references><reference anchor="R"><front><title>T</title></front><seriesInfo name="RFC" value="1234567890"/></reference></references></back></rfc>',
+  )
+  t.ok(
+    "a number past nine digits reads as absent, not as an i32 overflow",
+    long.isOk() &&
+      long.value.number === -1 &&
+      long.value.references.length === 1 &&
+      long.value.references[0].rfc === -1,
+  )
 }
 
 /** Plain text, code blocks and section lines of hand-written elements. */

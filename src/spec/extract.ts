@@ -152,6 +152,22 @@ const extractRelative = (from: string, to: string): string => {
   return parts.length === 0 ? "." : parts.join("/")
 }
 
+/** `path` made absolute against the working directory, with `.` and `..` resolved lexically, as the old extractor's `resolve` did. */
+const extractAbsolute = (path: string): string => {
+  const full = path.startsWith("/") ? path : `${realpathSync(".") ?? ""}/${path}`
+  const out: string[] = []
+  for (const p of extractParts(full)) {
+    if (p === "..") {
+      if (out.length > 0) {
+        out.pop()
+      }
+    } else if (p !== ".") {
+      out.push(p)
+    }
+  }
+  return `/${out.join("/")}`
+}
+
 const extractParts = (path: string): string[] => {
   const out: string[] = []
   let start = 0
@@ -256,12 +272,7 @@ const extractSurvivors = (path: string): Result<AllowedSurvivor[] | null, string
 }
 
 /** Fills in what the profile cannot know: `$schema`, the hashes, paths and files read, and the sidecar. */
-const extractComplete = (
-  ctx: ExtractContext,
-  c: Contract,
-  specReal: string,
-  specSha: string,
-): Result<boolean, string> => {
+const extractComplete = (ctx: ExtractContext, c: Contract, specSha: string): Result<boolean, string> => {
   const dirReal = realpathSync(dirname(ctx.contractPath))
   if (dirReal === null) {
     return Err(`${dirname(ctx.contractPath)}: no such directory, to write ${ctx.contractPath} in`)
@@ -275,7 +286,8 @@ const extractComplete = (
   if (sources !== null) {
     for (const d of sources) {
       if (d.rfc < 1) {
-        d.path = extractRelative(dirReal, specReal)
+        // Lexical, as the old extractor was, so a symlinked specs/ names the spec where the contract sees it.
+        d.path = extractRelative(extractAbsolute(dirname(ctx.contractPath)), extractAbsolute(ctx.xmlPath))
         continue
       }
       const got = ctx.rfcs.get(d.rfc)
@@ -363,13 +375,13 @@ export const extractContract = (
     out.refusals = read.error
     return out
   }
-  return extractFinish(ctx, read.value, specReal, sha256Hex(text))
+  return extractFinish(ctx, read.value, sha256Hex(text))
 }
 
-const extractFinish = (ctx: ExtractContext, read: ProfileRead, specReal: string, specSha: string): ExtractOutcome => {
+const extractFinish = (ctx: ExtractContext, read: ProfileRead, specSha: string): ExtractOutcome => {
   const out = ctx.out
   const c = read.contract
-  const done = extractComplete(ctx, c, specReal, specSha)
+  const done = extractComplete(ctx, c, specSha)
   if (done.isErr()) {
     out.errors.push(done.error)
     return out

@@ -100,7 +100,7 @@
       "id": "R-FULL-TAG",
       "section": "4",
       "level": "MUST",
-      "quote": "any protocol using this algorithm MUST include the complete tag to minimize the opportunity for forgery."
+      "quote": "Additionally, any protocol using this algorithm MUST include the complete tag to minimize the opportunity for forgery."
     },
     {
       "id": "R-NO-TRUNCATION",
@@ -117,7 +117,7 @@
     },
     {
       "section": "2.5",
-      "quote": "The pair (r,s) should be unique, and MUST be unpredictable for each invocation",
+      "quote": "The pair (r,s) should be unique, and MUST be unpredictable for each invocation (that is why it was originally obtained by encrypting a nonce), while \"r\" MAY be constant, but needs to be modified as follows before being used: (\"r\" is treated as a 16-octet little-endian number):",
       "reason": "the AEAD derives (r,s) per invocation from key and nonce (P-KEYGEN-IS-BLOCK0, P-TAG-IS-POLY1305); unpredictability is a property of the key, which no functional test observes"
     },
     {
@@ -137,7 +137,7 @@
     },
     {
       "section": "4",
-      "quote": "implementation MUST use a constant-time comparison function rather than relying on optimized but insecure library functions such as the C language's memcmp().",
+      "quote": "For this reason, with online protocols, implementation MUST use a constant-time comparison function rather than relying on optimized but insecure library functions such as the C language's memcmp().",
       "reason": "timing is not observable by a functional test; nish checks it on the emitted machine code (tests/cases/ct_asm_chacha20poly1305.ts, docs/security/crypto-aead.md)"
     }
   ],

@@ -1,0 +1,11 @@
+--- tests/cli/extract-check-mismatch/stale.json
++++ tests/cli/extract-check-mismatch/stale.json (extracted from specs/example-hex.xml)
+@@ -4,7 +4,7 @@
+   "source": {
+     "title": "Spec 0001: nish/hex — hexadecimal encoding and decoding",
+     "main": "example-hex",
+-    "sha256": "0c972eeca28874e9379542a3571f955dfb4f87262359484f86bbac1aede51c6b"
++    "sha256": "1c972eeca28874e9379542a3571f955dfb4f87262359484f86bbac1aede51c6b"
+   },
+   "sources": [
+     {

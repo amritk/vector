@@ -1,0 +1,1 @@
+vector: tests/cli/extract-check-mismatch/stale.json: is not what specs/example-hex.xml states; run: vector spec extract specs/example-hex.xml -o tests/cli/extract-check-mismatch/stale.json

@@ -1,0 +1,1 @@
+vector spec extract specs/example-hex.xml -o tests/cli/extract-check-mismatch/stale.json --check

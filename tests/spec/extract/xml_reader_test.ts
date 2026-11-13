@@ -179,6 +179,16 @@ const xmlReaderTestRefusals = (t: Suite): void => {
     xmlReaderTestErr("<rfc><?line 1000000000?></rfc>"),
     "names a line past 999999999",
   )
+  t.eqStr(
+    "corrections that add up past 999999999",
+    xmlReaderTestErr("<rfc><?line +999999999?>\n<?line +1?></rfc>"),
+    "2:1 md=-1 <?line +1?> corrects lines by more than 999999999 in all",
+  )
+  t.eqStr(
+    "negative corrections, the same",
+    xmlReaderTestErr("<rfc><?line -999999999?><?line -999999999?></rfc>"),
+    "1:25 md=-1 <?line -999999999?> corrects lines by more than 999999999 in all",
+  )
 }
 
 /** Inputs no parse may panic on: every prefix of a spec-shaped document. */

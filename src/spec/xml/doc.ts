@@ -177,9 +177,10 @@ const xmlDocNumber = (
   return Ok(subs)
 }
 
-/** Whether `s` is one or more ASCII digits. */
+/** Whether `s` is one to nine ASCII digits, a number that fits an i32. */
 const xmlDocDigits = (s: string): boolean => {
-  if (s.length === 0) {
+  // Nine digits at most, so parseInt stays in i32: no RFC number is longer, and a longer one reads as absent.
+  if (s.length === 0 || s.length > 9) {
     return false
   }
   for (let i = 0; i < s.length; i = i + 1) {

@@ -167,6 +167,10 @@ class FrontLexer {
   line: i32
   lineStart: i32
   toks: FrontTok[]
+  /** The byte frontCol last counted to, so the next count resumes there: columns cost linear time per line. */
+  colAt: i32
+  /** The column at colAt. */
+  colOf: i32
   constructor(text: string, subset: string) {
     this.text = text
     this.subset = subset
@@ -174,13 +178,20 @@ class FrontLexer {
     this.line = 1
     this.lineStart = 0
     this.toks = []
+    this.colAt = 0
+    this.colOf = 1
   }
 }
 
 /** The column of byte `at` on the current line, in UTF-16 units. */
 const frontCol = (lx: FrontLexer, at: i32): i32 => {
   let col = 1
-  for (let k = lx.lineStart; k < at; k++) {
+  let from = lx.lineStart
+  if (lx.colAt >= lx.lineStart && lx.colAt <= at) {
+    col = lx.colOf
+    from = lx.colAt
+  }
+  for (let k = from; k < at; k++) {
     const b = lx.text.charCodeAt(k)
     if ((b & 0xc0) !== 0x80) {
       col++
@@ -189,6 +200,8 @@ const frontCol = (lx: FrontLexer, at: i32): i32 => {
       }
     }
   }
+  lx.colAt = at
+  lx.colOf = col
   return col
 }
 
