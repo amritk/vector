@@ -1104,7 +1104,7 @@ Notes:
 
 Types: The Zig Language Reference, Primitive Types, Slices, Optionals and Error Union Type.
 
-Names: functions camelCase and parameters snake_case (Style Guide): words split at each capital, an acronym is a word like any other (parseHTTPRequest → parseHttpRequest, parse_http_request), and a digit run stays on the word before it (chacha20Poly1305Seal → chacha20Poly1305Seal, hkdfExpandSha256 → hkdfExpandSha256). A name override always wins.
+Names: functions camelCase and parameters snake_case (Style Guide): words split at each capital, an acronym is a word like any other (parseHTTPRequest → parseHttpRequest, parse_http_request), and a digit run stays on the word before it (chacha20Poly1305Seal → chacha20Poly1305Seal, hkdfExpandSha256 → hkdfExpandSha256). A derived name that is a keyword or a primitive type name (error, type, fn, test, u8, bool) is written @"…" or takes a name override. A name override always wins.
 
 Modules (file): a source file is a struct; the neutral path plus .zig, imported under its last segment: nish/crypto/hkdf → nish/crypto/hkdf.zig, const hkdf = @import("nish/crypto/hkdf.zig").
 
@@ -1206,7 +1206,7 @@ Notes:
 - type `f64`: IEC 60559 binary64
 - type `secret-bytes`: no secret type; secrecy is dropped (CryptographicOperations.ZeroMemory can wipe a copy)
 - outcome `refusing-return`: null is the refusal: a nullable reference type for byte[] and string, Nullable&lt;T> for value types
-- outcome `optional-input`: null is the absent argument
+- outcome `optional-input`: null is the absent argument; byte[]? and string? assume a nullable context (&lt;Nullable>enable&lt;/Nullable>)
 - literal `hex`: or Convert.FromHexString("0b0b")
 - literal `ascii`: a UTF-8 literal (C# 11), ASCII being a subset
 - literal `str`: non-ASCII as \u escapes, a scalar above U+FFFF as \U

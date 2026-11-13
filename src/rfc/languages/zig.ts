@@ -64,7 +64,7 @@ export const zig: LanguageTable = {
     note: 'a source file is a struct; the neutral path plus .zig, imported under its last segment: nish/crypto/hkdf → nish/crypto/hkdf.zig, const hkdf = @import("nish/crypto/hkdf.zig")',
   },
   nameRule:
-    "functions camelCase and parameters snake_case (Style Guide): words split at each capital, an acronym is a word like any other (parseHTTPRequest → parseHttpRequest, parse_http_request), and a digit run stays on the word before it (chacha20Poly1305Seal → chacha20Poly1305Seal, hkdfExpandSha256 → hkdfExpandSha256). A name override always wins.",
+    'functions camelCase and parameters snake_case (Style Guide): words split at each capital, an acronym is a word like any other (parseHTTPRequest → parseHttpRequest, parse_http_request), and a digit run stays on the word before it (chacha20Poly1305Seal → chacha20Poly1305Seal, hkdfExpandSha256 → hkdfExpandSha256). A derived name that is a keyword or a primitive type name (error, type, fn, test, u8, bool) is written @"…" or takes a name override. A name override always wins.',
   name: (n, kind) => (kind === "function" ? camel(n, "word") : snake(n)),
   choices: [
     "A refusing return is an optional ?T, not an error union !T: the contract's refusal carries no reason, so an error set would be invented. Where the function allocates, the error union holds only allocation failure (Allocator.Error!?T), so the two never mix.",

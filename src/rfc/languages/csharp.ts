@@ -36,7 +36,10 @@ export const csharp: LanguageTable = {
       spelling: "{T}?",
       note: "null is the refusal: a nullable reference type for byte[] and string, Nullable<T> for value types",
     },
-    "optional-input": { spelling: "{T}?", note: "null is the absent argument" },
+    "optional-input": {
+      spelling: "{T}?",
+      note: "null is the absent argument; byte[]? and string? assume a nullable context (<Nullable>enable</Nullable>)",
+    },
   },
   literals: {
     hex: {
