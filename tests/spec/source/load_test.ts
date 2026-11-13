@@ -40,6 +40,30 @@ const loadTestDecl = (id: string, rfc: i32, file: string | null, path: string | 
   return d
 }
 
+/** An XML spec with one section holding `body`, as xmlRead reads it. */
+const loadTestXml = (body: string): string =>
+  `<rfc><middle><section anchor="intro" numbered="true"><name>Intro</name><t>${body}</t></section></middle></rfc>`
+
+/**
+ * Loads, with the default readers, a contract whose one source is `file`
+ * beside it, an XML spec holding `body`: its problems joined by " | ", or,
+ * when it loads, "reads: " and its section's lines as the gates read them.
+ */
+const loadTestXmlProblems = (root: string, file: string, body: string): string => {
+  writeFileSync(joinPath(root, `contracts/${file}`), loadTestXml(body))
+  const x = loadTestContract(-1)
+  x.sources = [loadTestDecl("x", -1, null, file)]
+  const set = sourceLoad(x, joinPath(root, "contracts/c.json"), root)
+  if (set.problems.length > 0) {
+    return set.problems.join(" | ")
+  }
+  const read = sourceFind(set, "x")
+  if (read === null || read.doc.sections.length === 0) {
+    return "reads: nothing"
+  }
+  return `reads: ${read.doc.sections[0].lines.join(" / ")}`
+}
+
 /** The problems of a load, joined by " | ". */
 const loadTestProblems = (c: Contract, contractPath: string, root: string): string =>
   sourceLoad(c, contractPath, root).problems.join(" | ")
@@ -262,6 +286,31 @@ export const main = (): i32 => {
     "a look-alike only in a section's lines",
     linedProblems.startsWith("source lined: contracts/lines.xml as its reader decoded it: ") &&
       linedProblems.indexOf('"MUSТ" reads as MUST but is not spelled in ASCII') >= 0,
+  )
+
+  // A real XML source, through the default readers: an escape that decodes to
+  // hidden or look-alike text is refused, as the same bytes would be raw. A
+  // zero-width space is the exception: the reader drops it, as xml2rfc's text
+  // writer does, so the gates read the MUST the rendered page shows.
+  t.eqStr(
+    "a clean .xml loads through the default readers",
+    loadTestXmlProblems(root, "clean.xml", "It MUST work."),
+    "reads: It MUST work.",
+  )
+  t.eqStr(
+    "an escaped zero-width space in an .xml source is dropped, so MUST reads as MUST",
+    loadTestXmlProblems(root, "zwsp.xml", "It MU&#x200B;ST work."),
+    "reads: It MUST work.",
+  )
+  t.eqStr(
+    "an escaped right-to-left override in an .xml source is refused",
+    loadTestXmlProblems(root, "rlo.xml", "It MUST &#x202E;work."),
+    "source x: contracts/rlo.xml as its reader decoded it: text a reader cannot see as the gates read it: line 2: invisible character U+202E: remove it",
+  )
+  t.eqStr(
+    "an escaped Cyrillic look-alike in an .xml source is refused",
+    loadTestXmlProblems(root, "cyr.xml", "It MUS&#x422; work."),
+    'source x: contracts/cyr.xml as its reader decoded it: text a reader cannot see as the gates read it: line 2: "MUSТ" reads as MUST but is not spelled in ASCII: write MUST',
   )
 
   // Each refusal, with its reason.

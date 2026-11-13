@@ -1,0 +1,16 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ check-hidden-xml · spec (A spec whose XML hides a look-alike) · nish/name
+ Status: INVALID
+
+ Gate failures
+  ✘ fidelity sources: source spec: check-hidden-xml/spec.xml as its reader decoded it: text a reader cannot see as the gates read it: line 3: "MUSТ" reads as MUST but is not spelled in ASCII: write MUST, so nothing citing it can be checked
+
+ Requirements
+  ○ R-EMPTY  §1 MUST  "nameOk MUST return true for the empty name, ""."
+      ○ V-EMPTY
+
+ Warnings
+  ! clauses: no property clauses: the contract checks only the RFC's own vectors
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

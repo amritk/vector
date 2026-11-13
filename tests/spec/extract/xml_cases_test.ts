@@ -524,9 +524,19 @@ const xmlCasesTestFast = (t: Suite, name: string, start: f64): void => {
 /**
  * `open` then `level` nested `depth` deep around `fill` repeated `n` times,
  * in a paragraph, and how long reading it took: one warm-up run, then the
- * least of three, in milliseconds; -1 when it fails without a message.
+ * least of three, in milliseconds. -1 when the outcome is not `want` (it
+ * parses when `want` is "", else it is refused with a message holding
+ * `want`), so a fast failure is never mistaken for a fast read.
  */
-const xmlCasesTestTime = (open: string, close: string, level: string, fill: string, depth: i32, n: i32): f64 => {
+const xmlCasesTestTime = (
+  open: string,
+  close: string,
+  level: string,
+  fill: string,
+  want: string,
+  depth: i32,
+  n: i32,
+): f64 => {
   const doc = xmlCasesTestDoc(
     `<section><t>${xmlCasesTestRepeat(`${open}${level}`, depth)}${xmlCasesTestRepeat(fill, n)}${xmlCasesTestRepeat(close, depth)}</t></section>`,
     "",
@@ -536,7 +546,8 @@ const xmlCasesTestTime = (open: string, close: string, level: string, fill: stri
     const start = Date.now()
     const read = xmlDocParse(doc)
     const ms = Date.now() - start
-    if (read.isErr() && read.error.message.length === 0) {
+    const as = read.isErr() ? want.length > 0 && read.error.message.indexOf(want) >= 0 : want.length === 0
+    if (!as) {
       return -1.0
     }
     if (k > 0 && ms < best) {
@@ -551,12 +562,25 @@ const xmlCasesTestTime = (open: string, close: string, level: string, fill: stri
  * each level, around `n` bytes, then 8d deep around 8n. A linear reader takes
  * about 8 times as long; one that copies the text once per level, 64 times.
  * Pinned under 24, from a floor of 4 ms so a fast first run is not noise.
+ * Both sizes must end as `want` says (xmlCasesTestTime), or it fails.
  */
-const xmlCasesTestShape = (t: Suite, name: string, open: string, close: string, level: string, fill: string): void => {
-  const one = xmlCasesTestTime(open, close, level, fill, 31, 40000)
-  const eight = xmlCasesTestTime(open, close, level, fill, 248, 320000)
+const xmlCasesTestShape = (
+  t: Suite,
+  name: string,
+  open: string,
+  close: string,
+  level: string,
+  fill: string,
+  want: string,
+): void => {
+  const one = xmlCasesTestTime(open, close, level, fill, want, 31, 40000)
+  const eight = xmlCasesTestTime(open, close, level, fill, want, 248, 320000)
   const base: f64 = one < 4.0 ? 4.0 : one
-  t.ok(`${name}: ${one} ms, then ${eight} ms at 8 times the depth and text, linear`, one >= 0.0 && eight < 24.0 * base)
+  t.ok(`${name}: ${want.length === 0 ? "parses" : "is refused as expected"} at both sizes`, one >= 0.0 && eight >= 0.0)
+  t.ok(
+    `${name}: ${one} ms, then ${eight} ms at 8 times the depth and text, linear`,
+    one >= 0.0 && eight >= 0.0 && eight < 24.0 * base,
+  )
 }
 
 /** 4000 xrefs to `target`, by title or not. */
@@ -633,9 +657,11 @@ const xmlCasesTestLinear = (t: Suite): void => {
     '1:0 md=-1 <bcp14> holds "MUST x x x x x x x x x x x x x x x x x x...", which is not a BCP 14 keyword',
   )
   xmlCasesTestFast(t, "bcp14 nested deep", start)
-  xmlCasesTestShape(t, "bcp14 nested", "<bcp14> ", " </bcp14>", "MUST ", " MUST x")
-  xmlCasesTestShape(t, "eref nested", '<eref target="u">', "</eref>", "c ", " a b")
-  xmlCasesTestShape(t, "xref nested", '<xref target="u" format="none">', "</xref>", "c ", ' a b <iref item="i"/>')
+  // A <bcp14> holding more than a keyword is always refused, so its shape is
+  // the refusal's: the text is still read through every level first.
+  xmlCasesTestShape(t, "bcp14 nested", "<bcp14> ", " </bcp14>", "MUST ", " MUST x", '<bcp14> holds "MUST MUST')
+  xmlCasesTestShape(t, "eref nested", '<eref target="u">', "</eref>", "c ", " a b", "")
+  xmlCasesTestShape(t, "xref nested", '<xref target="u" format="none">', "</xref>", "c ", ' a b <iref item="i"/>', "")
 
   const many = xmlCasesTestRepeat("<t/>", 200000)
   const targets: string[][] = [
