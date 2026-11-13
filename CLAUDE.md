@@ -41,7 +41,8 @@ read `.nish/docs/AI.md` (the language as rules, traps first).
 - **Run the compiler rather than guess.** When unsure whether something
   compiles or what it does, `.nish/bin/nish run <file>` answers in seconds.
 - **Every export has a doc comment**: what it is for, `@param` for each
-  parameter, and `@returns` when it returns something.
+  parameter, and `@returns` when it returns something. The generated
+  reference fails on a gap, and its undocumented list only shrinks.
 - Exit codes are 0 when a check passed, 1 when vector refused the input, and
   2 for bad usage or an I/O or tool failure (`src/core/diag.ts`).
 

@@ -7,9 +7,14 @@
 //
 // A golden case is a directory holding `cmd` (one line: `vector <args>`,
 // split on whitespace, with '…' or "…" quoting), `stdout`, an optional
-// `stderr`, and `exit` (the expected status). Each case runs from the
-// repository root. The runner exits 1 if anything failed, 2 if it could not
-// run (no compiler, no dist/vector when a case needs it).
+// `stderr` (no file means stderr must be empty), and `exit` (the expected
+// status). Each case runs from the repository root.
+//
+// A unit test passes only when it exits 0 and its last line is nish/testing's
+// `N passed, M failed, K skipped` with N > 0 and M = 0, so a test that asserts
+// nothing fails. Every run is killed after TIMEOUT_MS. The runner exits 1 if
+// anything failed, 2 if it could not run (no compiler, no dist/vector when a
+// case needs it).
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -21,6 +26,7 @@ const testsDir = join(root, "tests");
 const filter = process.argv[2] ?? "";
 const nish = process.env.NISH ?? join(root, ".nish/bin/nish");
 const vector = join(root, "dist/vector");
+const TIMEOUT_MS = 120_000;
 
 const walk = (dir) =>
   readdirSync(dir).flatMap((name) => {
@@ -58,14 +64,22 @@ for (const file of units) {
     cwd: root,
     encoding: "utf8",
     maxBuffer: 64 << 20,
+    timeout: TIMEOUT_MS,
   });
   const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
-  if (r.status === 0) {
-    const summary = (r.stdout ?? "").trimEnd().split("\n").pop();
+  const summary = (r.stdout ?? "").trimEnd().split("\n").pop() ?? "";
+  const counts = /(\d+) passed, (\d+) failed, \d+ skipped$/.exec(summary);
+  const asserted =
+    counts !== null && Number(counts[1]) > 0 && Number(counts[2]) === 0;
+  if (r.status === 0 && asserted) {
     console.log(`ok    ${name}  ${summary}`);
   } else {
     failed.push(name);
-    console.log(`FAIL  ${name} (exit ${r.status ?? r.signal})`);
+    const why =
+      r.status !== 0
+        ? `exit ${r.status ?? r.signal}`
+        : "no passing `N passed, 0 failed` summary";
+    console.log(`FAIL  ${name} (${why})`);
     console.log(
       out
         .split("\n")
@@ -99,7 +113,11 @@ for (const dir of cases) {
     );
     continue;
   }
-  const r = spawnSync(vector, argv.slice(1), { cwd: root, encoding: "utf8" });
+  const r = spawnSync(vector, argv.slice(1), {
+    cwd: root,
+    encoding: "utf8",
+    timeout: TIMEOUT_MS,
+  });
   const problems = [];
   const wantExit = Number.parseInt(read(dir, "exit") ?? "", 10);
   if (Number.isNaN(wantExit))
@@ -110,8 +128,8 @@ for (const dir of cases) {
   if (wantOut === null) problems.push("stdout file is missing");
   else if (r.stdout !== wantOut)
     problems.push(`stdout differs:\n--- want\n${wantOut}--- got\n${r.stdout}`);
-  const wantErr = read(dir, "stderr");
-  if (wantErr !== null && r.stderr !== wantErr)
+  const wantErr = read(dir, "stderr") ?? "";
+  if (r.stderr !== wantErr)
     problems.push(`stderr differs:\n--- want\n${wantErr}--- got\n${r.stderr}`);
   if (problems.length === 0) {
     console.log(`ok    ${name}`);

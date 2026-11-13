@@ -1,4 +1,4 @@
-// Smoke test for tests/fixtures/nish-hex/hex.ts against specs/example-hex.md:
+// Smoke test for test/fixtures/nish-hex/hex.ts against specs/example-hex.md:
 // the spec's vectors V1–V9, then every byte through the round trip, every
 // byte value in each digit position, odd lengths and mixed case. smoke.sh
 // copies hex.ts into a scratch install as std/hex.ts and runs this file there.

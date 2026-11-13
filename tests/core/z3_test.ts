@@ -1,5 +1,6 @@
 import { Suite } from "nish/testing"
-import { resolveZ3, runZ3, z3Timeout } from "../../src/core/z3"
+import { ProcessResult } from "../../src/core/process"
+import { resolveZ3, runZ3, z3Timeout, z3Verdicts } from "../../src/core/z3"
 
 export const main = (): i32 => {
   const t = new Suite("core/z3")
@@ -22,5 +23,18 @@ export const main = (): i32 => {
   t.ok("millis", run.value.millis >= 0)
   const silent = runZ3("(check-sat)\n", 1)
   t.ok("no markers is an error", silent.isErr())
+
+  // A run the time limit cut short after answering some queries is an error,
+  // not those answers plus `unknown` for the rest.
+  const cut = new ProcessResult(-1, "@@Q0\nsat\n((x 3.0))\n@@Q1\n", "", true)
+  const killed = z3Verdicts(cut, "z3", 3, 60000)
+  t.ok("a timed-out run is an error", killed.isErr())
+  if (killed.isErr()) {
+    t.eqStr("timed-out message", killed.error, "z3 (z3) did not finish 3 queries within 60000 ms")
+  }
+  const done = z3Verdicts(new ProcessResult(0, "@@Q0\nunsat\n", "", false), "z3", 1, 60000)
+  t.ok("a finished run is read", done.isOk() && done.value[0].result === "unsat")
+  const none = z3Verdicts(new ProcessResult(0, "", "boom\n", false), "z3", 1, 60000)
+  t.ok("no markers names stderr", none.isErr() && none.error.indexOf("boom") >= 0)
   return t.done()
 }

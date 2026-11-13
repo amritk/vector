@@ -12,6 +12,7 @@ if [ -x "$dir/bin/nish" ] && [ "$("$dir/bin/nish" --version)" = "nish $version" 
   exit 0
 fi
 
-curl -fsSL https://raw.githubusercontent.com/amritk/nish/main/install.sh |
+# The installer comes from the same tag as the release, so it is pinned too.
+curl -fsSL "https://raw.githubusercontent.com/amritk/nish/v$version/install.sh" |
   sh -s -- "$version" --dir "$dir" --force
 "$dir/bin/nish" --version

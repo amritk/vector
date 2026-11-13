@@ -40,7 +40,11 @@ npm ci --no-audit --no-fund >/dev/null 2>&1 || say "npm ci failed; npm run lint 
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
   {
     echo "export PATH=\"$PWD/.nish/bin:$PWD/.z3:$HOME/.local/llvm-bin:\$PATH\""
-    echo "export VECTOR_Z3=\"$PWD/.z3/z3\""
   } >> "$CLAUDE_ENV_FILE"
+  # Only a z3 that is there: vector refuses a VECTOR_Z3 naming a missing file,
+  # while unset falls back to .z3/ beside the binary and then PATH.
+  if [ -x "$PWD/.z3/z3" ]; then
+    echo "export VECTOR_Z3=\"$PWD/.z3/z3\"" >> "$CLAUDE_ENV_FILE"
+  fi
 fi
 exit 0

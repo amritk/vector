@@ -9,7 +9,7 @@
  */
 
 import { dirname, joinPath } from "./fs"
-import { runProcess } from "./process"
+import { ProcessResult, runProcess } from "./process"
 import { QueryAnswer, parseZ3Output } from "./smt"
 
 const Z3_BASE_TIMEOUT_MS: i32 = 60000
@@ -79,29 +79,54 @@ export class Z3Run {
 }
 
 /**
- * Runs one SMT-LIB2 script through `z3 -in`. The script writes
- * `(echo "@@Q<i>")` before query `i`'s `(check-sat)`.
+ * Reads the answers out of one finished `z3 -in` run.
  *
  * z3 exits 0 even when a command in the script fails, so the markers are
  * what is trusted: a script with queries whose output has no marker at all
- * means z3 never ran them, which is an error.
+ * means z3 never ran them, which is an error. A run the time limit killed is
+ * an error too, however many markers it wrote: the queries it never reached
+ * were not answered, and must not read as `unknown`.
+ *
+ * @param out what the z3 process did
+ * @param bin the z3 that ran, for messages
+ * @param queryCount how many `@@Q` markers the script writes
+ * @param limitMs the time limit the run had, for messages
+ * @returns `Ok` with one answer per query, or `Err` when the run timed out or answered nothing
+ */
+export const z3Verdicts = (
+  out: ProcessResult,
+  bin: string,
+  queryCount: i32,
+  limitMs: i32,
+): Result<QueryAnswer[], string> => {
+  if (out.timedOut) {
+    return Err(`z3 (${bin}) did not finish ${queryCount} queries within ${limitMs} ms`)
+  }
+  if (queryCount > 0 && out.stdout.indexOf("@@Q") < 0) {
+    const detail = out.stderr.length === 0 ? "" : `: ${out.stderr.substring(0, 500)}`
+    return Err(`z3 (${bin}) produced no verdicts${detail}`)
+  }
+  return Ok(parseZ3Output(out.stdout, queryCount))
+}
+
+/**
+ * Runs one SMT-LIB2 script through `z3 -in`, within `z3Timeout(queryCount)`.
+ * The script writes `(echo "@@Q<i>")` before query `i`'s `(check-sat)`.
  *
  * @param script the SMT-LIB2 script
  * @param queryCount how many `@@Q` markers the script writes
- * @returns `Ok` with the answers, or `Err` when z3 cannot be found or run, or ran none of the queries
+ * @returns `Ok` with the answers, or `Err` when z3 cannot be found or run, runs
+ *   out of time, or ran none of the queries
  */
 export const runZ3 = (script: string, queryCount: i32): Result<Z3Run, string> => {
   const bin = resolveZ3().orReturn()
   const started = monotonicNanos()
-  const ran = runProcess([bin, "-in"], script, z3Timeout(queryCount))
+  const limitMs = z3Timeout(queryCount)
+  const ran = runProcess([bin, "-in"], script, limitMs)
   if (ran.isErr()) {
     return Err(`failed to run z3 (${bin}): ${ran.error}`)
   }
-  const out = ran.value
-  if (out.status === 127 || (queryCount > 0 && out.stdout.indexOf("@@Q") < 0)) {
-    const detail = out.stderr.length === 0 ? "" : `: ${out.stderr.substring(0, 500)}`
-    return Err(`z3 (${bin}) produced no verdicts${detail}`)
-  }
+  const answers = z3Verdicts(ran.value, bin, queryCount, limitMs).orReturn()
   const millis = toI32((monotonicNanos() - started) / 1000000)
-  return Ok(new Z3Run(parseZ3Output(out.stdout, queryCount), millis))
+  return Ok(new Z3Run(answers, millis))
 }
