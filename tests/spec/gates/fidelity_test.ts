@@ -135,5 +135,10 @@ export const main = (): i32 => {
   t.ok("not inside a word at its end", !gateQuoteWhole("the MUSTARD jar", "the MUST"))
   t.ok("a later occurrence can be whole", gateQuoteWhole("MUSTARD, then MUST", "MUST"))
   t.ok("punctuation bounds itself", gateQuoteWhole("a.b", ".b"))
+  t.ok("an underscore is part of a word", !gateQuoteWhole("the K_LEN bytes", "LEN bytes"))
+  t.ok("a decimal is one number", !gateQuoteWhole("version 1.5 holds", "5 holds"))
+  t.ok("a decimal's head is one number", !gateQuoteWhole("version 1.5 holds", "version 1"))
+  t.ok("a list's comma still bounds", gateQuoteWhole("1, 5 holds", "5 holds"))
+  t.ok("a non-ASCII byte is part of a word", !gateQuoteWhole("na\u00efve MUST", "ve MUST"))
   return t.done()
 }

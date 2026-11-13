@@ -6,6 +6,7 @@
  */
 
 import { fromHex, toHex, utf8Bytes } from "../../core/hex"
+import { SHAPE_MAX_LEN } from "../contract/shape"
 import { Expr, ExprKind, LitKind, Literal } from "../contract/types"
 import { sampleIntLess, sampleIntWrap, sampleParseInt } from "./ints"
 
@@ -325,6 +326,9 @@ const sampleBytesOp = (op: string, a: SampleValue[]): Result<SampleValue, string
   if (op === "zeros" || op === "fill") {
     const count = sampleArg(a, op === "zeros" ? 0 : 1, SampleKind.Int, op).orReturn().n
     const byte: u8 = op === "zeros" ? 0 : toU8(sampleArg(a, 0, SampleKind.Int, op).orReturn().n & toI64(255))
+    if (count > toI64(SHAPE_MAX_LEN)) {
+      return Err(`${op}: ${count} bytes is over the ${SHAPE_MAX_LEN}-byte limit`)
+    }
     const out: u8[] = []
     for (let i: i64 = 0; i < count; i++) {
       out.push(byte)

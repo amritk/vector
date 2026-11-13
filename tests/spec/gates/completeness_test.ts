@@ -89,6 +89,51 @@ const COMPLETENESS_TEST_PROBE_RFC: string = `Request for Comments: 9999
    Tokens SHALL expire.
 `
 
+/**
+ * A contract that quotes sentences holding an abbreviation and list items:
+ * a quote cut at "e.g" and one starting after it cover nothing, while each
+ * bulleted item quoted on its own covers that item.
+ */
+const COMPLETENESS_TEST_BOUNDS: string = `{
+  "contract": "c3",
+  "source": {"title": "T", "rfc": 9999},
+  "target": {"module": "nish/x"},
+  "requirements": [
+    {"id": "R-EG", "section": "1", "level": "MUST", "quote": "A server MUST NOT send data, e.g"},
+    {"id": "R-TLS", "section": "4", "level": "MUST", "quote": "TLS MUST be on."},
+    {"id": "R-A", "section": "2", "level": "MUST", "quote": "A MUST be X"},
+    {"id": "R-B", "section": "2", "level": "MUST", "quote": "B MUST be Y."},
+    {"id": "R-C", "section": "3", "level": "MUST", "quote": "C MUST be X"}
+  ],
+  "exclusions": [],
+  "functions": [{"name": "f", "params": [{"name": "a", "type": "bytes"}], "returns": "bytes"}],
+  "clauses": []
+}`
+
+/** The RFC the bounds contract cites. */
+const COMPLETENESS_TEST_BOUNDS_RFC: string = `Request for Comments: 9999
+
+1.  Data
+
+   A server MUST NOT send data, e.g. before the handshake completes.
+
+2.  List
+
+   o  A MUST be X;
+
+   o  B MUST be Y.
+
+3.  Gap
+
+   o  C MUST be X;
+
+   o  D MUST be Y.
+
+4.  Tags
+
+   Use a tag, e.g. TLS MUST be on.
+`
+
 /** A context with a contract and a hand-built source set holding one RFC. */
 const completenessTestWith = (contract: string, rfc: string): CheckContext => {
   const ctx = new CheckContext("contracts/c1.json", ".")
@@ -184,6 +229,27 @@ export const main = (): i32 => {
   t.ok("probe findings", probe.length === 7)
   if (probe.length !== 7) {
     console.log(probe.join("\n"))
+  }
+  const bounds = gateCompleteness(completenessTestWith(COMPLETENESS_TEST_BOUNDS, COMPLETENESS_TEST_BOUNDS_RFC))
+  t.ok(
+    "a quote cut at e.g covers nothing",
+    bounds.indexOf(
+      `§1: MUST NOT sentence is neither a requirement nor an exclusion: "A server MUST NOT send data, e.g. before the handshake completes."`,
+    ) >= 0,
+  )
+  t.ok(
+    "a quote starting after e.g covers nothing",
+    bounds.indexOf(`§4: MUST sentence is neither a requirement nor an exclusion: "Use a tag, e.g. TLS MUST be on."`) >=
+      0,
+  )
+  t.ok("each list item quoted alone", !bounds.some((f: string): boolean => f.indexOf("§2") === 0))
+  t.ok(
+    "an unquoted list item",
+    bounds.indexOf(`§3: MUST sentence is neither a requirement nor an exclusion: "D MUST be Y."`) >= 0,
+  )
+  t.ok("bounds findings", bounds.length === 3)
+  if (bounds.length !== 3) {
+    console.log(bounds.join("\n"))
   }
   return t.done()
 }

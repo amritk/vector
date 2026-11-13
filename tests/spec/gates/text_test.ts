@@ -11,6 +11,8 @@ import {
   gateKeywordUses,
   gateLines,
   gateSentenceAt,
+  gateSentenceBreaks,
+  gateSentenceSpan,
   gateTextLines,
   gateWordFind,
   gateWordLeads,
@@ -57,5 +59,27 @@ export const main = (): i32 => {
   t.ok("a label's count", gateIntLabelCount("c = 1\nc = 2\nxc = 3", "c") === 2)
   t.eqStr("f64s as printed", gateF64Printed("x = 1.5\nx: -0\nx NaN\nx = 1.5.2", "x").join("|"), "1.5|-0|NaN")
   t.eqStr("the sentence around an offset", gateSentenceAt("One. It MUST hold. Two.", 8), "It MUST hold.")
+  t.eqStr("a sentence's breaks", textTestNums(gateSentenceBreaks("One. It MUST hold. Two.")), "3,4,5,17,18,19")
+  t.eqStr("no break after e.g", textTestNums(gateSentenceBreaks("Send data, e.g. before it ends. Next.")), "30,31,32")
+  t.eqStr("no break after i.e or etc", textTestNums(gateSentenceBreaks("A, i.e. B, etc. C. D")), "17,18,19")
+  t.eqStr("no break before a lowercase letter", textTestNums(gateSentenceBreaks("Ver. two holds. X")), "14,15,16")
+  t.eqStr("a question breaks", textTestNums(gateSentenceBreaks("Why? Because.")), "3,4,5")
+  t.eqStr("a closing quote stays with its sentence", textTestNums(gateSentenceBreaks('Say "hi." Then go.')), "7,9,10")
+  t.eqStr("a closing curly quote too", textTestNums(gateSentenceBreaks("Say \u201chi.\u201d Then go.")), "9,13,14")
+  t.eqStr("a ; before a bullet breaks", textTestNums(gateSentenceBreaks("o A MUST be X; o B MUST be Y.")), "13,14,17")
+  t.eqStr("a ; alone does not", textTestNums(gateSentenceBreaks("A MUST be X; B MUST be Y.")), "")
+  t.eqStr("a bare bullet breaks", textTestNums(gateSentenceBreaks("Items: o A o B")), "5,6,9,10,10,13")
+  t.eqStr(
+    "an e.g sentence whole",
+    gateSentenceAt("A server MUST NOT send data, e.g. before the handshake completes. Next.", 10),
+    "A server MUST NOT send data, e.g. before the handshake completes.",
+  )
+  t.eqStr("a bulleted span", textTestNums(gateSentenceSpan("o A MUST be X; o B MUST be Y.", 20)), "17,28,29")
+  t.eqStr(
+    "the first item skips its bullet",
+    textTestNums(gateSentenceSpan("o A MUST be X; o B MUST be Y.", 4)),
+    "2,13,14",
+  )
+  t.eqStr("the last sentence stops before its terminator", textTestNums(gateSentenceSpan('Go "now."', 1)), "0,7,9")
   return t.done()
 }

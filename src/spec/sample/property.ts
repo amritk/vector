@@ -132,9 +132,14 @@ const sampleFill = (run: SampleRun, pinned: Map<string, i64>): Map<string, Sampl
   return env
 }
 
-/** Whether an input is in the domain; Err when `where` cannot be evaluated. */
-const sampleInDomain = (run: SampleRun, env: Map<string, SampleValue>): Result<boolean, string> =>
-  sampleHolds(run.k.where, env)
+/** Whether an input is in the domain; Err "where: ..." when `where` cannot be evaluated on it. */
+const sampleInDomain = (run: SampleRun, env: Map<string, SampleValue>): Result<boolean, string> => {
+  const r = sampleHolds(run.k.where, env)
+  if (r.isErr()) {
+    return Err(`where: cannot be evaluated: ${r.error}`)
+  }
+  return Ok(r.value)
+}
 
 /** Adds an input when it is new and in the domain; Ok(true) when added. */
 const sampleAdd = (run: SampleRun, env: Map<string, SampleValue>, why: string): Result<boolean, string> => {
@@ -322,10 +327,7 @@ export const sampleProperty = (contract: string, k: Clause): Result<SampleOutcom
 
 /** The boundaries, then the random draws; Err "where: ..." when `where` cannot be evaluated. */
 const sampleRun = (run: SampleRun, whereTerm: string | null, queries: SampleQuery[]): Result<boolean, string> => {
-  const probe = sampleInDomain(run, sampleFill(new SampleRun(run.k, run.ranges, "probe"), new Map<string, i64>()))
-  if (probe.isErr()) {
-    return Err(`where: cannot be evaluated: ${probe.error}`)
-  }
+  sampleInDomain(run, sampleFill(new SampleRun(run.k, run.ranges, "probe"), new Map<string, i64>())).orReturn()
   const unsat = sampleBoundaries(run, whereTerm, queries).orReturn()
   const want = run.k.samples >= 0 ? run.k.samples : SAMPLE_DEFAULT_RANDOM
   for (let tries = 0; run.out.stat.random < want && tries < want * 20 && run.out.samples.length < SAMPLE_MAX; tries++) {

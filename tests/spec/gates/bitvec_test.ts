@@ -22,6 +22,7 @@ import {
   sampleIntTerm,
   sampleIsBv,
   sampleModelInt,
+  sampleQueryTimeout,
   sampleSmtLit,
   sampleSort,
   sampleWrapsOnInt,
@@ -38,15 +39,15 @@ const BITVEC_TEST_C: string = `{
   "requirements": [{"id": "R1", "section": "2", "level": "MUST", "quote": "Q"}],
   "functions": [{"name": "f", "params": [{"name": "a", "type": "bytes"}], "returns": "bytes"}],
   "clauses": [
-    {"kind": "property", "id": "P-I8", "title": "t", "covers": ["R1"],
+    {"kind": "property", "id": "P-I8", "title": "t", "covers": ["R1"], "samples": 0,
      "forall": [{"name": "x", "type": "i8", "min": -128, "max": 127}],
      "where": {"op": "<", "args": [{"op": "+", "args": [{"var": "x"}, {"int": 1}]}, {"var": "x"}]},
      "assert": {"op": "==", "args": [{"var": "x"}, {"var": "x"}]}},
-    {"kind": "property", "id": "P-I64", "title": "t", "covers": ["R1"],
+    {"kind": "property", "id": "P-I64", "title": "t", "covers": ["R1"], "samples": 0,
      "forall": [{"name": "x", "type": "i64", "min": "-9223372036854775808", "max": "9223372036854775807"}],
      "where": {"op": "==", "args": [{"op": "*", "args": [{"var": "x"}, {"int": 3}]}, {"int": 7}]},
      "assert": {"op": "==", "args": [{"var": "x"}, {"var": "x"}]}},
-    {"kind": "property", "id": "P-U64", "title": "t", "covers": ["R1"],
+    {"kind": "property", "id": "P-U64", "title": "t", "covers": ["R1"], "samples": 0,
      "forall": [{"name": "x", "type": "u64", "min": 0, "max": "18446744073709551615"}],
      "where": {"op": "<", "args": [{"op": "+", "args": [{"var": "x"}, {"int": 2}]}, {"var": "x"}]},
      "assert": {"op": "==", "args": [{"var": "x"}, {"var": "x"}]}},
@@ -55,7 +56,7 @@ const BITVEC_TEST_C: string = `{
      "where": {"op": "and", "args": [{"op": "==", "args": [{"var": "y"}, {"int": 0}]},
                                       {"op": "==", "args": [{"op": "%", "args": [{"var": "x"}, {"var": "y"}]}, {"int": 5}]}]},
      "assert": {"op": "==", "args": [{"var": "x"}, {"var": "x"}]}},
-    {"kind": "property", "id": "P-REM-ZERO", "title": "t", "covers": ["R1"],
+    {"kind": "property", "id": "P-REM-ZERO", "title": "t", "covers": ["R1"], "samples": 0,
      "forall": [{"name": "x", "type": "u8", "min": 0, "max": 255}, {"name": "y", "type": "u8", "min": 0, "max": 255}],
      "where": {"op": "and", "args": [{"op": "==", "args": [{"var": "y"}, {"int": 0}]},
                                       {"op": "==", "args": [{"op": "%", "args": [{"var": "x"}, {"var": "y"}]}, {"int": 0}]}]},
@@ -63,7 +64,11 @@ const BITVEC_TEST_C: string = `{
     {"kind": "property", "id": "P-I32", "title": "t", "covers": ["R1"],
      "forall": [{"name": "x", "type": "i32", "min": -2147483648, "max": 2147483647}],
      "where": {"op": "==", "args": [{"op": "*", "args": [{"var": "x"}, {"int": 2}]}, {"int": 1}]},
-     "assert": {"op": "==", "args": [{"var": "x"}, {"var": "x"}]}}
+     "assert": {"op": "==", "args": [{"var": "x"}, {"var": "x"}]}},
+    {"kind": "property", "id": "P-ZEROS", "title": "t", "covers": ["R1"], "samples": 1,
+     "forall": [{"name": "n", "type": "i32", "min": 5000, "max": 6000}],
+     "where": {"op": "==", "args": [{"op": "zeros", "args": [{"var": "n"}]}, {"op": "zeros", "args": [{"var": "n"}]}]},
+     "assert": {"op": "==", "args": [{"var": "n"}, {"var": "n"}]}}
   ]
 }`
 
@@ -79,6 +84,10 @@ const bitvecTestSample = (i: i32): SampleOutcome => {
 /** The first variable's value in every sample of an outcome. */
 const bitvecTestValues = (o: SampleOutcome): i64[] =>
   o.samples.map((s): i64 => sampleParseInt(s.args[0].text).expect("int"))
+
+/** The i-th variable's value in every sample of an outcome. */
+const bitvecTestArgs = (o: SampleOutcome, i: i32): i64[] =>
+  o.samples.map((s): i64 => sampleParseInt(s.args[i].text).expect("int"))
 
 /** A clause's `where`, which every test clause has. */
 const bitvecTestWhere = (k: Clause): Expr => {
@@ -145,9 +154,13 @@ export const main = (): i32 => {
   t.ok("a model's hex, unsigned", sampleModelInt("#xff", "u8").expect("u8") === toI64(255))
   t.ok("a model's binary", sampleModelInt("#b101", "u8").expect("u8") === toI64(5))
   t.ok("a model's u64 maximum", sampleModelInt("#xffffffffffffffff", "u64").expect("u64") === toI64(-1))
-  t.ok("a model's negative Int", sampleModelInt("(- 5)", "i32").expect("i32") === toI64(-5))
+  t.ok("a model's negative Int", sampleModelInt("-5", "i32").expect("i32") === toI64(-5))
   t.ok("a model's Int", sampleModelInt("12", "i32").expect("i32") === toI64(12))
   t.ok("a model's garbage", sampleModelInt("#xzz", "u8").isErr())
+  t.ok("ten queries share the budget", sampleQueryTimeout(10) === 8000)
+  t.ok("one query", sampleQueryTimeout(1) === 53000)
+  t.ok("no queries", sampleQueryTimeout(0) === 50000)
+  t.ok("a query never waits past the cap", sampleQueryTimeout(1000) <= 55000)
 
   const k8 = bitvecTestClause(0)
   const w8 = sampleBoolTerm(bitvecTestWhere(k8), k8.forall)
@@ -187,14 +200,14 @@ export const main = (): i32 => {
   // Wrap-only domains sample, not refuse.
   const o8 = bitvecTestSample(0)
   const v8 = bitvecTestValues(o8)
-  t.ok("i8 x + 1 < x samples", o8.issue === null && v8.length > 0)
+  t.ok("i8 x + 1 < x samples at Z3's boundaries", o8.issue === null && o8.stat.boundary > 0 && o8.stat.random === 0)
   t.ok(
     "only at the i8 maximum",
     v8.every((x: i64): boolean => x === toI64(127)),
   )
   const o64 = bitvecTestSample(1)
   const v64 = bitvecTestValues(o64)
-  t.ok("i64 x * 3 == 7 samples", o64.issue === null && v64.length > 0)
+  t.ok("i64 x * 3 == 7 samples at Z3's boundaries", o64.issue === null && o64.stat.boundary > 0 && v64.length > 0)
   let wraps = true
   for (const x of v64) {
     const env64 = new Map<string, SampleValue>()
@@ -204,7 +217,7 @@ export const main = (): i32 => {
   t.ok("each wraps to 7", wraps)
   const ou = bitvecTestSample(2)
   const vu = bitvecTestValues(ou)
-  t.ok("u64 x + 2 < x samples", ou.issue === null && vu.length > 0)
+  t.ok("u64 x + 2 < x samples at Z3's boundaries", ou.issue === null && ou.stat.boundary > 0 && vu.length > 0)
   t.ok(
     "only at the top two",
     vu.every((x: i64): boolean => x === toI64(-1) || x === toI64(-2)),
@@ -213,13 +226,23 @@ export const main = (): i32 => {
   const ei = oe.issue
   t.ok("% by zero is never 5", (ei ?? "").startsWith("the domain is empty (Z3: unsat)"))
   const oz = bitvecTestSample(4)
-  t.ok("% by zero is 0, so it samples", oz.issue === null && oz.samples.length > 0)
+  t.ok("% by zero is 0, so it samples at Z3's boundaries", oz.issue === null && oz.stat.boundary > 0)
+  const kz = bitvecTestClause(4)
+  const wz = sampleBoolTerm(bitvecTestWhere(kz), kz.forall)
+  t.ok("% by a variable is guarded in the where", (wz ?? "").indexOf("(ite (= v_y (_ bv0 8)) (_ bv0 8) (bvurem") >= 0)
+  t.ok(
+    "each sample has y = 0",
+    bitvecTestArgs(oz, 1).every((y: i64): boolean => y === toI64(0)),
+  )
   const o32 = bitvecTestSample(5)
   const i32i = o32.issue
   t.ok(
     "i32 Int unsat is not an empty domain",
     (i32i ?? "").startsWith("no sample satisfies the domain") && o32.samples.length === 0,
   )
+
+  const oo = bitvecTestSample(6)
+  t.ok("zeros past the limit in a where is an issue", (oo.issue ?? "").startsWith("where: cannot be evaluated"))
 
   // The evaluator's integer semantics.
   t.ok("i8 + wraps", bitvecTestArith("+", toI64(127), "i8", "1") === toI64(-128))
@@ -272,6 +295,11 @@ export const main = (): i32 => {
     bitvecTestEval(bitvecTestOp("charAt", [bitvecTestVar("s"), bitvecTestInt("4")]), env).text,
     "",
   )
+  const big = sampleEval(bitvecTestOp("zeros", [bitvecTestInt("4097")]), env)
+  t.ok("zeros past the limit is refused", big.isErr() && big.error.indexOf("4096-byte limit") >= 0)
+  t.ok("zeros at the limit", bitvecTestEval(bitvecTestOp("zeros", [bitvecTestInt("4096")]), env).bytes.length === 4096)
+  const bigFill = sampleEval(bitvecTestOp("fill", [bitvecTestInt("1"), bitvecTestInt("100000")]), env)
+  t.ok("fill past the limit is refused", bigFill.isErr())
   t.eqStr("lower maps A-Z only", bitvecTestEval(bitvecTestOp("lower", [bitvecTestVar("s")]), env).text, "abz9")
   return t.done()
 }

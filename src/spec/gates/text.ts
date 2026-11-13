@@ -512,22 +512,133 @@ export const gateF64Printed = (lines: string, label: string): string[] => {
   return out
 }
 
+/** Abbreviations whose period does not end a sentence, each between bars. */
+const GATE_ABBREVIATIONS: string = "|e.g|E.g|i.e|I.e|etc|vs|cf|Cf|Fig|Sec|"
+
+/** The length of a list bullet (`o `, `* `, `- `) at an offset, or 0. */
+const gateBulletLen = (text: string, at: i32): i32 => {
+  const b = text.substring(at, at + 2)
+  return b === "o " || b === "* " || b === "- " ? 2 : 0
+}
+
+/** Whether the period at an offset ends an abbreviation such as "e.g". */
+const gateAbbreviationEnds = (text: string, at: i32): boolean => {
+  let j = at - 1
+  while (j >= 0) {
+    const c = text.charCodeAt(j)
+    if (!(c === 46 || (c >= 65 && c <= 90) || (c >= 97 && c <= 122))) {
+      break
+    }
+    j = j - 1
+  }
+  return j + 1 < at && GATE_ABBREVIATIONS.indexOf(`|${text.substring(j + 1, at)}|`) >= 0
+}
+
 /**
- * The sentence around an offset of a section's normalized text: from just
- * after the ". " before it to the "." of the ". " after it.
+ * Where a section's normalized text breaks into sentences, three numbers a
+ * break: where the sentence before it stops (at its terminator), where its
+ * terminator and any closing quote end, and where the next sentence starts
+ * (after any list bullet). A sentence ends at `.`, `?`, `."` or `.”` before a
+ * space, except a period after an abbreviation such as "e.g" or before a
+ * lowercase letter; a list item ends before its bullet, and a `;` or `:`
+ * before a bullet ends the item before it.
+ *
+ * @param text the normalized text
+ * @returns the breaks, in order
+ */
+export const gateSentenceBreaks = (text: string): i32[] => {
+  const out: i32[] = []
+  let i = 0
+  while (i + 1 < text.length) {
+    const c = text.charCodeAt(i)
+    // 46 is `.`, 63 `?`, 59 `;`, 58 `:`; 34 is `"`.
+    if (c === 46 || c === 63 || c === 59 || c === 58) {
+      let k = i + 1
+      if (text.charCodeAt(k) === 34) {
+        k = k + 1
+      } else if (text.substring(k, k + 3) === "\u201d") {
+        k = k + 3
+      }
+      if (k + 1 < text.length && text.charCodeAt(k) === 32) {
+        const bullet = gateBulletLen(text, k + 1)
+        const next = text.charCodeAt(k + 1)
+        let ends = bullet > 0 || c === 63
+        if (c === 46 && bullet === 0) {
+          ends = !(next >= 97 && next <= 122) && !gateAbbreviationEnds(text, i)
+        }
+        if (ends) {
+          out.push(i)
+          out.push(k)
+          out.push(k + 1 + bullet)
+          i = k + 1 + bullet
+          continue
+        }
+      }
+    } else if (c === 32 && text.substring(i + 1, i + 3) === "o ") {
+      // A bullet with no punctuation before it still starts an item.
+      out.push(i)
+      out.push(i)
+      out.push(i + 3)
+      i = i + 3
+      continue
+    }
+    i = i + 1
+  }
+  return out
+}
+
+/**
+ * The sentence around an offset of a section's normalized text, as three
+ * offsets: where it starts (after any list bullet), where it stops before
+ * its terminator (which a quote may leave out), and where the terminator
+ * and any closing quote end. Sentences are split as gateSentenceBreaks
+ * splits them.
+ *
+ * @param text the normalized text
+ * @param at the offset
+ * @returns [start, stop, end]
+ */
+export const gateSentenceSpan = (text: string, at: i32): i32[] => {
+  let start = gateBulletLen(text, 0)
+  let stop = -1
+  let end = text.length
+  const breaks = gateSentenceBreaks(text)
+  for (let i = 0; i + 2 < breaks.length; i += 3) {
+    if (breaks[i + 2] <= at) {
+      start = breaks[i + 2]
+    } else if (breaks[i] >= at) {
+      stop = breaks[i]
+      end = breaks[i + 1]
+      break
+    }
+  }
+  if (stop < 0) {
+    stop = text.length
+    let more = true
+    while (more && stop > start) {
+      const c = text.charCodeAt(stop - 1)
+      // 46 is `.`, 63 `?`, 34 `"`; a closing curly quote is three bytes.
+      if (c === 46 || c === 63 || c === 34) {
+        stop = stop - 1
+      } else if (stop - 3 >= start && text.substring(stop - 3, stop) === "\u201d") {
+        stop = stop - 3
+      } else {
+        more = false
+      }
+    }
+  }
+  return [start, stop, end]
+}
+
+/**
+ * The sentence around an offset of a section's normalized text, with its
+ * terminator, as gateSentenceSpan bounds it.
  *
  * @param text the normalized text
  * @param at the offset
  * @returns the sentence
  */
 export const gateSentenceAt = (text: string, at: i32): string => {
-  let start = 0
-  for (let i = at - 2; i >= 0; i--) {
-    if (text.substring(i, i + 2) === ". ") {
-      start = i + 2
-      break
-    }
-  }
-  const stop = toI32(text.indexOf(". ", at))
-  return text.substring(start, stop < 0 ? text.length : stop + 1)
+  const b = gateSentenceSpan(text, at)
+  return text.substring(b[0], b[2])
 }

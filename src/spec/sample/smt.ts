@@ -14,12 +14,30 @@
  */
 
 import { replaceAll } from "nish/text"
+import { z3Timeout } from "../../core/z3"
 import { Expr, ExprKind, ForallVar, LitKind } from "../contract/types"
 import { vocabIntMax, vocabIntMin, vocabIsIntType } from "../contract/vocab"
 import { sampleIntLess, sampleIntSigned, sampleIntWidth, sampleIntWrap, sampleParseInt } from "./ints"
 
-/** The script's preamble: models on, a timeout below the run's own, every logic. */
-const SAMPLE_PREAMBLE: string = "(set-option :produce-models true)\n(set-option :timeout 55000)\n(set-logic ALL)\n"
+/** The longest one query may take, in milliseconds. */
+const SAMPLE_QUERY_MAX_MS: i32 = 55000
+/** What the run keeps back from z3's budget for starting and reading it, in milliseconds. */
+const SAMPLE_QUERY_SLACK_MS: i32 = 10000
+
+/**
+ * How long one query of a script may take: the run's budget, less some
+ * slack, shared between its queries, so a script of hard queries (a 64-bit
+ * `bvmul`, say) answers `unknown` for each within the budget instead of
+ * running over it. An `unknown` query gives no boundary.
+ *
+ * @param queryCount how many queries the script asks
+ * @returns the per-query timeout in milliseconds
+ */
+export const sampleQueryTimeout = (queryCount: i32): i32 => {
+  const n = queryCount > 0 ? queryCount : 1
+  const share = (z3Timeout(queryCount) - SAMPLE_QUERY_SLACK_MS) / n
+  return share < SAMPLE_QUERY_MAX_MS ? share : SAMPLE_QUERY_MAX_MS
+}
 
 /** The six comparison operators. */
 const SAMPLE_COMPARISONS: string = " < <= > >= == != "
@@ -153,7 +171,7 @@ const sampleModelBits = (digits: string, base: i32): Result<u64, string> => {
 /**
  * A model's value of a variable as the i64 that holds it: `#x..` and `#b..`
  * bit-vectors read back into their type (two's complement for `iN`), Ints as
- * decimal, `(- 5)` included.
+ * decimal (`-5`, as core/smt renders a negative).
  *
  * @param raw the value z3 printed
  * @param ty the variable's type; a length's is any non-integer type
@@ -163,9 +181,6 @@ export const sampleModelInt = (raw: string, ty: string): Result<i64, string> => 
   if (raw.startsWith("#x") || raw.startsWith("#b")) {
     const bits = sampleModelBits(raw.substring(2), raw.startsWith("#x") ? 16 : 2).orReturn()
     return Ok(vocabIsIntType(ty) ? sampleIntWrap(toI64(bits), ty) : toI64(bits))
-  }
-  if (raw.startsWith("(- ") && raw.endsWith(")")) {
-    return sampleParseInt(`-${raw.substring(3, raw.length - 1)}`)
   }
   return sampleParseInt(raw)
 }
@@ -645,7 +660,7 @@ export const sampleScript = (
   whereTerm: string | null,
   queries: SampleQuery[],
 ): string => {
-  let s = SAMPLE_PREAMBLE
+  let s = `(set-option :produce-models true)\n(set-option :timeout ${sampleQueryTimeout(queries.length)})\n(set-logic ALL)\n`
   const names: string[] = []
   for (let i = 0; i < vars.length; i++) {
     const n = sampleSmtName(vars[i])

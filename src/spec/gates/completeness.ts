@@ -15,7 +15,7 @@ import { SourceSet, sourceFind } from "../source/load"
 import { RfcSection, rfcNormalize, rfcOwnSpans } from "../source/rfc"
 import { gateCiteLabel, gateCitedSection, gatePlace, gateQuoteMissing, gateSources } from "./cite"
 import { gateIssue, gateWarn } from "./note"
-import { gateKeywordName, gateKeywordUses, gateSentenceAt } from "./text"
+import { gateKeywordName, gateKeywordUses, gateSentenceAt, gateSentenceSpan } from "./text"
 
 const GATE_COMPLETENESS: string = "completeness"
 
@@ -52,35 +52,19 @@ const gateSpanHolds = (spans: i32[], start: i32, end: i32): boolean => {
 }
 
 /**
- * Where the sentence around an offset starts and ends in a section's own
- * text, as gateSentenceAt finds it: without the section's heading or a list
- * bullet before it, and without its closing period, which a quote may leave
- * out.
+ * Where the sentence around an offset starts and stops in a section's own
+ * text, as gateSentenceSpan bounds it: without a list bullet or the
+ * section's heading before it, and without its terminator, which a quote
+ * may leave out.
  */
 const gateSentenceBounds = (sec: RfcSection, text: string, at: i32): i32[] => {
-  let start = 0
-  for (let i = at - 2; i >= 0; i--) {
-    if (text.substring(i, i + 2) === ". ") {
-      start = i + 2
-      break
-    }
-  }
-  const head = `${sec.title} `
+  const b = gateSentenceSpan(text, at)
+  let start = b[0]
+  const head = `${rfcNormalize(sec.title)} `
   if (start > 0 && text.substring(start).startsWith(head)) {
     start = start + head.length
   }
-  // A list item's bullet is layout, not part of its sentence.
-  for (const bullet of ["o ", "* ", "- "]) {
-    if (text.substring(start).startsWith(bullet)) {
-      start = start + bullet.length
-    }
-  }
-  const stop = toI32(text.indexOf(". ", at))
-  let end = stop < 0 ? text.length : stop
-  if (stop < 0 && text.endsWith(".")) {
-    end = end - 1
-  }
-  return [start, end]
+  return [start, b[1]]
 }
 
 /** Each exclusion's quote is in its section; each one found is a warning. */
@@ -107,7 +91,7 @@ const gateExclusions = (ctx: CheckContext, out: string[], set: SourceSet, ex: Ex
 /** The sentence around an offset, without the section's heading before it. */
 const gateBindingSentence = (sec: RfcSection, text: string, at: i32): string => {
   const s = gateSentenceAt(text, at)
-  const head = `${sec.title} `
+  const head = `${rfcNormalize(sec.title)} `
   return s.indexOf(head) === 0 && text.indexOf(s) > 0 ? s.substring(head.length) : s
 }
 

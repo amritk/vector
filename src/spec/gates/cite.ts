@@ -112,28 +112,58 @@ export const gateCitedSection = (
 const gateDocName = (src: LoadedSource): string =>
   src.doc.number >= 1 ? `RFC ${src.doc.number}` : `source "${src.id}"`
 
-/** Whether a character code is a letter or a digit. */
-const gateIsWordChar = (c: i32): boolean => (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122)
+/** Whether a byte is part of a word: a letter, a digit, `_` or any non-ASCII byte. */
+const gateIsWordChar = (c: i32): boolean =>
+  (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95 || c >= 128
+
+/** Whether a byte is a digit. */
+const gateIsDigitChar = (c: i32): boolean => c >= 48 && c <= 57
+
+/**
+ * Whether a quote's edge at an offset continues the text across it: a word
+ * character on both sides, or a digit, then `.` or `,`, then a digit, as in
+ * "1.5" cut to "5".
+ *
+ * @param text the text
+ * @param inner the offset of the quote's edge character
+ * @param outer the offset of the text's character beside it
+ * @param step 1 when outer is after inner, -1 when before
+ */
+const gateCutsAt = (text: string, inner: i32, outer: i32, step: i32): boolean => {
+  if (outer < 0 || outer >= text.length) {
+    return false
+  }
+  const a = text.charCodeAt(inner)
+  const b = text.charCodeAt(outer)
+  if (gateIsWordChar(a) && gateIsWordChar(b)) {
+    return true
+  }
+  const past = outer + step
+  return (
+    gateIsDigitChar(a) &&
+    (b === 46 || b === 44) &&
+    past >= 0 &&
+    past < text.length &&
+    gateIsDigitChar(text.charCodeAt(past))
+  )
+}
 
 /**
  * Whether a quote is printed in a text as whole words somewhere: at some
  * occurrence, neither its first character nor its last continues a word of
- * the text around it. "MUST" inside "MUSTARD", or "ust not" cut from
- * "must not", is not a quote of the text.
+ * the text around it. "MUST" inside "MUSTARD", "LEN" inside "K_LEN",
+ * "5" cut from "1.5", or "ust not" cut from "must not", is not a quote of
+ * the text.
  *
  * @param text the text, whitespace collapsed
  * @param q the quote, whitespace collapsed and non-empty
  * @returns true when some occurrence is word-bounded
  */
 export const gateQuoteWhole = (text: string, q: string): boolean => {
-  const first = gateIsWordChar(q.charCodeAt(0))
-  const last = gateIsWordChar(q.charCodeAt(q.length - 1))
   let at = toI32(text.indexOf(q))
   while (at >= 0) {
     const end = at + q.length
-    const cutBefore = first && at > 0 && gateIsWordChar(text.charCodeAt(at - 1))
-    const cutAfter = last && end < text.length && gateIsWordChar(text.charCodeAt(end))
-    if (!cutBefore && !cutAfter) {
+    if (!gateCutsAt(text, at, at - 1, -1) && !gateCutsAt(text, end - 1, end, 1)) {
       return true
     }
     at = toI32(text.indexOf(q, at + 1))
