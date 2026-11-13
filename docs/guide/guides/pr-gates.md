@@ -62,6 +62,7 @@ spec frozen against HEAD: OK
   ✓ contract contracts/rfc5869-hkdf-sha256.json
   ✓ contract contracts/rfc8439-chacha20-poly1305.json
   ✓ contract contracts/vector-core-hex.json
+  ✓ contract contracts/vector-lang-names.json
 ```
 
 A change to a spec and to the code at once is refused:
@@ -80,6 +81,7 @@ spec frozen against HEAD: FAILED
   ✓ contract contracts/rfc5869-hkdf-sha256.json
   ✓ contract contracts/rfc8439-chacha20-poly1305.json
   ✓ contract contracts/vector-core-hex.json
+  ✓ contract contracts/vector-lang-names.json
   spec specs/rfc5869-hkdf-sha256.md
   implementation src/main.ts
 

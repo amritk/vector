@@ -20,7 +20,7 @@ The 3 JSON Schemas in `schemas/`.
 
 <scalar-card title="Modules" icon="phosphor/regular/books" href="#modules">
 
-The 91 source files of `src/`, from their doc comments.
+The 108 source files of `src/`, from their doc comments.
 
 </scalar-card>
 
@@ -55,6 +55,23 @@ The 91 source files of `src/`, from their doc comments.
 | [`core/process`](modules/core/process.md) | running a child process with its input given and its output collected. |
 | [`core/smt`](modules/core/smt.md) | reading what z3 prints: s-expressions, the numerals in a model, and a whole run's output split into one answer per query by the `(echo "@@Q<i>")` markers the script writes before each `(check-sat)`. |
 | [`core/z3`](modules/core/z3.md) | finding z3 and running one SMT-LIB2 script through it. |
+| [`lang/c`](modules/lang/c.md) | the C table: how C writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/cpp`](modules/lang/cpp.md) | the C++ table: how C++ writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/csharp`](modules/lang/csharp.md) | the C# table: how C# writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/dart`](modules/lang/dart.md) | the Dart table: how Dart writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/go`](modules/lang/go.md) | the Go table: how Go writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/java`](modules/lang/java.md) | the Java table: how Java writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/kotlin`](modules/lang/kotlin.md) | the Kotlin table: how Kotlin writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/names`](modules/lang/names.md) | how each language names a contract's functions, parameters and modules. |
+| [`lang/php`](modules/lang/php.md) | the PHP table: how PHP writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/python`](modules/lang/python.md) | the Python table: how Python writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/ruby`](modules/lang/ruby.md) | the Ruby table: how Ruby writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/rust`](modules/lang/rust.md) | the Rust table: how Rust writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/swift`](modules/lang/swift.md) | the Swift table: how Swift writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/table`](modules/lang/table.md) | the shape of a language table: how each construct of the contract vocabulary (`spec/contract/vocab`) is written in one language, and what that language drops. |
+| [`lang/tables`](modules/lang/tables.md) | the fourteen language tables, one for each language of `vocabLanguages`, in its order. |
+| [`lang/typescript`](modules/lang/typescript.md) | the TypeScript table: how TypeScript writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/zig`](modules/lang/zig.md) | the Zig table: how Zig writes each construct of the contract vocabulary, and what it drops. |
 | [`main`](modules/main.md) | the command-line entry point. |
 | [`spec/check`](modules/spec/check.md) | the pipeline every contract goes through: an ordered registry of gates, each a top-level function that reads the contract and returns its findings. |
 | [`spec/contract/chars`](modules/spec/contract/chars.md) | the character-level checks a contract's text needs: UTF-8 decoding one code point at a time, control characters, and the patterns its ids, sections and numbers are written in. |
