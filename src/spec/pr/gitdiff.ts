@@ -8,6 +8,7 @@
 
 import { split, splitLines, trim } from "nish/text"
 import { runProcess } from "../../core/process"
+import { LEX_IDENT, LEX_PUNCT, LexSpan, LexToken, lexStatements, lexTokens } from "./lex"
 
 /** How long one git call may take, in milliseconds. */
 export const GITDIFF_TIMEOUT_MS: i32 = 60000
@@ -373,9 +374,9 @@ export const gitdiffShow = (repo: string, commit: string, path: string): Result<
 export class GitdiffExport {
   /** The name it exports. */
   name: string
-  /** The 1-based line its declaration starts on. */
+  /** The 1-based line its `export` is on. */
   line: i32
-  /** Its declaration, up to the next top-level line, without trailing blank lines. */
+  /** Its statement, from `export` to its last token (a `;` included); for a list entry, the entry and the declaration it names. */
   body: string
   /** Why the scanner cannot name or resolve it; "" when it can. */
   problem: string
@@ -396,235 +397,224 @@ export class GitdiffExport {
   }
 }
 
-/** Whether `c` can be part of an identifier. */
-const gitdiffIdentChar = (c: i32): boolean =>
-  (c >= 0x30 && c <= 0x39) || (c >= 0x41 && c <= 0x5a) || (c >= 0x61 && c <= 0x7a) || c === 0x5f || c === 0x24
+/** A declaration's names, or why it has none the scanner can trust. */
+class GitdiffDecl {
+  /** The names it declares, in order. */
+  names: string[]
+  /** GITDIFF_DECL_OK, GITDIFF_DECL_UNNAMED or GITDIFF_DECL_UNSPLIT. */
+  problem: i32
 
-/** The identifier `text` starts with; "" when none. */
-const gitdiffIdent = (text: string): string => {
-  let i = 0
-  while (i < text.length && gitdiffIdentChar(text.charCodeAt(i))) {
-    i = i + 1
+  constructor(names: string[], problem: i32) {
+    this.names = names
+    this.problem = problem
   }
-  return text.substring(0, i)
 }
 
-/** The modifiers that may stand between `export` and a declaration's keyword. */
-const gitdiffModifiers = (): string[] => ["declare ", "abstract ", "async "]
+/** A declaration it reads. */
+const GITDIFF_DECL_OK: i32 = 0
+/** A statement that declares no name it can read. */
+const GITDIFF_DECL_UNNAMED: i32 = 1
+/** A `const`, `let` or `var` whose declarators it cannot tell apart. */
+const GITDIFF_DECL_UNSPLIT: i32 = 2
 
-/** The keywords that declare one name, the name following. */
-const gitdiffKinds = (): string[] => [
-  "const enum ",
-  "const ",
-  "let ",
-  "var ",
-  "class ",
-  "enum ",
-  "type ",
-  "interface ",
-  "namespace ",
-  "module ",
-]
+/** The text of token `i`, or "" past `to`. */
+const gitdiffTok = (toks: LexToken[], i: i32, to: i32): string => (i < to ? toks[i].text : "")
 
-/** `text` without the spaces it starts with. */
-const gitdiffTrimStart = (text: string): string => {
-  let i = 0
-  while (i < text.length && text.charCodeAt(i) === 0x20) {
-    i = i + 1
-  }
-  return text.substring(i)
-}
+/** Whether token `i`, before `to`, is an identifier. */
+const gitdiffIsIdent = (toks: LexToken[], i: i32, to: i32): boolean => i < to && toks[i].kind === LEX_IDENT
+
+/** Whether token `i`, before `to`, is the punctuation `p`. */
+const gitdiffIsPunct = (toks: LexToken[], i: i32, to: i32, p: string): boolean =>
+  i < to && toks[i].kind === LEX_PUNCT && toks[i].text === p
 
 /**
- * The name a declaration declares, `export` already taken off: "" when it is
- * not one declaration of one name.
+ * Whether the `<` at `at` follows a type's name in a value: `new Map<`,
+ * `x as Array<` or `x satisfies ns.T<`, the name a dotted chain of
+ * identifiers after `new`, `as` or `satisfies`, all within the value.
  */
-const gitdiffDeclName = (decl: string): string => {
-  let rest = decl
-  let moved = true
-  while (moved) {
-    moved = false
-    for (const w of gitdiffModifiers()) {
-      if (rest.startsWith(w)) {
-        rest = gitdiffTrimStart(rest.substring(w.length))
-        moved = true
-      }
-    }
-  }
-  if (rest.startsWith("function") && !(rest.length > 8 && gitdiffIdentChar(rest.charCodeAt(8)))) {
-    rest = gitdiffTrimStart(rest.substring(8))
-    if (rest.startsWith("*")) {
-      rest = gitdiffTrimStart(rest.substring(1))
-    }
-    return gitdiffIdent(rest)
-  }
-  for (const k of gitdiffKinds()) {
-    if (rest.startsWith(k)) {
-      return gitdiffIdent(gitdiffTrimStart(rest.substring(k.length)))
-    }
-  }
-  return ""
-}
-
-/** The declarators of a `const`, `let` or `var` declaration, `export` already taken off; null for any other. */
-const gitdiffBindings = (decl: string): string | null => {
-  let rest = gitdiffTrimStart(decl)
-  if (rest.startsWith("declare ")) {
-    rest = gitdiffTrimStart(rest.substring(8))
-  }
-  if (rest.startsWith("const enum ")) {
-    return null
-  }
-  for (const k of ["const ", "let ", "var "]) {
-    if (rest.startsWith(k)) {
-      return rest.substring(k.length)
-    }
-  }
-  return null
-}
-
-/** Where the quoted text opened by the quote at `i` ends: the index after its closing quote. */
-const gitdiffSkipQuoted = (text: string, i: i32): i32 => {
-  const q = text.charCodeAt(i)
-  let j = i + 1
-  while (j < text.length && text.charCodeAt(j) !== q) {
-    j = text.charCodeAt(j) === 0x5c ? j + 2 : j + 1
-  }
-  return j + 1
-}
-
-/**
- * Whether a declaration's declarators, `a = 1, b = 2`, name more than one:
- * a comma outside brackets, strings and comments, before the statement's
- * `;`. An angle bracket opens a type's brackets before the `=`, and after it
- * only where it follows a name (`new Map<K, V>()`) or opens the value (a
- * generic arrow, `<T, U>(x: T) => x`).
- */
-const gitdiffManyDeclarators = (bindings: string): boolean => {
-  let depth = 0
-  let angle = 0
-  let inValue = false
-  let last = -1
-  let i: i32 = 0
-  while (i < bindings.length) {
-    const c = bindings.charCodeAt(i)
-    const n = i + 1 < bindings.length ? bindings.charCodeAt(i + 1) : -1
-    if (c === 0x22 || c === 0x27 || c === 0x60) {
-      i = gitdiffSkipQuoted(bindings, i)
-      continue
-    }
-    if (c === 0x2f && n === 0x2f) {
-      const nl = bindings.indexOf("\n", i)
-      i = nl < 0 ? toI32(bindings.length) : toI32(nl)
-      continue
-    }
-    if (c === 0x2f && n === 0x2a) {
-      const close = bindings.indexOf("*/", i + 2)
-      i = close < 0 ? toI32(bindings.length) : toI32(close) + 2
-      continue
-    }
-    const p = i > 0 ? bindings.charCodeAt(i - 1) : -1
-    if (c === 0x28 || c === 0x5b || c === 0x7b) {
-      depth++
-    } else if (c === 0x29 || c === 0x5d || c === 0x7d) {
-      depth--
-    } else if (c === 0x3c && (!inValue || gitdiffIdentChar(p) || last === 0x3d)) {
-      angle++
-    } else if (c === 0x3e && angle > 0 && p !== 0x3d) {
-      angle--
-    } else if (depth === 0 && angle === 0 && c === 0x3d && n !== 0x3e && n !== 0x3d) {
-      inValue = true
-    } else if (depth === 0 && angle === 0 && c === 0x3b) {
-      return false
-    } else if (depth === 0 && angle === 0 && c === 0x2c) {
-      return true
-    }
-    if (c !== 0x20 && c !== 0x09 && c !== 0x0a) {
-      last = c
-    }
-    i = i + 1
-  }
-  return false
-}
-
-/** Whether a line starts with the word `export`. */
-const gitdiffIsExport = (line: string): boolean =>
-  line.startsWith("export") && (line.length === 6 || !gitdiffIdentChar(line.charCodeAt(6)))
-
-/** Whether an export line opens a braced list: `export {` or `export type {`. */
-const gitdiffIsList = (line: string): boolean => {
-  const rest = gitdiffTrimStart(line.substring(6))
-  return rest.startsWith("{") || (rest.startsWith("type") && gitdiffTrimStart(rest.substring(4)).startsWith("{"))
-}
-
-/**
- * The name a top-level `export` line declares: `default` for a default
- * export, the declared name for a declaration.
- *
- * @param line a line of the module
- * @returns the name; "" when the line is not an export; `Err` for an export
- *   it cannot name (a braced list, `export *`, `export import`, `export =`),
- *   which names no declaration to compare
- */
-export const gitdiffExportName = (line: string): Result<string, string> => {
-  if (!gitdiffIsExport(line)) {
-    return Ok("")
-  }
-  const rest = gitdiffTrimStart(line.substring(6))
-  if (rest.startsWith("default") && !(rest.length > 7 && gitdiffIdentChar(rest.charCodeAt(7)))) {
-    return Ok("default")
-  }
-  const name = gitdiffDeclName(rest)
-  if (name.length === 0) {
-    return Err(`an export it cannot name: ${trim(line)}`)
-  }
-  return Ok(name)
-}
-
-/** Whether a line starts at the top level: not blank, not indented, not a closing bracket. */
-const gitdiffTopLevel = (line: string): boolean => {
-  if (line.length === 0) {
+const gitdiffTypeChain = (toks: LexToken[], valueStart: i32, at: i32): boolean => {
+  let i = at - 1
+  if (i < valueStart || toks[i].kind !== LEX_IDENT || toks[i].depth !== 0) {
     return false
   }
-  const c = line.charCodeAt(0)
-  return c !== 0x20 && c !== 0x09 && c !== 0x7d && c !== 0x29 && c !== 0x5d
+  while (i - 2 >= valueStart && gitdiffIsPunct(toks, i - 1, at, ".") && toks[i - 2].kind === LEX_IDENT) {
+    i = i - 2
+  }
+  i = i - 1
+  if (i < valueStart || toks[i].kind !== LEX_IDENT || toks[i].depth !== 0) {
+    return false
+  }
+  const w = toks[i].text
+  return w === "new" || w === "as" || w === "satisfies"
 }
 
-/** The index after the last line of the item starting at `i`: the next top-level line. */
-const gitdiffItemEnd = (lines: string[], i: i32): i32 => {
-  let j = i + 1
-  while (j < lines.length && !gitdiffTopLevel(lines[j])) {
-    j = j + 1
+/**
+ * Whether the token at `close` is the `)` ending an arrow's parameters at the
+ * head of a value: `(…)`, `async (…)`, `<T>(…)` or `async <T>(…)`, so a `:`
+ * after it starts the arrow's return type rather than a ternary's other arm.
+ */
+const gitdiffArrowHead = (toks: LexToken[], valueStart: i32, close: i32): boolean => {
+  if (close < valueStart || !gitdiffIsPunct(toks, close, close + 1, ")") || toks[close].depth !== 0) {
+    return false
   }
-  return j
+  let open = close - 1
+  while (open >= valueStart && !(toks[open].depth === 0 && toks[open].text === "(")) {
+    open = open - 1
+  }
+  let head = valueStart
+  if (gitdiffTok(toks, head, open) === "async" && toks[head].kind === LEX_IDENT) {
+    head = head + 1
+  }
+  if (open === head) {
+    return true
+  }
+  return open > head && gitdiffIsPunct(toks, head, open, "<") && gitdiffIsPunct(toks, open - 1, open, ">")
 }
 
-/** Lines `i` up to `j`, without the blank lines they end with. */
-const gitdiffItemText = (lines: string[], i: i32, j: i32): string => {
-  let end = j
-  while (end > i + 1 && trim(lines[end - 1]).length === 0) {
-    end = end - 1
+/** Whether a `,` at `at` is followed by another declarator: a name, then `:`, `=`, `!`, `,` or the end. */
+const gitdiffNextDeclarator = (toks: LexToken[], at: i32, to: i32): boolean => {
+  if (!gitdiffIsIdent(toks, at + 1, to)) {
+    return false
   }
-  const body: string[] = []
-  for (let k = i; k < end; k++) {
-    body.push(lines[k])
+  if (at + 2 >= to) {
+    return true
   }
-  return body.join("\n")
+  const n = toks[at + 2]
+  return n.kind === LEX_PUNCT && (n.text === ":" || n.text === "=" || n.text === "!" || n.text === ",")
 }
 
-/** The text of the top-level declaration of `name`, exported or not; null when there is none. */
-const gitdiffDeclText = (lines: string[], name: string): string | null => {
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    if (!gitdiffTopLevel(line)) {
-      continue
+/**
+ * The names of the declarators of a `const`, `let` or `var`, from the token
+ * `from` after the keyword to `to`. A top-level `,` outside angle brackets
+ * starts the next declarator. Before a declarator's `=`, `<` and `>` pair as
+ * a type's brackets; after it `<` is an operator (`i < 3`) unless it opens the
+ * value (a generic arrow), follows a type's name (gitdiffTypeChain), or is in
+ * an arrow's return type: a `:` right after a top-level `)`, which must reach
+ * its `=>` with no `=` or top-level `,` on the way. A `,` not followed by a
+ * declarator, an angle bracket that never closes, or a return type that never
+ * reaches its arrow is a statement it cannot split, never one it guesses at.
+ */
+const gitdiffDeclarators = (toks: LexToken[], from: i32, to: i32): GitdiffDecl => {
+  const names: string[] = []
+  let i = from
+  while (true) {
+    if (!gitdiffIsIdent(toks, i, to)) {
+      return new GitdiffDecl(names, names.length === 0 ? GITDIFF_DECL_UNNAMED : GITDIFF_DECL_UNSPLIT)
     }
-    const decl = gitdiffIsExport(line) ? gitdiffTrimStart(line.substring(6)) : line
-    if (gitdiffDeclName(decl) === name) {
-      return gitdiffItemText(lines, toI32(i), gitdiffItemEnd(lines, toI32(i)))
+    names.push(toks[i].text)
+    i = i + 1
+    let inValue = false
+    let valueStart: i32 = -1
+    let angle = 0
+    let returnType = false
+    let next = false
+    while (i < to) {
+      const t = toks[i]
+      if (t.depth === 0 && t.kind === LEX_PUNCT) {
+        const typeAngle = !inValue || returnType || angle > 0
+        if (t.text === "<" && (typeAngle || i === valueStart || gitdiffTypeChain(toks, valueStart, i))) {
+          angle++
+        } else if (t.text === ">" && angle > 0) {
+          angle--
+        } else if (returnType) {
+          if (t.text === "=>" && angle === 0) {
+            returnType = false
+          } else if (t.text === "=" || (t.text === "," && angle === 0)) {
+            return new GitdiffDecl(names, GITDIFF_DECL_UNSPLIT)
+          }
+        } else if (inValue && angle === 0 && t.text === ":" && gitdiffArrowHead(toks, valueStart, i - 1)) {
+          returnType = true
+        } else if (t.text === "=" && !inValue && angle === 0) {
+          inValue = true
+          valueStart = i + 1
+        } else if (t.text === "," && angle === 0) {
+          if (!gitdiffNextDeclarator(toks, i, to)) {
+            return new GitdiffDecl(names, GITDIFF_DECL_UNSPLIT)
+          }
+          next = true
+          i = i + 1
+          break
+        }
+      }
+      i = i + 1
+    }
+    if (angle > 0 || returnType) {
+      return new GitdiffDecl(names, GITDIFF_DECL_UNSPLIT)
+    }
+    if (!next) {
+      return new GitdiffDecl(names, GITDIFF_DECL_OK)
     }
   }
-  return null
+}
+
+/**
+ * The names the declaration at tokens `[from, to)` declares, `export`
+ * already passed: one for a function, class, enum, interface, type alias,
+ * namespace or module, each declarator's for a `const`, `let` or `var`.
+ */
+const gitdiffDeclare = (toks: LexToken[], from: i32, to: i32): GitdiffDecl => {
+  let i = from
+  while (
+    (gitdiffTok(toks, i, to) === "declare" ||
+      gitdiffTok(toks, i, to) === "abstract" ||
+      gitdiffTok(toks, i, to) === "async") &&
+    gitdiffIsIdent(toks, i + 1, to)
+  ) {
+    i = i + 1
+  }
+  if (!gitdiffIsIdent(toks, i, to)) {
+    return new GitdiffDecl([], GITDIFF_DECL_UNNAMED)
+  }
+  let k = toks[i].text
+  if (k === "const" && gitdiffTok(toks, i + 1, to) === "enum") {
+    i = i + 1
+    k = "enum"
+  }
+  if (k === "const" || k === "let" || k === "var") {
+    return gitdiffDeclarators(toks, i + 1, to)
+  }
+  if (k === "function") {
+    i = i + 1
+    if (gitdiffIsPunct(toks, i, to, "*")) {
+      i = i + 1
+    }
+  } else if (["class", "enum", "interface", "type", "namespace", "module"].indexOf(k) >= 0) {
+    i = i + 1
+  } else {
+    return new GitdiffDecl([], GITDIFF_DECL_UNNAMED)
+  }
+  if (!gitdiffIsIdent(toks, i, to)) {
+    return new GitdiffDecl([], GITDIFF_DECL_UNNAMED)
+  }
+  return new GitdiffDecl([toks[i].text], GITDIFF_DECL_OK)
+}
+
+/** The index after a statement's last token other than a closing `;`. */
+const gitdiffStmtEnd = (toks: LexToken[], span: LexSpan): i32 =>
+  span.to > span.from && gitdiffIsPunct(toks, span.to - 1, span.to, ";") ? span.to - 1 : span.to
+
+/** A statement's text, from its first token to its last. */
+const gitdiffStmtText = (text: string, toks: LexToken[], span: LexSpan): string =>
+  text.substring(toks[span.from].start, toks[span.to - 1].end)
+
+/** Whether a statement starts with `export`. */
+const gitdiffIsExportStmt = (toks: LexToken[], span: LexSpan): boolean =>
+  toks[span.from].kind === LEX_IDENT && toks[span.from].text === "export"
+
+/**
+ * The text of every top-level statement declaring `name`, exported or not,
+ * joined by line breaks (overloads); null when there is none.
+ */
+const gitdiffDeclText = (text: string, toks: LexToken[], spans: LexSpan[], name: string): string | null => {
+  const found: string[] = []
+  for (const span of spans) {
+    const from = gitdiffIsExportStmt(toks, span) ? span.from + 1 : span.from
+    const d = gitdiffDeclare(toks, from, gitdiffStmtEnd(toks, span))
+    if (d.names.indexOf(name) >= 0) {
+      found.push(gitdiffStmtText(text, toks, span))
+    }
+  }
+  return found.length > 0 ? found.join("\n") : null
 }
 
 /**
@@ -633,42 +623,57 @@ const gitdiffDeclText = (lines: string[], name: string): string | null => {
  * from another module, or names a declaration the module lacks, is one the
  * scanner cannot resolve.
  */
-const gitdiffListExports = (lines: string[], at: i32, statement: string, out: GitdiffExport[]): void => {
-  const open = statement.indexOf("{")
-  const close = statement.indexOf("}")
-  if (close < open) {
-    out.push(new GitdiffExport("", at + 1, statement, `an export list it cannot read: ${trim(statement)}`))
+const gitdiffListExports = (
+  text: string,
+  toks: LexToken[],
+  spans: LexSpan[],
+  span: LexSpan,
+  open: i32,
+  out: GitdiffExport[],
+): void => {
+  const end = gitdiffStmtEnd(toks, span)
+  const line = toks[span.from].line
+  const statement = gitdiffStmtText(text, toks, span)
+  let close = open + 1
+  while (close < end && !(toks[close].depth === 0 && toks[close].text === "}")) {
+    close = close + 1
+  }
+  if (close + 1 < end) {
+    const why =
+      gitdiffTok(toks, close + 1, end) === "from"
+        ? `a re-export from another module it cannot resolve: ${statement}`
+        : `an export list it cannot read: ${statement}`
+    out.push(new GitdiffExport("", line, statement, why))
     return
   }
-  const tail = trim(statement.substring(close + 1))
-  if (tail.length > 0 && tail !== ";") {
-    out.push(
-      new GitdiffExport("", at + 1, statement, `a re-export from another module it cannot resolve: ${trim(statement)}`),
-    )
-    return
-  }
-  for (const raw of split(statement.substring(open + 1, close), ",")) {
-    let entry = trim(raw)
-    if (entry.length === 0) {
-      continue
+  let a = open + 1
+  while (a < close) {
+    let b = a
+    while (b < close && !(toks[b].depth === 1 && toks[b].text === ",")) {
+      b = b + 1
     }
-    if (entry.startsWith("type ")) {
-      entry = trim(entry.substring(5))
+    if (b > a) {
+      let s = a
+      if (b - s > 1 && toks[s].kind === LEX_IDENT && toks[s].text === "type") {
+        s = s + 1
+      }
+      const entry = text.substring(toks[s].start, toks[b - 1].end)
+      let name = ""
+      if (gitdiffIsIdent(toks, s, b)) {
+        if (b - s === 1) {
+          name = toks[s].text
+        } else if (b - s === 3 && gitdiffTok(toks, s + 1, b) === "as" && gitdiffIsIdent(toks, s + 2, b)) {
+          name = toks[s + 2].text
+        }
+      }
+      const decl: string | null = name.length > 0 ? gitdiffDeclText(text, toks, spans, toks[s].text) : null
+      if (decl === null) {
+        out.push(new GitdiffExport("", line, statement, `an export it cannot resolve to a declaration: ${entry}`))
+      } else {
+        out.push(new GitdiffExport(name, line, `${entry}\n${decl}`, ""))
+      }
     }
-    const local = gitdiffIdent(entry)
-    const as = trim(entry.substring(local.length))
-    let name = local
-    if (as.startsWith("as ")) {
-      name = gitdiffIdent(trim(as.substring(3)))
-    } else if (as.length > 0) {
-      name = ""
-    }
-    const decl: string | null = local.length > 0 && name.length > 0 ? gitdiffDeclText(lines, local) : null
-    if (decl === null) {
-      out.push(new GitdiffExport("", at + 1, statement, `an export it cannot resolve to a declaration: ${entry}`))
-    } else {
-      out.push(new GitdiffExport(name, at + 1, `${entry}\n${decl}`, ""))
-    }
+    a = b + 1
   }
 }
 
@@ -685,52 +690,120 @@ const gitdiffAddExport = (out: GitdiffExport[], e: GitdiffExport): void => {
   out.push(e)
 }
 
+/** The line a lexer message (`line N: why`) names, or 1. */
+const gitdiffLexLine = (message: string): i32 => {
+  let n: i32 = 0
+  let i = 5
+  if (!message.startsWith("line ")) {
+    return 1
+  }
+  while (i < message.length && message.charCodeAt(i) >= 0x30 && message.charCodeAt(i) <= 0x39) {
+    n = n * 10 + (message.charCodeAt(i) - 0x30)
+    i = i + 1
+  }
+  return n > 0 ? n : 1
+}
+
+/** The export statement `span`, added to `out`. */
+const gitdiffExportStmt = (
+  text: string,
+  toks: LexToken[],
+  spans: LexSpan[],
+  span: LexSpan,
+  out: GitdiffExport[],
+): void => {
+  const end = gitdiffStmtEnd(toks, span)
+  const line = toks[span.from].line
+  const body = gitdiffStmtText(text, toks, span)
+  const first = trim(splitLines(body)[0])
+  const k = span.from + 1
+  if (gitdiffIsIdent(toks, k, end) && toks[k].text === "default") {
+    gitdiffAddExport(out, new GitdiffExport("default", line, body, ""))
+    return
+  }
+  if (gitdiffIsPunct(toks, k, end, "{")) {
+    gitdiffListExports(text, toks, spans, span, k, out)
+    return
+  }
+  if (gitdiffTok(toks, k, end) === "type" && gitdiffIsPunct(toks, k + 1, end, "{")) {
+    gitdiffListExports(text, toks, spans, span, k + 1, out)
+    return
+  }
+  const d = gitdiffDeclare(toks, k, end)
+  if (d.problem === GITDIFF_DECL_UNNAMED) {
+    out.push(new GitdiffExport("", line, body, `an export it cannot name: ${first}`))
+  } else if (d.problem === GITDIFF_DECL_UNSPLIT) {
+    out.push(
+      new GitdiffExport(
+        "",
+        line,
+        body,
+        `an export it cannot split into names: ${first}: a comma or an angle bracket it cannot place, so it may declare more than one name`,
+      ),
+    )
+  } else if (d.names.length > 1) {
+    out.push(
+      new GitdiffExport(
+        "",
+        line,
+        body,
+        `an export declaring more than one name: ${first}: give each name its own export`,
+      ),
+    )
+  } else {
+    gitdiffAddExport(out, new GitdiffExport(d.names[0], line, body, ""))
+  }
+}
+
 /**
- * The exports a module declares, each with its declaration's text: from its
- * `export` line to the line before the next top-level line that is not a
- * closing bracket, so a doc comment above the next declaration is not part of
- * it. Declarations of one name (overloads) are joined into one export. A
- * braced list names each entry, with the text of the declaration it exports.
- * An export the scanner cannot name or resolve, or one `const`, `let` or `var`
- * declaring several names, is kept with an empty name and its `problem`, so a
- * change that adds one can be refused.
+ * The exports a module declares, each with its statement's text (lexStatements:
+ * a statement ends at a top-level `;`, before the next `export`, or where
+ * automatic semicolon insertion ends it, wherever lines start), so a doc
+ * comment above the next declaration is not part of it. Declarations of one
+ * name (overloads) are joined into one export. A braced list names each
+ * entry, with the text of the declaration it exports. An export the scanner
+ * cannot name, split or resolve, or one `const`, `let` or `var` declaring
+ * several names, is kept with an empty name and its `problem`, so a change
+ * that adds one can be refused. A module it cannot tokenize (lexTokens) is
+ * one unnamed export whose body is the whole text, so any change to it is
+ * refused.
  *
  * @param text the module's source
  * @returns the exports, in the order they are declared
  */
 export const gitdiffExports = (text: string): GitdiffExport[] => {
-  const lines = splitLines(text)
   const out: GitdiffExport[] = []
-  let i: i32 = 0
-  while (i < lines.length) {
-    const line = lines[i]
-    if (!gitdiffIsExport(line)) {
-      i = i + 1
-      continue
+  const lexed = lexTokens(text)
+  if (lexed.isErr()) {
+    out.push(new GitdiffExport("", gitdiffLexLine(lexed.error), text, `a module it cannot read: ${lexed.error}`))
+    return out
+  }
+  const toks = lexed.value
+  const spans = lexStatements(toks)
+  for (const span of spans) {
+    if (gitdiffIsExportStmt(toks, span)) {
+      gitdiffExportStmt(text, toks, spans, span, out)
     }
-    const j = gitdiffItemEnd(lines, i)
-    const statement = gitdiffItemText(lines, i, j)
-    if (gitdiffIsList(line)) {
-      gitdiffListExports(lines, i, statement, out)
-    } else {
-      const name = gitdiffExportName(line)
-      const bindings = gitdiffBindings(statement.substring(6))
-      if (name.isErr()) {
-        out.push(new GitdiffExport("", i + 1, statement, name.error))
-      } else if (bindings !== null && gitdiffManyDeclarators(bindings)) {
-        out.push(
-          new GitdiffExport(
-            "",
-            i + 1,
-            statement,
-            `an export declaring more than one name: ${trim(line)}: give each name its own export`,
-          ),
-        )
-      } else {
-        gitdiffAddExport(out, new GitdiffExport(name.value, i + 1, statement, ""))
-      }
-    }
-    i = j
   }
   return out
+}
+
+/**
+ * The name the first `export` in `source` declares: `default` for a default
+ * export, the declared name for a declaration.
+ *
+ * @param source a statement or a few, such as one line of a module
+ * @returns the name; "" when it holds no export; `Err` for an export it
+ *   cannot name or resolve (a braced list without its declaration, `export *`,
+ *   `export import`, `export =`, several names) or source it cannot read
+ */
+export const gitdiffExportName = (source: string): Result<string, string> => {
+  const list = gitdiffExports(source)
+  if (list.length === 0) {
+    return Ok("")
+  }
+  if (list[0].problem.length > 0) {
+    return Err(list[0].problem)
+  }
+  return Ok(list[0].name)
 }

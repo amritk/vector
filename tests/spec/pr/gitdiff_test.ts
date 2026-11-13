@@ -31,6 +31,29 @@ const gitdiffTestList = (list: GitdiffExport[]): string =>
     )
     .join("|")
 
+/**
+ * Each export's name, or for an unnamed one why: MANY (more than one name),
+ * SPLIT (cannot split into names), READ (cannot read the module) or NAME,
+ * joined by ",".
+ */
+const gitdiffTestNames = (text: string): string => {
+  const out: string[] = []
+  for (const e of gitdiffExports(text)) {
+    if (e.name.length > 0) {
+      out.push(e.name)
+    } else if (e.problem.indexOf("more than one name") >= 0 && e.problem.indexOf("cannot split") < 0) {
+      out.push("MANY")
+    } else if (e.problem.indexOf("cannot split") >= 0) {
+      out.push("SPLIT")
+    } else if (e.problem.indexOf("a module it cannot read") >= 0) {
+      out.push("READ")
+    } else {
+      out.push("NAME")
+    }
+  }
+  return out.join(",")
+}
+
 /** The ranges of a file, as text. */
 const gitdiffTestRanges = (r: i32[]): string => {
   const out: string[] = []
@@ -126,13 +149,13 @@ export const main = (): i32 => {
   )
   t.ok("a quoted path is refused", gitdiffParse('diff --git a/x b/x\n--- "a/\\tx"\n+++ b/x\n').isErr())
   t.eqStr("export const", gitdiffTestName("export const fooBar = (): i32 => 1"), "fooBar")
-  t.eqStr("export async function", gitdiffTestName("export async function go() {"), "go")
-  t.eqStr("export class", gitdiffTestName("export class Box {"), "Box")
-  t.eqStr("export function *g", gitdiffTestName("export function *gen() {"), "gen")
-  t.eqStr("export function * g", gitdiffTestName("export function * gen() {"), "gen")
-  t.eqStr("export namespace", gitdiffTestName("export namespace Space {"), "Space")
-  t.eqStr("export const enum", gitdiffTestName("export const enum E {"), "E")
-  t.eqStr("export default", gitdiffTestName("export default class Box {"), "default")
+  t.eqStr("export async function", gitdiffTestName("export async function go() {}"), "go")
+  t.eqStr("export class", gitdiffTestName("export class Box {}"), "Box")
+  t.eqStr("export function *g", gitdiffTestName("export function *gen() {}"), "gen")
+  t.eqStr("export function * g", gitdiffTestName("export function * gen() {}"), "gen")
+  t.eqStr("export namespace", gitdiffTestName("export namespace Space {}"), "Space")
+  t.eqStr("export const enum", gitdiffTestName("export const enum E {}"), "E")
+  t.eqStr("export default", gitdiffTestName("export default class Box {}"), "default")
   t.eqStr("a const named module", gitdiffTestName("export const module = 1"), "module")
   t.eqStr("a braced list is not one name", gitdiffTestName("export { a } from './a'"), "ERR")
   t.eqStr("export * is refused", gitdiffTestName("export * from './a'"), "ERR")
@@ -189,6 +212,52 @@ export const main = (): i32 => {
     "overloads join into one export",
     gitdiffTestList(gitdiffExports("export function f(a: i32): i32\nexport function f(a: string): i32\n")),
     "f:1:export function f(a: i32): i32\nexport function f(a: string): i32",
+  )
+  t.eqStr("a less-than then a comma is a second name", gitdiffTestNames("export const a = i<3, b = 2\n"), "MANY")
+  t.eqStr("a member less-than then a comma", gitdiffTestNames("export const a = x.length<2, y = 1\n"), "MANY")
+  t.eqStr("a shift then a comma", gitdiffTestNames("export const a = 1<<2, y = 3\n"), "MANY")
+  t.eqStr("a comma at column 0 goes on", gitdiffTestNames("export const a = 1\n,b = 2\n"), "MANY")
+  t.eqStr("a value at column 0 goes on", gitdiffTestNames("export const a =\n1, b = 2\n"), "MANY")
+  t.eqStr("two exports on one line", gitdiffTestNames("export const a = 1; export const b = 2\n"), "a,b")
+  t.eqStr("a generic call then a comma", gitdiffTestNames("export const a = f<T>(x), b = 1\n"), "MANY")
+  t.eqStr("a generic call with two types", gitdiffTestNames("export const a = f<T, U>(x)\n"), "SPLIT")
+  t.eqStr("an angle that never closes", gitdiffTestNames("export const a = new Foo<x, b = 2\n"), "SPLIT")
+  t.eqStr("a comma in a template's substitution", gitdiffTestNames("export const a = `${x, y}`, b = 1\n"), "MANY")
+  t.eqStr("a template alone is one name", gitdiffTestNames("export const a = `${f(x, y)}`\n"), "a")
+  t.eqStr("a regular expression is refused", gitdiffTestNames("export const a = /,/, b = 1\n"), "READ")
+  t.eqStr("a parenthesised comma then a comma", gitdiffTestNames("export const a = (1, 2), b = 3\n"), "MANY")
+  t.eqStr("an object then a comma", gitdiffTestNames("export const a = {x: 1, y: 2}, b = 3\n"), "MANY")
+  t.eqStr("a comma in a line comment", gitdiffTestNames("export const a = 1 // , b = 2\n"), "a")
+  t.eqStr("a comma in a block comment", gitdiffTestNames("export const a = 1 /* , b = 2 */\n"), "a")
+  t.eqStr(
+    "a function then an export on one line",
+    gitdiffTestNames("export function f() {}; export const g = 1\n"),
+    "f,g",
+  )
+  t.eqStr("export default mid-line", gitdiffTestNames("export const a = 1; export default a\n"), "a,default")
+  t.eqStr("an arrow's return type is one name", gitdiffTestNames("export const a = (): Result<A, B> => x\n"), "a")
+  t.eqStr(
+    "an arrow returning a ternary",
+    gitdiffTestNames("export const a = (x: i32) => x > 1 ? f(x, 2) : null\n"),
+    "a",
+  )
+  t.eqStr("an arrow then a comma", gitdiffTestNames("export const a = (x): T => y, b = 1\n"), "MANY")
+  t.eqStr("an as chain then a comma", gitdiffTestNames("export const a = x as Foo<A, B>, b = 1\n"), "MANY")
+  t.eqStr("a ternary then a comma", gitdiffTestNames("export const a = c ? 1 : 2, b = 3\n"), "MANY")
+  t.eqStr("an unclosed string is refused", gitdiffTestNames("export const a = 'x\n"), "READ")
+  t.eqStr("an unclosed comment is refused", gitdiffTestNames("export const a = 1 /* x\n"), "READ")
+  t.eqStr("an unclosed brace is refused", gitdiffTestNames("export const a = () => {\n"), "READ")
+  const unsplit = gitdiffExports("const z = 0\nexport const a = f<T, U>(x)\n")
+  t.eqStr(
+    "an unsplittable export names its line",
+    unsplit.length === 1 ? `${unsplit[0].line}:${unsplit[0].problem}` : "ERR",
+    "2:an export it cannot split into names: export const a = f<T, U>(x): a comma or an angle bracket it cannot place, so it may declare more than one name",
+  )
+  const unread = gitdiffExports("export const a = 1\nexport const b = /x/\n")
+  t.eqStr(
+    "an unreadable module names the line",
+    unread.length === 1 ? `${unread[0].line}:${unread[0].problem}` : "ERR",
+    "2:a module it cannot read: line 2: a regular expression literal, which Nish does not have",
   )
   const ex = gitdiffExports(
     "import x\n\n/** a */\nexport const a = (): i32 => {\n  return 1\n}\n\n/** b */\nexport const b = 2\nconst c = 3\n",
