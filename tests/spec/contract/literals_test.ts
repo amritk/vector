@@ -179,44 +179,44 @@ export const main = (): i32 => {
   t.eqStr("a bad escape", litTestParse('"a\\q"'), "a quoted string is a JSON string; bad escape @1")
   t.eqStr("a raw tab in a string", litTestParse('"a\tb"'), "a quoted string is a JSON string; bad escape @1")
   t.eqStr("an unclosed string", litTestParse('"ab'), "not a literal @1")
-  t.eqStr("bytes", litTestParse("[00 0f ff]"), `bytes:000fff`)
-  t.eqStr("no bytes", litTestParse("[]"), `bytes:`)
-  t.eqStr("adjacent pairs", litTestParse("[000f]"), `bytes:000f`)
+  t.eqStr("bytes", litTestParse("[00 0f ff]"), "bytes:000fff")
+  t.eqStr("no bytes", litTestParse("[]"), "bytes:")
+  t.eqStr("adjacent pairs", litTestParse("[000f]"), "bytes:000f")
   t.ok("uppercase bytes are refused", litTestParse("[0F]").endsWith("@1"))
   t.ok("two spaces are refused", litTestParse("[00  0f]").startsWith("bytes are lowercase hex pairs"))
-  t.eqStr("empty", litTestParse("(empty)"), `empty:`)
-  t.eqStr("null", litTestParse("null"), `null:`)
-  t.eqStr("true", litTestParse("true"), `bool: true`)
+  t.eqStr("empty", litTestParse("(empty)"), "empty:")
+  t.eqStr("null", litTestParse("null"), "null:")
+  t.eqStr("true", litTestParse("true"), "bool: true")
   t.eqStr("a word starting with null", litTestParse("nullx"), "not a literal @1")
-  t.eqStr("an int", litTestParse("-42"), `int:-42`)
-  t.eqStr("a big int", litTestParse("18446744073709551615"), `int:18446744073709551615`)
-  t.eqStr("an f64", litTestParse("-1.5e-3"), `f64:-1.5e-3`)
-  t.eqStr("NaN", litTestParse("NaN"), `f64:NaN`)
-  t.eqStr("-Infinity", litTestParse("-Infinity"), `f64:-Infinity`)
+  t.eqStr("an int", litTestParse("-42"), "int:-42")
+  t.eqStr("a big int", litTestParse("18446744073709551615"), "int:18446744073709551615")
+  t.eqStr("an f64", litTestParse("-1.5e-3"), "f64:-1.5e-3")
+  t.eqStr("NaN", litTestParse("NaN"), "f64:NaN")
+  t.eqStr("-Infinity", litTestParse("-Infinity"), "f64:-Infinity")
   t.eqStr("a leading zero", litTestParse("042"), "not a literal @1")
   t.eqStr("1.", litTestParse("1."), "unexpected text after the value @2")
-  t.eqStr("a concat", litTestParse('concat([00], "a")'), `concat: (bytes:00, str:a)`)
+  t.eqStr("a concat", litTestParse('concat([00], "a")'), "concat: (bytes:00, str:a)")
   t.eqStr("a nested concat", litTestParse("concat(concat([00]))"), "concat does not nest; list every part @8")
   t.eqStr("an empty concat", litTestParse("concat()"), "concat needs at least one part @1")
   const bars = charsFromCodePoint(0x2016)
   t.eqStr("the double bar", litTestParse(`[00] ${bars} [01]`), "unexpected text after the value @6")
   t.eqStr("the double bar alone", litTestParse(`${bars} [01]`), `\`${bars}\` is not a literal; write concat(a, b) @1`)
   t.eqStr("a column counts characters", litTestCall(`f("${charsFromCodePoint(0xe9)}" x)`), "expected `,` or `)` @7")
-  t.eqStr("a call", litTestCall("f(1, [00])"), `f(int:1, bytes:00)`)
+  t.eqStr("a call", litTestCall("f(1, [00])"), "f(int:1, bytes:00)")
   t.eqStr("no arguments", litTestCall("f()"), "f()")
   t.eqStr("not a call", litTestCall("1f(1)"), "a call is `name(args...)` @1")
   t.eqStr("text after a call", litTestCall("f(1) x"), "unexpected text after the value @6")
 
   // A labelled int.
-  t.eqStr("L = 42", litTestParse("L = 42"), `labelled-int:42 label=L hex=42`)
-  t.eqStr("L = 7", litTestParse("L = 7"), `labelled-int:7 label=L`)
-  t.eqStr("Out Len = -1", litTestParse("Out Len = -1"), `labelled-int:-1 label=Out Len`)
-  t.eqStr("L = 00 is bytes", litTestParse("L = 00"), `labelled:00 label=L`)
-  t.eqStr("L = 0b0b is bytes", litTestParse("L = 0b0b"), `labelled:0b0b label=L`)
+  t.eqStr("L = 42", litTestParse("L = 42"), "labelled-int:42 label=L hex=42")
+  t.eqStr("L = 7", litTestParse("L = 7"), "labelled-int:7 label=L")
+  t.eqStr("Out Len = -1", litTestParse("Out Len = -1"), "labelled-int:-1 label=Out Len")
+  t.eqStr("L = 00 is bytes", litTestParse("L = 00"), "labelled:00 label=L")
+  t.eqStr("L = 0b0b is bytes", litTestParse("L = 0b0b"), "labelled:0b0b label=L")
   t.eqStr(
     "a label as RFC 8439 prints one",
     litTestParse("32-bit fixed-common part = 07000000"),
-    `labelled:07000000 label=32-bit fixed-common part`,
+    "labelled:07000000 label=32-bit fixed-common part",
   )
   t.eqStr("an int where an i32 goes", litTestSettle("L = 42", "i32"), "{int:42 label:L}")
   t.eqStr("an int where a u32 goes", litTestSettle("L = 42", "u32?"), "{int:42 label:L}")
@@ -311,13 +311,13 @@ export const main = (): i32 => {
   t.eqStr("a labelled refusal in a call", litTestCall("f(1, L = 0A)"), `${labelled} @6`)
 
   // A repeated run.
-  const ikm = `repeat:0b x22`
+  const ikm = "repeat:0b x22"
   t.eqStr("with the sign", litTestParse(`22 ${times} 0b`), ikm)
   t.eqStr("with x", litTestParse("22 x 0b"), ikm)
-  t.eqStr("labelled", litTestParse(`IKM = 22 ${times} 0b`), `repeat:0b label=IKM x22`)
+  t.eqStr("labelled", litTestParse(`IKM = 22 ${times} 0b`), "repeat:0b label=IKM x22")
   t.eqStr("no spaces", litTestParse(`22${times}0b`), ikm)
   t.eqStr("a space before", litTestParse(`22 ${times}0b`), ikm)
-  t.eqStr("the largest", litTestParse(`${LITERALS_MAX_REPEAT / 2} ${times} 00ff`), `repeat:00ff x32768`)
+  t.eqStr("the largest", litTestParse(`${LITERALS_MAX_REPEAT / 2} ${times} 00ff`), "repeat:00ff x32768")
   t.eqStr("settled", litTestSettle(`22 ${times} 0b`, "bytes"), "{hex:0b repeat:22}")
   t.eqStr("settled with its label", litTestSettle("IKM = 22 x 0b", "bytes"), "{hex:0b repeat:22 label:IKM}")
   t.eqStr(
@@ -325,7 +325,7 @@ export const main = (): i32 => {
     litTestSettle(`concat(2 ${times} 0b, K = 3 ${times} ff, [00])`, "bytes"),
     "{concat:{hex:0b repeat:2},{hex:ff repeat:3 label:K},{hex:00}}",
   )
-  t.eqStr("in a call", litTestCall(`f(2 ${times} 0b,1 x 00)`), `f(repeat:0b x2, repeat:00 x1)`)
+  t.eqStr("in a call", litTestCall(`f(2 ${times} 0b,1 x 00)`), "f(repeat:0b x2, repeat:00 x1)")
 
   // Repeat refusals, with the column.
   const cases: string[] = [
