@@ -47,6 +47,10 @@ these rules:
   resolve `#anchor` there, so a `<scalar-card>` for another page drops `href`
   and links the page in its body. `node scripts/check-links.mjs` refuses any
   other `href`.
+- **A reference link has its definition.** `[text][ref]` and `[ref][]` need
+  `[ref]: target` in the same file. The checker also follows raw
+  `<a href>` links and percent-decodes fragments. Its header lists what it
+  does not check, such as a lone `[ref]`, which is plain text when undefined.
 
 ## The reference
 
@@ -77,11 +81,19 @@ delete its line, or run `node scripts/gen-reference.mjs --update-baseline`,
 which rewrites the file but refuses to add a line. `--grow-baseline` adds
 lines too, and is only for a change to the rule itself.
 
+`--check` alone compares the gaps with the branch's own baseline, which a
+branch that adds a gap and its line together would pass. On a pull request
+the Docs workflow runs `--check --base <base sha>`, which also fails on a
+line the base's `scripts/undocumented.txt` does not have. A change to the
+rule that grows the list fails that step on purpose, and its reviewer passes
+it by name.
+
 The gap detector tests itself on each run: it reads a fixture with a known set
 of gaps (an export without a comment, a missing `@param`, a missing
 `@returns`, an undocumented member, a bare `@internal`) alongside `src/`, and
 fails unless it finds exactly those. An `@internal` export is documented like
-any other.
+any other. The base comparison tests itself the same way, on fixed pairs of
+base and head lists.
 
 ## The site's look
 

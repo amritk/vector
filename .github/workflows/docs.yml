@@ -29,7 +29,22 @@ jobs:
         run: npm ci
 
       - name: The generated reference is up to date
+        if: github.event_name != 'pull_request'
         run: node scripts/gen-reference.mjs --check
+
+      # A pull request is also checked against its base: the undocumented
+      # baseline may lose lines, never gain one.
+      - name: Fetch the pull request's base
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: git fetch --no-tags --depth=1 origin "$BASE_SHA"
+
+      - name: The generated reference is up to date, and the baseline has not grown
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/gen-reference.mjs --check --base "$BASE_SHA"
 
       - name: Every link and anchor lands
         run: node scripts/check-links.mjs

@@ -3,14 +3,22 @@
 //
 //   node scripts/check-links.mjs            exit 1 and list every broken link
 //
-// Scans README.md, CLAUDE.md and docs/**/*.md. For each `[text](target)` or
-// `[ref]: target` outside a fenced code block: http(s)/mailto targets are
-// skipped; a relative path must exist; a `#fragment` must match a heading of
-// the target file (GitHub slug rules: lower-case, punctuation deleted, each
+// Scans README.md, CLAUDE.md and docs/**/*.md. For each `[text](target)`,
+// `[ref]: target` or raw `<a href="target">` outside code: http(s)/mailto
+// targets are skipped; a relative path must exist; a `#fragment`, percent-
+// decoded first, must match a heading of the target file (GitHub slug rules: lower-case, punctuation deleted, each
 // remaining space to one `-`, duplicates suffixed `-1`, `-2`, ... -- see
 // headingSlugs below, which is written to agree with github-slugger rather than
 // to approximate it). A bare `#fragment` refers to the current file. A
-// `<scalar-card>`'s href must be such a `#fragment`.
+// `<scalar-card>`'s href must be such a `#fragment`. A full or collapsed
+// reference link, `[text][ref]` or `[ref][]`, must have its `[ref]:`
+// definition in the same file (labels compared case-insensitively, runs of
+// space as one).
+//
+// What it does not check: a shortcut reference `[ref]` alone, which with no
+// definition is literal text on both sites and so cannot be told from prose;
+// `href`s on HTML elements other than `<a>` and `<scalar-card>`; HTML written
+// across lines; and a link or a heading inside an HTML block.
 //
 // A link to this repository on github.com at `main`
 // (`https://github.com/amritk/vector/blob/main/<path>`, or `tree/main/` for a
@@ -167,8 +175,12 @@ const slugsOf = (file) => {
 // Inline links `[text](target)` (target up to the first unbalanced `)`) and reference definitions `[ref]: target`.
 const INLINE = /\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
 const REFDEF = /^\s*\[[^\]]+\]:\s*(\S+)/;
-// The href of a `<scalar-card>`.
+// The href of a `<scalar-card>`, and of a raw `<a>`.
 const CARD = /<scalar-card\b[^>]*\shref="([^"]*)"/g;
+const ANCHOR = /<a\b[^>]*\shref="([^"]*)"/g;
+// A full or collapsed reference link, `[text][ref]` or `[ref][]`, and a label's normal form.
+const REFLINK = /\[([^\]]*)\]\[([^\]]*)\]/g;
+const label = (text) => text.trim().replace(/\s+/g, " ").toLowerCase();
 
 // This repository's files on github.com, at main.
 const REPO_URL =
@@ -195,7 +207,14 @@ const problems = [];
 let checked = 0;
 for (const file of files) {
   const text = fs.readFileSync(file, "utf8");
-  proseLines(text).forEach((line, index) => {
+  const lines = proseLines(text);
+  const defined = new Set(
+    lines.flatMap((line) => {
+      const m = /^\s*\[([^\]]+)\]:/.exec(line);
+      return m ? [label(m[1])] : [];
+    }),
+  );
+  lines.forEach((line, index) => {
     const targets = [];
     for (const m of line.matchAll(INLINE)) {
       targets.push(m[1]);
@@ -203,6 +222,19 @@ for (const file of files) {
     const ref = REFDEF.exec(line);
     if (ref) {
       targets.push(ref[1]);
+    }
+    for (const m of line.matchAll(ANCHOR)) {
+      targets.push(m[1]);
+    }
+    // Not inside an HTML tag (`type="i64[][]"` is an attribute), and a blank
+    // label is never a reference.
+    for (const m of line.replace(/<[^>]*>/g, "").matchAll(REFLINK)) {
+      const name = m[2] === "" ? m[1] : m[2];
+      if (label(name) !== "" && !defined.has(label(name))) {
+        problems.push(
+          `${path.relative(root, file)}:${index + 1}: reference link \`${m[0]}\` has no \`[${name}]:\` definition in this file`,
+        );
+      }
     }
     // A card's href. The site is only known to resolve an anchor of the page
     // there (a relative path may land nowhere, and GitHub drops the element),
@@ -256,7 +288,18 @@ for (const file of files) {
         if (!resolved.endsWith(".md") || fs.statSync(resolved).isDirectory()) {
           continue;
         }
-        if (!slugsOf(resolved).github.has(fragment.toLowerCase())) {
+        // A browser decodes a fragment before it looks for the ID, so
+        // `#%C3%A9t%C3%A9` lands on the heading "Été".
+        let decoded;
+        try {
+          decoded = decodeURIComponent(fragment);
+        } catch {
+          problems.push(
+            `${where}: anchor \`${target}\` is not valid percent-encoding`,
+          );
+          continue;
+        }
+        if (!slugsOf(resolved).github.has(decoded.toLowerCase())) {
           problems.push(
             `${where}: broken anchor \`${target}\` (no heading #${fragment} in ${path.relative(root, resolved)})`,
           );
@@ -264,7 +307,7 @@ for (const file of files) {
           repo === null &&
           routedPages.has(file) &&
           routedPages.has(resolved) &&
-          !slugsOf(resolved).site.has(fragment.toLowerCase())
+          !slugsOf(resolved).site.has(decoded.toLowerCase())
         ) {
           problems.push(
             `${where}: anchor \`${target}\` lands on GitHub but not on the docs site, which spells that heading's ID differently (or gives a heading below level 4 none); write <a id="${fragment}"></a> on its own line above the heading in ${path.relative(root, resolved)}`,

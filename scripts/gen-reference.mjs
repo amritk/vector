@@ -6,6 +6,8 @@
 //   node scripts/gen-reference.mjs --update-baseline  also rewrite scripts/undocumented.txt,
 //                                                     refusing to add a line to it
 //   node scripts/gen-reference.mjs --grow-baseline    the same, but allowed to add lines
+//   node scripts/gen-reference.mjs --check --base REF also exit 1 if scripts/undocumented.txt
+//                                                     lists a line that REF's copy does not
 //
 // The reference has three parts, each read from what defines it, so the
 // script needs no list of today's commands, schemas or modules:
@@ -30,6 +32,7 @@
 // the source alone, byte for byte. In scalar.config.json only the "/reference"
 // route is regenerated; every other line is kept as written. docs/README.md
 // ("The reference") states the rules this enforces.
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { Application, Converter, ReflectionKind, UnknownType } from "typedoc";
@@ -1761,12 +1764,65 @@ const baselineRead = () => {
   return fs.existsSync(full) ? fs.readFileSync(full, "utf8") : "";
 };
 
-const baselineLines = () =>
-  new Set(
-    baselineRead()
-      .split("\n")
-      .filter((l) => l.trim() && !l.startsWith("#")),
-  );
+/** A baseline's entries: its lines that are neither blank nor a comment. */
+const baselineEntries = (text) =>
+  new Set(text.split("\n").filter((l) => l.trim() && !l.startsWith("#")));
+
+const baselineLines = () => baselineEntries(baselineRead());
+
+/** The entries of `headText` that `baseText` lacks, in order: how a baseline grew. */
+const baselineGrowth = (baseText, headText) => {
+  const base = baselineEntries(baseText);
+  return [...baselineEntries(headText)].filter((l) => !base.has(l));
+};
+
+// `--check` alone compares the gaps with the baseline as the branch has it,
+// which a branch that adds a gap and its line together passes. `--base REF`
+// also compares the baseline with REF's, the PR's base, so the list only
+// shrinks across a merge. A grown line is reported even when --grow-baseline
+// wrote it: that change to the rule is one a reviewer passes by name.
+const BASELINE_GROWTH_CASES = [
+  // [base, head, the growth]
+  ["", "", []],
+  ["# h\na\nb\n", "# h\na\n", []],
+  ["# h\na\nb\n", "# other header\na\nb\n", []],
+  ["a\n", "a\nc\n", ["c"]],
+  ["", "# h\n\nx\ny\n", ["x", "y"]],
+  ["a\nb\n", "b\nd\na\n", ["d"]],
+];
+
+/** Fail unless baselineGrowth gives each case's growth: the base check tests itself. */
+const baselineGrowthSelfTest = () => {
+  for (const [base, head, want] of BASELINE_GROWTH_CASES) {
+    const got = baselineGrowth(base, head);
+    if (got.join("\n") !== want.join("\n")) {
+      fail(
+        `the baseline growth check is broken: for base ${JSON.stringify(base)} and head ${JSON.stringify(head)} it found [${got.join(", ")}], not [${want.join(", ")}]`,
+      );
+    }
+  }
+};
+
+/** REF's copy of the baseline ("" when REF has none), or null when REF names no commit. */
+const baselineAt = (ref) => {
+  const git = (...args) =>
+    execFileSync("git", args, {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  try {
+    git("rev-parse", "--verify", "--quiet", `${ref}^{commit}`);
+  } catch {
+    return null;
+  }
+  try {
+    git("cat-file", "-e", `${ref}:${baselineFile}`);
+  } catch {
+    return "";
+  }
+  return git("show", `${ref}:${baselineFile}`);
+};
 
 /** The baseline's disagreements with the gaps found, one line each. */
 const baselineProblems = (gaps) => {
@@ -1800,15 +1856,45 @@ const baselineProblems = (gaps) => {
 const main = async () => {
   const args = process.argv.slice(2);
   const known = ["--check", "--update-baseline", "--grow-baseline"];
-  const unknown = args.filter((a) => !known.includes(a));
+  let base;
+  const unknown = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--base" && i + 1 < args.length) {
+      base = args[++i];
+    } else if (args[i].startsWith("--base=")) {
+      base = args[i].slice("--base=".length);
+    } else if (!known.includes(args[i])) {
+      unknown.push(args[i]);
+    }
+  }
   const check = args.includes("--check");
   const grow = args.includes("--grow-baseline");
   const updateBaseline = grow || args.includes("--update-baseline");
-  if (unknown.length > 0 || (check && updateBaseline)) {
+  const usage =
+    unknown.length > 0
+      ? `unknown argument ${unknown.join(" ")}`
+      : check && updateBaseline
+        ? "--check writes nothing"
+        : base !== undefined && (!check || base === "")
+          ? "--base takes a ref and goes with --check"
+          : "";
+  if (usage !== "") {
     console.error(
-      `gen-reference: ${unknown.length > 0 ? `unknown argument ${unknown.join(" ")}` : "--check writes nothing"}; the flags are --check, --update-baseline or --grow-baseline`,
+      `gen-reference: ${usage}; the flags are --check [--base REF], --update-baseline or --grow-baseline`,
     );
     process.exit(2);
+  }
+  baselineGrowthSelfTest();
+  let baseText = "";
+  if (base !== undefined) {
+    const at = baselineAt(base);
+    if (at === null) {
+      console.error(
+        `gen-reference: --base ${base} names no commit here; fetch it first`,
+      );
+      process.exit(2);
+    }
+    baseText = at;
   }
 
   const tree = readCommandTree();
@@ -1887,6 +1973,8 @@ const main = async () => {
     problems.push(`stale: ${configFile} (the /reference routes)`);
   }
   const gapProblems = updateBaseline ? [] : baselineProblems(gaps);
+  const grown =
+    base === undefined ? [] : baselineGrowth(baseText, baselineRead());
 
   if (check) {
     for (const p of [...problems, ...gapProblems]) {
@@ -1902,11 +1990,21 @@ const main = async () => {
         `gen-reference: the documentation gaps disagree with ${baselineFile}, which only shrinks`,
       );
     }
-    if (problems.length > 0 || gapProblems.length > 0) {
+    for (const g of grown) {
+      console.error(
+        `gen-reference: grown: ${g}: ${baselineFile} lists it and ${base}'s copy does not; document the declaration instead`,
+      );
+    }
+    if (grown.length > 0) {
+      console.error(
+        `gen-reference: ${baselineFile} grew against ${base}; it only shrinks, and only a change to the rule itself adds a line`,
+      );
+    }
+    if (problems.length > 0 || gapProblems.length > 0 || grown.length > 0) {
       process.exit(1);
     }
     console.log(
-      `gen-reference: ${want.size} pages and their routes are up to date; ${gaps.length} gaps, each listed`,
+      `gen-reference: ${want.size} pages and their routes are up to date; ${gaps.length} gaps, each listed${base === undefined ? "" : `; ${baselineFile} has not grown against ${base}`}`,
     );
     return;
   }
