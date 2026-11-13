@@ -53,6 +53,7 @@ export class Sample {
 
 /** The samples the gates chose, which emit writes into the generated test. */
 export class SampleTable {
+  /** The samples, in the order the gates added them. */
   samples: Sample[]
   /** Makes an empty table. */
   constructor() {
@@ -90,6 +91,7 @@ export class CheckNote {
   gate: string
   /** The id or field it is about: a requirement, a clause, `functions`, ... */
   at: string
+  /** What the gate found. */
   message: string
   /** True for a warning, which never fails the check. */
   warning: boolean
@@ -113,9 +115,11 @@ export class CheckNote {
 export class CheckSourceRun {
   /** The vector clause's id. */
   clause: string
+  /** The shell command the vector's source declares. */
   command: string
   /** "pass", "fail" or "not run". */
   outcome: string
+  /** What went wrong: a mismatch, a timeout or a bad exit; "" when it passed or was not run. */
   detail: string
   /**
    * Makes a result.
@@ -135,6 +139,7 @@ export class CheckSourceRun {
 
 /** How a property's samples were chosen: counts and notes for the report. */
 export class CheckSampleStat {
+  /** The property's id. */
   clause: string
   /** Samples chosen at a boundary the solver found. */
   boundary: i32
@@ -142,6 +147,7 @@ export class CheckSampleStat {
   random: i32
   /** Whether some input satisfies the property's domain. */
   inhabited: boolean
+  /** What the sampler says about the choice, for the report. */
   notes: string[]
   /**
    * Makes empty stats.
@@ -235,6 +241,7 @@ export type CheckGate = (ctx: CheckContext) => string[]
 export class CheckGateEntry {
   /** The name its findings are reported under. */
   name: string
+  /** The gate: it returns one message per finding. */
   run: CheckGate
   /** Whether a finding stops the gates after it. */
   blocking: boolean
@@ -254,7 +261,9 @@ export class CheckGateEntry {
 
 /** One finding of one gate. */
 export class CheckFinding {
+  /** The name of the gate that found it. */
   gate: string
+  /** What the gate found. */
   message: string
   /**
    * Makes a finding.
@@ -270,6 +279,7 @@ export class CheckFinding {
 
 /** What a check found. */
 export class CheckReport {
+  /** Every finding, in the order the gates ran. */
   findings: CheckFinding[]
   /** The gates that ran, in order. */
   ran: string[]

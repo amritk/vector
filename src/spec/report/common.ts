@@ -12,8 +12,11 @@ import { sourceDecls, sourceMainId } from "../source/load"
 
 /** One finding, placed: the gate, what it is about ("" when unknown), and the message. */
 export class ReportIssue {
+  /** The name of the gate that found it. */
   gate: string
+  /** The id or field it is about; "" when unknown. */
   at: string
+  /** What the gate found. */
   message: string
   /**
    * Makes an issue.

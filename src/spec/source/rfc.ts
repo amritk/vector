@@ -22,6 +22,7 @@ import { hiddenProblem, hiddenText } from "./hidden"
 export class RfcSection {
   /** "2.3", "A.1", or "A" for an appendix. */
   id: string
+  /** The heading's text. */
   title: string
   /** The section's lines and its subsections', page furniture removed. */
   lines: string[]

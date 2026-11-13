@@ -22,6 +22,7 @@ export const sampleFnv1a = (s: string): u32 => {
 
 /** The generator's state: one 32-bit word, advanced by each draw. */
 export class SamplePrng {
+  /** The word the next draw advances. */
   state: u32
   /**
    * Makes a generator.

@@ -23,9 +23,11 @@ const XML_MAX_SECTION_LINES: i32 = 2000000
 
 /** A `<reference>`, and the RFC its seriesInfo names. */
 export class XmlRef {
+  /** The reference's anchor, which an xref cites. */
   anchor: string
   /** The RFC number; -1 when it names none. */
   rfc: i32
+  /** The `<reference>` element. */
   node: XmlNode
   /**
    * Makes a reference.
@@ -42,6 +44,7 @@ export class XmlRef {
 
 /** An RFC XML v3 document, read. */
 export class XmlDocument {
+  /** The document's root element. */
   root: XmlNode
   /** The front matter's title as plain text; "" without one. */
   title: string
@@ -51,6 +54,7 @@ export class XmlDocument {
   number: i32
   /** The numbered sections, in document order. */
   sections: RfcSection[]
+  /** The document's references, in document order. */
   references: XmlRef[]
   /** The number of each anchored numbered section. */
   sectionByAnchor: Map<string, string>
