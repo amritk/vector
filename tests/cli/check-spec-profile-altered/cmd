@@ -1,0 +1,1 @@
+vector spec check tests/cli/check-spec-profile-altered/contracts/example-hex.json --spec tests/cli/check-spec-profile-altered/specs/example-hex.xml

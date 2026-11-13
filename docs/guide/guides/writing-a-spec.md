@@ -315,10 +315,10 @@ A spec cites an RFC by listing it under `normative:` and writing
 `{{Section N of RFCx}}`. A quoted requirement, an exclusion of a quote, or a
 vector Source can cite it. Each cited RFC becomes a `sources[]` entry.
 
-Its text is looked up in three places, nearest first: beside the contract,
-in `../rfcs/`, then in a third `rfcs/`: vector's own for `check` (and
-`extract`), the current directory's for `emit`, `run` and `mutate`, so run
-those from the repository root. At each place `rfc<N>.xml` is preferred over
+Its text is looked up in four places, nearest first, the same for every
+command: beside the contract, in `../rfcs/`, in the `rfcs/` of vector's
+install root (the directory above the binary's own), then in the current
+directory's `rfcs/`. At each place `rfc<N>.xml` is preferred over
 `rfc<N>.txt`, so the order is `./rfc<N>.xml`, `./rfc<N>.txt`,
 `../rfcs/rfc<N>.xml`, and so on.
 

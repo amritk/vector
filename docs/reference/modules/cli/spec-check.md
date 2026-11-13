@@ -18,7 +18,6 @@ Generated from [src/cli/spec-check.ts](https://github.com/amritk/vector/blob/mai
 - [`SPEC_CHECK_ID`](#spec_check_id)
 - [`SpecCheckCommand`](#speccheckcommand)
 - [`specCheckRender`](#speccheckrender)
-- [`specCheckRoot`](#speccheckroot)
 - [`specCheckRepoTop`](#speccheckrepotop)
 - [`specCheckForeignWarning`](#speccheckforeignwarning)
 - [`registerSpecCheck`](#registerspeccheck)
@@ -85,14 +84,6 @@ The `--module <file>` flag.
 
 ```ts
 moduleFlag: i32
-```
-
-#### SpecCheckCommand.nishFlag
-
-The `--nish <bin>` flag.
-
-```ts
-nishFlag: i32
 ```
 
 #### SpecCheckCommand.nishRootFlag
@@ -162,22 +153,6 @@ what they found
 <scalar-field name="returns" type="string">
 
 the report's text
-
-</scalar-field>
-
-### specCheckRoot
-
-Where vector is installed, whose rfcs/ and specs/ sources are read from:
-the directory above the running binary's (`dist/vector`), else the current
-directory.
-
-```ts
-function specCheckRoot(): string
-```
-
-<scalar-field name="returns" type="string">
-
-the root
 
 </scalar-field>
 

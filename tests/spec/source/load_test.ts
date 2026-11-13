@@ -193,7 +193,7 @@ export const main = (): i32 => {
   t.eqStr(
     "a file no label can name",
     sourceRecordedProblem(loadTestDecl("s", -1, "rfcs/y.txt", null), null, read, null) ?? "",
-    "source s was read from /x/y.txt, which its file cannot name: it is under no specs/ or rfcs/ of the contract's repo or of the root, nor beside the contract",
+    "source s was read from /x/y.txt, which its file cannot name: it is under no specs/ or rfcs/ of the contract's repo, of the root or of the current directory, nor beside the contract",
   )
   t.ok(
     "the file recorded",

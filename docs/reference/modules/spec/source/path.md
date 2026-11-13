@@ -7,13 +7,15 @@ refusal of a file that is not spec text.
 
 A source is located by its `path` (relative to the contract's directory)
 or, for an RFC given by number, by looking for rfc&lt;n&gt;.xml then rfc&lt;n&gt;.txt
-beside the contract, in ../rfcs, then in the root's rfcs/. Its `file` does
+beside the contract, in ../rfcs, in the root's rfcs/, then in the current
+directory's rfcs/. The root is where vector is installed
+(sourceInstallRoot); the order is the same for every command. Its `file` does
 not locate it: it records which file was read (sourceLabel), and a check
 refuses a contract whose `file` names another.
 
 A contract can come from anyone, so it may read only spec text: a file
-beside it, or under specs/ or rfcs/ beside it, beside its parent, or in the
-root, with no hidden directory below that and no specs/ or rfcs/ that is
+beside it, or under specs/ or rfcs/ beside it, beside its parent, in the
+root or in the current directory, with no hidden directory below that and no specs/ or rfcs/ that is
 itself a symbolic link (which could lead anywhere). The file is judged after
 every link is followed, opened, and judged again as the file the descriptor
 holds, and its bytes come from that descriptor: a link swapped between the
@@ -23,6 +25,8 @@ Generated from [src/spec/source/path.ts](https://github.com/amritk/vector/blob/m
 
 ## Exports
 
+- [`sourceRootOf`](#sourcerootof)
+- [`sourceInstallRoot`](#sourceinstallroot)
 - [`sourceRfcFile`](#sourcerfcfile)
 - [`sourceFetchHint`](#sourcefetchhint)
 - [`sourceNameProblem`](#sourcenameproblem)
@@ -35,6 +39,44 @@ Generated from [src/spec/source/path.ts](https://github.com/amritk/vector/blob/m
 - [`sourceReadConfined`](#sourcereadconfined)
 
 ## Declarations
+
+### sourceRootOf
+
+The install root of a vector binary at `self`: the directory above the
+binary's own (`<root>/dist/vector` gives `<root>`, `/usr/local/bin/vector`
+gives `/usr/local`), else the current directory when the path is unknown.
+
+```ts
+function sourceRootOf(self: string | null): string
+```
+
+<scalar-field name="self" type="string | null" required>
+
+the binary's real path, or null when it is unknown
+
+</scalar-field>
+
+<scalar-field name="returns" type="string">
+
+the root
+
+</scalar-field>
+
+### sourceInstallRoot
+
+Where vector is installed, whose rfcs/, specs/ and schemas/ are read from by
+every command that reads a contract or extracts one (sourceRootOf the
+running binary), whatever the current directory.
+
+```ts
+function sourceInstallRoot(): string
+```
+
+<scalar-field name="returns" type="string">
+
+the root
+
+</scalar-field>
 
 ### sourceRfcFile
 
@@ -100,7 +142,8 @@ the problem, or null when the name may be resolved
 ### sourceRfcPlaces
 
 The places an RFC given only by number is looked for, nearest first: beside
-the contract, in ../rfcs, then in the root's rfcs/; at each the XML before
+the contract, in ../rfcs, in the root's rfcs/, then in the current
+directory's rfcs/; at each the XML before
 the plain text, since the XML is an RFC's definitive form.
 
 ```ts
@@ -121,7 +164,7 @@ the contract's own path
 
 <scalar-field name="root" type="string" required>
 
-the root whose rfcs/ is searched last
+the root whose rfcs/ is searched third
 
 </scalar-field>
 
@@ -163,7 +206,7 @@ the contract's own path
 
 <scalar-field name="root" type="string" required>
 
-the root whose rfcs/ is searched last
+the root whose rfcs/ is searched third, before the current directory's
 
 </scalar-field>
 
@@ -184,7 +227,7 @@ the extensions a reader is registered for, with their dots
 
 The directories a contract may read spec text under: its own (real)
 directory, and specs/ and rfcs/ of that directory's parent, of its
-grandparent, and of the root, leaving out any specs/ or rfcs/ that is a
+grandparent, of the root and of the current directory, leaving out any specs/ or rfcs/ that is a
 symbolic link.
 
 ```ts
@@ -264,7 +307,8 @@ the problem, or null when it is spec text
 ### sourceLabel
 
 How a source's `file` names the file at `real`: its path under specs/ or
-rfcs/ of the root or of the contract's directory or an ancestor, the
+rfcs/ of the root, of the current directory, or of the contract's directory
+or an ancestor, the
 shortest such (rfcs/rfc4648.txt wherever the contract sits); else, for a
 file below the contract's directory, its path from the directory holding
 that one (contracts/x.txt).

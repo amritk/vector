@@ -8,6 +8,7 @@ import { sha256Hex, toHex } from "../../core/hex"
 import { CheckContext, checkContract, checkLines, checkPassed } from "../check"
 import { contractLoad } from "../contract/contract"
 import { Contract } from "../contract/types"
+import { sourceInstallRoot } from "../source/path"
 import { EmitOptions, emitProgram } from "./emit"
 
 /** A contract and the test emitted for it. */
@@ -53,7 +54,7 @@ export const emitContractFile = (path: string, regenerate: string | null): Resul
     return Err(emitRefuseAll(path, loaded.error))
   }
   const c = loaded.value
-  const ctx = new CheckContext(path, ".")
+  const ctx = new CheckContext(path, sourceInstallRoot())
   const checked = checkContract(ctx, c)
   const failure = ctx.toolFailure
   if (failure !== null) {
