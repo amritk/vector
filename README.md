@@ -235,10 +235,9 @@ A contract (`schemas/rfc-contract.json`) has:
   (or `DEFINITION`);
 - **exclusions**: the MUST/SHALL sentences a functional test cannot observe
   (nonce uniqueness, constant-time comparison), each with its reason;
-- **functions**: the implementation's signatures (`bytes`, `bytes?`,
-  `string`, `string?`, `i32`, `u32`, `bool`, and `secret-bytes` for a nish
-  `Secret<u8[]>`, with `secret-bytes?` as a result only), plus any
-  reference function from another module. In the contract a secret is its
+- **functions**: the implementation's signatures, in the contract types
+  below (`bytes`, `string`, `bool`, `i8` … `u64`, `f64`, `secret-bytes`,
+  each optionally `?`), plus any reference function from another module. In the contract a secret is its
   bytes: the generated test copies an argument into a `Secret`, wipes it
   after the call, and reads a secret result with `expose`;
 - **clauses**: **vectors** (the RFC's own known answers) and **properties**
@@ -262,6 +261,10 @@ Expressions are JSON. Besides bytes and integers they have:
   only when its section prints `L = 42`, `L: 42` or `L 42` (decimal or `0x`).
   A bare number proves nothing — every section prints small integers — so an
   unlabelled int is reported as a warning, unchecked.
+- **labelled f64s** — `{"f64":"0.5","label":"L"}` passes fidelity only when
+  its section prints `L = ` then a decimal that reads to the same binary64
+  (`0.50` matches `0.5`; any NaN matches a NaN). An unlabelled f64 is a
+  warning, unchecked, like an unlabelled int.
 
 ### Writing a spec (kramdown-rfc)
 
@@ -345,7 +348,7 @@ and is merged in verbatim.
 |---|---|---|
 | `contract` | `docname: draft-<name>-00` in the front matter; `<name>` must be the file's basename | `<rfc docName="draft-<name>-00">` |
 | `source.rfc`, an RFC as the main source | `keyword: [vector-main-RFC<N>]` in the front matter, with RFC<N> under `normative:` | `<keyword>vector-main-RFC<N></keyword>` in `<front>` |
-| `target.module`, the signatures | one `~~~ ts-interface` block, first line `// module: nish/<path>`, then `export function f(…): T` or `export const f = (…): T` lines; after a later `// module: nish/<other>` line, reference functions (`module`) that properties may call. The module under test declares at least one function before any other module line. A module line is a line comment of one module after the previous signature: a comment of any style or case whose text starts `module:` or `module nish/` (`/* Module: … */`, `/// module: …`) that is not `// module: nish/<path>`, or a module line inside a signature, is refused. A vector's Call names a function of the module under test, and a property's assertion calls at least one; a clause that calls only reference functions is refused | `<sourcecode type="ts-interface">` |
+| `target.module`, the signatures | one `~~~ ts-interface` block, first line `// module: <root>/<path>`, then `export function f(…): T` or `export const f = (…): T` lines; after a later `// module: <root>/<other>` line, reference functions (`module`) that properties may call. The module under test declares at least one function before any other module line. A module line is a line comment of one module after the previous signature: a comment of any style or case whose text starts `module:` or `module <root>/` (`/* Module: … */`, `/// module: …`) that is not `// module: <root>/<path>`, or a module line inside a signature, is refused. A vector's Call names a function of the module under test, and a property's assertion calls at least one; a clause that calls only reference functions is refused | `<sourcecode type="ts-interface">` |
 | a requirement (`MUST` … `MAY`) | a paragraph holding one BCP 14 sentence, at one level, then `{: #R-ID}` on the next line | `<t anchor="R-ID">` with `<bcp14>` |
 | a requirement (`DEFINITION`) | a paragraph starting `Definition: `, with no BCP 14 keyword, then `{: #R-ID}` | `<t anchor="R-ID">Definition: …</t>` |
 | a requirement quoting an RFC | a blockquote whose last line is `{{Section N of RFCx}}`, then `{: #R-ID gi="blockquote"}` | `<blockquote anchor="R-ID">`, the `<xref section>` last |
@@ -422,17 +425,19 @@ Rules the profile enforces:
 | `[00 0f f0 ff]` | bytes: lowercase hex pairs, separated by single spaces |
 | `[]`, `(empty)` | empty bytes |
 | `null`, `true`, `false` | themselves |
-| `42`, `-1` | a decimal integer, in range for the parameter (`i32`, or `u32` 0..4294967295) |
+| `42`, `-1` | a decimal integer, in range for the parameter's type (`i8` … `u64`, e.g. `u8` 0..255, `i64` -9223372036854775808..9223372036854775807); where the type is `f64` it is that f64 |
 | `Key = 0b0b0b` | labelled bytes: lowercase hex pairs, no spaces; the label is the name the cited section prints the value under. A label may be several words, and its first word may start with digits joined to a letter (`32-bit fixed-common part = 07000000`); a bare number is not a label |
-| `L = 42` | a labelled decimal integer, checked against the cited section's "L = 42". Where the parameter (or return) type is `i32` or `u32` it is the int; anywhere else digits that are also hex pairs (`42`) are labelled bytes, and digits with a leading zero are never an int: `L = 00` is bytes, and `L = 042` (not whole hex pairs) is refused |
+| `L = 42` | a labelled decimal integer, checked against the cited section's "L = 42". Where the parameter (or return) type is an integer type it is the int; anywhere else digits that are also hex pairs (`42`) are labelled bytes, and digits with a leading zero are never an int: `L = 00` is bytes, and `L = 042` (not whole hex pairs) is refused |
 | `22 × 0b`, `22 x 0b`, `IKM = 22 × 0b` | a run of bytes written that many times (`{hex, repeat}`), as RFCs print runs; optionally labelled. `22×0b` also reads. The count is at least 1, the run lowercase hex pairs, and the expansion at most 65536 bytes |
 | `concat([00], Key = ff)` | the parts joined, all bytes; one level (`concat` does not nest), at least one part. `‖` is refused |
 
 The Call cell is `f(arg, …)`: as many arguments as `f` has parameters, each of
 its parameter's type. The Expected cell must be of `f`'s return type.
-Interface types are `u8[]`, `string`, `i32`, `u32`, `boolean` and
-`Secret<u8[]>`. `u8[]` and `string` may be `| null`, and `Secret<u8[]>` may be
-`| null` as a return type only.
+Interface types are the ts-interface spellings in the table below, each of
+which may be `| null`. A bare decimal integer (`42`, `-9223372036854775808`)
+is an int, and an f64 where the signature takes one; `1.5`, `-2e-3`, `NaN`,
+`Infinity` and `-Infinity` are f64 text. An integer literal must fit its
+type's range.
 
 **The contract's vocabulary.** The contract schema
 ([`schemas/rfc-contract.json`](schemas/rfc-contract.json)) names every type
@@ -452,9 +457,7 @@ is marked *not yet*.
 | `f64` | `f64` | an IEEE 754-2019 binary64 value |
 | `B?` | `B \| null` | see below; any type may take it |
 
-The profile reads only the spellings of the first paragraph: `i8`, `i16`,
-`i64`, `u8`, `u16`, `u64` and `f64`, and `| null` on `boolean`, an integer or
-`f64`, are *not yet* read.
+The profile reads every spelling in the table, and `| null` on each.
 
 `B?` means one of two things, by position, and its absent value is written
 `null` either way:
@@ -472,18 +475,39 @@ The profile reads only the spellings of the first paragraph: `i8`, `i16`,
   (IEEE 754-2019 §5.12.2, §4.3.1), or `NaN`, `Infinity`, `-Infinity`; `-0` is
   negative zero. `bits`, when given, is the binary64 encoding as 16
   lowercase hex digits, big-endian (§3.4), and must be the one the text
-  converts to; for `NaN` it fixes the payload.
+  converts to; for `NaN` it fixes the payload. Decimal text past binary64's
+  largest finite value (`1e400`) is refused, since it would round to an
+  infinity (§7.4): write `Infinity` when one is meant.
 - **A vector's `tolerance`** says how close an f64 result must be: `{"ulps":
   n}` units in the last place, or `{"abs": "1e-9"}` (a decimal string, so it
   is not itself rounded), with the `section` and `quote` of the source that
-  allows it. Without one an f64 result is compared bit for bit, so a NaN
-  equals a NaN of the same bits.
+  allows it; the `quote` must appear in that section, and a tolerance on a
+  non-`f64` result is refused. Without one an f64 result is compared bit for
+  bit, so a NaN equals a NaN of the same bits; an expected NaN or infinity is
+  compared bit for bit even with a tolerance. In a property body `==` on f64
+  is IEEE 754-2019 equality (§5.11): `NaN == NaN` is false and `-0 == 0` is
+  true.
 
-The profile has no spelling for an f64 literal or a tolerance yet, and vector
-does *not yet* sample a `forall` over `f64`: the schema records such a domain
-(`{"type": "f64", "min": "-1.5", "max": "Infinity"}`, bounds as f64 text) and
-vector refuses the property. A `forall` integer may be any of `i8` … `u64`,
-with the same wide-integer strings for bounds; the profile reads only `i32`.
+The profile has no spelling for a tolerance *yet*, and vector does *not yet*
+sample a `forall` over `f64`: the schema records such a domain (`{"type":
+"f64", "min": "-1.5", "max": "Infinity"}`, bounds as f64 text other than
+`NaN`, which orders nothing, IEEE 754-2019 §5.11) and vector refuses the
+property. A `forall` integer may be any of `i8` … `u64`, with the same
+wide-integer strings for bounds; the sampler takes each type's minimum and
+maximum, and Z3 solves over bit-vectors of its width, so `+ - * %` wrap as
+the evaluator's do.
+
+**The Nish test.** Nish has `i32`, `i64`, `u8`, `u16`, `u32`, `u64` and `f64`
+but no `i8` or `i16`, and `| null` only on reference types (`u8[]`, `string`,
+`Secret<u8[]>`), so the emitter refuses a signature or `forall` using what
+Nish lacks, and a target module outside `nish/`. A 64-bit int is written as
+`hi·2^32 + lo` so no literal passes 2^53; an f64 is its shortest round-tripping
+decimal, or, for `-0`, `NaN` and the infinities, its bits.
+Where the contract wraps, `i64` `+ - *` are emitted as `wrappingAdd`,
+`wrappingSub` and `wrappingMul` from `nish:unsafe`, so the test computes what
+the evaluator does; `u64` operators already wrap. `i32` arithmetic is emitted
+as plain operators, which panic on overflow, so such a property fails loudly
+rather than wrongly.
 
 **Modules and names.** `target.module` and a reference function's `module`
 are a neutral path: two or more lowercase segments joined by `/`
@@ -511,11 +535,12 @@ forall (b: u8[] /* 0..64 */) => {
 - **`forall (var, …) => body`**, optionally followed by `where expr`. Each
   variable has a bound in a comment:
   - `b: u8[] /* lo..hi */`: a length, with 0 ≤ lo ≤ hi ≤ 4096.
-  - `n: i32 /* lo..hi */`: a value in the i32 range.
+  - `n: i32 /* lo..hi */`: a value in the type's range, for any of `i8` …
+    `u64` (`/* -9223372036854775808..9223372036854775807 */` for `i64`).
+  - `f64` is not a forall type *yet*.
   - `t: string /* lo..hi CLASS… */`: a length and character classes, from
     `hexdigit`, `HEXDIGIT`, `digit`, `alpha`, `space` and `ascii-printable`.
     `/* lo..hi "chars" */` gives the characters as a JSON string instead.
-  - `u32` is not a forall type.
 - **The body** is an expression, or `{ const x = …; return …; }`.
   Semicolons are optional. `where` restricts the domain: a boolean that
   calls no function under test and cannot see the body's `const`s.
@@ -529,7 +554,7 @@ forall (b: u8[] /* 0..64 */) => {
   - `===` on `u8[]` compares contents.
   - `.slice` clamps its bounds.
   - `a % 0` is 0.
-  - i32 `+ - *` wrap.
+  - integer `+ - * %` wrap at the operands' width.
   - `+` with a string on either side joins strings.
   - A string literal is a string, except as an argument to a bytes operation.
 - **Refused:**

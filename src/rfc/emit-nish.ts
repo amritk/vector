@@ -16,7 +16,9 @@ import { createHash } from "node:crypto";
 import {
   type Clause,
   type Expr,
+  type ExprTy,
   type FnSig,
+  type IntType,
   type Literal,
   type PropertyClause,
   type RfcContract,
@@ -26,25 +28,138 @@ import {
   bytesToHex,
   callsIn,
   declaredSources,
+  f64Bits,
+  f64Value,
+  intBase,
+  intValue,
   isBytesLike,
+  isIntTy,
+  isLiteral,
   isStringLike,
   literalBytes,
+  nishModuleFile,
+  parseF64,
   sourceOf,
   typeOf,
   valueTy,
   withoutControlChars,
 } from "./contract.ts";
 import type { PropertySamples } from "./sample.ts";
+import { baseOf, isOptional } from "./vocab.ts";
 
+/**
+ * Each contract type as Nish spells it. Nish has no i8 or i16, and `T | null`
+ * only on a reference type (docs/LANGUAGE.md, "Nullable types"), so the
+ * entries for those are never emitted: refusals() refuses the contract first.
+ */
 const NISH_TY: Record<ValueTy, string> = {
   bytes: "u8[]",
   "bytes?": "u8[] | null",
   string: "string",
   "string?": "string | null",
+  i8: "i8",
+  "i8?": "i8 | null",
+  i16: "i16",
+  "i16?": "i16 | null",
   i32: "i32",
+  "i32?": "i32 | null",
+  i64: "i64",
+  "i64?": "i64 | null",
+  u8: "u8",
+  "u8?": "u8 | null",
+  u16: "u16",
+  "u16?": "u16 | null",
   u32: "u32",
+  "u32?": "u32 | null",
+  u64: "u64",
+  "u64?": "u64 | null",
+  f64: "f64",
+  "f64?": "f64 | null",
   bool: "boolean",
+  "bool?": "boolean | null",
 };
+
+/** A contract the Nish emitter cannot express, and why. */
+export class NishRefusal extends Error {
+  override name = "NishRefusal";
+}
+
+const NO_F64_FORALL =
+  "the sampler has no f64 forall variable yet, so Nish has no samples to check";
+const NO_SMALL_INT = "Nish has no i8 or i16: write the parameter as i32";
+
+/** Nish's conversion into each integer type other than i32. */
+const TO_INT: Record<Exclude<IntType, "i32" | "i8" | "i16">, string> = {
+  i64: "toI64",
+  u8: "toU8",
+  u16: "toU16",
+  u32: "toU32",
+  u64: "toU64",
+};
+
+/**
+ * `n` as a Nish expression of integer type `ty`. A Nish numeric literal is an
+ * i32 unless its context types it, and is exact only up to 2^53 in magnitude
+ * (docs/LANGUAGE.md, "Type rules"), so: an i32 is the literal; a value that
+ * fits i32 is converted; a larger one is typed by a `toT(0) +` beside it; one
+ * past 2^53 is built as hi * 2^32 + lo, each part exact and no step out of
+ * the type's range (C11 7.20.1.1 two's complement for the signed ones).
+ */
+export function intLit(n: bigint, ty: IntType): string {
+  const fitsI32 = n >= -2147483648n && n <= 2147483647n;
+  const neg = (s: string) => (s.startsWith("-") ? `(${s})` : s);
+  if (ty === "i32") return neg(String(n));
+  if (ty === "i8" || ty === "i16") throw new NishRefusal(NO_SMALL_INT);
+  const to = TO_INT[ty];
+  if (fitsI32) return `${to}(${n})`;
+  if (n >= -(2n ** 53n) && n <= 2n ** 53n)
+    return `(${to}(0) + ${neg(String(n))})`;
+  const hi = n >> 32n;
+  const lo = n - (hi << 32n);
+  return `(${intLit(hi, ty)} * 4294967296 + ${lo})`;
+}
+
+/**
+ * An f64 as a Nish expression: the shortest decimal that reads back to the
+ * same binary64 under roundTiesToEven (IEEE 754-2019 §5.12.2), through
+ * toF64 so its context is f64; -0, the infinities and NaN, which no decimal
+ * literal spells, from their bits.
+ */
+export function f64Lit(x: number): string {
+  if (Number.isFinite(x) && !Object.is(x, -0))
+    return `toF64(${String(x).replace("e+", "e")})`;
+  return `bitsToF64(${intLit(BigInt.asIntN(64, BigInt(`0x${f64Bits(x)}`)), "i64")})`;
+}
+
+/** nish:unsafe's wrapping form of each i64 operator (docs/LANGUAGE.md). */
+const WRAPPING = {
+  "+": "wrappingAdd",
+  "-": "wrappingSub",
+  "*": "wrappingMul",
+} as const;
+
+const remName = (t: IntType) => `rem${t[0].toUpperCase()}${t.slice(1)}`;
+
+/**
+ * The contract's \`a % b\` at each integer type but i32 (remI32): truncating,
+ * and 0 when \`b\` is 0, or -1 for a signed type, as evalPure has it.
+ */
+function remHelpers(): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const t of ["i64", "u8", "u16", "u32", "u64"] as const) {
+    const to = TO_INT[t];
+    const name = remName(t);
+    const zero =
+      t === "i64" ? "b === toI64(0) || b === toI64(-1)" : `b === ${to}(0)`;
+    out[name] = `const ${name} = (a: ${t}, b: ${t}): ${t} => {
+  if (${zero}) {
+    return ${to}(0);
+  }
+  return a % b;
+};`;
+  }
+  return out;
+}
 
 const HELPERS: Record<string, string> = {
   hexOf: `/** \`bytes\` as lowercase hex, the way the RFC prints them. */
@@ -196,6 +311,52 @@ const remI32 = (a: i32, b: i32): i32 => {
   }
   return a % b;
 };`,
+  ...remHelpers(),
+  eqF64Bits: `/** \`actual\` and \`expected\` the same binary64, bit for bit (IEEE 754-2019 §3.4). */
+const eqF64Bits = (t: Suite, name: string, actual: f64, expected: f64): boolean => {
+  if (f64ToBits(actual) === f64ToBits(expected)) {
+    return t.pass(name);
+  }
+  return t.fail(name, \`expected \${expected}, got \${actual} (other binary64 bits)\`);
+};`,
+  nearUlpsF64: `/**
+ * \`actual\` at most \`ulps\` binary64 units in the last place from
+ * \`expected\`: their distance on the line of ordered bit patterns, where
+ * consecutive doubles differ by one and -0 meets +0 (IEEE 754-2019 §3.4).
+ * A NaN is never near anything.
+ */
+const nearUlpsF64 = (t: Suite, name: string, actual: f64, expected: f64, ulps: i64): boolean => {
+  const lo: i64 = -9007199254740992;
+  const min: i64 = lo << 10;
+  let x: i64 = f64ToBits(actual);
+  let y: i64 = f64ToBits(expected);
+  if (x < 0) {
+    x = toI64(0) - (x - min);
+  }
+  if (y < 0) {
+    y = toI64(0) - (y - min);
+  }
+  let near: boolean = false;
+  if (x >= 0 && y >= 0) {
+    near = x - y <= ulps && y - x <= ulps;
+  }
+  if (x < 0 && y < 0) {
+    near = x - y <= ulps && y - x <= ulps;
+  }
+  if (x >= 0 && y < 0) {
+    near = x <= ulps && toI64(0) - y <= ulps - x;
+  }
+  if (x < 0 && y >= 0) {
+    near = y <= ulps && toI64(0) - x <= ulps - y;
+  }
+  if (actual !== actual || expected !== expected) {
+    near = false;
+  }
+  if (near) {
+    return t.pass(name);
+  }
+  return t.fail(name, \`expected \${expected} within \${ulps} ulps, got \${actual}\`);
+};`,
   le64: `/** \`n\` as 8 little-endian bytes. */
 const le64 = (n: i32): u8[] => {
   const out: u8[] = [];
@@ -335,6 +496,8 @@ class Emitter {
 
   /** What the test imports from nish:secret. */
   readonly secretNames = new Set<string>();
+  /** What the test imports from nish:unsafe: the wrapping i64 operators. */
+  readonly unsafeNames = new Set<string>();
   /** Plain-bytes wrappers of the functions that take or return a Secret. */
   readonly plainWrappers = new Map<string, string>();
 
@@ -365,17 +528,30 @@ class Emitter {
       (p) => `a_${p.name}: ${NISH_TY[valueTy(p.type)]}`,
     );
     const body: string[] = [];
+    const wipes: string[] = [];
     const args = sig.params.map((p) => {
-      if (p.type !== "secret-bytes") return `a_${p.name}`;
+      if (p.type === valueTy(p.type)) return `a_${p.name}`;
       this.secretNames.add("secret");
-      body.push(
-        `  const s_${p.name}: Secret<u8[]> = secret(copyBytes(a_${p.name}));`,
-      );
+      if (p.type === "secret-bytes") {
+        body.push(
+          `  const s_${p.name}: Secret<u8[]> = secret(copyBytes(a_${p.name}));`,
+        );
+        wipes.push(`  wipe(s_${p.name});`);
+      } else {
+        body.push(
+          `  let s_${p.name}: Secret<u8[]> | null = null;`,
+          `  if (a_${p.name} !== null) {`,
+          `    s_${p.name} = secret(copyBytes(a_${p.name}));`,
+          "  }",
+        );
+        wipes.push(
+          `  if (s_${p.name} !== null) {`,
+          `    wipe(s_${p.name});`,
+          "  }",
+        );
+      }
       return `s_${p.name}`;
     });
-    const wipes = sig.params
-      .filter((p) => p.type === "secret-bytes")
-      .map((p) => `  wipe(s_${p.name});`);
     const call = `${sig.name}(${args.join(", ")})`;
     const ret = valueTy(sig.returns);
     if (sig.returns === "secret-bytes" || sig.returns === "secret-bytes?") {
@@ -413,10 +589,8 @@ class Emitter {
   literal(lit: Literal, ty: ValueTy | "null"): string {
     if ("null" in lit) return "null";
     if ("bool" in lit) return String(lit.bool);
-    if ("int" in lit) {
-      if (ty === "u32") return `toU32(${lit.int})`;
-      return lit.int < 0 ? `(${lit.int})` : String(lit.int);
-    }
+    if ("int" in lit) return intLit(intValue(lit.int), intBase(ty) ?? "i32");
+    if ("f64" in lit) return f64Lit(f64Value(lit));
     if ("str" in lit) return jsString(lit.str);
     return this.bytesLit(literalBytes(lit) as Uint8Array);
   }
@@ -448,10 +622,15 @@ class Emitter {
 
   /** An expression; contract names are emitted as `v_<name>` locals. */
   expr(e: Expr, want?: ValueTy): string {
-    if ("var" in e)
-      return want === "u32" && this.vars.get(e.var) !== "u32"
-        ? `toU32(v_${e.var})`
-        : `v_${e.var}`;
+    // An integer wanted at another integer type (only an i32 where a u32 is
+    // wanted type-checks) is converted: Nish converts nothing on its own.
+    const conv = (s: string, natural: ExprTy) => {
+      const w = intBase(want);
+      return w && w !== "i32" && natural !== w && isIntTy(natural)
+        ? `${TO_INT[w as keyof typeof TO_INT]}(${s})`
+        : s;
+    };
+    if ("var" in e) return conv(`v_${e.var}`, this.vars.get(e.var) as ValueTy);
     if ("call" in e) {
       const sig = this.fns.get(e.call) as FnSig;
       return this.call(
@@ -462,11 +641,18 @@ class Emitter {
     if ("let" in e) throw new Error("a let may only open the assert");
     if (!("op" in e)) {
       const lit = e as Literal;
-      if ("int" in lit && want === "u32") return `toU32(${lit.int})`;
       return this.literal(lit, want ?? "bytes");
     }
+    // The integer type of an arithmetic or comparison op's operands, which an
+    // int literal among them is written at.
+    const operands = () => {
+      const t = e.args
+        .map((x) => (isLiteral(x) ? null : this.typeOf(x)))
+        .find(isIntTy);
+      return t ?? (this.typeOf(e.args[0]) as ValueTy);
+    };
     const a = (i: number, w?: ValueTy) => this.expr(e.args[i], w);
-    const wrapU32 = (s: string) => (want === "u32" ? `toU32(${s})` : s);
+    const wrapU32 = (s: string) => conv(s, this.typeOf(e));
     switch (e.op) {
       case "len":
         return wrapU32(`toI32(${a(0)}.length)`);
@@ -499,19 +685,33 @@ class Emitter {
       }
       case "+":
       case "-":
-      case "*":
-        return wrapU32(`(${a(0)} ${e.op} ${a(1)})`);
-      case "%":
+      case "*": {
+        const t = operands();
+        if (t === "i64") {
+          // Signed overflow panics in Nish; the contract wraps (evalPure), so
+          // i64 goes through nish:unsafe's two's-complement wrap.
+          const w = WRAPPING[e.op];
+          this.unsafeNames.add(w);
+          return `${w}(${a(0, t)}, ${a(1, t)})`;
+        }
+        return wrapU32(`(${a(0, t)} ${e.op} ${a(1, t)})`);
+      }
+      case "%": {
         // Through a helper, so a computed zero divisor gives 0 here exactly as
         // evalPure gives it when sampling `where`.
-        return wrapU32(`${this.use("remI32")}(${a(0)}, ${a(1)})`);
+        const t = operands() as IntType;
+        const h = this.use(remName(t));
+        return wrapU32(`${h}(${a(0, t)}, ${a(1, t)})`);
+      }
       case "le64":
         return `${this.use("le64")}(${a(0)})`;
       case "<":
       case "<=":
       case ">":
-      case ">=":
-        return `(${a(0)} ${e.op} ${a(1)})`;
+      case ">=": {
+        const t = operands();
+        return `(${a(0, t)} ${e.op} ${a(1, t)})`;
+      }
       case "==":
       case "!=": {
         // A null literal takes its kind from the other side.
@@ -526,7 +726,8 @@ class Emitter {
           const eq = `${this.use(h)}(${a(0)}, ${a(1)})`;
           return e.op === "==" ? eq : `!${eq}`;
         }
-        return `(${a(0)} ${e.op === "==" ? "===" : "!=="} ${a(1)})`;
+        const t = isIntTy(side) ? operands() : undefined;
+        return `(${a(0, t)} ${e.op === "==" ? "===" : "!=="} ${a(1, t)})`;
       }
       case "and":
         return `(${e.args.map((_, i) => a(i)).join(" && ")})`;
@@ -628,9 +829,29 @@ function emitVector(em: Emitter, k: VectorClause): string {
     case "i32":
       body = `t.eqI32(${name}, ${call}, ${(k.expect as { int: number }).int})`;
       break;
-    case "u32":
-      body = `t.eqStr(${name}, \`\${${call}}\`, ${jsString(String((k.expect as { int: number }).int))})`;
+    case "i64":
+      body = `t.eqI64(${name}, ${call}, ${em.literal(k.expect, "i64")})`;
       break;
+    case "u8":
+    case "u16":
+    case "u32":
+    case "u64":
+      body = `t.eqStr(${name}, \`\${${call}}\`, ${jsString(String((k.expect as { int: number | string }).int))})`;
+      break;
+    case "f64": {
+      const want = em.literal(k.expect, "f64");
+      const tol = k.tolerance;
+      // nearF64 fails equal infinities and nearUlpsF64 fails every NaN, so a
+      // non-finite expected value is checked bit for bit whatever the
+      // tolerance (IEEE 754-2019 §5.11: a NaN is unordered with everything).
+      if (!tol || !Number.isFinite(f64Value(k.expect as { f64: string })))
+        body = `${em.use("eqF64Bits")}(t, ${name}, ${call}, ${want})`;
+      else if (tol.abs !== undefined)
+        body = `t.nearF64(${name}, ${call}, ${want}, ${f64Lit(parseF64(tol.abs))})`;
+      else
+        body = `${em.use("nearUlpsF64")}(t, ${name}, ${call}, ${want}, ${intLit(BigInt(tol.ulps), "i64")})`;
+      break;
+    }
     case "string":
       body = `t.eqStr(${name}, ${call}, ${jsString((k.expect as { str: string }).str)})`;
       break;
@@ -639,6 +860,9 @@ function emitVector(em: Emitter, k: VectorClause): string {
       body = `t.eqStr(${name}, ${em.use("strOrNull")}(${call}), ${jsString(want)})`;
       break;
     }
+    default:
+      // refusals() has refused every other type already.
+      throw new NishRefusal(`Nish cannot check a ${sig.returns} result`);
   }
   return `const ${fnName(k)} = (t: Suite): boolean => ${body};`;
 }
@@ -660,6 +884,14 @@ function emitProperty(
     if (v.type === "i32") {
       const vals = ps.samples.map((s) => String(s[v.name] as number));
       out.push(`  const table_${v.name}: i32[] = [${vals.join(", ")}];`);
+    } else if (isIntTy(v.type)) {
+      const t = v.type;
+      const vals = ps.samples.map((s) =>
+        intLit(BigInt(s[v.name] as number | bigint), t),
+      );
+      out.push(`  const table_${v.name}: ${t}[] = [${vals.join(", ")}];`);
+    } else if (v.type === "f64") {
+      throw new NishRefusal(NO_F64_FORALL);
     } else {
       if (v.type === "bytes") em.use("unhex");
       const vals = ps.samples.map((s) =>
@@ -688,7 +920,7 @@ function emitProperty(
   const failCond = usesUnwrap ? "u.sawNull || !holds" : "!holds";
   const shown = k.forall
     .map((v) =>
-      v.type === "i32"
+      isIntTy(v.type)
         ? `${v.name} = \${v_${v.name}}`
         : `len(${v.name}) = \${toI32(v_${v.name}.length)}`,
     )
@@ -756,12 +988,49 @@ export function staleReason(
   return null;
 }
 
-/** The whole test program. */
+/**
+ * What in `c` Nish cannot express, refused before any output: a non-nish
+ * module, an i8 or i16, a nullable bool, integer or f64 (Nish has `T | null`
+ * only on a reference type), and an f64 forall variable.
+ */
+function refusals(c: RfcContract): void {
+  for (const m of [c.target.module, ...c.functions.map((f) => f.module)])
+    if (m !== undefined && nishModuleFile(m) === undefined)
+      throw new NishRefusal(
+        `Nish is the only emitter, and ${m} is not a nish/ module`,
+      );
+  for (const f of c.functions)
+    for (const [at, t] of [
+      ...f.params.map((p) => [`${f.name}(${p.name})`, p.type] as const),
+      [`${f.name}'s result`, f.returns] as const,
+    ]) {
+      const base = baseOf(t);
+      if (base === "i8" || base === "i16")
+        throw new NishRefusal(`${at} is ${t}: ${NO_SMALL_INT}`);
+      if (isOptional(t) && (base === "bool" || base === "f64" || isIntTy(base)))
+        throw new NishRefusal(
+          `${at} is ${t}: Nish has \`T | null\` only on a reference type`,
+        );
+    }
+  for (const k of c.clauses)
+    if (k.kind === "property")
+      for (const v of k.forall) {
+        if (v.type === "f64")
+          throw new NishRefusal(`${k.id}: ${v.name} is f64: ${NO_F64_FORALL}`);
+        if (v.type === "i8" || v.type === "i16")
+          throw new NishRefusal(
+            `${k.id}: ${v.name} is ${v.type}: ${NO_SMALL_INT}`,
+          );
+      }
+}
+
+/** The whole test program; throws a NishRefusal for what Nish cannot express. */
 export function emitNishTest(
   c: RfcContract,
   samples: Map<string, PropertySamples>,
   opts: EmitOptions = {},
 ): string {
+  refusals(c);
   const em = new Emitter(c);
   const bodies: string[] = [];
   const called = new Set<string>();
@@ -806,6 +1075,11 @@ export function emitNishTest(
     ...(em.secretNames.size > 0
       ? [
           `import { ${["Secret", "expose", "secret", "wipe"].filter((n) => em.secretNames.has(n)).join(", ")} } from "nish:secret";`,
+        ]
+      : []),
+    ...(em.unsafeNames.size > 0
+      ? [
+          `import { ${[...em.unsafeNames].sort().join(", ")} } from "nish:unsafe";`,
         ]
       : []),
   ];

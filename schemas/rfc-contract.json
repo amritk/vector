@@ -313,6 +313,11 @@
       "pattern": "^(?:-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|NaN|Infinity|-Infinity)$",
       "description": "An IEEE 754-2019 binary64 value as text: a decimal, converted to the nearest double with roundTiesToEven (§4.3.1, §5.12.2), or NaN, Infinity, -Infinity; -0 is negative zero."
     },
+    "f64Bound": {
+      "type": "string",
+      "pattern": "^(?:-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|Infinity|-Infinity)$",
+      "description": "An f64Text that is not NaN, for a bound of an f64 domain: NaN is unordered (IEEE 754-2019 §5.11), so it bounds nothing."
+    },
     "f64Bits": {
       "type": "string",
       "pattern": "^[0-9a-f]{16}$",
@@ -835,10 +840,10 @@
                     "const": "f64"
                   },
                   "min": {
-                    "$ref": "#/$defs/f64Text"
+                    "$ref": "#/$defs/f64Bound"
                   },
                   "max": {
-                    "$ref": "#/$defs/f64Text"
+                    "$ref": "#/$defs/f64Bound"
                   }
                 },
                 "required": ["name", "type", "min", "max"]
@@ -994,7 +999,7 @@
       "description": "The name the spec prints right before the value (`Key = 00:01:…`, `L = 42`); fidelity checks the pair."
     },
     "tolerance": {
-      "description": "How far an f64 result may be from `expect`: `abs`, an absolute difference as decimal text, or `ulps`, a count of binary64 units in the last place. It must come from the spec: `quote` is the sentence that states it, in `section` (of `source`, default the main one), checked like a requirement's quote. Without a tolerance an f64 expect is compared bit for bit (IEEE 754-2019 §3.4 encodings), so NaN equals a NaN of the same bits.",
+      "description": "How far an f64 result may be from `expect`: `abs`, an absolute difference as decimal text, or `ulps`, a count of binary64 units in the last place. It must come from the spec: `quote` is the sentence that states it, in `section` (of `source`, default the main one), checked like a requirement's quote. Without a tolerance an f64 expect is compared bit for bit (IEEE 754-2019 §3.4 encodings), so NaN equals a NaN of the same bits. Only an f64 result takes a tolerance, and an expected NaN or infinity is compared bit for bit even with one. `abs` must be finite: decimal text past binary64's largest finite value is refused (IEEE 754-2019 §7.4). `ulps` is at most 2^53−1, so it is exact as a JSON number (RFC 7493 §2.2).",
       "anyOf": [
         {
           "type": "object",
@@ -1023,7 +1028,8 @@
           "properties": {
             "ulps": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "source": {
               "$ref": "#/$defs/id"

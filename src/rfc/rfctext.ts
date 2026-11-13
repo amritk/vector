@@ -344,7 +344,11 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
  * Label and value must share a line: pass `sectionLines`, not the collapsed
  * section text, or "…the value of L" and a next line "5. Next" would match.
  */
-export function intLabelled(text: string, label: string, n: number): boolean {
+export function intLabelled(
+  text: string,
+  label: string,
+  n: number | string | bigint,
+): boolean {
   return intRounds(text, label, n).length > 0;
 }
 
@@ -357,11 +361,12 @@ const intLabelRe = (label: string) =>
 
 // `n` in decimal or 0x hex, not running into a longer identifier or number
 // (`1,000`, `4-5`, `12:30`, `255/256`, `1.5`, `1 000`).
-const intValueRe = (n: number) => {
-  const hex = n
+const intValueRe = (v: number | string | bigint) => {
+  const n = BigInt(v);
+  const hex = (n < 0n ? -n : n)
     .toString(16)
     .replace(/[a-f]/g, (d) => `[${d}${d.toUpperCase()}]`);
-  const value = n < 0 ? `${n}` : `(?:${n}|0[xX]0*${hex})`;
+  const value = n < 0n ? `${n}` : `(?:${n}|0[xX]0*${hex})`;
   return new RegExp(`^${value}(?![0-9A-Za-z_]|[.,:/-]\\d|[ \\t]\\d)`);
 };
 
@@ -369,11 +374,40 @@ const intValueRe = (n: number) => {
  * At which of `label`'s printings (counting from 0, every `label` followed
  * by some integer) is the integer `n` the value? Empty when none.
  */
-export function intRounds(text: string, label: string, n: number): number[] {
+export function intRounds(
+  text: string,
+  label: string,
+  n: number | string | bigint,
+): number[] {
   const value = intValueRe(n);
   return [...text.matchAll(intLabelRe(label))].flatMap((m, i) =>
     value.test(text.slice((m.index ?? 0) + m[0].length)) ? [i] : [],
   );
+}
+
+// `label` then a decimal number (IEEE 754-2019 §5.12 decimal character
+// sequence), or an infinity or NaN, captured as printed.
+const f64LabelRe = (label: string) =>
+  new RegExp(
+    `(?<![0-9A-Za-z_.-])${escapeRe(normalizeText(label))}(?:[ \\t]*[=:][ \\t]*|[ \\t]+)([-+]?(?:(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?|Infinity|NaN))(?![0-9A-Za-z_]|[.,:/-]\\d)`,
+    "g",
+  );
+
+/**
+ * At which of `label`'s printings (counting from 0, every `label` followed
+ * by some decimal number) does the printed number satisfy `same`? Empty
+ * when none. The caller says what "the same binary64" means.
+ */
+export function f64Rounds(
+  text: string,
+  label: string,
+  same: (printed: string) => boolean,
+): { rounds: number[]; of: number } {
+  const all = [...text.matchAll(f64LabelRe(label))];
+  return {
+    rounds: all.flatMap((m, i) => (same(m[1] as string) ? [i] : [])),
+    of: all.length,
+  };
 }
 
 /** How many times `label` is printed followed by some integer. */

@@ -19,12 +19,21 @@ import {
   type Expr,
   type PropertyClause,
   type RfcContract,
+  type ValueTy,
   type Var,
   alphabetChars,
+  f64Value,
+  isIntTy,
+  typeOf,
 } from "./contract.ts";
+import { INT_RANGE, INT_TYPES, type IntType } from "./vocab.ts";
 
-export type Value = Uint8Array | string | number | boolean | null;
-export type Sample = Record<string, Uint8Array | string | number>;
+/**
+ * A value as the evaluator holds it: an integer of up to 32 bits is a
+ * number, a 64-bit one a bigint (exact past 2^53), an f64 a number.
+ */
+export type Value = Uint8Array | string | number | bigint | boolean | null;
+export type Sample = Record<string, Uint8Array | string | number | bigint>;
 
 export interface PropertySamples {
   clauseId: string;
@@ -71,6 +80,34 @@ export function prng(seed: string): () => number {
 const intIn = (rnd: () => number, lo: number, hi: number) =>
   lo + Math.floor(rnd() * (hi - lo + 1));
 
+/** `intIn` over bigints: two 32-bit draws, reduced into the span. */
+function bigIn(rnd: () => number, lo: bigint, hi: bigint): bigint {
+  const draw =
+    (BigInt(Math.floor(rnd() * 4294967296)) << 32n) |
+    BigInt(Math.floor(rnd() * 4294967296));
+  return lo + (draw % (hi - lo + 1n));
+}
+
+/** `biasedInt` for a 64-bit range. */
+function biasedBig(rnd: () => number, lo: bigint, hi: bigint): bigint {
+  const r = rnd();
+  if (r < 0.5 || hi - lo < 32n) return bigIn(rnd, lo, hi);
+  if (r < 0.75) return bigIn(rnd, lo, lo + 16n);
+  return bigIn(rnd, hi - 16n, hi);
+}
+
+/** An integer type's width in bits, and whether it is two's complement. */
+const widthOf = (ty: IntType) => Number(ty.slice(1));
+const signedTy = (ty: IntType) => ty.startsWith("i");
+
+/** `x` reduced to `ty`: modulo 2^N, read as two's complement for `iN`. */
+export const wrapInt = (x: bigint, ty: IntType): bigint =>
+  signedTy(ty) ? BigInt.asIntN(widthOf(ty), x) : BigInt.asUintN(widthOf(ty), x);
+
+/** An integer of type `ty` as the evaluator holds it (see Value). */
+const intOut = (x: bigint, ty: IntType): number | bigint =>
+  widthOf(ty) > 32 ? x : Number(x);
+
 /** Uniform half the time, otherwise within 16 of one end. */
 function biasedInt(rnd: () => number, lo: number, hi: number): number {
   const r = rnd();
@@ -103,15 +140,24 @@ class Undefined extends Error {}
  * Evaluate a call-free expression. Throws Undefined on unwrap(null). A `let`
  * evaluates every binding before its `in`, as the emitted test does.
  */
-export function evalPure(e: Expr, env: Record<string, Value>): Value {
+export function evalPure(
+  e: Expr,
+  env: Record<string, Value>,
+  types: ReadonlyMap<string, ValueTy> = new Map(),
+): Value {
   if ("let" in e) {
     // No prototype, so a binding named __proto__ is an ordinary key.
     const scope: Record<string, Value> = Object.assign(
       Object.create(null),
       env,
     );
-    for (const b of e.let) scope[b.name] = evalPure(b.value, scope);
-    return evalPure(e.in, scope);
+    const inner = new Map(types);
+    for (const b of e.let) {
+      scope[b.name] = evalPure(b.value, scope, inner);
+      const t = typeIn(b.value, inner);
+      if (t !== null) inner.set(b.name, t);
+    }
+    return evalPure(e.in, scope, inner);
   }
   if ("hex" in e) {
     const one = Uint8Array.from(Buffer.from(e.hex, "hex"));
@@ -122,17 +168,24 @@ export function evalPure(e: Expr, env: Record<string, Value>): Value {
   }
   if ("ascii" in e) return new TextEncoder().encode(e.ascii);
   if ("str" in e) return e.str;
-  if ("int" in e) return e.int;
+  if ("int" in e) return typeof e.int === "string" ? BigInt(e.int) : e.int;
+  if ("f64" in e) return f64Value(e);
   if ("bool" in e) return e.bool;
   if ("null" in e) return null;
   if ("concat" in e) {
-    const parts = e.concat.map((p) => evalPure(p, env) as Uint8Array);
+    const parts = e.concat.map((p) => evalPure(p, env, types) as Uint8Array);
     return Uint8Array.from(parts.flatMap((p) => [...p]));
   }
   if ("var" in e) return env[e.var] ?? null;
   if ("call" in e) throw new Error("evalPure: calls are not pure");
-  const a = e.args.map((x) => () => evalPure(x, env));
-  const n = (i: number) => a[i]() as number;
+  const a = e.args.map((x) => () => evalPure(x, env, types));
+  const n = (i: number) => Number(a[i]());
+  const big = (i: number) => BigInt(a[i]() as number | bigint);
+  // + - * % wrap to the operands' type (contract typing makes them one).
+  const arith = (f: (x: bigint, y: bigint) => bigint) => {
+    const ty = intTyIn(e, types);
+    return intOut(wrapInt(f(big(0), big(1)), ty), ty);
+  };
   const b = (i: number) => a[i]() as Uint8Array;
   const s = (i: number) => a[i]() as string;
   const t = (i: number) => a[i]() as boolean;
@@ -183,30 +236,28 @@ export function evalPure(e: Expr, env: Record<string, Value>): Value {
     case "notNull":
       return a[0]() !== null;
     case "+":
-      return (n(0) + n(1)) | 0;
+      return arith((x, y) => x + y);
     case "-":
-      return (n(0) - n(1)) | 0;
+      return arith((x, y) => x - y);
     case "*":
-      return Math.imul(n(0), n(1));
-    case "%": {
-      // As the emitted remI32: 0 for a zero divisor, truncating otherwise
-      // (`| 0` turns JS's -0, as in -4 % 2 or -2147483648 % -1, into 0).
-      const d = n(1);
-      return d === 0 ? 0 : (n(0) % d) | 0;
-    }
+      return arith((x, y) => x * y);
+    case "%":
+      // As the emitted remainder helper: 0 for a zero divisor, truncating
+      // otherwise (bigint % truncates, and has no -0).
+      return arith((x, y) => (y === 0n ? 0n : x % y));
     case "le64": {
       const out = new Uint8Array(8);
       new DataView(out.buffer).setBigInt64(0, BigInt(n(0)), true);
       return out;
     }
     case "<":
-      return n(0) < n(1);
+      return big(0) < big(1);
     case "<=":
-      return n(0) <= n(1);
+      return big(0) <= big(1);
     case ">":
-      return n(0) > n(1);
+      return big(0) > big(1);
     case ">=":
-      return n(0) >= n(1);
+      return big(0) >= big(1);
     case "==":
     case "!=": {
       const eq = valuesEqual(a[0](), a[1]());
@@ -245,17 +296,46 @@ export function evalPure(e: Expr, env: Record<string, Value>): Value {
 const clamp = (x: number, lo: number, hi: number) =>
   Math.min(Math.max(x, lo), hi);
 
+const isBig = (v: Value): v is bigint => typeof v === "bigint";
+
 function valuesEqual(x: Value, y: Value): boolean {
   if (x instanceof Uint8Array && y instanceof Uint8Array) {
     return x.length === y.length && x.every((v, i) => v === y[i]);
   }
+  // A 64-bit value is a bigint and a small literal beside it a number.
+  if ((isBig(x) || isBig(y)) && (isBig(x) || Number.isInteger(x)))
+    return (
+      (isBig(y) || Number.isInteger(y)) &&
+      BigInt(x as number) === BigInt(y as number)
+    );
   return x === y;
 }
 
-function holds(where: Expr | undefined, s: Sample): boolean {
+/** The type of `e` among `types`, or null when it has none there. */
+function typeIn(e: Expr, types: ReadonlyMap<string, ValueTy>): ValueTy | null {
+  const env = { fns: new Map(), vars: new Map(types), allowCalls: true };
+  const t = typeOf(e, env, "", []);
+  return t === null || t === "null" ? null : (t as ValueTy);
+}
+
+/** The integer type `e` computes in; i32 where the types do not say. */
+function intTyIn(e: Expr, types: ReadonlyMap<string, ValueTy>): IntType {
+  const t = typeIn(e, types);
+  return isIntTy(t) ? t : "i32";
+}
+
+/** The types of a property's variables, for evalPure and the skeleton. */
+const varTypes = (vars: readonly Var[]) =>
+  new Map<string, ValueTy>(vars.map((v) => [v.name, v.type]));
+
+function holds(
+  where: Expr | undefined,
+  s: Sample,
+  types: ReadonlyMap<string, ValueTy>,
+): boolean {
   if (!where) return true;
   try {
-    return evalPure(where, s) === true;
+    return evalPure(where, s, types) === true;
   } catch (err) {
     if (err instanceof Undefined) return false;
     throw err;
@@ -263,9 +343,105 @@ function holds(where: Expr | undefined, s: Sample): boolean {
 }
 
 // ── SMT: the integer skeleton of a property ───────────────────────────────
+//
+// An integer of a new width is a bit-vector of that width (SMT-LIB 2.6
+// FixedSizeBitVectors), so + - * wrap in the solver as evalPure and the
+// implementation wrap them, and a comparison is signed (bvslt…) for iN and
+// unsigned (bvult…) for uN. An i32, and a length (an i32, as len and strLen
+// return), stay the mathematical Int they have always been: Z3 picks other
+// models for a bit-vector, and the committed contracts' samples must not move.
+// That encoding does not wrap; a boundary it finds past a wrap is only a
+// sample, and evalPure, which does wrap, decides whether it is in the domain.
 
-const smtName = (v: Var) =>
-  v.type === "i32" ? `v_${v.name}` : `len_${v.name}`;
+/** The SMT spelling of one integer type's terms. */
+interface Encoding {
+  sort: string;
+  lit(x: bigint): string;
+  /** + - * by contract op. */
+  arith: Record<"+" | "-" | "*", string>;
+  /** < <= > >= by contract op. */
+  order: Record<string, string>;
+  /** Truncating remainder (C11 §6.5.5), or null when not encoded. */
+  rem(l: string, d: Expr, dt: string): string | null;
+  /** `l - r` exactly (it never wraps), and the literal of an offset to it. */
+  diff(l: string, r: string): string;
+  offset(x: bigint): string;
+  /** A model's value, or null. */
+  read(raw: string): bigint | null;
+}
+
+const smtInt = (x: bigint) => (x < 0n ? `(- ${-x})` : String(x));
+
+const INT_ENCODING: Encoding = {
+  sort: "Int",
+  lit: smtInt,
+  arith: { "+": "+", "-": "-", "*": "*" },
+  order: { "<": "<", "<=": "<=", ">": ">", ">=": ">=" },
+  rem(l, d) {
+    // Z3's mod is Euclidean and % truncates; they agree for a positive
+    // literal divisor once the dividend's sign is pinned by an ite. A
+    // computed divisor, which may be 0, stays outside the encoding.
+    if (!("int" in d) || BigInt(d.int) <= 0n) return null;
+    return `(ite (>= ${l} 0) (mod ${l} ${d.int}) (- (mod (- ${l}) ${d.int})))`;
+  },
+  diff: (l, r) => `(- ${l} ${r})`,
+  offset: smtInt,
+  read: (raw) => (/^-?\d+$/.test(raw) ? BigInt(raw) : null),
+};
+
+function bvEncoding(ty: IntType): Encoding {
+  const w = widthOf(ty);
+  const signed = signedTy(ty);
+  const u = signed ? "s" : "u";
+  const ext = signed ? "sign_extend" : "zero_extend";
+  return {
+    sort: `(_ BitVec ${w})`,
+    lit: (x) => bvLit(x, w),
+    arith: { "+": "bvadd", "-": "bvsub", "*": "bvmul" },
+    order: {
+      "<": `bv${u}lt`,
+      "<=": `bv${u}le`,
+      ">": `bv${u}gt`,
+      ">=": `bv${u}ge`,
+    },
+    rem(l, d, dt) {
+      // bv[su]rem truncates; SMT-LIB leaves x rem 0 as x where evalPure and
+      // the emitted helper give 0, so a divisor that may be 0 is guarded.
+      const rem = `(bv${u}rem ${l} ${dt})`;
+      if ("int" in d && BigInt(d.int) !== 0n) return rem;
+      const zero = bvLit(0n, w);
+      return `(ite (= ${dt} ${zero}) ${zero} ${rem})`;
+    },
+    // Two bits wider, so the difference of any two values is exact.
+    diff: (l, r) => `(bvsub ((_ ${ext} 2) ${l}) ((_ ${ext} 2) ${r}))`,
+    offset: (x) => bvLit(x, w + 2),
+    read(raw) {
+      const m = raw.match(/^#(x[0-9a-fA-F]+|b[01]+)$/);
+      return m ? wrapInt(BigInt(`0${m[1]}`), ty) : null;
+    },
+  };
+}
+
+const ENCODINGS = new Map(
+  INT_TYPES.map((ty) => [ty, ty === "i32" ? INT_ENCODING : bvEncoding(ty)]),
+);
+const enc = (ty: IntType) => ENCODINGS.get(ty) as Encoding;
+
+const smtName = (v: Var) => (isIntTy(v.type) ? `v_${v.name}` : `len_${v.name}`);
+
+/** The variables of a property, with their types for typeOf. */
+interface Skeleton {
+  vars: Map<string, Var>;
+  types: Map<string, ValueTy>;
+}
+
+const skeletonOf = (vars: readonly Var[]): Skeleton => ({
+  vars: new Map(vars.map((v) => [v.name, v])),
+  types: varTypes(vars),
+});
+
+/** The bit-vector literal of `x` at width `w` (two's complement for a negative). */
+const bvLit = (x: bigint, w: number) => `(_ bv${BigInt.asUintN(w, x)} ${w})`;
 
 /**
  * `e` with every let-bound name replaced by its value, for the integer
@@ -286,63 +462,58 @@ function inlineLets(e: Expr, bound: Map<string, Expr> = new Map()): Expr {
 }
 
 /**
- * The SMT term for an integer expression, or null when it is not in the
- * linear-integer skeleton (a call, a bytes comparison, a slice's length…).
+ * The SMT term for an integer expression of type `ty`, or null when it is
+ * not in the skeleton (a call, a bytes comparison, a slice's length…).
  */
-function intTerm(e: Expr, vars: Map<string, Var>): string | null {
-  if ("int" in e) return e.int < 0 ? `(- ${-e.int})` : String(e.int);
+function intTerm(e: Expr, sk: Skeleton, ty: IntType): string | null {
+  if ("int" in e) return enc(ty).lit(BigInt(e.int));
   if ("var" in e) {
-    const v = vars.get(e.var);
-    return v && v.type === "i32" ? smtName(v) : null;
+    const v = sk.vars.get(e.var);
+    return v && v.type === ty ? smtName(v) : null;
   }
   if (!("op" in e)) return null;
-  if (e.op === "len" || e.op === "strLen") return lenTerm(e.args[0], vars);
+  if (e.op === "len" || e.op === "strLen")
+    return ty === "i32" ? lenTerm(e.args[0], sk) : null;
   if (e.op === "+" || e.op === "-" || e.op === "*") {
-    const l = intTerm(e.args[0], vars);
-    const r = intTerm(e.args[1], vars);
-    return l && r ? `(${e.op} ${l} ${r})` : null;
+    const l = intTerm(e.args[0], sk, ty);
+    const r = intTerm(e.args[1], sk, ty);
+    return l && r ? `(${enc(ty).arith[e.op]} ${l} ${r})` : null;
   }
   if (e.op === "%") {
-    // Z3's mod is Euclidean and JS's/Nish's % truncates; they agree for a
-    // non-negative dividend and a positive literal divisor, which is all this
-    // encodes (the dividend's sign is pinned by an ite). A computed divisor,
-    // which may be 0, stays outside the encoding: evalPure and the emitted
-    // remI32 both give 0 for it, and the solver never has to agree.
-    const l = intTerm(e.args[0], vars);
-    const d = e.args[1];
-    if (!l || !("int" in d) || d.int <= 0) return null;
-    return `(ite (>= ${l} 0) (mod ${l} ${d.int}) (- (mod (- ${l}) ${d.int})))`;
+    const l = intTerm(e.args[0], sk, ty);
+    const d = intTerm(e.args[1], sk, ty);
+    return l && d ? enc(ty).rem(l, e.args[1], d) : null;
   }
   return null;
 }
 
 /** The length term of a bytes or string expression (one byte per character). */
-function lenTerm(e: Expr, vars: Map<string, Var>): string | null {
+function lenTerm(e: Expr, sk: Skeleton): string | null {
   if ("var" in e) {
-    const v = vars.get(e.var);
-    return v && v.type !== "i32" ? smtName(v) : null;
+    const v = sk.vars.get(e.var);
+    return v && !isIntTy(v.type) ? smtName(v) : null;
   }
   if ("hex" in e) return String((e.hex.length / 2) * (e.repeat ?? 1));
   if ("str" in e) return String(e.str.length);
   if (!("op" in e)) return null;
   if (e.op === "concat" || e.op === "strConcat") {
-    const l = lenTerm(e.args[0], vars);
-    const r = lenTerm(e.args[1], vars);
+    const l = lenTerm(e.args[0], sk);
+    const r = lenTerm(e.args[1], sk);
     return l && r ? `(+ ${l} ${r})` : null;
   }
   if (e.op === "xor" || e.op === "bitAnd" || e.op === "bitOr") {
-    const l = lenTerm(e.args[0], vars);
-    const r = lenTerm(e.args[1], vars);
+    const l = lenTerm(e.args[0], sk);
+    const r = lenTerm(e.args[1], sk);
     return l && r ? `(ite (>= ${l} ${r}) ${l} ${r})` : null;
   }
-  if (e.op === "zeros") return nonNeg(intTerm(e.args[0], vars));
-  if (e.op === "fill") return nonNeg(intTerm(e.args[1], vars));
+  if (e.op === "zeros") return nonNeg(intTerm(e.args[0], sk, "i32"));
+  if (e.op === "fill") return nonNeg(intTerm(e.args[1], sk, "i32"));
   if (["flipBit", "lower", "upper", "utf8"].includes(e.op))
-    return lenTerm(e.args[0], vars);
-  if (e.op === "le64") return "8";
+    return lenTerm(e.args[0], sk);
+  if (e.op === "le64") return String(8);
   if (e.op === "charAt") {
-    const l = lenTerm(e.args[0], vars);
-    const i = intTerm(e.args[1], vars);
+    const l = lenTerm(e.args[0], sk);
+    const i = intTerm(e.args[1], sk, "i32");
     return l && i ? `(ite (and (>= ${i} 0) (< ${i} ${l})) 1 0)` : null;
   }
   return null;
@@ -350,35 +521,55 @@ function lenTerm(e: Expr, vars: Map<string, Var>): string | null {
 
 const nonNeg = (t: string | null) => (t ? `(ite (< ${t} 0) 0 ${t})` : null);
 
-function boolTerm(e: Expr, vars: Map<string, Var>): string | null {
+const COMPARISONS = ["<", "<=", ">", ">=", "==", "!="];
+
+/**
+ * The integer type two compared operands share: the first that is not a
+ * bare literal (a literal takes its type from the other side), else i32.
+ * Null when they are not integers.
+ */
+function comparedTy(args: Expr[], sk: Skeleton): IntType | null {
+  const typed = args.find((a) => !("int" in a));
+  if (!typed) return "i32";
+  const t = typeIn(typed, sk.types);
+  return isIntTy(t) ? t : null;
+}
+
+/** Both sides of an integer comparison in the skeleton, at their type. */
+function comparedTerms(
+  e: Expr & { op: string; args: Expr[] },
+  sk: Skeleton,
+): { l: string; r: string; ty: IntType } | null {
+  const ty = comparedTy(e.args, sk);
+  if (!ty) return null;
+  const l = intTerm(e.args[0], sk, ty);
+  const r = intTerm(e.args[1], sk, ty);
+  return l && r ? { l, r, ty } : null;
+}
+
+function boolTerm(e: Expr, sk: Skeleton): string | null {
   if ("bool" in e) return String(e.bool);
   if (!("op" in e)) return null;
+  if (COMPARISONS.includes(e.op)) {
+    const c = comparedTerms(e, sk);
+    if (!c) return null;
+    if (e.op === "==") return `(= ${c.l} ${c.r})`;
+    if (e.op === "!=") return `(not (= ${c.l} ${c.r}))`;
+    return `(${enc(c.ty).order[e.op]} ${c.l} ${c.r})`;
+  }
   switch (e.op) {
-    case "<":
-    case "<=":
-    case ">":
-    case ">=":
-    case "==":
-    case "!=": {
-      const l = intTerm(e.args[0], vars);
-      const r = intTerm(e.args[1], vars);
-      if (!l || !r) return null;
-      if (e.op === "==") return `(= ${l} ${r})`;
-      if (e.op === "!=") return `(not (= ${l} ${r}))`;
-      return `(${e.op} ${l} ${r})`;
-    }
     case "and":
     case "or": {
-      const ts = e.args.map((x) => boolTerm(x, vars));
+      const ts = e.args.map((x) => boolTerm(x, sk));
       return ts.every((t) => t) ? `(${e.op} ${ts.join(" ")})` : null;
     }
     case "not": {
-      const t = boolTerm(e.args[0], vars);
+      const t = boolTerm(e.args[0], sk);
       return t ? `(not ${t})` : null;
     }
     case "implies": {
-      const l = boolTerm(e.args[0], vars);
-      const r = boolTerm(e.args[1], vars);
+      const l = boolTerm(e.args[0], sk);
+      const r = boolTerm(e.args[1], sk);
       return l && r ? `(=> ${l} ${r})` : null;
     }
     default:
@@ -386,21 +577,23 @@ function boolTerm(e: Expr, vars: Map<string, Var>): string | null {
   }
 }
 
-/** Every integer comparison in `e` whose two sides are in the skeleton, as `left - right`. */
+/**
+ * Every integer comparison in `e` whose two sides are in the skeleton, as
+ * the exact term `left - right`, mapped to its type.
+ */
 function comparisonEdges(
   e: Expr,
-  vars: Map<string, Var>,
-  out: Set<string>,
+  sk: Skeleton,
+  out: Map<string, IntType>,
 ): void {
   if ("op" in e) {
-    if (["<", "<=", ">", ">=", "==", "!="].includes(e.op)) {
-      const l = intTerm(e.args[0], vars);
-      const r = intTerm(e.args[1], vars);
-      if (l && r) out.add(`(- ${l} ${r})`);
+    if (COMPARISONS.includes(e.op)) {
+      const c = comparedTerms(e, sk);
+      if (c) out.set(enc(c.ty).diff(c.l, c.r), c.ty);
     }
-    for (const x of e.args) comparisonEdges(x, vars, out);
+    for (const x of e.args) comparisonEdges(x, sk, out);
   } else if ("call" in e) {
-    for (const x of e.args) comparisonEdges(x, vars, out);
+    for (const x of e.args) comparisonEdges(x, sk, out);
   }
 }
 
@@ -410,22 +603,34 @@ interface Query {
   pins: string[];
 }
 
+/** A variable's type in the skeleton: its own, or i32 for a length. */
+const skeletonTy = (v: Var): IntType => (isIntTy(v.type) ? v.type : "i32");
+
+/** A variable's range in the skeleton, inclusive. */
+function rangeOf(v: Var): [bigint, bigint] {
+  if (v.type === "bytes" || v.type === "string")
+    return [BigInt(v.minLen), BigInt(v.maxLen)];
+  if (isIntTy(v.type) && "min" in v)
+    return [BigInt(v.min as number | string), BigInt(v.max as number | string)];
+  throw new Error(`${v.name}: not an integer or length variable`);
+}
+
 function propertyScript(k: PropertyClause, queries: Query[]): string {
   const vars = k.forall;
+  const sk = skeletonOf(vars);
   const lines = [...SMT_PREAMBLE];
   for (const v of vars) {
     const n = smtName(v);
-    lines.push(`(declare-const ${n} Int)`);
-    if (v.type === "i32")
-      lines.push(
-        `(assert (and (>= ${n} ${int(v.min)}) (<= ${n} ${int(v.max)})))`,
-      );
-    else
-      lines.push(`(assert (and (>= ${n} ${v.minLen}) (<= ${n} ${v.maxLen})))`);
+    const ty = skeletonTy(v);
+    const { sort, order, lit } = enc(ty);
+    const [lo, hi] = rangeOf(v);
+    lines.push(`(declare-const ${n} ${sort})`);
+    lines.push(
+      `(assert (and (${order[">="]} ${n} ${lit(lo)}) (${order["<="]} ${n} ${lit(hi)})))`,
+    );
   }
-  const varMap = new Map(vars.map((v) => [v.name, v]));
   if (k.where) {
-    const w = boolTerm(k.where, varMap);
+    const w = boolTerm(k.where, sk);
     if (w) lines.push(`(assert ${w})`);
   }
   const names = vars.map(smtName).join(" ");
@@ -439,18 +644,31 @@ function propertyScript(k: PropertyClause, queries: Query[]): string {
   return `${lines.join("\n")}\n`;
 }
 
-const int = (n: number) => (n < 0 ? `(- ${-n})` : String(n));
-
 // ── Sampling ──────────────────────────────────────────────────────────────
+
+const F64_VARS = "f64 variables are not sampled yet; give f64 cases as vectors";
 
 async function sampleProperty(
   c: RfcContract,
   k: PropertyClause,
 ): Promise<{ result: PropertySamples; solver?: string; error?: string }> {
   const notes: string[] = [];
-  const varMap = new Map(k.forall.map((v) => [v.name, v]));
+  const failed = (error: string, solver?: string) => ({
+    result: {
+      clauseId: k.id,
+      samples: [],
+      boundary: 0,
+      random: 0,
+      inhabited: "failed" as const,
+      notes,
+    },
+    solver,
+    error,
+  });
+  if (k.forall.some((v) => v.type === "f64")) return failed(F64_VARS);
+  const sk = skeletonOf(k.forall);
   const rnd = prng(`${c.contract}/${k.id}`);
-  const whereSmt = k.where ? boolTerm(k.where, varMap) : "true";
+  const whereSmt = k.where ? boolTerm(k.where, sk) : "true";
   if (k.where && !whereSmt) {
     notes.push(
       "where is outside the integer skeleton: Z3 saw only the variable ranges; samples are filtered by evaluation",
@@ -459,104 +677,105 @@ async function sampleProperty(
 
   // Q0: is the domain inhabited? Then the boundary queries.
   const queries: Query[] = [{ extra: "", pins: [] }];
-  const edges = new Set<string>();
-  if (k.where) comparisonEdges(k.where, varMap, edges);
-  comparisonEdges(inlineLets(k.assert), varMap, edges);
-  for (const d of edges) {
+  const edges = new Map<string, IntType>();
+  if (k.where) comparisonEdges(k.where, sk, edges);
+  comparisonEdges(inlineLets(k.assert), sk, edges);
+  for (const [d, ty] of edges) {
     const pins = k.forall
       .map(smtName)
       .filter((n) => new RegExp(`\\b${n}\\b`).test(d));
-    for (const off of [-1, 0, 1])
-      queries.push({ extra: `(= ${d} ${int(off)})`, pins });
+    for (const off of [-1n, 0n, 1n])
+      queries.push({ extra: `(= ${d} ${enc(ty).offset(off)})`, pins });
   }
   for (const v of k.forall) {
     const n = smtName(v);
-    const [lo, hi] = v.type === "i32" ? [v.min, v.max] : [v.minLen, v.maxLen];
-    for (const at of new Set([lo, lo + 1, hi - 1, hi])) {
+    const ty = skeletonTy(v);
+    const [lo, hi] = rangeOf(v);
+    // The variable's own extremes, then its type's (C11 §7.20.2 intN_t
+    // limits), where the range reaches them.
+    const { min, max } = INT_RANGE[ty];
+    for (const at of new Set([lo, lo + 1n, hi - 1n, hi, min, max])) {
       if (at >= lo && at <= hi)
-        queries.push({ extra: `(= ${n} ${int(at)})`, pins: [n] });
+        queries.push({
+          extra: `(= ${n} ${enc(ty).lit(at)})`,
+          pins: [n],
+        });
     }
   }
 
+  const types = sk.types;
   const samples: Sample[] = [];
   const seen = new Set<string>();
   const add = (s: Sample) => {
     const key = JSON.stringify(
       Object.entries(s).map(([n, v]) => [
         n,
-        v instanceof Uint8Array ? Buffer.from(v).toString("hex") : v,
+        v instanceof Uint8Array
+          ? Buffer.from(v).toString("hex")
+          : typeof v === "bigint"
+            ? `${v}n`
+            : v,
       ]),
     );
-    if (seen.has(key) || !holds(k.where, s)) return false;
+    if (seen.has(key) || !holds(k.where, s, types)) return false;
     seen.add(key);
     samples.push(s);
     return true;
   };
-  const fill = (ints: Record<string, number>): Sample => {
+  const fill = (ints: Record<string, bigint>): Sample => {
     const s: Sample = {};
     for (const v of k.forall) {
-      if (v.type === "i32") {
-        s[v.name] = ints[v.name] ?? biasedInt(rnd, v.min, v.max);
+      const [lo, hi] = rangeOf(v);
+      const at = ints[v.name];
+      if (isIntTy(v.type)) {
+        // Up to 32 bits a sample is a number, drawn as it always was; a
+        // 64-bit one a bigint.
+        s[v.name] =
+          widthOf(v.type) > 32
+            ? (at ?? biasedBig(rnd, lo, hi))
+            : at !== undefined
+              ? Number(at)
+              : biasedInt(rnd, Number(lo), Number(hi));
         continue;
       }
-      const n = ints[v.name] ?? biasedInt(rnd, v.minLen, v.maxLen);
+      const n =
+        at !== undefined ? Number(at) : biasedInt(rnd, Number(lo), Number(hi));
       s[v.name] =
-        v.type === "bytes"
-          ? randomBytes(rnd, n)
-          : randomString(rnd, alphabetChars(v.alphabet) as string[], n);
+        v.type === "string"
+          ? randomString(rnd, alphabetChars(v.alphabet) as string[], n)
+          : randomBytes(rnd, n);
     }
     return s;
   };
 
   let inhabited: PropertySamples["inhabited"] = "failed";
-  let solver: string | undefined;
   const z3 = await runZ3Script(propertyScript(k, queries), queries.length);
-  if (z3.kind === "error") {
-    return {
-      result: {
-        clauseId: k.id,
-        samples: [],
-        boundary: 0,
-        random: 0,
-        inhabited: "failed",
-        notes,
-      },
-      error: z3.message,
-    };
-  }
-  solver = z3.label;
+  if (z3.kind === "error") return failed(z3.message);
+  const solver = z3.label;
   if (z3.answers[0]?.result === "sat") inhabited = "z3";
   else if (z3.answers[0]?.result === "unsat" && whereSmt) {
-    return {
-      result: {
-        clauseId: k.id,
-        samples: [],
-        boundary: 0,
-        random: 0,
-        inhabited: "failed",
-        notes,
-      },
+    return failed(
+      "the domain is empty (Z3: unsat) — the property would hold vacuously",
       solver,
-      error:
-        "the domain is empty (Z3: unsat) — the property would hold vacuously",
-    };
+    );
   }
   let boundary = 0;
   z3.answers.forEach((ans, i) => {
     if (i === 0 || ans.result !== "sat") return;
-    const model: Record<string, number> = {};
-    const pinned: Record<string, number> = {};
+    const model: Record<string, bigint> = {};
+    const pinned: Record<string, bigint> = {};
     for (const v of k.forall) {
       const raw = ans.model[smtName(v)];
-      if (raw === undefined || !/^-?\d+$/.test(raw)) continue;
-      model[v.name] = Number(raw);
-      if (queries[i].pins.includes(smtName(v))) pinned[v.name] = Number(raw);
+      const x = raw === undefined ? null : enc(skeletonTy(v)).read(raw);
+      if (x === null) continue;
+      model[v.name] = x;
+      if (queries[i].pins.includes(smtName(v))) pinned[v.name] = x;
     }
     // Keep only what the query pinned and draw the rest, so ten boundary
     // samples are not ten copies of Z3's favourite zero; fall back to the
     // whole model when the draw leaves the domain.
     const drawn = fill(pinned);
-    if (holds(k.where, drawn)) {
+    if (holds(k.where, drawn, types)) {
       if (add(drawn)) boundary++;
     } else if (add(fill(model))) boundary++;
   });
@@ -579,7 +798,7 @@ async function sampleProperty(
         "no input satisfies the domain (Z3 could not decide it and no sample was found)",
     };
   }
-  if (edges.size === 0 && k.forall.some((v) => v.type === "i32")) {
+  if (edges.size === 0 && k.forall.some((v) => isIntTy(v.type))) {
     notes.push(
       "no integer comparison in the skeleton: boundaries are the variables' extremes only",
     );

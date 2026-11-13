@@ -94,12 +94,20 @@ describe("secret-bytes in a contract", () => {
     expect(validateContractShape(contract())).toEqual([]);
   });
 
-  test("secret-bytes? is a result type only", () => {
+  test("secret-bytes? is an optional secret input as a parameter", () => {
     const c = contract();
-    c.functions[0].params[1].type = "secret-bytes?";
-    expect(validateContractShape(c)).toEqual([
-      "functions[0].params[1].type: secret-bytes? is a result type only; a parameter may be secret-bytes",
-    ]);
+    c.functions[1].params[0].type = "secret-bytes?";
+    expect(validateContractShape(c)).toEqual([]);
+    expect(runGates(c).issues).toEqual([]);
+    (c.clauses[1] as { args: unknown[] }).args[0] = { null: true };
+    expect(runGates(c).issues).toEqual([]);
+    const out = emitNishTest(c, new Map());
+    // An absent secret stays null; a present one is copied into a Secret and
+    // wiped after the call, as a plain secret-bytes parameter is.
+    expect(out).toContain(
+      "  let s_scalar: Secret<u8[]> | null = null;\n  if (a_scalar !== null) {\n    s_scalar = secret(copyBytes(a_scalar));\n  }\n  const r: u8[] | null = x25519Base(s_scalar);\n  if (s_scalar !== null) {\n    wipe(s_scalar);\n  }\n",
+    );
+    expect(out).toContain("plain_x25519Base(null)");
   });
 
   test("a function may not take a name the test uses itself", () => {

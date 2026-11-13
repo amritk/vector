@@ -223,18 +223,13 @@ export const e = (): u8[] | null`);
     ],
     [
       "export function f(a: number): i32",
-      "`number` is not a ts-interface type; use u8[], string, i32, u32, boolean or Secret<u8[]>, with `| null` on u8[], string or a Secret<u8[]> result",
+      "`number` is not a ts-interface type; use u8[], string, boolean, i8, i16, i32, i64, u8, u16, u32, u64, f64, Secret<u8[]>, each optionally `| null`",
       "number",
     ],
     [
-      "export function f(): null | boolean",
-      "`boolean | null` is not a ts-interface type; use u8[], string, i32, u32, boolean or Secret<u8[]>, with `| null` on u8[], string or a Secret<u8[]> result",
+      "export function f(): null | number",
+      "`number | null` is not a ts-interface type; use u8[], string, boolean, i8, i16, i32, i64, u8, u16, u32, u64, f64, Secret<u8[]>, each optionally `| null`",
       "null |",
-    ],
-    [
-      "export function f(k: Secret<u8[]> | null): i32",
-      "`Secret<u8[]> | null` is allowed only as a result type",
-      "Secret",
     ],
     [
       "export const f = (a: i32): i32 => a",
@@ -280,12 +275,12 @@ export const e = (): u8[] | null`);
 
   test("the module line", () => {
     expect(refusal(ts.parseInterface(""))).toEqual({
-      message: "missing `// module: nish/<name>` first line",
+      message: "missing `// module: <root>/<path>` first line",
       line: 1,
       col: 1,
     });
     expect(refusal(ts.parseInterface("\n  export function f(): i32"))).toEqual({
-      message: "missing `// module: nish/<name>` first line",
+      message: "missing `// module: <root>/<path>` first line",
       line: 2,
       col: 3,
     });
@@ -294,17 +289,18 @@ export const e = (): u8[] | null`);
         ts.parseInterface("\n// module: nish/m\nexport function f(): i32"),
       ),
     ).toEqual({
-      message: "missing `// module: nish/<name>` first line",
+      message: "missing `// module: <root>/<path>` first line",
       line: 2,
       col: 1,
     });
     expect(refusal(ts.parseInterface("/* module: nish/m */"))).toEqual({
-      message: "missing `// module: nish/<name>` first line",
+      message: "missing `// module: <root>/<path>` first line",
       line: 1,
       col: 1,
     });
-    expect(refusal(ts.parseInterface("// module: crypto/hex"))).toEqual({
-      message: "`crypto/hex` is not a nish module; write nish/<path>",
+    expect(refusal(ts.parseInterface("// module: Crypto/hex"))).toEqual({
+      message:
+        "`Crypto/hex` is not a module path; write <root>/<path>, lowercase segments split by /",
       line: 1,
       col: 1,
     });
@@ -691,13 +687,18 @@ describe("ts-property refusals", () => {
     ],
     [
       "// P-X covers R-X — t\nforall (b: number /* 0..1 */) => true",
-      "`number` is not a forall type; use u8[], string or i32",
+      "`number` is not a forall type; use u8[], string or an integer type (i8, i16, i32, i64, u8, u16, u32, u64)",
       "number",
     ],
     [
-      "// P-X covers R-X — t\nforall (n: u32 /* 0..1 */) => true",
-      "`u32` is not a forall type; use u8[], string or i32",
-      "u32",
+      "// P-X covers R-X — t\nforall (n: boolean /* 0..1 */) => true",
+      "`boolean` is not a forall type; use u8[], string or an integer type (i8, i16, i32, i64, u8, u16, u32, u64)",
+      "boolean",
+    ],
+    [
+      "// P-X covers R-X — t\nforall (x: f64 /* 0..1 */) => true",
+      "properties over f64 are not sampled yet; give f64 cases as vectors",
+      "f64",
     ],
     [
       "// P-X covers R-X — t\nforall (b: u8[]) => true",
@@ -830,8 +831,18 @@ describe("ts-property refusals", () => {
       "unary `-` applies only to integer literals; write 0 - x",
       "-i",
     ],
-    [prop("i === 3000000000"), "`3000000000` is outside i32", "3000000000"],
-    [prop("i === -2147483649"), "`-2147483649` is outside i32", "-2147483649"],
+    [prop("i === 3000000000"), "3000000000 is outside i32", "3000000000"],
+    [prop("i === -2147483649"), "-2147483649 is outside i32", "-2147483649"],
+    [
+      prop("i === 18446744073709551616"),
+      "`18446744073709551616` is outside every integer type (-9223372036854775808..18446744073709551615)",
+      "18446744073709551616",
+    ],
+    [
+      prop("i === -9223372036854775809"),
+      "`-9223372036854775809` is outside every integer type (-9223372036854775808..18446744073709551615)",
+      "-9223372036854775809",
+    ],
     [
       prop("b[0] === 0"),
       "indexing is not in the ts-property subset; use slice or charAt",
@@ -884,7 +895,7 @@ describe("ts-property refusals", () => {
     [prop("b === 1"), "cannot compare u8[] with i32", "b === 1"],
     [
       prop("b === null"),
-      "`=== null` wants u8[] | null or string | null, got u8[]",
+      "`=== null` wants an optional (T?), got u8[]",
       "b === null",
     ],
     [prop("null === null"), "cannot compare null with null", "null === null"],

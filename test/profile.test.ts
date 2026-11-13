@@ -568,7 +568,7 @@ describe("refusals", () => {
       {
         line: 3,
         col: 1,
-        message: "missing `// module: nish/<name>` first line",
+        message: "missing `// module: <root>/<path>` first line",
       },
     ]);
   });
