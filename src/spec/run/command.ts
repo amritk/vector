@@ -58,11 +58,17 @@ export const runFindRoot = (flag: string | null): Result<string, string> => {
   return Ok(root)
 }
 
-/** The program run in a scratch install of `root`, removed afterwards. */
+/**
+ * The program run in a scratch install of `root`, removed afterwards. A
+ * scratch that cannot be removed is warned about, and the verdict stands.
+ */
 const runInScratch = (c: Contract, program: string, root: string): Result<RunResult, string> => {
   const s = runMakeScratch(root, [], []).orReturn()
   const ran = runTest(c, program, s.nish, RUN_TIMEOUT_MS)
-  runDisposeScratch(s).orReturn()
+  const gone = runDisposeScratch(s)
+  if (gone.isErr()) {
+    console.error(`vector: warning: spec run: ${gone.error}`)
+  }
   return ran
 }
 

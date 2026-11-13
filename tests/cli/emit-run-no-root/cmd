@@ -1,0 +1,1 @@
+vector spec run contracts/example-hex.json --nish-root tests/no-such-dir

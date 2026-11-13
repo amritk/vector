@@ -83,10 +83,9 @@ export const emitWriteFile = (path: string, data: string): Result<boolean, strin
       continue
     }
     if (written < 0) {
-      // Only these fail after the file was made, leaving a temporary to remove.
-      if (written === -28 || written === -5 || written === -27) {
-        unlinkSync(temp)
-      }
+      // A failed write may leave the temporary behind; its name is random
+      // and ours, so removing it whether or not it was made is safe.
+      unlinkSync(temp)
       return Err(`${path}: cannot write file (errno ${-written})`)
     }
     const renamed = renameSync(temp, path)

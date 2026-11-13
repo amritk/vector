@@ -8,6 +8,7 @@ import {
   RunClause,
   RunOutcome,
   runDisposeScratch,
+  runEscape,
   runFormatJson,
   runFormatMarkdown,
   runFormatText,
@@ -107,6 +108,15 @@ export const main = (): i32 => {
   t.ok("two end lines are a problem", runTranscript(c, forged, nonce, runParse(c, forged)).length > 0)
   const skipped = replaceAll(good, "PASS  [P-ODD]", "SKIP  [P-ODD]")
   t.eqStr("a skipped clause: ERROR", statusOf(c, skipped, nonce, 0), "ERROR")
+  t.eqStr("a control character is escaped", runEscape("a\u001b[31mb\tc\u007f"), "a\\x1b[31mb\\x09c\\x7f")
+  t.eqStr("a backtick cannot close a code span", runEscape("`x`"), "'x'")
+  t.eqStr("a short line is kept", runEscape("PASS  [V1] é"), "PASS  [V1] é")
+  let long = ""
+  for (let i = 0; i < 499; i++) {
+    long = `${long}x`
+  }
+  t.eqStr("a long line is cut", runEscape(`${long}yz`), `${long}y…`)
+  t.eqStr("but not inside a character", runEscape(`${long}éz`), `${long}…`)
   const empty: RunClause[] = []
   t.eqStr("no clauses at all: ERROR", runJudge(c, empty, 0, []).status, "ERROR")
 

@@ -465,7 +465,7 @@ const runRemove = (dir: string): Result<boolean, string> => {
 }
 
 const runCopy = (from: string, to: string): Result<boolean, string> => {
-  const r = runProcess(["cp", "-R", from, to], "", 120000).orReturn()
+  const r = runProcess(["cp", "-RP", from, to], "", 120000).orReturn()
   if (r.status !== 0) {
     return Err(`cannot copy ${from} to ${to}: ${r.stderr}`)
   }
@@ -496,7 +496,17 @@ const runFillScratch = (
       runCopy(joinPath(seed, e), joinPath(s.dir, e)).orReturn()
     }
   }
-  runCopy(joinPath(nishRoot, "std"), joinPath(s.dir, "std")).orReturn()
+  // Symlinks are copied as links, so one in std/ would let an override
+  // write through to the real library: refuse any.
+  const std = joinPath(s.dir, "std")
+  runCopy(joinPath(nishRoot, "std"), std).orReturn()
+  const links = runProcess(["find", std, "-type", "l"], "", 120000).orReturn()
+  if (links.status !== 0) {
+    return Err(`cannot look for symlinks in ${std}: ${links.stderr}`)
+  }
+  if (links.stdout.length > 0) {
+    return Err(`${joinPath(nishRoot, "std")} is or holds a symlink, which an override could write through`)
+  }
   for (let i = 0; i < paths.length; i++) {
     const target = joinPath(s.dir, paths[i])
     const parent = target.substring(0, target.length - basename(target).length - 1)
@@ -514,7 +524,7 @@ const runFillScratch = (
  * without its std, the root's own `std/`, and the overrides written over it.
  * `nish run` resolves `nish/…` imports to the std beside its binary, so a
  * test run with the scratch's compiler sees the overridden library and
- * nothing else does.
+ * nothing else does. A `std/` that is or holds a symlink is refused.
  *
  * @param nishRoot a nish install or checkout
  * @param paths where each override goes, relative and under `std/`
@@ -564,9 +574,12 @@ export const runTest = (c: Contract, source: string, nishBin: string, timeoutMs:
   const nonce = runNonce()
   const ran: Result<ProcessResult, string> =
     n < 0 ? Err(`cannot write ${file} (errno ${-n})`) : runProcess([nishBin, "run", file, nonce], "", timeoutMs)
-  runRemove(dir).orReturn()
+  const gone = runRemove(dir)
+  if (gone.isErr()) {
+    console.error(`vector: warning: spec run: ${gone.error}`)
+  }
   const p = ran.orReturn()
-  const out = new RunResult(c.contract, p.status, p.stdout, p.stderr)
+  const out = new RunResult(c.contract, p.status, runKeepTail(p.stdout), runKeepTail(p.stderr))
   if (p.timedOut) {
     out.integrity.push(`the test did not finish within ${timeoutMs} ms`)
   }
@@ -576,6 +589,57 @@ export const runTest = (c: Contract, source: string, nishBin: string, timeoutMs:
   }
   out.verdict = runJudge(c, out.clauses, p.status, out.integrity)
   return Ok(out)
+}
+
+/** The most of a run's stdout or stderr a result keeps: its last 64 KiB. */
+const RUN_KEEP_CHARS: i32 = 65536
+
+/**
+ * The end of a run's output, at most RUN_KEEP_CHARS bytes of it, starting
+ * at a line's start so no line or character is kept in part.
+ */
+const runKeepTail = (text: string): string => {
+  if (text.length <= RUN_KEEP_CHARS) {
+    return text
+  }
+  const from = text.indexOf("\n", text.length - RUN_KEEP_CHARS - 1)
+  return from < 0 ? "" : text.substring(from + 1, text.length)
+}
+
+/** The longest line of the module's output a report shows. */
+const RUN_LINE_CHARS: i32 = 500
+
+/**
+ * A line the module printed, made safe to show in a terminal or in markdown:
+ * a control character (an ANSI escape's ESC among them) becomes `\xNN`, a
+ * backtick becomes `'`, and past RUN_LINE_CHARS bytes it is cut, between
+ * characters, with `…`.
+ *
+ * @param text the line
+ * @returns the line as a report shows it
+ */
+export const runEscape = (text: string): string => {
+  const out: string[] = []
+  let n = text.length > RUN_LINE_CHARS ? RUN_LINE_CHARS : text.length
+  // The cut is in bytes: back off a UTF-8 continuation byte, so no character is split.
+  while (n > 0 && n < text.length && (toI32(text.charCodeAt(n)) & 0xc0) === 0x80) {
+    n -= 1
+  }
+  for (let i = 0; i < n; i++) {
+    const c = toI32(text.charCodeAt(i))
+    if (c < 32 || c === 127) {
+      const h = toHex([toU8(c)])
+      out.push(`\\x${h}`)
+    } else if (c === 96) {
+      out.push("'")
+    } else {
+      out.push(text.substring(i, i + 1))
+    }
+  }
+  if (n < text.length) {
+    out.push("…")
+  }
+  return out.join("")
 }
 
 const runTail = (text: string, n: i32): string[] => {
@@ -599,11 +663,11 @@ export const runFormatText = (r: RunResult): string[] => {
   }
   for (const k of r.clauses) {
     if (k.outcome === RunOutcome.Fail) {
-      out.push(k.detail.length > 0 ? `${k.line}\n      ${k.detail}` : k.line)
+      out.push(k.detail.length > 0 ? `${runEscape(k.line)}\n      ${runEscape(k.detail)}` : runEscape(k.line))
     }
   }
   for (const m of r.integrity) {
-    out.push(`integrity: ${m}`)
+    out.push(`integrity: ${runEscape(m)}`)
   }
   let anyRan = false
   for (const k of r.clauses) {
@@ -613,7 +677,7 @@ export const runFormatText = (r: RunResult): string[] => {
   }
   if (r.verdict.status === "ERROR" && !anyRan) {
     for (const l of runTail(`${r.stdout}${r.stderr}`, 20)) {
-      out.push(`  | ${l}`)
+      out.push(`  | ${runEscape(l)}`)
     }
   }
   return out
@@ -634,14 +698,14 @@ export const runFormatMarkdown = (r: RunResult): string => {
   for (const k of r.clauses) {
     if (k.outcome === RunOutcome.Fail) {
       out.push("")
-      out.push(`- \`${k.line}\`${k.detail.length > 0 ? `: ${k.detail}` : ""}`)
+      out.push(`- \`${runEscape(k.line)}\`${k.detail.length > 0 ? `: ${runEscape(k.detail)}` : ""}`)
     }
   }
   if (r.integrity.length > 0) {
     out.push("")
     out.push("The transcript cannot be trusted:")
     for (const m of r.integrity) {
-      out.push(`- ${m}`)
+      out.push(`- ${runEscape(m)}`)
     }
   }
   return `${out.join("\n")}\n`

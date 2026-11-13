@@ -1,15 +1,12 @@
 /**
  * `cli/spec-run` — `vector spec run`: emit a contract's Nish test and run it.
  *
- * Only the command's shape is declared here; the handler still exits 2. The
- * command itself is `runCommand` in `spec/run/command`, which the binary cannot link yet:
- * `spec/contract/types` and `verify/lang/ast` both declare `Expr`, `Param`
- * and `Clause`, and a Nish class name must be unique across the program.
- * Once one side is renamed, `run` calls `runCommand`.
+ * The command itself is `runCommand` in `spec/run/command`; this file declares its
+ * flags and hands them over.
  */
 
 import { Cli, ParseResult } from "nish/cli-args"
-import { report, usageError } from "../core/diag"
+import { RunRequest, runCommand } from "../spec/run/command"
 
 /** The id `vector spec run` is parsed to. */
 export const SPEC_RUN_ID: i32 = 6
@@ -50,13 +47,19 @@ export class SpecRunCommand {
   }
 
   /**
-   * Runs the command.
+   * Runs the command. `--spec` is accepted and not read: the contract's
+   * quotes are `spec check`'s to verify.
    *
-   * @param _r the parsed arguments (unread until the handler lands)
+   * @param r the parsed arguments
    * @returns the exit code
    */
-  run(_r: ParseResult): i32 {
-    return report(usageError("spec run: not implemented yet"))
+  run(r: ParseResult): i32 {
+    const req = new RunRequest(r.positional(this.contractJsonArg) ?? "")
+    req.out = r.value(this.outFlag)
+    req.nishRoot = r.value(this.nishRootFlag)
+    req.nish = r.value(this.nishFlag)
+    req.format = r.value(this.formatFlag) ?? "text"
+    return runCommand(req)
   }
 }
 
