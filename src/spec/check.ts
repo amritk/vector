@@ -23,6 +23,7 @@ import { gateCoverage } from "./gates/coverage"
 import { gateFidelity } from "./gates/fidelity"
 import { gateIds } from "./gates/ids"
 import { gateProvenance } from "./gates/provenance"
+import { gateSignatures } from "./gates/signatures"
 import { gateTyping } from "./gates/typing"
 import { SourceSet } from "./source/load"
 
@@ -288,6 +289,7 @@ export const checkGates = (): CheckGateEntry[] => [
   new CheckGateEntry("fidelity", gateFidelity, false),
   new CheckGateEntry("completeness", gateCompleteness, false),
   new CheckGateEntry("provenance", gateProvenance, false),
+  new CheckGateEntry("signatures", gateSignatures, false),
 ]
 
 /**
