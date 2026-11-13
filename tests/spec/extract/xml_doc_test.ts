@@ -67,7 +67,7 @@ const xmlDocTestRefusals = (t: Suite): void => {
   t.eqStr(
     "malformed, at its line",
     bad.isErr() ? bad.error : "ok",
-    "y.xml:2: malformed XML: </rfc> closes <a> from line 2",
+    "y.xml:2: malformed XML: </rfc> closes <a>, opened at y.xml:2",
   )
   const hidden = xmlRead(
     '<rfc number="9"><middle><section><name>A</name><t>It MU\u{200b}ST.</t></section></middle></rfc>',

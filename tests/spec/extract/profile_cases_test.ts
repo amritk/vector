@@ -191,7 +191,8 @@ const profileCasesTestOne = (f: ProfileRefusal, path: string): string => {
 const profileCasesTestReadAt = (all: ProfileCasesTestRfcs, xml: string, path: string): string => {
   const doc = xmlDocParse(xml)
   if (doc.isErr()) {
-    return `xml ${doc.error.line} ${doc.error.message}`
+    const see = doc.error.see
+    return `xml ${doc.error.line} ${doc.error.message}${see !== null ? ` line ${see.line}` : ""}`
   }
   const r = profileRead(doc.value, path, null, profileCasesTestRfcs(all))
   if (r.isErr()) {
@@ -692,7 +693,7 @@ const profileCasesTestSentences = (t: Suite, all: ProfileCasesTestRfcs): void =>
   t.eqStr(
     "a requirement id given twice is refused by the parser, at the second",
     profileCasesTestRead(all, profileCasesTestLines([PROFILE_CASES_REQ, replaceAll(PROFILE_CASES_REQ, "work", "run")])),
-    `xml 9 anchor "R-A" is used again; first on line 8`,
+    `xml 9 anchor "R-A" is used again; first used at line 8`,
   )
 }
 
@@ -1498,13 +1499,18 @@ const profileCasesTestLocator = (t: Suite, all: ProfileCasesTestRfcs): void => {
   const keys = ["R-A", "R-B.2", "V1", "V.2", "hexDecode", "hexEncode", "isHex"]
   t.eqStr(
     "locator: each part's line",
-    keys.map((k: string): string => `${k} ${l.at.get(k) ?? -1}`).join(", "),
+    keys
+      .map((k: string): string => {
+        const w = l.at.get(k)
+        return `${k} ${w !== undefined ? w.line : -1}`
+      })
+      .join(", "),
     "R-A 8, R-B.2 9, V1 11, V.2 12, hexDecode 4, hexEncode 5, isHex 6",
   )
   const w = profileLocate(l, "V.2.expect")
   t.eqStr("locator: a sub-path falls back to its clause", `${w.file}:${w.line}`, "specs/t.xml:12")
-  t.eqStr("locator: a source is at the root", `${profileLocate(l, "sources.rfc4648").line}`, `${l.root}`)
-  t.eqStr("locator: nothing is at the root", `${profileLocate(l, "").line}`, `${l.root}`)
+  t.eqStr("locator: a source is at the root", `${profileLocate(l, "sources.rfc4648").line}`, `${l.root.line}`)
+  t.eqStr("locator: nothing is at the root", `${profileLocate(l, "").line}`, `${l.root.line}`)
 }
 
 // ── The main source ─────────────────────────────────────────────────────────

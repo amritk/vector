@@ -20,13 +20,12 @@
  *
  * Every BCP 14 sentence must be a requirement or an exclusion, every xref to
  * an RFC must have a `<reference>`, and every section cited must exist in
- * the RFC handed over. A refusal names the markdown line where the XML
- * carries kramdown-rfc's `<?line N?>` and the markdown file is known, else
- * the XML line. That line can run late after a table: kramdown-rfc writes no
- * `<?line?>` inside one, so a refusal past it names the last line it wrote.
+ * the RFC handed over. Where a refusal is placed is profileWhere's rule: a
+ * markdown line only where the XML vouches for it, never one extrapolated.
  */
 
 import { split } from "nish/text"
+import { diagPlace } from "../../core/diag"
 import { charsFirstControl, charsIsId, charsIsSection } from "../contract/chars"
 import {
   RawCall,
@@ -85,6 +84,10 @@ export class ProfileRefusal {
   col: i32
   /** Why the profile was refused. */
   message: string
+  /** The XML file when `line` is only the last `<?line?>` mark's markdown line; "" otherwise. */
+  exactFile = ""
+  /** The XML line the refusal is on, when `exactFile` is set; 0 otherwise. */
+  exactLine: i32 = 0
   /**
    * Makes a refusal.
    *
@@ -101,12 +104,16 @@ export class ProfileRefusal {
   }
 }
 
-/** A file and a line in it. */
+/** A file and a line in it, and the XML line when that line is only near. */
 export class ProfileWhere {
   /** The file the line is in. */
   file: string
   /** The 1-based line. */
   line: i32
+  /** The XML file when `line` is only the last `<?line?>` mark's markdown line; "" when `line` is exact. */
+  exactFile = ""
+  /** The XML line the place is on, when `exactFile` is set; 0 otherwise. */
+  exactLine: i32 = 0
   /**
    * Makes a place.
    *
@@ -117,6 +124,42 @@ export class ProfileWhere {
     this.file = file
     this.line = line
   }
+}
+
+/** The markdown a spec was built from: its path, and how many lines it has. */
+export class ProfileMd {
+  /** The markdown file. */
+  path: string
+  /** Its number of lines; no place past the last is printed. */
+  lines: i32
+  /**
+   * Makes a markdown file's record.
+   *
+   * @param path the file
+   * @param lines how many lines it has
+   */
+  constructor(path: string, lines: i32) {
+    this.path = path
+    this.lines = lines
+  }
+}
+
+/**
+ * Reads the markdown a spec was built from, to count its lines.
+ *
+ * @param path the markdown file, or null
+ * @returns its record; null when there is no path or it cannot be read
+ */
+export const profileMdRead = (path: string | null): ProfileMd | null => {
+  if (path === null) {
+    return null
+  }
+  const text = readFileSyncOrNull(path)
+  if (text === null) {
+    return null
+  }
+  const lines = split(text, "\n").length
+  return new ProfileMd(path, text.endsWith("\n") ? lines - 1 : lines)
 }
 
 /** The RFCs a spec may cite, read beforehand, and the ones it needed but were not there. */
@@ -138,25 +181,18 @@ export class ProfileRfcs {
  * `exclusion §N` as the gates name it.
  */
 export class ProfileLocator {
-  /** The file of `root`, and of each line not in `files`. */
-  file: string
-  /** The line of the document's root, for what names no part. */
-  root: i32
-  /** The line of each part, by its key: a requirement or clause id, a function name, or `exclusion §N`. */
-  at: Map<string, i32>
-  /** The file of a line when it is not `file`. */
-  files: Map<string, string>
+  /** The document root's place, for what names no part. */
+  root: ProfileWhere
+  /** The place of each part, by its key: a requirement or clause id, a function name, or `exclusion §N`. */
+  at: Map<string, ProfileWhere>
   /**
    * Makes a locator with no part.
    *
-   * @param file the root's file
-   * @param root the root's line
+   * @param root the root's place
    */
-  constructor(file: string, root: i32) {
-    this.file = file
+  constructor(root: ProfileWhere) {
     this.root = root
-    this.at = new Map<string, i32>()
-    this.files = new Map<string, string>()
+    this.at = new Map<string, ProfileWhere>()
   }
 }
 
@@ -178,13 +214,15 @@ export class ProfileRead {
   }
 }
 
-/** An XML line and, when known, the markdown line. */
+/** An XML line, and the last `<?line?>` mark before it: its markdown line (-1 for none) and XML line. */
 class ProfileLoc {
   line: i32
   mdLine: i32
-  constructor(line: i32, mdLine: i32) {
+  markLine: i32
+  constructor(line: i32, mdLine: i32, markLine: i32) {
     this.line = line
     this.mdLine = mdLine
+    this.markLine = markLine
   }
 }
 
@@ -248,7 +286,7 @@ class ProfileTable {
 class ProfileContext {
   doc: XmlDocument
   xmlPath: string
-  mdPath: string | null
+  md: ProfileMd | null
   rfcs: ProfileRfcs
   refusals: ProfileRefusal[]
   /** Each reference's anchor, and the RFC it names (-1 for none). */
@@ -273,10 +311,10 @@ class ProfileContext {
   vectorLocs: ProfileLoc[]
   properties: Clause[]
   propertyLocs: ProfileLoc[]
-  constructor(doc: XmlDocument, xmlPath: string, mdPath: string | null, rfcs: ProfileRfcs) {
+  constructor(doc: XmlDocument, xmlPath: string, md: ProfileMd | null, rfcs: ProfileRfcs) {
     this.doc = doc
     this.xmlPath = xmlPath
-    this.mdPath = mdPath
+    this.md = md
     this.rfcs = rfcs
     this.refusals = []
     this.referenced = new Map<string, i32>()
@@ -305,35 +343,74 @@ class ProfileContext {
 
 // ── Places ─────────────────────────────────────────────────────────────────
 
-const profileLocOf = (n: XmlNode): ProfileLoc => new ProfileLoc(n.line, n.mdLine)
+const profileLocOf = (n: XmlNode): ProfileLoc => new ProfileLoc(n.line, n.mdLine, n.markLine)
 
-/** `loc` moved `n` lines down, in the XML and in the markdown alike. */
-const profileBelow = (loc: ProfileLoc, n: i32): ProfileLoc =>
-  new ProfileLoc(loc.line + n, loc.mdLine >= 0 ? loc.mdLine + n : -1)
+/** `loc` moved `n` lines down the XML; the mark stays, so the markdown line is no longer exact. */
+const profileBelow = (loc: ProfileLoc, n: i32): ProfileLoc => new ProfileLoc(loc.line + n, loc.mdLine, loc.markLine)
 
 /**
- * Where a place is printed: the markdown file at its markdown line when both
- * are known, else the XML file at its XML line.
+ * Where a place is printed. The markdown file at its markdown line when the
+ * place stands on a `<?line N?>` mark's own XML line, the one line whose
+ * markdown line the XML vouches for. Below a mark, the markdown file at the
+ * mark's line together with the XML file at the place's line, since
+ * kramdown-rfc's XML does not follow the markdown line for line. The XML file
+ * at its XML line when there is no markdown file, no mark before the place,
+ * or the mark names a line past the markdown's end.
  *
  * @param line the XML line
- * @param mdLine the markdown line, or -1
+ * @param mdLine the last mark's markdown line, or -1
+ * @param markLine the XML line that mark stands on
  * @param xmlPath the XML file
- * @param mdPath the markdown file, or null
- * @returns the file and line
+ * @param md the markdown file, or null
+ * @returns the file and line, and the XML line when the markdown line is only near
  */
-export const profileWhere = (line: i32, mdLine: i32, xmlPath: string, mdPath: string | null): ProfileWhere => {
-  if (mdPath !== null && mdLine >= 0) {
-    return new ProfileWhere(mdPath, mdLine)
+export const profileWhere = (
+  line: i32,
+  mdLine: i32,
+  markLine: i32,
+  xmlPath: string,
+  md: ProfileMd | null,
+): ProfileWhere => {
+  if (md === null || mdLine < 1 || mdLine > md.lines) {
+    return new ProfileWhere(xmlPath, line)
   }
-  return new ProfileWhere(xmlPath, line)
+  const w = new ProfileWhere(md.path, mdLine)
+  if (line !== markLine) {
+    w.exactFile = xmlPath
+    w.exactLine = line
+  }
+  return w
+}
+
+/**
+ * A place as it is printed: `file:line`, or `md:line (xml:line)` when the
+ * markdown line is only near.
+ *
+ * @param w the place
+ * @returns its text
+ */
+export const profileWhereText = (w: ProfileWhere): string => diagPlace(w.file, w.line, 0, w.exactFile, w.exactLine)
+
+/**
+ * Makes a refusal at a place.
+ *
+ * @param w the place
+ * @param col the column, or 0
+ * @param message why
+ * @returns the refusal
+ */
+export const profileRefusalAt = (w: ProfileWhere, col: i32, message: string): ProfileRefusal => {
+  const r = new ProfileRefusal(w.file, w.line, col, message)
+  r.exactFile = w.exactFile
+  r.exactLine = w.exactLine
+  return r
 }
 
 const profileWhereOf = (c: ProfileContext, loc: ProfileLoc): ProfileWhere =>
-  profileWhere(loc.line, loc.mdLine, c.xmlPath, c.mdPath)
+  profileWhere(loc.line, loc.mdLine, loc.markLine, c.xmlPath, c.md)
 
 const profileRefuseAt = (c: ProfileContext, loc: ProfileLoc, message: string, col: i32): void => {
-  const w = profileWhereOf(c, loc)
-  c.refusals.push(new ProfileRefusal(w.file, w.line, col, message))
+  c.refusals.push(profileRefusalAt(profileWhereOf(c, loc), col, message))
 }
 
 const profileRefuse = (c: ProfileContext, n: XmlNode, message: string): void => {
@@ -350,6 +427,9 @@ const profileSortRefusals = (rs: ProfileRefusal[]): ProfileRefusal[] =>
   rs.sort((a: ProfileRefusal, b: ProfileRefusal): i32 => {
     if (a.line !== b.line) {
       return a.line < b.line ? -1 : 1
+    }
+    if (a.exactLine !== b.exactLine) {
+      return a.exactLine < b.exactLine ? -1 : 1
     }
     if (a.col !== b.col) {
       return a.col < b.col ? -1 : 1
@@ -862,7 +942,7 @@ const profileFronted = (c: ProfileContext, node: XmlNode, kind: string): boolean
 
 const profileFrontRefuse = (c: ProfileContext, node: XmlNode, rs: FrontRefusal[]): void => {
   const code = xmlCodeOf(node)
-  const at = new ProfileLoc(code.line, code.mdLine)
+  const at = new ProfileLoc(code.line, code.mdLine, code.markLine)
   for (const r of rs) {
     profileRefuseAt(c, profileBelow(at, r.line - 1), r.message, r.col)
   }
@@ -892,7 +972,7 @@ const profileReadInterface = (c: ProfileContext, code: XmlNode[]): void => {
   const got = r.value
   c.functions = got.functions
   c.module = got.module
-  const at = new ProfileLoc(code0.line, code0.mdLine)
+  const at = new ProfileLoc(code0.line, code0.mdLine, code0.markLine)
   for (const l of got.lines) {
     c.fnLocs.push(profileBelow(at, l - 1))
   }
@@ -1515,7 +1595,7 @@ const profileReadProperties = (c: ProfileContext, code: XmlNode[]): void => {
       continue
     }
     const p = r.value
-    const at = new ProfileLoc(block.line, block.mdLine)
+    const at = new ProfileLoc(block.line, block.mdLine, block.markLine)
     const title = p.title ?? ""
     profileCheckId(c, p.id, at)
     profileCheckCovers(c, p.covers, at)
@@ -1708,21 +1788,16 @@ const profileShapeRefusals = (c: ProfileContext, out: Contract, clauseLocs: Prof
     } else if (f >= 0 && f < c.fnLocs.length) {
       loc = c.fnLocs[f]
     }
-    const w = profileWhereOf(c, loc)
-    shape.push(new ProfileRefusal(w.file, w.line, 0, `the contract read here is not valid: ${issue}`))
+    shape.push(profileRefusalAt(profileWhereOf(c, loc), 0, `the contract read here is not valid: ${issue}`))
   }
-  return shape.sort((a: ProfileRefusal, b: ProfileRefusal): i32 => (a.line < b.line ? -1 : a.line > b.line ? 1 : 0))
+  return profileSortRefusals(shape)
 }
 
 const profilePut = (c: ProfileContext, l: ProfileLocator, key: string, loc: ProfileLoc): void => {
   if (l.at.has(key)) {
     return
   }
-  const w = profileWhereOf(c, loc)
-  l.at.set(key, w.line)
-  if (w.file !== l.file) {
-    l.files.set(key, w.file)
-  }
+  l.at.set(key, profileWhereOf(c, loc))
 }
 
 const profileSorted = (c: ProfileContext): Result<ProfileRead, ProfileRefusal[]> => Err(profileSortRefusals(c.refusals))
@@ -1732,17 +1807,17 @@ const profileSorted = (c: ProfileContext): Result<ProfileRead, ProfileRefusal[]>
  *
  * @param doc the spec, parsed
  * @param xmlPath the spec's path, whose basename names the contract
- * @param mdPath the markdown it was built from, for refusals at its lines; null when unknown
+ * @param md the markdown it was built from, for refusals at its lines; null when unknown
  * @param rfcs the RFCs it may cite; one asked for and absent is recorded in `rfcs.missing`
  * @returns the contract and where each part was read, or every refusal, in line order
  */
 export const profileRead = (
   doc: XmlDocument,
   xmlPath: string,
-  mdPath: string | null,
+  md: ProfileMd | null,
   rfcs: ProfileRfcs,
 ): Result<ProfileRead, ProfileRefusal[]> => {
-  const c = new ProfileContext(doc, xmlPath, mdPath, rfcs)
+  const c = new ProfileContext(doc, xmlPath, md, rfcs)
   for (const r of doc.references) {
     c.referenced.set(r.anchor, r.rfc)
   }
@@ -1833,8 +1908,7 @@ export const profileRead = (
   if (shape.length > 0) {
     return Err(shape)
   }
-  const root = profileWhereOf(c, profileLocOf(doc.root))
-  const l = new ProfileLocator(root.file, root.line)
+  const l = new ProfileLocator(profileWhereOf(c, profileLocOf(doc.root)))
   if (key !== null) {
     profilePut(c, l, "source.main", profileLocOf(key))
   }
@@ -1865,14 +1939,13 @@ export const profileRead = (
 export const profileLocate = (l: ProfileLocator, at: string): ProfileWhere => {
   let k = at
   while (true) {
-    const line = l.at.get(k)
-    if (line !== undefined) {
-      const file = l.files.get(k)
-      return new ProfileWhere(file !== undefined ? file : l.file, line)
+    const w = l.at.get(k)
+    if (w !== undefined) {
+      return w
     }
     const dot = profileLastDot(k)
     if (dot < 0) {
-      return new ProfileWhere(l.file, l.root)
+      return l.root
     }
     k = k.substring(0, dot)
   }

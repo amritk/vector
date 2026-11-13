@@ -1,5 +1,6 @@
 import { Suite } from "nish/testing"
 import { replaceAll, split } from "nish/text"
+import { diagPlace } from "../../../src/core/diag"
 import { joinPath, makeTempDir, mkdirAll } from "../../../src/core/fs"
 import {
   ExtractOutcome,
@@ -18,7 +19,9 @@ const extractTestOutcome = (o: ExtractOutcome): string => {
     return `error ${o.errors.join("; ")}`
   }
   if (o.refusals.length > 0) {
-    return o.refusals.map((f): string => `${f.file}:${f.line} ${f.message}`).join("\n")
+    return o.refusals
+      .map((f): string => `${diagPlace(f.file, f.line, 0, f.exactFile, f.exactLine)} ${f.message}`)
+      .join("\n")
   }
   return "ok"
 }
@@ -60,7 +63,7 @@ const extractTestRefusals = (t: Suite, readers: SourceReaders): void => {
   t.contains(
     "a refusal at the markdown line",
     extractTestOutcome(k),
-    "tests/fixtures/xmlv3/kramdown.md:25 a <texttable> is v2 XML; write a v3 <table> (xml2rfc --v2v3 converts one)",
+    "tests/fixtures/xmlv3/kramdown.md:17 (tests/fixtures/xmlv3/kramdown.xml:57) a <texttable> is v2 XML; write a v3 <table> (xml2rfc --v2v3 converts one)",
   )
   t.eqStr(
     "a spec that is not there",
@@ -123,7 +126,7 @@ const extractTestTree = (t: Suite, readers: SourceReaders): void => {
   t.eqStr(
     "malformed XML, at its line",
     extractTestOutcome(extractContract(spec, out, tmp, readers)),
-    `${spec}:2 malformed XML: </rfc> closes <a> from line 2`,
+    `${spec}:2 malformed XML: </rfc> closes <a>, opened at ${spec}:2`,
   )
 }
 

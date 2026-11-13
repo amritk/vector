@@ -21,8 +21,11 @@ import {
   ProfileRefusal,
   ProfileRfcs,
   profileLocate,
+  profileMdRead,
   profileRead,
+  profileRefusalAt,
   profileWhere,
+  profileWhereText,
 } from "./profile/profile"
 import { hiddenProblem } from "./source/hidden"
 import { SourceReaders, sourceReaderFor, sourceReadersAdd, sourceReadersDefault } from "./source/load"
@@ -360,7 +363,7 @@ export const extractContract = (
     out.errors.push(`cannot read ${xmlPath}`)
     return out
   }
-  const md = extractMdBeside(xmlPath)
+  const md = profileMdRead(extractMdBeside(xmlPath))
   const hidden = hiddenProblem(text, xmlPath)
   if (hidden !== null) {
     out.refusals.push(new ProfileRefusal(xmlPath, 0, 0, hidden))
@@ -369,8 +372,15 @@ export const extractContract = (
   const parsed = xmlDocParse(text)
   if (parsed.isErr()) {
     const e = parsed.error
-    const w = profileWhere(e.line, e.mdLine, xmlPath, md)
-    out.refusals.push(new ProfileRefusal(w.file, w.line, w.file === xmlPath ? e.col : 0, e.message))
+    const w = profileWhere(e.line, e.mdLine, e.markLine, xmlPath, md)
+    // The column counts along the XML line, so it goes only where that line is printed.
+    const col = w.file === xmlPath || w.exactFile !== "" ? e.col : 0
+    const see = e.see
+    const message =
+      see !== null
+        ? `${e.message} ${profileWhereText(profileWhere(see.line, see.mdLine, see.markLine, xmlPath, md))}`
+        : e.message
+    out.refusals.push(profileRefusalAt(w, col, message))
     return out
   }
   const doc = parsed.value
@@ -428,17 +438,15 @@ const extractGateRowAdd = (
   // naming that source places it, and the message says which section.
   if (at.startsWith("\u00a7")) {
     const of = mainRfc >= 1 ? ` of RFC${mainRfc}` : ""
-    const w = profileLocate(locator, "source.main")
     const text = `${gate}: Section ${at.substring("\u00a7".length)}${of}: ${message}`
-    rows.push(new ExtractGateRow(new ProfileRefusal(w.file, w.line, 0, text), false))
+    rows.push(new ExtractGateRow(profileRefusalAt(profileLocate(locator, "source.main"), 0, text), false))
     return
   }
   // A note the locator places is at its part's line, which says where; one
   // it cannot place falls to the root, so its `at` stays in the text and two
   // root notes with one message stay two.
   const text = at.length > 0 && !extractPlaced(locator, at) ? `${gate}: ${at}: ${message}` : `${gate}: ${message}`
-  const w = profileLocate(locator, at)
-  rows.push(new ExtractGateRow(new ProfileRefusal(w.file, w.line, 0, text), false))
+  rows.push(new ExtractGateRow(profileRefusalAt(profileLocate(locator, at), 0, text), false))
 }
 
 /** Whether the locator holds `at` or a dotted prefix of it, as profileLocate looks it up. */

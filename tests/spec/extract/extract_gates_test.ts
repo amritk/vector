@@ -19,7 +19,7 @@ import {
   extractReaders,
   extractUnifiedDiff,
 } from "../../../src/spec/extract"
-import { ProfileLocator } from "../../../src/spec/profile/profile"
+import { ProfileLocator, ProfileWhere } from "../../../src/spec/profile/profile"
 import { SourceReaders } from "../../../src/spec/source/load"
 import { xmlRead } from "../../../src/spec/xml/doc"
 
@@ -37,10 +37,10 @@ const extractGatesTestIssue = (
 
 /** Each refusal once, sorted by line; a main-source section at the line naming it; the sidecar's last. */
 const extractGatesTestRows = (t: Suite): void => {
-  const locator = new ProfileLocator("s.xml", 1)
-  locator.at.set("V1", 7)
-  locator.at.set("V2", 9)
-  locator.at.set("source.main", 5)
+  const locator = new ProfileLocator(new ProfileWhere("s.xml", 1))
+  locator.at.set("V1", new ProfileWhere("s.xml", 7))
+  locator.at.set("V2", new ProfileWhere("s.xml", 9))
+  locator.at.set("source.main", new ProfileWhere("s.xml", 5))
   const report = new CheckReport(new SampleTable())
   const notes: CheckNote[] = []
   const fid = "1-byte value is not printed in §6"
@@ -206,8 +206,8 @@ const extractGatesTestSources = (t: Suite, readers: SourceReaders): void => {
     "it says nothing citing it can be checked",
     sources.length === 1 && sources[0].message.endsWith(", so nothing citing it can be checked"),
   )
-  const locator = new ProfileLocator(xml, 1)
-  locator.at.set("source.main", 5)
+  const locator = new ProfileLocator(new ProfileWhere(xml, 1))
+  locator.at.set("source.main", new ProfileWhere(xml, 5))
   const rows = extractGateRefusals(report, check.notes, locator, `${lone}.survivors.json`, c.value.source.rfc)
     .filter((r): boolean => r.message.indexOf("sources: ") >= 0)
     .map((r): string => `${r.file === xml ? "spec" : r.file}:${r.line}: ${r.message}`)

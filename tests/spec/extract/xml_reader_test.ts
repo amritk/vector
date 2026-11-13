@@ -20,13 +20,14 @@ const xmlReaderTestRepeat = (s: string, n: i32): string => {
   return parts.join("")
 }
 
-/** A refusal as `line:col md=N message`, or `ok <root>` when the text parses. */
+/** A refusal as `line:col md=N[@M] message[ see L]` (M the mark's XML line when there is one, L the second place's), or `ok <root>` when the text parses. */
 const xmlReaderTestErr = (text: string): string => {
   const r = xmlParse(text)
   if (r.isOk()) {
     return `ok <${r.value.name}>`
   }
-  return `${r.error.line}:${r.error.col} md=${r.error.mdLine} ${r.error.message}`
+  const see = r.error.see
+  return `${r.error.line}:${r.error.col} md=${r.error.mdLine}${r.error.mdLine >= 0 ? `@${r.error.markLine}` : ""} ${r.error.message}${see !== null ? ` see ${see.line}` : ""}`
 }
 
 /** The root, which the test expects to parse. */
@@ -72,17 +73,17 @@ const xmlReaderTestLines = (t: Suite): void => {
   t.eqStr(
     "no <?line?>: md=-1",
     xmlReaderTestErr("<rfc>\n<a>\n</rfc>"),
-    "3:6 md=-1 malformed XML: </rfc> closes <a> from line 2",
+    "3:6 md=-1 malformed XML: </rfc> closes <a>, opened at see 2",
   )
   t.eqStr(
-    "after <?line 40?>, two lines on",
+    "after <?line 40?>, the mark's markdown line, not one extrapolated from it",
     xmlReaderTestErr("<rfc>\n<?line 40?>\n<a>\n</rfc>"),
-    "4:6 md=42 malformed XML: </rfc> closes <a> from line 3",
+    "4:6 md=40@2 malformed XML: </rfc> closes <a>, opened at see 3",
   )
   t.eqStr(
     "a signed <?line -N?> corrects later lines",
     xmlReaderTestErr("<rfc>\n<?line 40?>\n<?line -10?>\n<?line 40?>\n<a>\n</rfc>"),
-    "6:6 md=32 malformed XML: </rfc> closes <a> from line 5",
+    "6:6 md=30@4 malformed XML: </rfc> closes <a>, opened at see 5",
   )
 }
 
@@ -137,7 +138,7 @@ const xmlReaderTestRefusals = (t: Suite): void => {
   t.eqStr(
     "xi:include",
     xmlReaderTestErr('<rfc>\n<?line 7?>\n<xi:include href="https://example.com/r.xml"/></rfc>'),
-    '3:1 md=8 <xi:include href="https://example.com/r.xml"> is refused: vector never fetches; expand it first (xml2rfc --expand)',
+    '3:1 md=7@2 <xi:include href="https://example.com/r.xml"> is refused: vector never fetches; expand it first (xml2rfc --expand)',
   )
   const deep = `${xmlReaderTestRepeat("<a>", XML_MAX_DEPTH + 1)}${xmlReaderTestRepeat("</a>", XML_MAX_DEPTH + 1)}`
   t.contains("one level past XML_MAX_DEPTH", xmlReaderTestErr(deep), `elements nest deeper than ${XML_MAX_DEPTH}`)

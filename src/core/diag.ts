@@ -24,6 +24,12 @@ export class Diagnostic {
   line: i32
   /** `EXIT_REFUSED` or `EXIT_USAGE`. */
   code: i32
+  /** The 1-based column, or 0 when the problem names none. */
+  col: i32 = 0
+  /** The file `exactLine` is in, when `line` only comes near the problem; "" otherwise. */
+  exactFile = ""
+  /** The 1-based line in `exactFile` the problem is on; 0 when `exactFile` is "". */
+  exactLine: i32 = 0
 
   /**
    * Makes a diagnostic.
@@ -61,17 +67,68 @@ export const refusal = (file: string, line: i32, message: string): Diagnostic =>
   new Diagnostic(file, line, message, EXIT_REFUSED)
 
 /**
- * Formats a diagnostic as `vector: file:line: message`, dropping the parts it lacks.
+ * Makes a refusal at a column, or at a line that only comes near the problem
+ * together with the line it is exactly on, which exits 1.
+ *
+ * @param file the file the refusal is about, or "" for none
+ * @param line the 1-based line, or 0 for none
+ * @param col the 1-based column, or 0 for none
+ * @param exactFile the file `exactLine` is in, or "" when `line` is exact
+ * @param exactLine the line the problem is exactly on, in `exactFile`
+ * @param message the text shown to the user
+ * @returns a diagnostic with code `EXIT_REFUSED`
+ */
+export const refusalAt = (
+  file: string,
+  line: i32,
+  col: i32,
+  exactFile: string,
+  exactLine: i32,
+  message: string,
+): Diagnostic => {
+  const d = refusal(file, line, message)
+  d.col = col
+  d.exactFile = exactFile
+  d.exactLine = exactLine
+  return d
+}
+
+/**
+ * Formats a place as `file`, `file:line` or `file:line:col`; when the line
+ * only comes near it, as `file:line (exactFile:exactLine)`, the column going
+ * with the exact line.
+ *
+ * @param file the file, or "" for none
+ * @param line the 1-based line, or 0 for none
+ * @param col the 1-based column, or 0 for none
+ * @param exactFile the file `exactLine` is in, or "" when `line` is exact
+ * @param exactLine the line the place is exactly on, in `exactFile`
+ * @returns the place, or "" when there is no file
+ */
+export const diagPlace = (file: string, line: i32, col: i32, exactFile: string, exactLine: i32): string => {
+  if (file.length === 0) {
+    return ""
+  }
+  if (line <= 0) {
+    return file
+  }
+  const colText = col > 0 ? `:${col}` : ""
+  if (exactFile.length !== 0) {
+    return `${file}:${line} (${exactFile}:${exactLine}${colText})`
+  }
+  return `${file}:${line}${colText}`
+}
+
+/**
+ * Formats a diagnostic as `vector: place: message` (see `diagPlace`),
+ * dropping the place when there is none.
  *
  * @param d the diagnostic to format
  * @returns one line, without a trailing newline
  */
 export const formatDiagnostic = (d: Diagnostic): string => {
-  let where = ""
-  if (d.file.length !== 0) {
-    where = d.line > 0 ? `${d.file}:${d.line}: ` : `${d.file}: `
-  }
-  return `vector: ${where}${d.message}`
+  const where = diagPlace(d.file, d.line, d.col, d.exactFile, d.exactLine)
+  return where.length !== 0 ? `vector: ${where}: ${d.message}` : `vector: ${d.message}`
 }
 
 /**

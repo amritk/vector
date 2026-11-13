@@ -1,5 +1,6 @@
 import { Suite } from "nish/testing"
 import { replaceAll, split } from "nish/text"
+import { diagPlace } from "../../../src/core/diag"
 import { joinPath, makeTempDir, mkdirAll } from "../../../src/core/fs"
 import { ExtractOutcome, extractContract, extractReaders } from "../../../src/spec/extract"
 import { SourceReaders } from "../../../src/spec/source/load"
@@ -46,7 +47,7 @@ const mdPathTestTree = (t: Suite, xml: string, md: string | null, name: string):
   return tr
 }
 
-/** Each refusal as `file:line: message`, or `error <why>`, or `ok`. */
+/** Each refusal as it prints, `file:line: message` or `md:line (xml:line): message`, or `error <why>`, or `ok`. */
 const mdPathTestLines = (o: ExtractOutcome): string[] => {
   if (o.errors.length > 0) {
     return o.errors.map((e: string): string => `error ${e}`)
@@ -54,7 +55,7 @@ const mdPathTestLines = (o: ExtractOutcome): string[] => {
   if (o.refusals.length === 0) {
     return ["ok"]
   }
-  return o.refusals.map((f): string => (f.line > 0 ? `${f.file}:${f.line}: ${f.message}` : `${f.file}: ${f.message}`))
+  return o.refusals.map((f): string => `${diagPlace(f.file, f.line, f.col, f.exactFile, f.exactLine)}: ${f.message}`)
 }
 
 /** Extract a tree's spec. */
@@ -63,15 +64,32 @@ const mdPathTestRun = (tr: MdPathTestTree, readers: SourceReaders): ExtractOutco
 
 const MD_PATH_TEST_FOO: string = '<?xml version="1.0"?>\n<?line 10?>\n<foo/>\n'
 const MD_PATH_TEST_ROOT: string = "not RFC XML: the root element is <foo>, not <rfc>"
+const MD_PATH_TEST_TWELVE: string = "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n"
 
 /** An XML reader refusal names the markdown only when the markdown line and the file are both there. */
 const mdPathTestReader = (t: Suite, readers: SourceReaders): void => {
-  const a = mdPathTestTree(t, MD_PATH_TEST_FOO, "", "bad")
+  const a = mdPathTestTree(t, MD_PATH_TEST_FOO, MD_PATH_TEST_TWELVE, "bad")
   if (a !== null) {
     t.eqLines(
-      "an XML reader refusal names the markdown at its line when the .md is beside the XML",
+      "an XML reader refusal below a mark names the mark's markdown line and the XML line",
       mdPathTestLines(mdPathTestRun(a, readers)),
-      [`${a.md}:11: ${MD_PATH_TEST_ROOT}`],
+      [`${a.md}:10 (${a.xml}:3): ${MD_PATH_TEST_ROOT}`],
+    )
+  }
+  const x = mdPathTestTree(t, '<?xml version="1.0"?>\n<?line 10?><foo/>\n', MD_PATH_TEST_TWELVE, "bad")
+  if (x !== null) {
+    t.eqLines(
+      "an XML reader refusal on a mark's own line names the markdown at the mark's line alone",
+      mdPathTestLines(mdPathTestRun(x, readers)),
+      [`${x.md}:10: ${MD_PATH_TEST_ROOT}`],
+    )
+  }
+  const p = mdPathTestTree(t, MD_PATH_TEST_FOO, "1\n2\n3\n4\n5\n6\n7\n8\n9\n", "bad")
+  if (p !== null) {
+    t.eqLines(
+      "an XML reader refusal names the XML when the mark's markdown line is past the .md's end",
+      mdPathTestLines(mdPathTestRun(p, readers)),
+      [`${p.xml}:3: ${MD_PATH_TEST_ROOT}`],
     )
   }
   const b = mdPathTestTree(t, '<?xml version="1.0"?>\n\n<foo/>\n', "", "bad")
@@ -122,10 +140,10 @@ const mdPathTestColon = (at: string): i32 => {
   return i
 }
 
-/** A `file:line`'s line; 0 when it has none. */
+/** A place's last line, the XML line of `md:line (xml:line)`; 0 when it has none. */
 const mdPathTestLineOf = (at: string): i32 => {
   let n = 0
-  for (let i = mdPathTestColon(at) + 1; i < at.length; i++) {
+  for (let i = mdPathTestColon(at) + 1; i < at.length && at.charCodeAt(i) >= 48 && at.charCodeAt(i) <= 57; i++) {
     n = n * 10 + (at.charCodeAt(i) - 48)
   }
   return n
@@ -189,8 +207,13 @@ const mdPathTestLineAt = (s: string, n: i32): string => {
 const mdPathTestLinesOf = (ats: string[], minus: i32): string =>
   ats.map((a: string): string => `${mdPathTestLineOf(a) - minus}`).join(" ")
 
-// extract-mini.xml's `<?line N?>` instructions put its middle 9 lines above
-// the XML's own count, and its tables further on (one XML line per cell).
+// extract-mini.xml's last unsigned `<?line N?>` is `<?line 21?>` on XML line
+// 30; the XML runs ahead of the markdown after it (one XML line per table
+// cell), so a refusal below it names md line 21 and its own XML line.
+
+/** Whether every place is the .md at `mdLine` together with the XML at some line. */
+const mdPathTestNear = (ats: string[], tr: MdPathTestTree, mdLine: i32): boolean =>
+  ats.every((a: string): boolean => a.startsWith(`${tr.md}:${mdLine} (${tr.xml}:`) && a.endsWith(")"))
 
 /** A profile refusal names the .md at a markdown line, else the XML at its line. */
 const mdPathTestProfile = (t: Suite, mini: string, md: string, readers: SourceReaders): void => {
@@ -198,15 +221,15 @@ const mdPathTestProfile = (t: Suite, mini: string, md: string, readers: SourceRe
   const r = mdPathTestBoth(t, "a profile refusal", xml, md, readers)
   if (r !== null) {
     const name = "a profile refusal at a markdown line names the .md; with no .md, the XML at its line"
-    t.ok(
-      `${name}: the .md`,
-      r.md.every((a: string): boolean => mdPathTestFileOf(a) === r.withMd.md),
-    )
+    t.ok(`${name}: the .md at the last mark, with the XML line`, mdPathTestNear(r.md, r.withMd, 21))
     t.ok(
       `${name}: the XML`,
       r.xml.every((a: string): boolean => mdPathTestFileOf(a) === r.withoutMd.xml),
     )
-    t.eqStr(`${name}: lines`, mdPathTestLinesOf(r.md, 0), mdPathTestLinesOf(r.xml, 9))
+    // Not md line 55, where adding the lines since the mark would put the
+    // sentence: it is on md line 52, and nothing in the XML says so.
+    t.eqStr(`${name}: lines`, mdPathTestLinesOf(r.md, 0), mdPathTestLinesOf(r.xml, 0))
+    t.eqStr(`${name}: the sentence's XML line`, mdPathTestLinesOf([r.md[0]], 0), "64")
     t.contains(`${name}: at the sentence`, mdPathTestLineAt(xml, mdPathTestLineOf(r.xml[0])), "Each byte <bcp14>MUST")
   }
 
@@ -215,11 +238,11 @@ const mdPathTestProfile = (t: Suite, mini: string, md: string, readers: SourceRe
   const s = mdPathTestBoth(t, "a ts-interface refusal", junk, md, readers)
   if (s !== null) {
     const name = "a profile refusal in a ts-interface block is at the line in the block, in either file"
-    t.eqStr(`${name}: the .md`, s.md[0], `${s.withMd.md}:40`)
-    t.eqStr(`${name}: the XML`, s.xml[0], `${s.withoutMd.xml}:49`)
+    t.eqStr(`${name}: the .md`, s.md[0], `${s.withMd.md}:21 (${s.withMd.xml}:49:54)`)
+    t.eqStr(`${name}: the XML, at the column of the junk`, s.xml[0], `${s.withoutMd.xml}:49:54`)
     t.eqStr(`${name}: the XML line`, mdPathTestLineAt(junk, 49), `${bad} junk`)
-    // The functions the gates name are at their lines in the block too.
-    t.eqStr(`${name}: every line`, mdPathTestLinesOf(s.md, 0), mdPathTestLinesOf(s.xml, 9))
+    // The functions the gates name are at their XML lines in the block too.
+    t.eqStr(`${name}: every line`, mdPathTestLinesOf(s.md, 0), mdPathTestLinesOf(s.xml, 0))
   }
 
   const o = mdPathTestTree(t, mini, md, "other")

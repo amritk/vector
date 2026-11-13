@@ -2,13 +2,23 @@
  * `cli/spec-extract` — `vector spec extract`: extract a contract from a kramdown-rfc spec's XML.
  *
  * The contract goes to stdout, or to `-o`; with `--check` nothing is written,
- * and a diff against `-o` exits 1. Refusals exit 1, each `file:line: message`
- * at the markdown line when the `.md` is beside the spec; an input or RFC that
- * cannot be read exits 2.
+ * and a diff against `-o` exits 1. Refusals exit 1, each `file:line[:col]:
+ * message`, or `spec.md:line (spec.xml:line[:col]): message` when the `.md` is
+ * beside the spec and only a `<?line?>` mark above the refusal names its
+ * markdown line; an input or RFC that cannot be read exits 2.
  */
 
 import { Cli, ParseResult } from "nish/cli-args"
-import { EXIT_PASS, EXIT_REFUSED, EXIT_USAGE, formatDiagnostic, refusal, report, usageError } from "../core/diag"
+import {
+  EXIT_PASS,
+  EXIT_REFUSED,
+  EXIT_USAGE,
+  formatDiagnostic,
+  refusal,
+  refusalAt,
+  report,
+  usageError,
+} from "../core/diag"
 import { dirname } from "../core/fs"
 import {
   EXTRACT_SIDECAR_SUFFIX,
@@ -91,7 +101,7 @@ export class SpecExtractCommand {
     }
     if (got.refusals.length > 0) {
       for (const f of got.refusals) {
-        console.error(formatDiagnostic(refusal(f.file, f.line, f.message)))
+        console.error(formatDiagnostic(refusalAt(f.file, f.line, f.col, f.exactFile, f.exactLine, f.message)))
       }
       return EXIT_REFUSED
     }

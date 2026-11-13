@@ -17,7 +17,7 @@
 
 import { trimEnd } from "nish/text"
 import { vocabLevels } from "../contract/vocab"
-import { XmlError, XmlNode, xmlAttr, xmlElements } from "./reader"
+import { XmlError, XmlNode, xmlAttr, xmlElements, xmlErrorAt } from "./reader"
 
 /** What an `<xref>` without derivedContent prints, as the document works it out. */
 export class XmlXrefInfo {
@@ -559,21 +559,25 @@ export class XmlCode {
   text: string
   /** The XML line its text starts on. */
   line: i32
-  /** The markdown line its text starts on; -1 when unknown. */
+  /** The markdown line of the last `<?line N?>` before its text; -1 when none. */
   mdLine: i32
+  /** The XML line that `<?line N?>` stands on; 0 when none. */
+  markLine: i32
   /**
    * Makes a code block.
    *
    * @param type its type, or null
    * @param text its text
    * @param line its XML line
-   * @param mdLine its markdown line, or -1
+   * @param mdLine the last mark's markdown line, or -1
+   * @param markLine the XML line of that mark, or 0
    */
-  constructor(type: string | null, text: string, line: i32, mdLine: i32) {
+  constructor(type: string | null, text: string, line: i32, mdLine: i32, markLine: i32) {
     this.type = type
     this.text = text
     this.line = line
     this.mdLine = mdLine
+    this.markLine = markLine
   }
 }
 
@@ -613,8 +617,7 @@ export const xmlCodeOf = (n: XmlNode): XmlCode => {
   }
   const base = first ?? n
   const skip = lead > 0 ? 1 : 0
-  const md = base.mdLine < 0 ? -1 : base.mdLine + skip
-  return new XmlCode(xmlAttr(n, "type"), text, base.line + skip, md)
+  return new XmlCode(xmlAttr(n, "type"), text, base.line + skip, base.mdLine, base.markLine)
 }
 
 /** A table cell, and whether it is a header cell. */
@@ -824,7 +827,7 @@ const xmlNormativeIn = (
     const level = word !== null && word === "NOT RECOMMENDED" ? "SHOULD NOT" : word
     if (level === null || !xmlIsKeyword(level)) {
       const shown = word ?? `${trimEnd(xmlCut(text.substring(st, text.length), 40))}...`
-      return Err(new XmlError(bn.line, 0, bn.mdLine, `<bcp14> holds "${shown}", which is not a BCP 14 keyword`))
+      return Err(xmlErrorAt(bn, `<bcp14> holds "${shown}", which is not a BCP 14 keyword`))
     }
     k = k + 1
     if ((st > 0 && text.charCodeAt(st - 1) === 0x22) || (en < text.length && text.charCodeAt(en) === 0x22)) {
