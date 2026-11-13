@@ -1,0 +1,1 @@
+vector: spec run: tests/no-such-dir: not a nish checkout (give --nish-root or set VECTOR_NISH_ROOT)
