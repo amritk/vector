@@ -13,8 +13,6 @@ export const SPEC_EMIT_ID: i32 = 5
 
 /** `vector spec emit`, declared on a `Cli`: its handles and its handler. */
 export class SpecEmitCommand {
-  /** The handle of the command in the tree. */
-  handle: i32
   /** The `-o, --out <main.ts>` flag. */
   outFlag: i32
   /** The `--spec <file>` flag. */
@@ -35,17 +33,17 @@ export class SpecEmitCommand {
    * @param parent the handle to declare it under (`ROOT` or the `spec` group)
    */
   constructor(cli: Cli, parent: i32) {
-    this.handle = cli.command(parent, "emit", SPEC_EMIT_ID, "Emit the Nish test a contract implies")
-    this.outFlag = cli.flag(this.handle, "-o, --out <main.ts>", "where to write the test")
+    const handle = cli.command(parent, "emit", SPEC_EMIT_ID, "Emit the Nish test a contract implies")
+    this.outFlag = cli.flag(handle, "-o, --out <main.ts>", "where to write the test")
     this.specFlag = cli.flag(
-      this.handle,
+      handle,
       "--spec <file>",
       "the source the contract quotes, RFC XML v3 or plain text (default: found next to the contract)",
     )
-    this.nishRootFlag = cli.flag(this.handle, "--nish-root <dir>", "a nish checkout: finds the module and the compiler")
-    this.nishFlag = cli.flag(this.handle, "--nish <bin>", "the nish compiler (default: nish)")
-    this.formatFlag = cli.flag(this.handle, "--format <f>", "text (default), markdown (a PR comment) or json")
-    this.contractJsonArg = cli.argument(this.handle, "<contract.json>", "the contract")
+    this.nishRootFlag = cli.flag(handle, "--nish-root <dir>", "a nish checkout: finds the module and the compiler")
+    this.nishFlag = cli.flag(handle, "--nish <bin>", "the nish compiler (default: nish)")
+    this.formatFlag = cli.flag(handle, "--format <f>", "text (default), markdown (a PR comment) or json")
+    this.contractJsonArg = cli.argument(handle, "<contract.json>", "the contract")
   }
 
   /**

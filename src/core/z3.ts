@@ -99,7 +99,7 @@ export const runZ3 = (script: string, queryCount: i32): Result<Z3Run, string> =>
   }
   const out = ran.value
   if (out.status === 127 || (queryCount > 0 && out.stdout.indexOf("@@Q") < 0)) {
-    const detail = out.stderr.length === 0 ? "" : `: ${out.stderr.slice(0, Math.min(500, toI32(out.stderr.length)))}`
+    const detail = out.stderr.length === 0 ? "" : `: ${out.stderr.substring(0, 500)}`
     return Err(`z3 (${bin}) produced no verdicts${detail}`)
   }
   const millis = toI32((monotonicNanos() - started) / 1000000)

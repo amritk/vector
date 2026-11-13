@@ -56,13 +56,16 @@ const goldenCases = existsSync(cliDir)
       .length
   : 0;
 
-const escapeDollar = (s) => s.replace(/[$]/g, "\\$");
+const called = new Set(
+  Array.from(
+    testText.matchAll(/(?<![\w$.])([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\(/g),
+    (m) => m[1],
+  ),
+);
 const untested = exported.filter(({ name, where }) => {
   if (name === "main" && where.startsWith("src/main.ts:"))
     return goldenCases === 0;
-  return !new RegExp(
-    `(?<![\\w$.])${escapeDollar(name)}\\s*(?:<[^>]*>)?\\(`,
-  ).test(testText);
+  return !called.has(name);
 });
 
 if (untested.length > 0) {

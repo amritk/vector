@@ -13,8 +13,6 @@ export const SPEC_EXTRACT_ID: i32 = 3
 
 /** `vector spec extract`, declared on a `Cli`: its handles and its handler. */
 export class SpecExtractCommand {
-  /** The handle of the command in the tree. */
-  handle: i32
   /** The `-o, --out <contract.json>` flag. */
   outFlag: i32
   /** The `--check` flag. */
@@ -29,10 +27,10 @@ export class SpecExtractCommand {
    * @param parent the handle to declare it under (`ROOT` or the `spec` group)
    */
   constructor(cli: Cli, parent: i32) {
-    this.handle = cli.command(parent, "extract", SPEC_EXTRACT_ID, "Extract a contract from a kramdown-rfc spec's XML")
-    this.outFlag = cli.flag(this.handle, "-o, --out <contract.json>", "where to write the contract")
-    this.checkFlag = cli.flag(this.handle, "--check", "write nothing; exit 1 with a diff if --out differs")
-    this.specXmlArg = cli.argument(this.handle, "<spec.xml>", "the spec, RFC XML v3")
+    const handle = cli.command(parent, "extract", SPEC_EXTRACT_ID, "Extract a contract from a kramdown-rfc spec's XML")
+    this.outFlag = cli.flag(handle, "-o, --out <contract.json>", "where to write the contract")
+    this.checkFlag = cli.flag(handle, "--check", "write nothing; exit 1 with a diff if --out differs")
+    this.specXmlArg = cli.argument(handle, "<spec.xml>", "the spec, RFC XML v3")
   }
 
   /**

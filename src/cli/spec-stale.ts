@@ -13,8 +13,6 @@ export const SPEC_STALE_ID: i32 = 8
 
 /** `vector spec stale`, declared on a `Cli`: its handles and its handler. */
 export class SpecStaleCommand {
-  /** The handle of the command in the tree. */
-  handle: i32
   /** The `--format <f>` flag. */
   formatFlag: i32
   /** The `<test.ts>` argument. */
@@ -29,15 +27,15 @@ export class SpecStaleCommand {
    * @param parent the handle to declare it under (`ROOT` or the `spec` group)
    */
   constructor(cli: Cli, parent: i32) {
-    this.handle = cli.command(
+    const handle = cli.command(
       parent,
       "stale",
       SPEC_STALE_ID,
       "Refuse a generated test that no longer matches its contract",
     )
-    this.formatFlag = cli.flag(this.handle, "--format <f>", "text (default), markdown (a PR comment) or json")
-    this.testTsArg = cli.argument(this.handle, "<test.ts>", "the generated test")
-    this.contractJsonArg = cli.argument(this.handle, "<contract.json>", "the contract it came from")
+    this.formatFlag = cli.flag(handle, "--format <f>", "text (default), markdown (a PR comment) or json")
+    this.testTsArg = cli.argument(handle, "<test.ts>", "the generated test")
+    this.contractJsonArg = cli.argument(handle, "<contract.json>", "the contract it came from")
   }
 
   /**

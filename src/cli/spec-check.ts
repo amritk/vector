@@ -13,8 +13,6 @@ export const SPEC_CHECK_ID: i32 = 4
 
 /** `vector spec check`, declared on a `Cli`: its handles and its handler. */
 export class SpecCheckCommand {
-  /** The handle of the command in the tree. */
-  handle: i32
   /** The `--spec <file>` flag. */
   specFlag: i32
   /** The `--run-sources` flag. */
@@ -37,27 +35,23 @@ export class SpecCheckCommand {
    * @param parent the handle to declare it under (`ROOT` or the `spec` group)
    */
   constructor(cli: Cli, parent: i32) {
-    this.handle = cli.command(
+    const handle = cli.command(
       parent,
       "check",
       SPEC_CHECK_ID,
       "Check a contract's quotes and vectors against its source",
     )
     this.specFlag = cli.flag(
-      this.handle,
+      handle,
       "--spec <file>",
       "the source the contract quotes, RFC XML v3 or plain text (default: found next to the contract)",
     )
-    this.runSourcesFlag = cli.flag(
-      this.handle,
-      "--run-sources",
-      "run the vectors' command sources and check their output",
-    )
-    this.moduleFlag = cli.flag(this.handle, "--module <file>", "the target module's source, for the signature gate")
-    this.nishRootFlag = cli.flag(this.handle, "--nish-root <dir>", "a nish checkout: finds the module and the compiler")
-    this.nishFlag = cli.flag(this.handle, "--nish <bin>", "the nish compiler (default: nish)")
-    this.formatFlag = cli.flag(this.handle, "--format <f>", "text (default), markdown (a PR comment) or json")
-    this.contractJsonArg = cli.argument(this.handle, "<contract.json>", "the contract")
+    this.runSourcesFlag = cli.flag(handle, "--run-sources", "run the vectors' command sources and check their output")
+    this.moduleFlag = cli.flag(handle, "--module <file>", "the target module's source, for the signature gate")
+    this.nishRootFlag = cli.flag(handle, "--nish-root <dir>", "a nish checkout: finds the module and the compiler")
+    this.nishFlag = cli.flag(handle, "--nish <bin>", "the nish compiler (default: nish)")
+    this.formatFlag = cli.flag(handle, "--format <f>", "text (default), markdown (a PR comment) or json")
+    this.contractJsonArg = cli.argument(handle, "<contract.json>", "the contract")
   }
 
   /**

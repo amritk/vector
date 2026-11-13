@@ -13,8 +13,6 @@ export const SPEC_FROZEN_ID: i32 = 7
 
 /** `vector spec frozen`, declared on a `Cli`: its handles and its handler. */
 export class SpecFrozenCommand {
-  /** The handle of the command in the tree. */
-  handle: i32
   /** The `--base <ref>` flag. */
   baseFlag: i32
   /** The `--repo <dir>` flag. */
@@ -31,15 +29,11 @@ export class SpecFrozenCommand {
    * @param parent the handle to declare it under (`ROOT` or the `spec` group)
    */
   constructor(cli: Cli, parent: i32) {
-    this.handle = cli.command(parent, "frozen", SPEC_FROZEN_ID, "Refuse a change that edits a frozen contract")
-    this.baseFlag = cli.flag(this.handle, "--base <ref>", "the commit the change is against")
-    this.repoFlag = cli.flag(this.handle, "--repo <dir>", "the repository (default: the current directory)")
-    this.formatFlag = cli.flag(this.handle, "--format <f>", "text (default), markdown (a PR comment) or json")
-    this.contractsArg = cli.argument(
-      this.handle,
-      "[contracts...]",
-      "the contracts to check (default: every changed one)",
-    )
+    const handle = cli.command(parent, "frozen", SPEC_FROZEN_ID, "Refuse a change that edits a frozen contract")
+    this.baseFlag = cli.flag(handle, "--base <ref>", "the commit the change is against")
+    this.repoFlag = cli.flag(handle, "--repo <dir>", "the repository (default: the current directory)")
+    this.formatFlag = cli.flag(handle, "--format <f>", "text (default), markdown (a PR comment) or json")
+    this.contractsArg = cli.argument(handle, "[contracts...]", "the contracts to check (default: every changed one)")
   }
 
   /**

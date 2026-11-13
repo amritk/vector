@@ -100,8 +100,8 @@ export const mkdirAll = (path: string, mode: i32): Result<boolean, string> => {
  * @returns `Ok` with the directory's path, or `Err` when none could be made
  */
 export const makeTempDir = (prefix: string): Result<string, string> => {
-  const base = getenv("TMPDIR") ?? "/tmp"
-  const root = base.length === 0 ? "/tmp" : base
+  const env = getenv("TMPDIR")
+  const root = env === null || env.length === 0 ? "/tmp" : env
   const bytes: u8[] = new Array<u8>(8)
   for (let attempt = 0; attempt < 16; attempt++) {
     crypto.getRandomValues(bytes)

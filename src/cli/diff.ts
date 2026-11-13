@@ -13,8 +13,6 @@ export const DIFF_ID: i32 = 2
 
 /** `vector diff`, declared on a `Cli`: its handles and its handler. */
 export class DiffCommand {
-  /** The handle of the command in the tree. */
-  handle: i32
   /** The `--json` flag. */
   jsonFlag: i32
   /** The `<old.json>` argument. */
@@ -29,10 +27,10 @@ export class DiffCommand {
    * @param parent the handle to declare it under (`ROOT` or the `spec` group)
    */
   constructor(cli: Cli, parent: i32) {
-    this.handle = cli.command(parent, "diff", DIFF_ID, "Prove two programs equivalent, or show where they differ")
-    this.jsonFlag = cli.flag(this.handle, "--json", "print the result as JSON")
-    this.oldJsonArg = cli.argument(this.handle, "<old.json>", "the program before")
-    this.newJsonArg = cli.argument(this.handle, "<new.json>", "the program after")
+    const handle = cli.command(parent, "diff", DIFF_ID, "Prove two programs equivalent, or show where they differ")
+    this.jsonFlag = cli.flag(handle, "--json", "print the result as JSON")
+    this.oldJsonArg = cli.argument(handle, "<old.json>", "the program before")
+    this.newJsonArg = cli.argument(handle, "<new.json>", "the program after")
   }
 
   /**

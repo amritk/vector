@@ -2,7 +2,7 @@
  * `cli/common` — what every command stub shares until its real handler lands.
  */
 
-import { EXIT_USAGE, report, usageError } from "../core/diag"
+import { report, usageError } from "../core/diag"
 
 /**
  * Reports that a command exists but has no handler yet, and answers the usage
@@ -11,7 +11,4 @@ import { EXIT_USAGE, report, usageError } from "../core/diag"
  * @param path the command as typed, e.g. `spec check`
  * @returns `EXIT_USAGE` (2)
  */
-export const notImplemented = (path: string): i32 => {
-  report(usageError(`${path}: not implemented yet`))
-  return EXIT_USAGE
-}
+export const notImplemented = (path: string): i32 => report(usageError(`${path}: not implemented yet`))

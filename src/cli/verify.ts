@@ -13,8 +13,6 @@ export const VERIFY_ID: i32 = 1
 
 /** `vector verify`, declared on a `Cli`: its handles and its handler. */
 export class VerifyCommand {
-  /** The handle of the command in the tree. */
-  handle: i32
   /** The `--json` flag. */
   jsonFlag: i32
   /** The `--emit <file>` flag. */
@@ -31,11 +29,11 @@ export class VerifyCommand {
    * @param parent the handle to declare it under (`ROOT` or the `spec` group)
    */
   constructor(cli: Cli, parent: i32) {
-    this.handle = cli.command(parent, "verify", VERIFY_ID, "Prove a program meets its spec plan")
-    this.jsonFlag = cli.flag(this.handle, "--json", "print the result as JSON")
-    this.emitFlag = cli.flag(this.handle, "--emit <file>", "write the verified program's TypeScript to <file>")
-    this.specJsonArg = cli.argument(this.handle, "<spec.json>", "the spec plan")
-    this.programJsonArg = cli.argument(this.handle, "<program.json>", "the program to verify")
+    const handle = cli.command(parent, "verify", VERIFY_ID, "Prove a program meets its spec plan")
+    this.jsonFlag = cli.flag(handle, "--json", "print the result as JSON")
+    this.emitFlag = cli.flag(handle, "--emit <file>", "write the verified program's TypeScript to <file>")
+    this.specJsonArg = cli.argument(handle, "<spec.json>", "the spec plan")
+    this.programJsonArg = cli.argument(handle, "<program.json>", "the program to verify")
   }
 
   /**

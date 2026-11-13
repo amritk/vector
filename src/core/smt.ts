@@ -4,6 +4,8 @@
  * `(echo "@@Q<i>")` markers the script writes before each `(check-sat)`.
  */
 
+import { indexOfAny, trim } from "nish/text"
+
 /** One s-expression: an atom, or a list of s-expressions. */
 export class Sexp {
   /** The atom's text; empty for a list. */
@@ -103,15 +105,7 @@ export const parseSexp = (text: string): Sexp | null => new SmtReader(smtTokens(
  * @returns the canonical text
  */
 export const normalizeValue = (value: string): string => {
-  let start = 0
-  let end = toI32(value.length)
-  while (start < end && smtIsSpace(value.charCodeAt(start))) {
-    start = start + 1
-  }
-  while (end > start && smtIsSpace(value.charCodeAt(end - 1))) {
-    end = end - 1
-  }
-  const v = value.slice(start, end)
+  const v = trim(value)
   const dot = toI32(v.indexOf("."))
   if (dot <= 0) {
     return v
@@ -236,19 +230,9 @@ export const parseModel = (answer: QueryAnswer, text: string): i32 => {
 
 const smtMarker = (stdout: string, from: i32): i32 => {
   const n = toI32(stdout.length)
-  for (let i = from; i + 2 < n; i++) {
-    if (stdout.charCodeAt(i) === 64 && stdout.charCodeAt(i + 1) === 64 && stdout.charCodeAt(i + 2) === 81) {
-      return i
-    }
-  }
-  return -1
-}
-
-const smtLineEnd = (stdout: string, from: i32): i32 => {
-  const n = toI32(stdout.length)
-  for (let i = from; i < n; i++) {
-    if (stdout.charCodeAt(i) === 10) {
-      return i
+  for (let at = indexOfAny(stdout, "@", from); at >= 0 && at + 2 < n; at = indexOfAny(stdout, "@", at + 1)) {
+    if (stdout.charCodeAt(at + 1) === 64 && stdout.charCodeAt(at + 2) === 81) {
+      return at
     }
   }
   return -1
@@ -278,7 +262,7 @@ export const parseZ3Output = (stdout: string, queryCount: i32): QueryAnswer[] =>
     ) {
       digitsEnd = digitsEnd + 1
     }
-    const lineEnd = smtLineEnd(stdout, at)
+    const lineEnd = indexOfAny(stdout, "\n", at)
     if (lineEnd < 0) {
       return answers
     }

@@ -27,6 +27,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Lint
+        run: npm run lint
+
+      - name: Every exported function is called in tests
+        run: npm run tested-exports
+
+      - name: Cache the pinned nish and z3
+        uses: actions/cache@v4
+        with:
+          path: |
+            .nish
+            .z3
+          key: toolchain-${{ runner.os }}-${{ hashFiles('scripts/fetch-nish.sh', 'scripts/fetch-z3.sh') }}
+
       - name: Fetch the pinned nish compiler
         run: bash scripts/fetch-nish.sh
 
@@ -38,12 +52,6 @@ jobs:
 
       - name: Test
         run: npm test
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Every exported function is called in tests
-        run: npm run tested-exports
 
       - name: Smoke-run the binary
         run: ./dist/vector --version

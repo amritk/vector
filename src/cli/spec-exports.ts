@@ -13,8 +13,6 @@ export const SPEC_EXPORTS_ID: i32 = 9
 
 /** `vector spec exports`, declared on a `Cli`: its handles and its handler. */
 export class SpecExportsCommand {
-  /** The handle of the command in the tree. */
-  handle: i32
   /** The `--base <ref>` flag. */
   baseFlag: i32
   /** The `--nish-root <dir>` flag. */
@@ -31,11 +29,11 @@ export class SpecExportsCommand {
    * @param parent the handle to declare it under (`ROOT` or the `spec` group)
    */
   constructor(cli: Cli, parent: i32) {
-    this.handle = cli.command(parent, "exports", SPEC_EXPORTS_ID, "Refuse a new export its contract does not cover")
-    this.baseFlag = cli.flag(this.handle, "--base <ref>", "the commit the change is against")
-    this.nishRootFlag = cli.flag(this.handle, "--nish-root <dir>", "a nish checkout: finds the module and the compiler")
-    this.formatFlag = cli.flag(this.handle, "--format <f>", "text (default), markdown (a PR comment) or json")
-    this.contractJsonArg = cli.argument(this.handle, "<contract.json>", "the contract")
+    const handle = cli.command(parent, "exports", SPEC_EXPORTS_ID, "Refuse a new export its contract does not cover")
+    this.baseFlag = cli.flag(handle, "--base <ref>", "the commit the change is against")
+    this.nishRootFlag = cli.flag(handle, "--nish-root <dir>", "a nish checkout: finds the module and the compiler")
+    this.formatFlag = cli.flag(handle, "--format <f>", "text (default), markdown (a PR comment) or json")
+    this.contractJsonArg = cli.argument(handle, "<contract.json>", "the contract")
   }
 
   /**
