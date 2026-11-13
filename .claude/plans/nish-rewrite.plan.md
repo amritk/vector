@@ -10,7 +10,7 @@ stages:
       - id: f-remove-ts
         content: Delete the TypeScript implementation (src/, test/*.test.ts, scripts/*.ts, src/generated, bun.lock, tsconfig.json) and move test/fixtures to tests/fixtures unchanged — see Foundation
       - id: f-toolchain
-        content: Add scripts/fetch-nish.sh (nish 0.38.0 pinned, into .nish/) and scripts/fetch-z3.sh (z3 4.16.0 into .z3/), and rewrite package.json scripts for build, test, lint and tested-exports — see Foundation
+        content: Add scripts/fetch-nish.sh (nish 0.39.0 pinned, into .nish/) and scripts/fetch-z3.sh (z3 4.16.0 into .z3/), and rewrite package.json scripts for build, test, lint and tested-exports — see Foundation
       - id: f-core
         content: Write src/core (files and paths, JSON helpers, hex and sha256, a subprocess runner with a timeout, the z3 runner and its s-expression reader, diagnostics with exit codes) with tests — see Foundation
       - id: f-cli
@@ -135,7 +135,7 @@ The rewrite is a fresh design in Nish, not a line-by-line port. The old code sta
 | Decision | Choice | Why |
 |---|---|---|
 | Where | In place in amritk/vector. Foundation deletes the TypeScript, and later stages fill the command line back in | One codebase from the first merge. `main` loses features until each stage lands, and that is accepted for a 0.x tool |
-| Compiler | nish **0.38.0**, pinned in `scripts/fetch-nish.sh`, installed to `.nish/` with nish's `install.sh`. Bumping it is its own PR | 0.38.0 lacks `spawnPipedWithin`, so timeouts run through coreutils `timeout -s KILL` |
+| Compiler | nish **0.39.0**, pinned in `scripts/fetch-nish.sh`, installed to `.nish/` with nish's `install.sh`. Bumping it is its own PR | 0.39.0 adds what this tool leans on: `spawnPipedWithin` (a captured run with a deadline), function references in fields, arrays and `Map` values (gate and command tables), typed JSON tagged unions (the `Expr` and clause unions), object spread, and `split` with a limit |
 | File formats | `schemas/spec-plan.json`, `program.json` and `rfc-contract.json` are unchanged, and so are the committed specs and contracts | The skills, the committed contracts and nish's `contracts/hex.json` keep working. Asked at sign-off |
 | Command line | Subcommands: `vector verify`, `vector diff`, `vector spec <cmd>`. Exit codes stay 0 (pass), 1 (refused), 2 (usage or I/O) | The flag modes were an accident of history |
 | Dropped | The 14 language tables and the README render (nothing used them), `--fixture`, `--spec/--program` aliases, the `rfc` alias, the embedded z3 tarball with z3cache and `--licenses`, `scripts/spec-stale.mjs`, mjst-generated code, Bun | Each is unused or exists only because of the Bun binary |
@@ -188,7 +188,7 @@ Nish has no coverage tool, so the 91% line-coverage floor cannot carry over. It 
 
 Owns: `src/**` (it deletes all of it, then writes `src/main.ts`, `src/core/**` and the `src/cli/*.ts` stubs), `test/**`, `tests/run.mjs`, `tests/core/**`, `tests/cli/**`, `tests/fixtures/**`, `scripts/*.ts`, `scripts/fetch-nish.sh`, `scripts/fetch-z3.sh`, `scripts/tested-exports.mjs`, `package.json`, `package-lock.json`, `bun.lock`, `tsconfig.json`, `biome.json`, `.gitignore`, `.github/workflows/ci.yml`, `.github/workflows/pr-title.yml`, `.claude/hooks/**`, `.claude/settings.json`, `CLAUDE.md`, `README.md`, `THIRD_PARTY_NOTICES.md`
 
-- `src/core`: files and paths (join, dirname, recursive mkdir, temp dirs; nish has none of these), JSON helpers over `nish/json-value`, hex and sha256, `runProcess(argv, stdin, timeoutMs)` through `timeout -s KILL`, and `runZ3(script)`, which keeps the `@@Q<i>` echo markers and the s-expression and rational reader from `git show 06d3cec:src/solve/runner.ts` and `smt.ts`.
+- `src/core`: files and paths (join, dirname, recursive mkdir, temp dirs; nish has none of these), JSON helpers over `nish/json-value`, hex and sha256, `runProcess(argv, stdin, timeoutMs)` over `spawnPipedWithin`, and `runZ3(script)`, which keeps the `@@Q<i>` echo markers and the s-expression and rational reader from `git show 06d3cec:src/solve/runner.ts` and `smt.ts`.
 - `package.json` keeps npm as the task runner: `build`, `test`, `lint` (biome), `tested-exports`. It adds `typedoc` and `typescript` as devDependencies now, so that docs-site does not need to touch the file.
 - `ci.yml` has a `check` job: fetch nish and z3, build, `npm test`, lint, tested-exports, and a smoke run of `dist/vector --version`.
 - The session hook installs nish and z3 if they are missing, and exports their paths.
@@ -215,13 +215,13 @@ Extract calls `checkContract`. It gains the real gates automatically when the ga
 
 Owns: `src/spec/gates/**`, `src/spec/sample/**`, `src/spec/report/**`, `src/spec/check.ts` (after contract-model merges), `src/cli/spec-check.ts`, `tests/spec/gates/**`, `tests/cli/check-*/**`
 
-Reference: `gates.ts`, `sample.ts`, `report.ts`, and `run.ts` (for `--run-sources`) under `git show 06d3cec:src/rfc/`. `--run-sources` keeps its 30 s timeout. The PID-namespace sandbox becomes `timeout -s KILL`, which kills the whole process group, and the guide says so.
+Reference: `gates.ts`, `sample.ts`, `report.ts`, and `run.ts` (for `--run-sources`) under `git show 06d3cec:src/rfc/`. `--run-sources` keeps its 30 s timeout. `spawnPipedWithin` kills only the child pid, so a source command runs under `setsid` with a group kill on timeout (or `timeout -s KILL`, which signals the group), and the guide says what it does and does not contain.
 
 ## Emit and run
 
 Owns: `src/spec/emit/**`, `src/spec/run/**`, `src/cli/spec-emit.ts`, `src/cli/spec-run.ts`, `tests/spec/emit/**`, `tests/cli/emit-*/**`
 
-Reference: `emit-nish.ts`, `run.ts` and `scratch.ts`. Emitted tests compile under nish 0.38.0. A golden test for the hex example contract pins the output. `run` tests use the session's nish checkout when `VECTOR_NISH_ROOT` is set, and skip with a printed reason when it is not.
+Reference: `emit-nish.ts`, `run.ts` and `scratch.ts`. Emitted tests compile under the pinned nish. A golden test for the hex example contract pins the output. `run` tests use the session's nish checkout when `VECTOR_NISH_ROOT` is set, and skip with a printed reason when it is not.
 
 ## PR gates
 
