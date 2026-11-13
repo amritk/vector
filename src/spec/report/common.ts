@@ -95,6 +95,37 @@ export const reportShapeOk = (report: CheckReport): boolean => report.findings.e
 export const reportOneLine = (s: string): string => splitWhitespace(s).join(" ")
 
 /**
+ * A text safe to print to a terminal: each control character (below 0x20,
+ * and 0x7f) written as `\xNN`, so contract text or a command's output can
+ * neither move the cursor nor hide what follows; cut to at most `n` bytes
+ * with an ellipsis, never inside a UTF-8 sequence.
+ *
+ * @param s the text
+ * @param n the most bytes kept
+ * @returns the escaped text, cut when longer
+ */
+export const reportSafe = (s: string, n: i32): string => {
+  const digits = "0123456789abcdef"
+  let out = ""
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i)
+    if (c < 32 || c === 127) {
+      out = `${out}\\x${digits.substring(c >> 4, (c >> 4) + 1)}${digits.substring(c & 15, (c & 15) + 1)}`
+    } else {
+      out = out + s.substring(i, i + 1)
+    }
+  }
+  if (out.length <= n) {
+    return out
+  }
+  let cut = n
+  while (cut > 0 && (out.charCodeAt(cut) & 0xc0) === 0x80) {
+    cut--
+  }
+  return `${out.substring(0, cut)}…`
+}
+
+/**
  * A text on one line, cut to at most `n` characters with an ellipsis, never
  * inside a UTF-8 sequence.
  *

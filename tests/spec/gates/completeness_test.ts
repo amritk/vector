@@ -39,16 +39,69 @@ const COMPLETENESS_TEST_RFC: string = `Request for Comments: 9999
    lock is kept. It should rest.
 `
 
-/** A context with the contract and a hand-built source set. */
-const completenessTestCtx = (): CheckContext => {
+/**
+ * A contract whose quotes hold a keyword but not its whole sentence: the
+ * keyword alone, half the sentence, a mid-word cut, and a sentence quoted
+ * under a sibling section. Only the whole sentence, its period left out, counts.
+ */
+const COMPLETENESS_TEST_PROBE: string = `{
+  "contract": "c2",
+  "source": {"title": "T", "rfc": 9999},
+  "target": {"module": "nish/x"},
+  "requirements": [
+    {"id": "R-HALF", "section": "1", "level": "MUST", "quote": "The server MUST reject a request"},
+    {"id": "R-WORD", "section": "2", "level": "MUST", "quote": "MUST NOT"},
+    {"id": "R-WHOLE", "section": "2", "level": "SHALL", "quote": "A client SHALL retry"},
+    {"id": "R-ITEM", "section": "2", "level": "MUST", "quote": "A list item MUST be quoted without its bullet."}
+  ],
+  "exclusions": [
+    {"section": "3", "quote": "It MUST keep the key", "reason": "half"},
+    {"section": "4", "quote": "t MUST NOT trust the input.", "reason": "mid-word"},
+    {"section": "1", "quote": "Tokens SHALL expire.", "reason": "a sibling's"}
+  ],
+  "functions": [{"name": "f", "params": [{"name": "a", "type": "bytes"}], "returns": "bytes"}],
+  "clauses": []
+}`
+
+/** The RFC the probe contract cites. */
+const COMPLETENESS_TEST_PROBE_RFC: string = `Request for Comments: 9999
+
+1.  Server
+
+   The server MUST reject a request unless it is signed.
+
+2.  Client
+
+   A client SHALL retry. The client MUST NOT block when idle.
+
+   o  A list item MUST be quoted without its bullet.
+
+3.  Keys
+
+   It MUST keep the key secret when stored.
+
+4.  Input
+
+   It MUST NOT trust the input.
+
+5.  Tokens
+
+   Tokens SHALL expire.
+`
+
+/** A context with a contract and a hand-built source set holding one RFC. */
+const completenessTestWith = (contract: string, rfc: string): CheckContext => {
   const ctx = new CheckContext("contracts/c1.json", ".")
-  ctx.contract = contractParse(COMPLETENESS_TEST_C, "c1").expect("parse")
+  ctx.contract = contractParse(contract, "c1").expect("parse")
   const set = new SourceSet()
   set.main = "rfc9999"
-  set.sources.push(new LoadedSource("rfc9999", "r.txt", "r.txt", rfcParse(COMPLETENESS_TEST_RFC)))
+  set.sources.push(new LoadedSource("rfc9999", "r.txt", "r.txt", rfcParse(rfc)))
   ctx.sources = set
   return ctx
 }
+
+/** A context with the contract and its source. */
+const completenessTestCtx = (): CheckContext => completenessTestWith(COMPLETENESS_TEST_C, COMPLETENESS_TEST_RFC)
 
 /** The completeness gate. */
 export const main = (): i32 => {
@@ -86,6 +139,51 @@ export const main = (): i32 => {
   t.ok("findings", all.length === 4)
   if (all.length !== 4) {
     console.log(all.join("\n"))
+  }
+  const probe = gateCompleteness(completenessTestWith(COMPLETENESS_TEST_PROBE, COMPLETENESS_TEST_PROBE_RFC))
+  t.ok(
+    "half a sentence as a requirement",
+    probe.indexOf(
+      `§1: MUST sentence is neither a requirement nor an exclusion: "The server MUST reject a request unless it is signed."`,
+    ) >= 0,
+  )
+  t.ok(
+    "the keyword alone as a requirement",
+    probe.indexOf(
+      `§2: MUST NOT sentence is neither a requirement nor an exclusion: "The client MUST NOT block when idle."`,
+    ) >= 0,
+  )
+  t.ok("a list item without its bullet", !probe.some((f: string): boolean => f.indexOf("A list item") >= 0))
+  t.ok(
+    "a whole sentence without its period",
+    !probe.some((f: string): boolean => f.indexOf("SHALL sentence") >= 0 && f.indexOf("§2") === 0),
+  )
+  t.ok(
+    "half a sentence as an exclusion",
+    probe.indexOf(
+      `§3: MUST sentence is neither a requirement nor an exclusion: "It MUST keep the key secret when stored."`,
+    ) >= 0,
+  )
+  t.ok(
+    "a mid-word exclusion",
+    probe.indexOf(`exclusion §4: the quote starts or ends inside a word: "t MUST NOT trust the input."`) >= 0,
+  )
+  t.ok(
+    "a mid-word exclusion covers nothing",
+    probe.indexOf(`§4: MUST NOT sentence is neither a requirement nor an exclusion: "It MUST NOT trust the input."`) >=
+      0,
+  )
+  t.ok(
+    "a sibling's sentence under the wrong section",
+    probe.indexOf(`exclusion §1: quote not found in RFC §1 ("Server"): "Tokens SHALL expire."`) >= 0,
+  )
+  t.ok(
+    "a sibling's sentence stays uncovered",
+    probe.indexOf(`§5: SHALL sentence is neither a requirement nor an exclusion: "Tokens SHALL expire."`) >= 0,
+  )
+  t.ok("probe findings", probe.length === 7)
+  if (probe.length !== 7) {
+    console.log(probe.join("\n"))
   }
   return t.done()
 }

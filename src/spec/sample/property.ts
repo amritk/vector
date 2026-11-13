@@ -17,15 +17,19 @@ import { SampleValue, sampleBytes, sampleHolds, sampleInt, sampleStr, sampleToLi
 import { sampleIntLess, sampleParseInt } from "./ints"
 import { SamplePrng, sampleBelow, sampleBiasedInt } from "./prng"
 import {
+  SampleEdge,
   SampleQuery,
   sampleBoolTerm,
   sampleEdges,
   sampleInlineLets,
+  sampleModelInt,
   sampleNamesIn,
   sampleRange,
   sampleScript,
-  sampleSmtIntOf,
+  sampleSmtInt,
+  sampleSmtLit,
   sampleSmtName,
+  sampleWrapsOnInt,
 } from "./smt"
 
 /**
@@ -157,7 +161,7 @@ const sampleAdd = (run: SampleRun, env: Map<string, SampleValue>, why: string): 
 const sampleQueries = (run: SampleRun): SampleQuery[] => {
   const k = run.k
   const queries: SampleQuery[] = [new SampleQuery("", [])]
-  const edges: string[] = []
+  const edges: SampleEdge[] = []
   const none = new Map<string, Expr>()
   const where = k.where
   if (where !== null) {
@@ -168,9 +172,9 @@ const sampleQueries = (run: SampleRun): SampleQuery[] => {
     sampleEdges(sampleInlineLets(a, none), run.vars, edges)
   }
   for (const d of edges) {
-    const pins = sampleNamesIn(d, run.vars)
-    for (const off of ["(- 1)", "0", "1"]) {
-      queries.push(new SampleQuery(`(= ${d} ${off})`, pins))
+    const pins = sampleNamesIn(d.diff, run.vars)
+    for (const off of d.offsets) {
+      queries.push(new SampleQuery(`(= ${d.diff} ${off})`, pins))
     }
   }
   if (edges.length === 0 && run.vars.some((v: ForallVar): boolean => vocabIsIntType(v.type))) {
@@ -202,7 +206,8 @@ const sampleQueries = (run: SampleRun): SampleQuery[] => {
       if (!sampleIntLess(x, lo, ty) && !sampleIntLess(hi, x, ty) && done.indexOf(x) < 0) {
         done.push(x)
         const n = sampleSmtName(v)
-        queries.push(new SampleQuery(`(= ${n} ${sampleSmtIntOf(x, ty)})`, [n]))
+        const lit = vocabIsIntType(v.type) ? sampleSmtLit(x, v.type) : sampleSmtInt(x)
+        queries.push(new SampleQuery(`(= ${n} ${lit})`, [n]))
       }
     }
   }
@@ -233,7 +238,7 @@ const sampleBoundaries = (
       if (raw === null) {
         continue
       }
-      const parsed = sampleParseInt(raw)
+      const parsed = sampleModelInt(raw, v.type)
       if (parsed.isErr()) {
         continue
       }
@@ -301,10 +306,16 @@ export const sampleProperty = (contract: string, k: Clause): Result<SampleOutcom
   }
   run.out.stat.inhabited = run.out.samples.length > 0
   if (!run.out.stat.inhabited) {
-    run.out.issue =
-      unsat.value && whereTerm !== null
-        ? "the domain is empty (Z3: unsat) — the property would hold vacuously"
-        : "no input satisfies the domain (Z3 could not decide it and no sample was found)"
+    // Int unsat proves nothing about i32 arithmetic, which wraps.
+    const exact = where === null || !sampleWrapsOnInt(where, run.vars)
+    if (unsat.value && whereTerm !== null && exact) {
+      run.out.issue = "the domain is empty (Z3: unsat) — the property would hold vacuously"
+    } else if (unsat.value && whereTerm !== null) {
+      run.out.issue =
+        "no sample satisfies the domain: Z3 found none over unbounded integers, where i32 arithmetic does not wrap, and no draw found one"
+    } else {
+      run.out.issue = "no input satisfies the domain (Z3 could not decide it and no sample was found)"
+    }
   }
   return Ok(run.out)
 }

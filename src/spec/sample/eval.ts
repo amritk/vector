@@ -211,9 +211,13 @@ const sampleArg = (args: SampleValue[], i: i32, kind: SampleKind, op: string): R
   return Ok(args[i])
 }
 
-/** The truncating remainder, 0 for a zero divisor, as the generated test's helper. */
+/**
+ * The truncating remainder, 0 for a zero divisor, as the generated test's
+ * helper. A signed `x % -1` is 0 (and the minimum's would trap); an unsigned
+ * divisor held as -1 is the u64 maximum, and divides as itself.
+ */
 const sampleRem = (x: i64, y: i64, ty: string): i64 => {
-  if (y === toI64(0) || y === toI64(-1)) {
+  if (y === toI64(0) || (y === toI64(-1) && ty !== "u64")) {
     return 0
   }
   return ty === "u64" ? toI64(toU64(x) % toU64(y)) : x % y

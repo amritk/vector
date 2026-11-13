@@ -1,7 +1,8 @@
 /**
  * `spec/report/text` — the check's report for a terminal: the status, every
  * finding, each requirement with the clauses that cover it, the source
- * commands, the exclusions and the warnings.
+ * commands, the exclusions and the warnings. Text from the contract or a
+ * command's output is printed with its control characters escaped.
  */
 
 import { CheckContext, CheckReport } from "../check"
@@ -10,6 +11,7 @@ import {
   reportCovered,
   reportCovering,
   reportIssues,
+  reportSafe,
   reportSampleCount,
   reportShapeOk,
   reportShort,
@@ -22,6 +24,9 @@ import {
 
 /** The rule under the report's title. */
 const REPORT_RULE: string = "── VECTOR RFC CONTRACT ─────────────────────────────────────────"
+
+/** The most bytes of one contract or command text the report prints. */
+const REPORT_CAP: i32 = 400
 
 /** Appends each line to the report. */
 const reportTextAdd = (out: string[], lines: string[]): void => {
@@ -52,13 +57,18 @@ export const reportMark = (outcome: string): string => {
 export const reportText = (ctx: CheckContext, report: CheckReport): string => {
   const c = ctx.contract
   const out: string[] = [REPORT_RULE]
-  out.push(` ${c.contract} · ${reportSourceTitle(c)} · ${c.target.module}`)
+  out.push(
+    c.contract === ""
+      ? ` ${ctx.contractPath} · not a contract the schema accepts`
+      : ` ${c.contract} · ${reportSourceTitle(c)} · ${c.target.module}`,
+  )
   out.push(` Status: ${reportStatus(report)}`)
   const issues = reportIssues(ctx, report)
   if (issues.length > 0) {
     reportTextAdd(out, ["", " Gate failures"])
     for (const i of issues) {
-      out.push(i.at === "" ? `  ✘ ${i.gate}: ${i.message}` : `  ✘ ${i.gate} ${i.at}: ${i.message}`)
+      const m = reportSafe(i.message, REPORT_CAP)
+      out.push(i.at === "" ? `  ✘ ${i.gate}: ${m}` : `  ✘ ${i.gate} ${reportSafe(i.at, REPORT_CAP)}: ${m}`)
     }
   }
   if (reportShapeOk(report)) {
@@ -84,7 +94,8 @@ export const reportText = (ctx: CheckContext, report: CheckReport): string => {
     if (runs.length > 0) {
       reportTextAdd(out, ["", " Vector sources run"])
       for (const r of runs) {
-        out.push(`  ${reportMark(r.outcome)} ${r.clause}: $ ${r.command}${r.detail === "" ? "" : ` — ${r.detail}`}`)
+        const detail = r.detail === "" ? "" : ` — ${reportSafe(r.detail, REPORT_CAP)}`
+        out.push(`  ${reportMark(r.outcome)} ${r.clause}: $ ${reportSafe(r.command, REPORT_CAP)}${detail}`)
       }
     }
     const ex = c.exclusions
@@ -99,7 +110,7 @@ export const reportText = (ctx: CheckContext, report: CheckReport): string => {
   if (warnings.length > 0) {
     reportTextAdd(out, ["", " Warnings"])
     for (const w of warnings) {
-      out.push(`  ! ${w.at}: ${w.message}`)
+      out.push(`  ! ${reportSafe(w.at, REPORT_CAP)}: ${reportSafe(w.message, REPORT_CAP)}`)
     }
   }
   reportTextAdd(out, ["", " ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run"])

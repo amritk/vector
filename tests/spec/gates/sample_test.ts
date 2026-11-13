@@ -31,6 +31,7 @@ import {
   sampleNext,
 } from "../../../src/spec/sample/prng"
 import {
+  SampleEdge,
   SampleQuery,
   sampleBoolTerm,
   sampleEdges,
@@ -172,11 +173,17 @@ export const main = (): i32 => {
   t.ok("where in the skeleton", wterm !== null && wterm === "(and (<= v_n v_m) (< len_a 3))")
   t.ok("a mixed comparison is outside", sampleBoolTerm(w2e, sampleTestClause(1).forall) === null)
   const flat = sampleInlineLets(a1e, none)
-  const edges: string[] = []
+  const edges: SampleEdge[] = []
   sampleEdges(flat, vars, edges)
   t.ok("a call's length gives no edge", edges.length === 0)
   sampleEdges(w1, vars, edges)
-  t.eqStr("the where's edges", edges.join(" "), "(- v_n v_m) (- len_a 3)")
+  sampleEdges(w1, vars, edges)
+  t.eqStr(
+    "the where's edges, each once",
+    edges.map((d: SampleEdge): string => d.diff).join(" "),
+    "(- v_n v_m) (- len_a 3)",
+  )
+  t.eqStr("an Int edge's offsets", edges[0].offsets.join(" "), "(- 1) 0 1")
   t.ok("names in a term", sampleNamesIn("(- (+ v_n 1) len_a)", vars).join(",") === "v_n,len_a")
   const ity = sampleIntTypeOf(flat.args[0], vars)
   t.ok("int type of n", ity !== null && ity === "i32")
@@ -188,7 +195,7 @@ export const main = (): i32 => {
     new SampleQuery("(= v_n 9)", ["v_n"]),
   ])
   t.ok("script declares", script.indexOf("(declare-const v_n Int)") >= 0)
-  t.ok("script ranges", script.indexOf("(assert (and (>= v_n (- 5)) (<= v_n 9)))") >= 0)
+  t.ok("script ranges", script.indexOf("(assert (and (<= (- 5) v_n) (<= v_n 9)))") >= 0)
   t.ok("script queries", script.indexOf(`(echo "@@Q1")`) >= 0 && script.indexOf("(assert (= v_n 9))") >= 0)
   return t.done()
 }

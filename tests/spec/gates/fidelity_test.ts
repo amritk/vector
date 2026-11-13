@@ -1,6 +1,7 @@
 import { Suite } from "nish/testing"
 import { CheckContext } from "../../../src/spec/check"
 import { contractParse } from "../../../src/spec/contract/read"
+import { gateQuoteWhole } from "../../../src/spec/gates/cite"
 import { gateFidelity } from "../../../src/spec/gates/fidelity"
 import { LoadedSource, SourceSet } from "../../../src/spec/source/load"
 import { rfcParse } from "../../../src/spec/source/rfc"
@@ -12,7 +13,10 @@ const FIDELITY_TEST_C: string = `{
   "target": {"module": "nish/x"},
   "requirements": [
     {"id": "R1", "section": "2", "level": "MUST", "quote": "It MUST return the key."},
-    {"id": "R2", "section": "2", "level": "MUST", "quote": "It MUST return the lock."}
+    {"id": "R2", "section": "2", "level": "MUST", "quote": "It MUST return the lock."},
+    {"id": "R3", "section": "2", "level": "MUST", "quote": "ST return the ke"},
+    {"id": "R4", "section": "2", "level": "MUST", "quote": "Hello there."},
+    {"id": "R5", "section": "2", "level": "MUST", "quote": "return the key"}
   ],
   "functions": [
     {"name": "f", "params": [{"name": "a", "type": "bytes"}, {"name": "b", "type": "bytes"}], "returns": "bytes"},
@@ -103,6 +107,12 @@ export const main = (): i32 => {
     "an altered quote",
     fidelityTestHas(all, "R2:", `quote not found in RFC §2 ("Rules"): "It MUST return the lock."`),
   )
+  t.ok(
+    "a quote cut mid-word",
+    fidelityTestHas(all, "R3:", `the quote starts or ends inside a word: "ST return the ke"`),
+  )
+  t.ok("a sibling section's quote", fidelityTestHas(all, "R4:", `quote not found in RFC §2 ("Rules"): "Hello there."`))
+  t.ok("whole words inside a sentence", !fidelityTestHas(all, "R5:", ""))
   t.ok("a true vector", !fidelityTestHas(all, "V1:", "") && !fidelityTestHas(all, "V1.", ""))
   t.ok("under another label", fidelityTestHas(all, "V2.args[0]:", `under "IKM", not under "salt"`))
   t.ok("part of a value", fidelityTestHas(all, "V2.args[1]:", "2-byte value is only part of a value"))
@@ -116,9 +126,14 @@ export const main = (): i32 => {
   t.ok("part of a string", fidelityTestHas(all, "V7.args[0]:", "only part of a longer value"))
   t.ok("a whole string", !fidelityTestHas(all, "V8:", "") && !fidelityTestHas(all, "V8.", ""))
   t.ok("an empty string", fidelityTestHas(all, "V9.args[0]:", "the empty value is not printed"))
-  t.ok("findings", all.length === 12)
-  if (all.length !== 12) {
+  t.ok("findings", all.length === 14)
+  if (all.length !== 14) {
     console.log(all.join("\n"))
   }
+  t.ok("a whole-word quote", gateQuoteWhole("It MUST NOT fail.", "MUST NOT fail."))
+  t.ok("not inside a word at its start", !gateQuoteWhole("the MUSTARD jar", "TARD jar"))
+  t.ok("not inside a word at its end", !gateQuoteWhole("the MUSTARD jar", "the MUST"))
+  t.ok("a later occurrence can be whole", gateQuoteWhole("MUSTARD, then MUST", "MUST"))
+  t.ok("punctuation bounds itself", gateQuoteWhole("a.b", ".b"))
   return t.done()
 }

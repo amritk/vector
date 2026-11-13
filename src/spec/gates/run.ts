@@ -4,9 +4,10 @@
  * after it. The commands come from the contract, so they are untrusted: each
  * runs as `sh -c` from the contract's directory, under `timeout -s KILL`,
  * which puts the command in its own process group and kills the whole group
- * at the deadline, so a forked grandchild dies with it. (A command that
- * leaves the group on purpose, with `setsid`, is not contained: the caller
- * is warned before any command runs.)
+ * at the deadline, so a forked grandchild dies with it. Only the deadline
+ * kills the group: a command that exits in time may leave a backgrounded
+ * child running, and one that leaves the group on purpose, with `setsid`,
+ * is never contained. The caller is warned before any command runs.
  */
 
 import { asciiLower, splitLines, trim } from "nish/text"

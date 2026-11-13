@@ -23,6 +23,7 @@ import {
   reportEvidence,
   reportIssues,
   reportOneLine,
+  reportSafe,
   reportSampleCount,
   reportShapeOk,
   reportShort,
@@ -85,6 +86,19 @@ export const main = (): i32 => {
   const t = new Suite("spec/gates/report")
 
   t.eqStr("one line", reportOneLine("  a \n\t b  "), "a b")
+  t.eqStr("control characters escaped", reportSafe("a\u001b[2Jb\nc\u007f", 40), "a\\x1b[2Jb\\x0ac\\x7f")
+  t.eqStr("safe text is capped", reportSafe("abcdef", 4), "abcd…")
+  t.eqStr("never cut inside a character", reportSafe("aéé", 2), "a…")
+  const raw = reportTestCtx()
+  raw.sourceRuns = [new CheckSourceRun("V-CMD", "printf '\u001b]0;x\u0007'", "fail", "out\u001b[2J\r")]
+  raw.notes.push(new CheckNote("run-sources", "V\u001bX", "said \u001b[31mred", true))
+  const shown = reportText(raw, new CheckReport(new SampleTable()))
+  t.ok(
+    "the text report prints no escape",
+    shown.indexOf("\u001b") < 0 && shown.indexOf("\r") < 0 && shown.indexOf("\u0007") < 0,
+  )
+  t.ok("it shows them escaped", shown.indexOf("$ printf '\\x1b]0;x\\x07' — out\\x1b[2J\\x0d") >= 0)
+  t.ok("in warnings too", shown.indexOf("! V\\x1bX: said \\x1b[31mred") >= 0)
   t.eqStr("short enough", reportShort("abc", 3), "abc")
   t.eqStr("cut with an ellipsis", reportShort("abcdef", 4), "abc…")
   t.eqStr("never inside a character", reportShort("ééééé", 3), "éé…")
@@ -96,6 +110,7 @@ export const main = (): i32 => {
   t.eqStr("markdown not run", reportMdMark("not run"), "⚪ not run")
   t.eqStr("a cell escapes pipes and backslashes", reportCell("a|b\\c"), "a\\|b\\\\c")
   t.eqStr("an empty cell", reportCell(""), " ")
+  t.eqStr("a cell escapes html, links and mentions", reportCell("<b>[x](y) @team"), "&lt;b>\\[x](y) &#64;team")
   t.eqStr("plain code", reportCode("x"), "`x`")
   t.eqStr("code around backticks", reportCode("a``b"), "``` a``b ```")
   t.eqStr("code in a cell", reportCodeCell("a\\|b"), "`a\\\\\\|b`")

@@ -5,6 +5,7 @@
  * another source).
  */
 
+import { jsonStringifyString } from "nish/json"
 import { CheckContext } from "../check"
 import { Citation, Clause, Contract, FnSig } from "../contract/types"
 import { hiddenText } from "../source/hidden"
@@ -111,9 +112,39 @@ export const gateCitedSection = (
 const gateDocName = (src: LoadedSource): string =>
   src.doc.number >= 1 ? `RFC ${src.doc.number}` : `source "${src.id}"`
 
+/** Whether a character code is a letter or a digit. */
+const gateIsWordChar = (c: i32): boolean => (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122)
+
+/**
+ * Whether a quote is printed in a text as whole words somewhere: at some
+ * occurrence, neither its first character nor its last continues a word of
+ * the text around it. "MUST" inside "MUSTARD", or "ust not" cut from
+ * "must not", is not a quote of the text.
+ *
+ * @param text the text, whitespace collapsed
+ * @param q the quote, whitespace collapsed and non-empty
+ * @returns true when some occurrence is word-bounded
+ */
+export const gateQuoteWhole = (text: string, q: string): boolean => {
+  const first = gateIsWordChar(q.charCodeAt(0))
+  const last = gateIsWordChar(q.charCodeAt(q.length - 1))
+  let at = toI32(text.indexOf(q))
+  while (at >= 0) {
+    const end = at + q.length
+    const cutBefore = first && at > 0 && gateIsWordChar(text.charCodeAt(at - 1))
+    const cutAfter = last && end < text.length && gateIsWordChar(text.charCodeAt(end))
+    if (!cutBefore && !cutAfter) {
+      return true
+    }
+    at = toI32(text.indexOf(q, at + 1))
+  }
+  return false
+}
+
 /**
  * Why a quote is not in a section, verbatim with whitespace collapsed:
- * empty, holding text a reader cannot see, or not printed there.
+ * empty, holding text a reader cannot see, not printed there, or printed
+ * only as part of a word.
  *
  * @param sec the section
  * @param quote the quote
@@ -128,7 +159,11 @@ export const gateQuoteMissing = (sec: RfcSection, quote: string): string | null 
   if (q.length === 0) {
     return "the quote is empty"
   }
-  return rfcSectionText(sec).indexOf(q) >= 0 ? null : "quote not found"
+  const text = rfcSectionText(sec)
+  if (text.indexOf(q) < 0) {
+    return "quote not found"
+  }
+  return gateQuoteWhole(text, q) ? null : `the quote starts or ends inside a word: ${jsonStringifyString(q)}`
 }
 
 /**

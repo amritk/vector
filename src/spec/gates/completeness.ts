@@ -41,14 +41,46 @@ const gateSectionQuotes = (ctx: CheckContext, set: SourceSet, section: string): 
   return out
 }
 
-/** Whether an offset is inside one of the spans, two numbers a span. */
-const gateInSpan = (spans: i32[], at: i32): boolean => {
+/** Whether one of the spans, two numbers a span, holds all of [start, end). */
+const gateSpanHolds = (spans: i32[], start: i32, end: i32): boolean => {
   for (let i = 0; i + 1 < spans.length; i += 2) {
-    if (spans[i] <= at && at < spans[i + 1]) {
+    if (spans[i] <= start && end <= spans[i + 1]) {
       return true
     }
   }
   return false
+}
+
+/**
+ * Where the sentence around an offset starts and ends in a section's own
+ * text, as gateSentenceAt finds it: without the section's heading or a list
+ * bullet before it, and without its closing period, which a quote may leave
+ * out.
+ */
+const gateSentenceBounds = (sec: RfcSection, text: string, at: i32): i32[] => {
+  let start = 0
+  for (let i = at - 2; i >= 0; i--) {
+    if (text.substring(i, i + 2) === ". ") {
+      start = i + 2
+      break
+    }
+  }
+  const head = `${sec.title} `
+  if (start > 0 && text.substring(start).startsWith(head)) {
+    start = start + head.length
+  }
+  // A list item's bullet is layout, not part of its sentence.
+  for (const bullet of ["o ", "* ", "- "]) {
+    if (text.substring(start).startsWith(bullet)) {
+      start = start + bullet.length
+    }
+  }
+  const stop = toI32(text.indexOf(". ", at))
+  let end = stop < 0 ? text.length : stop
+  if (stop < 0 && text.endsWith(".")) {
+    end = end - 1
+  }
+  return [start, end]
 }
 
 /** Each exclusion's quote is in its section; each one found is a warning. */
@@ -93,7 +125,8 @@ const gateSectionComplete = (ctx: CheckContext, out: string[], set: SourceSet, s
     }
   }
   for (let i = 0; i + 1 < uses.length; i += 2) {
-    if (!gateInSpan(spans, uses[i])) {
+    const b = gateSentenceBounds(sec, text, uses[i])
+    if (!gateSpanHolds(spans, b[0], b[1])) {
       gateIssue(
         ctx,
         out,

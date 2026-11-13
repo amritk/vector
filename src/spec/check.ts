@@ -341,6 +341,37 @@ export const checkContractWith = (ctx: CheckContext, contract: Contract, gates: 
 }
 
 /**
+ * The report of a contract its structure refused, before any gate could run:
+ * the reader's errors as the given gate's findings, the gates after it
+ * skipped. The context is reset as checkContractWith resets it, holding an
+ * empty contract, so the report renders without a model to read.
+ *
+ * @param ctx the check's context
+ * @param gate the gate the errors are reported under
+ * @param errors each structural error
+ * @param gates the registered gates, which name the skipped ones
+ * @returns the refused report
+ */
+export const checkRefused = (
+  ctx: CheckContext,
+  gate: string,
+  errors: string[],
+  gates: CheckGateEntry[],
+): CheckReport => {
+  const report = checkContractWith(ctx, new Contract(), [])
+  report.ran.push(gate)
+  for (const m of errors) {
+    report.findings.push(new CheckFinding(gate, m))
+  }
+  for (const g of gates) {
+    if (g.name !== gate) {
+      report.skipped.push(g.name)
+    }
+  }
+  return report
+}
+
+/**
  * Runs every registered gate over a contract.
  *
  * @param ctx the check's context

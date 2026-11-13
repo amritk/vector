@@ -2,7 +2,7 @@ import { Suite } from "nish/testing"
 import { specCheckForeignWarning, specCheckRender, specCheckRepoTop, specCheckRoot } from "../../../src/cli/spec-check"
 import { joinPath, makeTempDir } from "../../../src/core/fs"
 import { runProcess } from "../../../src/core/process"
-import { CheckContext, CheckReport, checkContract } from "../../../src/spec/check"
+import { CheckContext, CheckReport, checkContract, checkGates, checkRefused } from "../../../src/spec/check"
 import { contractLoadFile } from "../../../src/spec/contract/contract"
 import { Contract } from "../../../src/spec/contract/types"
 import { gateSources } from "../../../src/spec/gates/cite"
@@ -79,5 +79,16 @@ export const main = (): i32 => {
   t.ok("markdown", specCheckRender(ctx, found).startsWith("## ✅ rfc5869-hkdf-sha256: CONTRACT_VALID"))
   ctx.format = "json"
   t.ok("json", specCheckRender(ctx, found).startsWith('{"status":"CONTRACT_VALID"'))
+  // A contract the schema refuses is reported, not a usage error: its errors
+  // are the shape gate's, every later gate skipped, in every format.
+  const refusedCtx = new CheckContext("bad.json", ".")
+  const refused = checkRefused(refusedCtx, "shape", ['contract: unknown field "x"'], checkGates())
+  t.eqStr("refused: ran", refused.ran.join(","), "shape")
+  t.eqI32("refused: skipped every later gate", toI32(refused.skipped.length), toI32(checkGates().length) - 1)
+  t.eqStr("refused: the finding", refused.findings[0].message, 'contract: unknown field "x"')
+  for (const f of ["text", "markdown", "json"]) {
+    refusedCtx.format = f
+    t.ok(`refused renders as ${f}`, specCheckRender(refusedCtx, refused).indexOf("unknown field") >= 0)
+  }
   return t.done()
 }

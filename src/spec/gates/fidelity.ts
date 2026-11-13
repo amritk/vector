@@ -1,7 +1,11 @@
 /**
  * `spec/gates/fidelity` — the contract says what its sources say. Every
  * requirement's and tolerance's quote is printed verbatim (whitespace
- * collapsed) in the section it cites. Every value of a cited vector is
+ * collapsed) as whole words in the section it cites. A section's text holds
+ * its subsections', so a quote cited to §2 may be printed in §2.1; a quote
+ * printed only in a sibling, or in the parent of the section cited, is not
+ * found. Completeness, which reads each section's own text, still asks the
+ * subsection for a quote of its own. Every value of a cited vector is
  * printed whole in its section, under the label the contract gives it, and
  * all of them as one test case: on one line, or from one round of repeated
  * labels, with the expected value not also an input. A value printed for one

@@ -3,19 +3,23 @@
  *
  * It reads the contract, runs every gate (src/spec/check.ts) and prints the
  * report as text, markdown or JSON. Exit 0 when every gate passed, 1 when one
- * found something, 2 for bad usage, a contract that cannot be read, or a tool
- * (z3, a source command's shell) that failed.
+ * found something (a contract the schema refuses included: its structural
+ * errors are the shape gate's findings, in the same report), 2 for bad usage,
+ * a contract that cannot be read or is not JSON, or a tool (z3, a source
+ * command's shell) that failed.
  */
 
 import { Cli, ParseResult } from "nish/cli-args"
 import { trim } from "nish/text"
 import { EXIT_PASS, EXIT_REFUSED, EXIT_USAGE, report, usageError } from "../core/diag"
 import { dirname, joinPath } from "../core/fs"
+import { newJsonDocument, parseJson } from "../core/json"
 import { runProcess } from "../core/process"
-import { CheckContext, CheckReport, checkContract, checkPassed } from "../spec/check"
-import { contractLoadFile } from "../spec/contract/contract"
+import { CheckContext, CheckReport, checkContract, checkGates, checkPassed, checkRefused } from "../spec/check"
+import { contractFromJson } from "../spec/contract/read"
 import { Contract } from "../spec/contract/types"
 import { gateRunCommands } from "../spec/gates/run"
+import { reportSafe } from "../spec/report/common"
 import { reportJson } from "../spec/report/json"
 import { reportMarkdown } from "../spec/report/markdown"
 import { reportText } from "../spec/report/text"
@@ -82,20 +86,27 @@ export class SpecCheckCommand {
     if (spec !== null && realpathSync(spec) === null) {
       return report(usageError(`spec check: --spec ${spec} cannot be read`))
     }
-    const loaded = contractLoadFile(path)
-    if (loaded.isErr()) {
-      for (const e of loaded.error) {
-        console.error(`vector: ${e}`)
-      }
-      return EXIT_USAGE
-    }
-    const contract = loaded.value
     const ctx = new CheckContext(path, specCheckRoot())
     ctx.format = format
     ctx.specPath = spec
     ctx.moduleFile = r.value(this.moduleFlag)
     ctx.nishRoot = r.value(this.nishRootFlag)
     ctx.runSources = r.flag(this.runSourcesFlag)
+    const text = readFileSyncOrNull(path)
+    if (text === null) {
+      return report(usageError(`${path}: cannot be read`))
+    }
+    const doc = newJsonDocument()
+    const root = parseJson(doc, text, path)
+    if (root.isErr()) {
+      return report(usageError(root.error))
+    }
+    const parsed = contractFromJson(doc, root.value)
+    if (parsed.isErr()) {
+      console.log(specCheckRender(ctx, checkRefused(ctx, "shape", parsed.error, checkGates())))
+      return EXIT_REFUSED
+    }
+    const contract = parsed.value
     if (ctx.runSources) {
       const warning = specCheckForeignWarning(path, contract, specCheckRepoTop())
       if (warning !== null) {
@@ -178,11 +189,11 @@ export const specCheckForeignWarning = (path: string, c: Contract, top: string |
     `warning: --run-sources runs ${cmds.length} shell command(s) from ${path}, which is not in ${where}.`,
   ]
   out.push(
-    "They run as you, with sh -c, from the contract's directory, with your files and network. A timeout kills each command's process group, but not a process it detached with setsid. Read them first:",
+    "They run as you, with sh -c, from the contract's directory, with your environment, files and network. A timeout kills each command's process group, but not a process it detached with setsid. Read them first:",
   )
   for (const k of cmds) {
     const s = k.source
-    out.push(`  [${k.id}] $ ${s === null ? "" : s.text}`)
+    out.push(`  [${reportSafe(k.id, 200)}] $ ${reportSafe(s === null ? "" : s.text, 2000)}`)
   }
   return out.join("\n")
 }

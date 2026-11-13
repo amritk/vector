@@ -29,7 +29,9 @@ const reportMdAdd = (out: string[], lines: string[]): void => {
   }
 }
 /**
- * A table cell: one line, with `\` and `|` escaped so neither ends the cell.
+ * A table cell: one line, with `\` and `|` escaped so neither ends the cell,
+ * and `<`, `[` and `@` escaped so contract text never renders as HTML, a link
+ * or a mention in the PR comment.
  *
  * @param s the text
  * @returns the cell's text; a space when empty
@@ -39,8 +41,14 @@ export const reportCell = (s: string): string => {
   let out = ""
   for (let i = 0; i < t.length; i++) {
     const c = t.charCodeAt(i)
-    // 92 is `\`, 124 is `|`.
-    out = out + (c === 92 || c === 124 ? "\\" : "") + t.substring(i, i + 1)
+    // 92 is `\`, 124 is `|`, 91 is `[`; 60 is `<` and 64 is `@`, written as entities.
+    if (c === 60) {
+      out = `${out}&lt;`
+    } else if (c === 64) {
+      out = `${out}&#64;`
+    } else {
+      out = out + (c === 92 || c === 124 || c === 91 ? "\\" : "") + t.substring(i, i + 1)
+    }
   }
   return out === "" ? " " : out
 }
@@ -105,8 +113,14 @@ export const reportCodeCell = (s: string): string => {
 export const reportMarkdown = (ctx: CheckContext, report: CheckReport): string => {
   const c = ctx.contract
   const status = reportStatus(report)
-  const out: string[] = [`## ${status === "CONTRACT_VALID" ? "✅" : "❌"} ${c.contract}: ${status}`, ""]
-  reportMdAdd(out, [`${reportCell(reportSourceTitle(c))} · target ${reportCode(c.target.module)}`, ""])
+  const name = c.contract === "" ? reportCell(ctx.contractPath) : c.contract
+  const out: string[] = [`## ${status === "CONTRACT_VALID" ? "✅" : "❌"} ${name}: ${status}`, ""]
+  reportMdAdd(out, [
+    c.contract === ""
+      ? "Not a contract the schema accepts."
+      : `${reportCell(reportSourceTitle(c))} · target ${reportCode(c.target.module)}`,
+    "",
+  ])
   const issues = reportIssues(ctx, report)
   if (issues.length > 0) {
     reportMdAdd(out, ["### Gate failures", "", "| Where | Problem |", "| --- | --- |"])
