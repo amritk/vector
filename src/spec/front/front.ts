@@ -44,8 +44,11 @@ import {
 
 /** Why a block was refused; line and column (1-based) count from the block's first line. */
 export class FrontRefusal {
+  /** What is wrong. */
   message: string
+  /** The 1-based line, counted from the block's first line. */
   line: i32
+  /** The 1-based column, in UTF-16 units. */
   col: i32
   /**
    * Makes a refusal.
@@ -746,7 +749,9 @@ const frontNotModule = (m: string): string =>
 
 /** What a ts-interface block declares: the module under test and its functions. */
 export class FrontInterface {
+  /** The module under test, as `<root>/<path>`. */
   module: string
+  /** The functions the block declares, in order. */
   functions: FnSig[]
   /** `lines[i]` is the block line (1-based) that declares `functions[i]`. */
   lines: i32[]
@@ -980,8 +985,11 @@ class FrontV {
 
 /** What a ts-property block says: its ids, its title and its clause. */
 export class FrontProperty {
+  /** The clause's id. */
   id: string
+  /** The clause's title; null without one. */
   title: string | null
+  /** The requirement ids the property covers. */
   covers: string[]
   /** The property clause, its id, title and covers set. */
   clause: Clause

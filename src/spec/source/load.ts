@@ -23,6 +23,7 @@ export type SourceReader = (text: string, name: string) => Result<RfcDocument, s
 export class SourceReaderEntry {
   /** The extension, with its dot: ".txt". */
   ext: string
+  /** The reader for files with that extension. */
   read: SourceReader
   /**
    * Makes an entry.
@@ -38,6 +39,7 @@ export class SourceReaderEntry {
 
 /** The readers a load may use, by file extension. */
 export class SourceReaders {
+  /** One entry per extension. */
   entries: SourceReaderEntry[]
   /** Makes an empty registry. */
   constructor() {
@@ -161,6 +163,7 @@ export class LoadedSource {
   file: string
   /** How its `file` records it (sourceLabel); the resolved file when none can. */
   label: string
+  /** The source's sections, as its reader gave them. */
   doc: RfcDocument
   /**
    * Makes a loaded source.
@@ -182,7 +185,9 @@ export class LoadedSource {
 export class SourceSet {
   /** The id of the source a citation without one refers to; "" when none. */
   main: string
+  /** The sources that were read, in declaration order. */
   sources: LoadedSource[]
+  /** One message per source that could not be read. */
   problems: string[]
   /** Makes an empty set. */
   constructor() {

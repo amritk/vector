@@ -11,13 +11,17 @@ import { vocabBaseOf, vocabFitsInt, vocabIsIntType, vocabIsOptional, vocabValueT
 
 /** What `typeOf` knows: the functions under test, the variables in scope, and whether calls are allowed. */
 export class TypeEnv {
+  /** The functions under test, which a call may name. */
   fns: FnSig[]
-  /** The names in scope, with their types at the same index in `types`. */
+  /** The names in scope. */
   names: string[]
+  /** The type of each name, at the same index in `names`. */
   types: string[]
   /** False inside `where`: the domain must be decidable without the implementation. */
   allowCalls: boolean
   /**
+   * Makes an environment with nothing in scope.
+   *
    * @param fns the functions under test
    * @param allowCalls whether expressions may call them
    */

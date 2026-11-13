@@ -18,9 +18,11 @@ const GATE_SIGNATURES: string = "signatures"
 
 /** An exported arrow function's signature, as the module's source writes it. */
 export class GateModuleSig {
+  /** The function's name. */
   name: string
   /** Each parameter's type, whitespace collapsed. */
   params: string[]
+  /** The return type, whitespace collapsed. */
   returns: string
   /**
    * Makes a signature.

@@ -49,6 +49,7 @@ const SAMPLE_MAX: i32 = 96
 export class SampleOutcome {
   /** The inputs chosen, each in the domain. */
   samples: Sample[]
+  /** How the samples were chosen, for the report. */
   stat: CheckSampleStat
   /** Why the property is refused, or null. */
   issue: string | null = null

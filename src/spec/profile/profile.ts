@@ -79,9 +79,11 @@ const profileVectorHeader = (): string[] => ["Id", "Call", "Expected", "Covers",
 export class ProfileRefusal {
   /** The markdown file when `line` is its line, else the XML file. */
   file: string
+  /** The 1-based line in `file`. */
   line: i32
   /** The column, 1-based; 0 when the refusal names none. */
   col: i32
+  /** Why the profile was refused. */
   message: string
   /**
    * Makes a refusal.
@@ -101,7 +103,9 @@ export class ProfileRefusal {
 
 /** A file and a line in it. */
 export class ProfileWhere {
+  /** The file the line is in. */
   file: string
+  /** The 1-based line. */
   line: i32
   /**
    * Makes a place.
@@ -117,6 +121,7 @@ export class ProfileWhere {
 
 /** The RFCs a spec may cite, read beforehand, and the ones it needed but were not there. */
 export class ProfileRfcs {
+  /** The RFCs read, by number. */
   docs: Map<i32, RfcDocument>
   /** The RFCs asked for and not in `docs`, each once, in the order asked. */
   missing: i32[]
@@ -137,6 +142,7 @@ export class ProfileLocator {
   file: string
   /** The line of the document's root, for what names no part. */
   root: i32
+  /** The line of each part, by its key: a requirement or clause id, a function name, or `exclusion §N`. */
   at: Map<string, i32>
   /** The file of a line when it is not `file`. */
   files: Map<string, string>
@@ -156,7 +162,9 @@ export class ProfileLocator {
 
 /** What reading a profile gives: the contract and where each part was read. */
 export class ProfileRead {
+  /** The contract the profile gives. */
   contract: Contract
+  /** Where each part of `contract` was read. */
   locator: ProfileLocator
   /**
    * Makes a reading.
