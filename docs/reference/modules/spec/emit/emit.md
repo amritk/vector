@@ -42,6 +42,8 @@ class EmitOptions
 
 #### new EmitOptions
 
+Makes options with no regenerate line.
+
 ```ts
 new EmitOptions(contractSha256: string): EmitOptions
 ```

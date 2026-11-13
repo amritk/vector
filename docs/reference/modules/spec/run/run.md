@@ -42,15 +42,27 @@ enum RunOutcome
 ```
 
 <scalar-field name="Fail" type="3">
+
+The clause ran and did not hold.
+
 </scalar-field>
 
 <scalar-field name="NotRun" type="2">
+
+The clause could not be run.
+
 </scalar-field>
 
 <scalar-field name="Pass" type="0">
+
+The clause ran and held.
+
 </scalar-field>
 
 <scalar-field name="Skip" type="1">
+
+A property with no samples, which the emitted test skips.
+
 </scalar-field>
 
 ### runOutcomeName

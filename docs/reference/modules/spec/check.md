@@ -121,6 +121,8 @@ new SampleTable(): SampleTable
 
 #### SampleTable.samples
 
+The samples, in the order the gates added them.
+
 ```ts
 samples: Sample[]
 ```
@@ -236,6 +238,8 @@ gate: string
 
 #### CheckNote.message
 
+What the gate found.
+
 ```ts
 message: string
 ```
@@ -303,11 +307,15 @@ clause: string
 
 #### CheckSourceRun.command
 
+The shell command the vector's source declares.
+
 ```ts
 command: string
 ```
 
 #### CheckSourceRun.detail
+
+What went wrong: a mismatch, a timeout or a bad exit; "" when it passed or was not run.
 
 ```ts
 detail: string
@@ -353,6 +361,8 @@ boundary: i32
 
 #### CheckSampleStat.clause
 
+The property's id.
+
 ```ts
 clause: string
 ```
@@ -366,6 +376,8 @@ inhabited: boolean
 ```
 
 #### CheckSampleStat.notes
+
+What the sampler says about the choice, for the report.
 
 ```ts
 notes: string[]
@@ -645,6 +657,8 @@ name: string
 
 #### CheckGateEntry.run
 
+The gate: it returns one message per finding.
+
 ```ts
 run: CheckGate
 ```
@@ -679,11 +693,15 @@ what it found
 
 #### CheckFinding.gate
 
+The name of the gate that found it.
+
 ```ts
 gate: string
 ```
 
 #### CheckFinding.message
+
+What the gate found.
 
 ```ts
 message: string
@@ -712,6 +730,8 @@ the table the gates add samples to
 </scalar-field>
 
 #### CheckReport.findings
+
+Every finding, in the order the gates ran.
 
 ```ts
 findings: CheckFinding[]

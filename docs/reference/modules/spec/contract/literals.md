@@ -50,6 +50,9 @@ enum RawKind
 ```
 
 <scalar-field name="Bool" type="4">
+
+`true` or `false`.
+
 </scalar-field>
 
 <scalar-field name="Bytes" type="1">
@@ -95,6 +98,9 @@ A decimal integer.
 </scalar-field>
 
 <scalar-field name="Null" type="3">
+
+`null`.
+
 </scalar-field>
 
 <scalar-field name="Repeat" type="9">
@@ -163,6 +169,8 @@ hex: string | null
 
 #### RawLiteral.kind
 
+The form the cell wrote.
+
 ```ts
 kind: RawKind
 ```
@@ -230,6 +238,8 @@ col: i32
 
 #### LiteralError.message
 
+Why the text was refused.
+
 ```ts
 message: string
 ```
@@ -264,11 +274,15 @@ its arguments
 
 #### RawCall.args
 
+The arguments, in the order written.
+
 ```ts
 args: RawLiteral[]
 ```
 
 #### RawCall.call
+
+The callee's name.
 
 ```ts
 call: string
@@ -312,6 +326,8 @@ cell: string
 
 #### CellError.message
 
+Why the cell was refused.
+
 ```ts
 message: string
 ```
@@ -346,11 +362,15 @@ the expected value
 
 #### SettledVector.args
 
+The call's arguments, in order, each settled by its parameter's type.
+
 ```ts
 args: Literal[]
 ```
 
 #### SettledVector.expect
+
+The expected value, settled by the function's return type.
 
 ```ts
 expect: Literal

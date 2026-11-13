@@ -79,6 +79,8 @@ ext: string
 
 #### SourceReaderEntry.read
 
+The reader for files with that extension.
+
 ```ts
 read: SourceReader
 ```
@@ -100,6 +102,8 @@ new SourceReaders(): SourceReaders
 ```
 
 #### SourceReaders.entries
+
+One entry per extension.
 
 ```ts
 entries: SourceReaderEntry[]
@@ -237,6 +241,8 @@ its sections
 
 #### LoadedSource.doc
 
+The source's sections, as its reader gave them.
+
 ```ts
 doc: RfcDocument
 ```
@@ -291,11 +297,15 @@ main: string
 
 #### SourceSet.problems
 
+One message per source that could not be read.
+
 ```ts
 problems: string[]
 ```
 
 #### SourceSet.sources
+
+The sources that were read, in declaration order.
 
 ```ts
 sources: LoadedSource[]

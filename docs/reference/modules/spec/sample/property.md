@@ -58,6 +58,8 @@ samples: Sample[]
 
 #### SampleOutcome.stat
 
+How the samples were chosen, for the report.
+
 ```ts
 stat: CheckSampleStat
 ```

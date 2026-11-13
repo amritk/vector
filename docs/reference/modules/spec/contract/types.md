@@ -47,27 +47,51 @@ enum LitKind
 ```
 
 <scalar-field name="Ascii" type="1">
+
+Opened by `ascii`: printable ASCII text.
+
 </scalar-field>
 
 <scalar-field name="Bool" type="5">
+
+Opened by `bool`: true or false.
+
 </scalar-field>
 
 <scalar-field name="Concat" type="7">
+
+Opened by `concat`: the parts joined.
+
 </scalar-field>
 
 <scalar-field name="F64" type="4">
+
+Opened by `f64`: a binary64 value.
+
 </scalar-field>
 
 <scalar-field name="Hex" type="0">
+
+Opened by `hex`: bytes as hex digits.
+
 </scalar-field>
 
 <scalar-field name="Int" type="3">
+
+Opened by `int`: an integer.
+
 </scalar-field>
 
 <scalar-field name="Null" type="6">
+
+Opened by `null`: the absent value.
+
 </scalar-field>
 
 <scalar-field name="Str" type="2">
+
+Opened by `str`: a text string.
+
 </scalar-field>
 
 ### Literal
@@ -79,6 +103,8 @@ class Literal
 ```
 
 #### new Literal
+
+Makes a literal of one form.
 
 ```ts
 new Literal(kind: LitKind, text: string): Literal
@@ -113,6 +139,8 @@ flag: boolean
 ```
 
 #### Literal.kind
+
+Which key opened the literal.
 
 ```ts
 kind: LitKind
@@ -175,18 +203,33 @@ enum ExprKind
 ```
 
 <scalar-field name="Call" type="2">
+
+A call of a function.
+
 </scalar-field>
 
 <scalar-field name="Let" type="4">
+
+A let: bindings and a body.
+
 </scalar-field>
 
 <scalar-field name="Lit" type="0">
+
+A literal.
+
 </scalar-field>
 
 <scalar-field name="Op" type="3">
+
+An operator applied to arguments.
+
 </scalar-field>
 
 <scalar-field name="Var" type="1">
+
+A variable of the clause.
+
 </scalar-field>
 
 ### LetBinding
@@ -198,6 +241,8 @@ class LetBinding
 ```
 
 #### new LetBinding
+
+Binds a name to an expression.
 
 ```ts
 new LetBinding(name: string, value: Expr): LetBinding
@@ -217,11 +262,15 @@ the expression it is bound to
 
 #### LetBinding.name
 
+The name the let binds.
+
 ```ts
 name: string
 ```
 
 #### LetBinding.value
+
+The expression the name stands for.
 
 ```ts
 value: Expr
@@ -236,6 +285,8 @@ class Expr
 ```
 
 #### new Expr
+
+Makes an expression of one form.
 
 ```ts
 new Expr(kind: ExprKind, name: string): Expr
@@ -279,6 +330,8 @@ body: Expr | null
 
 #### Expr.kind
 
+Which form the expression takes.
+
 ```ts
 kind: ExprKind
 ```
@@ -309,6 +362,8 @@ class NameOverride
 
 #### new NameOverride
 
+Overrides a module path or name for one language.
+
 ```ts
 new NameOverride(language: string, value: string): NameOverride
 ```
@@ -327,11 +382,15 @@ the module path or name in that language
 
 #### NameOverride.language
 
+The language the override is for.
+
 ```ts
 language: string
 ```
 
 #### NameOverride.value
+
+The module path or name that language uses.
 
 ```ts
 value: string
@@ -347,11 +406,15 @@ class ContractSource
 
 #### new ContractSource
 
+Starts with no title or main source.
+
 ```ts
 new ContractSource(): ContractSource
 ```
 
 #### ContractSource.main
+
+The id of the main entry of `sources`; null when `rfc` is given.
 
 ```ts
 main: string | null
@@ -367,11 +430,15 @@ rfc: i32
 
 #### ContractSource.sha256
 
+The sha256 of the main source file, which every load of the sources checks.
+
 ```ts
 sha256: string | null
 ```
 
 #### ContractSource.title
+
+The main source's title.
 
 ```ts
 title: string
@@ -387,6 +454,8 @@ class SourceDecl
 
 #### new SourceDecl
 
+Starts with no id or file.
+
 ```ts
 new SourceDecl(): SourceDecl
 ```
@@ -400,6 +469,8 @@ file: string | null
 ```
 
 #### SourceDecl.id
+
+The id citations use to name this source.
 
 ```ts
 id: string
@@ -423,6 +494,8 @@ rfc: i32
 
 #### SourceDecl.sha256
 
+The sha256 of the file read, which `spec check` and `spec frozen` compare.
+
 ```ts
 sha256: string | null
 ```
@@ -437,17 +510,23 @@ class Target
 
 #### new Target
 
+Starts with no module.
+
 ```ts
 new Target(): Target
 ```
 
 #### Target.module
 
+The module path, neutral across languages.
+
 ```ts
 module: string
 ```
 
 #### Target.modules
+
+Per-language overrides of the module path.
 
 ```ts
 modules: NameOverride[] | null
@@ -463,11 +542,15 @@ class Requirement
 
 #### new Requirement
 
+Starts with no id, section, level or quote.
+
 ```ts
 new Requirement(): Requirement
 ```
 
 #### Requirement.id
+
+A stable id for the requirement.
 
 ```ts
 id: string
@@ -475,11 +558,15 @@ id: string
 
 #### Requirement.level
 
+The BCP 14 keyword, or DEFINITION.
+
 ```ts
 level: string
 ```
 
 #### Requirement.note
+
+A remark on how the requirement is read; null when none.
 
 ```ts
 note: string | null
@@ -487,17 +574,23 @@ note: string | null
 
 #### Requirement.quote
 
+The sentence, verbatim from the section.
+
 ```ts
 quote: string
 ```
 
 #### Requirement.section
 
+The section the quote is from.
+
 ```ts
 section: string
 ```
 
 #### Requirement.source
+
+The id of the cited source; null for the main one.
 
 ```ts
 source: string | null
@@ -513,11 +606,15 @@ class Exclusion
 
 #### new Exclusion
 
+Starts with no section, quote or reason.
+
 ```ts
 new Exclusion(): Exclusion
 ```
 
 #### Exclusion.quote
+
+The sentence, verbatim from the section.
 
 ```ts
 quote: string
@@ -525,17 +622,23 @@ quote: string
 
 #### Exclusion.reason
 
+Why the sentence is not tested.
+
 ```ts
 reason: string
 ```
 
 #### Exclusion.section
 
+The section the sentence is from.
+
 ```ts
 section: string
 ```
 
 #### Exclusion.source
+
+The id of the cited source; null for the main one.
 
 ```ts
 source: string | null
@@ -551,11 +654,15 @@ class Param
 
 #### new Param
 
+Starts with no name or type.
+
 ```ts
 new Param(): Param
 ```
 
 #### Param.name
+
+The parameter's name.
 
 ```ts
 name: string
@@ -563,11 +670,15 @@ name: string
 
 #### Param.names
 
+Per-language overrides of the name.
+
 ```ts
 names: NameOverride[] | null
 ```
 
 #### Param.type
+
+The parameter's type, like `bytes` or `u32`.
 
 ```ts
 type: string
@@ -583,11 +694,15 @@ class FnSig
 
 #### new FnSig
 
+Starts with no name, parameters or result.
+
 ```ts
 new FnSig(): FnSig
 ```
 
 #### FnSig.module
+
+The module it lives in, for a reference function from another module; null otherwise.
 
 ```ts
 module: string | null
@@ -595,11 +710,15 @@ module: string | null
 
 #### FnSig.name
 
+The function's name.
+
 ```ts
 name: string
 ```
 
 #### FnSig.names
+
+Per-language overrides of the name.
 
 ```ts
 names: NameOverride[] | null
@@ -607,11 +726,15 @@ names: NameOverride[] | null
 
 #### FnSig.params
 
+Its parameters, in order.
+
 ```ts
 params: Param[]
 ```
 
 #### FnSig.returns
+
+Its result type, like `bytes` or `i32?`.
 
 ```ts
 returns: string
@@ -627,17 +750,23 @@ class Citation
 
 #### new Citation
 
+Starts with no source or section.
+
 ```ts
 new Citation(): Citation
 ```
 
 #### Citation.section
 
+The section cited.
+
 ```ts
 section: string
 ```
 
 #### Citation.source
+
+The id of the cited source; null for the main one.
 
 ```ts
 source: string | null
@@ -679,6 +808,8 @@ class VectorSource
 
 #### new VectorSource
 
+Starts a provenance of one kind, with no text.
+
 ```ts
 new VectorSource(kind: VectorSourceKind): VectorSource
 ```
@@ -698,6 +829,8 @@ cite: Citation | null
 ```
 
 #### VectorSource.kind
+
+Which provenance it is.
 
 ```ts
 kind: VectorSourceKind
@@ -721,6 +854,8 @@ class Tolerance
 
 #### new Tolerance
 
+Starts with no bound, section or quote.
+
 ```ts
 new Tolerance(): Tolerance
 ```
@@ -743,17 +878,23 @@ isUlps: boolean
 
 #### Tolerance.quote
 
+The sentence that allows it, verbatim.
+
 ```ts
 quote: string
 ```
 
 #### Tolerance.section
 
+The section that allows it.
+
 ```ts
 section: string
 ```
 
 #### Tolerance.source
+
+The id of the source that allows the tolerance; null for the main one.
 
 ```ts
 source: string | null
@@ -777,6 +918,8 @@ class ForallVar
 
 #### new ForallVar
 
+Starts with no name, type or bounds.
+
 ```ts
 new ForallVar(): ForallVar
 ```
@@ -799,17 +942,23 @@ hasBounds: boolean
 
 #### ForallVar.max
 
+The upper bound as text.
+
 ```ts
 max: string
 ```
 
 #### ForallVar.maxLen
 
+The longest length; -1 when absent.
+
 ```ts
 maxLen: i32
 ```
 
 #### ForallVar.maxQuoted
+
+Whether max was written as a JSON string.
 
 ```ts
 maxQuoted: boolean
@@ -841,11 +990,15 @@ minQuoted: boolean
 
 #### ForallVar.name
 
+The variable's name.
+
 ```ts
 name: string
 ```
 
 #### ForallVar.type
+
+The variable's type.
 
 ```ts
 type: string
@@ -860,9 +1013,15 @@ enum ClauseKind
 ```
 
 <scalar-field name="Property" type="1">
+
+A property over a domain.
+
 </scalar-field>
 
 <scalar-field name="Vector" type="0">
+
+A known-answer test vector.
+
 </scalar-field>
 
 ### Clause
@@ -874,6 +1033,8 @@ class Clause
 ```
 
 #### new Clause
+
+Starts a clause of one kind, with the rest empty.
 
 ```ts
 new Clause(kind: ClauseKind): Clause
@@ -887,11 +1048,15 @@ a vector or a property
 
 #### Clause.args
 
+A vector's arguments.
+
 ```ts
 args: Literal[]
 ```
 
 #### Clause.assert
+
+The expression a property asserts.
 
 ```ts
 assert: Expr | null
@@ -899,11 +1064,15 @@ assert: Expr | null
 
 #### Clause.call
 
+The function a vector calls.
+
 ```ts
 call: string
 ```
 
 #### Clause.covers
+
+The ids of the requirements it tests.
 
 ```ts
 covers: string[]
@@ -911,11 +1080,15 @@ covers: string[]
 
 #### Clause.expect
 
+A vector's expected result.
+
 ```ts
 expect: Literal | null
 ```
 
 #### Clause.forall
+
+The variables a property quantifies over.
 
 ```ts
 forall: ForallVar[]
@@ -923,11 +1096,15 @@ forall: ForallVar[]
 
 #### Clause.id
 
+A stable id for the clause.
+
 ```ts
 id: string
 ```
 
 #### Clause.kind
+
+Whether it is a vector or a property.
 
 ```ts
 kind: ClauseKind
@@ -959,17 +1136,23 @@ source: VectorSource | null
 
 #### Clause.title
 
+A short description of what the clause checks.
+
 ```ts
 title: string
 ```
 
 #### Clause.tolerance
 
+How far an f64 result may be from expect; null when exact.
+
 ```ts
 tolerance: Tolerance | null
 ```
 
 #### Clause.where
+
+A property's restriction of its domain; null when none.
 
 ```ts
 where: Expr | null
@@ -985,17 +1168,23 @@ class OutOfScope
 
 #### new OutOfScope
 
+Starts with no name or reason.
+
 ```ts
 new OutOfScope(): OutOfScope
 ```
 
 #### OutOfScope.name
 
+The untested export.
+
 ```ts
 name: string
 ```
 
 #### OutOfScope.reason
+
+Why it is not tested.
 
 ```ts
 reason: string
@@ -1011,11 +1200,15 @@ class AllowedSurvivor
 
 #### new AllowedSurvivor
 
+Starts with no file, line or reason.
+
 ```ts
 new AllowedSurvivor(): AllowedSurvivor
 ```
 
 #### AllowedSurvivor.file
+
+The source file, relative to the implementation's root.
 
 ```ts
 file: string
@@ -1023,11 +1216,15 @@ file: string
 
 #### AllowedSurvivor.line
 
+The line whose surviving mutants are accepted.
+
 ```ts
 line: i64
 ```
 
 #### AllowedSurvivor.reason
+
+Why they are accepted.
 
 ```ts
 reason: string
@@ -1043,11 +1240,15 @@ class Contract
 
 #### new Contract
 
+Starts with every part empty.
+
 ```ts
 new Contract(): Contract
 ```
 
 #### Contract.allowSurvivors
+
+Lines whose surviving mutants are accepted.
 
 ```ts
 allowSurvivors: AllowedSurvivor[] | null
@@ -1055,11 +1256,15 @@ allowSurvivors: AllowedSurvivor[] | null
 
 #### Contract.clauses
 
+The vectors and properties that test the requirements.
+
 ```ts
 clauses: Clause[]
 ```
 
 #### Contract.contract
+
+The contract's id.
 
 ```ts
 contract: string
@@ -1067,11 +1272,15 @@ contract: string
 
 #### Contract.exclusions
 
+Sentences deliberately not tested.
+
 ```ts
 exclusions: Exclusion[] | null
 ```
 
 #### Contract.functions
+
+The signatures of the functions under test.
 
 ```ts
 functions: FnSig[]
@@ -1079,11 +1288,15 @@ functions: FnSig[]
 
 #### Contract.outOfScope
 
+Exports deliberately not tested.
+
 ```ts
 outOfScope: OutOfScope[] | null
 ```
 
 #### Contract.requirements
+
+The quoted requirements.
 
 ```ts
 requirements: Requirement[]
@@ -1091,11 +1304,15 @@ requirements: Requirement[]
 
 #### Contract.schema
 
+The schema the file declares, when it does; null otherwise.
+
 ```ts
 schema: string | null
 ```
 
 #### Contract.source
+
+The main source.
 
 ```ts
 source: ContractSource
@@ -1103,11 +1320,15 @@ source: ContractSource
 
 #### Contract.sources
 
+The documents cited, by id; null when only `source.rfc` is used.
+
 ```ts
 sources: SourceDecl[] | null
 ```
 
 #### Contract.target
+
+The module under test.
 
 ```ts
 target: Target

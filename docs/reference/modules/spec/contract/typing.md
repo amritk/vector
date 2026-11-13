@@ -33,6 +33,8 @@ class TypeEnv
 
 #### new TypeEnv
 
+Makes an environment with nothing in scope.
+
 ```ts
 new TypeEnv(fns: FnSig[], allowCalls: boolean): TypeEnv
 ```
@@ -59,19 +61,23 @@ allowCalls: boolean
 
 #### TypeEnv.fns
 
+The functions under test, which a call may name.
+
 ```ts
 fns: FnSig[]
 ```
 
 #### TypeEnv.names
 
-The names in scope, with their types at the same index in `types`.
+The names in scope.
 
 ```ts
 names: string[]
 ```
 
 #### TypeEnv.types
+
+The type of each name, at the same index in `names`.
 
 ```ts
 types: string[]

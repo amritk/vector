@@ -135,17 +135,23 @@ its number in the document
 
 #### XmlNode.attrNames
 
+The attributes' names, in the order written.
+
 ```ts
 attrNames: string[]
 ```
 
 #### XmlNode.attrValues
 
+The attributes' values, at the same index as `attrNames`.
+
 ```ts
 attrValues: string[]
 ```
 
 #### XmlNode.first
+
+The first child; null without one.
 
 ```ts
 first: XmlNode | null
@@ -160,6 +166,8 @@ id: i32
 ```
 
 #### XmlNode.last
+
+The last child; null without one.
 
 ```ts
 last: XmlNode | null
@@ -191,11 +199,15 @@ name: string
 
 #### XmlNode.next
 
+The next sibling; null for the last.
+
 ```ts
 next: XmlNode | null
 ```
 
 #### XmlNode.parent
+
+The enclosing element; null for the root.
 
 ```ts
 parent: XmlNode | null
@@ -274,6 +286,8 @@ mdLine: i32
 ```
 
 #### XmlError.message
+
+Why the input was refused.
 
 ```ts
 message: string

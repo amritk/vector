@@ -62,17 +62,23 @@ the column in UTF-16 units, 1-based
 
 #### FrontRefusal.col
 
+The 1-based column, in UTF-16 units.
+
 ```ts
 col: i32
 ```
 
 #### FrontRefusal.line
 
+The 1-based line, counted from the block's first line.
+
 ```ts
 line: i32
 ```
 
 #### FrontRefusal.message
+
+What is wrong.
 
 ```ts
 message: string
@@ -118,6 +124,8 @@ the block line declaring each function
 
 #### FrontInterface.functions
 
+The functions the block declares, in order.
+
 ```ts
 functions: FnSig[]
 ```
@@ -131,6 +139,8 @@ lines: i32[]
 ```
 
 #### FrontInterface.module
+
+The module under test, as `<root>/<path>`.
 
 ```ts
 module: string
@@ -237,17 +247,23 @@ clause: Clause
 
 #### FrontProperty.covers
 
+The requirement ids the property covers.
+
 ```ts
 covers: string[]
 ```
 
 #### FrontProperty.id
 
+The clause's id.
+
 ```ts
 id: string
 ```
 
 #### FrontProperty.title
+
+The clause's title; null without one.
 
 ```ts
 title: string | null

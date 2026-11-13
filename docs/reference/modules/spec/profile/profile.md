@@ -107,11 +107,15 @@ file: string
 
 #### ProfileRefusal.line
 
+The 1-based line in `file`.
+
 ```ts
 line: i32
 ```
 
 #### ProfileRefusal.message
+
+Why the profile was refused.
 
 ```ts
 message: string
@@ -147,11 +151,15 @@ the line
 
 #### ProfileWhere.file
 
+The file the line is in.
+
 ```ts
 file: string
 ```
 
 #### ProfileWhere.line
+
+The 1-based line.
 
 ```ts
 line: i32
@@ -174,6 +182,8 @@ new ProfileRfcs(): ProfileRfcs
 ```
 
 #### ProfileRfcs.docs
+
+The RFCs read, by number.
 
 ```ts
 docs: Map<i32, RfcDocument>
@@ -218,6 +228,8 @@ the root's line
 </scalar-field>
 
 #### ProfileLocator.at
+
+The line of each part, by its key: a requirement or clause id, a function name, or `exclusion §N`.
 
 ```ts
 at: Map<string, i32>
@@ -277,11 +289,15 @@ where its parts were read
 
 #### ProfileRead.contract
 
+The contract the profile gives.
+
 ```ts
 contract: Contract
 ```
 
 #### ProfileRead.locator
+
+Where each part of `contract` was read.
 
 ```ts
 locator: ProfileLocator

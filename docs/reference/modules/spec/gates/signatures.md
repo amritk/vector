@@ -60,6 +60,8 @@ its return type
 
 #### GateModuleSig.name
 
+The function's name.
+
 ```ts
 name: string
 ```
@@ -73,6 +75,8 @@ params: string[]
 ```
 
 #### GateModuleSig.returns
+
+The return type, whitespace collapsed.
 
 ```ts
 returns: string

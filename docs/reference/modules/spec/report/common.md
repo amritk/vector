@@ -65,17 +65,23 @@ what was found
 
 #### ReportIssue.at
 
+The id or field it is about; "" when unknown.
+
 ```ts
 at: string
 ```
 
 #### ReportIssue.gate
 
+The name of the gate that found it.
+
 ```ts
 gate: string
 ```
 
 #### ReportIssue.message
+
+What the gate found.
 
 ```ts
 message: string

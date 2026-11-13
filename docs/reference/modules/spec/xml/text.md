@@ -97,6 +97,8 @@ new XmlText(): XmlText
 
 #### XmlText.xrefs
 
+The worked-out text of each `<xref>`, keyed by its node.
+
 ```ts
 xrefs: Map<XmlNode, XmlXrefInfo>
 ```
@@ -156,6 +158,8 @@ anchor: string | null
 
 #### XmlNormative.level
 
+The BCP 14 keyword the markup names; NOT RECOMMENDED is stored as SHOULD NOT.
+
 ```ts
 level: string
 ```
@@ -185,6 +189,8 @@ section: string
 ```
 
 #### XmlNormative.sentence
+
+The sentence's text.
 
 ```ts
 sentence: string
@@ -332,6 +338,8 @@ mdLine: i32
 
 #### XmlCode.text
 
+The block's character data, without its opening and closing blank lines or its trailing whitespace.
+
 ```ts
 text: string
 ```
@@ -395,11 +403,15 @@ whether it is a header cell
 
 #### XmlCell.header
 
+True for a `<th>`.
+
 ```ts
 header: boolean
 ```
 
 #### XmlCell.node
+
+The cell's element.
 
 ```ts
 node: XmlNode
@@ -429,11 +441,15 @@ the document's xref texts
 
 #### XmlLines.normative
 
+The normative sentences found so far, in document order.
+
 ```ts
 normative: XmlNormative[]
 ```
 
 #### XmlLines.t
+
+The document's xref texts.
 
 ```ts
 t: XmlText

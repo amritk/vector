@@ -44,18 +44,33 @@ enum SampleKind
 ```
 
 <scalar-field name="Bool" type="3">
+
+A boolean.
+
 </scalar-field>
 
 <scalar-field name="Bytes" type="1">
+
+A byte string.
+
 </scalar-field>
 
 <scalar-field name="Int" type="0">
+
+An integer.
+
 </scalar-field>
 
 <scalar-field name="Null" type="4">
+
+`null`.
+
 </scalar-field>
 
 <scalar-field name="Str" type="2">
+
+A string.
+
 </scalar-field>
 
 ### SampleValue
@@ -82,17 +97,23 @@ its kind
 
 #### SampleValue.bytes
 
+A bytes value's content.
+
 ```ts
 bytes: u8[]
 ```
 
 #### SampleValue.flag
 
+A boolean's value.
+
 ```ts
 flag: boolean
 ```
 
 #### SampleValue.kind
+
+Which of the fields below holds the value.
 
 ```ts
 kind: SampleKind
@@ -107,6 +128,8 @@ n: i64
 ```
 
 #### SampleValue.text
+
+A string's content.
 
 ```ts
 text: string

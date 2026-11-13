@@ -53,11 +53,15 @@ its element
 
 #### XmlRef.anchor
 
+The reference's anchor, which an xref cites.
+
 ```ts
 anchor: string
 ```
 
 #### XmlRef.node
+
+The `<reference>` element.
 
 ```ts
 node: XmlNode
@@ -119,11 +123,15 @@ number: i32
 
 #### XmlDocument.references
 
+The document's references, in document order.
+
 ```ts
 references: XmlRef[]
 ```
 
 #### XmlDocument.root
+
+The document's root element.
 
 ```ts
 root: XmlNode

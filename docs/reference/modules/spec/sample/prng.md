@@ -63,6 +63,8 @@ the text it is seeded from
 
 #### SamplePrng.state
 
+The word the next draw advances.
+
 ```ts
 state: u32
 ```

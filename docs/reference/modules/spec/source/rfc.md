@@ -108,6 +108,8 @@ ownLines: string[]
 
 #### RfcSection.title
 
+The heading's text.
+
 ```ts
 title: string
 ```
