@@ -33,20 +33,27 @@ export class EmitOptions {
   regenerate: string | null = null
   /** The sha256 of the contract file, written as `// vector-contract-sha256: <hex>`. */
   contractSha256: string
+  /** Modules outside nish/ the test may import, each beside its import path in `localImports`. */
+  localModules: string[]
+  /** How the test imports each of `localModules`: a relative path, such as `../../src/core/hex`. */
+  localImports: string[]
 
   /**
-   * Makes options with no regenerate line.
+   * Makes options with no regenerate line and only nish/ modules.
    *
    * @param contractSha256 the sha256 of the contract file's bytes, in hex
    */
   constructor(contractSha256: string) {
     this.contractSha256 = contractSha256
+    this.localModules = []
+    this.localImports = []
   }
 }
 
 /** What emitting one program has gathered so far. */
 class EmitContext {
   c: Contract
+  opts: EmitOptions
   /** The helpers used, in first-use order. */
   used: string[]
   /** What the program imports from nish:secret and nish:unsafe. */
@@ -60,8 +67,9 @@ class EmitContext {
   /** What Nish cannot express, found while emitting. */
   errors: string[]
 
-  constructor(c: Contract) {
+  constructor(c: Contract, opts: EmitOptions) {
     this.c = c
+    this.opts = opts
     this.used = []
     this.secretNames = []
     this.unsafeNames = []
@@ -573,19 +581,39 @@ export const emitWrap = (text: string, width: i32): string[] => {
   return out
 }
 
-/** The doc comment above a clause: its title, then each covered requirement quoted. */
-const emitDocComment = (c: Contract, k: Clause): string => {
-  const lines: string[] = ["/**", ` * ${emitCommentText(k.title)}`]
+/**
+ * The text above a clause's check, one comment line each with no comment
+ * marker: its title, then each covered requirement, a blank line before it,
+ * named with its source and level and its quote wrapped at 72 characters
+ * under it. Each language puts its own marker in front.
+ *
+ * @param c the contract
+ * @param k the clause
+ * @returns the lines, "" for a blank one (the title, first, is never one)
+ */
+export const emitClauseLines = (c: Contract, k: Clause): string[] => {
+  const lines: string[] = [emitCommentText(k.title)]
   for (const id of k.covers) {
     for (const r of c.requirements) {
       if (r.id === id) {
-        lines.push(" *")
-        lines.push(` * ${emitCommentText(`${r.id} — ${emitSourceName(c, r.source)} §${r.section}, ${r.level}:`)}`)
+        lines.push("")
+        lines.push(emitCommentText(`${r.id} — ${emitSourceName(c, r.source)} §${r.section}, ${r.level}:`))
         for (const l of emitWrap(r.quote, 72)) {
-          lines.push(` *   ${emitCommentText(l)}`)
+          lines.push(`  ${emitCommentText(l)}`)
         }
       }
     }
+  }
+  return lines
+}
+
+/** The doc comment above a clause: its title, then each covered requirement quoted. */
+const emitDocComment = (c: Contract, k: Clause): string => {
+  const lines: string[] = ["/**"]
+  const body = emitClauseLines(c, k)
+  for (let i = 0; i < body.length; i++) {
+    // Only the blank lines between requirements are bare; a title is never.
+    lines.push(i > 0 && body[i] === "" ? " *" : ` * ${body[i]}`)
   }
   lines.push(" */")
   return lines.join("\n")
@@ -746,17 +774,22 @@ const emitTypeRefusal = (at: string, t: string): string | null => {
   return null
 }
 
+/** The refusal of a module that is neither nish's nor placed by `--package`. */
+const emitNotPlaced = (m: string): string =>
+  `${m} is not a nish/ module: give --package <name>=<dir> to say where your own modules live`
+
 /**
  * What in a contract Nish cannot express, found before any output: a
- * module outside nish/, an i8 or i16, a nullable bool, integer or f64 (Nish
+ * module outside nish/ that is not one of `local`, an i8 or i16, a nullable bool, integer or f64 (Nish
  * has `T | null` only on a reference type), an f64 forall variable, two
  * clause ids that make the same function name, and a clause check or
  * `plain_` wrapper whose name a contract function already has.
  *
  * @param c the contract
+ * @param local the modules outside nish/ that `--package` places
  * @returns one message per refusal; empty when Nish can express it all
  */
-export const emitRefusals = (c: Contract): string[] => {
+export const emitRefusals = (c: Contract, local: string[]): string[] => {
   const out: string[] = []
   const modules: string[] = [c.target.module]
   for (const f of c.functions) {
@@ -766,8 +799,8 @@ export const emitRefusals = (c: Contract): string[] => {
     }
   }
   for (const m of modules) {
-    if (shapeNishModuleFile(m) === null) {
-      out.push(`Nish is the only emitter, and ${m} is not a nish/ module`)
+    if (shapeNishModuleFile(m) === null && local.indexOf(m) < 0 && out.indexOf(emitNotPlaced(m)) < 0) {
+      out.push(emitNotPlaced(m))
     }
   }
   for (const f of c.functions) {
@@ -820,26 +853,40 @@ export const emitRefusals = (c: Contract): string[] => {
   return out
 }
 
-/** The header comment, ending with the contract's sha256. */
-const emitHeader = (c: Contract, opts: EmitOptions): string => {
+/**
+ * The header every emitted test opens with, one comment line each with no
+ * comment marker: what generated it from which contract, how to regenerate
+ * it, how its checks are named, and the contract's sha256 last.
+ *
+ * @param c the contract
+ * @param opts the regenerate command and the sha256
+ * @returns the lines, "" for a blank one
+ */
+export const emitHeaderLines = (c: Contract, opts: EmitOptions): string[] => {
   const lines: string[] = [
-    `// GENERATED by vector from the contract "${emitCommentText(c.contract)}" (${emitCommentText(emitSourceName(c, c.source.main))},`,
+    `GENERATED by vector from the contract "${emitCommentText(c.contract)}" (${emitCommentText(emitSourceName(c, c.source.main))},`,
   ]
   const regenerate = opts.regenerate
   if (regenerate === null) {
-    lines.push(`// ${emitCommentText(c.source.title)}). Do not edit: change the contract and regenerate.`)
+    lines.push(`${emitCommentText(c.source.title)}). Do not edit: change the contract and regenerate.`)
   } else {
-    lines.push(`// ${emitCommentText(c.source.title)}). Do not edit: change the contract and regenerate with`)
-    lines.push(`//   ${emitCommentText(regenerate)}.`)
+    lines.push(`${emitCommentText(c.source.title)}). Do not edit: change the contract and regenerate with`)
+    lines.push(`  ${emitCommentText(regenerate)}.`)
   }
-  lines.push("//")
-  lines.push("// Each check names its clause in brackets and the requirements it covers in")
-  lines.push("// parentheses; every requirement's text is quoted above its checks.")
-  lines.push("// Property samples were chosen by the solver (boundaries) and a seeded PRNG.")
-  lines.push("//")
-  lines.push(`// vector-contract-sha256: ${opts.contractSha256}`)
-  return lines.join("\n")
+  lines.push("")
+  lines.push("Each check names its clause in brackets and the requirements it covers in")
+  lines.push("parentheses; every requirement's text is quoted above its checks.")
+  lines.push("Property samples were chosen by the solver (boundaries) and a seeded PRNG.")
+  lines.push("")
+  lines.push(`vector-contract-sha256: ${opts.contractSha256}`)
+  return lines
 }
+
+/** The header comment, ending with the contract's sha256. */
+const emitHeader = (c: Contract, opts: EmitOptions): string =>
+  emitHeaderLines(c, opts)
+    .map((l: string): string => (l === "" ? "//" : `// ${l}`))
+    .join("\n")
 
 /** The imports: the suite, the functions called by module, then nish:secret and nish:unsafe. */
 const emitImports = (ctx: EmitContext, called: string[]): string => {
@@ -849,7 +896,9 @@ const emitImports = (ctx: EmitContext, called: string[]): string => {
   for (const n of emitSortedUnique(called)) {
     const f = emitFn(ctx, n)
     const m: string | null = f === null ? null : f.module
-    const mod = m ?? ctx.c.target.module
+    const named = m ?? ctx.c.target.module
+    const local = ctx.opts.localModules.indexOf(named)
+    const mod = local < 0 ? named : ctx.opts.localImports[local]
     const at = modules.indexOf(mod)
     if (at < 0) {
       modules.push(mod)
@@ -908,15 +957,16 @@ const emitMain = (c: Contract): string => {
  *
  * @param c the contract, already checked
  * @param table the property samples `checkContract` chose
- * @param opts the header's regenerate command and the contract's sha256
+ * @param opts the header's regenerate command, the contract's sha256, and where
+ *   modules outside nish/ are imported from
  * @returns the program's text, or every reason Nish cannot express the contract
  */
 export const emitProgram = (c: Contract, table: SampleTable, opts: EmitOptions): Result<string, string[]> => {
-  const refused = emitRefusals(c)
+  const refused = emitRefusals(c, opts.localModules)
   if (refused.length > 0) {
     return Err(refused)
   }
-  const ctx = new EmitContext(c)
+  const ctx = new EmitContext(c, opts)
   const bodies: string[] = []
   const called: string[] = []
   for (const k of c.clauses) {

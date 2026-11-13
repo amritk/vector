@@ -1,0 +1,1882 @@
+{
+  "$schema": "../schemas/rfc-contract.json",
+  "contract": "vector-lang-names",
+  "source": {
+    "title": "vector/lang/names — naming a contract's functions in each language",
+    "main": "vector-lang-names",
+    "sha256": "31478f6e1540a86b25a29fe852eade36314c6e0a174289ece00db0f0bfc38a5f"
+  },
+  "sources": [
+    {
+      "id": "vector-lang-names",
+      "path": "../specs/vector-lang-names.xml"
+    }
+  ],
+  "target": {
+    "module": "vector/lang/names"
+  },
+  "requirements": [
+    {
+      "id": "R-WORDS",
+      "section": "3",
+      "level": "MUST",
+      "quote": "A name MUST be split into words at each underscore, at each step from a lowercase letter or digit to a capital, and before the last capital of a run of two or more capitals that a lowercase letter follows; a run of digits MUST stay with the word before it, and every letter MUST be kept."
+    },
+    {
+      "id": "R-SNAKE",
+      "section": "4.1",
+      "level": "MUST",
+      "quote": "For rust, ruby, cpp, c and python, and for zig's parameters, langName MUST return the words in lowercase, joined by underscores."
+    },
+    {
+      "id": "R-CAMEL",
+      "section": "4.2",
+      "level": "MUST",
+      "quote": "For java and typescript, and for zig's functions, langName MUST return the first word in lowercase and each later word with its first letter in capitals and the rest in lowercase."
+    },
+    {
+      "id": "R-SHORT-CAPS",
+      "section": "4.3",
+      "level": "MUST",
+      "quote": "For kotlin and dart, langName MUST write names as java does, except that a later word of exactly two capitals MUST stay in capitals."
+    },
+    {
+      "id": "R-AS-WRITTEN",
+      "section": "4.4",
+      "level": "MUST",
+      "quote": "For php and swift, langName MUST return the first word in lowercase and each later word with its first letter in capitals and the rest as written."
+    },
+    {
+      "id": "R-CSHARP",
+      "section": "4.5",
+      "level": "MUST",
+      "quote": "For csharp, langName MUST name a parameter as kotlin does, and a function the same way but with its first word's first letter in capitals."
+    },
+    {
+      "id": "R-GO",
+      "section": "4.6",
+      "level": "MUST",
+      "quote": "For go, langName MUST write a function's first word with its first letter in capitals, so that it is exported, and a parameter's first word in lowercase; any other word that is an acronym or one of golint's initialisms MUST be written in capitals."
+    },
+    {
+      "id": "R-UNKNOWN",
+      "section": "4.7",
+      "level": "MUST",
+      "quote": "For a language vector does not know, langName and langModule MUST return the name and the module unchanged."
+    },
+    {
+      "id": "R-MODULE",
+      "section": "5.1",
+      "level": "MUST",
+      "quote": "langModule MUST write a contract's module path (segments joined by /) the way its language names a module: a crate path for rust and cpp, a constant path for ruby, a source file for zig, a header for c, a namespace for csharp and php, a package and class for java and kotlin, a dotted module for python, a module name for swift and a package library for dart."
+    },
+    {
+      "id": "R-QUALIFY",
+      "section": "5.2",
+      "level": "MUST",
+      "quote": "langQualify MUST write a name as its language calls it from outside its module."
+    }
+  ],
+  "exclusions": [],
+  "functions": [
+    {
+      "name": "langName",
+      "params": [
+        {
+          "name": "lang",
+          "type": "string"
+        },
+        {
+          "name": "contractName",
+          "type": "string"
+        },
+        {
+          "name": "isFunction",
+          "type": "bool"
+        }
+      ],
+      "returns": "string"
+    },
+    {
+      "name": "langModule",
+      "params": [
+        {
+          "name": "lang",
+          "type": "string"
+        },
+        {
+          "name": "module",
+          "type": "string"
+        }
+      ],
+      "returns": "string"
+    },
+    {
+      "name": "langQualify",
+      "params": [
+        {
+          "name": "lang",
+          "type": "string"
+        },
+        {
+          "name": "module",
+          "type": "string"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        }
+      ],
+      "returns": "string"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "V1",
+      "title": "a run of capitals ends before the capital that starts the next word",
+      "covers": ["R-WORDS", "R-SNAKE"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"rules\"][\"python\"][\"parseHTTPRequest\"][\"function\"])'"
+      },
+      "section": "7",
+      "call": "langName",
+      "args": [
+        {
+          "str": "python"
+        },
+        {
+          "str": "parseHTTPRequest"
+        },
+        {
+          "bool": true
+        }
+      ],
+      "expect": {
+        "str": "parse_http_request"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V2",
+      "title": "an underscore splits, and digits stay with their word",
+      "covers": ["R-WORDS", "R-SNAKE"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"rules\"][\"rust\"][\"x25519_publicKey\"][\"param\"])'"
+      },
+      "section": "7",
+      "call": "langName",
+      "args": [
+        {
+          "str": "rust"
+        },
+        {
+          "str": "x25519_publicKey"
+        },
+        {
+          "bool": false
+        }
+      ],
+      "expect": {
+        "str": "x25519_public_key"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V3",
+      "title": "a digit does not start a word",
+      "covers": ["R-WORDS", "R-SNAKE"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"rules\"][\"c\"][\"utf8Decode\"][\"function\"])'"
+      },
+      "section": "7",
+      "call": "langName",
+      "args": [
+        {
+          "str": "c"
+        },
+        {
+          "str": "utf8Decode"
+        },
+        {
+          "bool": true
+        }
+      ],
+      "expect": {
+        "str": "utf8_decode"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V4",
+      "title": "Zig functions are camelCase, every later word capitalized",
+      "covers": ["R-WORDS", "R-CAMEL"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"rules\"][\"zig\"][\"readIOStream\"][\"function\"])'"
+      },
+      "section": "7",
+      "call": "langName",
+      "args": [
+        {
+          "str": "zig"
+        },
+        {
+          "str": "readIOStream"
+        },
+        {
+          "bool": true
+        }
+      ],
+      "expect": {
+        "str": "readIoStream"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V5",
+      "title": "Zig parameters are snake_case",
+      "covers": ["R-SNAKE"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"rules\"][\"zig\"][\"readIOStream\"][\"param\"])'"
+      },
+      "section": "7",
+      "call": "langName",
+      "args": [
+        {
+          "str": "zig"
+        },
+        {
+          "str": "readIOStream"
+        },
+        {
+          "bool": false
+        }
+      ],
+      "expect": {
+        "str": "read_io_stream"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V6",
+      "title": "Java writes an acronym as a word",
+      "covers": ["R-CAMEL"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"rules\"][\"java\"][\"parseHTTPRequest\"][\"function\"])'"
+      },
+      "section": "7",
+      "call": "langName",
+      "args": [
+        {
+          "str": "java"
+        },
+        {
+          "str": "parseHTTPRequest"
+        },
+        {
+          "bool": true
+        }
+      ],
+      "expect": {
+        "str": "parseHttpRequest"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V7",
+      "title": "TypeScript joins the words an underscore split",
+      "covers": ["R-WORDS", "R-CAMEL"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"rules\"][\"typescript\"][\"x25519_publicKey\"][\"param\"])'"
+      },
+      "section": "7",
+      "call": "langName",
+      "args": [
+        {
+          "str": "typescript"
+        },
+        {
+          "str": "x25519_publicKey"
+        },
+        {
+          "bool": false
+        }
+      ],
+      "expect": {
+        "str": "x25519PublicKey"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V8",
+      "title": "Kotlin keeps a two-letter acronym in capitals",
+      "covers": ["R-SHORT-CAPS"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"rules\"][\"kotlin\"][\"readIOStream\"][\"function\"])'"
+      },
+      "section": "7",
+      "call": "langName",
+      "args": [
+        {
+          "str": "kotlin"
+        },
+        {
+          "str": "readIOStream"
+        },
+        {
+          "bool": true
+        }
+      ],
+      "expect": {
+        "str": "readIOStream"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V9",
+      "title": "Dart capitalizes a longer acronym as a word",
+      "covers": ["R-SHORT-CAPS"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"rules\"][\"dart\"][\"parseHTTPRequest\"][\"param\"])'"
+      },
+      "section": "7",
+      "call": "langName",
+      "args": [
+        {
+          "str": "dart"
+        },
+        {
+          "str": "parseHTTPRequest"
+        },
+        {
+          "bool": false
+        }
+      ],
+      "expect": {
+        "str": "parseHttpRequest"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V10",
+      "title": "a C# method is PascalCase and keeps a two-letter acronym",
+      "covers": ["R-CSHARP", "R-SHORT-CAPS"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"rules\"][\"csharp\"][\"readIOStream\"][\"function\"])'"
+      },
+      "section": "7",
+      "call": "langName",
+      "args": [
+        {
+          "str": "csharp"
+        },
+        {
+          "str": "readIOStream"
+        },
+        {
+          "bool": true
+        }
+      ],
+      "expect": {
+        "str": "ReadIOStream"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V11",
+      "title": "a C# parameter is camelCase",
+      "covers": ["R-CSHARP", "R-SHORT-CAPS"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"rules\"][\"csharp\"][\"parseHTTPRequest\"][\"param\"])'"
+      },
+      "section": "7",
+      "call": "langName",
+      "args": [
+        {
+          "str": "csharp"
+        },
+        {
+          "str": "parseHTTPRequest"
+        },
+        {
+          "bool": false
+        }
+      ],
+      "expect": {
+        "str": "parseHttpRequest"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V12",
+      "title": "Go exports a function and writes golint's ID initialism in capitals",
+      "covers": ["R-GO"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"rules\"][\"go\"][\"userId\"][\"function\"])'"
+      },
+      "section": "7",
+      "call": "langName",
+      "args": [
+        {
+          "str": "go"
+        },
+        {
+          "str": "userId"
+        },
+        {
+          "bool": true
+        }
+      ],
+      "expect": {
+        "str": "UserID"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V13",
+      "title": "a Go parameter is unexported, its first word in lowercase",
+      "covers": ["R-GO"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"rules\"][\"go\"][\"utf8Decode\"][\"param\"])'"
+      },
+      "section": "7",
+      "call": "langName",
+      "args": [
+        {
+          "str": "go"
+        },
+        {
+          "str": "utf8Decode"
+        },
+        {
+          "bool": false
+        }
+      ],
+      "expect": {
+        "str": "utf8Decode"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V14",
+      "title": "Go keeps an acronym in capitals",
+      "covers": ["R-GO"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"rules\"][\"go\"][\"parseHTTPRequest\"][\"function\"])'"
+      },
+      "section": "7",
+      "call": "langName",
+      "args": [
+        {
+          "str": "go"
+        },
+        {
+          "str": "parseHTTPRequest"
+        },
+        {
+          "bool": true
+        }
+      ],
+      "expect": {
+        "str": "ParseHTTPRequest"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V15",
+      "title": "Swift keeps every word's letters as written",
+      "covers": ["R-AS-WRITTEN"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"rules\"][\"swift\"][\"parseHTTPRequest\"][\"function\"])'"
+      },
+      "section": "7",
+      "call": "langName",
+      "args": [
+        {
+          "str": "swift"
+        },
+        {
+          "str": "parseHTTPRequest"
+        },
+        {
+          "bool": true
+        }
+      ],
+      "expect": {
+        "str": "parseHTTPRequest"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V16",
+      "title": "PHP keeps every word's letters as written",
+      "covers": ["R-AS-WRITTEN"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"rules\"][\"php\"][\"userId\"][\"param\"])'"
+      },
+      "section": "7",
+      "call": "langName",
+      "args": [
+        {
+          "str": "php"
+        },
+        {
+          "str": "userId"
+        },
+        {
+          "bool": false
+        }
+      ],
+      "expect": {
+        "str": "userId"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V17",
+      "title": "a Rust crate path",
+      "covers": ["R-MODULE"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"contracts\"][\"rfc5869-hkdf-sha256\"][\"rust\"][\"module\"])'"
+      },
+      "section": "7",
+      "call": "langModule",
+      "args": [
+        {
+          "str": "rust"
+        },
+        {
+          "str": "nish/crypto/hkdf"
+        }
+      ],
+      "expect": {
+        "str": "nish::crypto::hkdf"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V18",
+      "title": "a Ruby constant path",
+      "covers": ["R-MODULE"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"contracts\"][\"rfc5869-hkdf-sha256\"][\"ruby\"][\"module\"])'"
+      },
+      "section": "7",
+      "call": "langModule",
+      "args": [
+        {
+          "str": "ruby"
+        },
+        {
+          "str": "nish/crypto/hkdf"
+        }
+      ],
+      "expect": {
+        "str": "Nish::Crypto::Hkdf"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V19",
+      "title": "a C# namespace",
+      "covers": ["R-MODULE"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"contracts\"][\"rfc5869-hkdf-sha256\"][\"csharp\"][\"module\"])'"
+      },
+      "section": "7",
+      "call": "langModule",
+      "args": [
+        {
+          "str": "csharp"
+        },
+        {
+          "str": "nish/crypto/hkdf"
+        }
+      ],
+      "expect": {
+        "str": "Nish.Crypto.Hkdf"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V20",
+      "title": "a Java package and class",
+      "covers": ["R-MODULE"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"contracts\"][\"rfc5869-hkdf-sha256\"][\"java\"][\"module\"])'"
+      },
+      "section": "7",
+      "call": "langModule",
+      "args": [
+        {
+          "str": "java"
+        },
+        {
+          "str": "nish/crypto/hkdf"
+        }
+      ],
+      "expect": {
+        "str": "nish.crypto.Hkdf"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V21",
+      "title": "a Python dotted module",
+      "covers": ["R-MODULE"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"contracts\"][\"rfc5869-hkdf-sha256\"][\"python\"][\"module\"])'"
+      },
+      "section": "7",
+      "call": "langModule",
+      "args": [
+        {
+          "str": "python"
+        },
+        {
+          "str": "nish/crypto/hkdf"
+        }
+      ],
+      "expect": {
+        "str": "nish.crypto.hkdf"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V22",
+      "title": "a PHP namespace",
+      "covers": ["R-MODULE"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"contracts\"][\"rfc5869-hkdf-sha256\"][\"php\"][\"module\"])'"
+      },
+      "section": "7",
+      "call": "langModule",
+      "args": [
+        {
+          "str": "php"
+        },
+        {
+          "str": "nish/crypto/hkdf"
+        }
+      ],
+      "expect": {
+        "str": "Nish\\Crypto\\Hkdf"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V23",
+      "title": "a Swift module name",
+      "covers": ["R-MODULE"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"contracts\"][\"rfc5869-hkdf-sha256\"][\"swift\"][\"module\"])'"
+      },
+      "section": "7",
+      "call": "langModule",
+      "args": [
+        {
+          "str": "swift"
+        },
+        {
+          "str": "nish/crypto/hkdf"
+        }
+      ],
+      "expect": {
+        "str": "NishCryptoHkdf"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V24",
+      "title": "a Dart package library",
+      "covers": ["R-MODULE"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"contracts\"][\"rfc5869-hkdf-sha256\"][\"dart\"][\"module\"])'"
+      },
+      "section": "7",
+      "call": "langModule",
+      "args": [
+        {
+          "str": "dart"
+        },
+        {
+          "str": "nish/crypto/hkdf"
+        }
+      ],
+      "expect": {
+        "str": "package:nish/crypto/hkdf.dart"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V25",
+      "title": "Rust qualifies with ::",
+      "covers": ["R-QUALIFY"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"contracts\"][\"rfc5869-hkdf-sha256\"][\"rust\"][\"functions\"][\"hkdfExtractSha256\"][\"qualified\"])'"
+      },
+      "section": "7",
+      "call": "langQualify",
+      "args": [
+        {
+          "str": "rust"
+        },
+        {
+          "str": "nish::crypto::hkdf"
+        },
+        {
+          "str": "hkdf_extract_sha256"
+        }
+      ],
+      "expect": {
+        "str": "nish::crypto::hkdf::hkdf_extract_sha256"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V26",
+      "title": "C prefixes the header path",
+      "covers": ["R-QUALIFY"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"contracts\"][\"rfc5869-hkdf-sha256\"][\"c\"][\"functions\"][\"hkdfExtractSha256\"][\"qualified\"])'"
+      },
+      "section": "7",
+      "call": "langQualify",
+      "args": [
+        {
+          "str": "c"
+        },
+        {
+          "str": "nish/crypto/hkdf.h"
+        },
+        {
+          "str": "hkdf_extract_sha256"
+        }
+      ],
+      "expect": {
+        "str": "nish_crypto_hkdf_hkdf_extract_sha256"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V27",
+      "title": "Go qualifies by the package's last segment",
+      "covers": ["R-QUALIFY"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"contracts\"][\"rfc5869-hkdf-sha256\"][\"go\"][\"functions\"][\"hkdfExtractSha256\"][\"qualified\"])'"
+      },
+      "section": "7",
+      "call": "langQualify",
+      "args": [
+        {
+          "str": "go"
+        },
+        {
+          "str": "nish/crypto/hkdf"
+        },
+        {
+          "str": "HkdfExtractSha256"
+        }
+      ],
+      "expect": {
+        "str": "hkdf.HkdfExtractSha256"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V28",
+      "title": "Dart qualifies by the library's file name",
+      "covers": ["R-QUALIFY"],
+      "source": {
+        "command": "python3 -c 'import json; print(json.load(open(\"../tests/fixtures/languages/expected.json\"))[\"contracts\"][\"rfc5869-hkdf-sha256\"][\"dart\"][\"functions\"][\"hkdfExtractSha256\"][\"qualified\"])'"
+      },
+      "section": "7",
+      "call": "langQualify",
+      "args": [
+        {
+          "str": "dart"
+        },
+        {
+          "str": "package:nish/crypto/hkdf.dart"
+        },
+        {
+          "str": "hkdfExtractSha256"
+        }
+      ],
+      "expect": {
+        "str": "hkdf.hkdfExtractSha256"
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-WORDS-KEEP-LETTERS",
+      "title": "a name of letters loses none of them",
+      "covers": ["R-WORDS"],
+      "forall": [
+        {
+          "name": "n",
+          "type": "string",
+          "minLen": 1,
+          "maxLen": 24,
+          "alphabet": ["alpha"]
+        }
+      ],
+      "assert": {
+        "let": [
+          {
+            "name": "lower",
+            "value": {
+              "op": "lower",
+              "args": [
+                {
+                  "var": "n"
+                }
+              ]
+            }
+          }
+        ],
+        "in": {
+          "op": "and",
+          "args": [
+            {
+              "op": "==",
+              "args": [
+                {
+                  "op": "lower",
+                  "args": [
+                    {
+                      "call": "langName",
+                      "args": [
+                        {
+                          "str": "java"
+                        },
+                        {
+                          "var": "n"
+                        },
+                        {
+                          "bool": true
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "var": "lower"
+                }
+              ]
+            },
+            {
+              "op": "==",
+              "args": [
+                {
+                  "op": "lower",
+                  "args": [
+                    {
+                      "call": "langName",
+                      "args": [
+                        {
+                          "str": "go"
+                        },
+                        {
+                          "var": "n"
+                        },
+                        {
+                          "bool": true
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "var": "lower"
+                }
+              ]
+            },
+            {
+              "op": "==",
+              "args": [
+                {
+                  "op": "lower",
+                  "args": [
+                    {
+                      "call": "langName",
+                      "args": [
+                        {
+                          "str": "csharp"
+                        },
+                        {
+                          "var": "n"
+                        },
+                        {
+                          "bool": true
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "var": "lower"
+                }
+              ]
+            },
+            {
+              "op": "==",
+              "args": [
+                {
+                  "op": "lower",
+                  "args": [
+                    {
+                      "call": "langName",
+                      "args": [
+                        {
+                          "str": "swift"
+                        },
+                        {
+                          "var": "n"
+                        },
+                        {
+                          "bool": false
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "var": "lower"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-SNAKE-LOWER",
+      "title": "a snake_case name has no capital",
+      "covers": ["R-SNAKE"],
+      "forall": [
+        {
+          "name": "n",
+          "type": "string",
+          "minLen": 1,
+          "maxLen": 24,
+          "alphabet": ["a", "b", "c", "X", "Y", "Z", "_", "0", "9"]
+        }
+      ],
+      "assert": {
+        "let": [
+          {
+            "name": "s",
+            "value": {
+              "call": "langName",
+              "args": [
+                {
+                  "str": "python"
+                },
+                {
+                  "var": "n"
+                },
+                {
+                  "bool": true
+                }
+              ]
+            }
+          }
+        ],
+        "in": {
+          "op": "==",
+          "args": [
+            {
+              "var": "s"
+            },
+            {
+              "op": "lower",
+              "args": [
+                {
+                  "var": "s"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-SNAKE-AGREE",
+      "title": "every snake_case language names a function and a parameter alike",
+      "covers": ["R-SNAKE"],
+      "forall": [
+        {
+          "name": "n",
+          "type": "string",
+          "minLen": 1,
+          "maxLen": 24,
+          "alphabet": ["a", "b", "c", "X", "Y", "Z", "_", "0", "9"]
+        }
+      ],
+      "assert": {
+        "let": [
+          {
+            "name": "s",
+            "value": {
+              "call": "langName",
+              "args": [
+                {
+                  "str": "python"
+                },
+                {
+                  "var": "n"
+                },
+                {
+                  "bool": true
+                }
+              ]
+            }
+          }
+        ],
+        "in": {
+          "op": "and",
+          "args": [
+            {
+              "op": "==",
+              "args": [
+                {
+                  "call": "langName",
+                  "args": [
+                    {
+                      "str": "rust"
+                    },
+                    {
+                      "var": "n"
+                    },
+                    {
+                      "bool": false
+                    }
+                  ]
+                },
+                {
+                  "var": "s"
+                }
+              ]
+            },
+            {
+              "op": "==",
+              "args": [
+                {
+                  "call": "langName",
+                  "args": [
+                    {
+                      "str": "ruby"
+                    },
+                    {
+                      "var": "n"
+                    },
+                    {
+                      "bool": true
+                    }
+                  ]
+                },
+                {
+                  "var": "s"
+                }
+              ]
+            },
+            {
+              "op": "==",
+              "args": [
+                {
+                  "call": "langName",
+                  "args": [
+                    {
+                      "str": "cpp"
+                    },
+                    {
+                      "var": "n"
+                    },
+                    {
+                      "bool": false
+                    }
+                  ]
+                },
+                {
+                  "var": "s"
+                }
+              ]
+            },
+            {
+              "op": "==",
+              "args": [
+                {
+                  "call": "langName",
+                  "args": [
+                    {
+                      "str": "c"
+                    },
+                    {
+                      "var": "n"
+                    },
+                    {
+                      "bool": true
+                    }
+                  ]
+                },
+                {
+                  "var": "s"
+                }
+              ]
+            },
+            {
+              "op": "==",
+              "args": [
+                {
+                  "call": "langName",
+                  "args": [
+                    {
+                      "str": "zig"
+                    },
+                    {
+                      "var": "n"
+                    },
+                    {
+                      "bool": false
+                    }
+                  ]
+                },
+                {
+                  "var": "s"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-CAMEL-FIRST",
+      "title": "a camelCase name starts in lowercase",
+      "covers": ["R-CAMEL"],
+      "forall": [
+        {
+          "name": "n",
+          "type": "string",
+          "minLen": 1,
+          "maxLen": 24,
+          "alphabet": ["alpha"]
+        }
+      ],
+      "assert": {
+        "let": [
+          {
+            "name": "j",
+            "value": {
+              "call": "langName",
+              "args": [
+                {
+                  "str": "java"
+                },
+                {
+                  "var": "n"
+                },
+                {
+                  "bool": true
+                }
+              ]
+            }
+          },
+          {
+            "name": "c",
+            "value": {
+              "op": "charAt",
+              "args": [
+                {
+                  "var": "j"
+                },
+                {
+                  "int": 0
+                }
+              ]
+            }
+          }
+        ],
+        "in": {
+          "op": "and",
+          "args": [
+            {
+              "op": "==",
+              "args": [
+                {
+                  "var": "c"
+                },
+                {
+                  "op": "lower",
+                  "args": [
+                    {
+                      "var": "c"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "op": "==",
+              "args": [
+                {
+                  "call": "langName",
+                  "args": [
+                    {
+                      "str": "typescript"
+                    },
+                    {
+                      "var": "n"
+                    },
+                    {
+                      "bool": false
+                    }
+                  ]
+                },
+                {
+                  "var": "j"
+                }
+              ]
+            },
+            {
+              "op": "==",
+              "args": [
+                {
+                  "call": "langName",
+                  "args": [
+                    {
+                      "str": "zig"
+                    },
+                    {
+                      "var": "n"
+                    },
+                    {
+                      "bool": true
+                    }
+                  ]
+                },
+                {
+                  "var": "j"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-SHORT-CAPS-AGREE",
+      "title": "Kotlin and Dart name a function and a parameter alike",
+      "covers": ["R-SHORT-CAPS"],
+      "forall": [
+        {
+          "name": "n",
+          "type": "string",
+          "minLen": 1,
+          "maxLen": 24,
+          "alphabet": ["a", "b", "c", "X", "Y", "Z", "_", "0", "9"]
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "langName",
+            "args": [
+              {
+                "str": "kotlin"
+              },
+              {
+                "var": "n"
+              },
+              {
+                "bool": true
+              }
+            ]
+          },
+          {
+            "call": "langName",
+            "args": [
+              {
+                "str": "dart"
+              },
+              {
+                "var": "n"
+              },
+              {
+                "bool": false
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-AS-WRITTEN-AGREE",
+      "title": "PHP and Swift name a function and a parameter alike",
+      "covers": ["R-AS-WRITTEN"],
+      "forall": [
+        {
+          "name": "n",
+          "type": "string",
+          "minLen": 1,
+          "maxLen": 24,
+          "alphabet": ["a", "b", "c", "X", "Y", "Z", "_", "0", "9"]
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "langName",
+            "args": [
+              {
+                "str": "php"
+              },
+              {
+                "var": "n"
+              },
+              {
+                "bool": true
+              }
+            ]
+          },
+          {
+            "call": "langName",
+            "args": [
+              {
+                "str": "swift"
+              },
+              {
+                "var": "n"
+              },
+              {
+                "bool": false
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-CSHARP",
+      "title": "a C# method is PascalCase, a parameter is Kotlin's camelCase",
+      "covers": ["R-CSHARP"],
+      "forall": [
+        {
+          "name": "n",
+          "type": "string",
+          "minLen": 1,
+          "maxLen": 24,
+          "alphabet": ["alpha"]
+        }
+      ],
+      "assert": {
+        "let": [
+          {
+            "name": "f",
+            "value": {
+              "call": "langName",
+              "args": [
+                {
+                  "str": "csharp"
+                },
+                {
+                  "var": "n"
+                },
+                {
+                  "bool": true
+                }
+              ]
+            }
+          },
+          {
+            "name": "c",
+            "value": {
+              "op": "charAt",
+              "args": [
+                {
+                  "var": "f"
+                },
+                {
+                  "int": 0
+                }
+              ]
+            }
+          }
+        ],
+        "in": {
+          "op": "and",
+          "args": [
+            {
+              "op": "==",
+              "args": [
+                {
+                  "var": "c"
+                },
+                {
+                  "op": "upper",
+                  "args": [
+                    {
+                      "var": "c"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "op": "==",
+              "args": [
+                {
+                  "call": "langName",
+                  "args": [
+                    {
+                      "str": "csharp"
+                    },
+                    {
+                      "var": "n"
+                    },
+                    {
+                      "bool": false
+                    }
+                  ]
+                },
+                {
+                  "call": "langName",
+                  "args": [
+                    {
+                      "str": "kotlin"
+                    },
+                    {
+                      "var": "n"
+                    },
+                    {
+                      "bool": false
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-GO-EXPORTED",
+      "title": "a Go function is exported",
+      "covers": ["R-GO"],
+      "forall": [
+        {
+          "name": "n",
+          "type": "string",
+          "minLen": 1,
+          "maxLen": 24,
+          "alphabet": ["alpha"]
+        }
+      ],
+      "assert": {
+        "let": [
+          {
+            "name": "g",
+            "value": {
+              "call": "langName",
+              "args": [
+                {
+                  "str": "go"
+                },
+                {
+                  "var": "n"
+                },
+                {
+                  "bool": true
+                }
+              ]
+            }
+          },
+          {
+            "name": "c",
+            "value": {
+              "op": "charAt",
+              "args": [
+                {
+                  "var": "g"
+                },
+                {
+                  "int": 0
+                }
+              ]
+            }
+          }
+        ],
+        "in": {
+          "op": "==",
+          "args": [
+            {
+              "var": "c"
+            },
+            {
+              "op": "upper",
+              "args": [
+                {
+                  "var": "c"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-UNKNOWN",
+      "title": "an unknown language changes nothing",
+      "covers": ["R-UNKNOWN"],
+      "forall": [
+        {
+          "name": "n",
+          "type": "string",
+          "minLen": 1,
+          "maxLen": 24,
+          "alphabet": ["a", "b", "c", "X", "Y", "Z", "_", "0", "9", "/"]
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "langName",
+                "args": [
+                  {
+                    "str": "cobol"
+                  },
+                  {
+                    "var": "n"
+                  },
+                  {
+                    "bool": true
+                  }
+                ]
+              },
+              {
+                "var": "n"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "langModule",
+                "args": [
+                  {
+                    "str": "cobol"
+                  },
+                  {
+                    "var": "n"
+                  }
+                ]
+              },
+              {
+                "var": "n"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-MODULE-FILES",
+      "title": "Zig and C name a module by its file",
+      "covers": ["R-MODULE"],
+      "forall": [
+        {
+          "name": "m",
+          "type": "string",
+          "minLen": 1,
+          "maxLen": 24,
+          "alphabet": ["a", "b", "c", "_", "/"]
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "langModule",
+                "args": [
+                  {
+                    "str": "zig"
+                  },
+                  {
+                    "var": "m"
+                  }
+                ]
+              },
+              {
+                "op": "strConcat",
+                "args": [
+                  {
+                    "var": "m"
+                  },
+                  {
+                    "str": ".zig"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "langModule",
+                "args": [
+                  {
+                    "str": "c"
+                  },
+                  {
+                    "var": "m"
+                  }
+                ]
+              },
+              {
+                "op": "strConcat",
+                "args": [
+                  {
+                    "var": "m"
+                  },
+                  {
+                    "str": ".h"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-QUALIFY-DOT",
+      "title": "the dotted languages put a dot between the module and the name",
+      "covers": ["R-QUALIFY"],
+      "forall": [
+        {
+          "name": "m",
+          "type": "string",
+          "minLen": 1,
+          "maxLen": 16,
+          "alphabet": ["a", "b", "c", "A", "B", "."]
+        },
+        {
+          "name": "n",
+          "type": "string",
+          "minLen": 1,
+          "maxLen": 16,
+          "alphabet": ["alpha"]
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "langQualify",
+                "args": [
+                  {
+                    "str": "java"
+                  },
+                  {
+                    "var": "m"
+                  },
+                  {
+                    "var": "n"
+                  }
+                ]
+              },
+              {
+                "op": "strConcat",
+                "args": [
+                  {
+                    "op": "strConcat",
+                    "args": [
+                      {
+                        "var": "m"
+                      },
+                      {
+                        "str": "."
+                      }
+                    ]
+                  },
+                  {
+                    "var": "n"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "langQualify",
+                "args": [
+                  {
+                    "str": "python"
+                  },
+                  {
+                    "var": "m"
+                  },
+                  {
+                    "var": "n"
+                  }
+                ]
+              },
+              {
+                "op": "strConcat",
+                "args": [
+                  {
+                    "op": "strConcat",
+                    "args": [
+                      {
+                        "var": "m"
+                      },
+                      {
+                        "str": "."
+                      }
+                    ]
+                  },
+                  {
+                    "var": "n"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "langQualify",
+                "args": [
+                  {
+                    "str": "rust"
+                  },
+                  {
+                    "var": "m"
+                  },
+                  {
+                    "var": "n"
+                  }
+                ]
+              },
+              {
+                "op": "strConcat",
+                "args": [
+                  {
+                    "op": "strConcat",
+                    "args": [
+                      {
+                        "var": "m"
+                      },
+                      {
+                        "str": "::"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "n"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-QUALIFY-PHP",
+      "title": "PHP calls a static method from the global namespace",
+      "covers": ["R-QUALIFY"],
+      "forall": [
+        {
+          "name": "m",
+          "type": "string",
+          "minLen": 1,
+          "maxLen": 16,
+          "alphabet": ["a", "b", "c", "A", "B"]
+        },
+        {
+          "name": "n",
+          "type": "string",
+          "minLen": 1,
+          "maxLen": 16,
+          "alphabet": ["alpha"]
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "langQualify",
+            "args": [
+              {
+                "str": "php"
+              },
+              {
+                "var": "m"
+              },
+              {
+                "var": "n"
+              }
+            ]
+          },
+          {
+            "op": "strConcat",
+            "args": [
+              {
+                "op": "strConcat",
+                "args": [
+                  {
+                    "op": "strConcat",
+                    "args": [
+                      {
+                        "str": "\\"
+                      },
+                      {
+                        "var": "m"
+                      }
+                    ]
+                  },
+                  {
+                    "str": "::"
+                  }
+                ]
+              },
+              {
+                "var": "n"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

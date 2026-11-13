@@ -1,1 +1,1 @@
-vector: spec emit: -o <main.ts> is required
+vector: spec emit: -o <file> is required

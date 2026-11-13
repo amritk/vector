@@ -12,6 +12,7 @@ Generated from [src/core/fs.ts](https://github.com/amritk/vector/blob/main/src/c
 - [`joinPath`](#joinpath)
 - [`dirname`](#dirname)
 - [`basename`](#basename)
+- [`relativePath`](#relativepath)
 - [`mkdirAll`](#mkdirall)
 - [`makeTempDir`](#maketempdir)
 
@@ -83,6 +84,35 @@ the path to cut
 <scalar-field name="returns" type="string">
 
 everything after the last `/`
+
+</scalar-field>
+
+### relativePath
+
+The path that leads from directory `from` to `to`, as a relative import
+spells it: starting `./` or `../`. Both must be absolute and free of `..`
+parts, as `realpathSync` answers them; nothing on disk is read.
+
+```ts
+function relativePath(from: string, to: string): string
+```
+
+<scalar-field name="from" type="string" required>
+
+the directory to start from
+
+</scalar-field>
+
+<scalar-field name="to" type="string" required>
+
+the path to reach
+
+</scalar-field>
+
+<scalar-field name="returns" type="string">
+
+`./<path>` when `to` is at or below `from`, else `../` once per
+  part of `from` to climb, then the rest of `to`
 
 </scalar-field>
 

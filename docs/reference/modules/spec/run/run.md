@@ -23,9 +23,12 @@ Generated from [src/spec/run/run.ts](https://github.com/amritk/vector/blob/main/
 - [`RunScratch`](#runscratch)
 - [`runSeedOf`](#runseedof)
 - [`runIsStdPath`](#runisstdpath)
+- [`runRemove`](#runremove)
 - [`runDisposeScratch`](#rundisposescratch)
 - [`runMakeScratch`](#runmakescratch)
 - [`runTest`](#runtest)
+- [`runTestFile`](#runtestfile)
+- [`runTestCommand`](#runtestcommand)
 - [`runEscape`](#runescape)
 - [`runFormatText`](#runformattext)
 - [`runFormatMarkdown`](#runformatmarkdown)
@@ -500,6 +503,26 @@ true when it is under std/
 
 </scalar-field>
 
+### runRemove
+
+Removes a directory and everything below it.
+
+```ts
+function runRemove(dir: string): Result<boolean, string>
+```
+
+<scalar-field name="dir" type="string" required>
+
+the directory
+
+</scalar-field>
+
+<scalar-field name="returns" type="Result&lt;boolean, string&gt;">
+
+Ok once it is gone, else why it could not be removed
+
+</scalar-field>
+
 ### runDisposeScratch
 
 Removes a scratch install and everything in it.
@@ -603,6 +626,88 @@ the most milliseconds the build and run may take
 <scalar-field name="returns" type="Result&lt;RunResult, string&gt;">
 
 the result, or `Err` when the compiler could not be started
+
+</scalar-field>
+
+### runTestFile
+
+Compiles and runs an emitted test already written to `file`, where its
+relative imports resolve, with `nish run <file> <nonce>`, and judges what
+it printed. The file is left where it is.
+
+```ts
+function runTestFile(
+  c: Contract,
+  file: string,
+  nishBin: string,
+  timeoutMs: i32,
+): Result<RunResult, string>
+```
+
+<scalar-field name="c" type="Contract" required>
+
+the contract the test was emitted from
+
+</scalar-field>
+
+<scalar-field name="file" type="string" required>
+
+the test
+
+</scalar-field>
+
+<scalar-field name="nishBin" type="string" required>
+
+the compiler
+
+</scalar-field>
+
+<scalar-field name="timeoutMs" type="i32" required>
+
+the most milliseconds the build and run may take
+
+</scalar-field>
+
+<scalar-field name="returns" type="Result&lt;RunResult, string&gt;">
+
+the result, or `Err` when the compiler could not be started
+
+</scalar-field>
+
+### runTestCommand
+
+Runs an emitted test with the command that runs it in its language, a fresh
+nonce appended as its last argument, and judges what it printed.
+
+```ts
+function runTestCommand(
+  c: Contract,
+  argv: string[],
+  timeoutMs: i32,
+): Result<RunResult, string>
+```
+
+<scalar-field name="c" type="Contract" required>
+
+the contract the test was emitted from
+
+</scalar-field>
+
+<scalar-field name="argv" type="string[]" required>
+
+the command: `nish run <file>`, `python3 <file>`, ...
+
+</scalar-field>
+
+<scalar-field name="timeoutMs" type="i32" required>
+
+the most milliseconds the build and run may take
+
+</scalar-field>
+
+<scalar-field name="returns" type="Result&lt;RunResult, string&gt;">
+
+the result, or `Err` when the command could not be started
 
 </scalar-field>
 

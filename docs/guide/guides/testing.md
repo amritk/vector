@@ -1,14 +1,16 @@
 # Testing an implementation
 
-A checked contract implies a Nish test: its vectors, and its properties at
+A checked contract implies a test: its vectors, and its properties at
 samples z3 chose on the domain's boundaries. `vector spec emit` writes that
-test, and `vector spec run` emits it and runs it against a nish checkout. This
-page uses the RFC 5869 contract and nish's own `std/crypto/hkdf.ts`; [From a
-spec to a contract](spec-to-contract.md) covers how the contract is made.
+test, and `vector spec run` emits it and runs it: a Nish test against a nish
+checkout, and a test in [another language](#other-languages) by its own
+tooling. This page uses the RFC 5869 contract and nish's own
+`std/crypto/hkdf.ts`; [From a spec to a contract](spec-to-contract.md)
+covers how the contract is made.
 
 ## Emit the test
 
-`spec emit <contract.json> -o <main.ts>` checks the contract and writes its
+`spec emit <contract.json> -o <file>` checks the contract and writes its
 test. It does not make directories, so make the one the test goes in first:
 
 ```sh
@@ -48,12 +50,220 @@ head -9 test/spec/hkdf.ts
 ```
 
 ```text
-vector: spec emit: -o <main.ts> is required
+vector: spec emit: -o <file> is required
 ```
 
 A contract that does not check is refused (exit 1) and nothing is written.
 `emit` accepts `--spec`, `--nish-root`, `--nish` and `--format` but reads none
 of them: the sources are found from the contract, and nothing is compiled.
+
+## Test your own modules
+
+A contract whose module is not a `nish/` one is about a module of your own
+project. `--package <name>=<dir>` says where such modules live: the module
+`<name>/<path>` is the file `<dir>/<path>.ts`, and the test imports it by its
+path relative to the directory the test is written in. Give it once for each
+package; when two names match a module, the longer one wins. vector tests
+itself this way. Its own spec `specs/vector-core-hex.md` names the module
+`vector/core/hex`, which is `src/core/hex.ts`:
+
+```sh
+mkdir -p tests/dogfood
+./dist/vector spec emit contracts/vector-core-hex.json --package vector=src -o tests/dogfood/vector-core-hex_test.ts
+```
+
+```text
+wrote tests/dogfood/vector-core-hex_test.ts
+```
+
+```sh
+sed -n 3p tests/dogfood/vector-core-hex_test.ts
+sed -n 12p tests/dogfood/vector-core-hex_test.ts
+```
+
+```text
+//   vector spec emit contracts/vector-core-hex.json --package vector=src -o tests/dogfood/vector-core-hex_test.ts.
+import { sha256Hex, toHex } from "../../src/core/hex";
+```
+
+Without `--package`, such a module is refused, and nothing is written:
+
+<!-- exit 1 -->
+```sh
+./dist/vector spec emit contracts/vector-core-hex.json -o /tmp/hex_test.ts
+```
+
+```text
+vector: contracts/vector-core-hex.json: vector/core/hex is not a nish/ module: give --package <name>=<dir> to say where your own modules live
+```
+
+A flag that is not `<name>=<dir>`, a name of `nish`, or a name given twice
+is bad usage (exit 2), and so is a package that places a module at a file
+that does not exist:
+
+<!-- exit 2 -->
+```sh
+./dist/vector spec emit contracts/vector-core-hex.json --package vector=lib -o /tmp/hex_test.ts
+```
+
+```text
+vector: vector/core/hex: --package places it at lib/core/hex.ts, which does not exist
+```
+
+`spec run` takes the same flag. It writes the test to `-o`, or else to a fresh
+temporary directory, before it emits it, so the imports are relative to where
+the test runs. A test kept with `-o` has the same regenerate line `spec emit`
+writes.
+
+vector's own tests of itself live in `tests/dogfood/`, and `npm test` runs
+them. `npm run dogfood` checks that each one is what vector makes of its spec
+now: it extracts the spec's XML again and compares the contract, checks the
+contract with `--run-sources` and `--module`, runs `spec stale`, and reruns
+the test's regenerate command. A test that changes is left regenerated and
+reported, so a change to the emitter shows up in a diff of the tests it
+writes.
+
+## Other languages
+
+A contract is not tied to Nish: the same checks run against a port of the
+module in another language. `--lang <id>` picks the language the test is
+written in, and `--harness <h>` the framework that runs it:
+
+| Language | `--lang` | Harnesses | Runs with |
+| --- | --- | --- | --- |
+| Nish | `nish` (the default) | `standalone` | the nish root (see [Run it](#run-it)) |
+| Python | `python` | `standalone` (the default), `pytest` | `VECTOR_PYTHON`, else `python3` |
+| Rust | `rust` | `standalone` (the default), `cargo` | `VECTOR_RUSTC`, else `rustc` |
+
+The other languages vector has a naming table for (`ruby`, `zig`, `go`,
+`cpp`, `csharp`, `c`, `java`, `kotlin`, `typescript`, `php`, `swift` and
+`dart`) have no emitter yet, and `--lang` says so (exit 2):
+
+<!-- exit 2 -->
+```sh
+./dist/vector spec emit contracts/vector-core-hex.json --lang zig -o hex_test.zig
+```
+
+```text
+vector: spec emit: --lang zig: vector has no emitter for zig yet (it has: nish, python, rust)
+```
+
+A function is called by its name in the language, from the contract's
+language table: a contract's `toHex` is Python's `to_hex`, unless the contract
+names it for Python itself. A name the language cannot use, such as a
+keyword, or two functions that would share one name, is refused (exit 1).
+
+`--package <name>=<dir>` places modules the same way, with the language's
+extension: `vector/core/hex` is `<dir>/core/hex.py`, loaded by its path
+relative to the test. A `nish/` module has no Python file of its own, so a
+Python port of one is mapped like any package. `tests/fixtures/python/`
+holds the ports vector checks its Python tests against:
+
+```sh
+./dist/vector spec run contracts/vector-core-hex.json --lang python --package vector=tests/fixtures/python/vector
+```
+
+```text
+SATISFIED: vector-core-hex (exit 0)
+  pass  R-HEX-LEN
+  pass  R-HEX-DIGITS
+  pass  R-SHA256
+```
+
+A Python test needs no nish root. vector runs it with `python3 -B`, so it
+writes no bytecode beside your modules; set `VECTOR_PYTHON` to run it with
+another interpreter. The verdict, the transcript and its `vector-done` line
+are the same as a Nish test's, and so are its failures:
+
+<!-- exit 1 -->
+```sh
+./dist/vector spec run contracts/vector-core-hex.json --lang python --package vector=tests/fixtures/python/broken/vector
+```
+
+```text
+VIOLATED: vector-core-hex (exit 1)
+  fail  R-HEX-LEN
+  fail  R-HEX-DIGITS
+  pass  R-SHA256
+FAIL  [V2] every nibble boundary, high nibble first, lowercase (R-HEX-LEN, R-HEX-DIGITS)
+      expected "000f10ff", got "000F10FF"
+…
+```
+
+Every test is a standalone program, which is how `spec run` runs it. With
+`--harness pytest` the file also holds a `test_<clause>` function for each
+clause, so pytest collects it with the rest of your suite, and a failing
+clause fails with the same detail the transcript prints:
+
+<!-- illustrative -->
+```sh
+./dist/vector spec emit contracts/vector-core-hex.json --lang python --harness pytest --package vector=src/py -o tests/test_hex.py
+pytest tests/test_hex.py
+```
+
+The regenerate line in the test's header keeps `--lang` and `--harness`
+when they are not the defaults. A harness the language has not is bad usage:
+
+<!-- exit 2 -->
+```sh
+./dist/vector spec run contracts/vector-core-hex.json --lang python --harness junit
+```
+
+```text
+vector: spec run: --harness junit: python tests run standalone or pytest
+```
+
+### Rust
+
+A Rust test is one file that needs the standard library alone. Each function
+is called by its Rust name (`to_hex`), from the module's crate path
+(`use nish::crypto::hkdf::{…}`), or, for a module `--package` places, from
+the `.rs` file there, loaded with `#[path]` relative to the test. A bytes
+input is passed as `&[u8]` and a string as `&str`; an optional input is an
+`Option<&[u8]>` or `Option<&str>`. A result may come back as any type that
+derefs to bytes or a string, so `Vec<u8>`, `[u8; 32]`, `String` and `&str`
+all check; an optional result is an `Option` of one. `tests/fixtures/rust/`
+holds the ports vector checks its Rust tests against:
+
+```sh
+./dist/vector spec run contracts/vector-core-hex.json --lang rust --package vector=tests/fixtures/rust/vector
+```
+
+```text
+SATISFIED: vector-core-hex (exit 0)
+  pass  R-HEX-LEN
+  pass  R-HEX-DIGITS
+  pass  R-SHA256
+```
+
+`spec run` compiles the test with `rustc --edition 2021 -C
+overflow-checks=on` in a temporary directory, then runs it; set
+`VECTOR_RUSTC` to build with another compiler. The contract's `+`, `-` and
+`*` wrap, so an implementation that overflows where the contract wraps
+panics, and that check fails with the panic's message (`panicked: attempt to
+add with overflow`). A test that does not compile prints no transcript, so
+its verdict is ERROR, with rustc's messages.
+
+With `--harness cargo` the file also holds a `#[test] fn test_<clause>` for
+each clause, so `cargo test` (or `rustc --test`) runs the same checks, and a
+failing clause panics with the detail the transcript prints. A property
+with no samples is `#[ignore]`d:
+
+```sh
+./dist/vector spec run contracts/rfc5869-hkdf-sha256.json --lang rust --harness cargo --package nish=tests/fixtures/rust/nish
+```
+
+```text
+SATISFIED: rfc5869-hkdf-sha256 (exit 0)
+  pass  R-EXTRACT
+  pass  R-SALT
+  pass  R-PRK-LEN
+  pass  R-L
+  pass  R-INFO-EMPTY
+  pass  R-OKM-LEN
+  pass  R-OKM-FIRST
+  pass  R-T
+```
 
 ## Run it
 

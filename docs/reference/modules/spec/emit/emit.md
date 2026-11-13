@@ -27,7 +27,9 @@ Generated from [src/spec/emit/emit.ts](https://github.com/amritk/vector/blob/mai
 - [`emitTestName`](#emittestname)
 - [`emitClauseFn`](#emitclausefn)
 - [`emitWrap`](#emitwrap)
+- [`emitClauseLines`](#emitclauselines)
 - [`emitRefusals`](#emitrefusals)
+- [`emitHeaderLines`](#emitheaderlines)
 - [`emitProgram`](#emitprogram)
 
 ## Declarations
@@ -42,7 +44,7 @@ class EmitOptions
 
 #### new EmitOptions
 
-Makes options with no regenerate line.
+Makes options with no regenerate line and only nish/ modules.
 
 ```ts
 new EmitOptions(contractSha256: string): EmitOptions
@@ -60,6 +62,22 @@ The sha256 of the contract file, written as `// vector-contract-sha256: <hex>`.
 
 ```ts
 contractSha256: string
+```
+
+#### EmitOptions.localImports
+
+How the test imports each of `localModules`: a relative path, such as `../../src/core/hex`.
+
+```ts
+localImports: string[]
+```
+
+#### EmitOptions.localModules
+
+Modules outside nish/ the test may import, each beside its import path in `localImports`.
+
+```ts
+localModules: string[]
 ```
 
 #### EmitOptions.regenerate
@@ -178,16 +196,15 @@ the lines
 
 </scalar-field>
 
-### emitRefusals
+### emitClauseLines
 
-What in a contract Nish cannot express, found before any output: a
-module outside nish/, an i8 or i16, a nullable bool, integer or f64 (Nish
-has `T | null` only on a reference type), an f64 forall variable, two
-clause ids that make the same function name, and a clause check or
-`plain_` wrapper whose name a contract function already has.
+The text above a clause's check, one comment line each with no comment
+marker: its title, then each covered requirement, a blank line before it,
+named with its source and level and its quote wrapped at 72 characters
+under it. Each language puts its own marker in front.
 
 ```ts
-function emitRefusals(c: Contract): string[]
+function emitClauseLines(c: Contract, k: Clause): string[]
 ```
 
 <scalar-field name="c" type="Contract" required>
@@ -196,9 +213,73 @@ the contract
 
 </scalar-field>
 
+<scalar-field name="k" type="Clause" required>
+
+the clause
+
+</scalar-field>
+
+<scalar-field name="returns" type="string[]">
+
+the lines, "" for a blank one (the title, first, is never one)
+
+</scalar-field>
+
+### emitRefusals
+
+What in a contract Nish cannot express, found before any output: a
+module outside nish/ that is not one of `local`, an i8 or i16, a nullable bool, integer or f64 (Nish
+has `T | null` only on a reference type), an f64 forall variable, two
+clause ids that make the same function name, and a clause check or
+`plain_` wrapper whose name a contract function already has.
+
+```ts
+function emitRefusals(c: Contract, local: string[]): string[]
+```
+
+<scalar-field name="c" type="Contract" required>
+
+the contract
+
+</scalar-field>
+
+<scalar-field name="local" type="string[]" required>
+
+the modules outside nish/ that `--package` places
+
+</scalar-field>
+
 <scalar-field name="returns" type="string[]">
 
 one message per refusal; empty when Nish can express it all
+
+</scalar-field>
+
+### emitHeaderLines
+
+The header every emitted test opens with, one comment line each with no
+comment marker: what generated it from which contract, how to regenerate
+it, how its checks are named, and the contract's sha256 last.
+
+```ts
+function emitHeaderLines(c: Contract, opts: EmitOptions): string[]
+```
+
+<scalar-field name="c" type="Contract" required>
+
+the contract
+
+</scalar-field>
+
+<scalar-field name="opts" type="EmitOptions" required>
+
+the regenerate command and the sha256
+
+</scalar-field>
+
+<scalar-field name="returns" type="string[]">
+
+the lines, "" for a blank one
 
 </scalar-field>
 
@@ -230,7 +311,8 @@ the property samples `checkContract` chose
 
 <scalar-field name="opts" type="EmitOptions" required>
 
-the header's regenerate command and the contract's sha256
+the header's regenerate command, the contract's sha256, and where
+  modules outside nish/ are imported from
 
 </scalar-field>
 

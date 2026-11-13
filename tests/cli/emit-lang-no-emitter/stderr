@@ -1,0 +1,1 @@
+vector: spec emit: --lang zig: vector has no emitter for zig yet (it has: nish, python, rust)

@@ -20,6 +20,8 @@ import { runProcess } from "../../core/process"
 import { contractLoadFile } from "../contract/contract"
 import { shapeNishModuleFile } from "../contract/shape"
 import { emitContractFile } from "../emit/file"
+import { EmitPackages } from "../emit/packages"
+import { EmitTarget } from "../emit/target"
 import { gitdiffChanged, gitdiffPrefix } from "./gitdiff"
 import {
   MUTATE_BUILD_TIMED_OUT,
@@ -643,7 +645,7 @@ const mutaterunWithTest = (
  * the command exits 2 on.
  */
 const mutaterunEmit = (contractPath: string, r: PrReport): Result<string | null, string> => {
-  const emitted = emitContractFile(contractPath, null)
+  const emitted = emitContractFile(contractPath, null, new EmitPackages(), ".", new EmitTarget("nish", "standalone"))
   if (emitted.isOk()) {
     return Ok(emitted.value.program)
   }

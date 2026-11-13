@@ -1,0 +1,1 @@
+vector spec emit contracts/vector-core-hex.json --package vector=lib -o dist/emit-package-golden.ts

@@ -1,0 +1,1 @@
+vector spec run contracts/vector-core-hex.json --package vector=src --nish-root .nish

@@ -10,7 +10,8 @@
       "specs/**",
       "rfcs/**",
       "schemas/**",
-      "tests/fixtures/**"
+      "tests/fixtures/**",
+      "tests/dogfood/**"
     ]
   },
   "organizeImports": {

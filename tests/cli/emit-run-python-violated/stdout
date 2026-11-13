@@ -1,0 +1,10 @@
+VIOLATED: vector-core-hex (exit 1)
+  fail  R-HEX-LEN
+  fail  R-HEX-DIGITS
+  pass  R-SHA256
+FAIL  [V2] every nibble boundary, high nibble first, lowercase (R-HEX-LEN, R-HEX-DIGITS)
+      expected "000f10ff", got "000F10FF"
+FAIL  [V3] RFC 4648's BASE16("foobar"), in lowercase (R-HEX-DIGITS)
+      expected "666f6f626172", got "666F6F626172"
+FAIL  [P-HEX-LOWER] the encoding has no uppercase digit (R-HEX-DIGITS)
+      sample 1 of 29 (len(b) = 51): the assertion is false

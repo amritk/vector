@@ -4,6 +4,8 @@ import { contractLoadFile } from "../../../src/spec/contract/contract"
 import { Contract, LitKind, Literal } from "../../../src/spec/contract/types"
 import { EmitOptions, emitProgram } from "../../../src/spec/emit/emit"
 import { emitContractFile } from "../../../src/spec/emit/file"
+import { EmitPackages } from "../../../src/spec/emit/packages"
+import { EmitTarget } from "../../../src/spec/emit/target"
 import { runDisposeScratch, runMakeScratch, runTest } from "../../../src/spec/run/run"
 
 const FORMS: string = "tests/spec/emit/fixtures/forms.json"
@@ -206,7 +208,7 @@ const formsSpecs = (t: Suite): void => {
     const cmd = `vector spec emit ${path} -o ${name}.ts`
     const c = contractLoadFile(path).expect(`load ${name}`)
     const passed = checkPassed(checkContract(new CheckContext(path, "."), c))
-    const e = emitContractFile(path, cmd)
+    const e = emitContractFile(path, cmd, new EmitPackages(), ".", new EmitTarget("nish", "standalone"))
     t.ok(`${name} emits when check passes it`, e.isOk() === passed)
     if (e.isOk()) {
       t.contains(`${name}'s header`, e.value.program, `//   ${cmd}.\n`)

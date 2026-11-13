@@ -20,7 +20,7 @@ The 3 JSON Schemas in `schemas/`.
 
 <scalar-card title="Modules" icon="phosphor/regular/books" href="#modules">
 
-The 90 source files of `src/`, from their doc comments.
+The 111 source files of `src/`, from their doc comments.
 
 </scalar-card>
 
@@ -40,12 +40,12 @@ The 90 source files of `src/`, from their doc comments.
 | --- | --- |
 | [`cli/diff`](modules/cli/diff.md) | `vector diff`: prove two programs equivalent, or show where they differ. |
 | [`cli/spec-check`](modules/cli/spec-check.md) | `vector spec check`: check a contract's quotes and vectors against its source. |
-| [`cli/spec-emit`](modules/cli/spec-emit.md) | `vector spec emit`: emit the Nish test a contract implies. |
+| [`cli/spec-emit`](modules/cli/spec-emit.md) | `vector spec emit`: emit the test a contract implies. |
 | [`cli/spec-exports`](modules/cli/spec-exports.md) | `vector spec exports`: refuse a new export its contract does not cover. |
 | [`cli/spec-extract`](modules/cli/spec-extract.md) | `vector spec extract`: extract a contract from a kramdown-rfc spec's XML. |
 | [`cli/spec-frozen`](modules/cli/spec-frozen.md) | `vector spec frozen`: refuse a change that edits a frozen contract. |
 | [`cli/spec-mutate`](modules/cli/spec-mutate.md) | `vector spec mutate`: mutate the changed lines and refuse mutants the test misses. |
-| [`cli/spec-run`](modules/cli/spec-run.md) | `vector spec run`: emit a contract's Nish test and run it. |
+| [`cli/spec-run`](modules/cli/spec-run.md) | `vector spec run`: emit a contract's test and run it. |
 | [`cli/spec-stale`](modules/cli/spec-stale.md) | `vector spec stale`: refuse a generated test that no longer matches its contract. |
 | [`cli/verify`](modules/cli/verify.md) | `vector verify`: prove a program meets its spec plan. |
 | [`core/diag`](modules/core/diag.md) | how vector reports a problem and which exit code it ends with. |
@@ -55,6 +55,23 @@ The 90 source files of `src/`, from their doc comments.
 | [`core/process`](modules/core/process.md) | running a child process with its input given and its output collected. |
 | [`core/smt`](modules/core/smt.md) | reading what z3 prints: s-expressions, the numerals in a model, and a whole run's output split into one answer per query by the `(echo "@@Q<i>")` markers the script writes before each `(check-sat)`. |
 | [`core/z3`](modules/core/z3.md) | finding z3 and running one SMT-LIB2 script through it. |
+| [`lang/c`](modules/lang/c.md) | the C table: how C writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/cpp`](modules/lang/cpp.md) | the C++ table: how C++ writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/csharp`](modules/lang/csharp.md) | the C# table: how C# writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/dart`](modules/lang/dart.md) | the Dart table: how Dart writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/go`](modules/lang/go.md) | the Go table: how Go writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/java`](modules/lang/java.md) | the Java table: how Java writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/kotlin`](modules/lang/kotlin.md) | the Kotlin table: how Kotlin writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/names`](modules/lang/names.md) | how each language names a contract's functions, parameters and modules. |
+| [`lang/php`](modules/lang/php.md) | the PHP table: how PHP writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/python`](modules/lang/python.md) | the Python table: how Python writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/ruby`](modules/lang/ruby.md) | the Ruby table: how Ruby writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/rust`](modules/lang/rust.md) | the Rust table: how Rust writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/swift`](modules/lang/swift.md) | the Swift table: how Swift writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/table`](modules/lang/table.md) | the shape of a language table: how each construct of the contract vocabulary (`spec/contract/vocab`) is written in one language, and what that language drops. |
+| [`lang/tables`](modules/lang/tables.md) | the fourteen language tables, one for each language of `vocabLanguages`, in its order. |
+| [`lang/typescript`](modules/lang/typescript.md) | the TypeScript table: how TypeScript writes each construct of the contract vocabulary, and what it drops. |
+| [`lang/zig`](modules/lang/zig.md) | the Zig table: how Zig writes each construct of the contract vocabulary, and what it drops. |
 | [`main`](modules/main.md) | the command-line entry point. |
 | [`spec/check`](modules/spec/check.md) | the pipeline every contract goes through: an ordered registry of gates, each a top-level function that reads the contract and returns its findings. |
 | [`spec/contract/chars`](modules/spec/contract/chars.md) | the character-level checks a contract's text needs: UTF-8 decoding one code point at a time, control characters, and the patterns its ids, sections and numbers are written in. |
@@ -71,6 +88,10 @@ The 90 source files of `src/`, from their doc comments.
 | [`spec/emit/file`](modules/spec/emit/file.md) | from a contract file to its test's text, and the test written to disk: what `vector spec emit` and `vector spec run` share. |
 | [`spec/emit/helpers`](modules/spec/emit/helpers.md) | the Nish helpers an emitted test may define. |
 | [`spec/emit/lit`](modules/spec/emit/lit.md) | contract values as Nish source text: integers at their type, f64s, string literals, and the bytes a literal stands for. |
+| [`spec/emit/packages`](modules/spec/emit/packages.md) | `--package <name>=<dir>`: where the modules of your own project live, so a test can import a module outside nish/. |
+| [`spec/emit/python`](modules/spec/emit/python.md) | a contract and its samples as a Python test. |
+| [`spec/emit/rust`](modules/spec/emit/rust.md) | a contract and its samples as a Rust test. |
+| [`spec/emit/target`](modules/spec/emit/target.md) | what a test is emitted for: a language, and the harness that runs it in that language. |
 | [`spec/extract`](modules/spec/extract.md) | `vector spec extract`: an RFC XML v3 spec (xml2rfc's output for a kramdown-rfc spec) to its canonical contract. |
 | [`spec/front/front`](modules/spec/front/front.md) | the TypeScript front end. |
 | [`spec/gates/cite`](modules/spec/gates/cite.md) | what the gates that read a contract's sources share: reading them once a run, finding the section a citation names, and naming a citation in a message ("RFC §2.2" in the main RFC, "rfc2104 §2" in another source). |
@@ -100,7 +121,7 @@ The 90 source files of `src/`, from their doc comments.
 | [`spec/report/json`](modules/spec/report/json.md) | the check's report as one JSON object, for tools: `{status, contract, issues, warnings, coverage, samples, sources}`. |
 | [`spec/report/markdown`](modules/spec/report/markdown.md) | the check's report as GitHub markdown, for a PR comment: each requirement's quote, then the clauses that cover it; then the source commands, the exclusions and the warnings. |
 | [`spec/report/text`](modules/spec/report/text.md) | the check's report for a terminal: the status, every finding, each requirement with the clauses that cover it, the source commands, the exclusions and the warnings. |
-| [`spec/run/command`](modules/spec/run/command.md) | `vector spec run`: emit a contract's test, run it with a nish install, and report the verdict per requirement. |
+| [`spec/run/command`](modules/spec/run/command.md) | `vector spec run`: emit a contract's test, run it (with a nish install, or the language's own interpreter), and report the verdict per requirement. |
 | [`spec/run/run`](modules/spec/run/run.md) | running an emitted test against a nish install, and reading its transcript back in the contract's terms: which requirement each `PASS` / `FAIL` line speaks to, and whether the transcript is the one the test's own `main` wrote. |
 | [`spec/sample/eval`](modules/spec/sample/eval.md) | evaluates a property's call-free expressions, its `where` above all, as the generated test does: + - * % wrap to their operands' integer type, `and` and `or` stop at the first deciding operand, and `unwrap(null)` is undefined, which makes `where` false. |
 | [`spec/sample/ints`](modules/spec/sample/ints.md) | the integers a property's variables take, held in an i64 whatever their type. |

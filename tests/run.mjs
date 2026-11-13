@@ -12,7 +12,10 @@
 //
 // A unit test passes only when it exits 0 and its last line is nish/testing's
 // `N passed, M failed, K skipped` with N > 0 and M = 0, so a test that asserts
-// nothing fails. Every run is killed after TIMEOUT_MS. The runner exits 1 if
+// nothing fails. A test that vector emitted from a contract (tests/dogfood/) ends
+// with `vector-done <nonce> <bits>` after its summary: every test is passed a
+// fresh nonce, and such a line must carry it with every bit 1, or the test
+// fails. Every run is killed after TIMEOUT_MS. The runner exits 1 if
 // anything failed, 2 if it could not run (no compiler, no dist/vector when a
 // case needs it).
 //
@@ -23,8 +26,9 @@
 // the lookup beside the binary.
 
 import { spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -71,7 +75,8 @@ const failed = [];
 
 for (const file of units) {
   const name = relative(root, file);
-  const r = spawnSync(nish, ["run", name], {
+  const nonce = randomBytes(8).toString("hex");
+  const r = spawnSync(nish, ["run", name, nonce], {
     cwd: root,
     env: unitEnv,
     encoding: "utf8",
@@ -79,10 +84,23 @@ for (const file of units) {
     timeout: TIMEOUT_MS,
   });
   const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
-  const summary = (r.stdout ?? "").trimEnd().split("\n").pop() ?? "";
+  const lines = (r.stdout ?? "").trimEnd().split("\n");
+  const done = /^vector-done (\S+) ([01]*)$/.exec(lines.at(-1) ?? "");
+  if (done !== null) lines.pop();
+  // vector emits tests/dogfood/, so each must end with this run's nonce and a
+  // 1 for every clause; a hand-written test has no vector-done line.
+  const emitted = name.startsWith(`tests${sep}dogfood${sep}`);
+  const ended =
+    done === null
+      ? !emitted
+      : done[1] === nonce && done[2] !== "" && !done[2].includes("0");
+  const summary = lines.at(-1) ?? "";
   const counts = /(\d+) passed, (\d+) failed, \d+ skipped$/.exec(summary);
   const asserted =
-    counts !== null && Number(counts[1]) > 0 && Number(counts[2]) === 0;
+    ended &&
+    counts !== null &&
+    Number(counts[1]) > 0 &&
+    Number(counts[2]) === 0;
   if (r.status === 0 && asserted) {
     console.log(`ok    ${name}  ${summary}`);
   } else {
@@ -90,7 +108,11 @@ for (const file of units) {
     const why =
       r.status !== 0
         ? `exit ${r.status ?? r.signal}`
-        : "no passing `N passed, 0 failed` summary";
+        : ended
+          ? "no passing `N passed, 0 failed` summary"
+          : done === null
+            ? "vector emits it, but it printed no vector-done line"
+            : "its vector-done line lacks this run's nonce or has a clause that failed";
     console.log(`FAIL  ${name} (${why})`);
     console.log(
       out

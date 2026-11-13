@@ -5,3 +5,4 @@ dist/
 .z3/
 coverage/
 .nish/
+__pycache__/

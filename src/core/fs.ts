@@ -70,6 +70,52 @@ export const basename = (path: string): string => {
   return path.slice(i + 1, end)
 }
 
+/** A path's parts between slashes, with empty and `.` parts dropped. */
+const fsParts = (path: string): string[] => {
+  const out: string[] = []
+  let start = 0
+  for (let i = 0; i <= toI32(path.length); i++) {
+    if (i === toI32(path.length) || path.charCodeAt(i) === 47) {
+      const p = path.substring(start, i)
+      if (p.length > 0 && p !== ".") {
+        out.push(p)
+      }
+      start = i + 1
+    }
+  }
+  return out
+}
+
+/**
+ * The path that leads from directory `from` to `to`, as a relative import
+ * spells it: starting `./` or `../`. Both must be absolute and free of `..`
+ * parts, as `realpathSync` answers them; nothing on disk is read.
+ *
+ * @param from the directory to start from
+ * @param to the path to reach
+ * @returns `./<path>` when `to` is at or below `from`, else `../` once per
+ *   part of `from` to climb, then the rest of `to`
+ */
+export const relativePath = (from: string, to: string): string => {
+  const a = fsParts(from)
+  const b = fsParts(to)
+  let same = 0
+  while (same < a.length && same < b.length && a[same] === b[same]) {
+    same = same + 1
+  }
+  const parts: string[] = []
+  for (let i = same; i < a.length; i++) {
+    parts.push("..")
+  }
+  for (let i = same; i < b.length; i++) {
+    parts.push(b[i])
+  }
+  if (parts.length === 0) {
+    return "."
+  }
+  return parts[0] === ".." ? parts.join("/") : `./${parts.join("/")}`
+}
+
 /**
  * Makes a directory and every missing parent, like `mkdir -p`.
  *

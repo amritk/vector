@@ -282,6 +282,91 @@
                     "title": "core/z3",
                     "filepath": "docs/reference/modules/core/z3.md"
                   },
+                  "/lang-c": {
+                    "type": "page",
+                    "title": "lang/c",
+                    "filepath": "docs/reference/modules/lang/c.md"
+                  },
+                  "/lang-cpp": {
+                    "type": "page",
+                    "title": "lang/cpp",
+                    "filepath": "docs/reference/modules/lang/cpp.md"
+                  },
+                  "/lang-csharp": {
+                    "type": "page",
+                    "title": "lang/csharp",
+                    "filepath": "docs/reference/modules/lang/csharp.md"
+                  },
+                  "/lang-dart": {
+                    "type": "page",
+                    "title": "lang/dart",
+                    "filepath": "docs/reference/modules/lang/dart.md"
+                  },
+                  "/lang-go": {
+                    "type": "page",
+                    "title": "lang/go",
+                    "filepath": "docs/reference/modules/lang/go.md"
+                  },
+                  "/lang-java": {
+                    "type": "page",
+                    "title": "lang/java",
+                    "filepath": "docs/reference/modules/lang/java.md"
+                  },
+                  "/lang-kotlin": {
+                    "type": "page",
+                    "title": "lang/kotlin",
+                    "filepath": "docs/reference/modules/lang/kotlin.md"
+                  },
+                  "/lang-names": {
+                    "type": "page",
+                    "title": "lang/names",
+                    "filepath": "docs/reference/modules/lang/names.md"
+                  },
+                  "/lang-php": {
+                    "type": "page",
+                    "title": "lang/php",
+                    "filepath": "docs/reference/modules/lang/php.md"
+                  },
+                  "/lang-python": {
+                    "type": "page",
+                    "title": "lang/python",
+                    "filepath": "docs/reference/modules/lang/python.md"
+                  },
+                  "/lang-ruby": {
+                    "type": "page",
+                    "title": "lang/ruby",
+                    "filepath": "docs/reference/modules/lang/ruby.md"
+                  },
+                  "/lang-rust": {
+                    "type": "page",
+                    "title": "lang/rust",
+                    "filepath": "docs/reference/modules/lang/rust.md"
+                  },
+                  "/lang-swift": {
+                    "type": "page",
+                    "title": "lang/swift",
+                    "filepath": "docs/reference/modules/lang/swift.md"
+                  },
+                  "/lang-table": {
+                    "type": "page",
+                    "title": "lang/table",
+                    "filepath": "docs/reference/modules/lang/table.md"
+                  },
+                  "/lang-tables": {
+                    "type": "page",
+                    "title": "lang/tables",
+                    "filepath": "docs/reference/modules/lang/tables.md"
+                  },
+                  "/lang-typescript": {
+                    "type": "page",
+                    "title": "lang/typescript",
+                    "filepath": "docs/reference/modules/lang/typescript.md"
+                  },
+                  "/lang-zig": {
+                    "type": "page",
+                    "title": "lang/zig",
+                    "filepath": "docs/reference/modules/lang/zig.md"
+                  },
                   "/main": {
                     "type": "page",
                     "title": "main",
@@ -361,6 +446,26 @@
                     "type": "page",
                     "title": "spec/emit/lit",
                     "filepath": "docs/reference/modules/spec/emit/lit.md"
+                  },
+                  "/spec-emit-packages": {
+                    "type": "page",
+                    "title": "spec/emit/packages",
+                    "filepath": "docs/reference/modules/spec/emit/packages.md"
+                  },
+                  "/spec-emit-python": {
+                    "type": "page",
+                    "title": "spec/emit/python",
+                    "filepath": "docs/reference/modules/spec/emit/python.md"
+                  },
+                  "/spec-emit-rust": {
+                    "type": "page",
+                    "title": "spec/emit/rust",
+                    "filepath": "docs/reference/modules/spec/emit/rust.md"
+                  },
+                  "/spec-emit-target": {
+                    "type": "page",
+                    "title": "spec/emit/target",
+                    "filepath": "docs/reference/modules/spec/emit/target.md"
                   },
                   "/spec-extract": {
                     "type": "page",

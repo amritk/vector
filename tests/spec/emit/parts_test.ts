@@ -65,9 +65,11 @@ export const main = (): i32 => {
   t.ok("and lists what it covers", emitTestName(v1).endsWith(`(${v1.covers.join(", ")})`))
   v1.id = "P-a.b"
   t.eqStr("a clause's function name", emitClauseFn(v1), "clause_P_a_b")
-  t.eqLines("example-hex is expressible", emitRefusals(c), none)
+  t.eqLines("example-hex is expressible", emitRefusals(c, []), none)
   c.target.module = "lib/hex"
-  t.ok("a module outside nish/ is refused", emitRefusals(c).length > 0)
+  t.ok("a module outside nish/ is refused", emitRefusals(c, []).length > 0)
+  t.ok("and says how to place it", emitRefusals(c, [])[0].indexOf("--package <name>=<dir>") > 0)
+  t.eqLines("a module --module places is not", emitRefusals(c, ["lib/hex"]), none)
 
   const names = emitHelperNames()
   t.ok("hexOf is a helper", names.indexOf("hexOf") === 0)

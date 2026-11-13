@@ -244,8 +244,12 @@ do.
 Nish has `i32`, `i64`, `u8`, `u16`, `u32`, `u64` and `f64` but no `i8` or
 `i16`, and `| null` only on reference types (`u8[]`, `string`,
 `Secret<u8[]>`). So the emitter refuses a signature or `forall` using what
-Nish lacks, and a target module outside `nish/`.
+Nish lacks, and a module outside `nish/` unless `--package` says where it
+lives ([Test your own modules](testing.md#test-your-own-modules)).
 
+- The test defines helpers of its own, such as `utf8Bytes` and `bytesEq`, and
+  Nish has no import aliasing, so a function under test cannot share one of
+  their names; `spec extract` names the clash.
 - A 64-bit int is written as `hi·2^32 + lo`, so no literal passes 2^53.
 - An f64 is its shortest round-tripping decimal, or, for `-0`, `NaN` and the
   infinities, its bits.

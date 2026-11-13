@@ -2,8 +2,9 @@
 
 # spec/run/command
 
-`spec/run/command` — `vector spec run`: emit a contract's test, run it with
-a nish install, and report the verdict per requirement.
+`spec/run/command` — `vector spec run`: emit a contract's test, run it (with
+a nish install, or the language's own interpreter), and report the verdict
+per requirement.
 
 Generated from [src/spec/run/command.ts](https://github.com/amritk/vector/blob/main/src/spec/run/command.ts).
 
@@ -11,6 +12,8 @@ Generated from [src/spec/run/command.ts](https://github.com/amritk/vector/blob/m
 
 - [`RunRequest`](#runrequest)
 - [`runFindRoot`](#runfindroot)
+- [`runPython`](#runpython)
+- [`runRustc`](#runrustc)
 - [`runFormat`](#runformat)
 - [`runCommand`](#runcommand)
 
@@ -54,6 +57,22 @@ text, markdown or json.
 format: string
 ```
 
+#### RunRequest.harness
+
+The `--harness` flag, or null for the language's default.
+
+```ts
+harness: string | null
+```
+
+#### RunRequest.lang
+
+The `--lang` flag, or null for nish.
+
+```ts
+lang: string | null
+```
+
 #### RunRequest.nish
 
 The `--nish` flag: a compiler to run as it is, or null.
@@ -78,6 +97,14 @@ Where to keep the emitted test, or null to keep none.
 out: string | null
 ```
 
+#### RunRequest.packages
+
+The `--package <name>=<dir>` flags' values.
+
+```ts
+packages: string[]
+```
+
 ### runFindRoot
 
 The nish checkout to run against: `--nish-root`, else `VECTOR_NISH_ROOT`,
@@ -96,6 +123,34 @@ the `--nish-root` flag, or null
 <scalar-field name="returns" type="Result&lt;string, string&gt;">
 
 the directory, or why there is none
+
+</scalar-field>
+
+### runPython
+
+The interpreter a Python test runs with: `VECTOR_PYTHON`, else `python3`.
+
+```ts
+function runPython(): string
+```
+
+<scalar-field name="returns" type="string">
+
+the command
+
+</scalar-field>
+
+### runRustc
+
+The compiler a Rust test builds with: `VECTOR_RUSTC`, else `rustc`.
+
+```ts
+function runRustc(): string
+```
+
+<scalar-field name="returns" type="string">
+
+the command
 
 </scalar-field>
 
@@ -127,8 +182,8 @@ the report's text
 
 ### runCommand
 
-`vector spec run`: emits the contract's test, runs it against a nish
-install, and prints the verdict. Exits 0 when SATISFIED, 1 when VIOLATED
+`vector spec run`: emits the contract's test in the language `--lang`
+names, runs it (a Nish test against a nish install), and prints the verdict. Exits 0 when SATISFIED, 1 when VIOLATED
 or ERROR or the contract is refused, and 2 for bad usage or an I/O failure.
 
 ```ts

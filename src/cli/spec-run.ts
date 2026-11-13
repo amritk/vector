@@ -1,5 +1,5 @@
 /**
- * `cli/spec-run` — `vector spec run`: emit a contract's Nish test and run it.
+ * `cli/spec-run` — `vector spec run`: emit a contract's test and run it.
  *
  * The command itself is `runCommand` in `spec/run/command`; this file declares its
  * flags and hands them over.
@@ -13,7 +13,7 @@ export const SPEC_RUN_ID: i32 = 6
 
 /** `vector spec run`, declared on a `Cli`: its handles and its handler. */
 export class SpecRunCommand {
-  /** The `-o, --out <main.ts>` flag. */
+  /** The `-o, --out <file>` flag. */
   outFlag: i32
   /** The `--spec <file>` flag. */
   specFlag: i32
@@ -23,6 +23,12 @@ export class SpecRunCommand {
   nishFlag: i32
   /** The `--format <f>` flag. */
   formatFlag: i32
+  /** The repeatable `--package <name>=<dir>` flag. */
+  packageFlag: i32
+  /** The `--lang <id>` flag. */
+  langFlag: i32
+  /** The `--harness <h>` flag. */
+  harnessFlag: i32
   /** The `<contract.json>` argument. */
   contractJsonArg: i32
 
@@ -33,8 +39,8 @@ export class SpecRunCommand {
    * @param parent the handle to declare it under (`ROOT` or the `spec` group)
    */
   constructor(cli: Cli, parent: i32) {
-    const handle = cli.command(parent, "run", SPEC_RUN_ID, "Emit a contract's Nish test and run it")
-    this.outFlag = cli.flag(handle, "-o, --out <main.ts>", "where to keep the test (default: a temporary file)")
+    const handle = cli.command(parent, "run", SPEC_RUN_ID, "Emit a contract's test and run it")
+    this.outFlag = cli.flag(handle, "-o, --out <file>", "where to keep the test (default: a temporary file)")
     this.specFlag = cli.flag(
       handle,
       "--spec <file>",
@@ -43,6 +49,18 @@ export class SpecRunCommand {
     this.nishRootFlag = cli.flag(handle, "--nish-root <dir>", "a nish checkout: finds the module and the compiler")
     this.nishFlag = cli.flag(handle, "--nish <bin>", "the nish compiler (default: nish)")
     this.formatFlag = cli.flag(handle, "--format <f>", "text (default), markdown (a PR comment) or json")
+    this.packageFlag = cli.flag(
+      handle,
+      "--package <pkg>",
+      "a package of your own, <name>=<dir>: modules <name>/<path> are <dir>/<path>.ts, .py in python, .rs in rust (repeatable)",
+    )
+    cli.repeatable(this.packageFlag)
+    this.langFlag = cli.flag(handle, "--lang <id>", "the test's language: nish (default), python or rust")
+    this.harnessFlag = cli.flag(
+      handle,
+      "--harness <h>",
+      "standalone (default), or the test framework the test plugs into: pytest for python, cargo for rust",
+    )
     this.contractJsonArg = cli.argument(handle, "<contract.json>", "the contract")
   }
 
@@ -59,6 +77,9 @@ export class SpecRunCommand {
     req.nishRoot = r.value(this.nishRootFlag)
     req.nish = r.value(this.nishFlag)
     req.format = r.value(this.formatFlag) ?? "text"
+    req.packages = r.values(this.packageFlag)
+    req.lang = r.value(this.langFlag)
+    req.harness = r.value(this.harnessFlag)
     return runCommand(req)
   }
 }

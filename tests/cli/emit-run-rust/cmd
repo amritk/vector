@@ -1,0 +1,1 @@
+vector spec run contracts/vector-core-hex.json --lang rust --package vector=tests/fixtures/rust/vector

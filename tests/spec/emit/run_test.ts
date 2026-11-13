@@ -1,5 +1,5 @@
 import { Suite } from "nish/testing"
-import { replaceAll } from "nish/text"
+import { replaceAll, splitLines } from "nish/text"
 import { makeTempDir } from "../../../src/core/fs"
 import { runProcess } from "../../../src/core/process"
 import { Sample, SampleTable, checkAddSample } from "../../../src/spec/check"
@@ -21,8 +21,10 @@ import {
   runNonce,
   runOutcomeName,
   runParse,
+  runRemove,
   runSeedOf,
   runTest,
+  runTestFile,
   runTranscript,
 } from "../../../src/spec/run/run"
 
@@ -131,6 +133,7 @@ export const main = (): i32 => {
   t.ok("an override outside std/ is refused", runMakeScratch(".nish", ["bin/nish"], ["x"]).isErr())
   t.ok("a directory with no compiler is not a seed", runSeedOf("tests").isErr())
   runTestTail(t, c)
+  runTestInPlace(t, c)
   runTestLinks(t)
   runTestMarkdown(t)
 
@@ -172,6 +175,24 @@ const runTestSh = (line: string): void => {
   if (r.status !== 0) {
     console.log(`sh -c ${line}: ${r.stderr}`)
   }
+}
+
+/** runTestFile runs the test where it is, passing the file and a fresh nonce. */
+const runTestInPlace = (t: Suite, c: Contract): void => {
+  const dir = makeTempDir("vector-in-place-").expect("a temp dir")
+  const fake = `${dir}/nish`
+  runTestSh(`printf '#!/bin/sh\\necho "$1 $2"\\necho "$3"\\n' > ${fake} && chmod 755 ${fake}`)
+  const file = `${dir}/sub/main_test.ts`
+  const ran = runTestFile(c, file, fake, 10000)
+  t.ok("a test in place runs", ran.isOk())
+  if (ran.isOk()) {
+    const lines = splitLines(ran.value.stdout)
+    t.eqStr("it is run where it is", lines[0], `run ${file}`)
+    t.eqStr("with a nonce of 32 hex digits", `${lines[1].length}`, "32")
+    t.ok("and judged: it never printed the nonce back as its end", ran.value.verdict.status !== "SATISFIED")
+  }
+  t.ok("the test's directory is left alone", isDirectorySync(dir))
+  t.ok("runRemove removes it", runRemove(dir).isOk() && !isDirectorySync(dir))
 }
 
 /** A run that prints past 64 KiB keeps its last 64 KiB, cut at a line's start. */

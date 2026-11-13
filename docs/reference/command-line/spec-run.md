@@ -2,7 +2,7 @@
 
 # vector spec run
 
-Emit a contract's Nish test and run it.
+Emit a contract's test and run it.
 
 ## Usage
 
@@ -20,7 +20,7 @@ the contract
 
 ## Flags
 
-<scalar-field name="-o, --out" type="&lt;main.ts&gt;">
+<scalar-field name="-o, --out" type="&lt;file&gt;">
 
 where to keep the test (default: a temporary file)
 
@@ -47,6 +47,24 @@ the nish compiler (default: nish)
 <scalar-field name="--format" type="&lt;f&gt;">
 
 text (default), markdown (a PR comment) or json
+
+</scalar-field>
+
+<scalar-field name="--package" type="&lt;pkg&gt;">
+
+a package of your own, &lt;name&gt;=&lt;dir&gt;: modules &lt;name&gt;/&lt;path&gt; are &lt;dir&gt;/&lt;path&gt;.ts, .py in python, .rs in rust (repeatable) May be given more than once.
+
+</scalar-field>
+
+<scalar-field name="--lang" type="&lt;id&gt;">
+
+the test's language: nish (default), python or rust
+
+</scalar-field>
+
+<scalar-field name="--harness" type="&lt;h&gt;">
+
+standalone (default), or the test framework the test plugs into: pytest for python, cargo for rust
 
 </scalar-field>
 

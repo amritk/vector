@@ -8,7 +8,7 @@
 import { splitLines } from "nish/text"
 import { basename, joinPath, makeTempDir, mkdirAll } from "../../core/fs"
 import { toHex } from "../../core/hex"
-import { ProcessResult, runProcess } from "../../core/process"
+import { runProcess } from "../../core/process"
 import { Contract } from "../contract/types"
 import { emitQuote } from "../emit/lit"
 
@@ -460,7 +460,13 @@ export const runIsStdPath = (rel: string): boolean => {
   return true
 }
 
-const runRemove = (dir: string): Result<boolean, string> => {
+/**
+ * Removes a directory and everything below it.
+ *
+ * @param dir the directory
+ * @returns Ok once it is gone, else why it could not be removed
+ */
+export const runRemove = (dir: string): Result<boolean, string> => {
   const r = runProcess(["rm", "-rf", dir], "", 120000).orReturn()
   if (r.status !== 0) {
     return Err(`cannot remove ${dir}: ${r.stderr}`)
@@ -598,14 +604,46 @@ export const runTest = (c: Contract, source: string, nishBin: string, timeoutMs:
   const dir = makeTempDir("vector-run-").orReturn()
   const file = joinPath(dir, "main.ts")
   const n = writeFileSyncMode(file, source, 0o600)
-  const nonce = runNonce()
-  const ran: Result<ProcessResult, string> =
-    n < 0 ? Err(`cannot write ${file} (errno ${-n})`) : runProcess([nishBin, "run", file, nonce], "", timeoutMs)
+  const ran: Result<RunResult, string> =
+    n < 0 ? Err(`cannot write ${file} (errno ${-n})`) : runTestFile(c, file, nishBin, timeoutMs)
   const gone = runRemove(dir)
   if (gone.isErr()) {
     console.error(`vector: warning: spec run: ${gone.error}`)
   }
-  const p = ran.orReturn()
+  return ran
+}
+
+/**
+ * Compiles and runs an emitted test already written to `file`, where its
+ * relative imports resolve, with `nish run <file> <nonce>`, and judges what
+ * it printed. The file is left where it is.
+ *
+ * @param c the contract the test was emitted from
+ * @param file the test
+ * @param nishBin the compiler
+ * @param timeoutMs the most milliseconds the build and run may take
+ * @returns the result, or `Err` when the compiler could not be started
+ */
+export const runTestFile = (c: Contract, file: string, nishBin: string, timeoutMs: i32): Result<RunResult, string> =>
+  runTestCommand(c, [nishBin, "run", file], timeoutMs)
+
+/**
+ * Runs an emitted test with the command that runs it in its language, a fresh
+ * nonce appended as its last argument, and judges what it printed.
+ *
+ * @param c the contract the test was emitted from
+ * @param argv the command: `nish run <file>`, `python3 <file>`, ...
+ * @param timeoutMs the most milliseconds the build and run may take
+ * @returns the result, or `Err` when the command could not be started
+ */
+export const runTestCommand = (c: Contract, argv: string[], timeoutMs: i32): Result<RunResult, string> => {
+  const nonce = runNonce()
+  const cmd: string[] = []
+  for (const a of argv) {
+    cmd.push(a)
+  }
+  cmd.push(nonce)
+  const p = runProcess(cmd, "", timeoutMs).orReturn()
   const out = new RunResult(c.contract, p.status, runKeepTail(p.stdout), runKeepTail(p.stderr))
   if (p.timedOut) {
     out.integrity.push(`the test did not finish within ${timeoutMs} ms`)
