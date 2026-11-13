@@ -12,14 +12,15 @@
  * depend on (the shape gate: nothing after it can trust a malformed contract)
  * is `blocking`, and stops the pipeline when it finds anything. A gate that
  * chooses inputs for the generated test, such as boundary samples for a
- * property, adds them to `ctx.samples`; emit reads them from the report. Only
- * the shape gate is registered here; the other gates live with their stages.
+ * property, adds them to `ctx.samples`; emit reads them from the report. Each
+ * gate lives in its own module under gates/, and the domain gate samples.
  */
 
 import { contractShapeErrors } from "./contract/shape"
 import { Contract, Literal } from "./contract/types"
 import { gateCompleteness } from "./gates/completeness"
 import { gateCoverage } from "./gates/coverage"
+import { gateDomain } from "./gates/domain"
 import { gateFidelity } from "./gates/fidelity"
 import { gateIds } from "./gates/ids"
 import { gateProvenance } from "./gates/provenance"
@@ -185,6 +186,8 @@ export class CheckContext {
   format: string
   /** Each property's sampling stats; each run starts empty. */
   sampleStats: CheckSampleStat[]
+  /** Why a tool the gates need (z3) failed, which exits 2; null when none did. Each run starts null. */
+  toolFailure: string | null = null
   /**
    * Makes a context.
    *
@@ -290,6 +293,7 @@ export const checkGates = (): CheckGateEntry[] => [
   new CheckGateEntry("completeness", gateCompleteness, false),
   new CheckGateEntry("provenance", gateProvenance, false),
   new CheckGateEntry("signatures", gateSignatures, false),
+  new CheckGateEntry("domain", gateDomain, false),
 ]
 
 /**
@@ -311,6 +315,7 @@ export const checkContractWith = (ctx: CheckContext, contract: Contract, gates: 
   ctx.coverage = new Map<string, string[]>()
   ctx.sourceRuns = []
   ctx.sampleStats = []
+  ctx.toolFailure = null
   const report = new CheckReport(ctx.samples)
   let stopped = false
   for (const g of gates) {
