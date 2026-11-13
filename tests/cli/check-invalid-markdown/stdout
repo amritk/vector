@@ -1,0 +1,10 @@
+## ❌ tests/cli/check-invalid-structure/contract.json: INVALID
+
+Not a contract the schema accepts.
+
+### Gate failures
+
+| Where | Problem |
+| --- | --- |
+| shape | contract: unknown field "bogus" |
+| shape | requirements\[0].level: a string |

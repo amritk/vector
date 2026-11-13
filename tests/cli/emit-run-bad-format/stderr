@@ -1,0 +1,1 @@
+vector: spec run: --format must be text, markdown or json, not xml
