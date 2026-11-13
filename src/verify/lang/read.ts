@@ -16,7 +16,6 @@ import {
 } from "nish/json-value"
 import {
   Axiom,
-  Clause,
   EXPR_BINOP,
   EXPR_BOOL,
   EXPR_CALL,
@@ -24,9 +23,10 @@ import {
   EXPR_NUM,
   EXPR_UNOP,
   EXPR_VAR,
-  Expr,
   FnUnit,
-  Param,
+  LangClause,
+  LangExpr,
+  LangParam,
   PlanUnit,
   Program,
   SpecPlan,
@@ -239,8 +239,8 @@ class LangReader {
     return n < 1 || n > 1000000 ? 0 : toI32(n)
   }
 
-  expr(v: JsonValue, where: string): Expr {
-    const bad = new Expr(EXPR_BOOL, "", "true", "", [])
+  expr(v: JsonValue, where: string): LangExpr {
+    const bad = new LangExpr(EXPR_BOOL, "", "true", "", [])
     if (!this.isObject(v)) {
       this.errors.push(`${where}: expression must be an object, got ${this.show(v)}`)
       return bad
@@ -260,7 +260,7 @@ class LangReader {
           `${where}: num.value ${text} has more precision than a float64 holds — the emitted code would read it as ${parseFloat(text)}, so the proof (over the exact decimal) and the runtime would disagree. Write it with fewer significant digits.`,
         )
       }
-      return new Expr(EXPR_NUM, "", text, "", [])
+      return new LangExpr(EXPR_NUM, "", text, "", [])
     }
     if (kind === "bool") {
       this.extras(v, ["kind", "value"], where)
@@ -269,7 +269,7 @@ class LangReader {
         this.errors.push(`${where}: bool.value must be a boolean`)
         return bad
       }
-      return new Expr(EXPR_BOOL, "", this.doc.boolean(b) ? "true" : "false", "", [])
+      return new LangExpr(EXPR_BOOL, "", this.doc.boolean(b) ? "true" : "false", "", [])
     }
     if (kind === "var") {
       this.extras(v, ["kind", "name"], where)
@@ -278,7 +278,7 @@ class LangReader {
         this.errors.push(`${where}: var.name must be an identifier, got ${this.show(this.doc.get(v, "name"))}`)
         return bad
       }
-      return new Expr(EXPR_VAR, "", "", name, [])
+      return new LangExpr(EXPR_VAR, "", "", name, [])
     }
     if (kind === "unop") {
       this.extras(v, ["kind", "op", "arg"], where)
@@ -287,7 +287,7 @@ class LangReader {
         this.errors.push(`${where}: unop.op must be one of ${langUnops().join(", ")}`)
       }
       const arg = this.expr(this.doc.get(v, "arg"), `${where}.arg`)
-      return new Expr(EXPR_UNOP, op, "", "", [arg])
+      return new LangExpr(EXPR_UNOP, op, "", "", [arg])
     }
     if (kind === "binop") {
       this.extras(v, ["kind", "op", "left", "right"], where)
@@ -297,14 +297,14 @@ class LangReader {
       }
       const left = this.expr(this.doc.get(v, "left"), `${where}.left`)
       const right = this.expr(this.doc.get(v, "right"), `${where}.right`)
-      return new Expr(EXPR_BINOP, op, "", "", [left, right])
+      return new LangExpr(EXPR_BINOP, op, "", "", [left, right])
     }
     if (kind === "ite") {
       this.extras(v, ["kind", "cond", "then", "else"], where)
       const c = this.expr(this.doc.get(v, "cond"), `${where}.cond`)
       const t = this.expr(this.doc.get(v, "then"), `${where}.then`)
       const e = this.expr(this.doc.get(v, "else"), `${where}.else`)
-      return new Expr(EXPR_ITE, "", "", "", [c, t, e])
+      return new LangExpr(EXPR_ITE, "", "", "", [c, t, e])
     }
     if (kind === "call") {
       this.extras(v, ["kind", "fn", "args"], where)
@@ -312,7 +312,7 @@ class LangReader {
       if (fn === null || !langIsIdent(fn)) {
         this.errors.push(`${where}: call.fn must be an identifier`)
       }
-      const args: Expr[] = []
+      const args: LangExpr[] = []
       const a = this.doc.get(v, "args")
       if (this.doc.kind(a) !== JSON_VALUE_ARRAY) {
         this.errors.push(`${where}: call.args must be an array`)
@@ -321,14 +321,14 @@ class LangReader {
           args.push(this.expr(this.doc.at(a, i), `${where}.args[${i}]`))
         }
       }
-      return new Expr(EXPR_CALL, "", "", fn ?? "", args)
+      return new LangExpr(EXPR_CALL, "", "", fn ?? "", args)
     }
     this.errors.push(`${where}: unknown expression kind ${this.show(this.doc.get(v, "kind"))}`)
     return bad
   }
 
-  clauses(v: JsonValue, where: string, minItems: i32): Clause[] {
-    const out: Clause[] = []
+  clauses(v: JsonValue, where: string, minItems: i32): LangClause[] {
+    const out: LangClause[] = []
     if (this.doc.kind(v) !== JSON_VALUE_ARRAY) {
       this.errors.push(`${where}: must be an array`)
       return out
@@ -349,13 +349,13 @@ class LangReader {
           `${where}[${i}]: axiomId must match /^[A-Za-z][A-Za-z0-9_-]*$/ (it is embedded in emitted source), got ${this.show(this.doc.get(c, "axiomId"))}`,
         )
       }
-      out.push(new Clause(id ?? "", this.expr(this.doc.get(c, "expr"), `${where}[${i}].expr`)))
+      out.push(new LangClause(id ?? "", this.expr(this.doc.get(c, "expr"), `${where}[${i}].expr`)))
     }
     return out
   }
 
-  params(v: JsonValue, where: string): Param[] {
-    const out: Param[] = []
+  params(v: JsonValue, where: string): LangParam[] {
+    const out: LangParam[] = []
     if (this.doc.kind(v) !== JSON_VALUE_ARRAY) {
       this.errors.push(`${where}: params must be an array`)
       return out
@@ -371,7 +371,7 @@ class LangReader {
         continue
       }
       this.extras(p, ["name", "type"], `${where}[${i}]`)
-      out.push(new Param(name, ty))
+      out.push(new LangParam(name, ty))
     }
     return out
   }
