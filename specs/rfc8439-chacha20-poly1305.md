@@ -74,7 +74,7 @@ Untested: an obligation on the caller: a pure function cannot see its other invo
 > {{Section 2.5 of RFC8439}}
 {: #R-POLY gi="blockquote"}
 
-> The pair (r,s) should be unique, and MUST be unpredictable for each invocation
+> The pair (r,s) should be unique, and MUST be unpredictable for each invocation (that is why it was originally obtained by encrypting a nonce), while "r" MAY be constant, but needs to be modified as follows before being used: ("r" is treated as a 16-octet little-endian number):
 > {{Section 2.5 of RFC8439}}
 {: gi="blockquote"}
 
@@ -138,7 +138,7 @@ Untested: nonce management is the caller's
 
 # Security Considerations
 
-> any protocol using this algorithm MUST include the complete tag to minimize the opportunity for forgery.
+> Additionally, any protocol using this algorithm MUST include the complete tag to minimize the opportunity for forgery.
 > {{Section 4 of RFC8439}}
 {: #R-FULL-TAG gi="blockquote"}
 
@@ -152,7 +152,7 @@ Untested: nonce management is the caller's
 
 Untested: key management is the caller's
 
-> implementation MUST use a constant-time comparison function rather than relying on optimized but insecure library functions such as the C language's memcmp().
+> For this reason, with online protocols, implementation MUST use a constant-time comparison function rather than relying on optimized but insecure library functions such as the C language's memcmp().
 > {{Section 4 of RFC8439}}
 {: gi="blockquote"}
 

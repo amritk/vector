@@ -1,0 +1,1 @@
+vector spec extract specs/example-hex.xml -o specs/example-hex.md
