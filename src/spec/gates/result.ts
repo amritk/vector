@@ -13,7 +13,7 @@
  */
 
 import { asciiLower, split, trim } from "nish/text"
-import { Citation, Clause, Contract } from "../contract/types"
+import { Citation, Clause, Contract, LitKind, Literal } from "../contract/types"
 import { SourceSet, sourceFind } from "../source/load"
 import { RfcSection, rfcNormalize, rfcSection } from "../source/rfc"
 import { GATE_CLAUSE_GOES_ON, GATE_DENY, GATE_HEDGE, GATE_RETRACT, gateWordFind, gateWordLeads } from "./text"
@@ -399,4 +399,24 @@ export const gateStatesResult = (
     return `${k.id} covers no requirement cited to it, so nothing there requires the result "${word}"`
   }
   return reasons.join("; ")
+}
+
+/**
+ * The word a section must state for a vector's expected value: "null",
+ * "true" or "false"; "" for any other value, which a section prints instead.
+ *
+ * @param lit the expected value
+ * @returns the word, or ""
+ */
+export const gateResultWord = (lit: Literal | null): string => {
+  if (lit === null) {
+    return ""
+  }
+  if (lit.kind === LitKind.Null) {
+    return "null"
+  }
+  if (lit.kind !== LitKind.Bool) {
+    return ""
+  }
+  return lit.flag ? "true" : "false"
 }

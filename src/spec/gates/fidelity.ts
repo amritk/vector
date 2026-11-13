@@ -20,7 +20,7 @@ import { SourceSet } from "../source/load"
 import { HexValue, RfcSection, rfcHexValues, rfcNormalize, rfcSectionText } from "../source/rfc"
 import { gateArgsAt, gateCitedSection, gatePlace, gateQuoteMissing, gateSources } from "./cite"
 import { gateIssue, gateWarn } from "./note"
-import { gateStatesResult } from "./result"
+import { gateResultWord, gateStatesResult } from "./result"
 import { gateF64Printed, gateIntLabelCount, gateIntRounds, gateLines, gateTextLines } from "./text"
 
 /** Where one literal of a vector was found: under a label, or on lines. */
@@ -569,20 +569,6 @@ const gateOwnVariant = (l: GateLits, k: Clause, sec: RfcSection): void => {
       )
     }
   }
-}
-
-/** "null", "true" or "false" for an expected null or bool; "" otherwise. */
-const gateResultWord = (lit: Literal | null): string => {
-  if (lit === null) {
-    return ""
-  }
-  if (lit.kind === LitKind.Null) {
-    return "null"
-  }
-  if (lit.kind !== LitKind.Bool) {
-    return ""
-  }
-  return lit.flag ? "true" : "false"
 }
 
 /** A quote's finding: why it is not in the section, or "" when it is. */
