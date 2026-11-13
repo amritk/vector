@@ -17,7 +17,7 @@ import {
   sourceRecordedProblem,
 } from "../../../src/spec/source/load"
 import { SourceRead } from "../../../src/spec/source/path"
-import { RfcDocument, rfcParse, rfcRead } from "../../../src/spec/source/rfc"
+import { RfcDocument, RfcSection, rfcParse, rfcRead } from "../../../src/spec/source/rfc"
 
 /** The plain text of a one-section RFC numbered `n`. */
 const loadTestRfc = (n: i32, body: string): string => `Request for Comments: ${n}\n\f\n1.  Introduction\n\n   ${body}\n`
@@ -65,6 +65,20 @@ const loadTestDecodingReader = (text: string, name: string): Result<RfcDocument,
   const at = text.indexOf("&#1058;")
   const decoded = at < 0 ? text : `${text.substring(0, at)}${charsFromCodePoint(0x422)}${text.substring(at + 7)}`
   return Ok(rfcParse(decoded))
+}
+
+/**
+ * A reader that adds a section whose spoof is only in its `lines`: its title
+ * and own lines are clean, as a reader that keeps text only there might.
+ */
+const loadTestLinesReader = (text: string, name: string): Result<RfcDocument, string> => {
+  const raw = rfcRead(text, name)
+  if (raw.isErr()) {
+    return raw
+  }
+  const doc = raw.value
+  doc.sections.push(new RfcSection("9", "Clean", [`It MUS${charsFromCodePoint(0x422)} work.`], []))
+  return Ok(doc)
 }
 
 /** The message of a refused registration, or "" when it was registered. */
@@ -232,6 +246,19 @@ export const main = (): i32 => {
     "a look-alike only the reader's decoding shows",
     sourceLoadWith(esc, contractPath, root, decoding).problems.join(" | "),
     'source esc: contracts/esc.xml as its reader decoded it: text a reader cannot see as the gates read it: line 4: "MUSТ" reads as MUST but is not spelled in ASCII: write MUST',
+  )
+
+  // Every text field a reader returns is scanned: here only a section's lines.
+  writeFileSync(joinPath(root, "contracts/lines.xml"), loadTestRfc(4444, "It MUST work."))
+  const lining = sourceReadersDefault()
+  t.ok("the lines reader", sourceReadersAdd(lining, ".xml", loadTestLinesReader).isOk())
+  const lined = loadTestContract(-1)
+  lined.sources = [loadTestDecl("lined", -1, null, "lines.xml")]
+  const linedProblems = sourceLoadWith(lined, contractPath, root, lining).problems.join(" | ")
+  t.ok(
+    "a look-alike only in a section's lines",
+    linedProblems.startsWith("source lined: contracts/lines.xml as its reader decoded it: ") &&
+      linedProblems.indexOf('"MUSТ" reads as MUST but is not spelled in ASCII') >= 0,
   )
 
   // Each refusal, with its reason.

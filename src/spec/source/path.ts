@@ -161,11 +161,12 @@ export const sourceCandidate = (
     let first = ""
     let named = ""
     for (const f of sourceRfcPlaces(decl.rfc, contractPath, root)) {
-      if (!sourceReadable(f, exts) || !(sourceExists(f) || sourceIsLink(f))) {
+      // The reader is chosen by the realpath (sourceReaderFor), so the filter is too.
+      const real = realpathSync(f)
+      if (!sourceReadable(real ?? f, exts) || !(sourceExists(f) || sourceIsLink(f))) {
         continue
       }
       if (file !== null) {
-        const real = realpathSync(f)
         const label: string | null = real !== null ? sourceLabel(real, contractPath, root) : null
         if (label !== null && label === file) {
           return Ok(f)

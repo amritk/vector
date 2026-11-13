@@ -171,6 +171,17 @@ export const main = (): i32 => {
     pathTestErr(sourceCandidate(pathTestDecl(null, null, 1), contract, root, [".pdf"])),
     `rfc1 not found; fetch it: ${sourceFetchHint(1)}`,
   )
+  // The reader is chosen by where a file leads, so the filter is too: a .txt
+  // that is a symlink to an .xml is no text when only text is read.
+  const linkTxt = joinPath(root, "contracts/rfc1.txt")
+  t.ok("ln .txt to .xml", pathTestRun(["ln", "-sf", "rfc1.xml", linkTxt]))
+  t.eqStr(
+    "a .txt symlink to an .xml falls over to the next text",
+    sourceCandidate(pathTestDecl(null, null, 1), contract, root, [".txt"]).expect("ok"),
+    `${root}/contracts/../rfcs/rfc1.txt`,
+  )
+  t.ok("rm the link", pathTestRun(["rm", linkTxt]))
+  writeFileSync(linkTxt, "nearer")
   t.eqStr(
     "an RFC on disk nowhere says how to fetch it",
     pathTestErr(sourceCandidate(pathTestDecl(null, null, 1234), contract, root, pathTestBoth())),
@@ -247,10 +258,14 @@ export const main = (): i32 => {
   )
   const zero = joinPath(root, "contracts/rfc9.txt")
   t.ok("ln /dev/zero", pathTestRun(["ln", "-s", "/dev/zero", zero]))
-  const zeroAt = sourceCandidate(pathTestDecl(null, null, 9), contract, root, pathTestBoth()).expect("found")
+  t.eqStr(
+    "a /dev/zero symlink is no candidate: no reader reads where it leads",
+    pathTestErr(sourceCandidate(pathTestDecl(null, null, 9), contract, root, pathTestBoth())),
+    `rfc9 not found; fetch it: ${sourceFetchHint(9)}`,
+  )
   t.eqStr(
     "a /dev/zero symlink as an RFC",
-    pathTestRead(sourceReadConfined(pathTestDecl(null, null, 9), zeroAt, contract, root)),
+    pathTestRead(sourceReadConfined(pathTestDecl(null, null, 9), zero, contract, root)),
     pathTestNotSpec(zero),
   )
   const fifo = joinPath(root, "rfcs/fifo.txt")

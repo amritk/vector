@@ -52,7 +52,8 @@ export class SourceReaders {
  * @param read the reader
  * @returns `Ok(true)` when registered, `Err` when `ext` is not one leading dot
  *   and a name without another dot or a slash (sourceReaderFor could never
- *   select it)
+ *   select it). A caller must check it: on `Err` nothing is registered, and
+ *   a source with that extension stays unreadable.
  */
 export const sourceReadersAdd = (readers: SourceReaders, ext: string, read: SourceReader): Result<boolean, string> => {
   if (ext.length < 2 || ext.charCodeAt(0) !== 0x2e || ext.indexOf("/") >= 0 || ext.indexOf(".", 1) >= 0) {
@@ -89,14 +90,28 @@ const sourceReadersExts = (readers: SourceReaders): string[] => {
   return out
 }
 
-/** A document's text as its reader decoded it: each section's title and its own lines. */
-const sourceDecodedText = (doc: RfcDocument): string => {
-  const parts: string[] = []
-  for (const s of doc.sections) {
-    parts.push(s.title)
-    for (const l of s.ownLines) {
+/** Appends each of `lines` that `seen` does not hold yet to `parts`. */
+const sourceDecodedAdd = (parts: string[], seen: Map<string, boolean>, lines: string[]): void => {
+  for (const l of lines) {
+    if (!seen.has(l)) {
+      seen.set(l, true)
       parts.push(l)
     }
+  }
+}
+
+/**
+ * A document's text as its reader decoded it: every section's title, lines
+ * and own lines, each distinct line once (a section's lines hold its own
+ * lines and its subsections').
+ */
+const sourceDecodedText = (doc: RfcDocument): string => {
+  const parts: string[] = []
+  const seen = new Map<string, boolean>()
+  for (const s of doc.sections) {
+    sourceDecodedAdd(parts, seen, [s.title])
+    sourceDecodedAdd(parts, seen, s.lines)
+    sourceDecodedAdd(parts, seen, s.ownLines)
   }
   return parts.join("\n")
 }

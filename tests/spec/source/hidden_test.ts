@@ -1,6 +1,14 @@
+import { regexCompile } from "nish/regex"
 import { Suite } from "nish/testing"
 import { charsFromCodePoint, charsName } from "../../../src/spec/contract/chars"
-import { hiddenAsciiLetterOf, hiddenIsInvisible, hiddenProblem, hiddenText } from "../../../src/spec/source/hidden"
+import { foldTable } from "../../../src/spec/source/fold"
+import {
+  hiddenAsciiLetterOf,
+  hiddenIsInvisible,
+  hiddenProblem,
+  hiddenText,
+  hiddenWordClass,
+} from "../../../src/spec/source/hidden"
 
 /** A string of the given code points. */
 const hiddenTestOf = (cps: i32[]): string => {
@@ -168,8 +176,9 @@ export const main = (): i32 => {
     hiddenTestOf([0x15a, 0x1e24, 0xc0, 0x139, 0x13d]),
     hiddenTestOf([0x24c2, 0x24ca, 0x24c8, 0x24c9]),
     hiddenTestOf([0x1f13c, 0x1f144, 0x1f142, 0x1f143]),
+    hiddenTestOf([0x1cce2, 0x1ccea, 0x1cce8, 0x1cce9]),
   ]
-  const foldsTo: string[] = ["MUST", "REQUIRED", "SHALL", "MUST", "MUST"]
+  const foldsTo: string[] = ["MUST", "REQUIRED", "SHALL", "MUST", "MUST", "MUST"]
   for (let j = 0; j < folds.length; j++) {
     const w = folds[j]
     const k = foldsTo[j]
@@ -229,5 +238,20 @@ export const main = (): i32 => {
   t.ok("look-alikes", hiddenAsciiLetterOf(0x410) === 65 && hiddenAsciiLetterOf(0x216f) === 77)
   t.ok("precomposed and modifier letters", hiddenAsciiLetterOf(0xe9) === 101 && hiddenAsciiLetterOf(0x1d3f) === 82)
   t.ok("not a letter", hiddenAsciiLetterOf(48) === -1 && hiddenAsciiLetterOf(0x3b1) === -1)
+  t.ok("outlined", hiddenAsciiLetterOf(0x1ccd6) === 65 && hiddenAsciiLetterOf(0x1ccef) === 90)
+
+  // A word takes every code point the fold knows, so none is split off from one.
+  const one = regexCompile(`^${hiddenWordClass()}$`, "")
+  t.ok("the word class compiles", one.isOk())
+  if (one.isOk()) {
+    const f = foldTable()
+    const outside: string[] = []
+    for (let i = 0; i < f.length; i += 2) {
+      if (!one.value.test(charsFromCodePoint(f[i]))) {
+        outside.push(charsName(f[i]))
+      }
+    }
+    t.eqStr("every folded code point is in a word", outside.join(" "), "")
+  }
   return t.done()
 }

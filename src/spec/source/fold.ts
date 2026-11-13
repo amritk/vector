@@ -4,9 +4,22 @@
  * 17.0). Each non-ASCII code point whose NFKD form,
  * with its combining marks removed, is a single ASCII letter, and that
  * letter: the precomposed Latin and Greek letters, superscripts, subscripts,
- * modifier letters, letterlike symbols, circled, fullwidth and mathematical
+ * modifier letters, letterlike ranges, circled, fullwidth and mathematical
  * letters. Nish has no normalisation, so the spoof guard reads this.
  */
+
+/** How many pairs foldTable holds. */
+export const FOLD_ENTRIES: i32 = 1415
+
+/** The SHA-256 of foldTable's values in decimal, joined by commas: a hand edit changes it. */
+export const FOLD_SHA256: string = "40b5e3bb4a4e8555ee3240c6d068e67728d6b93195e47b011b81445853d44e0f"
+
+/**
+ * Every code point foldTable holds, as ranges for a regex character class: a
+ * word takes each of them whatever Unicode version the regex engine knows.
+ */
+export const FOLD_CLASS: string =
+  "\\u{aa}\\u{ba}\\u{c0}-\\u{c5}\\u{c7}-\\u{cf}\\u{d1}-\\u{d6}\\u{d9}-\\u{dd}\\u{e0}-\\u{e5}\\u{e7}-\\u{ef}\\u{f1}-\\u{f6}\\u{f9}-\\u{fd}\\u{ff}-\\u{10f}\\u{112}-\\u{125}\\u{128}-\\u{130}\\u{134}-\\u{137}\\u{139}-\\u{13e}\\u{143}-\\u{148}\\u{14c}-\\u{151}\\u{154}-\\u{165}\\u{168}-\\u{17f}\\u{1a0}-\\u{1a1}\\u{1af}-\\u{1b0}\\u{1cd}-\\u{1dc}\\u{1de}-\\u{1e1}\\u{1e6}-\\u{1ed}\\u{1f0}\\u{1f4}-\\u{1f5}\\u{1f8}-\\u{1fb}\\u{200}-\\u{21b}\\u{21e}-\\u{21f}\\u{226}-\\u{233}\\u{2b0}\\u{2b2}-\\u{2b3}\\u{2b7}-\\u{2b8}\\u{2e1}-\\u{2e3}\\u{1d2c}\\u{1d2e}\\u{1d30}-\\u{1d31}\\u{1d33}-\\u{1d3a}\\u{1d3c}\\u{1d3e}-\\u{1d43}\\u{1d47}-\\u{1d49}\\u{1d4d}\\u{1d4f}-\\u{1d50}\\u{1d52}\\u{1d56}-\\u{1d58}\\u{1d5b}\\u{1d62}-\\u{1d65}\\u{1d9c}\\u{1da0}\\u{1dbb}\\u{1e00}-\\u{1e99}\\u{1e9b}\\u{1ea0}-\\u{1ef9}\\u{2071}\\u{207f}\\u{2090}-\\u{2093}\\u{2095}-\\u{209c}\\u{2102}\\u{210a}-\\u{210e}\\u{2110}-\\u{2113}\\u{2115}\\u{2119}-\\u{211d}\\u{2124}\\u{2128}\\u{212a}-\\u{212d}\\u{212f}-\\u{2131}\\u{2133}-\\u{2134}\\u{2139}\\u{2145}-\\u{2149}\\u{2160}\\u{2164}\\u{2169}\\u{216c}-\\u{2170}\\u{2174}\\u{2179}\\u{217c}-\\u{217f}\\u{24b6}-\\u{24e9}\\u{2c7c}-\\u{2c7d}\\u{a7f1}-\\u{a7f4}\\u{ff21}-\\u{ff3a}\\u{ff41}-\\u{ff5a}\\u{107a5}\\u{1ccd6}-\\u{1ccef}\\u{1d400}-\\u{1d454}\\u{1d456}-\\u{1d49c}\\u{1d49e}-\\u{1d49f}\\u{1d4a2}\\u{1d4a5}-\\u{1d4a6}\\u{1d4a9}-\\u{1d4ac}\\u{1d4ae}-\\u{1d4b9}\\u{1d4bb}\\u{1d4bd}-\\u{1d4c3}\\u{1d4c5}-\\u{1d505}\\u{1d507}-\\u{1d50a}\\u{1d50d}-\\u{1d514}\\u{1d516}-\\u{1d51c}\\u{1d51e}-\\u{1d539}\\u{1d53b}-\\u{1d53e}\\u{1d540}-\\u{1d544}\\u{1d546}\\u{1d54a}-\\u{1d550}\\u{1d552}-\\u{1d6a3}\\u{1f12b}-\\u{1f12c}\\u{1f130}-\\u{1f149}"
 
 /**
  * The fold, as [code point, ASCII letter] pairs sorted by code point. Build it

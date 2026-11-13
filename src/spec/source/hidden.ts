@@ -15,7 +15,7 @@
 
 import { Regex, RegexMatch, regexCompile } from "nish/regex"
 import { charsCodePointAt, charsFromCodePoint, charsName, charsSequenceLength } from "../contract/chars"
-import { foldAsciiLetter, foldTable } from "./fold"
+import { FOLD_CLASS, foldAsciiLetter, foldTable } from "./fold"
 
 /** [lo, hi] pairs: the format characters (Cf) and the blank code points. */
 const hiddenInvisibleTable = (): i32[] => [
@@ -111,11 +111,14 @@ export const hiddenIsInvisible = (cp: i32): boolean => cp >= 0xad && hiddenInRan
 export const hiddenAsciiLetterOf = (cp: i32): i32 => hiddenLetterIn(new HiddenTables(), cp)
 
 /**
- * The symbols that fold to a letter (foldTable) but are not letters to
- * Unicode, so `\p{L}` leaves them out of a word: circled, parenthesised,
- * squared and outlined Latin letters.
+ * The regex character class a word is made of: letters, digits and marks of
+ * any script, and every code point that folds to a letter (FOLD_CLASS,
+ * generated with foldTable): the circled, squared and outlined letters
+ * `\p{L}` leaves out, and letters newer than the regex engine's tables.
+ *
+ * @returns the class, brackets included
  */
-const HIDDEN_SYMBOL_LETTERS: string = "\\u24B6-\\u24E9\\u{1CCD6}-\\u{1CCEF}\\u{1F12B}-\\u{1F12C}\\u{1F130}-\\u{1F149}"
+export const hiddenWordClass = (): string => `[\\p{L}\\p{N}\\p{M}${FOLD_CLASS}]`
 
 /** The patterns a text is read with, compiled once per call. */
 class HiddenPatterns {
@@ -136,7 +139,7 @@ class HiddenPatterns {
 
 /** Compiles the patterns; an error names the one that failed. */
 const hiddenPatterns = (): Result<HiddenPatterns, string> => {
-  const word = regexCompile(`[\\p{L}\\p{N}\\p{M}${HIDDEN_SYMBOL_LETTERS}]+`, "").orReturn()
+  const word = regexCompile(`${hiddenWordClass()}+`, "").orReturn()
   const mark = regexCompile("^\\p{M}$", "").orReturn()
   const letter = regexCompile("^\\p{L}$", "").orReturn()
   return Ok(new HiddenPatterns(word, mark, letter))
@@ -241,16 +244,12 @@ const hiddenNote = (scan: HiddenScan, spot: string): void => {
 const hiddenScan = (text: string, keep: i32): HiddenScan => {
   const scan = new HiddenScan(keep)
   const compiled = hiddenPatterns()
-  if (compiled.isErr()) {
-    hiddenNote(scan, `line 1: the words could not be read (${compiled.error}): nothing is trusted`)
-    return scan
-  }
-  const p = compiled.value
+  const tables = compiled.isOk() ? compiled.value.tables : new HiddenTables()
   let line = 1
   let i = 0
   while (i < text.length) {
     const cp = charsCodePointAt(text, i)
-    if (hiddenInvisibleIn(p.tables, cp) && !(i === 0 && cp === 0xfeff)) {
+    if (hiddenInvisibleIn(tables, cp) && !(i === 0 && cp === 0xfeff)) {
       hiddenNote(scan, `line ${line}: invisible character ${charsName(cp)}: remove it`)
     }
     if (cp === 10) {
@@ -258,6 +257,11 @@ const hiddenScan = (text: string, keep: i32): HiddenScan => {
     }
     i += charsSequenceLength(text, i)
   }
+  if (compiled.isErr()) {
+    hiddenNote(scan, `line 1: the words could not be read (${compiled.error}): nothing is trusted`)
+    return scan
+  }
+  const p = compiled.value
   const m = new RegexMatch()
   let from = 0
   let at = 0

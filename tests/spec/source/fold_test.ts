@@ -1,14 +1,22 @@
 import { Suite } from "nish/testing"
-import { foldAsciiLetter, foldTable } from "../../../src/spec/source/fold"
+import { sha256Hex } from "../../../src/core/hex"
+import { FOLD_ENTRIES, FOLD_SHA256, foldAsciiLetter, foldTable } from "../../../src/spec/source/fold"
 
 /** The generated fold table: NFKD, marks dropped, one ASCII letter. */
 export const main = (): i32 => {
   const t = new Suite("spec/source fold")
   const f = foldTable()
-  t.ok("the table is generated in full", f.length / 2 > 1000)
+  // Pinned to its generator: a hand edit changes the count or the hash.
+  t.ok("the table is generated in full", f.length % 2 === 0 && f.length / 2 === FOLD_ENTRIES && FOLD_ENTRIES > 1000)
+  const values: string[] = []
+  for (const v of f) {
+    values.push(`${v}`)
+  }
+  t.eqStr("the table is the one generated", sha256Hex(values.join(",")), FOLD_SHA256)
   let sorted = true
-  for (let i = 2; i < f.length; i += 2) {
-    sorted = sorted && f[i - 2] < f[i] && f[i - 1] < 128 && f[i - 1] >= 65
+  for (let i = 0; i < f.length; i += 2) {
+    const a = f[i + 1]
+    sorted = sorted && f[i] >= 0x80 && (i === 0 || f[i - 2] < f[i]) && ((a >= 65 && a <= 90) || (a >= 97 && a <= 122))
   }
   t.ok("sorted, each to an ASCII letter", sorted)
 
