@@ -117,8 +117,8 @@ const pyRefusals = (t: Suite): void => {
   c.functions[0].name = "lambda"
   c.functions[1].name = "testIt"
   c.functions[3].name = "nonEmpty"
-  c.functions[4].name = "t"
-  c.functions[5].name = "memoryview"
+  c.functions[6].name = "t"
+  c.functions[7].name = "memoryview"
   c.clauses[1].id = "P-MOD"
   const why = emitPyRefusals(c).join("\n")
   t.contains("a keyword", why, "lambda: its Python name lambda is a keyword")
