@@ -1,0 +1,365 @@
+#!/usr/bin/env node
+// Check every relative Markdown link (and heading anchor) in the repository's docs.
+//
+//   node scripts/check-links.mjs            exit 1 and list every broken link
+//
+// Scans README.md, CLAUDE.md and docs/**/*.md. For each `[text](target)`,
+// `[ref]: target` or raw `<a href="target">` outside code: http(s)/mailto
+// targets are skipped; a relative path must exist; a `#fragment`, percent-
+// decoded first, must match a heading of the target file (GitHub slug rules: lower-case, punctuation deleted, each
+// remaining space to one `-`, duplicates suffixed `-1`, `-2`, ... -- see
+// headingSlugs below, which is written to agree with github-slugger rather than
+// to approximate it). A bare `#fragment` refers to the current file. A
+// `<scalar-card>`'s href must be such a `#fragment`. A full or collapsed
+// reference link, `[text][ref]` or `[ref][]`, must have its `[ref]:`
+// definition in the same file (labels compared case-insensitively, runs of
+// space as one).
+//
+// What it does not check: a shortcut reference `[ref]` alone, which with no
+// definition is literal text on both sites and so cannot be told from prose;
+// `href`s on HTML elements other than `<a>` and `<scalar-card>`; HTML written
+// across lines; and a link or a heading inside an HTML block.
+//
+// A link to this repository on github.com at `main`
+// (`https://github.com/amritk/vector/blob/main/<path>`, or `tree/main/` for a
+// directory) is checked as the relative link to `<path>` would be: the file
+// must exist here and its `#fragment` must name a heading.
+//
+// The pages scalar.config.json routes are published as a site, which serves
+// those pages and hands any other file a page links to back as a download. So
+// a routed page links another routed page relatively (the site resolves it to
+// that page) and any other file of the repository by its GitHub URL, and a
+// relative link from a routed page to a file that is not one is reported.
+//
+// It also reads scalar.config.json, the navigation of the user guide's site:
+// every route's `filepath` must be an existing .md file, and every page under
+// docs/guide/ or docs/reference/ must be reached by some route, so a page
+// cannot be written and then never published. docs/README.md states the rules.
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+const listMarkdown = (dir) => {
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === "node_modules" || entry.name.startsWith(".")) {
+        continue;
+      }
+      out.push(...listMarkdown(full));
+    } else if (entry.name.endsWith(".md")) {
+      out.push(full);
+    }
+  }
+  return out;
+};
+
+const files = ["README.md", "CLAUDE.md"]
+  .map((f) => path.join(root, f))
+  .filter((f) => fs.existsSync(f))
+  .concat(listMarkdown(path.join(root, "docs")));
+
+/** Lines of a file with fenced code blocks and code spans blanked out (links inside them are not links). */
+const proseLines = (text) => {
+  let inFence = false;
+  return text.split("\n").map((line) => {
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence;
+      return "";
+    }
+    // A code span is code, not a link, on both sites.
+    return inFence
+      ? ""
+      : line.replace(/(`+)(?:(?!\1)[\s\S])*?\1/g, (span) =>
+          " ".repeat(span.length),
+        );
+  });
+};
+
+// GitHub slugs a heading with `github-slugger`, which is three steps and no
+// more: lower-case it, DELETE every character that is not a letter, a number, a
+// mark, `_` or `-`, then turn each remaining space into one `-`. The deletion
+// and the substitution are separate passes, so a character that vanishes
+// between two spaces leaves both spaces behind and the slug keeps a hyphen for
+// each: `G5 — Distribution` is `g5--distribution`, with two.
+//
+// The character class below is `[^\p{L}\p{N}\p{M}\p{Pc}\- ]`, which agrees with
+// github-slugger 2.0.0 on the headings of these docs. It is not
+// character-for-character that package's 8 KB generated table: the table is
+// generated against the Unicode version of the day and deletes code points
+// unassigned back then that are letters now, which is a difference in scripts
+// no heading here is written in.
+/** GitHub-style heading slugs for a Markdown file, in order. */
+const headingSlugs = (text) => {
+  const seen = new Map();
+  const slugs = new Set();
+  for (const line of proseLines(text)) {
+    const m = /^#{1,6}\s+(.*?)\s*#*\s*$/.exec(line);
+    if (!m) {
+      continue;
+    }
+    let slug = m[1]
+      .replace(/`([^`]*)`/g, "$1") // inline code keeps its text
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1") // links keep their text
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\p{M}\p{Pc}\- ]/gu, "") // deleted, not replaced
+      .replace(/ /g, "-"); // one hyphen per space, runs included
+    const n = seen.get(slug) ?? 0;
+    seen.set(slug, n + 1);
+    if (n > 0) {
+      slug = `${slug}-${n}`;
+    }
+    slugs.add(slug);
+  }
+  return slugs;
+};
+
+// The docs site (Scalar) slugs a heading its own way, which is not GitHub's:
+// it deletes `_` and every character but a letter, a number, a mark, `-`, `.`
+// and a space, turns each space into `-`, then collapses each run of `-` to
+// one and trims `-` from both ends, so `` `--fix` `` is `fix` there and
+// `--fix` on GitHub, and "4. Exit codes" keeps its dot. Only headings of levels
+// 1 to 4 get an ID at all. A link that has to land on both sites names a
+// heading whose two slugs agree, or an `<a id="...">` written above it.
+/** The docs site's heading IDs for a Markdown file. */
+const scalarHeadingSlugs = (text) => {
+  const seen = new Map();
+  const slugs = new Set();
+  for (const line of proseLines(text)) {
+    const m = /^#{1,4}\s+(.*?)\s*#*\s*$/.exec(line);
+    if (!m) {
+      continue;
+    }
+    let slug = m[1]
+      .replace(/`([^`]*)`/g, "$1")
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\p{M}\-. ]/gu, "")
+      .replace(/ /g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    const n = seen.get(slug) ?? 0;
+    seen.set(slug, n + 1);
+    if (n > 0) {
+      slug = `${slug}-${n}`;
+    }
+    slugs.add(slug);
+  }
+  return slugs;
+};
+
+/** The IDs a file's own HTML gives (`<a id="...">`), which hold on both sites. */
+const htmlIds = (text) =>
+  new Set(
+    proseLines(text).flatMap((line) =>
+      [...line.matchAll(/<a\s+id="([^"]+)"/g)].map((m) => m[1]),
+    ),
+  );
+
+const slugCache = new Map();
+const slugsOf = (file) => {
+  if (!slugCache.has(file)) {
+    const text = fs.readFileSync(file, "utf8");
+    const ids = htmlIds(text);
+    slugCache.set(file, {
+      github: new Set([...headingSlugs(text), ...ids]),
+      site: new Set([...scalarHeadingSlugs(text), ...ids]),
+    });
+  }
+  return slugCache.get(file);
+};
+
+// Inline links `[text](target)` (target up to the first unbalanced `)`) and reference definitions `[ref]: target`.
+const INLINE = /\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+const REFDEF = /^\s*\[[^\]]+\]:\s*(\S+)/;
+// The href of a `<scalar-card>`, and of a raw `<a>`.
+const CARD = /<scalar-card\b[^>]*\shref="([^"]*)"/g;
+const ANCHOR = /<a\b[^>]*\shref="([^"]*)"/g;
+// A full or collapsed reference link, `[text][ref]` or `[ref][]`, and a label's normal form.
+const REFLINK = /\[([^\]]*)\]\[([^\]]*)\]/g;
+const label = (text) => text.trim().replace(/\s+/g, " ").toLowerCase();
+
+// This repository's files on github.com, at main.
+const REPO_URL =
+  /^https:\/\/github\.com\/amritk\/vector\/(?:blob|tree)\/main\/([^#?]*)(#.*)?$/;
+
+// The site's pages, by absolute path, from scalar.config.json's routes.
+const scalarConfig = path.join(root, "scalar.config.json");
+const routes = JSON.parse(fs.readFileSync(scalarConfig, "utf8")).navigation
+  .routes;
+const routedPages = new Set();
+const collectPages = (entries) => {
+  for (const entry of Object.values(entries)) {
+    if (entry.filepath !== undefined) {
+      routedPages.add(path.join(root, entry.filepath));
+    }
+    if (entry.children !== undefined) {
+      collectPages(entry.children);
+    }
+  }
+};
+collectPages(routes);
+
+const problems = [];
+let checked = 0;
+for (const file of files) {
+  const text = fs.readFileSync(file, "utf8");
+  const lines = proseLines(text);
+  const defined = new Set(
+    lines.flatMap((line) => {
+      const m = /^\s*\[([^\]]+)\]:/.exec(line);
+      return m ? [label(m[1])] : [];
+    }),
+  );
+  lines.forEach((line, index) => {
+    const targets = [];
+    for (const m of line.matchAll(INLINE)) {
+      targets.push(m[1]);
+    }
+    const ref = REFDEF.exec(line);
+    if (ref) {
+      targets.push(ref[1]);
+    }
+    for (const m of line.matchAll(ANCHOR)) {
+      targets.push(m[1]);
+    }
+    // Not inside an HTML tag (`type="i64[][]"` is an attribute), and a blank
+    // label is never a reference.
+    for (const m of line.replace(/<[^>]*>/g, "").matchAll(REFLINK)) {
+      const name = m[2] === "" ? m[1] : m[2];
+      if (label(name) !== "" && !defined.has(label(name))) {
+        problems.push(
+          `${path.relative(root, file)}:${index + 1}: reference link \`${m[0]}\` has no \`[${name}]:\` definition in this file`,
+        );
+      }
+    }
+    // A card's href. The site is only known to resolve an anchor of the page
+    // there (a relative path may land nowhere, and GitHub drops the element),
+    // so a card for another page links it in its body instead.
+    for (const m of line.matchAll(CARD)) {
+      if (m[1].startsWith("#")) {
+        targets.push(m[1]);
+      } else {
+        problems.push(
+          `${path.relative(root, file)}:${index + 1}: card href \`${m[1]}\` is not an anchor of this page; drop it and link the page from the card's body`,
+        );
+      }
+    }
+    for (let target of targets) {
+      target = target.replace(/^<|>$/g, "");
+      const repo = REPO_URL.exec(target);
+      if (repo === null && /^(https?:|mailto:|tel:)/i.test(target)) {
+        continue;
+      }
+      checked++;
+      const [pathPart, fragment] =
+        repo === null ? target.split("#") : [repo[1], repo[2]?.slice(1)];
+      const where = `${path.relative(root, file)}:${index + 1}`;
+      let resolved = file;
+      if (pathPart) {
+        resolved =
+          repo === null
+            ? path.resolve(path.dirname(file), decodeURIComponent(pathPart))
+            : path.join(root, decodeURIComponent(pathPart));
+        if (
+          repo === null &&
+          routedPages.has(file) &&
+          !routedPages.has(resolved) &&
+          fs.existsSync(resolved)
+        ) {
+          const rel = path.relative(root, resolved).split(path.sep).join("/");
+          const kind = fs.statSync(resolved).isDirectory() ? "tree" : "blob";
+          problems.push(
+            `${where}: \`${target}\` is not a page of the docs site (scalar.config.json), which would serve it as a download; link https://github.com/amritk/vector/${kind}/main/${rel}${fragment !== undefined ? `#${fragment}` : ""} instead, or give it a route`,
+          );
+          continue;
+        }
+        if (!fs.existsSync(resolved)) {
+          problems.push(
+            `${where}: broken link \`${target}\` (no such file: ${path.relative(root, resolved)})`,
+          );
+          continue;
+        }
+      }
+      if (fragment !== undefined && fragment !== "") {
+        if (!resolved.endsWith(".md") || fs.statSync(resolved).isDirectory()) {
+          continue;
+        }
+        // A browser decodes a fragment before it looks for the ID, so
+        // `#%C3%A9t%C3%A9` lands on the heading "Été".
+        let decoded;
+        try {
+          decoded = decodeURIComponent(fragment);
+        } catch {
+          problems.push(
+            `${where}: anchor \`${target}\` is not valid percent-encoding`,
+          );
+          continue;
+        }
+        if (!slugsOf(resolved).github.has(decoded.toLowerCase())) {
+          problems.push(
+            `${where}: broken anchor \`${target}\` (no heading #${fragment} in ${path.relative(root, resolved)})`,
+          );
+        } else if (
+          repo === null &&
+          routedPages.has(file) &&
+          routedPages.has(resolved) &&
+          !slugsOf(resolved).site.has(decoded.toLowerCase())
+        ) {
+          problems.push(
+            `${where}: anchor \`${target}\` lands on GitHub but not on the docs site, which spells that heading's ID differently (or gives a heading below level 4 none); write <a id="${fragment}"></a> on its own line above the heading in ${path.relative(root, resolved)}`,
+          );
+        }
+      }
+    }
+  });
+}
+
+// The guide's navigation. A route to anything but an existing .md file (a typo,
+// a directory) is a dead page on the site, and a guide page no route names is
+// one nobody can reach from it.
+const walkRoutes = (entries, prefix) => {
+  for (const [route, entry] of Object.entries(entries)) {
+    // A page must name its file; a group or a link legitimately has none.
+    if (entry.type === "page" || entry.filepath !== undefined) {
+      const file = path.join(root, entry.filepath ?? "");
+      if (
+        !(
+          file.endsWith(".md") &&
+          fs.existsSync(file) &&
+          fs.statSync(file).isFile()
+        )
+      ) {
+        problems.push(
+          `scalar.config.json: route \`${prefix}${route}\` names no Markdown page: ${entry.filepath ?? "(no filepath)"}`,
+        );
+      }
+    }
+    if (entry.children !== undefined) {
+      walkRoutes(entry.children, prefix + route);
+    }
+  }
+};
+walkRoutes(routes, "");
+for (const dir of ["guide", "reference"]) {
+  const prefix = path.join(root, "docs", dir) + path.sep;
+  for (const page of files.filter((f) => f.startsWith(prefix))) {
+    if (!routedPages.has(page)) {
+      problems.push(
+        `${path.relative(root, page)}: no route in scalar.config.json reaches this ${dir} page`,
+      );
+    }
+  }
+}
+
+if (problems.length > 0) {
+  console.error(problems.join("\n"));
+  console.error(
+    `\n${problems.length} broken link(s) or route(s) in ${files.length} files (${checked} links checked)`,
+  );
+  process.exit(1);
+}
+console.log(`ok: ${checked} links in ${files.length} Markdown files`);

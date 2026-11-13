@@ -1,0 +1,629 @@
+{
+  "$schema": "https://registry.scalar.com/@scalar/schemas/config",
+  "scalar": "2.0.0",
+  "info": {
+    "title": "vector",
+    "description": "Prove small programs correct, and hold implementations to their specs: the guide and the reference."
+  },
+  "navigation": {
+    "header": [
+      {
+        "type": "link",
+        "title": "GitHub",
+        "icon": "phosphor/regular/github-logo",
+        "to": "https://github.com/amritk/vector",
+        "newTab": true
+      },
+      {
+        "type": "link",
+        "title": "Reference",
+        "icon": "phosphor/regular/book-open",
+        "to": "/reference"
+      }
+    ],
+    "routes": {
+      "/": {
+        "type": "group",
+        "title": "vector",
+        "children": {
+          "/": {
+            "type": "page",
+            "title": "vector",
+            "filepath": "docs/guide/index.md",
+            "showInSidebar": false,
+            "layout": {
+              "toc": false,
+              "pageTitle": false,
+              "pageActions": false,
+              "pageNav": false,
+              "lastUpdated": false,
+              "feedback": false,
+              "fullWidth": true,
+              "search": { "position": "header" },
+              "colorSchemeToggle": "header"
+            }
+          },
+          "/getting-started": {
+            "type": "group",
+            "title": "Getting started",
+            "icon": "phosphor/regular/rocket-launch",
+            "children": {
+              "/installation": {
+                "type": "page",
+                "title": "Installation",
+                "filepath": "docs/guide/getting-started/installation.md"
+              },
+              "/first-proof": {
+                "type": "page",
+                "title": "Your first proof",
+                "filepath": "docs/guide/getting-started/first-proof.md"
+              }
+            }
+          },
+          "/reference": {
+            "type": "group",
+            "title": "Reference",
+            "children": {
+              "/": {
+                "type": "page",
+                "title": "Overview",
+                "filepath": "docs/reference/index.md"
+              },
+              "/command-line": {
+                "type": "group",
+                "title": "Command line",
+                "children": {
+                  "/": {
+                    "type": "page",
+                    "title": "Overview",
+                    "filepath": "docs/reference/command-line.md"
+                  },
+                  "/verify": {
+                    "type": "page",
+                    "title": "vector verify",
+                    "filepath": "docs/reference/command-line/verify.md"
+                  },
+                  "/diff": {
+                    "type": "page",
+                    "title": "vector diff",
+                    "filepath": "docs/reference/command-line/diff.md"
+                  },
+                  "/spec-extract": {
+                    "type": "page",
+                    "title": "vector spec extract",
+                    "filepath": "docs/reference/command-line/spec-extract.md"
+                  },
+                  "/spec-check": {
+                    "type": "page",
+                    "title": "vector spec check",
+                    "filepath": "docs/reference/command-line/spec-check.md"
+                  },
+                  "/spec-emit": {
+                    "type": "page",
+                    "title": "vector spec emit",
+                    "filepath": "docs/reference/command-line/spec-emit.md"
+                  },
+                  "/spec-run": {
+                    "type": "page",
+                    "title": "vector spec run",
+                    "filepath": "docs/reference/command-line/spec-run.md"
+                  },
+                  "/spec-frozen": {
+                    "type": "page",
+                    "title": "vector spec frozen",
+                    "filepath": "docs/reference/command-line/spec-frozen.md"
+                  },
+                  "/spec-stale": {
+                    "type": "page",
+                    "title": "vector spec stale",
+                    "filepath": "docs/reference/command-line/spec-stale.md"
+                  },
+                  "/spec-exports": {
+                    "type": "page",
+                    "title": "vector spec exports",
+                    "filepath": "docs/reference/command-line/spec-exports.md"
+                  },
+                  "/spec-mutate": {
+                    "type": "page",
+                    "title": "vector spec mutate",
+                    "filepath": "docs/reference/command-line/spec-mutate.md"
+                  }
+                }
+              },
+              "/formats": {
+                "type": "group",
+                "title": "File formats",
+                "children": {
+                  "/program": {
+                    "type": "page",
+                    "title": "program.json",
+                    "filepath": "docs/reference/formats/program.md"
+                  },
+                  "/rfc-contract": {
+                    "type": "page",
+                    "title": "rfc-contract.json",
+                    "filepath": "docs/reference/formats/rfc-contract.md"
+                  },
+                  "/spec-plan": {
+                    "type": "page",
+                    "title": "spec-plan.json",
+                    "filepath": "docs/reference/formats/spec-plan.md"
+                  }
+                }
+              },
+              "/modules": {
+                "type": "group",
+                "title": "Modules",
+                "children": {
+                  "/cli-diff": {
+                    "type": "page",
+                    "title": "cli/diff",
+                    "filepath": "docs/reference/modules/cli/diff.md"
+                  },
+                  "/cli-spec-check": {
+                    "type": "page",
+                    "title": "cli/spec-check",
+                    "filepath": "docs/reference/modules/cli/spec-check.md"
+                  },
+                  "/cli-spec-emit": {
+                    "type": "page",
+                    "title": "cli/spec-emit",
+                    "filepath": "docs/reference/modules/cli/spec-emit.md"
+                  },
+                  "/cli-spec-exports": {
+                    "type": "page",
+                    "title": "cli/spec-exports",
+                    "filepath": "docs/reference/modules/cli/spec-exports.md"
+                  },
+                  "/cli-spec-extract": {
+                    "type": "page",
+                    "title": "cli/spec-extract",
+                    "filepath": "docs/reference/modules/cli/spec-extract.md"
+                  },
+                  "/cli-spec-frozen": {
+                    "type": "page",
+                    "title": "cli/spec-frozen",
+                    "filepath": "docs/reference/modules/cli/spec-frozen.md"
+                  },
+                  "/cli-spec-mutate": {
+                    "type": "page",
+                    "title": "cli/spec-mutate",
+                    "filepath": "docs/reference/modules/cli/spec-mutate.md"
+                  },
+                  "/cli-spec-run": {
+                    "type": "page",
+                    "title": "cli/spec-run",
+                    "filepath": "docs/reference/modules/cli/spec-run.md"
+                  },
+                  "/cli-spec-stale": {
+                    "type": "page",
+                    "title": "cli/spec-stale",
+                    "filepath": "docs/reference/modules/cli/spec-stale.md"
+                  },
+                  "/cli-verify": {
+                    "type": "page",
+                    "title": "cli/verify",
+                    "filepath": "docs/reference/modules/cli/verify.md"
+                  },
+                  "/core-diag": {
+                    "type": "page",
+                    "title": "core/diag",
+                    "filepath": "docs/reference/modules/core/diag.md"
+                  },
+                  "/core-fs": {
+                    "type": "page",
+                    "title": "core/fs",
+                    "filepath": "docs/reference/modules/core/fs.md"
+                  },
+                  "/core-hex": {
+                    "type": "page",
+                    "title": "core/hex",
+                    "filepath": "docs/reference/modules/core/hex.md"
+                  },
+                  "/core-json": {
+                    "type": "page",
+                    "title": "core/json",
+                    "filepath": "docs/reference/modules/core/json.md"
+                  },
+                  "/core-process": {
+                    "type": "page",
+                    "title": "core/process",
+                    "filepath": "docs/reference/modules/core/process.md"
+                  },
+                  "/core-smt": {
+                    "type": "page",
+                    "title": "core/smt",
+                    "filepath": "docs/reference/modules/core/smt.md"
+                  },
+                  "/core-z3": {
+                    "type": "page",
+                    "title": "core/z3",
+                    "filepath": "docs/reference/modules/core/z3.md"
+                  },
+                  "/main": {
+                    "type": "page",
+                    "title": "main",
+                    "filepath": "docs/reference/modules/main.md"
+                  },
+                  "/spec-check": {
+                    "type": "page",
+                    "title": "spec/check",
+                    "filepath": "docs/reference/modules/spec/check.md"
+                  },
+                  "/spec-contract-chars": {
+                    "type": "page",
+                    "title": "spec/contract/chars",
+                    "filepath": "docs/reference/modules/spec/contract/chars.md"
+                  },
+                  "/spec-contract-contract": {
+                    "type": "page",
+                    "title": "spec/contract/contract",
+                    "filepath": "docs/reference/modules/spec/contract/contract.md"
+                  },
+                  "/spec-contract-f64": {
+                    "type": "page",
+                    "title": "spec/contract/f64",
+                    "filepath": "docs/reference/modules/spec/contract/f64.md"
+                  },
+                  "/spec-contract-literals": {
+                    "type": "page",
+                    "title": "spec/contract/literals",
+                    "filepath": "docs/reference/modules/spec/contract/literals.md"
+                  },
+                  "/spec-contract-read": {
+                    "type": "page",
+                    "title": "spec/contract/read",
+                    "filepath": "docs/reference/modules/spec/contract/read.md"
+                  },
+                  "/spec-contract-shape": {
+                    "type": "page",
+                    "title": "spec/contract/shape",
+                    "filepath": "docs/reference/modules/spec/contract/shape.md"
+                  },
+                  "/spec-contract-types": {
+                    "type": "page",
+                    "title": "spec/contract/types",
+                    "filepath": "docs/reference/modules/spec/contract/types.md"
+                  },
+                  "/spec-contract-typing": {
+                    "type": "page",
+                    "title": "spec/contract/typing",
+                    "filepath": "docs/reference/modules/spec/contract/typing.md"
+                  },
+                  "/spec-contract-vocab": {
+                    "type": "page",
+                    "title": "spec/contract/vocab",
+                    "filepath": "docs/reference/modules/spec/contract/vocab.md"
+                  },
+                  "/spec-contract-write": {
+                    "type": "page",
+                    "title": "spec/contract/write",
+                    "filepath": "docs/reference/modules/spec/contract/write.md"
+                  },
+                  "/spec-emit-emit": {
+                    "type": "page",
+                    "title": "spec/emit/emit",
+                    "filepath": "docs/reference/modules/spec/emit/emit.md"
+                  },
+                  "/spec-emit-file": {
+                    "type": "page",
+                    "title": "spec/emit/file",
+                    "filepath": "docs/reference/modules/spec/emit/file.md"
+                  },
+                  "/spec-emit-helpers": {
+                    "type": "page",
+                    "title": "spec/emit/helpers",
+                    "filepath": "docs/reference/modules/spec/emit/helpers.md"
+                  },
+                  "/spec-emit-lit": {
+                    "type": "page",
+                    "title": "spec/emit/lit",
+                    "filepath": "docs/reference/modules/spec/emit/lit.md"
+                  },
+                  "/spec-extract": {
+                    "type": "page",
+                    "title": "spec/extract",
+                    "filepath": "docs/reference/modules/spec/extract.md"
+                  },
+                  "/spec-front-front": {
+                    "type": "page",
+                    "title": "spec/front/front",
+                    "filepath": "docs/reference/modules/spec/front/front.md"
+                  },
+                  "/spec-gates-cite": {
+                    "type": "page",
+                    "title": "spec/gates/cite",
+                    "filepath": "docs/reference/modules/spec/gates/cite.md"
+                  },
+                  "/spec-gates-completeness": {
+                    "type": "page",
+                    "title": "spec/gates/completeness",
+                    "filepath": "docs/reference/modules/spec/gates/completeness.md"
+                  },
+                  "/spec-gates-coverage": {
+                    "type": "page",
+                    "title": "spec/gates/coverage",
+                    "filepath": "docs/reference/modules/spec/gates/coverage.md"
+                  },
+                  "/spec-gates-domain": {
+                    "type": "page",
+                    "title": "spec/gates/domain",
+                    "filepath": "docs/reference/modules/spec/gates/domain.md"
+                  },
+                  "/spec-gates-fidelity": {
+                    "type": "page",
+                    "title": "spec/gates/fidelity",
+                    "filepath": "docs/reference/modules/spec/gates/fidelity.md"
+                  },
+                  "/spec-gates-ids": {
+                    "type": "page",
+                    "title": "spec/gates/ids",
+                    "filepath": "docs/reference/modules/spec/gates/ids.md"
+                  },
+                  "/spec-gates-note": {
+                    "type": "page",
+                    "title": "spec/gates/note",
+                    "filepath": "docs/reference/modules/spec/gates/note.md"
+                  },
+                  "/spec-gates-provenance": {
+                    "type": "page",
+                    "title": "spec/gates/provenance",
+                    "filepath": "docs/reference/modules/spec/gates/provenance.md"
+                  },
+                  "/spec-gates-result": {
+                    "type": "page",
+                    "title": "spec/gates/result",
+                    "filepath": "docs/reference/modules/spec/gates/result.md"
+                  },
+                  "/spec-gates-run": {
+                    "type": "page",
+                    "title": "spec/gates/run",
+                    "filepath": "docs/reference/modules/spec/gates/run.md"
+                  },
+                  "/spec-gates-signatures": {
+                    "type": "page",
+                    "title": "spec/gates/signatures",
+                    "filepath": "docs/reference/modules/spec/gates/signatures.md"
+                  },
+                  "/spec-gates-text": {
+                    "type": "page",
+                    "title": "spec/gates/text",
+                    "filepath": "docs/reference/modules/spec/gates/text.md"
+                  },
+                  "/spec-gates-typing": {
+                    "type": "page",
+                    "title": "spec/gates/typing",
+                    "filepath": "docs/reference/modules/spec/gates/typing.md"
+                  },
+                  "/spec-pr-cli": {
+                    "type": "page",
+                    "title": "spec/pr/cli",
+                    "filepath": "docs/reference/modules/spec/pr/cli.md"
+                  },
+                  "/spec-pr-exports": {
+                    "type": "page",
+                    "title": "spec/pr/exports",
+                    "filepath": "docs/reference/modules/spec/pr/exports.md"
+                  },
+                  "/spec-pr-frozen": {
+                    "type": "page",
+                    "title": "spec/pr/frozen",
+                    "filepath": "docs/reference/modules/spec/pr/frozen.md"
+                  },
+                  "/spec-pr-gitdiff": {
+                    "type": "page",
+                    "title": "spec/pr/gitdiff",
+                    "filepath": "docs/reference/modules/spec/pr/gitdiff.md"
+                  },
+                  "/spec-pr-lex": {
+                    "type": "page",
+                    "title": "spec/pr/lex",
+                    "filepath": "docs/reference/modules/spec/pr/lex.md"
+                  },
+                  "/spec-pr-mutate": {
+                    "type": "page",
+                    "title": "spec/pr/mutate",
+                    "filepath": "docs/reference/modules/spec/pr/mutate.md"
+                  },
+                  "/spec-pr-mutaterun": {
+                    "type": "page",
+                    "title": "spec/pr/mutaterun",
+                    "filepath": "docs/reference/modules/spec/pr/mutaterun.md"
+                  },
+                  "/spec-pr-report": {
+                    "type": "page",
+                    "title": "spec/pr/report",
+                    "filepath": "docs/reference/modules/spec/pr/report.md"
+                  },
+                  "/spec-pr-stale": {
+                    "type": "page",
+                    "title": "spec/pr/stale",
+                    "filepath": "docs/reference/modules/spec/pr/stale.md"
+                  },
+                  "/spec-profile-profile": {
+                    "type": "page",
+                    "title": "spec/profile/profile",
+                    "filepath": "docs/reference/modules/spec/profile/profile.md"
+                  },
+                  "/spec-report-common": {
+                    "type": "page",
+                    "title": "spec/report/common",
+                    "filepath": "docs/reference/modules/spec/report/common.md"
+                  },
+                  "/spec-report-json": {
+                    "type": "page",
+                    "title": "spec/report/json",
+                    "filepath": "docs/reference/modules/spec/report/json.md"
+                  },
+                  "/spec-report-markdown": {
+                    "type": "page",
+                    "title": "spec/report/markdown",
+                    "filepath": "docs/reference/modules/spec/report/markdown.md"
+                  },
+                  "/spec-report-text": {
+                    "type": "page",
+                    "title": "spec/report/text",
+                    "filepath": "docs/reference/modules/spec/report/text.md"
+                  },
+                  "/spec-run-command": {
+                    "type": "page",
+                    "title": "spec/run/command",
+                    "filepath": "docs/reference/modules/spec/run/command.md"
+                  },
+                  "/spec-run-run": {
+                    "type": "page",
+                    "title": "spec/run/run",
+                    "filepath": "docs/reference/modules/spec/run/run.md"
+                  },
+                  "/spec-sample-eval": {
+                    "type": "page",
+                    "title": "spec/sample/eval",
+                    "filepath": "docs/reference/modules/spec/sample/eval.md"
+                  },
+                  "/spec-sample-ints": {
+                    "type": "page",
+                    "title": "spec/sample/ints",
+                    "filepath": "docs/reference/modules/spec/sample/ints.md"
+                  },
+                  "/spec-sample-prng": {
+                    "type": "page",
+                    "title": "spec/sample/prng",
+                    "filepath": "docs/reference/modules/spec/sample/prng.md"
+                  },
+                  "/spec-sample-property": {
+                    "type": "page",
+                    "title": "spec/sample/property",
+                    "filepath": "docs/reference/modules/spec/sample/property.md"
+                  },
+                  "/spec-sample-smt": {
+                    "type": "page",
+                    "title": "spec/sample/smt",
+                    "filepath": "docs/reference/modules/spec/sample/smt.md"
+                  },
+                  "/spec-source-fold": {
+                    "type": "page",
+                    "title": "spec/source/fold",
+                    "filepath": "docs/reference/modules/spec/source/fold.md"
+                  },
+                  "/spec-source-hidden": {
+                    "type": "page",
+                    "title": "spec/source/hidden",
+                    "filepath": "docs/reference/modules/spec/source/hidden.md"
+                  },
+                  "/spec-source-load": {
+                    "type": "page",
+                    "title": "spec/source/load",
+                    "filepath": "docs/reference/modules/spec/source/load.md"
+                  },
+                  "/spec-source-path": {
+                    "type": "page",
+                    "title": "spec/source/path",
+                    "filepath": "docs/reference/modules/spec/source/path.md"
+                  },
+                  "/spec-source-rfc": {
+                    "type": "page",
+                    "title": "spec/source/rfc",
+                    "filepath": "docs/reference/modules/spec/source/rfc.md"
+                  },
+                  "/spec-xml-doc": {
+                    "type": "page",
+                    "title": "spec/xml/doc",
+                    "filepath": "docs/reference/modules/spec/xml/doc.md"
+                  },
+                  "/spec-xml-reader": {
+                    "type": "page",
+                    "title": "spec/xml/reader",
+                    "filepath": "docs/reference/modules/spec/xml/reader.md"
+                  },
+                  "/spec-xml-text": {
+                    "type": "page",
+                    "title": "spec/xml/text",
+                    "filepath": "docs/reference/modules/spec/xml/text.md"
+                  },
+                  "/verify-emit-dashboard": {
+                    "type": "page",
+                    "title": "verify/emit/dashboard",
+                    "filepath": "docs/reference/modules/verify/emit/dashboard.md"
+                  },
+                  "/verify-emit-float64": {
+                    "type": "page",
+                    "title": "verify/emit/float64",
+                    "filepath": "docs/reference/modules/verify/emit/float64.md"
+                  },
+                  "/verify-emit-outjson": {
+                    "type": "page",
+                    "title": "verify/emit/outjson",
+                    "filepath": "docs/reference/modules/verify/emit/outjson.md"
+                  },
+                  "/verify-emit-typescript": {
+                    "type": "page",
+                    "title": "verify/emit/typescript",
+                    "filepath": "docs/reference/modules/verify/emit/typescript.md"
+                  },
+                  "/verify-equiv-diff": {
+                    "type": "page",
+                    "title": "verify/equiv/diff",
+                    "filepath": "docs/reference/modules/verify/equiv/diff.md"
+                  },
+                  "/verify-lang-ast": {
+                    "type": "page",
+                    "title": "verify/lang/ast",
+                    "filepath": "docs/reference/modules/verify/lang/ast.md"
+                  },
+                  "/verify-lang-check": {
+                    "type": "page",
+                    "title": "verify/lang/check",
+                    "filepath": "docs/reference/modules/verify/lang/check.md"
+                  },
+                  "/verify-lang-pretty": {
+                    "type": "page",
+                    "title": "verify/lang/pretty",
+                    "filepath": "docs/reference/modules/verify/lang/pretty.md"
+                  },
+                  "/verify-lang-read": {
+                    "type": "page",
+                    "title": "verify/lang/read",
+                    "filepath": "docs/reference/modules/verify/lang/read.md"
+                  },
+                  "/verify-lang-style": {
+                    "type": "page",
+                    "title": "verify/lang/style",
+                    "filepath": "docs/reference/modules/verify/lang/style.md"
+                  },
+                  "/verify-smt-script": {
+                    "type": "page",
+                    "title": "verify/smt/script",
+                    "filepath": "docs/reference/modules/verify/smt/script.md"
+                  },
+                  "/verify-solve-report": {
+                    "type": "page",
+                    "title": "verify/solve/report",
+                    "filepath": "docs/reference/modules/verify/solve/report.md"
+                  },
+                  "/verify-verify": {
+                    "type": "page",
+                    "title": "verify/verify",
+                    "filepath": "docs/reference/modules/verify/verify.md"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "assetsDir": "docs/site",
+  "siteConfig": {
+    "isPrivate": true,
+    "agent": { "enabled": false },
+    "theme": "docs/site/theme.css",
+    "logo": {
+      "lightMode": "docs/site/logo-light.svg",
+      "darkMode": "docs/site/logo-dark.svg"
+    },
+    "head": {
+      "links": [{ "rel": "icon", "type": "image/svg+xml", "href": "/mark.svg" }]
+    }
+  }
+}
