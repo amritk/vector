@@ -666,7 +666,8 @@ const mutaterunEmit = (contractPath: string, r: PrReport): Result<string | null,
  * @param run where and how to run the test: its `file` is filled in from the contract
  * @param max the most mutants to run; 0 or less runs all
  * @returns the report, or `Err` when the contract cannot be read, its target
- *   is outside nish, git fails or the runner cannot work
+ *   is outside nish, the module cannot be lexed, git fails or the runner
+ *   cannot work
  */
 export const mutateCheck = (contractPath: string, base: string, run: MutateRun, max: i32): Result<PrReport, string> => {
   const loaded = contractLoadFile(contractPath)
@@ -686,7 +687,14 @@ export const mutateCheck = (contractPath: string, base: string, run: MutateRun, 
   }
   const prefix = gitdiffPrefix(run.nishRoot).orReturn()
   const changed = gitdiffChanged(run.nishRoot, base, [`${prefix}${file}`]).orReturn()
-  const all: MutateMutant[] = changed.length > 0 ? mutateSites(text, changed[0]) : []
+  let all: MutateMutant[] = []
+  if (changed.length > 0) {
+    const sites = mutateSites(text, changed[0])
+    if (sites.isErr()) {
+      return Err(`${run.nishRoot}/${file} cannot be mutated: ${sites.error}`)
+    }
+    all = sites.value
+  }
   const mutants = mutatePick(all, max)
   const dropped = toI32(all.length) - toI32(mutants.length)
   const allow = c.allowSurvivors ?? []
