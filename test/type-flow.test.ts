@@ -486,6 +486,102 @@ describe("a contract over the new types", () => {
   });
 });
 
+describe("tolerance and override shapes", () => {
+  const fa = (c: RfcContract) =>
+    c.clauses.find((k) => k.id === "V-FA") as VectorClause;
+  const shape = (edit: (c: RfcContract) => void): string => {
+    const c = numContract();
+    edit(c);
+    return validateContractShape(c).join("\n");
+  };
+  const tol = (t: unknown) => (c: RfcContract) => {
+    fa(c).tolerance = t as VectorClause["tolerance"];
+  };
+  const quote = hkdf.requirements[0].quote;
+
+  test("a tolerance takes exactly one of abs and ulps", () => {
+    expect(shape(tol({ abs: "1e-9", ulps: 1, ...at, quote }))).toContain(
+      `clauses[3].tolerance: an object with one of "abs" or "ulps"`,
+    );
+    expect(shape(tol({ ...at, quote }))).toContain(
+      `clauses[3].tolerance: an object with one of "abs" or "ulps"`,
+    );
+    expect(shape(tol({ ulps: 4, ...at, quote }))).toBe("");
+  });
+
+  test("abs is a finite non-negative decimal", () => {
+    for (const abs of ["-1e-9", "1e", ".5", "NaN", 0.001])
+      expect(shape(tol({ abs, ...at, quote }))).toContain(
+        "clauses[3].tolerance.abs: a non-negative decimal as text",
+      );
+    expect(shape(tol({ abs: "1e400", ...at, quote }))).toContain(
+      `clauses[3].tolerance.abs: "1e400" is past binary64's largest finite value`,
+    );
+  });
+
+  test("ulps is an integer in 0..2^53−1", () => {
+    for (const ulps of [-1, 1.5, "4", 2 ** 64, 2 ** 53, 1e20])
+      expect(shape(tol({ ulps, ...at, quote }))).toContain(
+        "clauses[3].tolerance.ulps: an integer in 0..2^53−1",
+      );
+    expect(shape(tol({ ulps: 9007199254740991, ...at, quote }))).toBe("");
+  });
+
+  test("a -Infinity expect with a tolerance validates and is checked by bits", async () => {
+    const c = numContract();
+    Object.assign(fa(c), {
+      args: [{ f64: "-Infinity" }],
+      expect: { f64: "-Infinity" },
+    });
+    expect(validateContractShape(c)).toEqual([]);
+    const src = emitNishTest(c, (await sampleContract(c)).properties);
+    expect(src).toContain(
+      'eqF64Bits(t, "[V-FA] V-FA (R-EXTRACT)", half(bitsToF64((toI64(0) + (-4503599627370496)))), bitsToF64((toI64(0) + (-4503599627370496))));',
+    );
+  });
+
+  // functions[].names, params[].names and target.modules: language → name.
+  const overrides: [string, (c: RfcContract, v: unknown) => void][] = [
+    [
+      "functions[0].names",
+      (c, v) => {
+        (c.functions[0] as { names?: unknown }).names = v;
+      },
+    ],
+    [
+      "functions[0].params[0].names",
+      (c, v) => {
+        (c.functions[0].params[0] as { names?: unknown }).names = v;
+      },
+    ],
+    [
+      "target.modules",
+      (c, v) => {
+        (c.target as { modules?: unknown }).modules = v;
+      },
+    ],
+  ];
+  for (const [where, put] of overrides)
+    test(`${where} is an object of language → non-empty string`, () => {
+      expect(shape((c) => put(c, { rust: "inc_64", go: "Inc64" }))).toBe("");
+      expect(shape((c) => put(c, "inc_64"))).toContain(
+        `${where}: an object keyed by language`,
+      );
+      expect(shape((c) => put(c, ["rust"]))).toContain(
+        `${where}: an object keyed by language`,
+      );
+      expect(shape((c) => put(c, { cobol: "INC64" }))).toContain(
+        `${where}: unknown field "cobol"`,
+      );
+      expect(shape((c) => put(c, { rust: "" }))).toContain(
+        `${where}.rust: a non-empty string`,
+      );
+      expect(shape((c) => put(c, { rust: 7 }))).toContain(
+        `${where}.rust: a non-empty string`,
+      );
+    });
+});
+
 describe("the Nish emitter", () => {
   test("intLit types a literal by its width and builds one past 2^53", () => {
     expect(intLit(-5n, "i32")).toBe("(-5)");

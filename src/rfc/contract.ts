@@ -921,8 +921,14 @@ function shapeTolerance(
   checkKeys(v, [kind, "source", "section", "quote"], at, errors);
   if (kind === "abs" && !(typeof v.abs === "string" && ABS_RE.test(v.abs)))
     errors.push(`${at}.abs: a non-negative decimal as text`);
-  if (kind === "ulps" && !(Number.isInteger(v.ulps) && (v.ulps as number) >= 0))
-    errors.push(`${at}.ulps: an integer >= 0`);
+  else if (kind === "abs" && overflows(v.abs as string))
+    errors.push(`${at}.abs: "${v.abs}" ${OVERFLOW_WANT}`);
+  // An ulps count is emitted as an i64 and must be exact as a JSON number.
+  if (
+    kind === "ulps" &&
+    !(Number.isSafeInteger(v.ulps) && (v.ulps as number) >= 0)
+  )
+    errors.push(`${at}.ulps: an integer in 0..2^53−1`);
   sourceRef(v.source, `${at}.source`);
   if (typeof v.section !== "string" || !SECTION_RE.test(v.section))
     errors.push(`${at}.section: a section number`);

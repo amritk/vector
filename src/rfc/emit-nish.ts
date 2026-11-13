@@ -131,10 +131,6 @@ export function f64Lit(x: number): string {
   return `bitsToF64(${intLit(BigInt.asIntN(64, BigInt(`0x${f64Bits(x)}`)), "i64")})`;
 }
 
-/**
- * The contract's \`a % b\` at each integer type but i32 (remI32): truncating,
- * and 0 when \`b\` is 0, or -1 for a signed type, as evalPure has it.
- */
 /** nish:unsafe's wrapping form of each i64 operator (docs/LANGUAGE.md). */
 const WRAPPING = {
   "+": "wrappingAdd",
@@ -144,6 +140,10 @@ const WRAPPING = {
 
 const remName = (t: IntType) => `rem${t[0].toUpperCase()}${t.slice(1)}`;
 
+/**
+ * The contract's \`a % b\` at each integer type but i32 (remI32): truncating,
+ * and 0 when \`b\` is 0, or -1 for a signed type, as evalPure has it.
+ */
 function remHelpers(): Record<string, string> {
   const out: Record<string, string> = {};
   for (const t of ["i64", "u8", "u16", "u32", "u64"] as const) {
