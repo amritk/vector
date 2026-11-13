@@ -26,6 +26,7 @@ Generated from [src/spec/pr/mutate.ts](https://github.com/amritk/vector/blob/mai
 - [`MUTATE_BUILD_TIMEOUT_PERCENT`](#mutate_build_timeout_percent)
 - [`MutateMutant`](#mutatemutant)
 - [`mutateOutcomeName`](#mutateoutcomename)
+- [`mutateCode`](#mutatecode)
 - [`mutateLine`](#mutateline)
 - [`mutateSites`](#mutatesites)
 - [`mutatePick`](#mutatepick)
@@ -226,13 +227,39 @@ its name
 
 </scalar-field>
 
+### mutateCode
+
+What each character of a module's lines is, as the lexer (lexTokens) reads
+the whole module: so a string, a template literal or a comment that spans
+lines, or a `/*` opened mid-line, is never taken for code.
+
+```ts
+function mutateCode(text: string): Result<i32[][], string>
+```
+
+<scalar-field name="text" type="string" required>
+
+the module
+
+</scalar-field>
+
+<scalar-field name="returns" type="Result&lt;i32[][], string&gt;">
+
+per line (splitLines), one entry per character and one more for
+  the line break after it: 1 for code, 2 for a string or template text, 3
+  for a comment, 0 for a space between tokens; or `Err` naming the line
+  the lexer cannot read
+
+</scalar-field>
+
 ### mutateLine
 
 The mutants of one line of a module: each operator, literal and statement
-it can change, left to right, skipping strings and comments.
+it can change, left to right, in code only: never in a string, template
+text or a comment.
 
 ```ts
-function mutateLine(text: string, line: i32): MutateMutant[]
+function mutateLine(text: string, line: i32, kinds: i32[]): MutateMutant[]
 ```
 
 <scalar-field name="text" type="string" required>
@@ -247,6 +274,12 @@ its number, from 1
 
 </scalar-field>
 
+<scalar-field name="kinds" type="i32[]" required>
+
+what each of its characters is, and its line break (mutateCode)
+
+</scalar-field>
+
 <scalar-field name="returns" type="MutateMutant[]">
 
 its mutants
@@ -255,10 +288,15 @@ its mutants
 
 ### mutateSites
 
-The mutants of a module's lines that a change added.
+The mutants of a module's lines that a change added. Where code is comes
+from the lexer (mutateCode), so no mutant lands in a string, a template
+literal or a comment, however many lines it spans.
 
 ```ts
-function mutateSites(text: string, changed: GitdiffFile): MutateMutant[]
+function mutateSites(
+  text: string,
+  changed: GitdiffFile,
+): Result<MutateMutant[], string>
 ```
 
 <scalar-field name="text" type="string" required>
@@ -273,9 +311,10 @@ the module's changes since the base (gitdiffChanged)
 
 </scalar-field>
 
-<scalar-field name="returns" type="MutateMutant[]">
+<scalar-field name="returns" type="Result&lt;MutateMutant[], string&gt;">
 
-the mutants, in the module's order
+the mutants, in the module's order, or `Err` naming the line the
+  lexer cannot read
 
 </scalar-field>
 

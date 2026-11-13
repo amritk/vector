@@ -243,6 +243,7 @@ the most mutants to run; 0 or less runs all
 <scalar-field name="returns" type="Result&lt;PrReport, string&gt;">
 
 the report, or `Err` when the contract cannot be read, its target
-  is outside nish, git fails or the runner cannot work
+  is outside nish, the root is a nish checkout with no compiler built, the
+  module cannot be lexed, git fails or the runner cannot work
 
 </scalar-field>
