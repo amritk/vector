@@ -964,7 +964,7 @@ The contract keeps all the data: an exact width, which outcome a `?` means, secr
 | Kotlin | `ByteArray` | `String` | `Boolean` | `Double` | `ByteArray` | `Byte` | `Short` | `Int` | `Long` | `UByte` | `UShort` | `UInt` | `ULong` |
 | Python | `bytes` | `str` | `bool` | `float` | `bytes` | `int` | `int` | `int` | `int` | `int` | `int` | `int` | `int` |
 | TypeScript | `Uint8Array` | `string` | `boolean` | `number` | `Uint8Array` | `number` | `number` | `number` | `bigint` | `number` | `number` | `number` | `bigint` |
-| PHP | `string` | `string` | `bool` | `float` | `#[\SensitiveParameter] string` | `int` | `int` | `int` | `int` | `int` | `int` | `int` | unsupported (1) |
+| PHP | `string` | `string` | `bool` | `float` | `string` | `int` | `int` | `int` | `int` | `int` | `int` | `int` | unsupported (1) |
 | Swift | `[UInt8]` | `String` | `Bool` | `Double` | `[UInt8]` | `Int8` | `Int16` | `Int32` | `Int64` | `UInt8` | `UInt16` | `UInt32` | `UInt64` |
 | Dart | `Uint8List` | `String` | `bool` | `double` | `Uint8List` | `int` | `int` | `int` | `int` | `int` | `int` | `int` | `BigInt` |
 
@@ -995,14 +995,14 @@ The contract keeps all the data: an exact width, which outcome a `?` means, secr
 
 | | `hex` | `ascii` | `str` | `int` | `f64` | `bool` | `null` | `concat` |
 |---|---|---|---|---|---|---|---|---|
-| Rust | `&[0x0b, 0x0b]` | `b"abc"` | `"abc"` | `42u32` | `f64::from_bits(0x3ff8000000000000)` | `true` | `None` | `[a, b].concat()` |
+| Rust | `&[0x0b, 0x0b]` | `b"abc"` | `"abc"` | `42u32` | `f64::from_bits(0x3ff8000000000000)` | `true` | `None` | `&[a, b].concat()` |
 | Ruby | `["0b0b"].pack("H*")` | `"abc".b` | `"abc"` | `42` | `["3ff8000000000000"].pack("H*").unpack1("G")` | `true` | `nil` | `a + b` |
 | Zig | `&[_]u8{ 0x0b, 0x0b }` | `"abc"` | `"abc"` | `@as(u32, 42)` | `@as(f64, @bitCast(@as(u64, 0x3ff8000000000000)))` | `true` | `null` | `a ++ b` |
 | Go | `[]byte{0x0b, 0x0b}` | `[]byte("abc")` | `"abc"` | `uint32(42)` | `math.Float64frombits(0x3ff8000000000000)` | `true` | `nil` | `append(append([]byte{}, a...), b...)` |
-| C++ | `std::array<std::uint8_t, 2>{0x0b, 0x0b}` | `std::array<std::uint8_t, 3>{'a', 'b', 'c'}` | `"abc"` | `std::uint32_t{42}` | `std::bit_cast<double>(std::uint64_t{0x3ff8000000000000})` | `true` | `std::nullopt` | `std::array<std::uint8_t, 2>{0x0b, 0x61}` |
+| C++ | `std::array<std::uint8_t, 2>{0x0b, 0x0b}` | `std::array<std::uint8_t, 3>{'a', 'b', 'c'}` | `"abc"sv` | `std::uint32_t{42}` | `std::bit_cast<double>(std::uint64_t{0x3ff8000000000000})` | `true` | `std::nullopt` | `std::array<std::uint8_t, 2>{0x0b, 0x61}` |
 | C# | `new byte[] { 0x0b, 0x0b }` | `"abc"u8.ToArray()` | `"abc"` | `42u` | `BitConverter.UInt64BitsToDouble(0x3ff8000000000000UL)` | `true` | `null` | `[.. a, .. b]` |
-| C | `(const uint8_t[]){0x0b, 0x0b}` | `(const uint8_t[]){"abc"}` | `"abc"` | `UINT32_C(42)` | `memcpy(&d, &(uint64_t){0x3ff8000000000000}, 8)` | `true` | `NULL` | `(const uint8_t[]){0x0b, 0x61}` |
-| Java | `HexFormat.of().parseHex("0b0b")` | `"abc".getBytes(StandardCharsets.US_ASCII)` | `"abc"` | `42L` | `Double.longBitsToDouble(0x3ff8000000000000L)` | `true` | `null` | `ByteBuffer.allocate(n).put(a).put(b).array()` |
+| C | `(const uint8_t[]){0x0b, 0x0b}` | `(const uint8_t[]){"abc"}` | `"abc"` | `UINT32_C(42)` | `((union { uint64_t u; double d; }){.u = 0x3ff8000000000000u}).d` | `true` | `NULL` | `(const uint8_t[]){0x0b, 0x61}` |
+| Java | `HexFormat.of().parseHex("0b0b")` | `"abc".getBytes(StandardCharsets.US_ASCII)` | `"abc"` | `42L` | `Double.longBitsToDouble(0x3ff8000000000000L)` | `true` | `null` | `ByteBuffer.allocate(a.length + b.length).put(a).put(b).array()` |
 | Kotlin | `byteArrayOf(0x0b, 0x0b)` | `"abc".toByteArray(Charsets.US_ASCII)` | `"abc"` | `42u` | `Double.fromBits(0x3ff8000000000000uL.toLong())` | `true` | `null` | `a + b` |
 | Python | `bytes.fromhex("0b0b")` | `b"abc"` | `"abc"` | `42` | `struct.unpack(">d", bytes.fromhex("3ff8000000000000"))[0]` | `True` | `None` | `a + b` |
 | TypeScript | `Uint8Array.of(0x0b, 0x0b)` | `new TextEncoder().encode("abc")` | `"abc"` | `42` | `new DataView(Uint8Array.of(0x3f, 0xf8, 0, 0, 0, 0, 0, 0).buffer).getFloat64(0)` | `true` | `null` | `Uint8Array.of(...a, ...b)` |
@@ -1056,9 +1056,10 @@ Notes:
 - type `secret-bytes`: std has no secret type; secrecy is dropped (a crate such as secrecy or zeroize can add it)
 - outcome `refusing-return`: None is the refusal
 - outcome `optional-input`: None is the absent argument
-- literal `str`: non-ASCII as \u{…} escapes
+- literal `str`: non-ASCII and control characters as \u{…} escapes
 - literal `int`: suffixed with its type, so every width is exact
 - literal `f64`: from its bits, so NaN payloads and -0 are exact
+- literal `concat`: a borrow of the joined Vec&lt;u8>, as a bytes input is &amp;[u8]; a returned value is [a, b].concat()
 
 </details>
 
@@ -1093,7 +1094,7 @@ Notes:
 - type `u64`: unbounded; the width's range and wrapping are the implementation's (mask with &amp; (2\*\*N - 1))
 - outcome `refusing-return`: RBS optional: nil is the refusal
 - outcome `optional-input`: nil is the absent argument
-- literal `str`: non-ASCII as \u{…} escapes
+- literal `str`: double-quoted, so # is written \# (a double-quoted string interpolates #{x}), \ as \\ and " as \"; non-ASCII and control characters as \u{…} escapes
 - literal `int`: exact at any width
 - literal `f64`: from its big-endian bits, so -0.0 and NaN payloads are exact
 
@@ -1149,7 +1150,7 @@ Notes:
 - type `secret-bytes`: no secret type; secrecy is dropped
 - outcome `refusing-return`: a non-nil error is the refusal; which error it is is outside the contract
 - outcome `optional-input`: nil is the absent argument
-- literal `str`: non-ASCII as \u escapes, a scalar above U+FFFF as \U
+- literal `str`: non-ASCII and control characters as \u escapes, a scalar above U+FFFF as \U
 - literal `int`: converted to its type, so every width is exact
 - literal `f64`: from its bits, so -0 and NaN payloads are exact
 
@@ -1177,7 +1178,7 @@ Notes:
 - type `i8`: the exact-width types are optional in the standard; every mainstream target has them
 - outcome `refusing-return`: std::nullopt is the refusal
 - outcome `optional-input`: std::nullopt is the absent argument
-- literal `str`: non-ASCII as its UTF-8 bytes in \x escapes ("\xc3\xa9" for é), split where a hex digit follows; a u8 literal is char8_t in C++20 and does not convert to std::string_view
+- literal `str`: a std::string_view literal (using namespace std::literals; [string.view.literals]), so its length is the literal's and keeps an embedded U+0000, which a plain "a\0b" would end at. Non-ASCII and control characters as their UTF-8 bytes in \x escapes ("\xc3\xa9"sv for é), split into adjacent literals where a hex digit follows ("\x00" "b"sv); a u8 literal is char8_t in C++20 and does not convert to std::string_view
 - literal `int`: braced, so a value out of range is a compile error; a minimum as -MAX - 1 (std::int64_t{-9223372036854775807 - 1}), and a u64 above INT64_MAX with a u suffix (std::uint64_t{18446744073709551615u})
 - literal `f64`: from its bits (C++20 [bit.cast]), so -0 and NaN payloads are exact
 - literal `concat`: no array concatenation in a literal; the joined bytes are written as one array
@@ -1196,7 +1197,7 @@ Choices:
 
 - A refusing return is a null return ({T}?), not a thrown exception or the Try pattern (bool TryX(..., out T)): a refusal is an expected outcome, tested by the vectors, and null maps the contract's null one-to-one. An implementation that throws ArgumentException is still checkable by mapping the throw to the refusal.
 - bytes are byte[] in both positions, though ReadOnlySpan&lt;byte> would avoid a copy on input.
-- A namespace holds no functions, so the module is a static class of static methods named for its last segment.
+- A namespace holds no functions, so the module is a static class of static methods named for its last segment. A method whose PascalCase name equals that class's name is CS0542, so it takes a name override.
 
 Notes:
 
@@ -1241,9 +1242,9 @@ Notes:
 - outcome `optional-input`: NULL is the absent argument; for bytes, a NULL pointer (its length ignored), so absent and empty stay distinct
 - literal `hex`: a compound literal, with its length sizeof'd; empty bytes as a non-NULL pointer and length 0, as C before C23 has no empty initializer
 - literal `ascii`: without the terminating NUL in its length
-- literal `str`: non-ASCII as its UTF-8 bytes in \x escapes ("\xc3\xa9" for é), split where a hex digit follows; a u8 literal is char8_t, not char, in C23
+- literal `str`: non-ASCII and control characters as their UTF-8 bytes in \x escapes ("\xc3\xa9" for é), split into adjacent literals where a hex digit follows ("\xc3\xa9" "b"); a u8 literal is char8_t, not char, in C23
 - literal `int`: &lt;stdint.h> constant macros give each width; a minimum is its INTn_MIN macro, or (-INT64_MAX - 1)
-- literal `f64`: from its bits, so -0 and NaN payloads are exact
+- literal `f64`: an expression: a compound literal of a union, read through its other member (C17 §6.5.2.3 footnote 97), so -0 and NaN payloads are exact
 - literal `concat`: no concatenation of arrays; the joined bytes are written as one array
 
 </details>
@@ -1254,7 +1255,7 @@ Types: The Java Language Specification (Java SE 21), §4.2 Primitive Types and V
 
 Names: methods and parameters lowerCamelCase: words split at each capital, a digit run stays on the word before it (hkdfExpandSha256 → hkdfExpandSha256), and an acronym is cased like a word (parseHTTPRequest → parseHttpRequest, readIOStream → readIoStream). A name that is a Java keyword takes a name override.
 
-Modules (class): a final class of static methods named for the last segment, in a package of the others (JLS §7.4, package names lowercase): nish/crypto/hkdf → class Hkdf in package nish.crypto.
+Modules (class): a final class of static methods named for the last segment, in a package of the others (JLS §6.1, package names lowercase): nish/crypto/hkdf → class Hkdf in package nish.crypto.
 
 Choices:
 
@@ -1273,10 +1274,10 @@ Notes:
 - type `u32`: widened to long
 - type `u64`: the same 64 bits read unsigned, with Long.compareUnsigned, Long.divideUnsigned and Long.toUnsignedString (JLS has no wider primitive)
 - outcome `refusing-return`: {T} boxed (boolean → Boolean, byte → Byte, short → Short, int → Integer, long → Long, double → Double; byte[] and String as they are), since a type argument is a reference type (JLS §4.5.1). Optional.empty() is the refusal; java.util.Optional's API note names it the return type for 'no result'
-- outcome `optional-input`: org.jspecify.annotations.Nullable (JSpecify 1.0), on {T} boxed as for a refusing return; null is the absent argument, and Optional is not used for parameters
+- outcome `optional-input`: org.jspecify.annotations.Nullable (JSpecify 1.0), a type-use annotation on {T} boxed as for a refusing return, and on an array as byte @Nullable [] (@Nullable byte[] would annotate the element type); null is the absent argument, and Optional is not used for parameters
 - literal `hex`: java.util.HexFormat (Java 17)
-- literal `str`: non-ASCII as \u escapes, a scalar above U+FFFF as its UTF-16 surrogate pair
-- literal `int`: per width: i8 (byte) 42, i16 (short) 42, i32, u8 and u16 42, i64, u32 and u64 42L; the minimums -2147483648 and -9223372036854775808L are valid as written, and a u64 above Long.MAX_VALUE is its bits as a hex long (0xffffffffffffffffL)
+- literal `str`: non-ASCII as \u escapes, a scalar above U+FFFF as its UTF-16 surrogate pair; a control character as an octal escape (\000), since a \u escape is translated before the literal is read (JLS §3.3) and \u000a would end the line
+- literal `int`: per width: i8 a cast (byte) 42 and i16 a cast (short) 42, since a method argument is not narrowed from int (JLS §5.3); i32, u8 and u16 42; i64, u32 and u64 42L. The minimums (byte) -128, (short) -32768, -2147483648 and -9223372036854775808L are valid as written, and a u64 above Long.MAX_VALUE is its bits as a hex long (0xffffffffffffffffL)
 - literal `f64`: from its bits; a NaN payload may not survive arithmetic, but is kept by the conversion
 - literal `null`: Optional.empty() where the refusal is meant
 
@@ -1305,7 +1306,7 @@ Notes:
 - outcome `refusing-return`: null is the refusal
 - outcome `optional-input`: a nullable parameter, null the absent argument
 - literal `hex`: a byte above 0x7f as 0xff.toByte(); "0b0b".hexToByteArray() needs @OptIn(ExperimentalStdlibApi::class) in Kotlin 1.9
-- literal `str`: non-ASCII as \u escapes; $ escaped as \$
+- literal `str`: non-ASCII as \u escapes, a scalar above U+FFFF as its UTF-16 surrogate pair (Kotlin has no \U); $ escaped as \$
 - literal `int`: per width: i8 42.toByte(), i16 42.toShort(), i32 42, i64 42L, u8 42u.toUByte(), u16 42u.toUShort(), u32 42u, u64 42uL; the minimums as Int.MIN_VALUE and Long.MIN_VALUE, since -2147483648 is a Long and -9223372036854775808L does not compile
 - literal `f64`: from its bits, so -0 and NaN payloads are exact; the bits are a ULong literal, as a hex Long literal with the sign bit set (-0, any negative value) does not compile
 - literal `concat`: ByteArray.plus
@@ -1341,14 +1342,14 @@ Notes:
 - type `u64`: arbitrary precision; the width is the implementation's to check
 - outcome `refusing-return`: None is the refusal (PEP 604)
 - outcome `optional-input`: None is the absent argument
-- literal `str`: non-ASCII as \u or \U escapes
+- literal `str`: non-ASCII and control characters as \u or \U escapes
 - literal `f64`: from its bits, so -0 and NaN payloads are exact
 
 </details>
 
 <details><summary>TypeScript</summary>
 
-Types: ECMA-262 (ECMAScript 2024), §6.1.6.1 The Number Type, §6.1.6.2 The BigInt Type, §25.2 TypedArray (Uint8Array).
+Types: ECMA-262 (ECMAScript 2024), §6.1.6.1 The Number Type, §6.1.6.2 The BigInt Type, §23.2 TypedArray Objects (Uint8Array).
 
 Names: functions and parameters lowerCamelCase, an acronym cased as a whole word (the guide's loadHttpUrl): words split at each capital, a digit run stays on the word before it (parseHTTPRequest → parseHttpRequest, readIOStream → readIoStream, hkdfExpandSha256 → hkdfExpandSha256). A name that is a reserved word takes a name override.
 
@@ -1370,7 +1371,7 @@ Notes:
 - outcome `refusing-return`: null is the refusal
 - outcome `optional-input`: an optional parameter; undefined is the absent argument
 - literal `ascii`: UTF-8, of which ASCII is a subset
-- literal `str`: non-ASCII as \u{…} escapes
+- literal `str`: non-ASCII and control characters as \u{…} escapes
 - literal `int`: 42n for i64 and u64
 - literal `f64`: from its bits, so -0 is exact; a NaN payload is lost
 
@@ -1395,7 +1396,7 @@ Notes:
 - type `bytes`: PHP strings are byte strings
 - type `string`: UTF-8 bytes; validity is the implementation's to check
 - type `f64`: binary64 on every supported platform
-- type `secret-bytes`: the attribute (PHP 8.2) keeps the value out of stack traces; it is not wiped (sodium_memzero can)
+- type `secret-bytes`: with #[\SensitiveParameter] before the parameter (PHP 8.2), which keeps the value out of stack traces: #[\SensitiveParameter] ?string $x = null. An attribute is not part of a type, so a return cannot carry it and a returned secret drops it; the value is not wiped (sodium_memzero can)
 - type `i8`: a 64-bit build is assumed; the width is the implementation's to check
 - type `i16`: a 64-bit build is assumed; the width is the implementation's to check
 - type `i32`: a 64-bit build is assumed; the width is the implementation's to check
@@ -1405,7 +1406,7 @@ Notes:
 - type `u32`: a 64-bit build is assumed; the width is the implementation's to check
 - outcome `refusing-return`: null is the refusal
 - outcome `optional-input`: null is the absent argument
-- literal `str`: non-ASCII as \u{…} escapes
+- literal `str`: double-quoted, so $ is written \$ (a double-quoted string interpolates $x), \ as \\ and " as \"; non-ASCII and control characters as \u{…} escapes
 - literal `int`: i64's minimum as PHP_INT_MIN: -9223372036854775808 is the float negation of an overflowed literal
 - literal `f64`: from its bits (big-endian double), so -0 and NaN payloads are exact
 
@@ -1444,7 +1445,7 @@ Types: Dart Programming Language Specification (6th edition), §10 Types and dar
 
 Names: functions and parameters lowerCamelCase: words split at each capital, a digit run stays on the word before it, a two-letter acronym stays in capitals and a longer one is cased like a word (readIOStream → readIOStream, parseHTTPRequest → parseHttpRequest). A name that is a reserved word takes a name override.
 
-Modules (file): a library file in the package named by the first segment, imported with a prefix named for the last: nish/crypto/hkdf → import 'package:nish/crypto/hkdf.dart' as hkdf, called hkdf.&lt;name>.
+Modules (file): a library file in the package named by the first segment, imported with a prefix named for the last: nish/crypto/hkdf → import 'package:nish/crypto/hkdf.dart' as hkdf, called hkdf.&lt;name>; a one-segment module is the package's main library (nish → package:nish/nish.dart).
 
 Choices:
 

@@ -46,7 +46,10 @@ export const ruby: LanguageTable = {
   literals: {
     hex: { spelling: '["0b0b"].pack("H*")' },
     ascii: { spelling: '"abc".b' },
-    str: { spelling: '"abc"', note: "non-ASCII as \\u{…} escapes" },
+    str: {
+      spelling: '"abc"',
+      note: 'double-quoted, so # is written \\# (a double-quoted string interpolates #{x}), \\ as \\\\ and " as \\"; non-ASCII and control characters as \\u{…} escapes',
+    },
     int: { spelling: "42", note: "exact at any width" },
     f64: {
       spelling: '["3ff8000000000000"].pack("H*").unpack1("G")',

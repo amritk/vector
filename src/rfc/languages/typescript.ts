@@ -4,7 +4,7 @@ export const typescript: LanguageTable = {
   id: "typescript",
   title: "TypeScript",
   typeStandard:
-    "ECMA-262 (ECMAScript 2024), §6.1.6.1 The Number Type, §6.1.6.2 The BigInt Type, §25.2 TypedArray (Uint8Array)",
+    "ECMA-262 (ECMAScript 2024), §6.1.6.1 The Number Type, §6.1.6.2 The BigInt Type, §23.2 TypedArray Objects (Uint8Array)",
   nameStandard:
     "Google TypeScript Style Guide, Identifiers › Naming style and Camel case (lowerCamelCase; acronyms cased as whole words)",
   types: {
@@ -44,7 +44,10 @@ export const typescript: LanguageTable = {
       spelling: 'new TextEncoder().encode("abc")',
       note: "UTF-8, of which ASCII is a subset",
     },
-    str: { spelling: '"abc"', note: "non-ASCII as \\u{…} escapes" },
+    str: {
+      spelling: '"abc"',
+      note: "non-ASCII and control characters as \\u{…} escapes",
+    },
     int: { spelling: "42", note: "42n for i64 and u64" },
     f64: {
       spelling:

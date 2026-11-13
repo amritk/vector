@@ -40,7 +40,10 @@ export const rust: LanguageTable = {
   literals: {
     hex: { spelling: "&[0x0b, 0x0b]" },
     ascii: { spelling: 'b"abc"' },
-    str: { spelling: '"abc"', note: "non-ASCII as \\u{…} escapes" },
+    str: {
+      spelling: '"abc"',
+      note: "non-ASCII and control characters as \\u{…} escapes",
+    },
     int: {
       spelling: "42u32",
       note: "suffixed with its type, so every width is exact",
@@ -51,7 +54,10 @@ export const rust: LanguageTable = {
     },
     bool: { spelling: "true" },
     null: { spelling: "None" },
-    concat: { spelling: "[a, b].concat()" },
+    concat: {
+      spelling: "&[a, b].concat()",
+      note: "a borrow of the joined Vec<u8>, as a bytes input is &[u8]; a returned value is [a, b].concat()",
+    },
   },
   module: {
     form: "crate-path",

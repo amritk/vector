@@ -79,6 +79,6 @@ export const csharp: LanguageTable = {
   choices: [
     "A refusing return is a null return ({T}?), not a thrown exception or the Try pattern (bool TryX(..., out T)): a refusal is an expected outcome, tested by the vectors, and null maps the contract's null one-to-one. An implementation that throws ArgumentException is still checkable by mapping the throw to the refusal.",
     "bytes are byte[] in both positions, though ReadOnlySpan<byte> would avoid a copy on input.",
-    "A namespace holds no functions, so the module is a static class of static methods named for its last segment.",
+    "A namespace holds no functions, so the module is a static class of static methods named for its last segment. A method whose PascalCase name equals that class's name is CS0542, so it takes a name override.",
   ],
 };

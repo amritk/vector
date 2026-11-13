@@ -51,8 +51,8 @@ export const cpp: LanguageTable = {
     hex: { spelling: "std::array<std::uint8_t, 2>{0x0b, 0x0b}" },
     ascii: { spelling: "std::array<std::uint8_t, 3>{'a', 'b', 'c'}" },
     str: {
-      spelling: '"abc"',
-      note: 'non-ASCII as its UTF-8 bytes in \\x escapes ("\\xc3\\xa9" for é), split where a hex digit follows; a u8 literal is char8_t in C++20 and does not convert to std::string_view',
+      spelling: '"abc"sv',
+      note: 'a std::string_view literal (using namespace std::literals; [string.view.literals]), so its length is the literal\'s and keeps an embedded U+0000, which a plain "a\\0b" would end at. Non-ASCII and control characters as their UTF-8 bytes in \\x escapes ("\\xc3\\xa9"sv for é), split into adjacent literals where a hex digit follows ("\\x00" "b"sv); a u8 literal is char8_t in C++20 and does not convert to std::string_view',
     },
     int: {
       spelling: "std::uint32_t{42}",

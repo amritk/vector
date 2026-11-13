@@ -67,10 +67,10 @@ export const dart: LanguageTable = {
     form: "file",
     apply: (m) => {
       const [pkg, ...rest] = m.split("/");
-      return `package:${pkg}/${rest.join("/")}.dart`;
+      return `package:${pkg}/${rest.length > 0 ? rest.join("/") : pkg}.dart`;
     },
     qualify: (m, n) => `${basename(m)}.${n}`,
-    note: "a library file in the package named by the first segment, imported with a prefix named for the last: nish/crypto/hkdf → import 'package:nish/crypto/hkdf.dart' as hkdf, called hkdf.<name>",
+    note: "a library file in the package named by the first segment, imported with a prefix named for the last: nish/crypto/hkdf → import 'package:nish/crypto/hkdf.dart' as hkdf, called hkdf.<name>; a one-segment module is the package's main library (nish → package:nish/nish.dart)",
   },
   nameRule:
     "functions and parameters lowerCamelCase: words split at each capital, a digit run stays on the word before it, a two-letter acronym stays in capitals and a longer one is cased like a word (readIOStream → readIOStream, parseHTTPRequest → parseHttpRequest). A name that is a reserved word takes a name override.",

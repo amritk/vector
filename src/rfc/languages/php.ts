@@ -20,8 +20,8 @@ export const php: LanguageTable = {
     bool: { spelling: "bool" },
     f64: { spelling: "float", note: "binary64 on every supported platform" },
     "secret-bytes": {
-      spelling: "#[\\SensitiveParameter] string",
-      note: "the attribute (PHP 8.2) keeps the value out of stack traces; it is not wiped (sodium_memzero can)",
+      spelling: "string",
+      note: "with #[\\SensitiveParameter] before the parameter (PHP 8.2), which keeps the value out of stack traces: #[\\SensitiveParameter] ?string $x = null. An attribute is not part of a type, so a return cannot carry it and a returned secret drops it; the value is not wiped (sodium_memzero can)",
     },
     i8: {
       spelling: "int",
@@ -51,7 +51,10 @@ export const php: LanguageTable = {
   literals: {
     hex: { spelling: 'hex2bin("0b0b")' },
     ascii: { spelling: "'abc'" },
-    str: { spelling: '"abc"', note: "non-ASCII as \\u{…} escapes" },
+    str: {
+      spelling: '"abc"',
+      note: 'double-quoted, so $ is written \\$ (a double-quoted string interpolates $x), \\ as \\\\ and " as \\"; non-ASCII and control characters as \\u{…} escapes',
+    },
     int: {
       spelling: "42",
       note: "i64's minimum as PHP_INT_MIN: -9223372036854775808 is the float negation of an overflowed literal",

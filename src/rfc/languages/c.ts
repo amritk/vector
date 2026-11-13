@@ -55,15 +55,16 @@ export const c: LanguageTable = {
     },
     str: {
       spelling: '"abc"',
-      note: 'non-ASCII as its UTF-8 bytes in \\x escapes ("\\xc3\\xa9" for é), split where a hex digit follows; a u8 literal is char8_t, not char, in C23',
+      note: 'non-ASCII and control characters as their UTF-8 bytes in \\x escapes ("\\xc3\\xa9" for é), split into adjacent literals where a hex digit follows ("\\xc3\\xa9" "b"); a u8 literal is char8_t, not char, in C23',
     },
     int: {
       spelling: "UINT32_C(42)",
       note: "<stdint.h> constant macros give each width; a minimum is its INTn_MIN macro, or (-INT64_MAX - 1)",
     },
     f64: {
-      spelling: "memcpy(&d, &(uint64_t){0x3ff8000000000000}, 8)",
-      note: "from its bits, so -0 and NaN payloads are exact",
+      spelling:
+        "((union { uint64_t u; double d; }){.u = 0x3ff8000000000000u}).d",
+      note: "an expression: a compound literal of a union, read through its other member (C17 §6.5.2.3 footnote 97), so -0 and NaN payloads are exact",
     },
     bool: { spelling: "true" },
     null: { spelling: "NULL" },

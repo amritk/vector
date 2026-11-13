@@ -46,7 +46,7 @@ export const kotlin: LanguageTable = {
     ascii: { spelling: '"abc".toByteArray(Charsets.US_ASCII)' },
     str: {
       spelling: '"abc"',
-      note: "non-ASCII as \\u escapes; $ escaped as \\$",
+      note: "non-ASCII as \\u escapes, a scalar above U+FFFF as its UTF-16 surrogate pair (Kotlin has no \\U); $ escaped as \\$",
     },
     int: {
       spelling: "42u",

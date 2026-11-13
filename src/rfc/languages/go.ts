@@ -98,7 +98,7 @@ export const go: LanguageTable = {
     ascii: { spelling: '[]byte("abc")' },
     str: {
       spelling: '"abc"',
-      note: "non-ASCII as \\u escapes, a scalar above U+FFFF as \\U",
+      note: "non-ASCII and control characters as \\u escapes, a scalar above U+FFFF as \\U",
     },
     int: {
       spelling: "uint32(42)",

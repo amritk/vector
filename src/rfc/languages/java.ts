@@ -47,7 +47,7 @@ export const java: LanguageTable = {
     },
     "optional-input": {
       spelling: "@Nullable {T}",
-      note: "org.jspecify.annotations.Nullable (JSpecify 1.0), on {T} boxed as for a refusing return; null is the absent argument, and Optional is not used for parameters",
+      note: "org.jspecify.annotations.Nullable (JSpecify 1.0), a type-use annotation on {T} boxed as for a refusing return, and on an array as byte @Nullable [] (@Nullable byte[] would annotate the element type); null is the absent argument, and Optional is not used for parameters",
     },
   },
   literals: {
@@ -58,11 +58,11 @@ export const java: LanguageTable = {
     ascii: { spelling: '"abc".getBytes(StandardCharsets.US_ASCII)' },
     str: {
       spelling: '"abc"',
-      note: "non-ASCII as \\u escapes, a scalar above U+FFFF as its UTF-16 surrogate pair",
+      note: "non-ASCII as \\u escapes, a scalar above U+FFFF as its UTF-16 surrogate pair; a control character as an octal escape (\\000), since a \\u escape is translated before the literal is read (JLS §3.3) and \\u000a would end the line",
     },
     int: {
       spelling: "42L",
-      note: "per width: i8 (byte) 42, i16 (short) 42, i32, u8 and u16 42, i64, u32 and u64 42L; the minimums -2147483648 and -9223372036854775808L are valid as written, and a u64 above Long.MAX_VALUE is its bits as a hex long (0xffffffffffffffffL)",
+      note: "per width: i8 a cast (byte) 42 and i16 a cast (short) 42, since a method argument is not narrowed from int (JLS §5.3); i32, u8 and u16 42; i64, u32 and u64 42L. The minimums (byte) -128, (short) -32768, -2147483648 and -9223372036854775808L are valid as written, and a u64 above Long.MAX_VALUE is its bits as a hex long (0xffffffffffffffffL)",
     },
     f64: {
       spelling: "Double.longBitsToDouble(0x3ff8000000000000L)",
@@ -73,13 +73,16 @@ export const java: LanguageTable = {
       spelling: "null",
       note: "Optional.empty() where the refusal is meant",
     },
-    concat: { spelling: "ByteBuffer.allocate(n).put(a).put(b).array()" },
+    concat: {
+      spelling:
+        "ByteBuffer.allocate(a.length + b.length).put(a).put(b).array()",
+    },
   },
   module: {
     form: "class",
     apply: packageClass,
     qualify: (m, n) => `${m}.${n}`,
-    note: "a final class of static methods named for the last segment, in a package of the others (JLS §7.4, package names lowercase): nish/crypto/hkdf → class Hkdf in package nish.crypto",
+    note: "a final class of static methods named for the last segment, in a package of the others (JLS §6.1, package names lowercase): nish/crypto/hkdf → class Hkdf in package nish.crypto",
   },
   nameRule:
     "methods and parameters lowerCamelCase: words split at each capital, a digit run stays on the word before it (hkdfExpandSha256 → hkdfExpandSha256), and an acronym is cased like a word (parseHTTPRequest → parseHttpRequest, readIOStream → readIoStream). A name that is a Java keyword takes a name override.",

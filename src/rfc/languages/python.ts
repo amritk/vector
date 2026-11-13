@@ -49,7 +49,10 @@ export const python: LanguageTable = {
   literals: {
     hex: { spelling: 'bytes.fromhex("0b0b")' },
     ascii: { spelling: 'b"abc"' },
-    str: { spelling: '"abc"', note: "non-ASCII as \\u or \\U escapes" },
+    str: {
+      spelling: '"abc"',
+      note: "non-ASCII and control characters as \\u or \\U escapes",
+    },
     int: { spelling: "42" },
     f64: {
       spelling: 'struct.unpack(">d", bytes.fromhex("3ff8000000000000"))[0]',
