@@ -7,40 +7,51 @@
 //   requirements  verbatim quotes from the RFC, each tied to a section and a
 //                 BCP 14 level. These are the *claims*; nothing else may be
 //                 invented.
-//   functions     the signatures of the implementation under test, in a tiny
-//                 type vocabulary (bytes, bytes?, string, string?, i32,
-//                 u32, bool).
+//   functions     the signatures of the implementation under test, in the
+//                 neutral type vocabulary of vocab.ts (bytes, string, bool,
+//                 f64, secret-bytes, i8 … u64, each also as `T?`).
 //   clauses       the *evidence*: known-answer vectors copied from the RFC, and
 //                 properties quantified over a typed domain. Every clause
 //                 cites the requirements it checks, and every MUST is cited.
 
-export const VALUE_TYPES = [
-  "bytes",
-  "bytes?",
-  "string",
-  "string?",
-  "i32",
-  "u32",
-  "bool",
-] as const;
-export type ValueTy = (typeof VALUE_TYPES)[number];
+import {
+  INT_RANGE,
+  INT_TYPES,
+  type IntType,
+  LANGUAGES,
+  type ModuleOverrides,
+  type NameOverrides,
+  SIG_TYPES as VOCAB_SIG_TYPES,
+  type SigType,
+  baseOf,
+} from "./vocab.ts";
 
 /**
- * The types a function's parameters and result may have: the value types, and
- * `secret-bytes` for a nish `Secret<u8[]>`, plus `secret-bytes?` (`| null`) as
- * a result. In the contract a secret is its bytes; the generated test wraps an
- * argument with `secret` and reads a result with `expose`.
+ * The types a function's parameters and result may have (vocab.ts SIG_TYPES):
+ * each base type `B` and `B?`. `secret-bytes` is bytes whose value is secret;
+ * a language may wrap it in its own secret type (the Nish test wraps an
+ * argument with `secret` and reads a result with `expose`), but in the
+ * contract a secret is its bytes.
  */
-export const SIG_TYPES = [
-  ...VALUE_TYPES,
-  "secret-bytes",
-  "secret-bytes?",
-] as const;
-export type SigTy = (typeof SIG_TYPES)[number];
+export const SIG_TYPES = VOCAB_SIG_TYPES;
+export type SigTy = SigType;
+
+/** The types a value has in the contract: every SigTy but the secret ones. */
+export const VALUE_TYPES = SIG_TYPES.filter(
+  (t): t is Exclude<SigTy, "secret-bytes" | "secret-bytes?"> =>
+    baseOf(t) !== "secret-bytes",
+);
+export type ValueTy = Exclude<SigTy, "secret-bytes" | "secret-bytes?">;
 
 /** What a parameter or result of type `t` is in the contract. */
 export const valueTy = (t: SigTy): ValueTy =>
   t === "secret-bytes" ? "bytes" : t === "secret-bytes?" ? "bytes?" : t;
+
+export { INT_RANGE, INT_TYPES, type IntType };
+
+/** Whether `t` is one of the fixed-width integers. */
+export const isIntTy = (t: unknown): t is IntType =>
+  (INT_TYPES as readonly unknown[]).includes(t);
 
 export const LEVELS = [
   "MUST",
@@ -81,6 +92,8 @@ export interface Requirement {
 export interface Param {
   name: string;
   type: SigTy;
+  /** Per-language overrides of the parameter's name. */
+  names?: NameOverrides;
 }
 
 export interface FnSig {
@@ -89,6 +102,8 @@ export interface FnSig {
   returns: SigTy;
   /** The module that exports it, when not the contract's target (a reference function). */
   module?: string;
+  /** Per-language overrides of the function's name. */
+  names?: NameOverrides;
 }
 
 /**
@@ -114,14 +129,18 @@ export interface Exclusion {
  * name ("Key = 00:01:…", a dump under "Ciphertext:") must give that name as
  * `label`. An `int` is checked only next to its `label`, the name the RFC
  * prints it under ("L = 42"); without one it is unchecked, and the report
- * says so. A label printed more than once in the cited section is read in
+ * says so. An `int` beyond ±(2^53−1) is a decimal string (RFC 7493 §2.2);
+ * an `f64` is decimal text read with roundTiesToEven (IEEE 754-2019
+ * §5.12.2), and `bits`, when given, is the binary64 encoding it must read
+ * to, as 16 lowercase hex digits. A label printed more than once in the cited section is read in
  * rounds: the k-th printing of each label belongs to one test case.
  */
 export type Literal =
   | { hex: string; repeat?: number; label?: string; unchecked?: string }
   | { ascii: string; label?: string; unchecked?: string }
   | { str: string; unchecked?: string }
-  | { int: number; label?: string; unchecked?: string }
+  | { int: number | string; label?: string; unchecked?: string }
+  | { f64: string; bits?: string; label?: string; unchecked?: string }
   | { bool: boolean }
   | { null: true }
   | { concat: Literal[] };
@@ -178,7 +197,8 @@ export type Expr =
   | LetExpr;
 
 export type Var =
-  | { name: string; type: "i32"; min: number; max: number }
+  | { name: string; type: IntType; min: number | string; max: number | string }
+  | { name: string; type: "f64"; min: string; max: string }
   | { name: string; type: "bytes"; minLen: number; maxLen: number }
   | {
       name: string;
@@ -263,7 +283,19 @@ export interface VectorClause {
   call: string;
   args: Literal[];
   expect: Literal;
+  /** How far an f64 result may be from `expect`; without it, bit for bit. */
+  tolerance?: Tolerance;
 }
+
+/**
+ * How far an f64 result may be from the expected value: `abs`, an absolute
+ * difference as decimal text, or `ulps`, a count of binary64 units in the
+ * last place. `quote` is the spec sentence stating it, in `section`.
+ */
+export type Tolerance = (
+  | { abs: string; ulps?: undefined }
+  | { ulps: number; abs?: undefined }
+) & { source?: string; section: string; quote: string };
 
 export interface PropertyClause {
   kind: "property";
@@ -307,7 +339,7 @@ export interface RfcContract {
   source: { title: string; rfc?: number; main?: string; sha256?: string };
   sources?: SourceDecl[];
   /** The module under test, as the generated test imports it ("nish/crypto/hkdf"). */
-  target: { module: string };
+  target: { module: string; modules?: ModuleOverrides };
   requirements: Requirement[];
   functions: FnSig[];
   clauses: Clause[];
@@ -452,9 +484,47 @@ export const isLiteral = (e: Expr): e is Literal =>
   "ascii" in e ||
   "str" in e ||
   "int" in e ||
+  "f64" in e ||
   "bool" in e ||
   "null" in e ||
   "concat" in e;
+
+/** The largest integer a JSON number carries exactly: 2^53−1 (RFC 7493 §2.2). */
+export const JSON_SAFE_MAX = 9007199254740991n;
+
+/** An int literal's (or bound's) exact value: a JSON integer or a decimal string. */
+export const intValue = (v: number | string): bigint => BigInt(v);
+
+/** Whether `v` lies in `ty`'s range (vocab.ts INT_RANGE), compared exactly. */
+export const fitsInt = (v: number | string | bigint, ty: IntType): boolean => {
+  const n = typeof v === "bigint" ? v : intValue(v);
+  return n >= INT_RANGE[ty].min && n <= INT_RANGE[ty].max;
+};
+
+/**
+ * An f64 literal's text as a binary64: a decimal goes to the nearest double,
+ * ties to even (IEEE 754-2019 §5.12.2; ECMAScript's StringToNumber rounds the
+ * same way), and NaN, Infinity, -Infinity are themselves.
+ */
+export const parseF64 = (text: string): number => Number(text);
+
+/** The binary64 encoding of `x` (IEEE 754-2019 §3.4), as 16 lowercase hex digits. */
+export function f64Bits(x: number): string {
+  const v = new DataView(new ArrayBuffer(8));
+  v.setFloat64(0, x);
+  return v.getBigUint64(0).toString(16).padStart(16, "0");
+}
+
+/** The binary64 whose encoding is `bits` (16 hex digits). */
+export function f64FromBits(bits: string): number {
+  const v = new DataView(new ArrayBuffer(8));
+  v.setBigUint64(0, BigInt(`0x${bits}`));
+  return v.getFloat64(0);
+}
+
+/** The binary64 an f64 literal denotes: its `bits` when given, else its text. */
+export const f64Value = (lit: { f64: string; bits?: string }): number =>
+  lit.bits !== undefined ? f64FromBits(lit.bits) : parseF64(lit.f64);
 
 /** The bytes a bytes-valued literal denotes, or null when it is not one. */
 export function literalBytes(lit: Literal): Uint8Array | null {
@@ -503,7 +573,7 @@ const isObj = (v: unknown): v is Obj =>
 
 function checkKeys(
   o: Obj,
-  allowed: string[],
+  allowed: readonly string[],
   at: string,
   errors: string[],
 ): void {
@@ -526,6 +596,40 @@ function checkLabel(
     );
   }
 }
+
+/** A decimal string for an int, as the schema's intValue admits it. */
+const INT_STRING_RE = /^-?[1-9][0-9]{15,}$/;
+const INT_VALUE_WANT =
+  "an integer within ±(2^53−1), or a decimal string for one beyond it (RFC 7493 §2.2)";
+
+/**
+ * An intValue: a JSON integer within ±(2^53−1), or a decimal string for a
+ * value beyond it. A string a JSON integer could carry is refused, so each
+ * value has one spelling (RFC 7493 §2.2).
+ */
+function shapeIntValue(v: unknown, at: string, errors: string[]): void {
+  if (typeof v === "number") {
+    if (!Number.isSafeInteger(v)) errors.push(`${at}: ${INT_VALUE_WANT}`);
+  } else if (typeof v !== "string" || !INT_STRING_RE.test(v))
+    errors.push(`${at}: ${INT_VALUE_WANT}`);
+  else if (BigInt(v) <= JSON_SAFE_MAX && BigInt(v) >= -JSON_SAFE_MAX)
+    errors.push(
+      `${at}: "${v}" fits in ±(2^53−1), so it is written as a JSON integer, not a string (RFC 7493 §2.2)`,
+    );
+}
+
+/** The schema's f64Text: a JSON-style decimal, or NaN, Infinity, -Infinity. */
+const F64_TEXT_RE =
+  /^(?:-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|NaN|Infinity|-Infinity)$/;
+const F64_TEXT_WANT =
+  "decimal text (RFC 8259 §6 number syntax), NaN, Infinity or -Infinity";
+const isF64Text = (v: unknown): v is string =>
+  typeof v === "string" && F64_TEXT_RE.test(v);
+const F64_BITS_RE = /^[0-9a-f]{16}$/;
+const F64_BITS_WANT =
+  "the binary64 encoding as 16 lowercase hex digits (IEEE 754-2019 §3.4)";
+/** The schema's tolerance `abs`: a non-negative decimal. */
+const ABS_RE = /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$/;
 
 function shapeLiteral(v: unknown, at: string, errors: string[]): void {
   if (!isObj(v)) {
@@ -556,12 +660,20 @@ function shapeLiteral(v: unknown, at: string, errors: string[]): void {
   } else if ("int" in v) {
     checkKeys(v, ["int", "label", "unchecked"], at, errors);
     checkLabel(v, at, errors);
-    if (
-      !Number.isInteger(v.int) ||
-      (v.int as number) < I32_MIN ||
-      (v.int as number) > 4294967295
-    ) {
-      errors.push(`${at}.int: an integer in the i32/u32 range`);
+    shapeIntValue(v.int, `${at}.int`, errors);
+  } else if ("f64" in v) {
+    checkKeys(v, ["f64", "bits", "label", "unchecked"], at, errors);
+    checkLabel(v, at, errors);
+    if (!isF64Text(v.f64)) errors.push(`${at}.f64: ${F64_TEXT_WANT}`);
+    else if (v.bits !== undefined) {
+      if (typeof v.bits !== "string" || !F64_BITS_RE.test(v.bits))
+        errors.push(`${at}.bits: ${F64_BITS_WANT}`);
+      else if (!Number.isNaN(parseF64(v.f64)) && f64Bits(parseF64(v.f64)) !== v.bits)
+        errors.push(
+          `${at}.bits: ${v.f64} reads as ${f64Bits(parseF64(v.f64))} (roundTiesToEven, IEEE 754-2019 §5.12.2), not ${v.bits}`,
+        );
+      else if (Number.isNaN(parseF64(v.f64)) && !Number.isNaN(f64FromBits(v.bits)))
+        errors.push(`${at}.bits: ${v.bits} is not a NaN encoding`);
     }
   } else if ("bool" in v) {
     checkKeys(v, ["bool"], at, errors);
@@ -583,7 +695,7 @@ function shapeLiteral(v: unknown, at: string, errors: string[]): void {
     }
   } else {
     errors.push(
-      `${at}: not a literal (hex, ascii, str, int, bool, null, concat)`,
+      `${at}: not a literal (hex, ascii, str, int, f64, bool, null, concat)`,
     );
   }
   if (
@@ -734,6 +846,55 @@ const strField = (o: Obj, k: string, at: string, errors: string[]) => {
 };
 
 /** Structural validation. Empty means the input has the RfcContract shape. */
+/**
+ * A neutral module path `<root>/<segment>/…`: lowercase segments split by
+ * `/`, as the segments of a URI path (RFC 3986 §3.3). Each emitter maps it to
+ * its own language's module form.
+ */
+export const MODULE_RE = /^[a-z][a-z0-9_]*(?:\/[a-z][a-z0-9_]*)+$/;
+
+function shapeModule(v: unknown, at: string, errors: string[]): void {
+  if (typeof v !== "string" || !MODULE_RE.test(v))
+    errors.push(
+      `${at}: a module path <root>/<segment>/…, lowercase [a-z][a-z0-9_]* segments (RFC 3986 §3.3)`,
+    );
+}
+
+/** A per-language override map: each key a language, each value non-empty. */
+function shapeOverrides(v: unknown, at: string, errors: string[]): void {
+  if (v === undefined) return;
+  if (!isObj(v)) {
+    errors.push(`${at}: an object keyed by language`);
+    return;
+  }
+  checkKeys(v, LANGUAGES, at, errors);
+  for (const [k, x] of Object.entries(v))
+    if (typeof x !== "string" || x === "")
+      errors.push(`${at}.${k}: a non-empty string`);
+}
+
+function shapeTolerance(
+  v: unknown,
+  at: string,
+  sourceRef: (v: unknown, at: string) => void,
+  errors: string[],
+): void {
+  if (!isObj(v) || ("abs" in v) === ("ulps" in v)) {
+    errors.push(`${at}: an object with one of "abs" or "ulps"`);
+    return;
+  }
+  const kind = "abs" in v ? "abs" : "ulps";
+  checkKeys(v, [kind, "source", "section", "quote"], at, errors);
+  if (kind === "abs" && !(typeof v.abs === "string" && ABS_RE.test(v.abs)))
+    errors.push(`${at}.abs: a non-negative decimal as text`);
+  if (kind === "ulps" && !(Number.isInteger(v.ulps) && (v.ulps as number) >= 0))
+    errors.push(`${at}.ulps: an integer >= 0`);
+  sourceRef(v.source, `${at}.source`);
+  if (typeof v.section !== "string" || !SECTION_RE.test(v.section))
+    errors.push(`${at}.section: a section number`);
+  strField(v, "quote", at, errors);
+}
+
 export function validateContractShape(input: unknown): string[] {
   const errors: string[] = [];
   if (!isObj(input)) return ["contract: expected an object"];
@@ -768,7 +929,11 @@ export function validateContractShape(input: unknown): string[] {
     }
   };
   if (!isObj(input.target)) errors.push("contract.target: an object");
-  else strField(input.target, "module", "contract.target", errors);
+  else {
+    checkKeys(input.target, ["module", "modules"], "contract.target", errors);
+    shapeModule(input.target.module, "contract.target.module", errors);
+    shapeOverrides(input.target.modules, "contract.target.modules", errors);
+  }
 
   if (!Array.isArray(input.requirements) || input.requirements.length === 0) {
     errors.push("contract.requirements: a non-empty array");
@@ -808,13 +973,9 @@ export function validateContractShape(input: unknown): string[] {
         errors.push(`${at}: an object`);
         return;
       }
-      checkKeys(f, ["name", "params", "returns", "module"], at, errors);
-      if (
-        f.module !== undefined &&
-        (typeof f.module !== "string" || f.module === "")
-      ) {
-        errors.push(`${at}.module: a module specifier`);
-      }
+      checkKeys(f, ["name", "params", "returns", "module", "names"], at, errors);
+      if (f.module !== undefined) shapeModule(f.module, `${at}.module`, errors);
+      shapeOverrides(f.names, `${at}.names`, errors);
       if (typeof f.name !== "string" || !IDENT_RE.test(f.name)) {
         errors.push(`${at}.name: an identifier`);
       } else {
@@ -838,15 +999,12 @@ export function validateContractShape(input: unknown): string[] {
             errors.push(`${pat}: an object`);
             return;
           }
-          checkKeys(p, ["name", "type"], pat, errors);
+          checkKeys(p, ["name", "type", "names"], pat, errors);
           if (typeof p.name !== "string" || !IDENT_RE.test(p.name)) {
             errors.push(`${pat}.name: an identifier`);
           }
-          if (p.type === "secret-bytes?") {
-            errors.push(
-              `${pat}.type: secret-bytes? is a result type only; a parameter may be secret-bytes`,
-            );
-          } else if (!(SIG_TYPES as readonly unknown[]).includes(p.type)) {
+          shapeOverrides(p.names, `${pat}.names`, errors);
+          if (!(SIG_TYPES as readonly unknown[]).includes(p.type)) {
             errors.push(`${pat}.type: one of ${SIG_TYPES.join(" ")}`);
           }
         });
@@ -911,10 +1069,13 @@ export function validateContractShape(input: unknown): string[] {
             "call",
             "args",
             "expect",
+            "tolerance",
           ],
           at,
           errors,
         );
+        if (c.tolerance !== undefined)
+          shapeTolerance(c.tolerance, `${at}.tolerance`, sourceRef, errors);
         shapeVectorSource(c, at, sourceRef, errors);
         if (typeof c.call !== "string" || !IDENT_RE.test(c.call)) {
           errors.push(`${at}.call: a function name`);
@@ -950,16 +1111,32 @@ export function validateContractShape(input: unknown): string[] {
             if (typeof v.name !== "string" || !IDENT_RE.test(v.name)) {
               errors.push(`${vat}.name: an identifier`);
             }
-            if (v.type === "i32") {
+            if (isIntTy(v.type)) {
               checkKeys(v, ["name", "type", "min", "max"], vat, errors);
-              const ok =
-                Number.isInteger(v.min) &&
-                Number.isInteger(v.max) &&
-                (v.min as number) >= I32_MIN &&
-                (v.max as number) <= I32_MAX &&
-                (v.min as number) <= (v.max as number);
-              if (!ok) errors.push(`${vat}: i32 needs integer min <= max`);
-            } else if (v.type === "bytes") {
+              const n = errors.length;
+              shapeIntValue(v.min, `${vat}.min`, errors);
+              shapeIntValue(v.max, `${vat}.max`, errors);
+              if (errors.length > n) return;
+              const [lo, hi] = [v.min, v.max].map((x) => intValue(x as number | string));
+              const r = INT_RANGE[v.type];
+              if (lo < r.min || hi > r.max || lo > hi)
+                errors.push(
+                  `${vat}: ${v.type} needs min <= max, both in ${r.min}..${r.max}`,
+                );
+            } else if (v.type === "f64") {
+              checkKeys(v, ["name", "type", "min", "max"], vat, errors);
+              for (const k of ["min", "max"] as const) {
+                if (!isF64Text(v[k]) || v[k] === "NaN")
+                  errors.push(
+                    `${vat}.${k}: ${F64_TEXT_WANT.replace(", NaN", "")} (a bound cannot be NaN: it orders nothing, IEEE 754-2019 §5.11)`,
+                  );
+              }
+              if (
+                isF64Text(v.min) &&
+                isF64Text(v.max) &&
+                !(parseF64(v.min) <= parseF64(v.max))
+              )
+                errors.push(`${vat}: f64 needs min <= max`);            } else if (v.type === "bytes") {
               checkKeys(v, ["name", "type", "minLen", "maxLen"], vat, errors);
               shapeLengths(v, vat, "bytes", errors);
             } else if (v.type === "string") {
@@ -972,7 +1149,9 @@ export function validateContractShape(input: unknown): string[] {
               shapeLengths(v, vat, "string", errors);
               shapeAlphabet(v.alphabet, `${vat}.alphabet`, errors);
             } else {
-              errors.push(`${vat}.type: "i32", "bytes" or "string"`);
+              errors.push(
+                `${vat}.type: an integer type (${INT_TYPES.join(" ")}), "f64", "bytes" or "string"`,
+              );
             }
           });
         }
