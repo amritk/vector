@@ -60,6 +60,48 @@
               }
             }
           },
+          "/guides": {
+            "type": "group",
+            "title": "Guides",
+            "icon": "phosphor/regular/compass",
+            "children": {
+              "/proving": {
+                "type": "page",
+                "title": "Proving a function",
+                "filepath": "docs/guide/guides/proving.md"
+              },
+              "/spec-to-contract": {
+                "type": "page",
+                "title": "From a spec to a contract",
+                "filepath": "docs/guide/guides/spec-to-contract.md"
+              },
+              "/writing-a-spec": {
+                "type": "page",
+                "title": "Writing a spec",
+                "filepath": "docs/guide/guides/writing-a-spec.md"
+              },
+              "/testing": {
+                "type": "page",
+                "title": "Testing an implementation",
+                "filepath": "docs/guide/guides/testing.md"
+              },
+              "/pr-gates": {
+                "type": "page",
+                "title": "Gating a spec-first PR",
+                "filepath": "docs/guide/guides/pr-gates.md"
+              },
+              "/exit-codes": {
+                "type": "page",
+                "title": "Exit codes and tool failures",
+                "filepath": "docs/guide/guides/exit-codes.md"
+              },
+              "/file-formats": {
+                "type": "page",
+                "title": "File formats",
+                "filepath": "docs/guide/guides/file-formats.md"
+              }
+            }
+          },
           "/reference": {
             "type": "group",
             "title": "Reference",

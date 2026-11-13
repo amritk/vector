@@ -12,6 +12,7 @@ vector is written in [Nish](https://github.com/amritk/nish), a static subset of 
 
 Nish runs `clang` from your `PATH`, or the compiler `CC` names when it is set. On Ubuntu or Debian:
 
+<!-- illustrative -->
 ```sh
 sudo apt-get install -y clang-18 lld-18 llvm-18
 export CC=clang-18           # add this line to your shell profile
@@ -23,6 +24,7 @@ These packages install only versioned commands (`clang-18`, `ld.lld-18`), not a 
 
 From a clone of [amritk/vector](https://github.com/amritk/vector):
 
+<!-- illustrative -->
 ```sh
 bash scripts/fetch-nish.sh   # nish 0.39.0, into .nish/
 bash scripts/fetch-z3.sh     # z3 4.16.0, into .z3/
@@ -35,13 +37,26 @@ vector runs the z3 that `VECTOR_Z3` names, if set; otherwise `.z3/z3` in the che
 
 ## Build
 
+<!-- illustrative -->
 ```sh
 npm run build                # compiles src/main.ts to dist/vector
-./dist/vector --version
-./dist/vector --help
 ```
 
-`--version` prints `vector 0.1.0`, and `--help` lists the commands:
+Then check the binary. `--version` prints its version:
+
+```sh
+./dist/vector --version
+```
+
+```text
+vector 0.1.0
+```
+
+and `--help` lists the commands:
+
+```sh
+./dist/vector --help
+```
 
 ```text
 vector 0.1.0  Prove small programs correct, and hold implementations to their specs
