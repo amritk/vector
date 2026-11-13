@@ -991,6 +991,17 @@ const profileCasesTestCode = (t: Suite, all: ProfileCasesTestRfcs): void => {
     ),
     ["3:1 missing `// module: <root>/<path>` first line"],
   )
+  profileCasesTestRefused(
+    t,
+    all,
+    "an interface on its tag's line: the code's first column is not the XML's, so none",
+    profileCasesTestSpecWith(
+      "",
+      "draft-t-00",
+      `<section><name>I</name>${profileCasesTestIface("export function f(\n")}</section>`,
+    ),
+    ["2 missing `// module: <root>/<path>` first line"],
+  )
   profileCasesTestRefusedWith(
     t,
     all,

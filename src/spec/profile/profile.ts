@@ -948,11 +948,21 @@ const profileFronted = (c: ProfileContext, node: XmlNode, kind: string): boolean
   return true
 }
 
+/**
+ * Refuses a code block at each front end's place. A column on a line after
+ * the first is the XML's; on the first it is only when the code starts a
+ * line of its own, not after the opening tag.
+ */
 const profileFrontRefuse = (c: ProfileContext, node: XmlNode, rs: FrontRefusal[]): void => {
   const code = xmlCodeOf(node)
   const at = new ProfileLoc(code.line, code.mdLine, code.markLine)
+  let k = node.first
+  while (k !== null && k.name.length !== 0) {
+    k = k.next
+  }
+  const ownLine = k === null || code.line > k.line
   for (const r of rs) {
-    profileRefuseAt(c, profileBelow(at, r.line - 1), r.message, r.col)
+    profileRefuseAt(c, profileBelow(at, r.line - 1), r.message, r.line > 1 || ownLine ? r.col : 0)
   }
 }
 
