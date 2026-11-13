@@ -141,11 +141,11 @@ The other languages vector has a naming table for (`ruby`, `zig`, `go`,
 
 <!-- exit 2 -->
 ```sh
-./dist/vector spec emit contracts/vector-core-hex.json --lang go -o hex_test.go
+./dist/vector spec emit contracts/vector-core-hex.json --lang zig -o hex_test.zig
 ```
 
 ```text
-vector: spec emit: --lang go: vector has no emitter for go yet (it has: nish, python, rust)
+vector: spec emit: --lang zig: vector has no emitter for zig yet (it has: nish, python, rust)
 ```
 
 A function is called by its name in the language, from the contract's

@@ -67,11 +67,11 @@ const pyTargets = (t: Suite): void => {
   t.eqStr("the default language", d.lang, "nish")
   t.eqStr("the default harness", d.harness, "standalone")
   t.eqStr("python's default harness", emitTargetParse("python", null).expect("py").harness, "standalone")
-  const known = emitTargetParse("go", null)
+  const known = emitTargetParse("zig", null)
   t.eqStr(
     "a language vector names but has no emitter for",
     known.isErr() ? known.error : "",
-    "--lang go: vector has no emitter for go yet (it has: nish, python, rust)",
+    "--lang zig: vector has no emitter for zig yet (it has: nish, python, rust)",
   )
   const unknown = emitTargetParse("cobol", null)
   t.eqStr(

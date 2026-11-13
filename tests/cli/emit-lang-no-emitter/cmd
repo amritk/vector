@@ -1,1 +1,1 @@
-vector spec emit contracts/vector-core-hex.json --lang go -o dist/emit-lang-golden.go
+vector spec emit contracts/vector-core-hex.json --lang zig -o dist/emit-lang-golden.zig
