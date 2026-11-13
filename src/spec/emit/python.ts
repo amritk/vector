@@ -82,15 +82,19 @@ const emitPyKeywords = (): string[] => [
   "yield",
 ]
 
-/** The names the test itself defines or calls, which no function under test can take. */
+/** The names the test itself defines, binds or calls, which no function under test can take. */
 const emitPyTaken = (): string[] => [
   "Exception",
   "Suite",
   "abs",
   "all",
+  "any",
   "bytearray",
   "bytes",
+  "chr",
   "float",
+  "holds",
+  "i",
   "importlib",
   "int",
   "isinstance",
@@ -99,7 +103,9 @@ const emitPyTaken = (): string[] => [
   "main",
   "math",
   "max",
+  "memoryview",
   "min",
+  "ord",
   "os",
   "print",
   "pytest",
@@ -108,7 +114,10 @@ const emitPyTaken = (): string[] => [
   "str",
   "struct",
   "sys",
+  "t",
   "type",
+  "u",
+  "why",
 ]
 
 /**

@@ -167,7 +167,7 @@ export const emitCommand = (
   harness: string | null,
 ): i32 => {
   if (out === null) {
-    return report(usageError("spec emit: -o <main.ts> is required"))
+    return report(usageError("spec emit: -o <file> is required"))
   }
   const target = emitTargetParse(lang, harness)
   if (target.isErr()) {

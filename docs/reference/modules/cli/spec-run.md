@@ -105,7 +105,7 @@ nishRootFlag: i32
 
 #### SpecRunCommand.outFlag
 
-The `-o, --out <main.ts>` flag.
+The `-o, --out <file>` flag.
 
 ```ts
 outFlag: i32

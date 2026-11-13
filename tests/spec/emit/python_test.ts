@@ -117,9 +117,13 @@ const pyRefusals = (t: Suite): void => {
   c.functions[0].name = "lambda"
   c.functions[1].name = "testIt"
   c.functions[3].name = "nonEmpty"
+  c.functions[4].name = "t"
+  c.functions[5].name = "memoryview"
   c.clauses[1].id = "P-MOD"
   const why = emitPyRefusals(c).join("\n")
   t.contains("a keyword", why, "lambda: its Python name lambda is a keyword")
+  t.contains("the suite a check is given", why, "t: its Python name t is one the test uses for its own")
+  t.contains("a builtin the runtime calls", why, "memoryview: its Python name memoryview is one the test uses")
   t.contains("a name the test uses", why, "testIt: its Python name test_it is one the test uses for its own")
   t.contains("two functions, one name", why, "nonEmpty: its Python name non_empty is another function's too")
   t.contains("two clauses, one check", why, "P-MOD: its check would be clause_P_MOD")

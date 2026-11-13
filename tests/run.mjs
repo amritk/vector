@@ -28,7 +28,7 @@
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -87,7 +87,13 @@ for (const file of units) {
   const lines = (r.stdout ?? "").trimEnd().split("\n");
   const done = /^vector-done (\S+) ([01]*)$/.exec(lines.at(-1) ?? "");
   if (done !== null) lines.pop();
-  const ended = done === null || (done[1] === nonce && !done[2].includes("0"));
+  // vector emits tests/dogfood/, so each must end with this run's nonce and a
+  // 1 for every clause; a hand-written test has no vector-done line.
+  const emitted = name.startsWith(`tests${sep}dogfood${sep}`);
+  const ended =
+    done === null
+      ? !emitted
+      : done[1] === nonce && done[2] !== "" && !done[2].includes("0");
   const summary = lines.at(-1) ?? "";
   const counts = /(\d+) passed, (\d+) failed, \d+ skipped$/.exec(summary);
   const asserted =
@@ -104,7 +110,9 @@ for (const file of units) {
         ? `exit ${r.status ?? r.signal}`
         : ended
           ? "no passing `N passed, 0 failed` summary"
-          : "its vector-done line lacks this run's nonce or has a clause that failed";
+          : done === null
+            ? "vector emits it, but it printed no vector-done line"
+            : "its vector-done line lacks this run's nonce or has a clause that failed";
     console.log(`FAIL  ${name} (${why})`);
     console.log(
       out

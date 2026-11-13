@@ -23,6 +23,7 @@ Generated from [src/spec/run/run.ts](https://github.com/amritk/vector/blob/main/
 - [`RunScratch`](#runscratch)
 - [`runSeedOf`](#runseedof)
 - [`runIsStdPath`](#runisstdpath)
+- [`runRemove`](#runremove)
 - [`runDisposeScratch`](#rundisposescratch)
 - [`runMakeScratch`](#runmakescratch)
 - [`runTest`](#runtest)
@@ -499,6 +500,26 @@ the path
 <scalar-field name="returns" type="boolean">
 
 true when it is under std/
+
+</scalar-field>
+
+### runRemove
+
+Removes a directory and everything below it.
+
+```ts
+function runRemove(dir: string): Result<boolean, string>
+```
+
+<scalar-field name="dir" type="string" required>
+
+the directory
+
+</scalar-field>
+
+<scalar-field name="returns" type="Result&lt;boolean, string&gt;">
+
+Ok once it is gone, else why it could not be removed
 
 </scalar-field>
 

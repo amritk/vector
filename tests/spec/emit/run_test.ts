@@ -21,6 +21,7 @@ import {
   runNonce,
   runOutcomeName,
   runParse,
+  runRemove,
   runSeedOf,
   runTest,
   runTestFile,
@@ -191,7 +192,7 @@ const runTestInPlace = (t: Suite, c: Contract): void => {
     t.ok("and judged: it never printed the nonce back as its end", ran.value.verdict.status !== "SATISFIED")
   }
   t.ok("the test's directory is left alone", isDirectorySync(dir))
-  runTestSh(`rm -rf ${dir}`)
+  t.ok("runRemove removes it", runRemove(dir).isOk() && !isDirectorySync(dir))
 }
 
 /** A run that prints past 64 KiB keeps its last 64 KiB, cut at a line's start. */

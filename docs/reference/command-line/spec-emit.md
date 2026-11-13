@@ -20,7 +20,7 @@ the contract
 
 ## Flags
 
-<scalar-field name="-o, --out" type="&lt;main.ts&gt;">
+<scalar-field name="-o, --out" type="&lt;file&gt;">
 
 where to write the test
 

@@ -460,7 +460,13 @@ export const runIsStdPath = (rel: string): boolean => {
   return true
 }
 
-const runRemove = (dir: string): Result<boolean, string> => {
+/**
+ * Removes a directory and everything below it.
+ *
+ * @param dir the directory
+ * @returns Ok once it is gone, else why it could not be removed
+ */
+export const runRemove = (dir: string): Result<boolean, string> => {
   const r = runProcess(["rm", "-rf", dir], "", 120000).orReturn()
   if (r.status !== 0) {
     return Err(`cannot remove ${dir}: ${r.stderr}`)

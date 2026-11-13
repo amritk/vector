@@ -10,7 +10,7 @@ covers how the contract is made.
 
 ## Emit the test
 
-`spec emit <contract.json> -o <main.ts>` checks the contract and writes its
+`spec emit <contract.json> -o <file>` checks the contract and writes its
 test. It does not make directories, so make the one the test goes in first:
 
 ```sh
@@ -50,7 +50,7 @@ head -9 test/spec/hkdf.ts
 ```
 
 ```text
-vector: spec emit: -o <main.ts> is required
+vector: spec emit: -o <file> is required
 ```
 
 A contract that does not check is refused (exit 1) and nothing is written.

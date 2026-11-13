@@ -13,7 +13,7 @@ export const SPEC_EMIT_ID: i32 = 5
 
 /** `vector spec emit`, declared on a `Cli`: its handles and its handler. */
 export class SpecEmitCommand {
-  /** The `-o, --out <main.ts>` flag. */
+  /** The `-o, --out <file>` flag. */
   outFlag: i32
   /** The `--spec <file>` flag. */
   specFlag: i32
@@ -40,7 +40,7 @@ export class SpecEmitCommand {
    */
   constructor(cli: Cli, parent: i32) {
     const handle = cli.command(parent, "emit", SPEC_EMIT_ID, "Emit the test a contract implies")
-    this.outFlag = cli.flag(handle, "-o, --out <main.ts>", "where to write the test")
+    this.outFlag = cli.flag(handle, "-o, --out <file>", "where to write the test")
     this.specFlag = cli.flag(
       handle,
       "--spec <file>",

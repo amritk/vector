@@ -6,7 +6,6 @@
 
 import { EXIT_PASS, EXIT_REFUSED, report, usageError } from "../../core/diag"
 import { dirname, joinPath, makeTempDir } from "../../core/fs"
-import { runProcess } from "../../core/process"
 import { Contract } from "../contract/types"
 import { emitContractFile, emitReportAll, emitWriteFile } from "../emit/file"
 import { emitPackageFlags, emitParsePackages } from "../emit/packages"
@@ -18,6 +17,7 @@ import {
   runFormatMarkdown,
   runFormatText,
   runMakeScratch,
+  runRemove,
   runTestCommand,
   runTestFile,
 } from "./run"
@@ -138,9 +138,9 @@ const runDropTemp = (dir: string | null): void => {
   if (dir === null) {
     return
   }
-  const r = runProcess(["rm", "-rf", dir], "", 120000)
-  if (r.isErr() || r.value.status !== 0) {
-    console.error(`vector: warning: spec run: cannot remove ${dir}`)
+  const r = runRemove(dir)
+  if (r.isErr()) {
+    console.error(`vector: warning: spec run: ${r.error}`)
   }
 }
 

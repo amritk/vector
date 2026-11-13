@@ -13,7 +13,7 @@ export const SPEC_RUN_ID: i32 = 6
 
 /** `vector spec run`, declared on a `Cli`: its handles and its handler. */
 export class SpecRunCommand {
-  /** The `-o, --out <main.ts>` flag. */
+  /** The `-o, --out <file>` flag. */
   outFlag: i32
   /** The `--spec <file>` flag. */
   specFlag: i32
@@ -40,7 +40,7 @@ export class SpecRunCommand {
    */
   constructor(cli: Cli, parent: i32) {
     const handle = cli.command(parent, "run", SPEC_RUN_ID, "Emit a contract's test and run it")
-    this.outFlag = cli.flag(handle, "-o, --out <main.ts>", "where to keep the test (default: a temporary file)")
+    this.outFlag = cli.flag(handle, "-o, --out <file>", "where to keep the test (default: a temporary file)")
     this.specFlag = cli.flag(
       handle,
       "--spec <file>",
