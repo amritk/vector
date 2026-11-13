@@ -1,13 +1,15 @@
 /**
  * `cli/spec-mutate` — `vector spec mutate`: mutate the changed lines and refuse mutants the test misses.
  *
- * The check lives in `spec/pr/mutate`; this handler exits 2 until the
- * contract model's class names stop clashing with verify's, so main can
- * import it.
+ * The change's lines in the contract's target module are mutated, and the
+ * test must kill every mutant that builds (`spec/pr/mutate`, run by
+ * `spec/pr/mutaterun`).
  */
 
 import { Cli, ParseResult } from "nish/cli-args"
 import { report, usageError } from "../core/diag"
+import { prCliBase, prCliFinish, prCliFormat } from "../spec/pr/cli"
+import { MutateRun, mutateCheck } from "../spec/pr/mutaterun"
 
 /** The id `vector spec mutate` is parsed to. */
 export const SPEC_MUTATE_ID: i32 = 10
@@ -55,14 +57,59 @@ export class SpecMutateCommand {
   }
 
   /**
-   * Runs the command.
+   * Runs the command: exit 0 when the test kills every mutant that builds or
+   * the contract allows the survivor, 1 when not, 2 for bad usage, an
+   * unreadable contract or a git failure.
    *
-   * @param _r the parsed arguments (unread until the handler lands)
+   * @param r the parsed arguments
    * @returns the exit code
    */
-  run(_r: ParseResult): i32 {
-    return report(usageError("spec mutate: not wired in yet: see spec/pr/mutate"))
+  run(r: ParseResult): i32 {
+    const format = prCliFormat(r, this.formatFlag)
+    if (format.isErr()) {
+      return report(usageError(`spec mutate: ${format.error}`))
+    }
+    const base = prCliBase(r, this.baseFlag)
+    if (base.isErr()) {
+      return report(usageError(`spec mutate: ${base.error}`))
+    }
+    const root = r.value(this.nishRootFlag)
+    if (root === null) {
+      return report(usageError("spec mutate: --nish-root <dir> is required: the nish checkout holding the module"))
+    }
+    const test = r.value(this.testFlag)
+    if (test === null) {
+      return report(usageError("spec mutate: --test <file> is required: the generated test to run"))
+    }
+    const jobs = specMutateCount(r.value(this.jobsFlag), 1)
+    if (jobs < 1) {
+      return report(usageError("spec mutate: --jobs takes a whole number of at least 1"))
+    }
+    const max = specMutateCount(r.value(this.maxFlag), 0)
+    if (max < 0) {
+      return report(usageError("spec mutate: --max takes a whole number"))
+    }
+    const run = new MutateRun(root, "", r.value(this.nishFlag) ?? "bin/nish", test, jobs, 0)
+    const contract = r.positional(this.contractJsonArg) ?? ""
+    return prCliFinish("spec mutate", mutateCheck(contract, base.value, run, max), format.value)
   }
+}
+
+/** A count flag's value: `fallback` when absent, -1 when not a whole number. */
+const specMutateCount = (v: string | null, fallback: i32): i32 => {
+  if (v === null) {
+    return fallback
+  }
+  if (v.length === 0 || v.length > 6) {
+    return -1
+  }
+  for (let i = 0; i < v.length; i++) {
+    const c = v.charCodeAt(i)
+    if (c < 48 || c > 57) {
+      return -1
+    }
+  }
+  return parseInt(v)
 }
 
 /**

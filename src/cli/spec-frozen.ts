@@ -1,13 +1,14 @@
 /**
  * `cli/spec-frozen` — `vector spec frozen`: refuse a change that edits a frozen contract.
  *
- * The check lives in `spec/pr/frozen`; this handler exits 2 until the
- * contract model's class names stop clashing with verify's, so main can
- * import it.
+ * A PR changes the spec side or the implementation, never both, and every
+ * contract checked still holds to the sources it pins (`spec/pr/frozen`).
  */
 
 import { Cli, ParseResult } from "nish/cli-args"
 import { report, usageError } from "../core/diag"
+import { prCliBase, prCliFinish, prCliFormat } from "../spec/pr/cli"
+import { frozenCheck } from "../spec/pr/frozen"
 
 /** The id `vector spec frozen` is parsed to. */
 export const SPEC_FROZEN_ID: i32 = 7
@@ -42,13 +43,23 @@ export class SpecFrozenCommand {
   }
 
   /**
-   * Runs the command.
+   * Runs the command: exit 0 when the change keeps to one side and every
+   * contract holds, 1 when not, 2 for bad usage or a git failure.
    *
-   * @param _r the parsed arguments (unread until the handler lands)
+   * @param r the parsed arguments
    * @returns the exit code
    */
-  run(_r: ParseResult): i32 {
-    return report(usageError("spec frozen: not wired in yet: see spec/pr/frozen"))
+  run(r: ParseResult): i32 {
+    const format = prCliFormat(r, this.formatFlag)
+    if (format.isErr()) {
+      return report(usageError(`spec frozen: ${format.error}`))
+    }
+    const base = prCliBase(r, this.baseFlag)
+    if (base.isErr()) {
+      return report(usageError(`spec frozen: ${base.error}`))
+    }
+    const repo = r.value(this.repoFlag) ?? "."
+    return prCliFinish("spec frozen", frozenCheck(repo, base.value, r.positionals(this.contractsArg)), format.value)
   }
 }
 

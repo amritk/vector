@@ -1,13 +1,14 @@
 /**
  * `cli/spec-exports` — `vector spec exports`: refuse a new export its contract does not cover.
  *
- * The check lives in `spec/pr/exports`; this handler exits 2 until the
- * contract model's class names stop clashing with verify's, so main can
- * import it.
+ * Every export the change adds to or changes in the contract's target module
+ * is one the contract tests or lists out of scope (`spec/pr/exports`).
  */
 
 import { Cli, ParseResult } from "nish/cli-args"
 import { report, usageError } from "../core/diag"
+import { prCliBase, prCliFinish, prCliFormat } from "../spec/pr/cli"
+import { exportsCheck } from "../spec/pr/exports"
 
 /** The id `vector spec exports` is parsed to. */
 export const SPEC_EXPORTS_ID: i32 = 9
@@ -38,13 +39,27 @@ export class SpecExportsCommand {
   }
 
   /**
-   * Runs the command.
+   * Runs the command: exit 0 when every changed export is tested or out of
+   * scope, 1 when not, 2 for bad usage, an unreadable contract or a git failure.
    *
-   * @param _r the parsed arguments (unread until the handler lands)
+   * @param r the parsed arguments
    * @returns the exit code
    */
-  run(_r: ParseResult): i32 {
-    return report(usageError("spec exports: not wired in yet: see spec/pr/exports"))
+  run(r: ParseResult): i32 {
+    const format = prCliFormat(r, this.formatFlag)
+    if (format.isErr()) {
+      return report(usageError(`spec exports: ${format.error}`))
+    }
+    const base = prCliBase(r, this.baseFlag)
+    if (base.isErr()) {
+      return report(usageError(`spec exports: ${base.error}`))
+    }
+    const root = r.value(this.nishRootFlag)
+    if (root === null) {
+      return report(usageError("spec exports: --nish-root <dir> is required: the nish checkout holding the module"))
+    }
+    const contract = r.positional(this.contractJsonArg) ?? ""
+    return prCliFinish("spec exports", exportsCheck(contract, root, base.value), format.value)
   }
 }
 
