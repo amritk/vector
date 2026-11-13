@@ -189,6 +189,7 @@ and verifies it again. **Unproven code is never emitted.** For specs, see
 - [How a run goes](#how-a-run-goes)
 - [RFC → contract → Nish test](#rfc--contract--nish-test)
   - [Writing a spec (kramdown-rfc)](#writing-a-spec-kramdown-rfc)
+- [Languages](#languages)
 - [The idea](#the-idea)
 - [Where the model runs](#where-the-model-runs)
 - [Install & requirements](#install--requirements)
@@ -939,6 +940,539 @@ early exit, a clause reported twice, a line after that end, or a line that
 disagrees with its clause's return value makes the run `ERROR`. A module
 written to read the nonce from its own argv could still forge a run; `mutate`
 is the check against that (a gamed module's mutants all survive).
+
+---
+
+## Languages
+
+A contract is language-neutral: one schema, checked against an implementation in any of fourteen languages. Each language has a mapping table in [`src/rfc/languages/`](src/rfc/languages/) that writes every construct of the vocabulary ([`src/rfc/vocab.ts`](src/rfc/vocab.ts)) in that language: every base type, both outcomes of `B?`, every literal form, the module path and the name rule. The tables are typed over the vocabulary, so a construct added there without a mapping fails `bun run typecheck`. [`test/languages.test.ts`](test/languages.test.ts) names every function of the three contracts in every language and checks this section is the tables' rendering.
+
+The contract keeps all the data: an exact width, which outcome a `?` means, secrecy, the bits of an f64. A language that cannot express one of those says what it drops, in a note or a choice below. A construct it cannot express at all is marked unsupported, with the reason. `{T}` stands for the mapped base type. A contract's `names` or `modules` override for a language always wins over these rules.
+
+### Base types
+
+| | `bytes` | `string` | `bool` | `f64` | `secret-bytes` | `i8` | `i16` | `i32` | `i64` | `u8` | `u16` | `u32` | `u64` |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Rust | `&[u8]` | `&str` | `bool` | `f64` | `&[u8]` | `i8` | `i16` | `i32` | `i64` | `u8` | `u16` | `u32` | `u64` |
+| Ruby | `String` | `String` | `bool` | `Float` | `String` | `Integer` | `Integer` | `Integer` | `Integer` | `Integer` | `Integer` | `Integer` | `Integer` |
+| Zig | `[]const u8` | `[]const u8` | `bool` | `f64` | `[]const u8` | `i8` | `i16` | `i32` | `i64` | `u8` | `u16` | `u32` | `u64` |
+| Go | `[]byte` | `string` | `bool` | `float64` | `[]byte` | `int8` | `int16` | `int32` | `int64` | `uint8` | `uint16` | `uint32` | `uint64` |
+| C++ | `std::span<const std::uint8_t>` | `std::string_view` | `bool` | `double` | `std::span<const std::uint8_t>` | `std::int8_t` | `std::int16_t` | `std::int32_t` | `std::int64_t` | `std::uint8_t` | `std::uint16_t` | `std::uint32_t` | `std::uint64_t` |
+| C# | `byte[]` | `string` | `bool` | `double` | `byte[]` | `sbyte` | `short` | `int` | `long` | `byte` | `ushort` | `uint` | `ulong` |
+| C | `const uint8_t *, size_t` | `const char *` | `bool` | `double` | `const uint8_t *, size_t` | `int8_t` | `int16_t` | `int32_t` | `int64_t` | `uint8_t` | `uint16_t` | `uint32_t` | `uint64_t` |
+| Java | `byte[]` | `String` | `boolean` | `double` | `byte[]` | `byte` | `short` | `int` | `long` | `int` | `int` | `long` | `long` |
+| Kotlin | `ByteArray` | `String` | `Boolean` | `Double` | `ByteArray` | `Byte` | `Short` | `Int` | `Long` | `UByte` | `UShort` | `UInt` | `ULong` |
+| Python | `bytes` | `str` | `bool` | `float` | `bytes` | `int` | `int` | `int` | `int` | `int` | `int` | `int` | `int` |
+| TypeScript | `Uint8Array` | `string` | `boolean` | `number` | `Uint8Array` | `number` | `number` | `number` | `bigint` | `number` | `number` | `number` | `bigint` |
+| PHP | `string` | `string` | `bool` | `float` | `string` | `int` | `int` | `int` | `int` | `int` | `int` | `int` | unsupported (1) |
+| Swift | `[UInt8]` | `String` | `Bool` | `Double` | `[UInt8]` | `Int8` | `Int16` | `Int32` | `Int64` | `UInt8` | `UInt16` | `UInt32` | `UInt64` |
+| Dart | `Uint8List` | `String` | `bool` | `double` | `Uint8List` | `int` | `int` | `int` | `int` | `int` | `int` | `int` | `BigInt` |
+
+1. PHP `u64`: PHP int is signed 64-bit and a value above PHP_INT_MAX becomes float, losing precision; no native type holds 2^63..2^64-1 (GMP would, as an object)
+
+### Outcomes of `B?`
+
+`refusing-return` is a return of `B?`: the function refuses its input. `optional-input` is a parameter of `B?`: the argument may be absent.
+
+| | `refusing-return` | `optional-input` |
+|---|---|---|
+| Rust | `Option<{T}>` | `Option<{T}>` |
+| Ruby | `{T}?` | `{T}?` |
+| Zig | `?{T}` | `?{T}` |
+| Go | `({T}, error)` | `*{T}` |
+| C++ | `std::optional<{T}>` | `std::optional<{T}>` |
+| C# | `{T}?` | `{T}?` |
+| C | `int f(..., {T} *out)` | `const {T} *` |
+| Java | `Optional<{T}>` | `@Nullable {T}` |
+| Kotlin | `{T}?` | `{T}? = null` |
+| Python | `{T} \| None` | `{T} \| None` |
+| TypeScript | `{T} \| null` | `{T} \| undefined` |
+| PHP | `?{T}` | `?{T} $x` |
+| Swift | `{T}?` | `{T}? = nil` |
+| Dart | `{T}?` | `{T}? x` |
+
+### Literals
+
+| | `hex` | `ascii` | `str` | `int` | `f64` | `bool` | `null` | `concat` |
+|---|---|---|---|---|---|---|---|---|
+| Rust | `&[0x0b, 0x0b]` | `b"abc"` | `"abc"` | `42u32` | `f64::from_bits(0x3ff8000000000000)` | `true` | `None` | `&[a, b].concat()` |
+| Ruby | `["0b0b"].pack("H*")` | `"abc".b` | `"abc"` | `42` | `["3ff8000000000000"].pack("H*").unpack1("G")` | `true` | `nil` | `a + b` |
+| Zig | `&[_]u8{ 0x0b, 0x0b }` | `"abc"` | `"abc"` | `@as(u32, 42)` | `@as(f64, @bitCast(@as(u64, 0x3ff8000000000000)))` | `true` | `null` | `a ++ b` |
+| Go | `[]byte{0x0b, 0x0b}` | `[]byte("abc")` | `"abc"` | `uint32(42)` | `math.Float64frombits(0x3ff8000000000000)` | `true` | `nil` | `append(append([]byte{}, a...), b...)` |
+| C++ | `std::array<std::uint8_t, 2>{0x0b, 0x0b}` | `std::array<std::uint8_t, 3>{'a', 'b', 'c'}` | `"abc"sv` | `std::uint32_t{42}` | `std::bit_cast<double>(std::uint64_t{0x3ff8000000000000})` | `true` | `std::nullopt` | `std::array<std::uint8_t, 2>{0x0b, 0x61}` |
+| C# | `new byte[] { 0x0b, 0x0b }` | `"abc"u8.ToArray()` | `"abc"` | `42u` | `BitConverter.UInt64BitsToDouble(0x3ff8000000000000UL)` | `true` | `null` | `[.. a, .. b]` |
+| C | `(const uint8_t[]){0x0b, 0x0b}` | `(const uint8_t[]){"abc"}` | `"abc"` | `UINT32_C(42)` | `((union { uint64_t u; double d; }){.u = 0x3ff8000000000000u}).d` | `true` | `NULL` | `(const uint8_t[]){0x0b, 0x61}` |
+| Java | `HexFormat.of().parseHex("0b0b")` | `"abc".getBytes(StandardCharsets.US_ASCII)` | `"abc"` | `42L` | `Double.longBitsToDouble(0x3ff8000000000000L)` | `true` | `null` | `ByteBuffer.allocate(a.length + b.length).put(a).put(b).array()` |
+| Kotlin | `byteArrayOf(0x0b, 0x0b)` | `"abc".toByteArray(Charsets.US_ASCII)` | `"abc"` | `42u` | `Double.fromBits(0x3ff8000000000000uL.toLong())` | `true` | `null` | `a + b` |
+| Python | `bytes.fromhex("0b0b")` | `b"abc"` | `"abc"` | `42` | `struct.unpack(">d", bytes.fromhex("3ff8000000000000"))[0]` | `True` | `None` | `a + b` |
+| TypeScript | `Uint8Array.of(0x0b, 0x0b)` | `new TextEncoder().encode("abc")` | `"abc"` | `42` | `new DataView(Uint8Array.of(0x3f, 0xf8, 0, 0, 0, 0, 0, 0).buffer).getFloat64(0)` | `true` | `null` | `Uint8Array.of(...a, ...b)` |
+| PHP | `hex2bin("0b0b")` | `'abc'` | `"abc"` | `42` | `unpack('E', hex2bin('3ff8000000000000'))[1]` | `true` | `null` | `$a . $b` |
+| Swift | `[0x0b, 0x0b] as [UInt8]` | `Array("abc".utf8)` | `"abc"` | `UInt32(42)` | `Double(bitPattern: 0x3ff8000000000000)` | `true` | `nil` | `a + b` |
+| Dart | `Uint8List.fromList([0x0b, 0x0b])` | `ascii.encode('abc')` | `'abc'` | `42` | `(ByteData(8)..setUint64(0, 0x3ff8000000000000)).getFloat64(0)` | `true` | `null` | `Uint8List.fromList([...a, ...b])` |
+
+### Names and modules
+
+Every rule starts from one word split: a capital starts a word, a run of capitals is one acronym (`parseHTTPRequest` → parse, HTTP, Request), a digit run stays on the word before it (`chacha20Poly1305Seal` → chacha20, Poly1305, Seal), and `_` separates words.
+
+| | `hkdfExpandSha256` | `parseHTTPRequest` | param `userId` | `nish/crypto/hkdf` | called as | name standard |
+|---|---|---|---|---|---|---|
+| Rust | `hkdf_expand_sha256` | `parse_http_request` | `user_id` | `nish::crypto::hkdf` | `nish::crypto::hkdf::hkdf_expand_sha256` | Rust API Guidelines C-CASE (RFC 430, naming conventions) |
+| Ruby | `hkdf_expand_sha256` | `parse_http_request` | `user_id` | `Nish::Crypto::Hkdf` | `Nish::Crypto::Hkdf.hkdf_expand_sha256` | The Ruby Style Guide, Naming Conventions (snake_case methods; CamelCase modules) |
+| Zig | `hkdfExpandSha256` | `parseHttpRequest` | `user_id` | `nish/crypto/hkdf.zig` | `hkdf.hkdfExpandSha256` | The Zig Language Reference, Style Guide › Names (camelCase functions, snake_case variables) |
+| Go | `HkdfExpandSha256` | `ParseHTTPRequest` | `userID` | `nish/crypto/hkdf` | `hkdf.HkdfExpandSha256` | Effective Go, Names (MixedCaps; an upper-case first letter exports) and Go Code Review Comments, Initialisms |
+| C++ | `hkdf_expand_sha256` | `parse_http_request` | `user_id` | `nish::crypto::hkdf` | `nish::crypto::hkdf::hkdf_expand_sha256` | C++ Core Guidelines NL.10 (prefer underscore_style names) and NL.8 (consistent naming style) |
+| C# | `HkdfExpandSha256` | `ParseHttpRequest` | `userId` | `Nish.Crypto.Hkdf` | `Nish.Crypto.Hkdf.HkdfExpandSha256` | .NET Framework Design Guidelines, Capitalization Conventions (PascalCase members, camelCase parameters; two-letter acronyms in capitals) |
+| C | `hkdf_expand_sha256` | `parse_http_request` | `user_id` | `nish/crypto/hkdf.h` | `nish_crypto_hkdf_hkdf_expand_sha256` | ISO C has no naming standard; the common convention of lower snake_case behind a module prefix (as in POSIX and OpenSSL), invented for this table where none fits |
+| Java | `hkdfExpandSha256` | `parseHttpRequest` | `userId` | `nish.crypto.Hkdf` | `nish.crypto.Hkdf.hkdfExpandSha256` | Google Java Style Guide, §5.3 Camel case: defined (acronyms cased as words) |
+| Kotlin | `hkdfExpandSha256` | `parseHttpRequest` | `userId` | `nish.crypto.Hkdf` | `nish.crypto.Hkdf.hkdfExpandSha256` | Kotlin Coding Conventions, Naming rules (lowerCamelCase functions; two-letter acronyms in capitals) |
+| Python | `hkdf_expand_sha256` | `parse_http_request` | `user_id` | `nish.crypto.hkdf` | `nish.crypto.hkdf.hkdf_expand_sha256` | PEP 8, Naming Conventions › Function and Variable Names |
+| TypeScript | `hkdfExpandSha256` | `parseHttpRequest` | `userId` | `nish/crypto/hkdf` | `hkdf.hkdfExpandSha256` | Google TypeScript Style Guide, Identifiers › Naming style and Camel case (lowerCamelCase; acronyms cased as whole words) |
+| PHP | `hkdfExpandSha256` | `parseHTTPRequest` | `userId` | `Nish\Crypto\Hkdf` | `\Nish\Crypto\Hkdf::hkdfExpandSha256` | PSR-1 Basic Coding Standard, §4.3 Methods (camelCase) and PSR-4 Autoloader |
+| Swift | `hkdfExpandSha256` | `parseHTTPRequest` | `userId` | `NishCryptoHkdf` | `NishCryptoHkdf.hkdfExpandSha256` | Swift API Design Guidelines, Conventions › General Conventions (lowerCamelCase; acronyms uniformly cased as written) |
+| Dart | `hkdfExpandSha256` | `parseHttpRequest` | `userId` | `package:nish/crypto/hkdf.dart` | `hkdf.hkdfExpandSha256` | Effective Dart: Style, Identifiers (lowerCamelCase; acronyms longer than two letters capitalized like words) |
+
+### Per language
+
+<details><summary>Rust</summary>
+
+Types: The Rust Reference, Type system › Types (numeric, boolean, textual and slice types).
+
+Names: functions and parameters snake_case (C-CASE): words split at each capital, an acronym is one word (parseHTTPRequest → parse_http_request), and a digit run stays on the word before it (chacha20Poly1305Seal → chacha20_poly1305_seal). A name override always wins; a name that is a keyword (type, match, …) takes one.
+
+Modules (crate-path): the segments as a path of modules, the root segment the crate (The Rust Reference, Items › Modules): nish/crypto/hkdf → nish::crypto::hkdf.
+
+Choices:
+
+- A refusing return is Option&lt;T>, not Result&lt;T, E>: the contract says only that the function declines, and gives no reason, so an error type E would be invented. An implementation that returns Result is still checkable by mapping Err to the refusal; the reason it carries is outside the contract.
+- An optional input is Option&lt;T>, so absent and empty (Some(&amp;[])) stay distinct.
+- Integer arithmetic in the contract wraps modulo 2^N; Rust's + panics on overflow in debug builds, so an implementation uses wrapping_add and friends where the contract wraps.
+- secret-bytes is a plain byte slice: std has no secret type, so the secrecy is dropped.
+
+Notes:
+
+- type `bytes`: a returned value is Vec&lt;u8>
+- type `string`: a returned value is String; both are UTF-8 by construction
+- type `f64`: IEEE 754-2008 binary64 (Reference, Numeric types)
+- type `secret-bytes`: std has no secret type; secrecy is dropped (a crate such as secrecy or zeroize can add it)
+- outcome `refusing-return`: None is the refusal
+- outcome `optional-input`: None is the absent argument
+- literal `str`: non-ASCII and control characters as \u{…} escapes
+- literal `int`: suffixed with its type, so every width is exact
+- literal `f64`: from its bits, so NaN payloads and -0 are exact
+- literal `concat`: a borrow of the joined Vec&lt;u8>, as a bytes input is &amp;[u8]; a returned value is [a, b].concat()
+
+</details>
+
+<details><summary>Ruby</summary>
+
+Types: RBS, Ruby's type signature language (core class names: String, Integer, Float, bool).
+
+Names: methods and parameters snake_case: words split at each capital, an acronym is one word (parseHTTPRequest → parse_http_request), and a digit run stays on the word before it (hkdfExpandSha256 → hkdf_expand_sha256). A name override always wins.
+
+Modules (module): nested modules, each segment in CamelCase (Style Guide: CamelCase for classes and modules); the file is the neutral path plus .rb: nish/crypto/hkdf → Nish::Crypto::Hkdf in nish/crypto/hkdf.rb.
+
+Choices:
+
+- Ruby's Integer is unbounded, so there is no native u64 or any fixed width: every integer type is Integer, and the width (its range and its wrapping) is dropped from the type and kept by the implementation.
+- A refusing return is nil, not a raised exception: nil maps the contract's null one-to-one (as Integer(s, exception: false) does). An implementation that raises ArgumentError is still checkable by mapping the raise to the refusal.
+- bytes and string are both String, told apart only by encoding (ASCII-8BIT vs UTF-8).
+
+Notes:
+
+- type `bytes`: with Encoding::ASCII_8BIT (binary)
+- type `string`: with Encoding::UTF_8
+- type `bool`: RBS's bool: true or false (Ruby has no Boolean class)
+- type `f64`: a C double, IEEE 754 binary64 on every supported platform
+- type `secret-bytes`: binary String; Ruby has no secret type, so secrecy is dropped
+- type `i8`: unbounded; the width's range and wrapping are the implementation's (mask with &amp; (2\*\*N - 1))
+- type `i16`: unbounded; the width's range and wrapping are the implementation's (mask with &amp; (2\*\*N - 1))
+- type `i32`: unbounded; the width's range and wrapping are the implementation's (mask with &amp; (2\*\*N - 1))
+- type `i64`: unbounded; the width's range and wrapping are the implementation's (mask with &amp; (2\*\*N - 1))
+- type `u8`: unbounded; the width's range and wrapping are the implementation's (mask with &amp; (2\*\*N - 1))
+- type `u16`: unbounded; the width's range and wrapping are the implementation's (mask with &amp; (2\*\*N - 1))
+- type `u32`: unbounded; the width's range and wrapping are the implementation's (mask with &amp; (2\*\*N - 1))
+- type `u64`: unbounded; the width's range and wrapping are the implementation's (mask with &amp; (2\*\*N - 1))
+- outcome `refusing-return`: RBS optional: nil is the refusal
+- outcome `optional-input`: nil is the absent argument
+- literal `str`: double-quoted, so # is written \# (a double-quoted string interpolates #{x}), \ as \\ and " as \"; non-ASCII and control characters as \u{…} escapes
+- literal `int`: exact at any width
+- literal `f64`: from its big-endian bits, so -0.0 and NaN payloads are exact
+
+</details>
+
+<details><summary>Zig</summary>
+
+Types: The Zig Language Reference, Primitive Types, Slices, Optionals and Error Union Type.
+
+Names: functions camelCase and parameters snake_case (Style Guide): words split at each capital, an acronym is a word like any other (parseHTTPRequest → parseHttpRequest, parse_http_request), and a digit run stays on the word before it (chacha20Poly1305Seal → chacha20Poly1305Seal, hkdfExpandSha256 → hkdfExpandSha256). A derived name that is a keyword or a primitive type name (error, type, fn, test, u8, bool) is written @"…" or takes a name override. A name override always wins.
+
+Modules (file): a source file is a struct; the neutral path plus .zig, imported under its last segment: nish/crypto/hkdf → nish/crypto/hkdf.zig, const hkdf = @import("nish/crypto/hkdf.zig").
+
+Choices:
+
+- A refusing return is an optional ?T, not an error union !T: the contract's refusal carries no reason, so an error set would be invented. Where the function allocates, the error union holds only allocation failure (Allocator.Error!?T), so the two never mix.
+- bytes and string share one type, []const u8; the string's UTF-8 guarantee is dropped.
+- Inputs are slices []const u8; outputs are allocated from a caller-supplied std.mem.Allocator, which the contract does not name (it is an extra first parameter).
+
+Notes:
+
+- type `bytes`: a returned slice is []u8 allocated from a caller-supplied std.mem.Allocator
+- type `string`: Zig has no string type: UTF-8 bytes, so the guarantee that they are valid UTF-8 is dropped
+- type `f64`: IEEE-754-2008 binary64
+- type `secret-bytes`: no secret type; secrecy is dropped (std.crypto.secureZero can wipe a copy)
+- outcome `refusing-return`: null is the refusal; a function that allocates returns std.mem.Allocator.Error!?{T}
+- outcome `optional-input`: null is the absent argument
+- literal `str`: non-ASCII as \u{…} escapes
+- literal `int`: typed by @as, so every width is exact
+- literal `f64`: from its bits, so -0 and NaN payloads are exact
+- literal `concat`: comptime; at run time std.mem.concat
+
+</details>
+
+<details><summary>Go</summary>
+
+Types: The Go Programming Language Specification, Types (Numeric types, String types, Slice types).
+
+Names: MixedCaps: a function is exported, so its first letter is a capital (hkdfExpandSha256 → HkdfExpandSha256); a parameter is unexported (lowerCamel). Words split at each capital and a digit run stays on the word before it (chacha20Poly1305Seal → Chacha20Poly1305Seal). An initialism, one the contract writes in capitals or one in golint's list (ID, URL, HTTP, UTF8, …), is all capitals after the first word (userId → userID, parseHttpRequest → ParseHTTPRequest); HKDF and SHA are not on the list, so they stay Hkdf and Sha. A name override always wins.
+
+Modules (package): the neutral path is the import path; the package name is its last segment without underscores (Effective Go, Package names): nish/crypto/hkdf → import "nish/crypto/hkdf", package hkdf.
+
+Choices:
+
+- A refusing return is (T, error): Go has no optional, and the error result is how Go reports that a call declined (Effective Go, Errors). The contract gives no reason, so any non-nil error is the refusal and its message is dropped.
+- An optional input is a pointer \*T, nil when absent, so absent and empty stay distinct (a nil []byte and an empty one compare equal under len).
+- Initialisms follow a fixed list (golint's commonInitialisms) plus whatever the contract writes in capitals, so the rule is deterministic; HKDF, HMAC, SHA, AEAD are not on the list, and a name override can spell them HKDF.
+
+Notes:
+
+- type `string`: a Go string may hold any bytes; the UTF-8 guarantee is the implementation's
+- type `f64`: IEEE 754 binary64 (Spec, Numeric types)
+- type `secret-bytes`: no secret type; secrecy is dropped
+- outcome `refusing-return`: a non-nil error is the refusal; which error it is is outside the contract
+- outcome `optional-input`: nil is the absent argument
+- literal `str`: non-ASCII and control characters as \u escapes, a scalar above U+FFFF as \U
+- literal `int`: converted to its type, so every width is exact
+- literal `f64`: from its bits, so -0 and NaN payloads are exact
+
+</details>
+
+<details><summary>C++</summary>
+
+Types: ISO/IEC 14882:2020 (C++20), [cstdint.syn] fixed-width integers, [basic.fundamental], [views.span], [optional].
+
+Names: functions and parameters underscore_style (NL.10), as the standard library is: words split at each capital, an acronym is one word (parseHTTPRequest → parse_http_request), and a digit run stays on the word before it (chacha20Poly1305Seal → chacha20_poly1305_seal). A name override always wins.
+
+Modules (namespace): nested namespaces, one per segment, declared in the header at the neutral path plus .hpp: nish/crypto/hkdf → namespace nish::crypto::hkdf in nish/crypto/hkdf.hpp.
+
+Choices:
+
+- A refusing return is std::optional&lt;T> (C++17), not std::expected&lt;T, E> (C++23) or an exception: the contract gives no reason, so E would be invented.
+- Inputs are non-owning std::span / std::string_view and outputs owning std::vector / std::string, so the contract's single bytes type splits by position.
+
+Notes:
+
+- type `bytes`: a returned value is std::vector&lt;std::uint8_t>
+- type `string`: UTF-8 octets; a returned value is std::string. The UTF-8 guarantee is the implementation's
+- type `f64`: binary64 where std::numeric_limits&lt;double>::is_iec559 holds; the standard does not require it
+- type `secret-bytes`: no secret type in the standard library; secrecy is dropped
+- type `i8`: the exact-width types are optional in the standard; every mainstream target has them
+- outcome `refusing-return`: std::nullopt is the refusal
+- outcome `optional-input`: std::nullopt is the absent argument
+- literal `str`: a std::string_view literal (using namespace std::literals; [string.view.literals]), so its length is the literal's and keeps an embedded U+0000, which a plain "a\0b" would end at. Non-ASCII and control characters as their UTF-8 bytes in \x escapes ("\xc3\xa9"sv for é), split into adjacent literals where a hex digit follows ("\x00" "b"sv); a u8 literal is char8_t in C++20 and does not convert to std::string_view
+- literal `int`: braced, so a value out of range is a compile error; a minimum as -MAX - 1 (std::int64_t{-9223372036854775807 - 1}), and a u64 above INT64_MAX with a u suffix (std::uint64_t{18446744073709551615u})
+- literal `f64`: from its bits (C++20 [bit.cast]), so -0 and NaN payloads are exact
+- literal `concat`: no array concatenation in a literal; the joined bytes are written as one array
+
+</details>
+
+<details><summary>C#</summary>
+
+Types: ECMA-334 (C# Language Specification), Types › Simple types and Nullable value types.
+
+Names: methods PascalCase and parameters camelCase: words split at each capital, a digit run stays on the word before it (hkdfExpandSha256 → HkdfExpandSha256), a two-letter acronym stays in capitals and a longer one is cased like a word (readIOStream → ReadIOStream, parseHTTPRequest → ParseHttpRequest). A parameter whose camelCase name is a keyword (in, out, string, object, params, event, base) is written with @ (@in) or takes a name override. A name override always wins.
+
+Modules (class): a static class named for the last segment, in a namespace of the others, all PascalCase (Design Guidelines, Names of Namespaces): nish/crypto/hkdf → static class Hkdf in namespace Nish.Crypto.
+
+Choices:
+
+- A refusing return is a null return ({T}?), not a thrown exception or the Try pattern (bool TryX(..., out T)): a refusal is an expected outcome, tested by the vectors, and null maps the contract's null one-to-one. An implementation that throws ArgumentException is still checkable by mapping the throw to the refusal.
+- bytes are byte[] in both positions, though ReadOnlySpan&lt;byte> would avoid a copy on input.
+- A namespace holds no functions, so the module is a static class of static methods named for its last segment. A method whose PascalCase name equals that class's name is CS0542, so it takes a name override.
+
+Notes:
+
+- type `bytes`: a ReadOnlySpan&lt;byte> input would avoid a copy; byte[] is chosen for one type in and out
+- type `string`: UTF-16; every Unicode scalar value is representable
+- type `f64`: IEC 60559 binary64
+- type `secret-bytes`: no secret type; secrecy is dropped (CryptographicOperations.ZeroMemory can wipe a copy)
+- outcome `refusing-return`: null is the refusal: a nullable reference type for byte[] and string, Nullable&lt;T> for value types
+- outcome `optional-input`: null is the absent argument; byte[]? and string? assume a nullable context (&lt;Nullable>enable&lt;/Nullable>)
+- literal `hex`: or Convert.FromHexString("0b0b")
+- literal `ascii`: a UTF-8 literal (C# 11), ASCII being a subset
+- literal `str`: non-ASCII as \u escapes, a scalar above U+FFFF as \U
+- literal `int`: per width: sbyte, short, byte and ushort by a cast ((sbyte)-128), int bare, uint 42u, long 42L, ulong 42UL; -2147483648 and -9223372036854775808 are valid as written
+- literal `f64`: from its bits (.NET 6), so -0 and NaN payloads are exact; Int64BitsToDouble would not take a hex literal with the sign bit set, which is a ulong (C# spec §6.4.5.3)
+- literal `concat`: a collection expression (C# 12)
+
+</details>
+
+<details><summary>C</summary>
+
+Types: ISO/IEC 9899:2018 (C17), §7.20 &lt;stdint.h>, §7.18 &lt;stdbool.h>, Annex F (IEC 60559 floating point).
+
+Names: functions and parameters lower snake_case, a function behind its module prefix: words split at each capital, an acronym is one word (parseHTTPRequest → parse_http_request), and a digit run stays on the word before it (hkdfExpandSha256 → nish_crypto_hkdf_hkdf_expand_sha256). The prefix repeats a segment when the name does; a name override removes the repetition.
+
+Modules (header-prefix): a header at the neutral path plus .h, and every symbol prefixed by the segments joined with _ (C has one namespace for external names): nish/crypto/hkdf → nish/crypto/hkdf.h, nish_crypto_hkdf_&lt;name>.
+
+Choices:
+
+- A refusing return is an int status (0 success, nonzero the refusal) with the value through an out-parameter. The contract gives no reason, so the nonzero value carries none.
+- Bytes are a pointer/length pair; returned bytes go to a caller-supplied buffer (uint8_t \*out, size_t \*out_len), so a function returning bytes always returns a status: a buffer too small is a status the contract does not define, and is outside it.
+- An optional input is a pointer that may be NULL. For bytes the NULL pointer is the absence, so (NULL, 0) and an empty buffer differ.
+- A string is NUL-terminated, so a string containing U+0000 cannot be passed: that one value is dropped.
+
+Notes:
+
+- type `bytes`: a pointer and a length; a returned value goes through out-parameters uint8_t \*out, size_t \*out_len
+- type `string`: NUL-terminated UTF-8, so a string holding U+0000 cannot be passed; that value is dropped. A returned string goes into a caller-supplied buffer char \*out, size_t out_cap, so the caller owns it
+- type `bool`: &lt;stdbool.h>
+- type `f64`: binary64 where __STDC_IEC_559__ is defined (Annex F)
+- type `secret-bytes`: no secret type; secrecy is dropped (C23 memset_explicit can wipe a copy)
+- outcome `refusing-return`: returns 0 with the value in \*out, or a nonzero status for the refusal; which nonzero value is outside the contract
+- outcome `optional-input`: NULL is the absent argument; for bytes, a NULL pointer (its length ignored), so absent and empty stay distinct
+- literal `hex`: a compound literal, with its length sizeof'd; empty bytes as a non-NULL pointer and length 0, as C before C23 has no empty initializer
+- literal `ascii`: without the terminating NUL in its length
+- literal `str`: non-ASCII and control characters as their UTF-8 bytes in \x escapes ("\xc3\xa9" for é), split into adjacent literals where a hex digit follows ("\xc3\xa9" "b"); a u8 literal is char8_t, not char, in C23
+- literal `int`: &lt;stdint.h> constant macros give each width; a minimum is its INTn_MIN macro, or (-INT64_MAX - 1)
+- literal `f64`: an expression: a compound literal of a union, read through its other member (C17 §6.5.2.3 footnote 97), so -0 and NaN payloads are exact
+- literal `concat`: no concatenation of arrays; the joined bytes are written as one array
+
+</details>
+
+<details><summary>Java</summary>
+
+Types: The Java Language Specification (Java SE 21), §4.2 Primitive Types and Values.
+
+Names: methods and parameters lowerCamelCase: words split at each capital, a digit run stays on the word before it (hkdfExpandSha256 → hkdfExpandSha256), and an acronym is cased like a word (parseHTTPRequest → parseHttpRequest, readIOStream → readIoStream). A name that is a Java keyword takes a name override.
+
+Modules (class): a final class of static methods named for the last segment, in a package of the others (JLS §6.1, package names lowercase): nish/crypto/hkdf → class Hkdf in package nish.crypto.
+
+Choices:
+
+- Unsigned widths widen to the next signed type (u8, u16 → int; u32 → long), and u64 stays long read unsigned: the value is kept, the type no longer states its range.
+- A refusing return is Optional&lt;T>, not a thrown exception: the refusal is an expected outcome, and Optional's API note names this use. An implementation that throws IllegalArgumentException is still checkable by mapping the throw to the refusal.
+- An optional input is a nullable reference; Optional parameters are discouraged by the same API note.
+
+Notes:
+
+- type `bytes`: each element read unsigned (b &amp; 0xff)
+- type `string`: UTF-16; every Unicode scalar value is representable
+- type `f64`: IEEE 754 binary64 (JLS §4.2.3)
+- type `secret-bytes`: no secret type; secrecy is dropped (Arrays.fill can wipe a copy)
+- type `u8`: Java has no unsigned types; widened to int, range 0..255 the implementation's to keep
+- type `u16`: widened to int, as char is not a number here
+- type `u32`: widened to long
+- type `u64`: the same 64 bits read unsigned, with Long.compareUnsigned, Long.divideUnsigned and Long.toUnsignedString (JLS has no wider primitive)
+- outcome `refusing-return`: {T} boxed (boolean → Boolean, byte → Byte, short → Short, int → Integer, long → Long, double → Double; byte[] and String as they are), since a type argument is a reference type (JLS §4.5.1). Optional.empty() is the refusal; java.util.Optional's API note names it the return type for 'no result'
+- outcome `optional-input`: org.jspecify.annotations.Nullable (JSpecify 1.0), a type-use annotation on {T} boxed as for a refusing return, and on an array as byte @Nullable [] (@Nullable byte[] would annotate the element type); null is the absent argument, and Optional is not used for parameters
+- literal `hex`: java.util.HexFormat (Java 17)
+- literal `str`: non-ASCII as \u escapes, a scalar above U+FFFF as its UTF-16 surrogate pair; a control character as an octal escape (\000), since a \u escape is translated before the literal is read (JLS §3.3) and \u000a would end the line
+- literal `int`: per width: i8 a cast (byte) 42 and i16 a cast (short) 42, since a method argument is not narrowed from int (JLS §5.3); i32, u8 and u16 42; i64, u32 and u64 42L. The minimums (byte) -128, (short) -32768, -2147483648 and -9223372036854775808L are valid as written, and a u64 above Long.MAX_VALUE is its bits as a hex long (0xffffffffffffffffL)
+- literal `f64`: from its bits; a NaN payload may not survive arithmetic, but is kept by the conversion
+- literal `null`: Optional.empty() where the refusal is meant
+
+</details>
+
+<details><summary>Kotlin</summary>
+
+Types: Kotlin Language Specification, Built-in types and their semantics (kotlin.Byte…Long, kotlin.UByte…ULong, nullable types).
+
+Names: functions and parameters lowerCamelCase: words split at each capital, a digit run stays on the word before it, a two-letter acronym stays in capitals and a longer one is cased like a word (readIOStream → readIOStream, parseHTTPRequest → parseHttpRequest). A name that is a hard keyword takes a name override.
+
+Modules (class): an object named for the last segment, in a package of the others (Coding Conventions, Names for packages and classes): nish/crypto/hkdf → object Hkdf in package nish.crypto.
+
+Choices:
+
+- A refusing return is a nullable type ({T}?), not a thrown exception or Result&lt;T>: Kotlin's null safety makes the refusal visible in the type.
+- Unsigned widths keep their own types (UByte…ULong); only bytes stays ByteArray, signed, as UByteArray is experimental.
+- The module is an object rather than top-level functions, so a caller names it as Java does.
+
+Notes:
+
+- type `bytes`: UByteArray is still experimental; elements read unsigned with toUByte()
+- type `string`: UTF-16; every Unicode scalar value is representable
+- type `f64`: IEEE 754 binary64
+- type `secret-bytes`: no secret type; secrecy is dropped (fill(0) can wipe a copy)
+- outcome `refusing-return`: null is the refusal
+- outcome `optional-input`: a nullable parameter, null the absent argument; the default is allowed before a required parameter, which a caller then passes by name or passes null for x
+- literal `hex`: a byte above 0x7f as 0xff.toByte(); "0b0b".hexToByteArray() needs @OptIn(ExperimentalStdlibApi::class) in Kotlin 1.9
+- literal `str`: non-ASCII as \u escapes, a scalar above U+FFFF as its UTF-16 surrogate pair (Kotlin has no \U); $ escaped as \$
+- literal `int`: per width: i8 42.toByte(), i16 42.toShort() (a negative one parenthesised, (-128).toByte() and (-32768).toShort(), as -128.toByte() is -(128.toByte()), an Int), i32 42, i64 42L, u8 42u.toUByte(), u16 42u.toUShort(), u32 42u, u64 42uL; the minimums as Int.MIN_VALUE and Long.MIN_VALUE, since -2147483648 is a Long and -9223372036854775808L does not compile
+- literal `f64`: from its bits, so -0 and NaN payloads are exact; the bits are a ULong literal, as a hex Long literal with the sign bit set (-0, any negative value) does not compile
+- literal `concat`: ByteArray.plus
+
+</details>
+
+<details><summary>Python</summary>
+
+Types: The Python Language Reference, §3.2 The standard type hierarchy; PEP 484 (type hints), PEP 604 (X | None).
+
+Names: functions and parameters lower snake_case: words split at each capital, an acronym is one word (parseHTTPRequest → parse_http_request), and a digit run stays on the word before it (hkdfExpandSha256 → hkdf_expand_sha256). A name that is a keyword takes a name override.
+
+Modules (module): a module at the dotted neutral path, lowercase (PEP 8, Package and Module Names): nish/crypto/hkdf → nish.crypto.hkdf.
+
+Choices:
+
+- Every integer width is int: the width is not in the type, so a value out of range is the implementation's to refuse.
+- A refusing return is None, not a raised ValueError. The idiomatic raise is still checkable by mapping the exception to the refusal.
+- secret-bytes is bytes: Python cannot wipe an immutable object, so secrecy is dropped.
+
+Notes:
+
+- type `string`: every Unicode scalar value is representable
+- type `f64`: binary64 on every CPython platform (sys.float_info)
+- type `secret-bytes`: no secret type and bytes are immutable, so a copy cannot be wiped; secrecy is dropped
+- type `i8`: arbitrary precision; the width is the implementation's to check
+- type `i16`: arbitrary precision; the width is the implementation's to check
+- type `i32`: arbitrary precision; the width is the implementation's to check
+- type `i64`: arbitrary precision; the width is the implementation's to check
+- type `u8`: arbitrary precision; the width is the implementation's to check
+- type `u16`: arbitrary precision; the width is the implementation's to check
+- type `u32`: arbitrary precision; the width is the implementation's to check
+- type `u64`: arbitrary precision; the width is the implementation's to check
+- outcome `refusing-return`: None is the refusal (PEP 604)
+- outcome `optional-input`: None is the absent argument, passed explicitly; = None may be added only when every later parameter also has a default, as a default before a parameter without one is a SyntaxError
+- literal `str`: non-ASCII and control characters as \u or \U escapes
+- literal `f64`: from its bits, so -0 and NaN payloads are exact
+
+</details>
+
+<details><summary>TypeScript</summary>
+
+Types: ECMA-262 (ECMAScript 2024), §6.1.6.1 The Number Type, §6.1.6.2 The BigInt Type, §23.2 TypedArray Objects (Uint8Array).
+
+Names: functions and parameters lowerCamelCase, an acronym cased as a whole word (the guide's loadHttpUrl): words split at each capital, a digit run stays on the word before it (parseHTTPRequest → parseHttpRequest, readIOStream → readIoStream, hkdfExpandSha256 → hkdfExpandSha256). A name that is a reserved word takes a name override.
+
+Modules (file): an ES module at the neutral path, imported as a namespace named for its last segment: nish/crypto/hkdf → import \* as hkdf from "nish/crypto/hkdf", called hkdf.&lt;name>.
+
+Choices:
+
+- Widths up to 32 bits are number, and i64/u64 are bigint, so every integer is exact; the type no longer states the width.
+- f64 is number: every binary64 value but a NaN's payload is kept. That payload is dropped.
+- A refusing return is null and an optional input is undefined, so the two outcomes of ? keep different spellings.
+
+Notes:
+
+- type `string`: UTF-16; a lone surrogate is also representable, and is the implementation's to refuse
+- type `f64`: binary64, but a NaN payload is not preserved (ECMA-262 §6.1.6.1: all NaNs are one value)
+- type `secret-bytes`: no secret type; secrecy is dropped (fill(0) can wipe a copy)
+- type `i64`: number is exact only to 2^53
+- type `u64`: as i64
+- outcome `refusing-return`: null is the refusal
+- outcome `optional-input`: an optional parameter; undefined is the absent argument
+- literal `ascii`: UTF-8, of which ASCII is a subset
+- literal `str`: non-ASCII and control characters as \u{…} escapes
+- literal `int`: 42n for i64 and u64
+- literal `f64`: from its bits, so -0 is exact; a NaN payload is lost
+
+</details>
+
+<details><summary>PHP</summary>
+
+Types: PHP Language Reference, Types (Integers, Floating point numbers, Strings, Nullable types); PHP 8.2.
+
+Names: methods and parameters camelCase with words as the contract writes them (PSR-1 requires camelCase and leaves acronyms open): parseHTTPRequest → parseHTTPRequest. A name that is a reserved word takes a name override.
+
+Modules (class): a final class of static methods, its fully qualified name the segments in PascalCase (PSR-4 autoloads classes, not functions): nish/crypto/hkdf → Nish\Crypto\Hkdf.
+
+Choices:
+
+- u64 is unsupported: no native PHP type holds the upper half of its range. A contract with u64 cannot be checked against a PHP implementation.
+- Every other integer width is int on a 64-bit build; the width is not in the type.
+- bytes and string are both string; only the parameter's name and contract tell them apart.
+
+Notes:
+
+- type `bytes`: PHP strings are byte strings
+- type `string`: UTF-8 bytes; validity is the implementation's to check
+- type `f64`: binary64 on every supported platform
+- type `secret-bytes`: with #[\SensitiveParameter] before the parameter (PHP 8.2), which keeps the value out of stack traces: #[\SensitiveParameter] ?string $x = null. An attribute is not part of a type, so a return cannot carry it and a returned secret drops it; the value is not wiped (sodium_memzero can)
+- type `i8`: a 64-bit build is assumed; the width is the implementation's to check
+- type `i16`: a 64-bit build is assumed; the width is the implementation's to check
+- type `i32`: a 64-bit build is assumed; the width is the implementation's to check
+- type `i64`: exact on a 64-bit build (PHP_INT_SIZE 8); its minimum is written PHP_INT_MIN
+- type `u8`: a 64-bit build is assumed; the width is the implementation's to check
+- type `u16`: a 64-bit build is assumed; the width is the implementation's to check
+- type `u32`: a 64-bit build is assumed; the width is the implementation's to check
+- outcome `refusing-return`: null is the refusal
+- outcome `optional-input`: null is the absent argument, passed explicitly; = null may be added only when every later parameter also has a default, as an optional parameter before a required one is deprecated (PHP 8.0, and for ?T $x = null since 8.3)
+- literal `str`: double-quoted, so $ is written \$ (a double-quoted string interpolates $x), \ as \\ and " as \"; non-ASCII and control characters as \u{…} escapes
+- literal `int`: i64's minimum as PHP_INT_MIN: -9223372036854775808 is the float negation of an overflowed literal
+- literal `f64`: from its bits (big-endian double), so -0 and NaN payloads are exact
+
+</details>
+
+<details><summary>Swift</summary>
+
+Types: The Swift Programming Language (Swift 5.9), The Basics › Integers, Floating-Point Numbers, Optionals.
+
+Names: functions and parameters lowerCamelCase with words as the contract writes them, so an acronym keeps its uniform case (API Design Guidelines): parseHTTPRequest → parseHTTPRequest, hkdfExpandSha256 → hkdfExpandSha256. A name that is a keyword takes a name override (or backticks).
+
+Modules (module): Swift modules do not nest, so one module named by the segments in UpperCamelCase, joined: nish/crypto/hkdf → NishCryptoHkdf.
+
+Choices:
+
+- A refusing return is an Optional ({T}?), not throws: the refusals are simple domain errors with no reason to report, the case Swift's error-handling rationale gives Optional.
+- Modules do not nest, so the module path is flattened into one UpperCamelCase name.
+
+Notes:
+
+- type `bytes`: Data would also do; [UInt8] needs no Foundation
+- type `string`: every Unicode scalar value is representable
+- type `f64`: IEEE 754 binary64
+- type `secret-bytes`: no secret type; secrecy is dropped (CryptoKit's SymmetricKey is one where available)
+- outcome `refusing-return`: nil is the refusal
+- outcome `optional-input`: nil is the absent argument
+- literal `str`: non-ASCII as \u{…} escapes; a backslash written \\, since \( interpolates
+- literal `int`: every width exact
+- literal `f64`: from its bits, so -0 and NaN payloads are exact
+
+</details>
+
+<details><summary>Dart</summary>
+
+Types: Dart Programming Language Specification (6th edition), §10 Types and dart:core (int, double, BigInt), dart:typed_data (Uint8List).
+
+Names: functions and parameters lowerCamelCase: words split at each capital, a digit run stays on the word before it, a two-letter acronym stays in capitals and a longer one is cased like a word (readIOStream → readIOStream, parseHTTPRequest → parseHttpRequest). A name that is a reserved word takes a name override.
+
+Modules (file): a library file in the package named by the first segment, imported with a prefix named for the last: nish/crypto/hkdf → import 'package:nish/crypto/hkdf.dart' as hkdf, called hkdf.&lt;name>; a one-segment module is the package's main library (nish → package:nish/nish.dart).
+
+Choices:
+
+- Every signed width and u8..u32 are int; u64 is BigInt, as int cannot hold its upper half. On the web, i64 is exact only to 2^53, which this table drops.
+- A refusing return is null ({T}?), not a thrown ArgumentError.
+
+Notes:
+
+- type `string`: UTF-16; every Unicode scalar value is representable
+- type `f64`: IEEE 754 binary64
+- type `secret-bytes`: no secret type; secrecy is dropped (fillRange can wipe a copy)
+- type `i8`: the width is the implementation's to check
+- type `i16`: the width is the implementation's to check
+- type `i32`: the width is the implementation's to check
+- type `i64`: exact on native; on the web int is a JavaScript number, exact only to 2^53
+- type `u8`: the width is the implementation's to check
+- type `u16`: the width is the implementation's to check
+- type `u32`: the width is the implementation's to check
+- type `u64`: int is signed 64-bit, so the upper half of u64 needs BigInt
+- outcome `refusing-return`: null is the refusal (sound null safety)
+- outcome `optional-input`: a required nullable parameter, valid in any position; null is the absent argument, passed explicitly. [{T}? x] (an optional positional parameter) may be used instead only when no required parameter follows it
+- literal `ascii`: dart:convert
+- literal `str`: non-ASCII as \u{…} escapes; $ escaped as \$
+- literal `int`: BigInt.parse('…') for u64
+- literal `f64`: from its bits on native, so -0 and NaN payloads are exact
+
+</details>
 
 ---
 
