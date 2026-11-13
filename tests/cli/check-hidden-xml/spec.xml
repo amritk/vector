@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rfc version="3">
+  <front><title>Hidden text</title></front>
+  <middle>
+    <section anchor="intro" numbered="true">
+      <name>Introduction</name>
+      <t>nameOk <bcp14>MUST</bcp14> return true for the empty name, "".</t>
+      <t>A label MUS&#x422; not be empty.</t>
+    </section>
+  </middle>
+</rfc>

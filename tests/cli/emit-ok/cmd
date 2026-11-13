@@ -1,0 +1,1 @@
+vector spec emit contracts/rfc5869-hkdf-sha256.json -o dist/emit-ok-golden.ts

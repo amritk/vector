@@ -1,0 +1,3 @@
+Validation failed:
+  ✘ usdToEur/body: "usdToEur" (layer 1) may only call strictly lower layers, but calls "applyRate" (layer 1)
+  ✘ function "usdToEur": layer 1 disagrees with spec unit layer 2

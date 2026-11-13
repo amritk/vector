@@ -1,0 +1,4 @@
+### ❌ spec stale tests/cli/pr-stale-stale/t.ts against tests/cli/pr-stale-stale/c.json: FAILED
+
+**problems:**
+- ❌ tests/cli/pr-stale-stale/t.ts: stale: emitted from a contract with sha256 2862af9f52f638bce7ccc650775df4365a0c5ab36b457471863563b4d6994c5d, but the contract's is f9935d6ed21bad6ac5fcb06e053f7096c9658ac47f1463dabcfd263cc7a2d4dd: regenerate it with vector spec emit

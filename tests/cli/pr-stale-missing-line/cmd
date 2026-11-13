@@ -1,0 +1,1 @@
+vector spec stale tests/cli/pr-stale-missing-line/t.ts tests/cli/pr-stale-ok/c.json --format json

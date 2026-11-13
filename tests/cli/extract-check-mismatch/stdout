@@ -1,0 +1,11 @@
+--- tests/cli/extract-check-mismatch/stale.json
++++ tests/cli/extract-check-mismatch/stale.json (extracted from specs/rfc5869-hkdf-sha256.xml)
+@@ -4,7 +4,7 @@
+   "source": {
+     "rfc": 5869,
+     "title": "HMAC-based Extract-and-Expand Key Derivation Function (HKDF)",
+-    "sha256": "0a40eb3835b35fc947eb12a2ed614db079d43b26e50dbc537c31fba16397089c"
++    "sha256": "7a40eb3835b35fc947eb12a2ed614db079d43b26e50dbc537c31fba16397089c"
+   },
+   "sources": [
+     {

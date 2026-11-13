@@ -1,0 +1,1 @@
+vector verify tests/fixtures/currency-spec.json tests/fixtures/currency.json

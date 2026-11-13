@@ -1,0 +1,1 @@
+vector spec emit contracts/example-hex.json -o dist/emit-example-hex-golden.ts

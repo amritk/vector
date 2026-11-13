@@ -1,0 +1,49 @@
+{
+  "programName": "diffcase",
+  "functions": [
+    {
+      "name": "f",
+      "layer": 1,
+      "purpose": "f under test",
+      "params": [{ "name": "x", "type": "Real" }],
+      "returnType": "Real",
+      "requires": [
+        {
+          "axiomId": "f_R0",
+          "expr": {
+            "kind": "binop",
+            "op": ">",
+            "left": { "kind": "var", "name": "x" },
+            "right": { "kind": "num", "value": "3.1" }
+          }
+        },
+        {
+          "axiomId": "f_R1",
+          "expr": {
+            "kind": "binop",
+            "op": "<",
+            "left": { "kind": "var", "name": "x" },
+            "right": { "kind": "num", "value": "3.2" }
+          }
+        }
+      ],
+      "ensures": [
+        {
+          "axiomId": "f_E0",
+          "expr": {
+            "kind": "binop",
+            "op": "==",
+            "left": { "kind": "var", "name": "result" },
+            "right": { "kind": "var", "name": "result" }
+          }
+        }
+      ],
+      "body": {
+        "kind": "binop",
+        "op": "+",
+        "left": { "kind": "var", "name": "x" },
+        "right": { "kind": "num", "value": "0.3" }
+      }
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+vector: spec extract: --check needs -o <contract.json>

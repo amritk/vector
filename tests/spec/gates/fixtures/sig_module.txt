@@ -1,0 +1,17 @@
+A module for the signatures gate's test, kept as .txt so no linter rewrites
+it: what it exports is the point.
+
+/** Right. */
+export const derive = (salt: u8[] | null, ikm: Secret<u8[]>, n: u32): u8[] => new Uint8Array(0)
+
+/** A wrong return, over lines. */
+export const check = (
+  a: string,
+  b: Map<string, i32>,
+): boolean => true
+
+/** Generic: left out. */
+export const pick = <T>(a: T): T => a
+
+/** Not a function. */
+export const LIMIT: i32 = 3

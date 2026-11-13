@@ -1,0 +1,1 @@
+vector: spec frozen: --base main..HEAD contains "..": give one ref, not a range

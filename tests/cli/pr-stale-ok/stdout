@@ -1,0 +1,1 @@
+spec stale tests/cli/pr-stale-ok/t.ts against tests/cli/pr-stale-ok/c.json: OK

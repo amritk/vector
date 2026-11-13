@@ -1,0 +1,1 @@
+vector: spec exports: tests/cli/pr-exports-unreadable/missing.json: not a contract: tests/cli/pr-exports-unreadable/missing.json: cannot be read

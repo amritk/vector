@@ -1,12 +1,12 @@
 /**
  * `cli/spec-emit` — `vector spec emit`: emit the Nish test a contract implies.
  *
- * Only the command's shape is declared so far; its handler is a stub that
- * exits 2.
+ * The command itself is `emitCommand` in `spec/emit/file`; this file declares its
+ * flags and hands them over.
  */
 
 import { Cli, ParseResult } from "nish/cli-args"
-import { report, usageError } from "../core/diag"
+import { emitCommand } from "../spec/emit/file"
 
 /** The id `vector spec emit` is parsed to. */
 export const SPEC_EMIT_ID: i32 = 5
@@ -47,13 +47,15 @@ export class SpecEmitCommand {
   }
 
   /**
-   * Runs the command.
+   * Runs the command: writes the test to `-o`. `--spec`, `--nish-root`,
+   * `--nish` and `--format` are the shape `spec run` shares; emit reads none
+   * of them.
    *
-   * @param _r the parsed arguments (unread until the handler lands)
+   * @param r the parsed arguments
    * @returns the exit code
    */
-  run(_r: ParseResult): i32 {
-    return report(usageError("spec emit: not implemented yet"))
+  run(r: ParseResult): i32 {
+    return emitCommand(r.positional(this.contractJsonArg) ?? "", r.value(this.outFlag))
   }
 }
 

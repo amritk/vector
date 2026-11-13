@@ -1,0 +1,150 @@
+name: Spec
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  spec-xml-drift:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the pinned spec tools
+        run: |
+          gem install kramdown-rfc -v 1.7.43 --no-document
+          pip install xml2rfc==3.35.0
+
+      - name: "specs/*.xml match a rebuild of specs/*.md (offline)"
+        run: |
+          status=0
+          for f in specs/*.md; do
+            bash scripts/build-spec.sh --check "$f" || status=1
+          done
+          exit "$status"
+
+      # The old suite's test/build-spec.test.ts, as shell: here the pinned
+      # tools are present, so none of it skips.
+      - name: "build-spec.sh golden cases (tools present, so none skip)"
+        run: |
+          set -u
+          fail() { echo "::error::build-spec golden: $1"; exit 1; }
+          fx=tests/fixtures/kramdown/profile.md
+          fxml=tests/fixtures/kramdown/profile.xml
+          # expect <code> <name> <args...>: runs the script, keeps stdout and stderr.
+          expect() {
+            want=$1; name=$2; shift 2
+            set +e; bash scripts/build-spec.sh "$@" >"$RUNNER_TEMP/out" 2>"$RUNNER_TEMP/err"; got=$?; set -e
+            [ "$got" = "$want" ] || { cat "$RUNNER_TEMP/err"; fail "$name: exit $got, not $want"; }
+          }
+          has() { grep -qF -- "$2" "$RUNNER_TEMP/$1" || fail "$3: $1 lacks: $2"; }
+          # copy <sed script>: a scratch copy of the fixture at $md, edited,
+          # in a directory under $RUNNER_TEMP that the next copy replaces.
+          copy() {
+            d=$RUNNER_TEMP/build-spec-copy; rm -rf "$d"; mkdir -p "$d"
+            md=$d/spec.md; xml=$d/spec.xml
+            sed "$1" "$fx" >"$md"
+          }
+          ruby() { sed 's/(Ruby [^)]*)/(Ruby)/' "$1"; }
+
+          expect 2 "no spec"
+          has err "usage: scripts/build-spec.sh" "no spec"
+          expect 2 "not .md" spec.txt
+          has err "is not a .md file" "not .md"
+          set +e; PATH=/usr/bin:/bin bash scripts/build-spec.sh "$fx" 2>"$RUNNER_TEMP/err"; got=$?; set -e
+          [ "$got" = 2 ] || fail "missing tools: exit $got"
+          has err "kramdown-rfc is not installed" "missing tools"
+          has err "gem install kramdown-rfc -v 1.7.43 --no-document" "missing tools"
+          has err "pip install xml2rfc==3.35.0" "missing tools"
+
+          expect 0 "the committed profile.xml is current" --check "$fx"
+          [ ! -s "$RUNNER_TEMP/err" ] || fail "the committed profile.xml is current: stderr is not empty"
+
+          copy ''
+          expect 0 "a rebuild" "$md"
+          diff <(ruby "$xml") <(ruby "$fxml") || fail "a rebuild differs from profile.xml beyond the Ruby version"
+
+          copy 's/two characters per input byte/2 chars per byte/'
+          cp "$fxml" "$xml"
+          expect 1 "--check on drift" --check "$md"
+          has out '-        <t anchor="R-ENC-LEN">hexEncode <bcp14>MUST</bcp14> return exactly two characters per input byte.</t>' "--check on drift"
+          has out '+        <t anchor="R-ENC-LEN">hexEncode <bcp14>MUST</bcp14> return exactly 2 chars per byte.</t>' "--check on drift"
+          has err "is out of date with" "--check on drift"
+
+          copy ''
+          perl -0pe 's/<!--.*?-->/<!-- changed -->/gs; s/<\?line -?\d+\?>/<?line 1?>\n<!-- extra -->/g' "$fxml" >"$xml"
+          expect 0 "--check ignores comments and processing instructions" --check "$md"
+          perl -0pi -e 's/<t anchor=/<t  anchor=/' "$xml"
+          expect 1 "--check sees a changed element" --check "$md"
+
+          copy 's/^date: 2026-11-11$/date: 2026-11-11\nvector-contract: x/'
+          expect 1 "an unknown front-matter key" "$md"
+          grep -qE '\*\*\* attributes left \{"vector-contract"\s*=>\s*"x"\}!' "$RUNNER_TEMP/err" || fail "an unknown front-matter key: no attributes-left error"
+
+          copy 's/^  RFC4648:$/  RFC4648:\n  RFC9999:/'
+          expect 1 "a reference not in .refcache" "$md"
+          has err "run once with --fetch" "a reference not in .refcache"
+
+          copy '/^date: 2026-11-11$/d'
+          expect 1 "no date" "$md"
+          has err "front matter has no date: line" "no date"
+
+          copy 's/^date: 2026-11-11$/date: 11 November 2026/'
+          expect 1 "a date not YYYY-MM-DD" "$md"
+          has err "is not an ISO YYYY-MM-DD date" "a date not YYYY-MM-DD"
+
+          copy 's/^date: 2026-11-11$/date: 2020-01-15/'
+          expect 0 "an old date" "$md"
+          [ ! -s "$RUNNER_TEMP/err" ] || fail "an old date: stderr is not empty"
+
+  spec-extract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install the LLVM toolchain nish links with
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 lld-18 llvm-18
+          mkdir -p "$HOME/.local/llvm-bin"
+          for t in clang llc opt ld.lld; do ln -sf "/usr/bin/$t-18" "$HOME/.local/llvm-bin/$t"; done
+          echo "$HOME/.local/llvm-bin" >> "$GITHUB_PATH"
+
+      - name: Cache the pinned nish and z3
+        uses: actions/cache@v4
+        with:
+          path: |
+            .nish
+            .z3
+          key: toolchain-${{ runner.os }}-${{ hashFiles('scripts/fetch-nish.sh', 'scripts/fetch-z3.sh') }}
+
+      - name: Fetch the pinned nish compiler
+        run: bash scripts/fetch-nish.sh
+
+      - name: Fetch the pinned z3
+        run: bash scripts/fetch-z3.sh
+
+      - name: Build
+        run: npm run build
+
+      - name: "contracts/*.json match an extract of specs/*.xml"
+        run: |
+          status=0
+          for f in specs/*.xml; do
+            ./dist/vector spec extract "$f" -o "contracts/$(basename "$f" .xml).json" --check || status=1
+          done
+          exit "$status"

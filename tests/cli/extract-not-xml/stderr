@@ -1,0 +1,1 @@
+vector: spec extract: reads an RFC XML v3 spec (.xml), not tests/fixtures/xmlv3/kramdown.txt

@@ -1,0 +1,1 @@
+vector verify --emit tests/cli/verify-emit-refuted/never.ts tests/fixtures/unsat-spec.json tests/fixtures/unsat.json

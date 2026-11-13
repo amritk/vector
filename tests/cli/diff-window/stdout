@@ -1,0 +1,12 @@
+── VECTOR DIFF ─────────────────────────────────────────
+ old: diffcase   new: diffcase
+ Solver: Z3 4.16.0 (native)
+ Status: DIFFERENT
+
+ ✘ f(x: Real): Real — equal over the reals, but the emitted float64 code DIFFERS
+     float64: at x = 3.15 → old = 3.45, new = 3.4499999999999997
+
+ Review each listed delta against the change you intended —
+ the witnesses above are the entire behavioral change.
+ (Proven over exact rationals, then compared on sampled float64 inputs;
+  assumes both versions pass vector verify.)

@@ -1,0 +1,29 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ rfc5869-hkdf-sha256 · RFC 5869 (HMAC-based Extract-and-Expand Key Derivation Function (HKDF)) · nish/crypto/hkdf
+ Status: INVALID
+
+ Gate failures
+  ✘ fidelity R-SALT: quote not found in RFC §2.2 ("Step 1: Extract"): "if not provided, it is set to a string of HashLen ones."
+
+ Requirements
+  ○ R-EXTRACT  §2.2 DEFINITION  "PRK = HMAC-Hash(salt, IKM)"
+      ○ A.1-PRK  ○ A.2-PRK  ○ A.3-PRK  ○ P-EXTRACT-IS-HMAC (33 samples: 9 boundary)
+  ○ R-SALT  §2.2 DEFINITION  "if not provided, it is set to a string of HashLen ones."
+      ○ A.3-PRK  ○ P-EMPTY-SALT (29 samples: 5 boundary)
+  ○ R-PRK-LEN  §2.2 DEFINITION  "PRK a pseudorandom key (of HashLen octets)"
+      ○ A.1-PRK  ○ A.2-PRK  ○ A.3-PRK  ○ P-PRK-LEN (33 samples: 9 boundary)
+  ○ R-L  §2.3 DEFINITION  "L length of output keying material in octets (<= 255*HashLen)"
+      ○ P-EXPAND-LENGTH (40 samples: 16 boundary)
+  ○ R-INFO-EMPTY  §2.3 DEFINITION  "info optional context and application specific information (can…"
+      ○ A.3-OKM
+  ○ R-OKM-LEN  §2.3 DEFINITION  "OKM output keying material (of L octets)"
+      ○ A.1-OKM  ○ A.2-OKM  ○ A.3-OKM  ○ P-EXPAND-LENGTH (40 samples: 16 boundary)
+  ○ R-OKM-FIRST  §2.3 DEFINITION  "OKM = first L octets of T"
+      ○ A.1-OKM  ○ A.2-OKM  ○ A.3-OKM  ○ P-PREFIX (43 samples: 19 boundary)
+  ○ R-T  §2.3 DEFINITION  "T(0) = empty string (zero length) T(1) = HMAC-Hash(PRK, T(0) | …"
+      ○ A.1-OKM  ○ A.2-OKM  ○ A.3-OKM  ○ P-T1-T2 (33 samples: 9 boundary)
+
+ Warnings
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

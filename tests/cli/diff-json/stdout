@@ -1,0 +1,93 @@
+{
+  "status": "DIFFERENT",
+  "report": {
+    "solver": "Z3 4.16.0 (native)",
+    "oldProgramName": "usd_to_eur_converter",
+    "newProgramName": "usd_to_eur_converter",
+    "matched": [
+      {
+        "name": "applyRate",
+        "signature": "applyRate(value: Real, rate: Real): Real",
+        "paramRenames": [
+          {
+            "oldName": "amount",
+            "newName": "value"
+          }
+        ],
+        "domainNarrowed": {
+          "status": "none"
+        },
+        "domainWidened": {
+          "status": "none"
+        },
+        "valueDiff": {
+          "status": "none"
+        },
+        "status": "EQUIVALENT",
+        "equivalent": true,
+        "equivalentOverReals": true,
+        "vacuous": false,
+        "contractChanges": {
+          "requiresAdded": [],
+          "requiresRemoved": [],
+          "ensuresAdded": [
+            "result == value * rate"
+          ],
+          "ensuresRemoved": [
+            "result == amount * rate"
+          ]
+        }
+      },
+      {
+        "name": "usdToEur",
+        "signature": "usdToEur(amount: Real): Real",
+        "paramRenames": [],
+        "domainNarrowed": {
+          "status": "witness",
+          "witness": {
+            "inputs": {
+              "amount": "0"
+            }
+          }
+        },
+        "domainWidened": {
+          "status": "none"
+        },
+        "valueDiff": {
+          "status": "witness",
+          "witness": {
+            "inputs": {
+              "amount": "100"
+            },
+            "oldResult": "91",
+            "newResult": "92"
+          }
+        },
+        "status": "DIFFERENT",
+        "equivalent": false,
+        "equivalentOverReals": false,
+        "vacuous": false,
+        "contractChanges": {
+          "requiresAdded": [
+            "amount > 0"
+          ],
+          "requiresRemoved": [
+            "amount >= 0"
+          ],
+          "ensuresAdded": [
+            "result == amount * 0.92"
+          ],
+          "ensuresRemoved": [
+            "result == amount * 0.91"
+          ]
+        }
+      }
+    ],
+    "added": [],
+    "removed": [],
+    "signatureChanged": [],
+    "float64Deltas": [],
+    "float64Unsampled": []
+  },
+  "summary": "── VECTOR DIFF ─────────────────────────────────────────\n old: usd_to_eur_converter   new: usd_to_eur_converter\n Solver: Z3 4.16.0 (native)\n Status: DIFFERENT\n\n ✓ applyRate(value: Real, rate: Real): Real — EQUIVALENT for all inputs\n     note:   param renamed amount → value\n     contract: + ensures result == value * rate\n     contract: − ensures result == amount * rate\n ✘ usdToEur(amount: Real): Real — BEHAVIOR DIFFERS\n     value:  at amount = 100 → old = 91, new = 92\n     domain: amount = 0 was accepted, now REJECTED\n     contract: + requires amount > 0\n     contract: − requires amount >= 0\n     contract: + ensures result == amount * 0.92\n     contract: − ensures result == amount * 0.91\n\n Review each listed delta against the change you intended —\n the witnesses above are the entire behavioral change.\n (Proven over exact rationals, then compared on sampled float64 inputs;\n  assumes both versions pass vector verify.)"
+}

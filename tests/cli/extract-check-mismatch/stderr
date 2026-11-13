@@ -1,0 +1,1 @@
+vector: tests/cli/extract-check-mismatch/stale.json: is not what specs/rfc5869-hkdf-sha256.xml states; run: vector spec extract specs/rfc5869-hkdf-sha256.xml -o tests/cli/extract-check-mismatch/stale.json
