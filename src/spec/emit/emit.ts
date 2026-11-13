@@ -34,7 +34,11 @@ export class EmitOptions {
   /** The sha256 of the contract file, written as `// vector-contract-sha256: <hex>`. */
   contractSha256: string
 
-  /** @param contractSha256 the sha256 of the contract file's bytes, in hex */
+  /**
+   * Makes options with no regenerate line.
+   *
+   * @param contractSha256 the sha256 of the contract file's bytes, in hex
+   */
   constructor(contractSha256: string) {
     this.contractSha256 = contractSha256
   }

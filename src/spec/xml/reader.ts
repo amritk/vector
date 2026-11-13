@@ -52,11 +52,17 @@ export class XmlNode {
   name: string
   /** Character data's text, references resolved; "" for an element. */
   text: string
+  /** The attributes' names, in the order written. */
   attrNames: string[]
+  /** The attributes' values, at the same index as `attrNames`. */
   attrValues: string[]
+  /** The enclosing element; null for the root. */
   parent: XmlNode | null = null
+  /** The first child; null without one. */
   first: XmlNode | null = null
+  /** The last child; null without one. */
   last: XmlNode | null = null
+  /** The next sibling; null for the last. */
   next: XmlNode | null = null
   /** The 1-based XML line it starts on. */
   line: i32
@@ -91,6 +97,7 @@ export class XmlError {
   col: i32
   /** The markdown line, after a `<?line N?>`; -1 when none. */
   mdLine: i32
+  /** Why the input was refused. */
   message: string
   /**
    * Makes an error.

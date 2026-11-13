@@ -14,9 +14,13 @@ import { emitQuote } from "../emit/lit"
 
 /** A clause's outcome, ordered from best to worst: a requirement takes its clauses' worst. */
 export enum RunOutcome {
+  /** The clause ran and held. */
   Pass = 0,
+  /** The clause was left out on purpose. */
   Skip = 1,
+  /** The clause could not be run. */
   NotRun = 2,
+  /** The clause ran and did not hold. */
   Fail = 3,
 }
 

@@ -15,22 +15,31 @@ export const SAMPLE_UNDEFINED: string = "unwrap of null"
 
 /** Which kind of value. */
 export enum SampleKind {
+  /** An integer. */
   Int = 0,
+  /** A byte string. */
   Bytes = 1,
+  /** A string. */
   Str = 2,
+  /** A boolean. */
   Bool = 3,
+  /** `null`. */
   Null = 4,
 }
 
 /** A value as the evaluator holds it. */
 export class SampleValue {
+  /** Which of the fields below holds the value. */
   kind: SampleKind
   /** An integer's value (see `spec/sample/ints`). */
   n: i64
   /** An integer's type; "" for a bare literal, which takes the other operand's. */
   ty: string
+  /** A bytes value's content. */
   bytes: u8[]
+  /** A string's content. */
   text: string
+  /** A boolean's value. */
   flag: boolean
   /**
    * Makes a value of a kind, zero until set.

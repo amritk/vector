@@ -39,6 +39,7 @@ export class XmlXrefInfo {
 
 /** What rendering needs of the document: each xref's worked-out text. */
 export class XmlText {
+  /** The worked-out text of each `<xref>`, keyed by its node. */
   xrefs: Map<XmlNode, XmlXrefInfo>
   /** Makes an empty context. */
   constructor() {
@@ -50,7 +51,9 @@ export class XmlText {
 export class XmlNormative {
   /** The section's number; "" for an unnumbered section. */
   section: string
+  /** The BCP 14 keyword the markup names, or `DEFINITION`. */
   level: string
+  /** The sentence's text. */
   sentence: string
   /** The sentence's first `<bcp14>`. */
   node: XmlNode
@@ -552,6 +555,7 @@ export const xmlPlainTextOfNodes = (t: XmlText, nodes: XmlNode[]): string => xml
 export class XmlCode {
   /** Its type attribute; null when it has none. */
   type: string | null
+  /** The block's text, as written. */
   text: string
   /** The XML line its text starts on. */
   line: i32
@@ -615,7 +619,9 @@ export const xmlCodeOf = (n: XmlNode): XmlCode => {
 
 /** A table cell, and whether it is a header cell. */
 export class XmlCell {
+  /** The cell's element. */
   node: XmlNode
+  /** True for a `<th>`. */
   header: boolean
   /**
    * Makes a cell.
@@ -706,7 +712,9 @@ const xmlHoldsBlocks = (n: XmlNode): boolean => {
 
 /** A section's lines being built, and the normative sentences found. */
 export class XmlLines {
+  /** The document's xref texts. */
   t: XmlText
+  /** The normative sentences found so far, in document order. */
   normative: XmlNormative[]
   /** Makes a builder. @param t the document's xref texts */
   constructor(t: XmlText) {

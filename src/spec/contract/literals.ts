@@ -28,7 +28,9 @@ export enum RawKind {
   Bytes = 1,
   /** `(empty)`: no bytes. */
   Empty = 2,
+  /** `null`. */
   Null = 3,
+  /** `true` or `false`. */
   Bool = 4,
   /** A decimal integer. */
   Int = 5,
@@ -46,6 +48,7 @@ export enum RawKind {
 
 /** A literal as the cell writes it, before a type says what a string is. */
 export class RawLiteral {
+  /** The form the cell wrote. */
   kind: RawKind
   /**
    * A string's value, the hex digits of bytes, a labelled value and a run,
@@ -81,6 +84,7 @@ export class RawLiteral {
 
 /** Why a cell's text was refused, and where. */
 export class LiteralError {
+  /** Why the text was refused. */
   message: string
   /** The 1-based column, counted in characters, the refusal points at. */
   col: i32
@@ -98,7 +102,9 @@ export class LiteralError {
 
 /** A Call cell, parsed: the callee and its raw arguments. */
 export class RawCall {
+  /** The callee's name. */
   call: string
+  /** The arguments, in the order written. */
   args: RawLiteral[]
   /**
    * Makes a parsed call.
@@ -116,6 +122,7 @@ export class RawCall {
 export class CellError {
   /** "Call" or "Expected". */
   cell: string
+  /** Why the cell was refused. */
   message: string
   /**
    * Makes a cell error.
@@ -131,7 +138,9 @@ export class CellError {
 
 /** A vector's cells, settled: the arguments and the expected value. */
 export class SettledVector {
+  /** The call's arguments, in order, each settled by its parameter's type. */
   args: Literal[]
+  /** The expected value, settled by the function's return type. */
   expect: Literal
   /**
    * Makes a settled vector.

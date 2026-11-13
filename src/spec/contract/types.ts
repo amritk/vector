@@ -8,18 +8,27 @@
 
 /** Which key opens a literal. */
 export enum LitKind {
+  /** Opened by `hex`: bytes as hex digits. */
   Hex = 0,
+  /** Opened by `ascii`: printable ASCII text. */
   Ascii = 1,
+  /** Opened by `str`: a text string. */
   Str = 2,
+  /** Opened by `int`: an integer. */
   Int = 3,
+  /** Opened by `f64`: a binary64 value. */
   F64 = 4,
+  /** Opened by `bool`: true or false. */
   Bool = 5,
+  /** Opened by `null`: the absent value. */
   Null = 6,
+  /** Opened by `concat`: the parts joined. */
   Concat = 7,
 }
 
 /** A literal value: bytes, text, a number, a boolean, null, or a concatenation. */
 export class Literal {
+  /** Which key opened the literal. */
   kind: LitKind
   /** The hex digits, the ascii or str text, the int's decimal text, or the f64's text. */
   text: string
@@ -38,6 +47,8 @@ export class Literal {
   /** A concat literal's parts. */
   parts: Literal[]
   /**
+   * Makes a literal of one form.
+   *
    * @param kind the key that opens the literal
    * @param text its value as text, or "" for bool, null and concat
    */
@@ -52,18 +63,27 @@ export class Literal {
 
 /** Which form an expression takes. */
 export enum ExprKind {
+  /** A literal. */
   Lit = 0,
+  /** A variable of the clause. */
   Var = 1,
+  /** A call of a function. */
   Call = 2,
+  /** An operator applied to arguments. */
   Op = 3,
+  /** A let: bindings and a body. */
   Let = 4,
 }
 
 /** One `{name, value}` binding of a let. */
 export class LetBinding {
+  /** The name the let binds. */
   name: string
+  /** The expression the name stands for. */
   value: Expr
   /**
+   * Binds a name to an expression.
+   *
    * @param name the name bound
    * @param value the expression it is bound to
    */
@@ -75,6 +95,7 @@ export class LetBinding {
 
 /** An expression of a property clause: a literal, a variable, a call, an operator, or a let. */
 export class Expr {
+  /** Which form the expression takes. */
   kind: ExprKind
   /** A literal expression's literal. */
   lit: Literal | null = null
@@ -87,6 +108,8 @@ export class Expr {
   /** A let's body. */
   body: Expr | null = null
   /**
+   * Makes an expression of one form.
+   *
    * @param kind the expression's form
    * @param name the variable, function or operator it names, or ""
    */
@@ -100,9 +123,13 @@ export class Expr {
 
 /** A per-language override of a module path or a name. */
 export class NameOverride {
+  /** The language the override is for. */
   language: string
+  /** The module path or name that language uses. */
   value: string
   /**
+   * Overrides a module path or name for one language.
+   *
    * @param language a language from vocabLanguages
    * @param value the module path or name in that language
    */
@@ -114,11 +141,15 @@ export class NameOverride {
 
 /** The contract's `source`: its title and its main source. */
 export class ContractSource {
+  /** The main source's title. */
   title: string
   /** The main RFC's number; -1 when absent. */
   rfc: i32 = -1
+  /** The id of the main entry of `sources`; null when `rfc` is given. */
   main: string | null = null
+  /** The sha256 of the main source file, which `spec frozen` checks. */
   sha256: string | null = null
+  /** Starts with no title or main source. */
   constructor() {
     this.title = ""
   }
@@ -126,6 +157,7 @@ export class ContractSource {
 
 /** A document the contract cites: an RFC by number, a file, or both. */
 export class SourceDecl {
+  /** The id citations use to name this source. */
   id: string
   /** The RFC's number; -1 when absent. */
   rfc: i32 = -1
@@ -133,7 +165,9 @@ export class SourceDecl {
   path: string | null = null
   /** The file read for it from the repository root, like rfcs/rfc4648.txt. */
   file: string | null = null
+  /** The sha256 of the file read, which `spec check` and `spec frozen` compare. */
   sha256: string | null = null
+  /** Starts with no id or file. */
   constructor() {
     this.id = ""
   }
@@ -141,8 +175,11 @@ export class SourceDecl {
 
 /** The module under test. */
 export class Target {
+  /** The module path, neutral across languages. */
   module: string
+  /** Per-language overrides of the module path. */
   modules: NameOverride[] | null = null
+  /** Starts with no module. */
   constructor() {
     this.module = ""
   }
@@ -150,12 +187,19 @@ export class Target {
 
 /** A requirement quoted from a source. */
 export class Requirement {
+  /** A stable id for the requirement. */
   id: string
+  /** The id of the cited source; null for the main one. */
   source: string | null = null
+  /** The section the quote is from. */
   section: string
+  /** The BCP 14 keyword, or DEFINITION. */
   level: string
+  /** The sentence, verbatim from the section. */
   quote: string
+  /** A remark on how the requirement is read; null when none. */
   note: string | null = null
+  /** Starts with no id, section, level or quote. */
   constructor() {
     this.id = ""
     this.section = ""
@@ -166,10 +210,15 @@ export class Requirement {
 
 /** A sentence of a source the contract leaves untested, and why. */
 export class Exclusion {
+  /** The id of the cited source; null for the main one. */
   source: string | null = null
+  /** The section the sentence is from. */
   section: string
+  /** The sentence, verbatim from the section. */
   quote: string
+  /** Why the sentence is not tested. */
   reason: string
+  /** Starts with no section, quote or reason. */
   constructor() {
     this.section = ""
     this.quote = ""
@@ -179,9 +228,13 @@ export class Exclusion {
 
 /** A parameter of a function under test. */
 export class Param {
+  /** The parameter's name. */
   name: string
+  /** The parameter's type, like `bytes` or `u32`. */
   type: string
+  /** Per-language overrides of the name. */
   names: NameOverride[] | null = null
+  /** Starts with no name or type. */
   constructor() {
     this.name = ""
     this.type = ""
@@ -190,11 +243,17 @@ export class Param {
 
 /** A function under test: its name and signature. */
 export class FnSig {
+  /** The function's name. */
   name: string
+  /** The module it lives in, for a reference function from another module; null otherwise. */
   module: string | null = null
+  /** Its parameters, in order. */
   params: Param[]
+  /** Its result type, like `bytes` or `i32?`. */
   returns: string
+  /** Per-language overrides of the name. */
   names: NameOverride[] | null = null
+  /** Starts with no name, parameters or result. */
   constructor() {
     this.name = ""
     this.returns = ""
@@ -204,8 +263,11 @@ export class FnSig {
 
 /** A section of a source; the main source when `source` is null. */
 export class Citation {
+  /** The id of the cited source; null for the main one. */
   source: string | null = null
+  /** The section cited. */
   section: string
+  /** Starts with no source or section. */
   constructor() {
     this.section = ""
   }
@@ -223,12 +285,17 @@ export enum VectorSourceKind {
 
 /** A vector's provenance. */
 export class VectorSource {
+  /** Which provenance it is. */
   kind: VectorSourceKind
   /** A cited vector's citation. */
   cite: Citation | null = null
   /** The command, or the spec's section. */
   text: string
-  /** @param kind which provenance it is */
+  /**
+   * Starts a provenance of one kind, with no text.
+   *
+   * @param kind which provenance it is
+   */
   constructor(kind: VectorSourceKind) {
     this.text = ""
     this.kind = kind
@@ -243,9 +310,13 @@ export class Tolerance {
   abs: string
   /** An ulps tolerance; -1 when absent. */
   ulps: i64 = -1
+  /** The id of the source that allows the tolerance; null for the main one. */
   source: string | null = null
+  /** The section that allows it. */
   section: string
+  /** The sentence that allows it, verbatim. */
   quote: string
+  /** Starts with no bound, section or quote. */
   constructor() {
     this.isUlps = false
     this.abs = ""
@@ -256,21 +327,27 @@ export class Tolerance {
 
 /** A variable a property quantifies over, and its domain. */
 export class ForallVar {
+  /** The variable's name. */
   name: string
+  /** The variable's type. */
   type: string
   /** An integer's or an f64's bounds as text. */
   min: string
+  /** The upper bound as text. */
   max: string
   /** An integer bound written as a JSON string. */
   minQuoted: boolean
+  /** Whether max was written as a JSON string. */
   maxQuoted: boolean
   /** Whether min and max are given (integers and f64). */
   hasBounds: boolean
   /** A bytes or string length bound; -1 when absent. */
   minLen: i32 = -1
+  /** The longest length; -1 when absent. */
   maxLen: i32 = -1
   /** A string's alphabet: characters and class names. */
   alphabet: string[] | null = null
+  /** Starts with no name, type or bounds. */
   constructor() {
     this.name = ""
     this.type = ""
@@ -284,30 +361,47 @@ export class ForallVar {
 
 /** Which kind of clause. */
 export enum ClauseKind {
+  /** A known-answer test vector. */
   Vector = 0,
+  /** A property over a domain. */
   Property = 1,
 }
 
 /** A clause: a test vector or a property. */
 export class Clause {
+  /** Whether it is a vector or a property. */
   kind: ClauseKind
+  /** A stable id for the clause. */
   id: string
+  /** A short description of what the clause checks. */
   title: string
+  /** The ids of the requirements it tests. */
   covers: string[]
   /** A vector's provenance. */
   source: VectorSource | null = null
   /** The main-source section printing a vector's args. */
   section: string | null = null
+  /** The function the clause calls. */
   call: string
+  /** A vector's arguments. */
   args: Literal[]
+  /** A vector's expected result. */
   expect: Literal | null = null
+  /** How far an f64 result may be from expect; null when exact. */
   tolerance: Tolerance | null = null
+  /** The variables a property quantifies over. */
   forall: ForallVar[]
+  /** A property's restriction of its domain; null when none. */
   where: Expr | null = null
+  /** The expression a property asserts. */
   assert: Expr | null = null
   /** A property's random samples; -1 when absent. */
   samples: i32 = -1
-  /** @param kind a vector or a property */
+  /**
+   * Starts a clause of one kind, with the rest empty.
+   *
+   * @param kind a vector or a property
+   */
   constructor(kind: ClauseKind) {
     this.id = ""
     this.title = ""
@@ -321,8 +415,11 @@ export class Clause {
 
 /** An export of the target module the contract does not test, and why. */
 export class OutOfScope {
+  /** The untested export. */
   name: string
+  /** Why it is not tested. */
   reason: string
+  /** Starts with no name or reason. */
   constructor() {
     this.name = ""
     this.reason = ""
@@ -331,9 +428,13 @@ export class OutOfScope {
 
 /** A line of the module whose surviving mutants are accepted, and why. */
 export class AllowedSurvivor {
+  /** The source file, relative to the implementation's root. */
   file: string
+  /** The line whose surviving mutants are accepted. */
   line: i64 = -1
+  /** Why they are accepted. */
   reason: string
+  /** Starts with no file, line or reason. */
   constructor() {
     this.file = ""
     this.reason = ""
@@ -342,17 +443,29 @@ export class AllowedSurvivor {
 
 /** A contract: what a module must do, quoted from its sources, and the clauses that test it. */
 export class Contract {
+  /** The schema the file declares, when it does; null otherwise. */
   schema: string | null = null
+  /** The contract's id. */
   contract: string
+  /** The main source. */
   source: ContractSource
+  /** The documents cited, by id; null when only `source.rfc` is used. */
   sources: SourceDecl[] | null = null
+  /** The module under test. */
   target: Target
+  /** The quoted requirements. */
   requirements: Requirement[]
+  /** Sentences deliberately not tested. */
   exclusions: Exclusion[] | null = null
+  /** The signatures of the functions under test. */
   functions: FnSig[]
+  /** The vectors and properties that test the requirements. */
   clauses: Clause[]
+  /** Exports deliberately not tested. */
   outOfScope: OutOfScope[] | null = null
+  /** Lines whose surviving mutants are accepted. */
   allowSurvivors: AllowedSurvivor[] | null = null
+  /** Starts with every part empty. */
   constructor() {
     this.contract = ""
     this.source = new ContractSource()
