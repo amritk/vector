@@ -27,7 +27,7 @@ import { gateProvenance } from "./gates/provenance"
 import { gateRunSources } from "./gates/run"
 import { gateSignatures } from "./gates/signatures"
 import { gateTyping } from "./gates/typing"
-import { SourceSet } from "./source/load"
+import { SourceReader, SourceReaders, SourceSet, sourceReadersAdd, sourceReadersDefault } from "./source/load"
 
 /** One sampled input of a property: the values its variables take, and why. */
 export class Sample {
@@ -191,6 +191,8 @@ export class CheckContext {
   sampleStats: CheckSampleStat[]
   /** Why a tool the gates need (z3) failed, which exits 2; null when none did. Each run starts null. */
   toolFailure: string | null = null
+  /** The readers sources are read with, by extension; sourceReadersDefault until checkAddReader adds one. */
+  readers: SourceReaders
   /**
    * Makes a context.
    *
@@ -209,8 +211,22 @@ export class CheckContext {
     this.runTimeoutMs = 30000
     this.format = "text"
     this.sampleStats = []
+    this.readers = sourceReadersDefault()
   }
 }
+
+/**
+ * Adds a source reader to a check's readers, so the gates read sources with
+ * that extension (`.xml`) with it; it replaces one already there.
+ *
+ * @param ctx the check's context
+ * @param ext the extension, with its leading dot: ".xml"
+ * @param read the reader
+ * @returns `Ok(true)` when added, `Err` (as sourceReadersAdd) when `ext` is
+ *   not a leading dot and a name; nothing is added then
+ */
+export const checkAddReader = (ctx: CheckContext, ext: string, read: SourceReader): Result<boolean, string> =>
+  sourceReadersAdd(ctx.readers, ext, read)
 
 /** A gate: every finding in `ctx.contract`, one message each; empty when it passes. */
 export type CheckGate = (ctx: CheckContext) => string[]

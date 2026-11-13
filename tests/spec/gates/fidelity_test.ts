@@ -22,7 +22,8 @@ const FIDELITY_TEST_C: string = `{
     {"name": "f", "params": [{"name": "a", "type": "bytes"}, {"name": "b", "type": "bytes"}], "returns": "bytes"},
     {"name": "g", "params": [{"name": "a", "type": "bytes"}, {"name": "n", "type": "u32"}], "returns": "bytes"},
     {"name": "hmacSha256", "params": [{"name": "a", "type": "bytes"}], "returns": "bytes"},
-    {"name": "s", "params": [{"name": "a", "type": "string"}], "returns": "bytes"}
+    {"name": "s", "params": [{"name": "a", "type": "string"}], "returns": "bytes"},
+    {"name": "h", "params": [{"name": "a", "type": "bytes"}], "returns": "string"}
   ],
   "clauses": [
     {"kind": "vector", "id": "V1", "title": "t", "covers": ["R1"], "source": {"cite": {"section": "3"}}, "call": "f",
@@ -44,7 +45,13 @@ const FIDELITY_TEST_C: string = `{
     {"kind": "vector", "id": "V9", "title": "t", "covers": ["R1"], "source": {"cite": {"section": "6"}}, "call": "s",
      "args": [{"str": ""}], "expect": {"hex": "aabb", "label": "OKM", "unchecked": "computed"}},
     {"kind": "vector", "id": "V10", "title": "t", "covers": ["R1"], "source": {"cite": {"section": "4"}}, "call": "f",
-     "args": [{"hex": "03", "label": "Key"}, {"hex": "04", "label": "Data"}], "expect": {"hex": "aabb", "unchecked": "computed"}}
+     "args": [{"hex": "03", "label": "Key"}, {"hex": "04", "label": "Data"}], "expect": {"hex": "aabb", "unchecked": "computed"}},
+    {"kind": "vector", "id": "V11", "title": "t", "covers": ["R1"], "source": {"cite": {"section": "7"}}, "call": "h",
+     "args": [{"hex": "000ff0ff"}], "expect": {"str": "000ff0ff"}},
+    {"kind": "vector", "id": "V12", "title": "t", "covers": ["R1"], "source": {"cite": {"section": "7"}}, "call": "h",
+     "args": [{"hex": "000ff0fe"}], "expect": {"str": "000ff0ff"}},
+    {"kind": "vector", "id": "V13", "title": "t", "covers": ["R1"], "source": {"cite": {"section": "7"}}, "call": "h",
+     "args": [{"hex": "10"}], "expect": {"str": "000ff0ff"}}
   ]
 }`
 
@@ -81,15 +88,19 @@ const FIDELITY_TEST_RFC: string = `Request for Comments: 9999
 6.  Strings
 
    Message: "abc"
+
+7.  Calls
+
+   hexEncode([00 0f f0 ff]) returns "000ff0ff". See [10].
 `
 
-/** A context with the contract and a hand-built source set. */
-const fidelityTestCtx = (): CheckContext => {
+/** A context with the contract and a hand-built source set, its RFC read from `file`. */
+const fidelityTestCtx = (file: string): CheckContext => {
   const ctx = new CheckContext("contracts/c1.json", ".")
   ctx.contract = contractParse(FIDELITY_TEST_C, "c1").expect("parse")
   const set = new SourceSet()
   set.main = "rfc9999"
-  set.sources.push(new LoadedSource("rfc9999", "r.txt", "r.txt", rfcParse(FIDELITY_TEST_RFC)))
+  set.sources.push(new LoadedSource("rfc9999", file, file, rfcParse(FIDELITY_TEST_RFC)))
   ctx.sources = set
   return ctx
 }
@@ -101,7 +112,7 @@ const fidelityTestHas = (all: string[], head: string, body: string): boolean =>
 /** The fidelity gate. */
 export const main = (): i32 => {
   const t = new Suite("spec/gates/fidelity")
-  const all = gateFidelity(fidelityTestCtx())
+  const all = gateFidelity(fidelityTestCtx("r.txt"))
   t.ok("a quote that is there", !fidelityTestHas(all, "R1:", ""))
   t.ok(
     "an altered quote",
@@ -122,12 +133,18 @@ export const main = (): i32 => {
   t.ok("an unprinted integer", fidelityTestHas(all, "V4.args[1]:", `RFC §3 does not print "L" followed by 43`))
   t.ok("different rounds", fidelityTestHas(all, "V5:", "so they are from different test cases"))
   t.ok("one round", !fidelityTestHas(all, "V10:", "") && !fidelityTestHas(all, "V10.", ""))
+  t.ok("a byte list in plain text is not a value", fidelityTestHas(all, "V11.args[0]:", "4-byte value is not printed"))
+  t.ok("a reference in plain text is not a value", fidelityTestHas(all, "V13.args[0]:", "1-byte value is not printed"))
+  const xml = gateFidelity(fidelityTestCtx("r.xml"))
+  t.ok("bytes printed in brackets, from XML", !fidelityTestHas(xml, "V11", ""))
+  t.ok("a bracketed byte list in XML, not a reference", !fidelityTestHas(xml, "V13", ""))
+  t.ok("other bytes than the brackets'", fidelityTestHas(xml, "V12.args[0]:", "4-byte value is not printed in RFC §7"))
   t.ok("another variant", fidelityTestHas(all, "V6.expect:", "hmacSha256 names 256"))
   t.ok("part of a string", fidelityTestHas(all, "V7.args[0]:", "only part of a longer value"))
   t.ok("a whole string", !fidelityTestHas(all, "V8:", "") && !fidelityTestHas(all, "V8.", ""))
   t.ok("an empty string", fidelityTestHas(all, "V9.args[0]:", "the empty value is not printed"))
-  t.ok("findings", all.length === 14)
-  if (all.length !== 14) {
+  t.ok("findings", all.length === 17)
+  if (all.length !== 17) {
     console.log(all.join("\n"))
   }
   t.ok("a whole-word quote", gateQuoteWhole("It MUST NOT fail.", "MUST NOT fail."))

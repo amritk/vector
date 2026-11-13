@@ -10,7 +10,7 @@
  * follow it, and the entry `*n't` is any word ending in n't (with ' or ’).
  */
 
-import { asciiLower, split } from "nish/text"
+import { asciiLower, split, splitWhitespace } from "nish/text"
 import { rfcNormalize } from "../source/rfc"
 
 /** Words that, before a stated result in its sentence, deny or condition it. */
@@ -512,8 +512,8 @@ export const gateF64Printed = (lines: string, label: string): string[] => {
   return out
 }
 
-/** Abbreviations whose period does not end a sentence, each between bars. */
-const GATE_ABBREVIATIONS: string = "|e.g|E.g|i.e|I.e|etc|vs|cf|Cf|Fig|Sec|"
+/** Abbreviations whose period does not end a sentence, lowercase, each between bars; matched ignoring case. */
+const GATE_ABBREVIATIONS: string = "|e.g|i.e|etc|vs|cf|fig|sec|al|a.k.a|"
 
 /** The length of a list bullet (`o `, `* `, `- `) at an offset, or 0. */
 const gateBulletLen = (text: string, at: i32): i32 => {
@@ -531,25 +531,81 @@ const gateAbbreviationEnds = (text: string, at: i32): boolean => {
     }
     j = j - 1
   }
-  return j + 1 < at && GATE_ABBREVIATIONS.indexOf(`|${text.substring(j + 1, at)}|`) >= 0
+  return j + 1 < at && GATE_ABBREVIATIONS.indexOf(`|${asciiLower(text.substring(j + 1, at))}|`) >= 0
+}
+
+/**
+ * Where each paragraph after the first starts in the normalized text of some
+ * lines (rfcNormalize of the lines joined): a paragraph ends at a blank line,
+ * which normalizing the text erases.
+ *
+ * @param lines the lines, as a section's ownLines holds them
+ * @returns each later paragraph's first offset, in order
+ */
+export const gateParagraphStarts = (lines: string[]): i32[] => {
+  const out: i32[] = []
+  let off = 0
+  let blank = false
+  for (const line of lines) {
+    const words = splitWhitespace(line)
+    if (words.length === 0) {
+      blank = off > 0
+      continue
+    }
+    if (off > 0) {
+      off = off + 1
+      if (blank) {
+        out.push(off)
+      }
+    }
+    off = off + words.join(" ").length
+    blank = false
+  }
+  return out
+}
+
+/** Where a sentence stops before its terminator (`.`, `?`, `"`, `”`), which a quote may leave out. */
+const gateTerminatorStart = (text: string, start: i32, end: i32): i32 => {
+  let stop = end
+  let more = true
+  while (more && stop > start) {
+    const c = text.charCodeAt(stop - 1)
+    // 46 is `.`, 63 `?`, 34 `"`; a closing curly quote is three bytes.
+    if (c === 46 || c === 63 || c === 34) {
+      stop = stop - 1
+    } else if (stop - 3 >= start && text.substring(stop - 3, stop) === "\u201d") {
+      stop = stop - 3
+    } else {
+      more = false
+    }
+  }
+  return stop
 }
 
 /**
  * Where a section's normalized text breaks into sentences, three numbers a
  * break: where the sentence before it stops (at its terminator), where its
  * terminator and any closing quote end, and where the next sentence starts
- * (after any list bullet). A sentence ends at `.`, `?`, `."` or `.”` before a
- * space, except a period after an abbreviation such as "e.g" or before a
- * lowercase letter; a list item ends before its bullet, and a `;` or `:`
- * before a bullet ends the item before it.
+ * (after any list bullet). A paragraph's end always breaks. Within one, a
+ * sentence ends at `.`, `?`, `."` or `.”` before a space, except a period
+ * that ends an abbreviation (e.g., i.e., etc., vs., cf., Fig., Sec., et
+ * al., a.k.a., case ignored): an identifier such as `hexDecode` may start
+ * the next sentence. A list item
+ * ends before its bullet, and a `;` or `:` before a bullet ends the item
+ * before it.
  *
  * @param text the normalized text
+ * @param paras where each paragraph after the first starts (gateParagraphStarts)
  * @returns the breaks, in order
  */
-export const gateSentenceBreaks = (text: string): i32[] => {
+export const gateSentenceBreaks = (text: string, paras: i32[]): i32[] => {
   const out: i32[] = []
+  let p = 0
   let i = 0
   while (i + 1 < text.length) {
+    while (p < paras.length && paras[p] <= i) {
+      p = p + 1
+    }
     const c = text.charCodeAt(i)
     // 46 is `.`, 63 `?`, 59 `;`, 58 `:`; 34 is `"`.
     if (c === 46 || c === 63 || c === 59 || c === 58) {
@@ -561,10 +617,9 @@ export const gateSentenceBreaks = (text: string): i32[] => {
       }
       if (k + 1 < text.length && text.charCodeAt(k) === 32) {
         const bullet = gateBulletLen(text, k + 1)
-        const next = text.charCodeAt(k + 1)
-        let ends = bullet > 0 || c === 63
-        if (c === 46 && bullet === 0) {
-          ends = !(next >= 97 && next <= 122) && !gateAbbreviationEnds(text, i)
+        let ends = bullet > 0 || c === 63 || (p < paras.length && paras[p] === k + 1)
+        if (c === 46 && !ends) {
+          ends = !gateAbbreviationEnds(text, i)
         }
         if (ends) {
           out.push(i)
@@ -574,7 +629,17 @@ export const gateSentenceBreaks = (text: string): i32[] => {
           continue
         }
       }
-    } else if (c === 32 && text.substring(i + 1, i + 3) === "o ") {
+    }
+    if (c === 32 && p < paras.length && paras[p] === i + 1) {
+      // A paragraph ends here, with or without a terminator.
+      const bullet = gateBulletLen(text, i + 1)
+      out.push(gateTerminatorStart(text, 0, i))
+      out.push(i)
+      out.push(i + 1 + bullet)
+      i = i + 1 + bullet
+      continue
+    }
+    if (c === 32 && text.substring(i + 1, i + 3) === "o ") {
       // A bullet with no punctuation before it still starts an item.
       out.push(i)
       out.push(i)
@@ -595,14 +660,15 @@ export const gateSentenceBreaks = (text: string): i32[] => {
  * splits them.
  *
  * @param text the normalized text
+ * @param paras where each paragraph after the first starts (gateParagraphStarts)
  * @param at the offset
  * @returns [start, stop, end]
  */
-export const gateSentenceSpan = (text: string, at: i32): i32[] => {
+export const gateSentenceSpan = (text: string, paras: i32[], at: i32): i32[] => {
   let start = gateBulletLen(text, 0)
   let stop = -1
   let end = text.length
-  const breaks = gateSentenceBreaks(text)
+  const breaks = gateSentenceBreaks(text, paras)
   for (let i = 0; i + 2 < breaks.length; i += 3) {
     if (breaks[i + 2] <= at) {
       start = breaks[i + 2]
@@ -613,19 +679,7 @@ export const gateSentenceSpan = (text: string, at: i32): i32[] => {
     }
   }
   if (stop < 0) {
-    stop = text.length
-    let more = true
-    while (more && stop > start) {
-      const c = text.charCodeAt(stop - 1)
-      // 46 is `.`, 63 `?`, 34 `"`; a closing curly quote is three bytes.
-      if (c === 46 || c === 63 || c === 34) {
-        stop = stop - 1
-      } else if (stop - 3 >= start && text.substring(stop - 3, stop) === "\u201d") {
-        stop = stop - 3
-      } else {
-        more = false
-      }
-    }
+    stop = gateTerminatorStart(text, start, text.length)
   }
   return [start, stop, end]
 }
@@ -635,10 +689,67 @@ export const gateSentenceSpan = (text: string, at: i32): i32[] => {
  * terminator, as gateSentenceSpan bounds it.
  *
  * @param text the normalized text
+ * @param paras where each paragraph after the first starts (gateParagraphStarts)
  * @param at the offset
  * @returns the sentence
  */
-export const gateSentenceAt = (text: string, at: i32): string => {
-  const b = gateSentenceSpan(text, at)
+export const gateSentenceAt = (text: string, paras: i32[], at: i32): string => {
+  const b = gateSentenceSpan(text, paras, at)
   return text.substring(b[0], b[2])
+}
+
+/** The value of a hex digit, or -1. */
+const gateHexDigit = (c: i32): i32 => {
+  if (c >= 48 && c <= 57) {
+    return c - 48
+  }
+  if (c >= 97 && c <= 102) {
+    return c - 87
+  }
+  if (c >= 65 && c <= 70) {
+    return c - 55
+  }
+  return -1
+}
+
+/** The end of the byte list whose `[` is at an offset, its bytes pushed to `out`; -1 when it is not one. */
+const gateByteListAt = (line: string, open: i32, out: string[]): i32 => {
+  let i = open + 1
+  let hex = ""
+  while (i + 1 < line.length && gateHexDigit(line.charCodeAt(i)) >= 0 && gateHexDigit(line.charCodeAt(i + 1)) >= 0) {
+    hex = `${hex}${asciiLower(line.substring(i, i + 2))}`
+    i = i + 2
+    if (i < line.length && line.charCodeAt(i) === 93) {
+      out.push(hex)
+      return i + 1
+    }
+    // 32 is a space, 44 a comma: what may part two bytes.
+    const from = i
+    while (i < line.length && (line.charCodeAt(i) === 32 || line.charCodeAt(i) === 44)) {
+      i = i + 1
+    }
+    if (i === from) {
+      return -1
+    }
+  }
+  return -1
+}
+
+/**
+ * Each byte list a line prints, such as `[00 0f f0 ff]` in
+ * `hexEncode([00 0f f0 ff])`: two hex digits a byte, parted by spaces or
+ * commas, inside brackets. A spec prints a vector's bytes so, and each list
+ * is a whole printed value.
+ *
+ * @param line the line
+ * @returns each list's bytes as lowercase hex, in order
+ */
+export const gateByteLists = (line: string): string[] => {
+  const out: string[] = []
+  let at = line.indexOf("[")
+  while (at >= 0) {
+    const end = gateByteListAt(line, toI32(at), out)
+    at = line.indexOf("[", end > 0 ? end : at + 1)
+  }
+  return out
 }

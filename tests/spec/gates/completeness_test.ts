@@ -134,6 +134,38 @@ const COMPLETENESS_TEST_BOUNDS_RFC: string = `Request for Comments: 9999
    Use a tag, e.g. TLS MUST be on.
 `
 
+/**
+ * A contract quoting a sentence an identifier starts, after a period, and a
+ * sentence after a paragraph with no final period: each quote covers its
+ * sentence alone, and what it leaves out is reported on its own.
+ */
+const COMPLETENESS_TEST_PARAS: string = `{
+  "contract": "c4",
+  "source": {"title": "T", "rfc": 9999},
+  "target": {"module": "nish/x"},
+  "requirements": [
+    {"id": "R-ID", "section": "1", "level": "MUST", "quote": "hexDecode MUST NOT accept an odd length."},
+    {"id": "R-PARA", "section": "2", "level": "MUST", "quote": "It MUST hold."}
+  ],
+  "exclusions": [],
+  "functions": [{"name": "f", "params": [{"name": "a", "type": "bytes"}], "returns": "bytes"}],
+  "clauses": []
+}`
+
+/** The RFC the paragraphs contract cites. */
+const COMPLETENESS_TEST_PARAS_RFC: string = `Request for Comments: 9999
+
+1.  Decode
+
+   Keys are key material. hexDecode MUST NOT accept an odd length.
+
+2.  Para
+
+   The lock MUST be shut, as the table shows
+
+   It MUST hold.
+`
+
 /** A context with a contract and a hand-built source set holding one RFC. */
 const completenessTestWith = (contract: string, rfc: string): CheckContext => {
   const ctx = new CheckContext("contracts/c1.json", ".")
@@ -250,6 +282,21 @@ export const main = (): i32 => {
   t.ok("bounds findings", bounds.length === 3)
   if (bounds.length !== 3) {
     console.log(bounds.join("\n"))
+  }
+  const paras = gateCompleteness(completenessTestWith(COMPLETENESS_TEST_PARAS, COMPLETENESS_TEST_PARAS_RFC))
+  t.ok(
+    "an identifier after a period starts the sentence quoted",
+    !paras.some((f: string): boolean => f.indexOf("§1") === 0),
+  )
+  t.ok(
+    "a paragraph without a final period is a sentence of its own",
+    paras.indexOf(
+      `§2: MUST sentence is neither a requirement nor an exclusion: "The lock MUST be shut, as the table shows"`,
+    ) >= 0,
+  )
+  t.ok("paragraph findings", paras.length === 1)
+  if (paras.length !== 1) {
+    console.log(paras.join("\n"))
   }
   return t.done()
 }

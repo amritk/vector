@@ -4,12 +4,14 @@ import {
   GATE_DENY,
   GATE_HEDGE,
   GATE_RETRACT,
+  gateByteLists,
   gateF64Printed,
   gateIntLabelCount,
   gateIntRounds,
   gateKeywordName,
   gateKeywordUses,
   gateLines,
+  gateParagraphStarts,
   gateSentenceAt,
   gateSentenceBreaks,
   gateSentenceSpan,
@@ -58,28 +60,98 @@ export const main = (): i32 => {
   t.eqStr("rounds count printings", textTestNums(gateIntRounds("c = 1\nc = 2\nc = 1", "c", "1")), "0,2")
   t.ok("a label's count", gateIntLabelCount("c = 1\nc = 2\nxc = 3", "c") === 2)
   t.eqStr("f64s as printed", gateF64Printed("x = 1.5\nx: -0\nx NaN\nx = 1.5.2", "x").join("|"), "1.5|-0|NaN")
-  t.eqStr("the sentence around an offset", gateSentenceAt("One. It MUST hold. Two.", 8), "It MUST hold.")
-  t.eqStr("a sentence's breaks", textTestNums(gateSentenceBreaks("One. It MUST hold. Two.")), "3,4,5,17,18,19")
-  t.eqStr("no break after e.g", textTestNums(gateSentenceBreaks("Send data, e.g. before it ends. Next.")), "30,31,32")
-  t.eqStr("no break after i.e or etc", textTestNums(gateSentenceBreaks("A, i.e. B, etc. C. D")), "17,18,19")
-  t.eqStr("no break before a lowercase letter", textTestNums(gateSentenceBreaks("Ver. two holds. X")), "14,15,16")
-  t.eqStr("a question breaks", textTestNums(gateSentenceBreaks("Why? Because.")), "3,4,5")
-  t.eqStr("a closing quote stays with its sentence", textTestNums(gateSentenceBreaks('Say "hi." Then go.')), "7,9,10")
-  t.eqStr("a closing curly quote too", textTestNums(gateSentenceBreaks("Say \u201chi.\u201d Then go.")), "9,13,14")
-  t.eqStr("a ; before a bullet breaks", textTestNums(gateSentenceBreaks("o A MUST be X; o B MUST be Y.")), "13,14,17")
-  t.eqStr("a ; alone does not", textTestNums(gateSentenceBreaks("A MUST be X; B MUST be Y.")), "")
-  t.eqStr("a bare bullet breaks", textTestNums(gateSentenceBreaks("Items: o A o B")), "5,6,9,10,10,13")
+  t.eqStr("the sentence around an offset", gateSentenceAt("One. It MUST hold. Two.", [], 8), "It MUST hold.")
+  t.eqStr("a sentence's breaks", textTestNums(gateSentenceBreaks("One. It MUST hold. Two.", [])), "3,4,5,17,18,19")
+  t.eqStr(
+    "no break after e.g",
+    textTestNums(gateSentenceBreaks("Send data, e.g. before it ends. Next.", [])),
+    "30,31,32",
+  )
+  t.eqStr("no break after i.e or etc", textTestNums(gateSentenceBreaks("A, i.e. B, etc. C. D", [])), "17,18,19")
+  t.eqStr(
+    "a break before a lowercase letter",
+    textTestNums(gateSentenceBreaks("Ver. two holds. X", [])),
+    "3,4,5,14,15,16",
+  )
+  t.eqStr(
+    "an identifier starts a sentence",
+    gateSentenceAt("It is key material. hexEncode MUST NOT fail.", [], 25),
+    "hexEncode MUST NOT fail.",
+  )
+  t.eqStr(
+    "and the sentence before stops at its period",
+    textTestNums(gateSentenceSpan("It is key material. hexEncode MUST NOT fail.", [], 3)),
+    "0,18,19",
+  )
+  t.eqStr(
+    "paragraph starts",
+    textTestNums(gateParagraphStarts(["  One", "  two.", "", "   ", "Three", "", "Four"])),
+    "9,15",
+  )
+  t.eqStr("none without a blank line", textTestNums(gateParagraphStarts(["", "One", "two"])), "")
+  const paras = gateParagraphStarts(["The key is kept", "", "It MUST hold."])
+  t.eqStr(
+    "a paragraph without a final period breaks",
+    textTestNums(gateSentenceBreaks("The key is kept It MUST hold.", paras)),
+    "15,15,16",
+  )
+  t.eqStr("its sentence is its own", gateSentenceAt("The key is kept It MUST hold.", paras, 20), "It MUST hold.")
+  t.eqStr(
+    "and the one before stops at its end",
+    gateSentenceAt("The key is kept It MUST hold.", paras, 2),
+    "The key is kept",
+  )
+  const etc = gateParagraphStarts(["Keys, etc.", "", "It MUST hold."])
+  t.eqStr(
+    "a paragraph ending in an abbreviation still breaks",
+    textTestNums(gateSentenceBreaks("Keys, etc. It MUST hold.", etc)),
+    "9,10,11",
+  )
+  t.eqStr("a period before a paragraph breaks once", textTestNums(gateSentenceBreaks("One. Two.", [5])), "3,4,5")
+  t.eqStr(
+    "a bullet after a paragraph break is skipped",
+    textTestNums(gateSentenceBreaks("Items o A MUST hold.", [6])),
+    "5,5,8",
+  )
+  t.eqStr("a question breaks", textTestNums(gateSentenceBreaks("Why? Because.", [])), "3,4,5")
+  t.eqStr(
+    "a closing quote stays with its sentence",
+    textTestNums(gateSentenceBreaks('Say "hi." Then go.', [])),
+    "7,9,10",
+  )
+  t.eqStr("a closing curly quote too", textTestNums(gateSentenceBreaks("Say \u201chi.\u201d Then go.", [])), "9,13,14")
+  t.eqStr(
+    "a ; before a bullet breaks",
+    textTestNums(gateSentenceBreaks("o A MUST be X; o B MUST be Y.", [])),
+    "13,14,17",
+  )
+  t.eqStr("a ; alone does not", textTestNums(gateSentenceBreaks("A MUST be X; B MUST be Y.", [])), "")
+  t.eqStr("a bare bullet breaks", textTestNums(gateSentenceBreaks("Items: o A o B", [])), "5,6,9,10,10,13")
   t.eqStr(
     "an e.g sentence whole",
-    gateSentenceAt("A server MUST NOT send data, e.g. before the handshake completes. Next.", 10),
+    gateSentenceAt("A server MUST NOT send data, e.g. before the handshake completes. Next.", [], 10),
     "A server MUST NOT send data, e.g. before the handshake completes.",
   )
-  t.eqStr("a bulleted span", textTestNums(gateSentenceSpan("o A MUST be X; o B MUST be Y.", 20)), "17,28,29")
+  t.eqStr("a bulleted span", textTestNums(gateSentenceSpan("o A MUST be X; o B MUST be Y.", [], 20)), "17,28,29")
   t.eqStr(
     "the first item skips its bullet",
-    textTestNums(gateSentenceSpan("o A MUST be X; o B MUST be Y.", 4)),
+    textTestNums(gateSentenceSpan("o A MUST be X; o B MUST be Y.", [], 4)),
     "2,13,14",
   )
-  t.eqStr("the last sentence stops before its terminator", textTestNums(gateSentenceSpan('Go "now."', 1)), "0,7,9")
+  for (const abbr of ["e.g.", "i.e.", "etc.", "vs.", "cf.", "Fig.", "Sec.", "et al.", "a.k.a.", "E.G.", "FIG."]) {
+    const text = `One. A MUST hold ${abbr} Then MUST go. Two.`
+    const whole = `A MUST hold ${abbr} Then MUST go.`
+    t.eqStr(`${abbr} does not end a sentence, from its start side`, gateSentenceAt(text, [], 7), whole)
+    t.eqStr(`nor ${abbr} from its end side`, gateSentenceAt(text, [], text.indexOf("Then") + 6), whole)
+  }
+  t.eqStr(
+    "et al. inside a sentence",
+    gateSentenceAt("One. Smith et al. propose that clients MUST retry. Next.", [], 10),
+    "Smith et al. propose that clients MUST retry.",
+  )
+  t.eqStr("the last sentence stops before its terminator", textTestNums(gateSentenceSpan('Go "now."', [], 1)), "0,7,9")
+  t.eqStr("a byte list inside a call", gateByteLists("hexEncode([00 0f f0 ff])").join("|"), "000ff0ff")
+  t.eqStr("commas, upper case, two lists", gateByteLists("[0A, FF] and [01]").join("|"), "0aff|01")
+  t.eqStr("not a byte list", gateByteLists("[0] [00ff] [zz] [00 0] [00 ff").join("|"), "")
   return t.done()
 }
