@@ -17,6 +17,9 @@ import {
   sourceRoots,
 } from "../../../src/spec/source/path"
 
+/** The extensions both readers would register. */
+const pathTestBoth = (): string[] => [".xml", ".txt"]
+
 /** A declaration with an id and the given file, path and RFC. */
 const pathTestDecl = (file: string | null, path: string | null, rfc: i32): SourceDecl => {
   const d = new SourceDecl()
@@ -71,27 +74,27 @@ export const main = (): i32 => {
   )
   t.eqStr(
     "path is beside the contract",
-    sourceCandidate(pathTestDecl(null, "a.txt", -1), "/r/c/x.json", "/r").expect("ok"),
+    sourceCandidate(pathTestDecl(null, "a.txt", -1), "/r/c/x.json", "/r", pathTestBoth()).expect("ok"),
     "/r/c/a.txt",
   )
   t.eqStr(
     "absolute file refused",
-    pathTestErr(sourceCandidate(pathTestDecl("/etc/passwd", null, 1), "/r/c.json", "/r")),
+    pathTestErr(sourceCandidate(pathTestDecl("/etc/passwd", null, 1), "/r/c.json", "/r", pathTestBoth())),
     "source s1: file: an absolute path, /etc/passwd: give it relative to the contract",
   )
   t.eqStr(
     "absolute path refused",
-    pathTestErr(sourceCandidate(pathTestDecl(null, "/etc/passwd", -1), "/r/c.json", "/r")),
+    pathTestErr(sourceCandidate(pathTestDecl(null, "/etc/passwd", -1), "/r/c.json", "/r", pathTestBoth())),
     "source s1: path: an absolute path, /etc/passwd: give it relative to the contract",
   )
   t.eqStr(
     "backslash path refused",
-    pathTestErr(sourceCandidate(pathTestDecl(null, "..\\..\\x", -1), "/r/c.json", "/r")),
+    pathTestErr(sourceCandidate(pathTestDecl(null, "..\\..\\x", -1), "/r/c.json", "/r", pathTestBoth())),
     "source s1: path: a backslash in the path: separate with /",
   )
   t.eqStr(
     "a file alone locates nothing",
-    pathTestErr(sourceCandidate(pathTestDecl("rfcs/a.txt", null, -1), "/r/c.json", "/r")),
+    pathTestErr(sourceCandidate(pathTestDecl("rfcs/a.txt", null, -1), "/r/c.json", "/r", pathTestBoth())),
     "source s1: names no rfc or path",
   )
 
@@ -122,35 +125,55 @@ export const main = (): i32 => {
   // The implicit lookup.
   t.eqStr(
     "an RFC in ../rfcs",
-    sourceCandidate(pathTestDecl(null, null, 1), contract, root).expect("ok"),
+    sourceCandidate(pathTestDecl(null, null, 1), contract, root, pathTestBoth()).expect("ok"),
     `${root}/contracts/../rfcs/rfc1.txt`,
   )
   writeFileSync(joinPath(root, "contracts/rfc1.txt"), "nearer")
   t.eqStr(
     "beside the contract comes first",
-    sourceCandidate(pathTestDecl(null, null, 1), contract, root).expect("ok"),
+    sourceCandidate(pathTestDecl(null, null, 1), contract, root, pathTestBoth()).expect("ok"),
     `${root}/contracts/rfc1.txt`,
   )
   writeFileSync(joinPath(root, "rfcs/rfc1.xml"), "<rfc/>")
   t.eqStr(
     "the recorded name picks among them",
-    sourceCandidate(pathTestDecl("rfcs/rfc1.xml", null, 1), contract, root).expect("ok"),
+    sourceCandidate(pathTestDecl("rfcs/rfc1.xml", null, 1), contract, root, pathTestBoth()).expect("ok"),
     `${root}/contracts/../rfcs/rfc1.xml`,
   )
   writeFileSync(joinPath(root, "contracts/rfc1.xml"), "<rfc/>")
   t.eqStr(
     "XML before text",
-    sourceCandidate(pathTestDecl(null, null, 1), contract, root).expect("ok"),
+    sourceCandidate(pathTestDecl(null, null, 1), contract, root, pathTestBoth()).expect("ok"),
     `${root}/contracts/rfc1.xml`,
   )
   t.eqStr(
     "a recorded .txt is not displaced by a nearer .xml",
-    sourceCandidate(pathTestDecl("contracts/rfc1.txt", null, 1), contract, root).expect("ok"),
+    sourceCandidate(pathTestDecl("contracts/rfc1.txt", null, 1), contract, root, pathTestBoth()).expect("ok"),
     `${root}/contracts/rfc1.txt`,
   )
   t.eqStr(
+    "with no XML reader, the text beside it",
+    sourceCandidate(pathTestDecl(null, null, 1), contract, root, [".txt"]).expect("ok"),
+    `${root}/contracts/rfc1.txt`,
+  )
+  t.eqStr(
+    "the recorded label, not only its name, picks among them",
+    sourceCandidate(pathTestDecl("rfcs/rfc1.txt", null, 1), contract, root, pathTestBoth()).expect("ok"),
+    `${root}/contracts/../rfcs/rfc1.txt`,
+  )
+  t.eqStr(
+    "a recorded name no label matches falls back to its name",
+    sourceCandidate(pathTestDecl("elsewhere/rfc1.txt", null, 1), contract, root, pathTestBoth()).expect("ok"),
+    `${root}/contracts/rfc1.txt`,
+  )
+  t.eqStr(
+    "no reader for any place",
+    pathTestErr(sourceCandidate(pathTestDecl(null, null, 1), contract, root, [".pdf"])),
+    `rfc1 not found; fetch it: ${sourceFetchHint(1)}`,
+  )
+  t.eqStr(
     "an RFC on disk nowhere says how to fetch it",
-    pathTestErr(sourceCandidate(pathTestDecl(null, null, 1234), contract, root)),
+    pathTestErr(sourceCandidate(pathTestDecl(null, null, 1234), contract, root, pathTestBoth())),
     `rfc1234 not found; fetch it: ${sourceFetchHint(1234)}`,
   )
 
@@ -224,7 +247,7 @@ export const main = (): i32 => {
   )
   const zero = joinPath(root, "contracts/rfc9.txt")
   t.ok("ln /dev/zero", pathTestRun(["ln", "-s", "/dev/zero", zero]))
-  const zeroAt = sourceCandidate(pathTestDecl(null, null, 9), contract, root).expect("found")
+  const zeroAt = sourceCandidate(pathTestDecl(null, null, 9), contract, root, pathTestBoth()).expect("found")
   t.eqStr(
     "a /dev/zero symlink as an RFC",
     pathTestRead(sourceReadConfined(pathTestDecl(null, null, 9), zeroAt, contract, root)),
@@ -247,6 +270,19 @@ export const main = (): i32 => {
     pathTestRead(sourceReadConfined(pathTestDecl(null, "none.txt", -1), `${root}/contracts/none.txt`, contract, root)),
     "source s1: none.txt: no such file",
   )
+  // The cap: one byte past 16 MiB is refused before it is read (a sparse file).
+  t.ok("truncate big", pathTestRun(["truncate", "-s", "16777217", joinPath(root, "contracts/big.txt")]))
+  t.eqStr(
+    "a file past 16 MiB",
+    pathTestRead(sourceReadConfined(pathTestDecl(null, "big.txt", -1), `${root}/contracts/big.txt`, contract, root)),
+    "source s1: big.txt is 16777217 bytes, more than a source may be (16777216)",
+  )
+  t.ok("truncate at the cap", pathTestRun(["truncate", "-s", "16777216", joinPath(root, "contracts/big.txt")]))
+  t.ok(
+    "a file of exactly 16 MiB is read",
+    sourceReadConfined(pathTestDecl(null, "big.txt", -1), `${root}/contracts/big.txt`, contract, root).isOk(),
+  )
+  t.ok("rm big", pathTestRun(["rm", joinPath(root, "contracts/big.txt")]))
   // A specs/ that is a symlink is no root, wherever it leads.
   t.ok("ln specs", pathTestRun(["ln", "-s", joinPath(tmp, "elsewhere"), joinPath(root, "specs")]))
   t.ok("specs/ left out of the roots", sourceRoots(contract, root).indexOf(`${real}/specs`) < 0)

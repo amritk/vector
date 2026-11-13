@@ -163,6 +163,8 @@ export const main = (): i32 => {
   t.eqStr("Numbered is not decimal", rfcTestLabelled("Numbered"), "Numbered=1234")
   t.eqStr("integers is not decimal", rfcTestLabelled("Some integers"), "Some integers=1234")
   t.eqStr("base 100 is not decimal", rfcTestLabelled("In base 100"), "In base 100=1234")
+  t.eqStr("test_number is not decimal", rfcTestLabelled("test_number"), "test_number=1234")
+  t.eqStr("number_ is not decimal", rfcTestLabelled("Some number_"), "Some number_=1234")
 
   // Reading refuses what is not an RFC, and what hides text.
   t.ok("an RFC reads", rfcRead(rfcTestText(), "r.txt").isOk())

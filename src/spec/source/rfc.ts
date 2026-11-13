@@ -385,13 +385,13 @@ class RfcHexReader {
   }
 }
 
-/** Whether the byte at `i` of `s` is an ASCII letter or digit; false outside `s`. */
+/** Whether the byte at `i` of `s` is an ASCII letter, digit or `_`; false outside `s`. */
 const rfcWordByte = (s: string, i: i32): boolean => {
   if (i < 0 || i >= s.length) {
     return false
   }
   const c = s.charCodeAt(i)
-  return (c >= 0x30 && c <= 0x39) || (c >= 0x61 && c <= 0x7a) || (c >= 0x41 && c <= 0x5a)
+  return c === 0x5f || (c >= 0x30 && c <= 0x39) || (c >= 0x61 && c <= 0x7a) || (c >= 0x41 && c <= 0x5a)
 }
 
 /** Whether lower-case `l` holds `word` as a whole word: no letter or digit on either side. */

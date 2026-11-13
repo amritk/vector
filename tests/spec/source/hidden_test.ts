@@ -161,6 +161,36 @@ export const main = (): i32 => {
     hiddenTestOne(`MU${charsFromCodePoint(0x34f)}ST`),
     "line 1: invisible character U+034F: remove it",
   )
+  // Precomposed letters and compatibility forms fold as NFKD would.
+  const folds: string[] = [
+    hiddenTestOf([0x1e3e, 0xda, 0x15a, 0x164]),
+    hiddenTestOf([0x1d3f, 0x1d31, 0xa7f4, 0x1d41, 0x1d35, 0x1d3f, 0x1d31, 0x1d30]),
+    hiddenTestOf([0x15a, 0x1e24, 0xc0, 0x139, 0x13d]),
+    hiddenTestOf([0x24c2, 0x24ca, 0x24c8, 0x24c9]),
+    hiddenTestOf([0x1f13c, 0x1f144, 0x1f142, 0x1f143]),
+  ]
+  const foldsTo: string[] = ["MUST", "REQUIRED", "SHALL", "MUST", "MUST"]
+  for (let j = 0; j < folds.length; j++) {
+    const w = folds[j]
+    const k = foldsTo[j]
+    t.eqStr(
+      `${w} folds to ${k}`,
+      hiddenTestOne(`a ${w} b`),
+      `line 1: "${w}" reads as ${k} but is not spelled in ASCII: write ${k}`,
+    )
+  }
+  t.eqStr(
+    "accented words that are not keywords still read",
+    hiddenTestOne(
+      `Caf${charsFromCodePoint(0xe9)} ${charsFromCodePoint(0xc9)}TAT ${hiddenTestOf([0x1e3f, 0xfa, 0x15b, 0x165])} ${hiddenTestOf([0x1d39, 0x1d2c, 0x1d3f])}`,
+    ),
+    "0 problems: ",
+  )
+  t.eqStr(
+    "a symbol that is not a letter still ends a word",
+    hiddenTestOne(`${charsFromCodePoint(0xa9)}${cyrillicT}`),
+    `line 1: "${cyrillicT}" reads as MUST but is not spelled in ASCII: write MUST`,
+  )
   const ordinary = `A caf${charsFromCodePoint(0xe9)}, ${charsFromCodePoint(0x394)}x, &#169;, ${hiddenTestOf([0x414, 0x41e, 0x41c, 0x410])}, S_HALL, x*y*z, M&#85;ST.`
   t.eqStr("ordinary text still reads", hiddenTestOne(ordinary), "0 problems: ")
   t.eqStr(
@@ -197,6 +227,7 @@ export const main = (): i32 => {
   t.ok("fullwidth", hiddenAsciiLetterOf(0xff21) === 65 && hiddenAsciiLetterOf(0xff5a) === 122)
   t.ok("math italic", hiddenAsciiLetterOf(0x1d434) === 65 && hiddenAsciiLetterOf(0x1d44e) === 97)
   t.ok("look-alikes", hiddenAsciiLetterOf(0x410) === 65 && hiddenAsciiLetterOf(0x216f) === 77)
-  t.ok("not a letter", hiddenAsciiLetterOf(48) === -1 && hiddenAsciiLetterOf(0xe9) === -1)
+  t.ok("precomposed and modifier letters", hiddenAsciiLetterOf(0xe9) === 101 && hiddenAsciiLetterOf(0x1d3f) === 82)
+  t.ok("not a letter", hiddenAsciiLetterOf(48) === -1 && hiddenAsciiLetterOf(0x3b1) === -1)
   return t.done()
 }

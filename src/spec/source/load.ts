@@ -4,7 +4,9 @@
  * names, when no `source.main` picks another) is located (sourceCandidate),
  * read only if it is spec text (sourceReadConfined), checked against the file
  * it records and the SHA-256 it pins, refused if it hides text from the gates
- * (hidden), and read into its sections by the reader its extension selects.
+ * (hidden), and read into its sections by the reader its extension selects,
+ * whose decoded text is checked for hidden text again (an XML reader turns
+ * `&#1058;` into a Cyrillic Т the raw bytes never showed).
  * Every problem is collected, so one run names them all.
  */
 
@@ -46,17 +48,24 @@ export class SourceReaders {
  * Registers a reader for an extension, replacing one already there.
  *
  * @param readers the registry
- * @param ext the extension, with its dot: ".xml"
+ * @param ext the extension, with its leading dot: ".xml"
  * @param read the reader
+ * @returns `Ok(true)` when registered, `Err` when `ext` is not one leading dot
+ *   and a name without another dot or a slash (sourceReaderFor could never
+ *   select it)
  */
-export const sourceReadersAdd = (readers: SourceReaders, ext: string, read: SourceReader): void => {
+export const sourceReadersAdd = (readers: SourceReaders, ext: string, read: SourceReader): Result<boolean, string> => {
+  if (ext.length < 2 || ext.charCodeAt(0) !== 0x2e || ext.indexOf("/") >= 0 || ext.indexOf(".", 1) >= 0) {
+    return Err(`a reader's extension is "${ext}": give it with its leading dot and nothing else, as ".xml"`)
+  }
   for (const e of readers.entries) {
     if (e.ext === ext) {
       e.read = read
-      return
+      return Ok(true)
     }
   }
   readers.entries.push(new SourceReaderEntry(ext, read))
+  return Ok(true)
 }
 
 /**
@@ -67,8 +76,29 @@ export const sourceReadersAdd = (readers: SourceReaders, ext: string, read: Sour
  */
 export const sourceReadersDefault = (): SourceReaders => {
   const r = new SourceReaders()
-  sourceReadersAdd(r, ".txt", rfcRead)
+  r.entries.push(new SourceReaderEntry(".txt", rfcRead))
   return r
+}
+
+/** The extensions a registry has a reader for, in registration order. */
+const sourceReadersExts = (readers: SourceReaders): string[] => {
+  const out: string[] = []
+  for (const e of readers.entries) {
+    out.push(e.ext)
+  }
+  return out
+}
+
+/** A document's text as its reader decoded it: each section's title and its own lines. */
+const sourceDecodedText = (doc: RfcDocument): string => {
+  const parts: string[] = []
+  for (const s of doc.sections) {
+    parts.push(s.title)
+    for (const l of s.ownLines) {
+      parts.push(l)
+    }
+  }
+  return parts.join("\n")
 }
 
 /** The extension of the last component of `path`, with its dot; "" without one. */
@@ -234,7 +264,8 @@ const sourceLoadOne = (
   root: string,
   readers: SourceReaders,
 ): Result<LoadedSource, string> => {
-  const candidate = sourceCandidate(decl, contractPath, root).orReturn()
+  const exts = sourceReadersExts(readers)
+  const candidate = sourceCandidate(decl, contractPath, root, exts).orReturn()
   const read = sourceReadConfined(decl, candidate, contractPath, root).orReturn()
   const label = sourceLabel(read.real, contractPath, root)
   const recorded = sourceRecordedProblem(decl, pin, read, label)
@@ -247,7 +278,7 @@ const sourceLoadOne = (
     const ext = sourceExtOf(read.real)
     const kind = ext.length > 0 ? `a ${ext} file` : "a file without an extension"
     return Err(
-      `source ${decl.id}: ${shown} is ${kind}, and no reader is registered for it: give the source's plain text (.txt)`,
+      `source ${decl.id}: ${shown} is ${kind}, and no reader is registered for it: readers are registered for ${exts.join(", ")}`,
     )
   }
   const hidden = hiddenProblem(read.text, shown)
@@ -257,6 +288,10 @@ const sourceLoadOne = (
   const doc = reader.read(read.text, shown)
   if (doc.isErr()) {
     return Err(`source ${decl.id}: ${doc.error}`)
+  }
+  const decoded = hiddenProblem(sourceDecodedText(doc.value), `${shown} as its reader decoded it`)
+  if (decoded !== null) {
+    return Err(`source ${decl.id}: ${decoded}`)
   }
   if (decl.rfc >= 1 && doc.value.number !== decl.rfc) {
     return Err(`source ${decl.id}: ${shown} is RFC ${doc.value.number}, not RFC ${decl.rfc}`)

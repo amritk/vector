@@ -110,19 +110,37 @@ export const sourceRfcPlaces = (n: i32, contractPath: string, root: string): str
   return out
 }
 
+/** Whether a reader reads `path`: it ends with one of `exts`. */
+const sourceReadable = (path: string, exts: string[]): boolean => {
+  for (const e of exts) {
+    if (path.endsWith(e)) {
+      return true
+    }
+  }
+  return false
+}
+
 /**
  * The file a source is read from, before it is judged: its `path` beside the
- * contract, else the first of sourceRfcPlaces that exists, preferring one
- * whose name is that of its recorded `file` (an rfc<n>.xml added later must
- * not displace the file the contract was checked against).
+ * contract, else the first of sourceRfcPlaces that exists and that a reader
+ * reads (so an rfc<n>.xml with no XML reader falls back to the .txt),
+ * preferring the one its recorded `file` names exactly, then one with that
+ * file's name (an rfc<n>.xml added later must not displace the file the
+ * contract was checked against).
  *
  * @param decl the source
  * @param contractPath the contract's own path
  * @param root the root whose rfcs/ is searched last
+ * @param exts the extensions a reader is registered for, with their dots
  * @returns `Ok` with the path to read, or `Err` when a name is refused
  *   (sourceNameProblem), the RFC is on disk nowhere, or it names nothing
  */
-export const sourceCandidate = (decl: SourceDecl, contractPath: string, root: string): Result<string, string> => {
+export const sourceCandidate = (
+  decl: SourceDecl,
+  contractPath: string,
+  root: string,
+  exts: string[],
+): Result<string, string> => {
   const file = decl.file
   if (file !== null) {
     const problem = sourceNameProblem(file)
@@ -141,15 +159,27 @@ export const sourceCandidate = (decl: SourceDecl, contractPath: string, root: st
   if (decl.rfc >= 1) {
     const recorded = file !== null ? basename(file) : ""
     let first = ""
+    let named = ""
     for (const f of sourceRfcPlaces(decl.rfc, contractPath, root)) {
-      if (sourceExists(f) || sourceIsLink(f)) {
-        if (basename(f) === recorded) {
+      if (!sourceReadable(f, exts) || !(sourceExists(f) || sourceIsLink(f))) {
+        continue
+      }
+      if (file !== null) {
+        const real = realpathSync(f)
+        const label: string | null = real !== null ? sourceLabel(real, contractPath, root) : null
+        if (label !== null && label === file) {
           return Ok(f)
         }
-        if (first.length === 0) {
-          first = f
-        }
       }
+      if (named.length === 0 && basename(f) === recorded) {
+        named = f
+      }
+      if (first.length === 0) {
+        first = f
+      }
+    }
+    if (named.length > 0) {
+      return Ok(named)
     }
     if (first.length > 0) {
       return Ok(first)

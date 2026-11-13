@@ -15,6 +15,7 @@
 
 import { Regex, RegexMatch, regexCompile } from "nish/regex"
 import { charsCodePointAt, charsFromCodePoint, charsName, charsSequenceLength } from "../contract/chars"
+import { foldAsciiLetter, foldTable } from "./fold"
 
 /** [lo, hi] pairs: the format characters (Cf) and the blank code points. */
 const hiddenInvisibleTable = (): i32[] => [
@@ -51,6 +52,44 @@ const hiddenInRanges = (ranges: i32[], cp: i32): boolean => {
   return false
 }
 
+/** The tables a text is judged with, built once per text rather than per code point. */
+class HiddenTables {
+  invisible: i32[]
+  lookalike: i32[]
+  fold: i32[]
+  keywords: string[]
+  constructor() {
+    this.invisible = hiddenInvisibleTable()
+    this.lookalike = hiddenLookalikeTable()
+    this.fold = foldTable()
+    this.keywords = hiddenKeywordsTable()
+  }
+}
+
+/** Whether `cp` is invisible, by the tables held. */
+const hiddenInvisibleIn = (tables: HiddenTables, cp: i32): boolean => cp >= 0xad && hiddenInRanges(tables.invisible, cp)
+
+/** The ASCII letter `cp` reads as, by the tables held; -1 when none. */
+const hiddenLetterIn = (tables: HiddenTables, cp: i32): i32 => {
+  if ((cp >= 65 && cp <= 90) || (cp >= 97 && cp <= 122)) {
+    return cp
+  }
+  if (cp < 0x80) {
+    return -1
+  }
+  const folded = foldAsciiLetter(tables.fold, cp)
+  if (folded >= 0) {
+    return folded
+  }
+  const table = tables.lookalike
+  for (let i = 0; i + 1 < table.length; i += 2) {
+    if (table[i] === cp) {
+      return table[i + 1]
+    }
+  }
+  return -1
+}
+
 /**
  * Whether a code point renders as nothing: a format character, a variation
  * selector or a filler.
@@ -62,53 +101,42 @@ export const hiddenIsInvisible = (cp: i32): boolean => cp >= 0xad && hiddenInRan
 
 /**
  * The ASCII letter a code point reads as, when it reads as one: itself for an
- * ASCII letter, its look-alike for a capital of another script, and the
- * letter of a mathematical alphanumeric or a fullwidth Latin letter.
+ * ASCII letter; the letter its compatibility decomposition leaves once its
+ * marks are dropped (foldAsciiLetter: "Ú", "ᴿ", a fullwidth or mathematical
+ * letter); else its look-alike, for a capital of another script.
  *
  * @param cp a code point
  * @returns the ASCII letter's code, or -1 when it reads as none
  */
-export const hiddenAsciiLetterOf = (cp: i32): i32 => {
-  if ((cp >= 65 && cp <= 90) || (cp >= 97 && cp <= 122)) {
-    return cp
-  }
-  if (cp >= 0xff21 && cp <= 0xff3a) {
-    return cp - 0xff21 + 65
-  }
-  if (cp >= 0xff41 && cp <= 0xff5a) {
-    return cp - 0xff41 + 97
-  }
-  if (cp >= 0x1d400 && cp <= 0x1d6a3) {
-    const k = (cp - 0x1d400) % 52
-    return k < 26 ? 65 + k : 97 + k - 26
-  }
-  const table = hiddenLookalikeTable()
-  for (let i = 0; i + 1 < table.length; i += 2) {
-    if (table[i] === cp) {
-      return table[i + 1]
-    }
-  }
-  return -1
-}
+export const hiddenAsciiLetterOf = (cp: i32): i32 => hiddenLetterIn(new HiddenTables(), cp)
+
+/**
+ * The symbols that fold to a letter (foldTable) but are not letters to
+ * Unicode, so `\p{L}` leaves them out of a word: circled, parenthesised,
+ * squared and outlined Latin letters.
+ */
+const HIDDEN_SYMBOL_LETTERS: string = "\\u24B6-\\u24E9\\u{1CCD6}-\\u{1CCEF}\\u{1F12B}-\\u{1F12C}\\u{1F130}-\\u{1F149}"
 
 /** The patterns a text is read with, compiled once per call. */
 class HiddenPatterns {
-  /** A word: a run of letters, digits and marks of any script. */
+  /** A word: a run of letters, digits and marks of any script, and of symbol letters. */
   word: Regex
   /** One combining mark, the whole string. */
   mark: Regex
   /** One letter, the whole string. */
   letter: Regex
+  tables: HiddenTables
   constructor(word: Regex, mark: Regex, letter: Regex) {
     this.word = word
     this.mark = mark
     this.letter = letter
+    this.tables = new HiddenTables()
   }
 }
 
 /** Compiles the patterns; an error names the one that failed. */
 const hiddenPatterns = (): Result<HiddenPatterns, string> => {
-  const word = regexCompile("[\\p{L}\\p{N}\\p{M}]+", "").orReturn()
+  const word = regexCompile(`[\\p{L}\\p{N}\\p{M}${HIDDEN_SYMBOL_LETTERS}]+`, "").orReturn()
   const mark = regexCompile("^\\p{M}$", "").orReturn()
   const letter = regexCompile("^\\p{L}$", "").orReturn()
   return Ok(new HiddenPatterns(word, mark, letter))
@@ -130,14 +158,14 @@ const hiddenSpoofs = (p: HiddenPatterns, word: string): string | null => {
   while (i < word.length) {
     const cp = charsCodePointAt(word, i)
     const n = charsSequenceLength(word, i)
-    if (!hiddenIsInvisible(cp)) {
+    if (!hiddenInvisibleIn(p.tables, cp)) {
       if (cp >= 0x80 && p.mark.test(word.substring(i, i + n))) {
         marked = true
       } else {
         if (cp >= 0x80) {
           ascii = false
         }
-        const f = hiddenAsciiLetterOf(cp)
+        const f = hiddenLetterIn(p.tables, cp)
         folded.push(f >= 0 ? f : cp)
       }
     }
@@ -156,7 +184,7 @@ const hiddenSpoofs = (p: HiddenPatterns, word: string): string | null => {
       foreign = true
     }
   }
-  for (const k of hiddenKeywordsTable()) {
+  for (const k of p.tables.keywords) {
     if (k.length !== folded.length) {
       continue
     }
@@ -189,37 +217,47 @@ const hiddenLineAt = (text: string, from: i32, at: i32, line: i32): i32 => {
   return n
 }
 
-/**
- * Why a text would read differently to a reviewer than to the gates, one
- * entry per spot: each invisible character, and each word that reads as a
- * binding keyword without being spelled in ASCII. A word is a run of letters,
- * digits and combining marks of any script, so a no-break space or a curly
- * quote ends one. A byte-order mark at the very start is an encoding marker
- * and passes.
- *
- * @param text the source's text
- * @returns `line N: …` entries; empty when the text reads the same
- */
-export const hiddenText = (text: string): string[] => {
-  const out: string[] = []
+/** What a scan found: the spots it kept, and how many it found in all. */
+class HiddenScan {
+  spots: string[]
+  total: i32
+  keep: i32
+  constructor(keep: i32) {
+    this.spots = []
+    this.total = 0
+    this.keep = keep
+  }
+}
+
+/** Counts a spot, and keeps its text while fewer than `keep` are kept. */
+const hiddenNote = (scan: HiddenScan, spot: string): void => {
+  scan.total = scan.total + 1
+  if (scan.spots.length < scan.keep) {
+    scan.spots.push(spot)
+  }
+}
+
+/** Scans `text` (hiddenText), keeping the first `keep` spots' text. */
+const hiddenScan = (text: string, keep: i32): HiddenScan => {
+  const scan = new HiddenScan(keep)
+  const compiled = hiddenPatterns()
+  if (compiled.isErr()) {
+    hiddenNote(scan, `line 1: the words could not be read (${compiled.error}): nothing is trusted`)
+    return scan
+  }
+  const p = compiled.value
   let line = 1
   let i = 0
   while (i < text.length) {
     const cp = charsCodePointAt(text, i)
-    if (hiddenIsInvisible(cp) && !(i === 0 && cp === 0xfeff)) {
-      out.push(`line ${line}: invisible character ${charsName(cp)}: remove it`)
+    if (hiddenInvisibleIn(p.tables, cp) && !(i === 0 && cp === 0xfeff)) {
+      hiddenNote(scan, `line ${line}: invisible character ${charsName(cp)}: remove it`)
     }
     if (cp === 10) {
       line = line + 1
     }
     i += charsSequenceLength(text, i)
   }
-  const compiled = hiddenPatterns()
-  if (compiled.isErr()) {
-    out.push(`line 1: the words could not be read (${compiled.error}): nothing is trusted`)
-    return out
-  }
-  const p = compiled.value
   const m = new RegexMatch()
   let from = 0
   let at = 0
@@ -230,12 +268,25 @@ export const hiddenText = (text: string): string[] => {
     const word = text.substring(m.start(), m.end())
     const k = hiddenSpoofs(p, word)
     if (k !== null) {
-      out.push(`line ${line}: "${word}" reads as ${k} but is not spelled in ASCII: write ${k}`)
+      hiddenNote(scan, `line ${line}: "${word}" reads as ${k} but is not spelled in ASCII: write ${k}`)
     }
     from = m.end() > m.start() ? m.end() : m.start() + 1
   }
-  return out
+  return scan
 }
+
+/**
+ * Why a text would read differently to a reviewer than to the gates, one
+ * entry per spot: each invisible character, and each word that reads as a
+ * binding keyword without being spelled in ASCII. A word is a run of letters,
+ * digits and combining marks of any script (and of the circled and squared
+ * letters), so a no-break space or a curly quote ends one. A byte-order mark at the very start is an encoding marker
+ * and passes.
+ *
+ * @param text the source's text
+ * @returns `line N: …` entries; empty when the text reads the same
+ */
+export const hiddenText = (text: string): string[] => hiddenScan(text, text.length + 1).spots
 
 /**
  * The refusal of a source whose text hides what it says (hiddenText): its
@@ -246,11 +297,10 @@ export const hiddenText = (text: string): string[] => {
  * @returns the refusal, or null when the text reads the same to both
  */
 export const hiddenProblem = (text: string, name: string): string | null => {
-  const hidden = hiddenText(text)
-  if (hidden.length === 0) {
+  const scan = hiddenScan(text, 5)
+  if (scan.total === 0) {
     return null
   }
-  const shown = hidden.slice(0, hidden.length > 5 ? 5 : hidden.length)
-  const more = hidden.length > 5 ? ` (and ${hidden.length - 5} more)` : ""
-  return `${name}: text a reader cannot see as the gates read it: ${shown.join("; ")}${more}`
+  const more = scan.total > 5 ? ` (and ${scan.total - 5} more)` : ""
+  return `${name}: text a reader cannot see as the gates read it: ${scan.spots.join("; ")}${more}`
 }
