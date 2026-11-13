@@ -1,0 +1,1 @@
+vector spec stale tests/cli/pr-stale-duplicate/t.ts tests/cli/pr-stale-ok/c.json

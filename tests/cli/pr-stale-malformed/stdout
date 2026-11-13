@@ -1,0 +1,4 @@
+spec stale tests/cli/pr-stale-malformed/t.ts against tests/cli/pr-stale-ok/c.json: FAILED
+
+problems:
+  ✗ tests/cli/pr-stale-malformed/t.ts: its vector-contract-sha256 line holds "2862AF9F", not 64 lowercase hex digits: regenerate it with vector spec emit
