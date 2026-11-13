@@ -180,16 +180,20 @@ class F64Ctx {
   }
 }
 
+// biome-ignore lint/suspicious/noSelfCompare: Nish has no Number.isFinite; x - x is NaN only for NaN and ±Infinity.
 const f64IsFinite = (x: f64): boolean => x - x === x - x
+
+// biome-ignore lint/suspicious/noSelfCompare: Nish has no Number.isNaN; NaN is the only value unequal to itself.
+const f64IsNaN = (x: f64): boolean => x !== x
 
 const f64IsNegZero = (x: f64): boolean => x === f64Zero() && parseFloat("1") / x < f64Zero()
 
 // JS Math.min: NaN wins, and -0 is below +0.
 const f64Min = (l: f64, r: f64): f64 => {
-  if (l !== l) {
+  if (f64IsNaN(l)) {
     return l
   }
-  if (r !== r) {
+  if (f64IsNaN(r)) {
     return r
   }
   if (l < r) {
@@ -203,10 +207,10 @@ const f64Min = (l: f64, r: f64): f64 => {
 
 // JS Math.max: NaN wins, and +0 is above -0.
 const f64Max = (l: f64, r: f64): f64 => {
-  if (l !== l) {
+  if (f64IsNaN(l)) {
     return l
   }
-  if (r !== r) {
+  if (f64IsNaN(r)) {
     return r
   }
   if (l > r) {
@@ -494,7 +498,9 @@ const f64RealPool = (): f64[] =>
 
 // Both sides of the safe-integer edge: ±(2^53 - 1) passes the Int guard, ±2^53 does not.
 const f64IntPool = (): f64[] =>
-  f64List("0 1 -1 2 -2 3 -3 5 -5 7 10 -10 100 42 9007199254740991 -9007199254740991 9007199254740992 -9007199254740992 1e15")
+  f64List(
+    "0 1 -1 2 -2 3 -3 5 -5 7 10 -10 100 42 9007199254740991 -9007199254740991 9007199254740992 -9007199254740992 1e15",
+  )
 
 // A random magnitude from about 1e-320 to 1e308 with a random sign: the
 // exponent is uniform, so every order of magnitude is reachable.
@@ -502,6 +508,7 @@ const f64RandomMagnitude = (rand: F64Rng): f64 => {
   const exp = f64Round((rand.next() * parseFloat("2") - parseFloat("1")) * parseFloat("320"))
   const mantissa = parseFloat("1") + rand.next() * parseFloat("9")
   const sign = rand.next() < parseFloat("0.5") ? parseFloat("-1") : parseFloat("1")
+  // biome-ignore lint/style/useExponentiationOperator: Nish has no `**`.
   return sign * mantissa * Math.pow(parseFloat("10"), exp)
 }
 
@@ -964,7 +971,7 @@ export const checkConformance = (program: Program, report: VerifyReport): Confor
         seed.setBool(p.name, raw === "true")
       } else {
         const x = float64ParseModel(raw)
-        if (x === x) {
+        if (!f64IsNaN(x)) {
           seed.setNum(p.name, p.ty === "Int" ? f64Round(x) : x)
         } else {
           seedComplete = false
@@ -1088,7 +1095,12 @@ const f64Run = (program: Program, fn: FnUnit, env: F64Env): F64Side => {
   const v = f64Eval(ctx, fn.body, env)
   if (ctx.threw) {
     if (ctx.guard) {
-      return new F64Side(false, false, none, `(throws — guard violated: ${ctx.guardCallee} requires ${ctx.guardPretty})`)
+      return new F64Side(
+        false,
+        false,
+        none,
+        `(throws — guard violated: ${ctx.guardCallee} requires ${ctx.guardPretty})`,
+      )
     }
     return new F64Side(true, false, none, "")
   }
@@ -1100,8 +1112,8 @@ const f64SameValue = (a: F64Val, b: F64Val): boolean => {
   if (a.isBool || b.isBool) {
     return a.isBool === b.isBool && a.b === b.b
   }
-  if (a.n !== a.n || b.n !== b.n) {
-    return a.n !== a.n && b.n !== b.n
+  if (f64IsNaN(a.n) || f64IsNaN(b.n)) {
+    return f64IsNaN(a.n) && f64IsNaN(b.n)
   }
   return f64ToBits(a.n) === f64ToBits(b.n)
 }
@@ -1164,7 +1176,12 @@ class F64Compare {
  * @param newFn the function after
  * @returns the delta; `found` is false when no sample told them apart
  */
-export const findFloat64Delta = (oldProgram: Program, oldFn: FnUnit, newProgram: Program, newFn: FnUnit): Float64Delta => {
+export const findFloat64Delta = (
+  oldProgram: Program,
+  oldFn: FnUnit,
+  newProgram: Program,
+  newFn: FnUnit,
+): Float64Delta => {
   const out = new Float64Delta()
   const rand = new F64Rng(-2048144789)
   const cmp = new F64Compare(oldProgram, oldFn, newProgram, newFn)

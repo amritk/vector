@@ -1,0 +1,22 @@
+╔════════════════════════════════════════════════════════════════════╗
+║                        VECTOR — PROOF REPORT                       ║
+╠════════════════════════════════════════════════════════════════════╣
+║ Prompt:  "verify: tests/fixtures/unsat.json"                       ║
+║ Attempt: 1/1      Solver: Z3 4.16.0 (native)      Status: REFUTED  ║
+╠════════════════════════════════════════════════════════════════════╣
+║ LAYER 1 · usdToEur(amount: Real): Real                             ║
+║   { amount >= 0 }  amount * 0.91                                   ║
+║   { result > amount }                                              ║
+║   ✘ ensures AX-BAD  REFUTED (sat)                                  ║
+║       counterexample: amount = 0 → result = 0                      ║
+║   ⚠ guard amount >= 0 enforced at runtime; proven to hold at every ║
+║   internal call site                                               ║
+╠════════════════════════════════════════════════════════════════════╣
+║ VERDICT: 1 CONTRACT VIOLATION(S) FOUND — SEE ABOVE                 ║
+║ "Testing shows the presence of bugs, never their absence."         ║
+║  — proven over exact reals; float64 conformance-checked.           ║
+╚════════════════════════════════════════════════════════════════════╝
+
+── FEEDBACK (repair and re-verify) ────────────────────
+
+Function usdToEur, ensures AX-BAD (result > amount): REFUTED — counterexample amount = 0 gives result = 0.

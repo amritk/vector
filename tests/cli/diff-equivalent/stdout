@@ -1,0 +1,12 @@
+── VECTOR DIFF ─────────────────────────────────────────
+ old: usd_to_eur_converter   new: usd_to_eur_converter
+ Solver: Z3 4.16.0 (native)
+ Status: EQUIVALENT
+
+ ✓ applyRate(amount: Real, rate: Real): Real — EQUIVALENT for all inputs
+ ✓ usdToEur(amount: Real): Real — EQUIVALENT for all inputs
+
+ Every shared function provably behaves identically — the
+ regeneration is behavior-preserving; nothing to review.
+ (Proven over exact rationals, then compared on sampled float64 inputs;
+  assumes both versions pass vector verify.)

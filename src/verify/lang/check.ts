@@ -8,7 +8,19 @@
  * `Expr.numTy`, which the SMT translation reads.
  */
 
-import { EXPR_BINOP, EXPR_BOOL, EXPR_CALL, EXPR_ITE, EXPR_NUM, EXPR_UNOP, EXPR_VAR, Expr, FnUnit, Program, SpecPlan } from "./ast"
+import {
+  EXPR_BINOP,
+  EXPR_BOOL,
+  EXPR_CALL,
+  EXPR_ITE,
+  EXPR_NUM,
+  EXPR_UNOP,
+  EXPR_VAR,
+  Expr,
+  FnUnit,
+  Program,
+  SpecPlan,
+} from "./ast"
 
 /** The name an ensures clause uses for the function's return value. */
 export const RESULT_NAME: string = "result"
@@ -329,7 +341,9 @@ export const checkSpecProgramConsistency = (plan: SpecPlan, program: Program): s
       errors.push(`function "${fn.name}": layer ${fn.layer} disagrees with spec unit layer ${u.layer}`)
     }
     if (fn.returnType !== u.returnType) {
-      errors.push(`function "${fn.name}": returnType ${fn.returnType} disagrees with spec unit returnType ${u.returnType}`)
+      errors.push(
+        `function "${fn.name}": returnType ${fn.returnType} disagrees with spec unit returnType ${u.returnType}`,
+      )
     }
     if (fn.params.length !== u.params.length) {
       errors.push(`function "${fn.name}": has ${fn.params.length} param(s) but spec unit declares ${u.params.length}`)
@@ -339,7 +353,9 @@ export const checkSpecProgramConsistency = (plan: SpecPlan, program: Program): s
       const p = fn.params[i]
       const up = u.params[i]
       if (p.name !== up.name || p.ty !== up.ty) {
-        errors.push(`function "${fn.name}": param ${i + 1} is ${p.name}:${p.ty} but spec unit declares ${up.name}:${up.ty}`)
+        errors.push(
+          `function "${fn.name}": param ${i + 1} is ${p.name}:${p.ty} but spec unit declares ${up.name}:${up.ty}`,
+        )
       }
     }
   }

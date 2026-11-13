@@ -6,7 +6,18 @@
  * are inlined, which layering makes finite.
  */
 
-import { EXPR_BINOP, EXPR_BOOL, EXPR_CALL, EXPR_ITE, EXPR_NUM, EXPR_UNOP, EXPR_VAR, Expr, Program, programFunctionIndex } from "../lang/ast"
+import {
+  EXPR_BINOP,
+  EXPR_BOOL,
+  EXPR_CALL,
+  EXPR_ITE,
+  EXPR_NUM,
+  EXPR_UNOP,
+  EXPR_VAR,
+  Expr,
+  Program,
+  programFunctionIndex,
+} from "../lang/ast"
 import { RESULT_NAME } from "../lang/check"
 import { prettyMath } from "../lang/pretty"
 
@@ -380,7 +391,11 @@ export const buildVerificationScript = (program: Program): SmtScript => {
       const clause = fn.ensures[ci]
       const t = em.term(clause.expr, ensuresScope, smtNoPath())
       const pretty = prettyMath(clause.expr)
-      w.query(new SmtQuery(QUERY_ENSURES, idx, clause.axiomId, ci, pretty, ""), [bindResult, `(assert (not ${t}))`], true)
+      w.query(
+        new SmtQuery(QUERY_ENSURES, idx, clause.axiomId, ci, pretty, ""),
+        [bindResult, `(assert (not ${t}))`],
+        true,
+      )
       w.query(new SmtQuery(QUERY_TRIVIAL, idx, clause.axiomId, ci, pretty, ""), [`(assert (not ${t}))`], false)
     }
     for (const d of em.divs) {

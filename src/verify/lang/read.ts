@@ -33,7 +33,23 @@ import {
 } from "./ast"
 
 const langUnops = (): string[] => ["not", "neg", "abs", "floor", "ceil"]
-const langBinops = (): string[] => ["+", "-", "*", "/", "min", "max", "<", "<=", ">", ">=", "==", "!=", "and", "or", "implies"]
+const langBinops = (): string[] => [
+  "+",
+  "-",
+  "*",
+  "/",
+  "min",
+  "max",
+  "<",
+  "<=",
+  ">",
+  ">=",
+  "==",
+  "!=",
+  "and",
+  "or",
+  "implies",
+]
 const langTys = (): string[] => ["Real", "Int", "Bool"]
 
 const langIsDigit = (c: i32): boolean => c >= 48 && c <= 57
@@ -174,7 +190,8 @@ const langCanonicalDecimal = (text: string): string => {
  */
 export const langRoundTrips = (text: string): boolean => {
   const v = parseFloat(text)
-  if (!(v === v && v - v === v - v)) {
+  // biome-ignore lint/suspicious/noSelfCompare: Nish has no Number.isFinite; x - x is NaN only for NaN and ±Infinity.
+  if (!(v - v === v - v)) {
     return false
   }
   return langCanonicalDecimal(text) === langCanonicalDecimal(`${v}`)
@@ -348,7 +365,9 @@ class LangReader {
       const name: string | null = this.isObject(p) ? this.str(p, "name") : null
       const ty: string | null = this.isObject(p) ? this.str(p, "type") : null
       if (name === null || ty === null || !langIsIdent(name) || langTys().indexOf(ty) < 0) {
-        this.errors.push(`${where}[${i}]: param must be { name: identifier, type: Real | Int | Bool }, got ${this.show(p)}`)
+        this.errors.push(
+          `${where}[${i}]: param must be { name: identifier, type: Real | Int | Bool }, got ${this.show(p)}`,
+        )
         continue
       }
       this.extras(p, ["name", "type"], `${where}[${i}]`)
@@ -403,11 +422,7 @@ class LangReader {
         continue
       }
       const where = this.whereOf(f, "functions", i)
-      this.extras(
-        f,
-        ["name", "layer", "purpose", "params", "returnType", "requires", "ensures", "body"],
-        where,
-      )
+      this.extras(f, ["name", "layer", "purpose", "params", "returnType", "requires", "ensures", "body"], where)
       this.header(f, where)
       const params = this.params(this.doc.get(f, "params"), `${where}/params`)
       const requires = this.clauses(this.doc.get(f, "requires"), `${where}/requires`, 0)

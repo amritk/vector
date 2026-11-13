@@ -7,20 +7,14 @@
  */
 
 import { JsonDocument, JsonValue } from "nish/json-value"
-import { dashInputs, renderDashboard, STATUS_PROVEN, verdictStatus } from "./emit/dashboard"
+import { STATUS_PROVEN, dashInputs, renderDashboard, verdictStatus } from "./emit/dashboard"
 import { checkConformance } from "./emit/float64"
-import {
-  OutJson,
-  outJsonArray,
-  outJsonObject,
-  outJsonString,
-  outJsonStrings,
-} from "./emit/outjson"
+import { OutJson, outJsonArray, outJsonObject, outJsonString, outJsonStrings } from "./emit/outjson"
 import { emitTypeScript } from "./emit/typescript"
 import { checkAxiomTraceability, checkSpecProgramConsistency, typecheckProgram } from "./lang/check"
 import { readProgram, readSpecPlan } from "./lang/read"
-import { collectStyleWarnings, StyleWarning } from "./lang/style"
-import { CLAUSE_PROVEN, CLAUSE_REFUTED, Counterexample, solveProgram, VerifyReport } from "./solve/report"
+import { StyleWarning, collectStyleWarnings } from "./lang/style"
+import { CLAUSE_PROVEN, CLAUSE_REFUTED, Counterexample, VerifyReport, solveProgram } from "./solve/report"
 
 /** Every proven clause holds, over the reals and in float64. */
 export const OUTCOME_PROVEN: string = "PROVEN"

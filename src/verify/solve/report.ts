@@ -395,7 +395,7 @@ export const solverLabel = (): string => {
  * @param line one error line
  * @returns true when the line is that refusal
  */
-export const solveIsModelRefusal = (line: string): boolean => line.endsWith(": model is not available\")")
+export const solveIsModelRefusal = (line: string): boolean => line.endsWith(': model is not available")')
 
 /**
  * Proves a typechecked program: builds its script, runs z3 and assembles the
