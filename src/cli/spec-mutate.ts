@@ -49,7 +49,11 @@ export class SpecMutateCommand {
     this.baseFlag = cli.flag(handle, "--base <ref>", "the commit the change is against")
     this.nishRootFlag = cli.flag(handle, "--nish-root <dir>", "a nish checkout: finds the module and the compiler")
     this.nishFlag = cli.flag(handle, "--nish <bin>", "the nish compiler, from --nish-root (default: bin/nish)")
-    this.testFlag = cli.flag(handle, "--test <file>", "the generated test program to run against each mutant")
+    this.testFlag = cli.flag(
+      handle,
+      "--test <file>",
+      "the test program to run against each mutant (default: the contract's test, emitted as spec emit does)",
+    )
     this.jobsFlag = cli.flag(handle, "--jobs <n>", "mutants run at once (default 1)")
     this.maxFlag = cli.flag(handle, "--max <n>", "at most this many mutants, spread over the changed lines")
     this.formatFlag = cli.flag(handle, "--format <f>", "text (default), markdown (a PR comment) or json")
@@ -78,10 +82,7 @@ export class SpecMutateCommand {
     if (root === null) {
       return report(usageError("spec mutate: --nish-root <dir> is required: the nish checkout holding the module"))
     }
-    const test = r.value(this.testFlag)
-    if (test === null) {
-      return report(usageError("spec mutate: --test <file> is required: the generated test to run"))
-    }
+    const test = r.value(this.testFlag) ?? ""
     const jobs = specMutateCount(r.value(this.jobsFlag), 1)
     if (jobs < 1) {
       return report(usageError("spec mutate: --jobs takes a whole number of at least 1"))

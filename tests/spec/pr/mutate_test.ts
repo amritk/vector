@@ -37,7 +37,7 @@ const mutateTestList = (ms: MutateMutant[]): string => {
  */
 const MUTATE_TEST_NISH: string = `#!/bin/sh
 root=$(cd "$(dirname "$0")/.." && pwd)
-if grep -q 'return null' "$root/std/m.ts"; then
+if grep -q 'return null\\|canary' "$root/std/m.ts"; then
   printf '%s/std/m.ts:5:3: error: refused\\n  5 |   return null\\n1 error\\n' "$root" >&2
   exit 1
 fi
@@ -174,6 +174,10 @@ const mutateTestRepo = (t: Suite): Result<boolean, string> => {
  */
 const MUTATE_TEST_ODD_NISH: string = `#!/bin/sh
 root=$(cd "$(dirname "$0")/.." && pwd)
+if grep -q 'canary' "$root/std/m.ts"; then
+  echo "std/m.ts:9:1: syntax error: canary" >&2
+  exit 1
+fi
 if grep -q 'a <= b' "$root/std/m.ts"; then
   exec sleep 600
 fi
@@ -185,9 +189,13 @@ printf '#!/bin/sh\\ncd "%s" && exec sh "%s"\\n' "$root" "$1" > "$3"
 chmod +x "$3"
 `
 
-/** A stub compiler that fails "return null" with \`what\` (shell), and otherwise links. */
+/** A stub compiler that refuses the canary, fails "return null" with \`what\` (shell), and otherwise links. */
 const mutateTestBadNish = (what: string): string => `#!/bin/sh
 root=$(cd "$(dirname "$0")/.." && pwd)
+if grep -q 'canary' "$root/std/m.ts"; then
+  echo "std/m.ts:9:1: syntax error: canary" >&2
+  exit 1
+fi
 if grep -q 'return null' "$root/std/m.ts"; then
   ${what}
 fi
@@ -200,8 +208,19 @@ const MUTATE_TEST_EMPTY_NISH: string = `#!/bin/sh
 exit 0
 `
 
-/** Runs the change's mutants against the stub compiler `nish`, in a fresh repository. */
-const mutateTestWith = (nish: string): Result<PrReport, string> => {
+/** A stub compiler that links every module, the canary included: it does not read the copy. */
+const MUTATE_TEST_BLIND_NISH: string = `#!/bin/sh
+root=$(cd "$(dirname "$0")/.." && pwd)
+printf '#!/bin/sh\\ncd "%s" && exec sh "%s"\\n' "$root" "$1" > "$3"
+chmod +x "$3"
+`
+
+/**
+ * Runs the change's mutants against the stub compiler `nish`, in a fresh
+ * repository, with the test `t.sh`, or with the contract's emitted test when
+ * `emit` is set.
+ */
+const mutateTestWith = (nish: string, emit: boolean): Result<PrReport, string> => {
   const dir = prTestRepo("vector-mutate-odd-").orReturn()
   prTestWrite(dir, "nish/std/m.ts", MUTATE_TEST_BEFORE).orReturn()
   prTestWrite(dir, "nish/bin/nish", nish).orReturn()
@@ -211,7 +230,7 @@ const mutateTestWith = (nish: string): Result<PrReport, string> => {
   prTestWrite(dir, "nish/std/m.ts", MUTATE_TEST_AFTER).orReturn()
   prTestWrite(dir, "t.sh", MUTATE_TEST_PROGRAM).orReturn()
   prTestWrite(dir, "c.json", MUTATE_TEST_CONTRACT).orReturn()
-  const run = new MutateRun(`${dir}/nish`, "", "bin/nish", `${dir}/t.sh`, 4, MUTATE_TEST_LIMIT_MS)
+  const run = new MutateRun(`${dir}/nish`, "", "bin/nish", emit ? "" : `${dir}/t.sh`, 4, MUTATE_TEST_LIMIT_MS)
   const r = mutateCheck(`${dir}/c.json`, "main", run, 0)
   prTestRemove(dir)
   return r
@@ -219,7 +238,7 @@ const mutateTestWith = (nish: string): Result<PrReport, string> => {
 
 /** Builds that hang, are refused, or fail for the tool, for a mutant and for the baseline. */
 const mutateTestOddBuilds = (t: Suite): void => {
-  const odd = mutateTestWith(MUTATE_TEST_ODD_NISH)
+  const odd = mutateTestWith(MUTATE_TEST_ODD_NISH, false)
   t.eqStr(
     "a hung build and a refused one",
     odd.isOk() ? `${odd.value.items.join(" | ")} || ${odd.value.problems.join(" | ")}` : odd.error,
@@ -238,10 +257,23 @@ const mutateTestOddBuilds = (t: Suite): void => {
     ["no binary", "exit 0", "a mutant's build exits 0 but writes no binary"],
   ]
   for (const b of bad) {
-    const r = mutateTestWith(mutateTestBadNish(b[1]))
+    const r = mutateTestWith(mutateTestBadNish(b[1]), false)
     t.ok(`${b[0]} is the tool's failure, not a stillborn mutant`, r.isErr() && r.error.indexOf(b[2]) >= 0)
   }
-  const empty = mutateTestWith(MUTATE_TEST_EMPTY_NISH)
+  const blind = mutateTestWith(MUTATE_TEST_BLIND_NISH, false)
+  t.ok(
+    "a compiler that builds the unparseable canary does not read the copy: the tool's failure",
+    blind.isErr() && blind.error.indexOf("so it does not read the copy") >= 0,
+  )
+  const emitted = mutateTestWith(MUTATE_TEST_NISH, true)
+  t.ok(
+    "without --test, a contract whose test cannot be emitted is refused, naming why",
+    emitted.isOk() &&
+      emitted.value.items.length === 0 &&
+      emitted.value.problems.length > 0 &&
+      emitted.value.problems[0].indexOf("the contract's test cannot be emitted: fidelity: R1: quote not found") === 0,
+  )
+  const empty = mutateTestWith(MUTATE_TEST_EMPTY_NISH, false)
   t.ok(
     "a baseline build without a binary is the tool's failure",
     empty.isErr() && empty.error.indexOf("the unmutated module's build exits 0 but writes no binary") >= 0,

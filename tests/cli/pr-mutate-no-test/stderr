@@ -1,1 +1,0 @@
-vector: spec mutate: --test <file> is required: the generated test to run

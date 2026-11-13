@@ -14,10 +14,12 @@
  */
 
 import { splitLines, trim } from "nish/text"
+import { EXIT_USAGE } from "../../core/diag"
 import { joinPath, makeTempDir, mkdirAll } from "../../core/fs"
 import { runProcess } from "../../core/process"
 import { contractLoadFile } from "../contract/contract"
 import { shapeNishModuleFile } from "../contract/shape"
+import { emitContractFile } from "../emit/file"
 import { gitdiffChanged, gitdiffPrefix } from "./gitdiff"
 import {
   MUTATE_BUILD_TIMED_OUT,
@@ -46,8 +48,10 @@ export class MutateRun {
   file: string
   /** The compiler, from the nish root, such as bin/nish. */
   nish: string
-  /** The test program, an absolute path: what `verify/emit` writes. */
+  /** The test program, an absolute path; "" to emit it from the contract, as `spec emit` does. */
   test: string
+  /** The emitted test's source, written beside the scratch copies when `test` is ""; null until emitted. */
+  program: string | null = null
   /** How many mutants run at once. */
   jobs: i32
   /** The most milliseconds a build or run may take; 0 or less for three times the baseline's, at least MUTATERUN_MIN_TIMEOUT_MS. */
@@ -59,7 +63,7 @@ export class MutateRun {
    * @param nishRoot the nish checkout
    * @param file the module, from the nish root ("" until the contract names it)
    * @param nish the compiler, from the nish root
-   * @param test the test program, an absolute path
+   * @param test the test program, an absolute path; "" to emit it from the contract
    * @param jobs how many mutants run at once; below 1 is 1, above the machine's CPUs is their count
    * @param timeoutMs the time limit per step; 0 or less to derive it from the baseline
    */
@@ -205,6 +209,40 @@ const mutaterunBaseline = (run: MutateRun, dir: string, limitMs: i32): Result<Mu
     return Ok(new MutaterunBaseline(0, `it exits ${test.status}: ${mutaterunLogTail(dir)}`))
   }
   return Ok(new MutaterunBaseline((monotonicNanos() - start) / toI64(1000000), ""))
+}
+
+/** The line the canary build appends to the module: no module can hold it. */
+const MUTATERUN_CANARY: string = "\n)vector mutate canary(\n"
+
+/**
+ * Checks that the compiler builds from the copy in `dir`: the module, made
+ * unparseable there, must be refused with an error located in it. A compiler
+ * that reads another install's std (an installed wrapper that execs by
+ * absolute path, say) builds it anyway, and would let every mutant pass
+ * unseen, so that is a tool failure. The module is restored after.
+ */
+const mutaterunCanary = (run: MutateRun, dir: string, text: string, limitMs: i32): Result<boolean, string> => {
+  const module = joinPath(dir, run.file)
+  writeFileSync(module, `${text}${MUTATERUN_CANARY}`)
+  unlinkSync(joinPath(dir, "mutant.bin"))
+  const build = runProcess(mutaterunBuildArgv(run, dir), "", limitMs)
+  writeFileSync(module, text)
+  const b = build.orReturn()
+  if (b.timedOut) {
+    return Err(`the canary build (the module made unparseable) ran past ${limitMs} ms: ${mutaterunLogTail(dir)}`)
+  }
+  if (b.status === 0) {
+    return Err(
+      `the compiler ${run.nish} builds the test even with ${run.file} made unparseable in the copy, so it does not read the copy (an installed wrapper that execs another install by absolute path?): give a --nish that builds from the checkout it sits in`,
+    )
+  }
+  const log = readFileSyncOrNull(joinPath(dir, "mutant.log")) ?? ""
+  if (!mutaterunRefused(run, log)) {
+    return Err(
+      `the canary build (the module made unparseable) exits ${b.status} with no error located in ${run.file}: ${mutaterunLogTail(dir)}`,
+    )
+  }
+  return Ok(true)
 }
 
 /** Starts the next step in a slot: `argv`, ending by `limitMs` from now. */
@@ -478,6 +516,7 @@ const mutaterunIn = (
       slowest = baseline.value.ms
     }
   }
+  mutaterunCanary(run, slots[0].dir, text, first).orReturn()
   let limitMs = run.timeoutMs
   if (limitMs <= 0) {
     const derived = slowest * toI64(3)
@@ -506,12 +545,54 @@ export const mutateRunAll = (run: MutateRun, text: string, mutants: MutateMutant
     return Ok(passed)
   }
   const scratch = makeTempDir("vector-mutate-").orReturn()
-  const result = mutaterunIn(run, scratch, text, mutants)
+  const result = mutaterunWithTest(run, scratch, text, mutants)
   const removed = runProcess(["rm", "-rf", "--", scratch], "", MUTATERUN_COPY_MS)
   if (removed.isErr() && result.isOk()) {
     return Err(`cannot remove ${scratch}: ${removed.error}`)
   }
   return result
+}
+
+/**
+ * Runs the mutants in `scratch`, first writing the emitted test there when
+ * the run has a program but no test file.
+ */
+const mutaterunWithTest = (
+  run: MutateRun,
+  scratch: string,
+  text: string,
+  mutants: MutateMutant[],
+): Result<string | null, string> => {
+  const program = run.program
+  if (run.test === "" && program !== null) {
+    const test = joinPath(scratch, "spec_test.ts")
+    const n = createFileExclusiveSync(test, program, 0o644)
+    if (n < 0) {
+      return Err(`cannot write the emitted test ${test} (errno ${-n})`)
+    }
+    run.test = test
+  }
+  return mutaterunIn(run, scratch, text, mutants)
+}
+
+/**
+ * The contract's test as `spec emit` writes it, for a run given no `--test`:
+ * `Ok(null)` with the refusals added to `r` when the contract is refused,
+ * `Err` when it cannot be read.
+ */
+const mutaterunEmit = (contractPath: string, r: PrReport): Result<string | null, string> => {
+  const emitted = emitContractFile(contractPath, null)
+  if (emitted.isOk()) {
+    return Ok(emitted.value.program)
+  }
+  const none: string | null = null
+  for (const d of emitted.error) {
+    if (d.code === EXIT_USAGE) {
+      return Err(d.message)
+    }
+    r.problems.push(`the contract's test cannot be emitted: ${d.message}`)
+  }
+  return Ok(none)
 }
 
 /**
@@ -551,7 +632,13 @@ export const mutateCheck = (contractPath: string, base: string, run: MutateRun, 
     mutateJudge(r, file, mutants, allow, null, dropped)
     return Ok(r)
   }
-  if (realpathSync(run.test) === null) {
+  if (run.test === "") {
+    const program = mutaterunEmit(contractPath, r).orReturn()
+    if (program === null) {
+      return Ok(r)
+    }
+    run.program = program
+  } else if (realpathSync(run.test) === null) {
     return Err(`the test ${run.test} cannot be read`)
   }
   const compiler = joinPath(run.nishRoot, run.nish)
