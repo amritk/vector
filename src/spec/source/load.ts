@@ -11,6 +11,7 @@
  */
 
 import { Contract, SourceDecl } from "../contract/types"
+import { xmlRead } from "../xml/doc"
 import { hiddenProblem } from "./hidden"
 import { SourceRead, sourceCandidate, sourceLabel, sourceReadConfined } from "./path"
 import { RfcDocument, rfcRead } from "./rfc"
@@ -70,14 +71,17 @@ export const sourceReadersAdd = (readers: SourceReaders, ext: string, read: Sour
 }
 
 /**
- * The readers every load has: an RFC's plain text, `.txt`. Other stages
- * register theirs (the XML of an RFC or a spec) with sourceReadersAdd.
+ * The readers every load has: an RFC's plain text, `.txt`, and the XML of an
+ * RFC or a spec, `.xml`. Every command builds its readers from this one
+ * place, so none can forget a source format; sourceReadersAdd adds or
+ * replaces one.
  *
- * @returns a registry holding `.txt`
+ * @returns a registry holding `.txt` and `.xml`
  */
 export const sourceReadersDefault = (): SourceReaders => {
   const r = new SourceReaders()
   r.entries.push(new SourceReaderEntry(".txt", rfcRead))
+  r.entries.push(new SourceReaderEntry(".xml", xmlRead))
   return r
 }
 
@@ -316,7 +320,7 @@ const sourceLoadOne = (
 
 /**
  * Reads every source a contract declares (sourceDecls), with the readers
- * sourceReadersDefault holds.
+ * sourceReadersDefault holds (`.txt` and `.xml`).
  *
  * @param contract the contract
  * @param contractPath the contract's own path, which `path` is relative to

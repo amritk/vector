@@ -40,6 +40,30 @@ const loadTestDecl = (id: string, rfc: i32, file: string | null, path: string | 
   return d
 }
 
+/** An XML spec with one section holding `body`, as xmlRead reads it. */
+const loadTestXml = (body: string): string =>
+  `<rfc><middle><section anchor="intro" numbered="true"><name>Intro</name><t>${body}</t></section></middle></rfc>`
+
+/**
+ * Loads, with the default readers, a contract whose one source is `file`
+ * beside it, an XML spec holding `body`: its problems joined by " | ", or,
+ * when it loads, "reads: " and its section's lines as the gates read them.
+ */
+const loadTestXmlProblems = (root: string, file: string, body: string): string => {
+  writeFileSync(joinPath(root, `contracts/${file}`), loadTestXml(body))
+  const x = loadTestContract(-1)
+  x.sources = [loadTestDecl("x", -1, null, file)]
+  const set = sourceLoad(x, joinPath(root, "contracts/c.json"), root)
+  if (set.problems.length > 0) {
+    return set.problems.join(" | ")
+  }
+  const read = sourceFind(set, "x")
+  if (read === null || read.doc.sections.length === 0) {
+    return "reads: nothing"
+  }
+  return `reads: ${read.doc.sections[0].lines.join(" / ")}`
+}
+
 /** The problems of a load, joined by " | ". */
 const loadTestProblems = (c: Contract, contractPath: string, root: string): string =>
   sourceLoad(c, contractPath, root).problems.join(" | ")
@@ -181,37 +205,40 @@ export const main = (): i32 => {
   )
 
   // Readers, by extension.
-  writeFileSync(joinPath(root, "contracts/spec.xml"), loadTestRfc(5555, "XML."))
+  writeFileSync(joinPath(root, "contracts/spec.adoc"), loadTestRfc(5555, "Adoc."))
   writeFileSync(joinPath(root, "contracts/README"), loadTestRfc(5555, "None."))
   const xml = loadTestContract(-1)
-  xml.sources = [loadTestDecl("x", -1, null, "spec.xml"), loadTestDecl("bare", -1, null, "README")]
+  xml.sources = [loadTestDecl("x", -1, null, "spec.adoc"), loadTestDecl("bare", -1, null, "README")]
   t.eqStr(
-    "no reader for .xml, nor for no extension",
+    "no reader for an unregistered extension, nor for no extension",
     loadTestProblems(xml, contractPath, root),
     [
-      "source x: contracts/spec.xml is a .xml file, and no reader is registered for it: readers are registered for .txt",
-      "source bare: contracts/README is a file without an extension, and no reader is registered for it: readers are registered for .txt",
+      "source x: contracts/spec.adoc is a .adoc file, and no reader is registered for it: readers are registered for .txt, .xml",
+      "source bare: contracts/README is a file without an extension, and no reader is registered for it: readers are registered for .txt, .xml",
     ].join(" | "),
   )
   const readers = sourceReadersDefault()
   t.ok(
-    "the default reads .txt",
-    sourceReaderFor(readers, "a/b.txt") !== null && sourceReaderFor(readers, "a.b/c") === null,
+    "the default reads .txt and .xml",
+    sourceReaderFor(readers, "a/b.txt") !== null &&
+      sourceReaderFor(readers, "a/b.xml") !== null &&
+      sourceReaderFor(readers, "a.b/c") === null &&
+      sourceReaderFor(readers, "a/b.adoc") === null,
   )
-  t.ok("a reader is registered", sourceReadersAdd(readers, ".xml", loadTestOtherReader).isOk())
-  t.ok("a registered reader is found", sourceReaderFor(readers, "rfc1.xml") !== null)
+  t.ok("a reader is registered", sourceReadersAdd(readers, ".adoc", loadTestOtherReader).isOk())
+  t.ok("a registered reader is found", sourceReaderFor(readers, "rfc1.adoc") !== null)
   const withXml = sourceLoadWith(xml, contractPath, root, readers)
   const x = sourceFind(withXml, "x")
-  t.ok("a registered reader reads", x !== null && x.doc.number === 5555 && x.label === "contracts/spec.xml")
-  t.ok("re-registered", sourceReadersAdd(readers, ".xml", loadTestRefusingReader).isOk())
-  t.ok("adding again keeps one entry", readers.entries.length === 2)
+  t.ok("a registered reader reads", x !== null && x.doc.number === 5555 && x.label === "contracts/spec.adoc")
+  t.ok("re-registered", sourceReadersAdd(readers, ".adoc", loadTestRefusingReader).isOk())
+  t.ok("adding again keeps one entry", readers.entries.length === 3)
   const refused = sourceLoadWith(xml, contractPath, root, readers).problems.join(" | ")
   t.eqStr(
     "adding again replaces the reader",
     refused,
     [
-      "source x: contracts/spec.xml: refused (an RFC)",
-      "source bare: contracts/README is a file without an extension, and no reader is registered for it: readers are registered for .txt, .xml",
+      "source x: contracts/spec.adoc: refused (an RFC)",
+      "source bare: contracts/README is a file without an extension, and no reader is registered for it: readers are registered for .txt, .xml, .adoc",
     ].join(" | "),
   )
   t.eqStr(
@@ -234,7 +261,7 @@ export const main = (): i32 => {
     loadTestAddErr(readers, ".a/b"),
     'a reader\'s extension is ".a/b": give it with its leading dot and nothing else, as ".xml"',
   )
-  t.ok("a refused extension is not registered", readers.entries.length === 2)
+  t.ok("a refused extension is not registered", readers.entries.length === 3)
 
   // The text a reader decodes is checked as well as the bytes it was given.
   writeFileSync(joinPath(root, "contracts/esc.xml"), loadTestRfc(4444, "It MUS&#1058; work."))
@@ -259,6 +286,31 @@ export const main = (): i32 => {
     "a look-alike only in a section's lines",
     linedProblems.startsWith("source lined: contracts/lines.xml as its reader decoded it: ") &&
       linedProblems.indexOf('"MUSТ" reads as MUST but is not spelled in ASCII') >= 0,
+  )
+
+  // A real XML source, through the default readers: an escape that decodes to
+  // hidden or look-alike text is refused, as the same bytes would be raw. A
+  // zero-width space is the exception: the reader drops it, as xml2rfc's text
+  // writer does, so the gates read the MUST the rendered page shows.
+  t.eqStr(
+    "a clean .xml loads through the default readers",
+    loadTestXmlProblems(root, "clean.xml", "It MUST work."),
+    "reads: It MUST work.",
+  )
+  t.eqStr(
+    "an escaped zero-width space in an .xml source is dropped, so MUST reads as MUST",
+    loadTestXmlProblems(root, "zwsp.xml", "It MU&#x200B;ST work."),
+    "reads: It MUST work.",
+  )
+  t.eqStr(
+    "an escaped right-to-left override in an .xml source is refused",
+    loadTestXmlProblems(root, "rlo.xml", "It MUST &#x202E;work."),
+    "source x: contracts/rlo.xml as its reader decoded it: text a reader cannot see as the gates read it: line 2: invisible character U+202E: remove it",
+  )
+  t.eqStr(
+    "an escaped Cyrillic look-alike in an .xml source is refused",
+    loadTestXmlProblems(root, "cyr.xml", "It MUS&#x422; work."),
+    'source x: contracts/cyr.xml as its reader decoded it: text a reader cannot see as the gates read it: line 2: "MUSТ" reads as MUST but is not spelled in ASCII: write MUST',
   )
 
   // Each refusal, with its reason.

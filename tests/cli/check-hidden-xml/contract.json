@@ -1,0 +1,58 @@
+{
+  "contract": "check-hidden-xml",
+  "source": {
+    "title": "A spec whose XML hides a look-alike",
+    "main": "spec"
+  },
+  "sources": [
+    {
+      "id": "spec",
+      "path": "spec.xml"
+    }
+  ],
+  "target": {
+    "module": "nish/name"
+  },
+  "functions": [
+    {
+      "name": "nameOk",
+      "params": [
+        {
+          "name": "name",
+          "type": "string"
+        }
+      ],
+      "returns": "bool"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "R-EMPTY",
+      "section": "1",
+      "level": "MUST",
+      "quote": "nameOk MUST return true for the empty name, \"\"."
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "V-EMPTY",
+      "title": "an empty name is short",
+      "covers": ["R-EMPTY"],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "nameOk",
+      "args": [
+        {
+          "str": ""
+        }
+      ],
+      "expect": {
+        "bool": true
+      }
+    }
+  ]
+}

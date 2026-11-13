@@ -34,9 +34,10 @@ const emitRefuseAll = (path: string, messages: string[]): Diagnostic[] =>
   messages.map((m: string): Diagnostic => refusal(path, 0, m))
 
 /**
- * Reads a contract file, checks it, and emits its test. An unreadable file
- * is a usage error (exit 2); a contract that does not load, fails its check,
- * or that Nish cannot express is refused (exit 1), one diagnostic per reason.
+ * Reads a contract file, checks it, and emits its test. An unreadable file,
+ * or a tool the check needs (z3) that failed, is a usage error (exit 2), alone
+ * and with no refusals; a contract that does not load, fails its check, or
+ * that Nish cannot express is refused (exit 1), one diagnostic per reason.
  *
  * @param path the contract file
  * @param regenerate the command shown in the test's header, or null for none
@@ -52,7 +53,12 @@ export const emitContractFile = (path: string, regenerate: string | null): Resul
     return Err(emitRefuseAll(path, loaded.error))
   }
   const c = loaded.value
-  const checked = checkContract(new CheckContext(path, "."), c)
+  const ctx = new CheckContext(path, ".")
+  const checked = checkContract(ctx, c)
+  const failure = ctx.toolFailure
+  if (failure !== null) {
+    return Err([usageError(`${path}: cannot be checked: ${failure}`)])
+  }
   if (!checkPassed(checked)) {
     return Err(emitRefuseAll(path, checkLines(checked)))
   }
@@ -116,7 +122,8 @@ export const emitReportAll = (ds: Diagnostic[]): i32 => {
 /**
  * `vector spec emit <contract.json> -o <main.ts>`: emits the contract's test
  * and writes it. Exits 0 when written, 1 when the contract is refused, and 2
- * for bad usage or a file that cannot be read or written.
+ * for bad usage, a file that cannot be read or written, or a tool (z3) that
+ * failed.
  *
  * @param path the contract file
  * @param out where to write the test; null is a usage error

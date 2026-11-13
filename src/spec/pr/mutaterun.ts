@@ -639,7 +639,8 @@ const mutaterunWithTest = (
 /**
  * The contract's test as `spec emit` writes it, for a run given no `--test`:
  * `Ok(null)` with the refusals added to `r` when the contract is refused,
- * `Err` when it cannot be read.
+ * `Err` when it cannot be read or a tool its check needs (z3) failed, which
+ * the command exits 2 on.
  */
 const mutaterunEmit = (contractPath: string, r: PrReport): Result<string | null, string> => {
   const emitted = emitContractFile(contractPath, null)

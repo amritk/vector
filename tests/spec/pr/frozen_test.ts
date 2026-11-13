@@ -184,6 +184,46 @@ const frozenTestRepo = (t: Suite, dir: string): Result<boolean, string> => {
   return Ok(true)
 }
 
+/** A one-section spec in RFC XML v3. */
+const FROZEN_TEST_XML: string =
+  '<rfc><front><title>S</title></front><middle><section anchor="a" numbered="true"><name>A</name><t>It MUST work.</t></section></middle></rfc>\n'
+
+/** A valid contract whose only source is specs/s.xml, pinned to `sha`. */
+const frozenTestXmlContract = (sha: string): string => `{
+  "contract": "x1",
+  "source": {"title": "S", "main": "s", "sha256": "${sha}"},
+  "sources": [{"id": "s", "path": "../specs/s.xml"}],
+  "target": {"module": "nish/hex"},
+  "requirements": [{"id": "R1", "section": "1", "level": "MUST", "quote": "It MUST work."}],
+  "functions": [{"name": "enc", "params": [{"name": "b", "type": "bytes"}], "returns": "string"}],
+  "clauses": [
+    {"kind": "vector", "id": "V1", "title": "t", "covers": ["R1"],
+     "source": {"cite": {"section": "1"}}, "call": "enc", "args": [{"hex": "00"}], "expect": {"str": "00"}}
+  ]
+}
+`
+
+/** A repository whose only contract reads an .xml source: the gate reads it, and holds it to its pin. */
+const frozenTestXmlRepo = (t: Suite): Result<boolean, string> => {
+  const dir = prTestRepo("vector-frozen-xml-").orReturn()
+  prTestWrite(dir, "specs/s.xml", FROZEN_TEST_XML).orReturn()
+  prTestWrite(dir, "contracts/x.json", frozenTestXmlContract(sha256Hex(FROZEN_TEST_XML))).orReturn()
+  prTestCommit(dir, "base").orReturn()
+  prTestGit(dir, ["checkout", "-q", "-b", "work"]).orReturn()
+  prTestWrite(dir, "src/x.ts", "x\n").orReturn()
+  t.eqStr("a contract whose only source is .xml passes", frozenTestVerdict(dir, []), "OK")
+  prTestGit(dir, ["reset", "-q", "--hard"]).orReturn()
+  prTestWrite(dir, "specs/s.xml", "<rfc/>\n").orReturn()
+  prTestCommit(dir, "spec changed").orReturn()
+  const changed = frozenTestVerdict(dir, [])
+  t.ok(
+    "and the .xml source is held to its pin",
+    changed.indexOf("source s (specs/s.xml) has SHA-256 ") >= 0 && changed.indexOf("the source changed") >= 0,
+  )
+  prTestRemove(dir)
+  return Ok(true)
+}
+
 /** A path resolved against the top "/r", or "ERR". */
 const frozenTestInTop = (given: string): string => {
   const r = frozenResolve("/r", given)
@@ -233,5 +273,9 @@ export const main = (): i32 => {
     t.fail("the repository steps", ran.error)
   }
   prTestRemove(dir.value)
+  const xml = frozenTestXmlRepo(t)
+  if (xml.isErr()) {
+    t.fail("the .xml repository steps", xml.error)
+  }
   return t.done()
 }
