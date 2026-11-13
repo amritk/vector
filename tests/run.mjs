@@ -15,6 +15,12 @@
 // nothing fails. Every run is killed after TIMEOUT_MS. The runner exits 1 if
 // anything failed, 2 if it could not run (no compiler, no dist/vector when a
 // case needs it).
+//
+// A unit test runs from nish's build cache, so vector's lookup of `.z3/` beside
+// the binary cannot find the repository's z3. Unit tests therefore get
+// VECTOR_Z3 set to the repository's .z3/z3 when it exists and VECTOR_Z3 is not
+// already set. Golden cases run dist/vector without it, so they exercise
+// the lookup beside the binary.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -27,6 +33,11 @@ const filter = process.argv[2] ?? "";
 const nish = process.env.NISH ?? join(root, ".nish/bin/nish");
 const vector = join(root, "dist/vector");
 const TIMEOUT_MS = 120_000;
+const repoZ3 = join(root, ".z3/z3");
+const unitEnv =
+  process.env.VECTOR_Z3 || !existsSync(repoZ3)
+    ? process.env
+    : { ...process.env, VECTOR_Z3: repoZ3 };
 
 const walk = (dir) =>
   readdirSync(dir).flatMap((name) => {
@@ -62,6 +73,7 @@ for (const file of units) {
   const name = relative(root, file);
   const r = spawnSync(nish, ["run", name], {
     cwd: root,
+    env: unitEnv,
     encoding: "utf8",
     maxBuffer: 64 << 20,
     timeout: TIMEOUT_MS,
