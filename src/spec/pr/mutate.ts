@@ -24,6 +24,10 @@ export const MUTATE_SURVIVED: i32 = 1
 export const MUTATE_STILLBORN: i32 = 2
 /** The test ran past its time on the mutant: counted as killed. */
 export const MUTATE_TIMED_OUT: i32 = 3
+/** The mutant's build ran past its time: it tested nothing, and too many of them refuse the run. */
+export const MUTATE_BUILD_TIMED_OUT: i32 = 4
+/** The share of mutants, in percent, whose builds may run past their time before the run is refused. */
+export const MUTATE_BUILD_TIMEOUT_PERCENT: i32 = 10
 
 /** One mutant: a single line of the module, changed. */
 export class MutateMutant {
@@ -77,6 +81,9 @@ export const mutateOutcomeName = (outcome: i32): string => {
   }
   if (outcome === MUTATE_TIMED_OUT) {
     return "timed out"
+  }
+  if (outcome === MUTATE_BUILD_TIMED_OUT) {
+    return "build timed out"
   }
   return "not run"
 }
@@ -397,6 +404,7 @@ export const mutateJudge = (
   }
   let stillborn = 0
   let timedOut = 0
+  let buildTimedOut = 0
   const used = new Set<string>()
   for (const m of mutants) {
     r.items.push(`${mutateOutcomeName(m.outcome)} ${file}:${m.line}:${m.col} ${m.op}: ${trim(m.after)}`)
@@ -404,6 +412,8 @@ export const mutateJudge = (
       stillborn++
     } else if (m.outcome === MUTATE_TIMED_OUT) {
       timedOut++
+    } else if (m.outcome === MUTATE_BUILD_TIMED_OUT) {
+      buildTimedOut++
     } else if (m.outcome === MUTATE_SURVIVED) {
       const a = mutateAllowed(allow, file, m.line)
       if (a !== null) {
@@ -418,15 +428,23 @@ export const mutateJudge = (
       r.problems.push(`mutant ${m.id} was not run`)
     }
   }
-  if (stillborn === mutants.length) {
-    r.problems.push("every mutant is stillborn: none builds, so the test met none of them")
+  if (stillborn + buildTimedOut === mutants.length) {
+    r.problems.push(
+      "every mutant is stillborn or its build ran past its time: none built, so the test met none of them",
+    )
+  } else if (buildTimedOut * 100 > toI32(mutants.length) * MUTATE_BUILD_TIMEOUT_PERCENT) {
+    r.problems.push(
+      `${buildTimedOut} of ${mutants.length} mutant builds ran past their time, more than ${MUTATE_BUILD_TIMEOUT_PERCENT}%: a survivor may hide among them, so run with fewer --jobs`,
+    )
+  } else if (buildTimedOut > 0) {
+    r.notes.push(`${buildTimedOut} of ${mutants.length} mutant builds ran past their time: they tested nothing`)
   }
   if (timedOut > 0) {
     r.notes.push(`${timedOut} mutants ran past their time: a timeout counts as killed`)
   }
   const mutated = new Set<string>()
   for (const m of mutants) {
-    if (m.outcome !== MUTATE_STILLBORN && m.outcome !== MUTATE_PENDING) {
+    if (m.outcome !== MUTATE_STILLBORN && m.outcome !== MUTATE_BUILD_TIMED_OUT && m.outcome !== MUTATE_PENDING) {
       mutated.add(`${m.line}`)
     }
   }

@@ -1,6 +1,7 @@
 import { Suite } from "nish/testing"
 import { replaceAll } from "nish/text"
 import { sha256Hex } from "../../../src/core/hex"
+import { runProcess } from "../../../src/core/process"
 import {
   FROZEN_GENERATED,
   FROZEN_IMPLEMENTATION,
@@ -139,6 +140,21 @@ const frozenTestRepo = (t: Suite, dir: string): Result<boolean, string> => {
     frozenTestVerdict(dir, ["/etc/c.json"]),
     `/etc/c.json: outside the repository at ${top}: the gate checks only its own contracts`,
   )
+
+  runProcess(["ln", "-s", "c.json", `${dir}/contracts/link.json`], "", 10000).orReturn()
+  t.eqStr(
+    "a symbolic link to a contract is refused",
+    frozenTestVerdict(dir, ["contracts/link.json"]),
+    "contracts/link.json: contracts/link.json is a symbolic link: the gate reads only the repository's own files",
+  )
+  frozenTestReset(dir).orReturn()
+  runProcess(["ln", "-s", ".", `${dir}/contracts/here`], "", 10000).orReturn()
+  t.eqStr(
+    "a contract under a linked directory is refused",
+    frozenTestVerdict(dir, [`${top}/contracts/here/c.json`]),
+    "contracts/here/c.json: contracts/here is a symbolic link: the gate reads only the repository's own files",
+  )
+  frozenTestReset(dir).orReturn()
 
   prTestGit(dir, ["mv", "src/x.ts", "src/y.ts"]).orReturn()
   prTestWrite(dir, "specs/s.md", "s\n").orReturn()

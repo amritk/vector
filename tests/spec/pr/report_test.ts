@@ -60,6 +60,21 @@ export const main = (): i32 => {
     sha,
   )
   t.eqStr(
+    "code after a block comment's close ends the header",
+    staleShaLines(`/* x */ const y = 1\n${STALE_PREFIX}${sha}\n`).join(","),
+    "",
+  )
+  t.eqStr(
+    "code after a multi-line block's close ends the header",
+    staleShaLines(`/*\n * x\n */ const y = 1\n${STALE_PREFIX}${sha}\n`).join(","),
+    "",
+  )
+  t.eqStr(
+    "a comment after a block's close keeps the header",
+    staleShaLines(`/* x */ // y\n/* a */ /* b */\n${STALE_PREFIX}${sha}\n`).join(","),
+    sha,
+  )
+  t.eqStr(
     "a malformed line is refused",
     staleReason(`${STALE_PREFIX}abc\n`, contract) ?? "",
     'its vector-contract-sha256 line holds "abc", not 64 lowercase hex digits: regenerate it with vector spec emit',

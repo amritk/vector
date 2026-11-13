@@ -1,1 +1,0 @@
-vector spec mutate --base HEAD --nish-root tests/cli/pr-exports-ok/nish --test t.ts tests/cli/pr-exports-ok/c.json

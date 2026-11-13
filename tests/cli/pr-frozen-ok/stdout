@@ -1,3 +1,0 @@
-spec frozen against HEAD: OK
-
-  ✓ contract contracts/rfc5869-hkdf-sha256.json

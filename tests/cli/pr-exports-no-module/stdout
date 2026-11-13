@@ -1,4 +1,0 @@
-spec exports of std/hex.ts against HEAD: FAILED
-
-problems:
-  ✗ std/hex.ts exists neither at the fork point nor now: is tests/cli/pr-exports-ok the nish checkout?

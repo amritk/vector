@@ -1,1 +1,0 @@
-vector spec exports --base HEAD --nish-root tests/cli/pr-exports-ok tests/cli/pr-exports-ok/c.json

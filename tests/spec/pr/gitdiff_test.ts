@@ -166,6 +166,26 @@ export const main = (): i32 => {
     ":1:an export it cannot name: export * from './a'",
   )
   t.eqStr(
+    "an export declaring two names is refused",
+    gitdiffTestList(gitdiffExports("export const fresh = 1, hidden = 2\n")),
+    ":1:an export declaring more than one name: export const fresh = 1, hidden = 2: give each name its own export",
+  )
+  t.eqStr(
+    "a second declarator on a later line is refused",
+    gitdiffTestList(gitdiffExports("export let a: i32 = 1,\n  b = 2\n")),
+    ":1:an export declaring more than one name: export let a: i32 = 1,: give each name its own export",
+  )
+  t.eqStr("a destructuring export is refused", gitdiffTestName("export const { a, b } = o"), "ERR")
+  t.eqStr(
+    "commas inside a value, a type or a string are one name",
+    gitdiffExports(
+      'export const m: Map<string, i32> = new Map<string, i32>()\nexport const g = f(a, b)\nexport const h: (a: i32, b: i32) => i32 = add\nexport const s = "x, y" // a, b\nexport const c = a > b ? [1, 2] : { p: 1, q: 2 }\nexport const id = <T, U>(x: T, y: U): T => x\n',
+    )
+      .map((e: GitdiffExport): string => (e.name.length > 0 ? e.name : e.problem))
+      .join(","),
+    "m,g,h,s,c,id",
+  )
+  t.eqStr(
     "overloads join into one export",
     gitdiffTestList(gitdiffExports("export function f(a: i32): i32\nexport function f(a: string): i32\n")),
     "f:1:export function f(a: i32): i32\nexport function f(a: string): i32",

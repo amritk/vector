@@ -4,7 +4,8 @@
  * of its own (its .git left behind), so each copy's compiler builds against
  * its own std/ holding its own mutant. A mutant runs in two steps, both
  * timed: `<nish> <test> --link <bin>` builds the test against it, and a build
- * that fails or runs past its time makes it stillborn; then `<bin>` runs, and
+ * that fails or leaves no binary makes it stillborn, one that runs past its
+ * time is counted apart (MUTATE_BUILD_TIMED_OUT); then `<bin>` runs, and
  * a nonzero exit, or running past its time, kills it. Every copy runs the
  * unmutated baseline first, so a broken copy cannot pass off as a kill. The test is given, not made here: generating it is `verify/emit`'s.
  */
@@ -16,6 +17,7 @@ import { contractLoadFile } from "../contract/contract"
 import { shapeNishModuleFile } from "../contract/shape"
 import { gitdiffChanged, gitdiffGit } from "./gitdiff"
 import {
+  MUTATE_BUILD_TIMED_OUT,
   MUTATE_KILLED,
   MUTATE_STILLBORN,
   MUTATE_SURVIVED,
@@ -158,6 +160,9 @@ const mutaterunBaseline = (run: MutateRun, dir: string, limitMs: i32): Result<i6
   if (build.timedOut || build.status !== 0) {
     return Err(`it does not build: ${mutaterunLogTail(dir)}`)
   }
+  if (realpathSync(joinPath(dir, "mutant.bin")) === null) {
+    return Err(`its build exits 0 but writes no binary: ${mutaterunLogTail(dir)}`)
+  }
   const test = runProcess(mutaterunTestArgv(dir), "", limitMs).orReturn()
   if (test.timedOut) {
     return Err(`it ran past ${limitMs} ms`)
@@ -225,6 +230,10 @@ class MutaterunStep {
 
 /** Handles a slot's step exiting with `status`: a built mutant moves on to its test, anything else settles it. */
 const mutaterunExited = (slot: MutaterunSlot, mutants: MutateMutant[], status: i32, limitMs: i32): MutaterunStep => {
+  if (slot.building && status === 0 && realpathSync(joinPath(slot.dir, "mutant.bin")) === null) {
+    mutaterunSettle(slot, mutants, MUTATE_STILLBORN)
+    return new MutaterunStep(1, "")
+  }
   if (slot.building && status === 0) {
     const started = mutaterunStart(slot, mutaterunTestArgv(slot.dir), false, limitMs)
     if (started.isErr()) {
@@ -293,7 +302,7 @@ const mutaterunLoop = (
           }
         } else {
           mutaterunKill(slot.pid)
-          mutaterunSettle(slot, mutants, slot.building ? MUTATE_STILLBORN : MUTATE_TIMED_OUT)
+          mutaterunSettle(slot, mutants, slot.building ? MUTATE_BUILD_TIMED_OUT : MUTATE_TIMED_OUT)
           busy--
         }
       }

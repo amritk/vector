@@ -28,11 +28,18 @@ const staleIsSha = (text: string): boolean => {
 /** Whether `line` ends a block comment opened on an earlier line. */
 const staleClosesBlock = (line: string): boolean => line.indexOf("*/") >= 0
 
+/** Whether the text after the close of a block comment in `line` is code, not a comment or nothing. */
+const staleCodeAfterBlock = (line: string): boolean => {
+  const rest = trim(line.substring(line.indexOf("*/") + 2))
+  return rest.length > 0 && !rest.startsWith("//") && !rest.startsWith("/*")
+}
+
 /**
  * What every `// vector-contract-sha256:` line in a test's header comment
  * names, well-formed or not: the text after the prefix. The header is the
  * lines before the first line of code: blank lines, `//` lines and block
- * comments. A line further down is code or a string, not the test's own.
+ * comments; a line where code follows a block comment's close is code. A line
+ * further down is code or a string, not the test's own.
  *
  * @param test the test's source
  * @returns the text after each prefix, in order
@@ -44,10 +51,17 @@ export const staleShaLines = (test: string): string[] => {
     const line = trim(raw)
     if (inBlock) {
       inBlock = !staleClosesBlock(line)
+      if (!inBlock && staleCodeAfterBlock(line)) {
+        break
+      }
       continue
     }
     if (line.startsWith("/*")) {
-      inBlock = !staleClosesBlock(line.substring(2))
+      const body = line.substring(2)
+      inBlock = !staleClosesBlock(body)
+      if (!inBlock && staleCodeAfterBlock(body)) {
+        break
+      }
       continue
     }
     if (line.length > 0 && !line.startsWith("//")) {

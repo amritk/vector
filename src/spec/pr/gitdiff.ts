@@ -466,6 +466,87 @@ const gitdiffDeclName = (decl: string): string => {
   return ""
 }
 
+/** The declarators of a `const`, `let` or `var` declaration, `export` already taken off; null for any other. */
+const gitdiffBindings = (decl: string): string | null => {
+  let rest = gitdiffTrimStart(decl)
+  if (rest.startsWith("declare ")) {
+    rest = gitdiffTrimStart(rest.substring(8))
+  }
+  if (rest.startsWith("const enum ")) {
+    return null
+  }
+  for (const k of ["const ", "let ", "var "]) {
+    if (rest.startsWith(k)) {
+      return rest.substring(k.length)
+    }
+  }
+  return null
+}
+
+/** Where the quoted text opened by the quote at `i` ends: the index after its closing quote. */
+const gitdiffSkipQuoted = (text: string, i: i32): i32 => {
+  const q = text.charCodeAt(i)
+  let j = i + 1
+  while (j < text.length && text.charCodeAt(j) !== q) {
+    j = text.charCodeAt(j) === 0x5c ? j + 2 : j + 1
+  }
+  return j + 1
+}
+
+/**
+ * Whether a declaration's declarators, `a = 1, b = 2`, name more than one:
+ * a comma outside brackets, strings and comments, before the statement's
+ * `;`. An angle bracket opens a type's brackets before the `=`, and after it
+ * only where it follows a name (`new Map<K, V>()`) or opens the value (a
+ * generic arrow, `<T, U>(x: T) => x`).
+ */
+const gitdiffManyDeclarators = (bindings: string): boolean => {
+  let depth = 0
+  let angle = 0
+  let inValue = false
+  let last = -1
+  let i: i32 = 0
+  while (i < bindings.length) {
+    const c = bindings.charCodeAt(i)
+    const n = i + 1 < bindings.length ? bindings.charCodeAt(i + 1) : -1
+    if (c === 0x22 || c === 0x27 || c === 0x60) {
+      i = gitdiffSkipQuoted(bindings, i)
+      continue
+    }
+    if (c === 0x2f && n === 0x2f) {
+      const nl = bindings.indexOf("\n", i)
+      i = nl < 0 ? toI32(bindings.length) : toI32(nl)
+      continue
+    }
+    if (c === 0x2f && n === 0x2a) {
+      const close = bindings.indexOf("*/", i + 2)
+      i = close < 0 ? toI32(bindings.length) : toI32(close) + 2
+      continue
+    }
+    const p = i > 0 ? bindings.charCodeAt(i - 1) : -1
+    if (c === 0x28 || c === 0x5b || c === 0x7b) {
+      depth++
+    } else if (c === 0x29 || c === 0x5d || c === 0x7d) {
+      depth--
+    } else if (c === 0x3c && (!inValue || gitdiffIdentChar(p) || last === 0x3d)) {
+      angle++
+    } else if (c === 0x3e && angle > 0 && p !== 0x3d) {
+      angle--
+    } else if (depth === 0 && angle === 0 && c === 0x3d && n !== 0x3e && n !== 0x3d) {
+      inValue = true
+    } else if (depth === 0 && angle === 0 && c === 0x3b) {
+      return false
+    } else if (depth === 0 && angle === 0 && c === 0x2c) {
+      return true
+    }
+    if (c !== 0x20 && c !== 0x09 && c !== 0x0a) {
+      last = c
+    }
+    i = i + 1
+  }
+  return false
+}
+
 /** Whether a line starts with the word `export`. */
 const gitdiffIsExport = (line: string): boolean =>
   line.startsWith("export") && (line.length === 6 || !gitdiffIdentChar(line.charCodeAt(6)))
@@ -610,8 +691,9 @@ const gitdiffAddExport = (out: GitdiffExport[], e: GitdiffExport): void => {
  * closing bracket, so a doc comment above the next declaration is not part of
  * it. Declarations of one name (overloads) are joined into one export. A
  * braced list names each entry, with the text of the declaration it exports.
- * An export the scanner cannot name or resolve is kept with an empty name and
- * its `problem`, so a change that adds one can be refused.
+ * An export the scanner cannot name or resolve, or one `const`, `let` or `var`
+ * declaring several names, is kept with an empty name and its `problem`, so a
+ * change that adds one can be refused.
  *
  * @param text the module's source
  * @returns the exports, in the order they are declared
@@ -632,8 +714,18 @@ export const gitdiffExports = (text: string): GitdiffExport[] => {
       gitdiffListExports(lines, i, statement, out)
     } else {
       const name = gitdiffExportName(line)
+      const bindings = gitdiffBindings(statement.substring(6))
       if (name.isErr()) {
         out.push(new GitdiffExport("", i + 1, statement, name.error))
+      } else if (bindings !== null && gitdiffManyDeclarators(bindings)) {
+        out.push(
+          new GitdiffExport(
+            "",
+            i + 1,
+            statement,
+            `an export declaring more than one name: ${trim(line)}: give each name its own export`,
+          ),
+        )
       } else {
         gitdiffAddExport(out, new GitdiffExport(name.value, i + 1, statement, ""))
       }

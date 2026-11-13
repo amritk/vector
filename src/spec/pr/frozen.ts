@@ -83,10 +83,34 @@ const frozenMainPinned = (c: Contract): boolean => {
 const frozenShown = (path: string, top: string): string =>
   path.startsWith(`${top}/`) ? path.substring(top.length + 1) : path
 
+/** Whether `path` is itself a symbolic link. */
+const frozenIsLink = (path: string): boolean => {
+  const st = lstatOwnerModeSync(path)
+  return st >= 0 && (st & 0o170000) === 0o120000
+}
+
+/** `path`, under `top`, unless it or a directory between them is a symbolic link. */
+const frozenUnlinked = (top: string, path: string): Result<string, string> => {
+  let at = top
+  for (const seg of split(path.substring(top.length + 1), "/")) {
+    if (seg.length === 0) {
+      continue
+    }
+    at = `${at}/${seg}`
+    if (frozenIsLink(at)) {
+      return Err(
+        `${frozenShown(path, top)}: ${frozenShown(at, top)} is a symbolic link: the gate reads only the repository's own files`,
+      )
+    }
+  }
+  return Ok(path)
+}
+
 /**
  * A contract path as given, made absolute against the repository's top:
  * relative paths are read from the top, not the working directory, and no
- * path may leave it, through `..` or by being absolute elsewhere.
+ * path may leave it, through `..`, by being absolute elsewhere, or through a
+ * symbolic link (the contract itself or a directory above it).
  *
  * @param top the repository's top
  * @param given the path as given
@@ -102,9 +126,9 @@ export const frozenResolve = (top: string, given: string): Result<string, string
     if (!given.startsWith(`${top}/`)) {
       return Err(`${given}: outside the repository at ${top}: the gate checks only its own contracts`)
     }
-    return Ok(given)
+    return frozenUnlinked(top, given)
   }
-  return Ok(`${top}/${given}`)
+  return frozenUnlinked(top, `${top}/${given}`)
 }
 
 /**

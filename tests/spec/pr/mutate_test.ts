@@ -3,6 +3,7 @@ import { runProcess } from "../../../src/core/process"
 import { contractLoad } from "../../../src/spec/contract/contract"
 import { GitdiffFile, gitdiffParse } from "../../../src/spec/pr/gitdiff"
 import {
+  MUTATE_BUILD_TIMED_OUT,
   MUTATE_KILLED,
   MUTATE_PENDING,
   MUTATE_STILLBORN,
@@ -43,6 +44,12 @@ printf '#!/bin/sh\\ncd "%s" && exec sh "%s"\\n' "$root" "$1" > "$3"
 chmod +x "$3"
 `
 
+/**
+ * The time limit for each step of a run: long past what the stub compiler's
+ * build and the test take on a loaded machine, and short of the hang (60 s).
+ */
+const MUTATE_TEST_LIMIT_MS: i32 = 8000
+
 /** The module at the base. */
 const MUTATE_TEST_BEFORE: string = "export const old = (): i32 => 1\n"
 
@@ -57,7 +64,7 @@ export const f = (x: i32): i32 => {
 
 /** The test: pins \`a < b\`, hangs on 6, and pins nothing else. */
 const MUTATE_TEST_PROGRAM: string = `grep -q 'a < b' std/m.ts || exit 1
-grep -q '=> 6' std/m.ts && sleep 5
+grep -q '=> 6' std/m.ts && sleep 60
 exit 0
 `
 
@@ -92,7 +99,7 @@ const mutateTestRepo = (t: Suite): Result<boolean, string> => {
   prTestWrite(dir, "t.sh", MUTATE_TEST_PROGRAM).orReturn()
   prTestWrite(dir, "c.json", MUTATE_TEST_CONTRACT).orReturn()
   const root = `${dir}/nish`
-  const run = new MutateRun(root, "", "bin/nish", `${dir}/t.sh`, 3, 1000)
+  const run = new MutateRun(root, "", "bin/nish", `${dir}/t.sh`, 3, MUTATE_TEST_LIMIT_MS)
   const r = mutateCheck(`${dir}/c.json`, "main", run, 0)
   t.ok("the check runs", r.isOk())
   if (r.isOk()) {
@@ -117,13 +124,13 @@ const mutateTestRepo = (t: Suite): Result<boolean, string> => {
   t.eqStr(
     "one job, two mutants, a derived time limit",
     one.isOk() ? one.value.items.join(" | ") : "<err>",
-    "killed std/m.ts:2:50 relational: export const lt = (a: i32, b: i32): boolean => a <= b | survived std/m.ts:3:29 int: export const k = (): i32 => 6",
+    "killed std/m.ts:2:50 relational: export const lt = (a: i32, b: i32): boolean => a <= b | timed out std/m.ts:3:29 int: export const k = (): i32 => 6",
   )
   prTestWrite(dir, "fail.sh", "exit 3\n").orReturn()
   const failing = mutateCheck(
     `${dir}/c.json`,
     "main",
-    new MutateRun(root, "", "bin/nish", `${dir}/fail.sh`, 2, 1000),
+    new MutateRun(root, "", "bin/nish", `${dir}/fail.sh`, 2, MUTATE_TEST_LIMIT_MS),
     0,
   )
   t.eqStr(
@@ -140,7 +147,12 @@ const mutateTestRepo = (t: Suite): Result<boolean, string> => {
     none.isOk() ? none.value.problems.join(" | ") : "<err>",
     "no mutants: the change adds no line of std/m.ts that can be mutated",
   )
-  const elsewhere = mutateCheck(`${dir}/c.json`, "main", new MutateRun(dir, "", "bin/nish", `${dir}/t.sh`, 1, 1000), 0)
+  const elsewhere = mutateCheck(
+    `${dir}/c.json`,
+    "main",
+    new MutateRun(dir, "", "bin/nish", `${dir}/t.sh`, 1, MUTATE_TEST_LIMIT_MS),
+    0,
+  )
   t.ok(
     "a root without the module says so",
     elsewhere.isOk() &&
@@ -149,6 +161,70 @@ const mutateTestRepo = (t: Suite): Result<boolean, string> => {
   )
   prTestRemove(dir)
   return Ok(true)
+}
+
+/**
+ * A stub compiler whose builds go wrong: it hangs on \`a <= b\`, exits 0
+ * without a binary on \`=> 8\`, refuses "return null", and otherwise links.
+ */
+const MUTATE_TEST_ODD_NISH: string = `#!/bin/sh
+root=$(cd "$(dirname "$0")/.." && pwd)
+if grep -q 'a <= b' "$root/std/m.ts"; then
+  exec sleep 60
+fi
+if grep -q '=> 8' "$root/std/m.ts"; then
+  exit 0
+fi
+if grep -q 'return null' "$root/std/m.ts"; then
+  exit 1
+fi
+printf '#!/bin/sh\\ncd "%s" && exec sh "%s"\\n' "$root" "$1" > "$3"
+chmod +x "$3"
+`
+
+/** A stub compiler that exits 0 and writes nothing. */
+const MUTATE_TEST_EMPTY_NISH: string = `#!/bin/sh
+exit 0
+`
+
+/** Runs the change's mutants against the stub compiler `nish`, in a fresh repository. */
+const mutateTestWith = (nish: string): Result<PrReport, string> => {
+  const dir = prTestRepo("vector-mutate-odd-").orReturn()
+  prTestWrite(dir, "nish/std/m.ts", MUTATE_TEST_BEFORE).orReturn()
+  prTestWrite(dir, "nish/bin/nish", nish).orReturn()
+  runProcess(["chmod", "+x", "--", `${dir}/nish/bin/nish`], "", 10000).orReturn()
+  prTestCommit(dir, "base").orReturn()
+  prTestGit(dir, ["checkout", "-q", "-b", "work"]).orReturn()
+  prTestWrite(dir, "nish/std/m.ts", MUTATE_TEST_AFTER).orReturn()
+  prTestWrite(dir, "t.sh", MUTATE_TEST_PROGRAM).orReturn()
+  prTestWrite(dir, "c.json", MUTATE_TEST_CONTRACT).orReturn()
+  const run = new MutateRun(`${dir}/nish`, "", "bin/nish", `${dir}/t.sh`, 4, MUTATE_TEST_LIMIT_MS)
+  const r = mutateCheck(`${dir}/c.json`, "main", run, 0)
+  prTestRemove(dir)
+  return r
+}
+
+/** Builds that hang, or exit 0 without a binary, for a mutant and for the baseline. */
+const mutateTestOddBuilds = (t: Suite): void => {
+  const odd = mutateTestWith(MUTATE_TEST_ODD_NISH)
+  t.eqStr(
+    "a hung build and a build without a binary",
+    odd.isOk() ? `${odd.value.items.join(" | ")} || ${odd.value.problems.join(" | ")}` : odd.error,
+    [
+      "build timed out std/m.ts:2:50 relational: export const lt = (a: i32, b: i32): boolean => a <= b",
+      "stillborn std/m.ts:3:29 int: export const k = (): i32 => 8",
+      "timed out std/m.ts:3:29 int: export const k = (): i32 => 6",
+      "stillborn std/m.ts:5:3 return-null: return null || 1 of 4 mutant builds ran past their time, more than 10%: a survivor may hide among them, so run with fewer --jobs",
+      "allowSurvivors std/m.ts:3 is stale: the test killed every mutant of that line, so the allowance would only excuse whatever survives there next: remove it, or move it to the line it means",
+    ].join(" | "),
+  )
+  const empty = mutateTestWith(MUTATE_TEST_EMPTY_NISH)
+  t.ok(
+    "a baseline build without a binary fails the check",
+    empty.isOk() &&
+      empty.value.problems.length === 1 &&
+      empty.value.problems[0].indexOf("its build exits 0 but writes no binary") >= 0,
+  )
 }
 
 /** The diff that adds lines `from` to `to` of `x.ts`. */
@@ -191,7 +267,32 @@ const mutateTestJudge = (t: Suite): void => {
   t.eqStr(
     "all stillborn fails",
     r2.problems.join(" | "),
-    "every mutant is stillborn: none builds, so the test met none of them",
+    "every mutant is stillborn or its build ran past its time: none built, so the test met none of them",
+  )
+  const bt = new MutateMutant(4, 1, "delete-statement", "", "")
+  bt.outcome = MUTATE_BUILD_TIMED_OUT
+  const k: MutateMutant[] = [bt]
+  for (let i = 0; i < 9; i++) {
+    const m = new MutateMutant(5, 1, "int", `${i}`, "")
+    m.outcome = MUTATE_KILLED
+    k.push(m)
+  }
+  const r6 = new PrReport("mutate", "m")
+  mutateJudge(r6, "std/m.ts", k, [], null, 0)
+  t.eqStr(
+    "a build timeout within the share is noted",
+    `${r6.problems.join(" | ")}||${r6.notes.join(" | ")}`,
+    "||1 of 10 mutant builds ran past their time: they tested nothing",
+  )
+  const bt2 = new MutateMutant(6, 1, "delete-statement", "", "")
+  bt2.outcome = MUTATE_BUILD_TIMED_OUT
+  k.push(bt2)
+  const r7 = new PrReport("mutate", "m")
+  mutateJudge(r7, "std/m.ts", k, [], null, 0)
+  t.eqStr(
+    "build timeouts past the share refuse",
+    r7.problems.join(" | "),
+    "2 of 11 mutant builds ran past their time, more than 10%: a survivor may hide among them, so run with fewer --jobs",
   )
   const p = new MutateMutant(4, 1, "delete-statement", "", "")
   const r3 = new PrReport("mutate", "m")
@@ -287,13 +388,14 @@ export const main = (): i32 => {
   t.eqStr("applying keeps a missing final newline", mutateApply("a\nb", new MutateMutant(2, 1, "x", "", "")), "a\n")
   t.eqStr(
     "outcome names",
-    `${mutateOutcomeName(MUTATE_TIMED_OUT)},${mutateOutcomeName(MUTATE_PENDING)}`,
-    "timed out,not run",
+    `${mutateOutcomeName(MUTATE_TIMED_OUT)},${mutateOutcomeName(MUTATE_BUILD_TIMED_OUT)},${mutateOutcomeName(MUTATE_PENDING)}`,
+    "timed out,build timed out,not run",
   )
   const empty: MutateMutant[] = []
   const nothing = mutateRunAll(new MutateRun("/nonexistent", "m.ts", "bin/nish", "/t", 1, 1), "", empty)
   t.ok("running no mutants does nothing", nothing.isOk() && nothing.value === null)
   mutateTestJudge(t)
+  mutateTestOddBuilds(t)
   const r = mutateTestRepo(t)
   if (r.isErr()) {
     t.fail("the repository is built", r.error)

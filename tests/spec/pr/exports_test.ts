@@ -72,6 +72,32 @@ const exportsTestRepo = (t: Suite, dir: string): Result<boolean, string> => {
     "changed enc (tested), changed aux, added fresh, deleted dec, deleted gone",
   )
 
+  prTestWrite(
+    dir,
+    "nish/std/hex.ts",
+    "/** Encodes. */\nexport const enc = (b: string): string => {\n  return b\n}\n\nexport const dec = (b: string): string => b, hidden = 2\n\nexport const aux = (): i32 => 1\n\nexport const gone = (): i32 => 2\n",
+  ).orReturn()
+  const appended = exportsCheck(contract, root, "main")
+  t.eqStr(
+    "a second declarator appended to an export is refused",
+    appended.isOk() ? exportsTestReport(appended.value) : appended.error,
+    "line 6: an export declaring more than one name: export const dec = (b: string): string => b, hidden = 2: give each name its own export: give it a declaration of its own the contract can test, since the gate refuses what it cannot name || export dec is deleted; the contract does not test it",
+  )
+  prTestWrite(
+    dir,
+    "nish/std/hex.ts",
+    "/** Encodes. */\nexport const enc = (b: string): string => {\n  return b\n},\n  hidden = 2\n\nexport const dec = (b: string): string => b\n\nexport const aux = (): i32 => 1\n\nexport const gone = (): i32 => 2\n",
+  ).orReturn()
+  const onTested = exportsCheck(contract, root, "main")
+  t.ok(
+    "a second declarator appended to a tested export is refused",
+    onTested.isOk() &&
+      onTested.value.problems.indexOf(
+        "export enc is deleted, but the contract tests it: its test can no longer build",
+      ) >= 0 &&
+      onTested.value.problems.join(" | ").indexOf("an export declaring more than one name: export const enc") >= 0,
+  )
+
   prTestWrite(dir, "nish/std/hex.ts", "export const other = (): i32 => 1\n").orReturn()
   const deleted = exportsCheck(contract, root, "main")
   t.ok(
