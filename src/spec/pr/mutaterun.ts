@@ -6,7 +6,8 @@
  * timed: `<nish> <test> --link <bin>` builds the test against it, and a build
  * that fails or leaves no binary makes it stillborn, one that runs past its
  * time is counted apart (MUTATE_BUILD_TIMED_OUT); then `<bin>` runs, and
- * a nonzero exit, or running past its time, kills it. Every copy runs the
+ * a nonzero exit kills it, while running past its time is counted apart
+ * (MUTATE_TIMED_OUT), as neither a kill nor a survival. Every copy runs the
  * unmutated baseline first, so a broken copy cannot pass off as a kill. The test is given, not made here: generating it is `verify/emit`'s.
  */
 

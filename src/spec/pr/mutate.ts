@@ -5,7 +5,9 @@
  * test must kill every one that builds, unless the contract allows a
  * survivor on that line with a reason. The gate also fails when there is
  * nothing to mutate, when no mutant builds, and when the test fails on the
- * unmutated module, since then it proves nothing. Running the mutants is
+ * unmutated module, since then it proves nothing, and when too many builds
+ * or test runs pass their time limit, since a timeout is neither a kill nor a
+ * survival. Running the mutants is
  * `spec/pr/mutaterun`'s, and so is mutateCheck, which joins them.
  */
 
@@ -22,11 +24,15 @@ export const MUTATE_KILLED: i32 = 0
 export const MUTATE_SURVIVED: i32 = 1
 /** The mutant does not build: it tests nothing. */
 export const MUTATE_STILLBORN: i32 = 2
-/** The test ran past its time on the mutant: counted as killed. */
+/**
+ * The test ran past its time on the mutant: neither a kill nor a survival,
+ * since a loaded machine looks the same as a hang, so it is reported apart and
+ * too many of them refuse the run.
+ */
 export const MUTATE_TIMED_OUT: i32 = 3
 /** The mutant's build ran past its time: it tested nothing, and too many of them refuse the run. */
 export const MUTATE_BUILD_TIMED_OUT: i32 = 4
-/** The share of mutants, in percent, whose builds may run past their time before the run is refused. */
+/** The share of mutants, in percent, whose builds, or whose test runs, may run past their time before the run is refused. */
 export const MUTATE_BUILD_TIMEOUT_PERCENT: i32 = 10
 
 /** One mutant: a single line of the module, changed. */
@@ -439,12 +445,27 @@ export const mutateJudge = (
   } else if (buildTimedOut > 0) {
     r.notes.push(`${buildTimedOut} of ${mutants.length} mutant builds ran past their time: they tested nothing`)
   }
-  if (timedOut > 0) {
-    r.notes.push(`${timedOut} mutants ran past their time: a timeout counts as killed`)
+  if (timedOut > 0 && stillborn + buildTimedOut + timedOut === mutants.length) {
+    r.problems.push(
+      "every mutant that built ran its test past its time: the test settled none of them, so run with fewer --jobs",
+    )
+  } else if (timedOut * 100 > toI32(mutants.length) * MUTATE_BUILD_TIMEOUT_PERCENT) {
+    r.problems.push(
+      `${timedOut} of ${mutants.length} mutants ran their test past its time, more than ${MUTATE_BUILD_TIMEOUT_PERCENT}%: a timeout is neither a kill nor a survival, so a survivor may hide among them: run with fewer --jobs`,
+    )
+  } else if (timedOut > 0) {
+    r.notes.push(
+      `${timedOut} of ${mutants.length} mutants ran their test past its time: counted neither killed nor survived`,
+    )
   }
   const mutated = new Set<string>()
   for (const m of mutants) {
-    if (m.outcome !== MUTATE_STILLBORN && m.outcome !== MUTATE_BUILD_TIMED_OUT && m.outcome !== MUTATE_PENDING) {
+    if (
+      m.outcome !== MUTATE_STILLBORN &&
+      m.outcome !== MUTATE_BUILD_TIMED_OUT &&
+      m.outcome !== MUTATE_TIMED_OUT &&
+      m.outcome !== MUTATE_PENDING
+    ) {
       mutated.add(`${m.line}`)
     }
   }

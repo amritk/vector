@@ -1,6 +1,7 @@
 import { Suite } from "nish/testing"
 import { runProcess } from "../../../src/core/process"
 import { contractLoad } from "../../../src/spec/contract/contract"
+import { AllowedSurvivor } from "../../../src/spec/contract/types"
 import { GitdiffFile, gitdiffParse } from "../../../src/spec/pr/gitdiff"
 import {
   MUTATE_BUILD_TIMED_OUT,
@@ -45,10 +46,15 @@ chmod +x "$3"
 `
 
 /**
- * The time limit for each step of a run: long past what the stub compiler's
- * build and the test take on a loaded machine, and short of the hang (60 s).
+ * The time limit for each step of a run that must cut a hang short: a stub
+ * build is one printf and a test one grep, which no loaded CI machine
+ * stretches to 20 s, while the hang (600 s) always outlasts it. The test file
+ * runs three such runs, and must finish inside tests/run.mjs's 120 s.
  */
-const MUTATE_TEST_LIMIT_MS: i32 = 8000
+const MUTATE_TEST_LIMIT_MS: i32 = 20000
+
+/** The time limit for a run with no hang in it, so it never ends by the clock. */
+const MUTATE_TEST_CALM_MS: i32 = 60000
 
 /** The module at the base. */
 const MUTATE_TEST_BEFORE: string = "export const old = (): i32 => 1\n"
@@ -64,7 +70,7 @@ export const f = (x: i32): i32 => {
 
 /** The test: pins \`a < b\`, hangs on 6, and pins nothing else. */
 const MUTATE_TEST_PROGRAM: string = `grep -q 'a < b' std/m.ts || exit 1
-grep -q '=> 6' std/m.ts && sleep 60
+grep -q '=> 6' std/m.ts && sleep 600
 exit 0
 `
 
@@ -113,11 +119,15 @@ const mutateTestRepo = (t: Suite): Result<boolean, string> => {
         "stillborn std/m.ts:5:3 return-null: return null",
       ].join(" | "),
     )
-    t.eqStr("an allowed survivor passes", r.value.problems.join(" | "), "")
+    t.eqStr(
+      "a hung test is no kill: one in four is past the share",
+      r.value.problems.join(" | "),
+      "1 of 4 mutants ran their test past its time, more than 10%: a timeout is neither a kill nor a survival, so a survivor may hide among them: run with fewer --jobs",
+    )
     t.eqStr(
       "the notes",
       r.value.notes.join(" | "),
-      "survivor std/m.ts:3 (3:29:int:+1) is allowed: k is a constant the spec leaves open | 1 mutants ran past their time: a timeout counts as killed | STALE? allowSurvivors std/m.ts:9 matched no survivor this run: no mutant of that line ran, so check it still names the line it means",
+      "survivor std/m.ts:3 (3:29:int:+1) is allowed: k is a constant the spec leaves open | STALE? allowSurvivors std/m.ts:9 matched no survivor this run: no mutant of that line ran, so check it still names the line it means",
     )
   }
   const one = mutateCheck(`${dir}/c.json`, "main", new MutateRun(root, "", "bin/nish", `${dir}/t.sh`, 1, 0), 2)
@@ -130,7 +140,7 @@ const mutateTestRepo = (t: Suite): Result<boolean, string> => {
   const failing = mutateCheck(
     `${dir}/c.json`,
     "main",
-    new MutateRun(root, "", "bin/nish", `${dir}/fail.sh`, 2, MUTATE_TEST_LIMIT_MS),
+    new MutateRun(root, "", "bin/nish", `${dir}/fail.sh`, 2, MUTATE_TEST_CALM_MS),
     0,
   )
   t.eqStr(
@@ -150,7 +160,7 @@ const mutateTestRepo = (t: Suite): Result<boolean, string> => {
   const elsewhere = mutateCheck(
     `${dir}/c.json`,
     "main",
-    new MutateRun(dir, "", "bin/nish", `${dir}/t.sh`, 1, MUTATE_TEST_LIMIT_MS),
+    new MutateRun(dir, "", "bin/nish", `${dir}/t.sh`, 1, MUTATE_TEST_CALM_MS),
     0,
   )
   t.ok(
@@ -170,7 +180,7 @@ const mutateTestRepo = (t: Suite): Result<boolean, string> => {
 const MUTATE_TEST_ODD_NISH: string = `#!/bin/sh
 root=$(cd "$(dirname "$0")/.." && pwd)
 if grep -q 'a <= b' "$root/std/m.ts"; then
-  exec sleep 60
+  exec sleep 600
 fi
 if grep -q '=> 8' "$root/std/m.ts"; then
   exit 0
@@ -215,7 +225,7 @@ const mutateTestOddBuilds = (t: Suite): void => {
       "stillborn std/m.ts:3:29 int: export const k = (): i32 => 8",
       "timed out std/m.ts:3:29 int: export const k = (): i32 => 6",
       "stillborn std/m.ts:5:3 return-null: return null || 1 of 4 mutant builds ran past their time, more than 10%: a survivor may hide among them, so run with fewer --jobs",
-      "allowSurvivors std/m.ts:3 is stale: the test killed every mutant of that line, so the allowance would only excuse whatever survives there next: remove it, or move it to the line it means",
+      "every mutant that built ran its test past its time: the test settled none of them, so run with fewer --jobs",
     ].join(" | "),
   )
   const empty = mutateTestWith(MUTATE_TEST_EMPTY_NISH)
@@ -293,6 +303,36 @@ const mutateTestJudge = (t: Suite): void => {
     "build timeouts past the share refuse",
     r7.problems.join(" | "),
     "2 of 11 mutant builds ran past their time, more than 10%: a survivor may hide among them, so run with fewer --jobs",
+  )
+  const tk: MutateMutant[] = []
+  const to = new MutateMutant(7, 1, "int", "x", "")
+  to.outcome = MUTATE_TIMED_OUT
+  tk.push(to)
+  for (let i = 0; i < 9; i++) {
+    const m = new MutateMutant(8, 1, "int", `${i}`, "")
+    m.outcome = MUTATE_KILLED
+    tk.push(m)
+  }
+  const onSeven = new AllowedSurvivor()
+  onSeven.file = "std/m.ts"
+  onSeven.line = 7
+  onSeven.reason = "r"
+  const r8 = new PrReport("mutate", "m")
+  mutateJudge(r8, "std/m.ts", tk, [onSeven], null, 0)
+  t.eqStr(
+    "a test timeout within the share is noted, not killed",
+    `${r8.problems.join(" | ")}||${r8.notes.join(" | ")}`,
+    "||1 of 10 mutants ran their test past its time: counted neither killed nor survived | STALE? allowSurvivors std/m.ts:7 matched no survivor this run: no mutant of that line ran, so check it still names the line it means",
+  )
+  const to2 = new MutateMutant(9, 1, "int", "y", "")
+  to2.outcome = MUTATE_TIMED_OUT
+  tk.push(to2)
+  const r9 = new PrReport("mutate", "m")
+  mutateJudge(r9, "std/m.ts", tk, [], null, 0)
+  t.eqStr(
+    "test timeouts past the share refuse",
+    r9.problems.join(" | "),
+    "2 of 11 mutants ran their test past its time, more than 10%: a timeout is neither a kill nor a survival, so a survivor may hide among them: run with fewer --jobs",
   )
   const p = new MutateMutant(4, 1, "delete-statement", "", "")
   const r3 = new PrReport("mutate", "m")
