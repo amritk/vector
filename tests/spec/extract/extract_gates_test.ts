@@ -176,7 +176,12 @@ const extractGatesTestMini = (t: Suite, readers: SourceReaders): void => {
 const extractGatesTestSources = (t: Suite, readers: SourceReaders): void => {
   const d = extractGatesTestTree(t, readFileSyncOrNull("tests/fixtures/extract/extract-mini.xml") ?? "")
   const away = makeTempDir("vector-extract-sources-")
-  if (d === null || away.isErr()) {
+  if (d === null) {
+    t.fail("the sources gate's tree", "the temporary tree could not be made")
+    return
+  }
+  if (away.isErr()) {
+    t.fail("the sources gate's second directory", away.error)
     return
   }
   const xml = joinPath(d, "specs/extract-mini.xml")

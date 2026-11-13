@@ -181,37 +181,40 @@ export const main = (): i32 => {
   )
 
   // Readers, by extension.
-  writeFileSync(joinPath(root, "contracts/spec.xml"), loadTestRfc(5555, "XML."))
+  writeFileSync(joinPath(root, "contracts/spec.adoc"), loadTestRfc(5555, "Adoc."))
   writeFileSync(joinPath(root, "contracts/README"), loadTestRfc(5555, "None."))
   const xml = loadTestContract(-1)
-  xml.sources = [loadTestDecl("x", -1, null, "spec.xml"), loadTestDecl("bare", -1, null, "README")]
+  xml.sources = [loadTestDecl("x", -1, null, "spec.adoc"), loadTestDecl("bare", -1, null, "README")]
   t.eqStr(
-    "no reader for .xml, nor for no extension",
+    "no reader for an unregistered extension, nor for no extension",
     loadTestProblems(xml, contractPath, root),
     [
-      "source x: contracts/spec.xml is a .xml file, and no reader is registered for it: readers are registered for .txt",
-      "source bare: contracts/README is a file without an extension, and no reader is registered for it: readers are registered for .txt",
+      "source x: contracts/spec.adoc is a .adoc file, and no reader is registered for it: readers are registered for .txt, .xml",
+      "source bare: contracts/README is a file without an extension, and no reader is registered for it: readers are registered for .txt, .xml",
     ].join(" | "),
   )
   const readers = sourceReadersDefault()
   t.ok(
-    "the default reads .txt",
-    sourceReaderFor(readers, "a/b.txt") !== null && sourceReaderFor(readers, "a.b/c") === null,
+    "the default reads .txt and .xml",
+    sourceReaderFor(readers, "a/b.txt") !== null &&
+      sourceReaderFor(readers, "a/b.xml") !== null &&
+      sourceReaderFor(readers, "a.b/c") === null &&
+      sourceReaderFor(readers, "a/b.adoc") === null,
   )
-  t.ok("a reader is registered", sourceReadersAdd(readers, ".xml", loadTestOtherReader).isOk())
-  t.ok("a registered reader is found", sourceReaderFor(readers, "rfc1.xml") !== null)
+  t.ok("a reader is registered", sourceReadersAdd(readers, ".adoc", loadTestOtherReader).isOk())
+  t.ok("a registered reader is found", sourceReaderFor(readers, "rfc1.adoc") !== null)
   const withXml = sourceLoadWith(xml, contractPath, root, readers)
   const x = sourceFind(withXml, "x")
-  t.ok("a registered reader reads", x !== null && x.doc.number === 5555 && x.label === "contracts/spec.xml")
-  t.ok("re-registered", sourceReadersAdd(readers, ".xml", loadTestRefusingReader).isOk())
-  t.ok("adding again keeps one entry", readers.entries.length === 2)
+  t.ok("a registered reader reads", x !== null && x.doc.number === 5555 && x.label === "contracts/spec.adoc")
+  t.ok("re-registered", sourceReadersAdd(readers, ".adoc", loadTestRefusingReader).isOk())
+  t.ok("adding again keeps one entry", readers.entries.length === 3)
   const refused = sourceLoadWith(xml, contractPath, root, readers).problems.join(" | ")
   t.eqStr(
     "adding again replaces the reader",
     refused,
     [
-      "source x: contracts/spec.xml: refused (an RFC)",
-      "source bare: contracts/README is a file without an extension, and no reader is registered for it: readers are registered for .txt, .xml",
+      "source x: contracts/spec.adoc: refused (an RFC)",
+      "source bare: contracts/README is a file without an extension, and no reader is registered for it: readers are registered for .txt, .xml, .adoc",
     ].join(" | "),
   )
   t.eqStr(
@@ -234,7 +237,7 @@ export const main = (): i32 => {
     loadTestAddErr(readers, ".a/b"),
     'a reader\'s extension is ".a/b": give it with its leading dot and nothing else, as ".xml"',
   )
-  t.ok("a refused extension is not registered", readers.entries.length === 2)
+  t.ok("a refused extension is not registered", readers.entries.length === 3)
 
   // The text a reader decodes is checked as well as the bytes it was given.
   writeFileSync(joinPath(root, "contracts/esc.xml"), loadTestRfc(4444, "It MUS&#1058; work."))
