@@ -26,12 +26,16 @@
  * Every refusal is an XmlError with its XML line and column and, after a
  * `<?line N?>`, its markdown line. Nothing here panics.
  *
- * Lines. After a `<?line N?>` processing instruction (kramdown-rfc writes one
- * at the start of each `--- middle` / `--- back` part, N being the markdown
- * line of that marker), a node's markdown line is N plus the XML lines since
- * that instruction. A signed `<?line -N?>` or `<?line +N?>` is, as in
- * kramdown-rfc, a correction to every later unsigned N; it moves no line by
- * itself. N has at most 9 digits.
+ * Lines. A `<?line N?>` processing instruction (kramdown-rfc writes one at
+ * the start of the abstract and of each `--- middle` / `--- back` part) says
+ * that the XML line it stands on is markdown line N. Each node and refusal
+ * carries the last such mark before it: its N (`mdLine`) and the XML line it
+ * stands on (`markLine`). The markdown line is known exactly only on the
+ * mark's own line; below it, kramdown-rfc's XML no longer follows the
+ * markdown line for line (a table, a list or a heading takes a different
+ * number of lines in each), so nothing is extrapolated. A signed
+ * `<?line -N?>` or `<?line +N?>` is, as in kramdown-rfc, a correction to
+ * every later unsigned N; it moves no line by itself. N has at most 9 digits.
  */
 
 import { replaceAll, trim } from "nish/text"
@@ -66,25 +70,34 @@ export class XmlNode {
   next: XmlNode | null = null
   /** The 1-based XML line it starts on. */
   line: i32
-  /** The markdown line, from the nearest `<?line N?>` before it; -1 when none. */
+  /** The markdown line of the last `<?line N?>` at or before it; -1 when none. */
   mdLine: i32
+  /** The XML line that `<?line N?>` stands on; 0 when none. `mdLine` is this node's own markdown line only when `line` is this one. */
+  markLine: i32
   /** A number unique in its document, for keying a node in a Map. */
   id: i32
+  /** The 1-based column it starts at, on `line`. */
+  col: i32 = 0
+  /** For character data, the XML it was read from, from `col` up to the next markup: equal to `text` where no reference, CDATA section or comment changed it. */
+  raw: string
   /**
    * Makes a node.
    *
    * @param name the element's name, or "" for character data
    * @param line its XML line
-   * @param mdLine its markdown line, or -1
+   * @param mdLine the last mark's markdown line, or -1
+   * @param markLine the XML line of that mark, or 0
    * @param id its number in the document
    */
-  constructor(name: string, line: i32, mdLine: i32, id: i32) {
+  constructor(name: string, line: i32, mdLine: i32, markLine: i32, id: i32) {
+    this.raw = ""
     this.name = name
     this.text = ""
     this.attrNames = []
     this.attrValues = []
     this.line = line
     this.mdLine = mdLine
+    this.markLine = markLine
     this.id = id
   }
 }
@@ -93,26 +106,57 @@ export class XmlNode {
 export class XmlError {
   /** The 1-based XML line. */
   line: i32
-  /** The 1-based byte column in that line. */
+  /** The 1-based column in that line, counted in characters, not bytes. */
   col: i32
-  /** The markdown line, after a `<?line N?>`; -1 when none. */
+  /** The markdown line of the last `<?line N?>` at or before it; -1 when none. */
   mdLine: i32
-  /** Why the input was refused. */
+  /** The XML line that `<?line N?>` stands on; 0 when none. */
+  markLine: i32
+  /** Why the input was refused. When `see` is set, the message ends where that node's place is to be printed. */
   message: string
+  /** A second node the message is about, such as an anchor's first use; null when none. */
+  see: XmlNode | null = null
   /**
    * Makes an error.
    *
    * @param line the XML line
-   * @param col the byte column
-   * @param mdLine the markdown line, or -1
+   * @param col the byte column, or 0
+   * @param mdLine the last mark's markdown line, or -1
+   * @param markLine the XML line of that mark, or 0
    * @param message what is wrong
    */
-  constructor(line: i32, col: i32, mdLine: i32, message: string) {
+  constructor(line: i32, col: i32, mdLine: i32, markLine: i32, message: string) {
     this.line = line
     this.col = col
     this.mdLine = mdLine
+    this.markLine = markLine
     this.message = message
   }
+}
+
+/**
+ * Makes an error at a node, with no column.
+ *
+ * @param n the node the error is about
+ * @param message what is wrong
+ * @returns the error, at the node's line and mark
+ */
+export const xmlErrorAt = (n: XmlNode, message: string): XmlError =>
+  new XmlError(n.line, 0, n.mdLine, n.markLine, message)
+
+/**
+ * Makes an error about two nodes: the message ends where the second one's
+ * place is to be printed, in the same file and numbering as the first's.
+ *
+ * @param n the node the error is about
+ * @param message what is wrong, up to the second node's place
+ * @param see the second node
+ * @returns the error, at `n`
+ */
+export const xmlErrorSee = (n: XmlNode, message: string, see: XmlNode): XmlError => {
+  const e = xmlErrorAt(n, message)
+  e.see = see
+  return e
 }
 
 /** The reader's state over one input. */
@@ -173,26 +217,28 @@ const xmlLineOf = (r: XmlReader, at: i32): i32 => {
   return lo + 1
 }
 
-/** The markdown line of XML line `line`, or -1 before any `<?line N?>`. */
-const xmlMdLineOf = (r: XmlReader, line: i32): i32 => {
+/** The last `<?line N?>`'s markdown line, or -1 before any. */
+const xmlMarkMd = (r: XmlReader): i32 => {
   if (!r.piSeen) {
     return -1
   }
   // A signed <?line -N?> can correct the count below the first line.
-  return Math.max(1, r.piN + line - r.piLine)
+  return Math.max(1, r.piN)
 }
 
 /** A refusal at byte `at`. */
 const xmlErrAt = (r: XmlReader, message: string, at: i32): XmlError => {
   const line = xmlLineOf(r, at)
-  return new XmlError(line, at - r.lineStarts[line - 1] + 1, xmlMdLineOf(r, line), message)
+  return new XmlError(line, at - r.lineStarts[line - 1] + 1, xmlMarkMd(r), r.piLine, message)
 }
 
 /** A new node starting at byte `at`. */
 const xmlNodeAt = (r: XmlReader, name: string, at: i32): XmlNode => {
   const line = xmlLineOf(r, at)
   r.ids = r.ids + 1
-  return new XmlNode(name, line, xmlMdLineOf(r, line), r.ids)
+  const n = new XmlNode(name, line, xmlMarkMd(r), r.piLine, r.ids)
+  n.col = at - r.lineStarts[line - 1] + 1
+  return n
 }
 
 /** Appends `kid` to `parent`'s children. */
@@ -651,8 +697,11 @@ const xmlStartTag = (r: XmlReader, node: XmlNode, at: i32): Result<boolean, XmlE
  */
 const xmlCloseText = (r: XmlReader): XmlNode | null => {
   const t = r.piecesNode
-  if (t !== null && r.pieces.length > 1) {
-    t.text = r.pieces.join("")
+  if (t !== null) {
+    if (r.pieces.length > 1) {
+      t.text = r.pieces.join("")
+    }
+    t.raw = r.src.substring(r.lineStarts[t.line - 1] + t.col - 1, r.pos)
   }
   r.piecesNode = null
   r.pieces = []
@@ -699,7 +748,9 @@ const xmlElement = (r: XmlReader): Result<XmlNode, XmlError> => {
       xmlSkipWs(r)
       xmlExpect(r, ">", `to end </${end}>`).orReturn()
       if (end !== node.name) {
-        return Err(xmlErrAt(r, `malformed XML: </${end}> closes <${node.name}> from line ${node.line}`, r.pos - 1))
+        const e = xmlErrAt(r, `malformed XML: </${end}> closes <${node.name}>, opened at`, r.pos - 1)
+        e.see = node
+        return Err(e)
       }
       const up = node.parent
       if (up === null) {
@@ -788,6 +839,7 @@ export const xmlParse = (text: string): Result<XmlNode, XmlError> => {
         1,
         1,
         -1,
+        0,
         `input is ${text.length} bytes, over the ${XML_MAX_INPUT_BYTES}-byte limit (XML_MAX_INPUT_BYTES)`,
       ),
     )

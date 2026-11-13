@@ -191,7 +191,8 @@ const profileCasesTestOne = (f: ProfileRefusal, path: string): string => {
 const profileCasesTestReadAt = (all: ProfileCasesTestRfcs, xml: string, path: string): string => {
   const doc = xmlDocParse(xml)
   if (doc.isErr()) {
-    return `xml ${doc.error.line} ${doc.error.message}`
+    const see = doc.error.see
+    return `xml ${doc.error.line} ${doc.error.message}${see !== null ? ` line ${see.line}` : ""}`
   }
   const r = profileRead(doc.value, path, null, profileCasesTestRfcs(all))
   if (r.isErr()) {
@@ -692,7 +693,7 @@ const profileCasesTestSentences = (t: Suite, all: ProfileCasesTestRfcs): void =>
   t.eqStr(
     "a requirement id given twice is refused by the parser, at the second",
     profileCasesTestRead(all, profileCasesTestLines([PROFILE_CASES_REQ, replaceAll(PROFILE_CASES_REQ, "work", "run")])),
-    `xml 9 anchor "R-A" is used again; first on line 8`,
+    `xml 9 anchor "R-A" is used again; first used at line 8`,
   )
 }
 
@@ -990,6 +991,45 @@ const profileCasesTestCode = (t: Suite, all: ProfileCasesTestRfcs): void => {
     ),
     ["3:1 missing `// module: <root>/<path>` first line"],
   )
+  profileCasesTestRefused(
+    t,
+    all,
+    "an interface on its tag's line: the code's first column is not the XML's, so none",
+    profileCasesTestSpecWith(
+      "",
+      "draft-t-00",
+      `<section><name>I</name>${profileCasesTestIface("export function f(\n")}</section>`,
+    ),
+    ["2 missing `// module: <root>/<path>` first line"],
+  )
+  profileCasesTestRefused(
+    t,
+    all,
+    "an interface without CDATA: the XML column where the line is written as is",
+    profileCasesTestSpecWith(
+      "",
+      "draft-t-00",
+      `<section><name>I</name><sourcecode type="ts-interface">
+// module: nish/hex
+export function g(a: string, b: @@): string
+</sourcecode></section>`,
+    ),
+    ["4:33 `@` is not in the ts-interface subset"],
+  )
+  profileCasesTestRefused(
+    t,
+    all,
+    "an interface with a reference before the fault: no column, since the XML's differs",
+    profileCasesTestSpecWith(
+      "",
+      "draft-t-00",
+      `<section><name>I</name><sourcecode type="ts-interface">
+// module: nish/hex
+export function g(a: &amp;&amp;&amp;, b: @@): string
+</sourcecode></section>`,
+    ),
+    ["4 `@` is not in the ts-interface subset"],
+  )
   profileCasesTestRefusedWith(
     t,
     all,
@@ -1192,7 +1232,7 @@ const profileCasesTestVectors = (t: Suite, all: ProfileCasesTestRfcs): void => {
   profileCasesTestRefused(
     t,
     all,
-    "Call and Expected cells that do not parse, with columns",
+    "Call and Expected cells that do not parse, with their columns in the XML",
     profileCasesTestSpec(
       profileCasesTestSec(
         PROFILE_CASES_REQ +
@@ -1201,15 +1241,18 @@ const profileCasesTestVectors = (t: Suite, all: ProfileCasesTestRfcs): void => {
             profileCasesTestVectorId("V3", 'nope("66")', '"f"'),
             profileCasesTestVectorId("V4", "hexDecode", '"f"'),
             profileCasesTestVectorId("V5", 'hexEncode(concat([00], "é"))', '"00"'),
+            profileCasesTestVectorId("V6", "hexDecode(&quot;66&quot;, [0 x 0b])", '"f"'),
           ]),
         "",
       ),
     ),
     [
-      "8:1 Expected: `‖` is not a literal; write concat(a, b)",
+      "8:57 Expected: `‖` is not a literal; write concat(a, b)",
       `9 "nope" is not a function of the ts-interface block`,
-      "10:1 Call: a call is `name(args...)`",
+      "10:24 Call: a call is `name(args...)`",
       `11 Call: a quoted string is printable ASCII, tab, LF and CR only; "\\u00e9" is not`,
+      // A reference before the fault: the cell's text is not the XML's, so no column.
+      `12 Call: ${PROFILE_CASES_BYTES_HINT}`,
     ],
   )
   profileCasesTestRefused(
@@ -1257,8 +1300,8 @@ const profileCasesTestVectors = (t: Suite, all: ProfileCasesTestRfcs): void => {
       "12 Call: argument 1 of hexDecode (text) is string, not bytes",
       "13 Call: argument 1 of hexDecode (text) is string, not an int -1",
       "14 Call: hexDecode takes 1 argument(s), not 0",
-      `15:11 Call: ${PROFILE_CASES_LABELLED}`,
-      "16:11 Call: not a literal",
+      `15:34 Call: ${PROFILE_CASES_LABELLED}`,
+      "16:34 Call: not a literal",
       "17 Expected: hexEncode returns string, not bytes",
       "18 Expected: isHex returns bool, not an int -1",
     ],
@@ -1271,7 +1314,7 @@ const profileCasesTestVectors = (t: Suite, all: ProfileCasesTestRfcs): void => {
       PROFILE_CASES_REQ,
       profileCasesTestTable([profileCasesTestVector("hexEncode([00  0f])", '"000f"')]),
     ]),
-    [`10:11 Call: ${PROFILE_CASES_BYTES_HINT}`],
+    [`10:34 Call: ${PROFILE_CASES_BYTES_HINT}`],
   )
   profileCasesTestRefused(
     t,
@@ -1498,13 +1541,18 @@ const profileCasesTestLocator = (t: Suite, all: ProfileCasesTestRfcs): void => {
   const keys = ["R-A", "R-B.2", "V1", "V.2", "hexDecode", "hexEncode", "isHex"]
   t.eqStr(
     "locator: each part's line",
-    keys.map((k: string): string => `${k} ${l.at.get(k) ?? -1}`).join(", "),
+    keys
+      .map((k: string): string => {
+        const w = l.at.get(k)
+        return `${k} ${w !== undefined ? w.line : -1}`
+      })
+      .join(", "),
     "R-A 8, R-B.2 9, V1 11, V.2 12, hexDecode 4, hexEncode 5, isHex 6",
   )
   const w = profileLocate(l, "V.2.expect")
   t.eqStr("locator: a sub-path falls back to its clause", `${w.file}:${w.line}`, "specs/t.xml:12")
-  t.eqStr("locator: a source is at the root", `${profileLocate(l, "sources.rfc4648").line}`, `${l.root}`)
-  t.eqStr("locator: nothing is at the root", `${profileLocate(l, "").line}`, `${l.root}`)
+  t.eqStr("locator: a source is at the root", `${profileLocate(l, "sources.rfc4648").line}`, `${l.root.line}`)
+  t.eqStr("locator: nothing is at the root", `${profileLocate(l, "").line}`, `${l.root.line}`)
 }
 
 // ── The main source ─────────────────────────────────────────────────────────

@@ -23,10 +23,8 @@ clock, the same contract or the same refusals for the same input.
 
 Every BCP 14 sentence must be a requirement or an exclusion, every xref to
 an RFC must have a `<reference>`, and every section cited must exist in
-the RFC handed over. A refusal names the markdown line where the XML
-carries kramdown-rfc's `<?line N?>` and the markdown file is known, else
-the XML line. That line can run late after a table: kramdown-rfc writes no
-`<?line?>` inside one, so a refusal past it names the last line it wrote.
+the RFC handed over. Where a refusal is placed is profileWhere's rule: a
+markdown line only where the XML vouches for it, never one extrapolated.
 
 Generated from [src/spec/profile/profile.ts](https://github.com/amritk/vector/blob/main/src/spec/profile/profile.ts).
 
@@ -34,10 +32,14 @@ Generated from [src/spec/profile/profile.ts](https://github.com/amritk/vector/bl
 
 - [`ProfileRefusal`](#profilerefusal)
 - [`ProfileWhere`](#profilewhere)
+- [`ProfileMd`](#profilemd)
+- [`profileMdRead`](#profilemdread)
 - [`ProfileRfcs`](#profilerfcs)
 - [`ProfileLocator`](#profilelocator)
 - [`ProfileRead`](#profileread)
 - [`profileWhere`](#profilewhere)
+- [`profileWhereText`](#profilewheretext)
+- [`profileRefusalAt`](#profilerefusalat)
 - [`profileTrim`](#profiletrim)
 - [`profileRead`](#profileread)
 - [`profileLocate`](#profilelocate)
@@ -97,6 +99,22 @@ The column, 1-based; 0 when the refusal names none.
 col: i32
 ```
 
+#### ProfileRefusal.exactFile
+
+The XML file when `line` is only the last `<?line?>` mark's markdown line; "" otherwise.
+
+```ts
+exactFile: string
+```
+
+#### ProfileRefusal.exactLine
+
+The XML line the refusal is on, when `exactFile` is set; 0 otherwise.
+
+```ts
+exactLine: i32
+```
+
 #### ProfileRefusal.file
 
 The markdown file when `line` is its line, else the XML file.
@@ -123,7 +141,7 @@ message: string
 
 ### ProfileWhere
 
-A file and a line in it.
+A file and a line in it, and the XML line when that line is only near.
 
 ```ts
 class ProfileWhere
@@ -149,6 +167,22 @@ the line
 
 </scalar-field>
 
+#### ProfileWhere.exactFile
+
+The XML file when `line` is only the last `<?line?>` mark's markdown line; "" when `line` is exact.
+
+```ts
+exactFile: string
+```
+
+#### ProfileWhere.exactLine
+
+The XML line the place is on, when `exactFile` is set; 0 otherwise.
+
+```ts
+exactLine: i32
+```
+
 #### ProfileWhere.file
 
 The file the line is in.
@@ -164,6 +198,78 @@ The 1-based line.
 ```ts
 line: i32
 ```
+
+#### ProfileWhere.mdOnly
+
+Whether `line` is a markdown line standing alone, which an XML column does not fit.
+
+```ts
+mdOnly: boolean
+```
+
+### ProfileMd
+
+The markdown a spec was built from: its path, and how many lines it has.
+
+```ts
+class ProfileMd
+```
+
+#### new ProfileMd
+
+Makes a markdown file's record.
+
+```ts
+new ProfileMd(path: string, lines: i32): ProfileMd
+```
+
+<scalar-field name="path" type="string" required>
+
+the file
+
+</scalar-field>
+
+<scalar-field name="lines" type="i32" required>
+
+how many lines it has
+
+</scalar-field>
+
+#### ProfileMd.lines
+
+Its number of lines; no place past the last is printed.
+
+```ts
+lines: i32
+```
+
+#### ProfileMd.path
+
+The markdown file.
+
+```ts
+path: string
+```
+
+### profileMdRead
+
+Reads the markdown a spec was built from, to count its lines.
+
+```ts
+function profileMdRead(path: string | null): ProfileMd | null
+```
+
+<scalar-field name="path" type="string | null" required>
+
+the markdown file, or null
+
+</scalar-field>
+
+<scalar-field name="returns" type="ProfileMd | null">
+
+its record; null when there is no path or it cannot be read
+
+</scalar-field>
 
 ### ProfileRfcs
 
@@ -212,51 +318,29 @@ class ProfileLocator
 Makes a locator with no part.
 
 ```ts
-new ProfileLocator(file: string, root: i32): ProfileLocator
+new ProfileLocator(root: ProfileWhere): ProfileLocator
 ```
 
-<scalar-field name="file" type="string" required>
+<scalar-field name="root" type="ProfileWhere" required>
 
-the root's file
-
-</scalar-field>
-
-<scalar-field name="root" type="i32" required>
-
-the root's line
+the root's place
 
 </scalar-field>
 
 #### ProfileLocator.at
 
-The line of each part, by its key: a requirement or clause id, a function name, or `exclusion §N`.
+The place of each part, by its key: a requirement or clause id, a function name, or `exclusion §N`.
 
 ```ts
-at: Map<string, i32>
-```
-
-#### ProfileLocator.file
-
-The file of `root`, and of each line not in `files`.
-
-```ts
-file: string
-```
-
-#### ProfileLocator.files
-
-The file of a line when it is not `file`.
-
-```ts
-files: Map<string, string>
+at: Map<string, ProfileWhere>
 ```
 
 #### ProfileLocator.root
 
-The line of the document's root, for what names no part.
+The document root's place, for what names no part.
 
 ```ts
-root: i32
+root: ProfileWhere
 ```
 
 ### ProfileRead
@@ -305,15 +389,21 @@ locator: ProfileLocator
 
 ### profileWhere
 
-Where a place is printed: the markdown file at its markdown line when both
-are known, else the XML file at its XML line.
+Where a place is printed. The markdown file at its markdown line when the
+place stands on a `<?line N?>` mark's own XML line, the one line whose
+markdown line the XML vouches for. Below a mark, the markdown file at the
+mark's line together with the XML file at the place's line, since
+kramdown-rfc's XML does not follow the markdown line for line. The XML file
+at its XML line when there is no markdown file, no mark before the place,
+or the mark names a line past the markdown's end.
 
 ```ts
 function profileWhere(
   line: i32,
   mdLine: i32,
+  markLine: i32,
   xmlPath: string,
-  mdPath: string | null,
+  md: ProfileMd | null,
 ): ProfileWhere
 ```
 
@@ -325,7 +415,13 @@ the XML line
 
 <scalar-field name="mdLine" type="i32" required>
 
-the markdown line, or -1
+the last mark's markdown line, or -1
+
+</scalar-field>
+
+<scalar-field name="markLine" type="i32" required>
+
+the XML line that mark stands on
 
 </scalar-field>
 
@@ -335,7 +431,7 @@ the XML file
 
 </scalar-field>
 
-<scalar-field name="mdPath" type="string | null" required>
+<scalar-field name="md" type="ProfileMd | null" required>
 
 the markdown file, or null
 
@@ -343,7 +439,65 @@ the markdown file, or null
 
 <scalar-field name="returns" type="ProfileWhere">
 
-the file and line
+the file and line, and the XML line when the markdown line is only near
+
+</scalar-field>
+
+### profileWhereText
+
+A place as it is printed: `file:line`, or `md:line (xml:line)` when the
+markdown line is only near.
+
+```ts
+function profileWhereText(w: ProfileWhere): string
+```
+
+<scalar-field name="w" type="ProfileWhere" required>
+
+the place
+
+</scalar-field>
+
+<scalar-field name="returns" type="string">
+
+its text
+
+</scalar-field>
+
+### profileRefusalAt
+
+Makes a refusal at a place. The column counts along the XML line, so it
+is dropped when the place is a markdown line alone.
+
+```ts
+function profileRefusalAt(
+  w: ProfileWhere,
+  col: i32,
+  message: string,
+): ProfileRefusal
+```
+
+<scalar-field name="w" type="ProfileWhere" required>
+
+the place
+
+</scalar-field>
+
+<scalar-field name="col" type="i32" required>
+
+the 1-based column on the XML line, or 0
+
+</scalar-field>
+
+<scalar-field name="message" type="string" required>
+
+why
+
+</scalar-field>
+
+<scalar-field name="returns" type="ProfileRefusal">
+
+the refusal
 
 </scalar-field>
 
@@ -377,7 +531,7 @@ Reads a contract from a spec under the vector profile.
 function profileRead(
   doc: XmlDocument,
   xmlPath: string,
-  mdPath: string | null,
+  md: ProfileMd | null,
   rfcs: ProfileRfcs,
 ): Result<ProfileRead, ProfileRefusal[]>
 ```
@@ -394,7 +548,7 @@ the spec's path, whose basename names the contract
 
 </scalar-field>
 
-<scalar-field name="mdPath" type="string | null" required>
+<scalar-field name="md" type="ProfileMd | null" required>
 
 the markdown it was built from, for refusals at its lines; null when unknown
 

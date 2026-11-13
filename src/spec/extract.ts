@@ -21,8 +21,11 @@ import {
   ProfileRefusal,
   ProfileRfcs,
   profileLocate,
+  profileMdRead,
   profileRead,
+  profileRefusalAt,
   profileWhere,
+  profileWhereText,
 } from "./profile/profile"
 import { hiddenProblem } from "./source/hidden"
 import { SourceReaders, sourceReaderFor, sourceReadersAdd, sourceReadersDefault } from "./source/load"
@@ -360,7 +363,7 @@ export const extractContract = (
     out.errors.push(`cannot read ${xmlPath}`)
     return out
   }
-  const md = extractMdBeside(xmlPath)
+  const md = profileMdRead(extractMdBeside(xmlPath))
   const hidden = hiddenProblem(text, xmlPath)
   if (hidden !== null) {
     out.refusals.push(new ProfileRefusal(xmlPath, 0, 0, hidden))
@@ -369,8 +372,13 @@ export const extractContract = (
   const parsed = xmlDocParse(text)
   if (parsed.isErr()) {
     const e = parsed.error
-    const w = profileWhere(e.line, e.mdLine, xmlPath, md)
-    out.refusals.push(new ProfileRefusal(w.file, w.line, w.file === xmlPath ? e.col : 0, e.message))
+    const w = profileWhere(e.line, e.mdLine, e.markLine, xmlPath, md)
+    const see = e.see
+    const message =
+      see !== null
+        ? `${e.message} ${profileWhereText(profileWhere(see.line, see.mdLine, see.markLine, xmlPath, md))}`
+        : e.message
+    out.refusals.push(profileRefusalAt(w, e.col, message))
     return out
   }
   const doc = parsed.value
@@ -428,17 +436,15 @@ const extractGateRowAdd = (
   // naming that source places it, and the message says which section.
   if (at.startsWith("\u00a7")) {
     const of = mainRfc >= 1 ? ` of RFC${mainRfc}` : ""
-    const w = profileLocate(locator, "source.main")
     const text = `${gate}: Section ${at.substring("\u00a7".length)}${of}: ${message}`
-    rows.push(new ExtractGateRow(new ProfileRefusal(w.file, w.line, 0, text), false))
+    rows.push(new ExtractGateRow(profileRefusalAt(profileLocate(locator, "source.main"), 0, text), false))
     return
   }
   // A note the locator places is at its part's line, which says where; one
   // it cannot place falls to the root, so its `at` stays in the text and two
   // root notes with one message stay two.
   const text = at.length > 0 && !extractPlaced(locator, at) ? `${gate}: ${at}: ${message}` : `${gate}: ${message}`
-  const w = profileLocate(locator, at)
-  rows.push(new ExtractGateRow(new ProfileRefusal(w.file, w.line, 0, text), false))
+  rows.push(new ExtractGateRow(profileRefusalAt(profileLocate(locator, at), 0, text), false))
 }
 
 /** Whether the locator holds `at` or a dotted prefix of it, as profileLocate looks it up. */
@@ -460,9 +466,9 @@ const extractPlaced = (locator: ProfileLocator, at: string): boolean => {
   return false
 }
 
-/** Appends a refusal unless one with its file, line and message is there. */
+/** Appends a refusal unless one with its place (file, line, XML line, column) and message is there. */
 const extractGateKeep = (out: ProfileRefusal[], seen: Set<string>, r: ProfileRefusal): void => {
-  const key = `${r.file}\u0000${r.line}\u0000${r.message}`
+  const key = `${r.file}\u0000${r.line}\u0000${r.exactLine}\u0000${r.col}\u0000${r.message}`
   if (!seen.has(key)) {
     seen.add(key)
     out.push(r)
@@ -474,7 +480,8 @@ const extractGateKeep = (out: ProfileRefusal[], seen: Set<string>, r: ProfileRef
  * A gate that places a finding (a note, gateIssue) is placed by the note's
  * `at` through the locator; a finding no note places is at the spec's root.
  * Each refusal is given once, since two fields of one part can break one
- * rule on one line, and they are sorted by line. A finding about
+ * rule on one line, and they are sorted by line, then XML line: two parts
+ * under one `<?line?>` mark share a markdown line but not an XML one. A finding about
  * allowSurvivors is the sidecar's, so it names that file, after the rest.
  *
  * @param report what the gates found
@@ -507,10 +514,17 @@ export const extractGateRefusals = (
   const out: ProfileRefusal[] = []
   const seen = new Set<string>()
   const main = rows.filter((r: ExtractGateRow): boolean => !r.sidecar)
-  main.sort(
-    (a: ExtractGateRow, b: ExtractGateRow): i32 =>
-      a.refusal.line < b.refusal.line ? -1 : a.refusal.line > b.refusal.line ? 1 : 0,
-  )
+  main.sort((a: ExtractGateRow, b: ExtractGateRow): i32 => {
+    const x = a.refusal
+    const y = b.refusal
+    if (x.line !== y.line) {
+      return x.line < y.line ? -1 : 1
+    }
+    if (x.exactLine !== y.exactLine) {
+      return x.exactLine < y.exactLine ? -1 : 1
+    }
+    return x.col < y.col ? -1 : x.col > y.col ? 1 : 0
+  })
   for (const r of main) {
     extractGateKeep(out, seen, r.refusal)
   }

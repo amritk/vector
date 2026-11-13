@@ -23,13 +23,14 @@ const xmlCasesTestRepeat = (s: string, n: i32): string => {
 const xmlCasesTestDoc = (middle: string, back: string): string =>
   `<rfc number="1"><front><title>T</title></front><middle>${middle}</middle><back>${back}</back></rfc>`
 
-/** A refusal as `line:col md=N message`, or `ok` when the document reads. */
+/** A refusal as `line:col md=N[@M] message[ see L]` (M the mark's XML line when there is one, L the second place's), or `ok` when the document reads. */
 const xmlCasesTestErr = (text: string): string => {
   const r = xmlDocParse(text)
   if (r.isOk()) {
     return "ok"
   }
-  return `${r.error.line}:${r.error.col} md=${r.error.mdLine} ${r.error.message}`
+  const see = r.error.see
+  return `${r.error.line}:${r.error.col} md=${r.error.mdLine}${r.error.mdLine >= 0 ? `@${r.error.markLine}` : ""} ${r.error.message}${see !== null ? ` see ${see.line}` : ""}`
 }
 
 /** The document, or null after failing the test. */
@@ -83,10 +84,10 @@ const xmlCasesTestFind = (n: XmlNode, name: string): XmlNode | null => {
   return null
 }
 
-/** Where the element named `name` sits, as `xmlLine/mdLine`. */
+/** Where the element named `name` sits, as `xmlLine/mdLine`, and `@markLine` when there is a mark. */
 const xmlCasesTestAt = (root: XmlNode, name: string): string => {
   const n = xmlCasesTestFind(root, name)
-  return n === null ? `<no ${name}>` : `${n.line}/${n.mdLine}`
+  return n === null ? `<no ${name}>` : `${n.line}/${n.mdLine}${n.mdLine >= 0 ? `@${n.markLine}` : ""}`
 }
 
 /** Sections numbered as xml2rfc numbers them, and what is not a section. */
@@ -145,19 +146,19 @@ const xmlCasesTestAnchors = (t: Suite): void => {
   t.eqStr(
     "two sections",
     xmlCasesTestErr('<rfc><middle>\n<section anchor="s"/>\n<section anchor="s"/></middle></rfc>'),
-    '3:0 md=-1 anchor "s" is used again; first on line 2',
+    '3:0 md=-1 anchor "s" is used again; first used at see 2',
   )
   t.eqStr(
     "a paragraph and a reference",
     xmlCasesTestErr(
       '<rfc><middle><t anchor="t"/></middle><back><references><reference anchor="t"/></references></back></rfc>',
     ),
-    '1:0 md=-1 anchor "t" is used again; first on line 1',
+    '1:0 md=-1 anchor "t" is used again; first used at see 1',
   )
   t.eqStr(
-    "after <?line?>, the markdown line",
+    "after <?line?>, the mark's markdown line and XML line",
     xmlCasesTestErr('<rfc><middle>\n<?line 30?>\n<section anchor="s"/>\n\n<section anchor="s"/></middle></rfc>'),
-    '5:0 md=33 anchor "s" is used again; first on line 3',
+    '5:0 md=30@2 anchor "s" is used again; first used at see 3',
   )
   const d = xmlCasesTestParse(
     t,
@@ -486,17 +487,17 @@ const xmlCasesTestLineNumbers = (t: Suite): void => {
     "<rfc>\n<?line 10?>\n<a/>\n<?line -3?>\n<b/>\n<?line 20?>\n<c/>\n<?line +5?><?line 30?>\n<d/></rfc>",
   )
   if (signed.isOk()) {
-    t.eqStr("after <?line 10?>", xmlCasesTestAt(signed.value, "a"), "3/11")
-    t.eqStr("a correction moves no line by itself", xmlCasesTestAt(signed.value, "b"), "5/13")
-    t.eqStr("it corrects the next <?line?>", xmlCasesTestAt(signed.value, "c"), "7/18")
-    t.eqStr("corrections add up", xmlCasesTestAt(signed.value, "d"), "9/33")
+    t.eqStr("after <?line 10?>", xmlCasesTestAt(signed.value, "a"), "3/10@2")
+    t.eqStr("a correction moves no line by itself", xmlCasesTestAt(signed.value, "b"), "5/10@2")
+    t.eqStr("it corrects the next <?line?>", xmlCasesTestAt(signed.value, "c"), "7/17@6")
+    t.eqStr("corrections add up", xmlCasesTestAt(signed.value, "d"), "9/32@8")
   } else {
     t.fail("signed <?line?>", signed.error.message)
   }
   const below = xmlParse("<rfc>\n<?line -50?><?line 1?>\n<a/>\n<b/></rfc>")
   if (below.isOk()) {
-    t.eqStr("a correction below the first line reads as line 1", xmlCasesTestAt(below.value, "a"), "3/1")
-    t.eqStr("and stays there", xmlCasesTestAt(below.value, "b"), "4/1")
+    t.eqStr("a correction below the first line reads as line 1", xmlCasesTestAt(below.value, "a"), "3/1@2")
+    t.eqStr("and stays there", xmlCasesTestAt(below.value, "b"), "4/1@2")
   } else {
     t.fail("<?line?> below the first line", below.error.message)
   }

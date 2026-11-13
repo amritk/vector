@@ -12,7 +12,7 @@
 
 import { hiddenProblem } from "../source/hidden"
 import { RfcDocument, RfcSection } from "../source/rfc"
-import { XmlError, XmlNode, xmlAttr, xmlChild, xmlElements, xmlParse } from "./reader"
+import { XmlError, XmlNode, xmlAttr, xmlChild, xmlElements, xmlErrorAt, xmlErrorSee, xmlParse } from "./reader"
 import { XmlLines, XmlNormative, XmlText, XmlXrefInfo, xmlPlainText, xmlSectionLines } from "./text"
 
 /** The xref text worked out may run this many characters past the input's length. */
@@ -167,7 +167,7 @@ const xmlDocNumber = (
     i = i + 1
     const top = back && prefix.length === 0
     if (top && i > 26) {
-      return Err(new XmlError(s.line, 0, s.mdLine, "<back> has more than 26 sections; appendix letters run out at Z"))
+      return Err(xmlErrorAt(s, "<back> has more than 26 sections; appendix letters run out at Z"))
     }
     const n = top ? String.fromCharCode(64 + i) : `${i}`
     const id = prefix.length > 0 ? `${prefix}.${n}` : n
@@ -211,13 +211,13 @@ const xmlDocWalk = (c: XmlDocContext, n: XmlNode, inCell: boolean): Result<boole
   if (anchor !== null) {
     const first = c.byAnchor.get(anchor)
     if (first !== undefined) {
-      return Err(new XmlError(n.line, 0, n.mdLine, `anchor "${anchor}" is used again; first on line ${first.line}`))
+      return Err(xmlErrorSee(n, `anchor "${anchor}" is used again; first used at`, first))
     }
     c.byAnchor.set(anchor, n)
   }
   const isTable = n.name === "table" || n.name === "texttable"
   if (inCell && isTable) {
-    return Err(new XmlError(n.line, 0, n.mdLine, `<${n.name}> inside a table cell is not RFC XML v3`))
+    return Err(xmlErrorAt(n, `<${n.name}> inside a table cell is not RFC XML v3`))
   }
   if (n.name === "xref") {
     c.xrefs.push(n)
@@ -326,10 +326,8 @@ const xmlDocXrefs = (c: XmlDocContext, inputLength: i32): Result<boolean, XmlErr
     spent = spent + reftext.length
     if (spent > budget) {
       return Err(
-        new XmlError(
-          x.line,
-          0,
-          x.mdLine,
+        xmlErrorAt(
+          x,
           `the xref text worked out runs past ${budget} characters, the input's length and XML_MAX_XREF_TEXT`,
         ),
       )
@@ -381,10 +379,8 @@ const xmlDocSections = (c: XmlDocContext): Result<boolean, XmlError> => {
     held = held + (z - a)
     if (held > XML_MAX_SECTION_LINES) {
       return Err(
-        new XmlError(
-          s.node.line,
-          0,
-          s.node.mdLine,
+        xmlErrorAt(
+          s.node,
           `numbered sections hold over ${XML_MAX_SECTION_LINES} lines, counting each subsection's in its parents' (XML_MAX_SECTION_LINES)`,
         ),
       )
@@ -411,7 +407,7 @@ const xmlDocSections = (c: XmlDocContext): Result<boolean, XmlError> => {
 export const xmlDocParse = (text: string): Result<XmlDocument, XmlError> => {
   const root = xmlParse(text).orReturn()
   if (root.name !== "rfc") {
-    return Err(new XmlError(root.line, 0, root.mdLine, `not RFC XML: the root element is <${root.name}>, not <rfc>`))
+    return Err(xmlErrorAt(root, `not RFC XML: the root element is <${root.name}>, not <rfc>`))
   }
   const doc = new XmlDocument(root)
   const c = new XmlDocContext(doc)
@@ -448,7 +444,8 @@ export const xmlDocParse = (text: string): Result<XmlDocument, XmlError> => {
 export const xmlRead = (text: string, name: string): Result<RfcDocument, string> => {
   const r = xmlDocParse(text)
   if (r.isErr()) {
-    return Err(`${name}:${r.error.line}: ${r.error.message}`)
+    const see = r.error.see
+    return Err(`${name}:${r.error.line}: ${r.error.message}${see !== null ? ` ${name}:${see.line}` : ""}`)
   }
   const hidden = hiddenProblem(text, name)
   if (hidden !== null) {

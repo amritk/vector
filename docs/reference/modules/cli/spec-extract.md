@@ -5,9 +5,10 @@
 `cli/spec-extract` — `vector spec extract`: extract a contract from a kramdown-rfc spec's XML.
 
 The contract goes to stdout, or to `-o`; with `--check` nothing is written,
-and a diff against `-o` exits 1. Refusals exit 1, each `file:line: message`
-at the markdown line when the `.md` is beside the spec; an input or RFC that
-cannot be read exits 2.
+and a diff against `-o` exits 1. Refusals exit 1, each `file:line[:col]:
+message`, or `spec.md:line (spec.xml:line[:col]): message` when the `.md` is
+beside the spec and only a `<?line?>` mark above the refusal names its
+markdown line; an input or RFC that cannot be read exits 2.
 
 Generated from [src/cli/spec-extract.ts](https://github.com/amritk/vector/blob/main/src/cli/spec-extract.ts).
 

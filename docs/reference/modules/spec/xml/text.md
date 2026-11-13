@@ -293,7 +293,13 @@ class XmlCode
 Makes a code block.
 
 ```ts
-new XmlCode(type: string | null, text: string, line: i32, mdLine: i32): XmlCode
+new XmlCode(
+  type: string | null,
+  text: string,
+  line: i32,
+  mdLine: i32,
+  markLine: i32,
+): XmlCode
 ```
 
 <scalar-field name="type" type="string | null" required>
@@ -316,7 +322,13 @@ its XML line
 
 <scalar-field name="mdLine" type="i32" required>
 
-its markdown line, or -1
+the last mark's markdown line, or -1
+
+</scalar-field>
+
+<scalar-field name="markLine" type="i32" required>
+
+the XML line of that mark, or 0
 
 </scalar-field>
 
@@ -328,9 +340,17 @@ The XML line its text starts on.
 line: i32
 ```
 
+#### XmlCode.markLine
+
+The XML line that `<?line N?>` stands on; 0 when none.
+
+```ts
+markLine: i32
+```
+
 #### XmlCode.mdLine
 
-The markdown line its text starts on; -1 when unknown.
+The markdown line of the last `<?line N?>` before its text; -1 when none.
 
 ```ts
 mdLine: i32

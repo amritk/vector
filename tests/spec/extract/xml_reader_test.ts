@@ -8,6 +8,8 @@ import {
   xmlAttr,
   xmlChild,
   xmlElements,
+  xmlErrorAt,
+  xmlErrorSee,
   xmlParse,
 } from "../../../src/spec/xml/reader"
 
@@ -20,13 +22,14 @@ const xmlReaderTestRepeat = (s: string, n: i32): string => {
   return parts.join("")
 }
 
-/** A refusal as `line:col md=N message`, or `ok <root>` when the text parses. */
+/** A refusal as `line:col md=N[@M] message[ see L]` (M the mark's XML line when there is one, L the second place's), or `ok <root>` when the text parses. */
 const xmlReaderTestErr = (text: string): string => {
   const r = xmlParse(text)
   if (r.isOk()) {
     return `ok <${r.value.name}>`
   }
-  return `${r.error.line}:${r.error.col} md=${r.error.mdLine} ${r.error.message}`
+  const see = r.error.see
+  return `${r.error.line}:${r.error.col} md=${r.error.mdLine}${r.error.mdLine >= 0 ? `@${r.error.markLine}` : ""} ${r.error.message}${see !== null ? ` see ${see.line}` : ""}`
 }
 
 /** The root, which the test expects to parse. */
@@ -65,6 +68,38 @@ const xmlReaderTestTree = (t: Suite): void => {
   const title: XmlNode | null = front === null ? null : xmlChild(front, "title")
   const text: XmlNode | null = title === null ? null : title.first
   t.eqStr("character references resolve", text === null ? "<none>" : text.text, "T AB")
+  t.ok("an element's column", front !== null && front.col === 3)
+  t.ok("text with references is not its raw XML", text !== null && text.col === 17 && text.raw !== text.text)
+}
+
+/** Character data keeps the XML it was read from, from its column up to the next markup. */
+const xmlReaderTestRaw = (t: Suite): void => {
+  const root = xmlReaderTestRoot(t, "<rfc>\n  <tt>a(b)</tt><tt><![CDATA[c]]></tt><tt>d&lt;</tt>\n</rfc>")
+  if (root === null) {
+    return
+  }
+  const got = xmlElements(root).map((n: XmlNode): string => {
+    const k = n.first
+    return k === null ? "<none>" : `${k.text}@${k.line}:${k.col} ${k.raw}`
+  })
+  t.eqStr("plain, CDATA, a reference", got.join(", "), "a(b)@2:7 a(b), c@2:20 <![CDATA[c]]>, d<@2:42 d&lt;")
+}
+
+/** An error at a node takes its line and mark and no column; a second node rides along to be printed. */
+const xmlReaderTestErrorAt = (t: Suite): void => {
+  const a = new XmlNode("a", 7, 30, 5, 1)
+  a.col = 4
+  const b = new XmlNode("b", 9, 30, 5, 2)
+  const e = xmlErrorAt(a, "why")
+  t.eqStr("at the node", `${e.line}:${e.col} md=${e.mdLine} mark=${e.markLine} ${e.message}`, "7:0 md=30 mark=5 why")
+  t.ok("no second node", e.see === null)
+  const s = xmlErrorSee(a, "opened at", b)
+  const see = s.see
+  t.eqStr(
+    "with a second node",
+    see !== null ? `${s.line} ${s.message} ${see.name}:${see.line}` : "none",
+    "7 opened at b:9",
+  )
 }
 
 /** kramdown-rfc's `<?line N?>` names the markdown line of what follows. */
@@ -72,17 +107,17 @@ const xmlReaderTestLines = (t: Suite): void => {
   t.eqStr(
     "no <?line?>: md=-1",
     xmlReaderTestErr("<rfc>\n<a>\n</rfc>"),
-    "3:6 md=-1 malformed XML: </rfc> closes <a> from line 2",
+    "3:6 md=-1 malformed XML: </rfc> closes <a>, opened at see 2",
   )
   t.eqStr(
-    "after <?line 40?>, two lines on",
+    "after <?line 40?>, the mark's markdown line, not one extrapolated from it",
     xmlReaderTestErr("<rfc>\n<?line 40?>\n<a>\n</rfc>"),
-    "4:6 md=42 malformed XML: </rfc> closes <a> from line 3",
+    "4:6 md=40@2 malformed XML: </rfc> closes <a>, opened at see 3",
   )
   t.eqStr(
     "a signed <?line -N?> corrects later lines",
     xmlReaderTestErr("<rfc>\n<?line 40?>\n<?line -10?>\n<?line 40?>\n<a>\n</rfc>"),
-    "6:6 md=32 malformed XML: </rfc> closes <a> from line 5",
+    "6:6 md=30@4 malformed XML: </rfc> closes <a>, opened at see 5",
   )
 }
 
@@ -137,7 +172,7 @@ const xmlReaderTestRefusals = (t: Suite): void => {
   t.eqStr(
     "xi:include",
     xmlReaderTestErr('<rfc>\n<?line 7?>\n<xi:include href="https://example.com/r.xml"/></rfc>'),
-    '3:1 md=8 <xi:include href="https://example.com/r.xml"> is refused: vector never fetches; expand it first (xml2rfc --expand)',
+    '3:1 md=7@2 <xi:include href="https://example.com/r.xml"> is refused: vector never fetches; expand it first (xml2rfc --expand)',
   )
   const deep = `${xmlReaderTestRepeat("<a>", XML_MAX_DEPTH + 1)}${xmlReaderTestRepeat("</a>", XML_MAX_DEPTH + 1)}`
   t.contains("one level past XML_MAX_DEPTH", xmlReaderTestErr(deep), `elements nest deeper than ${XML_MAX_DEPTH}`)
@@ -285,6 +320,8 @@ const xmlReaderTestPrefixes = (t: Suite): void => {
 export const main = (): i32 => {
   const t = new Suite("spec/extract xml reader")
   xmlReaderTestTree(t)
+  xmlReaderTestRaw(t)
+  xmlReaderTestErrorAt(t)
   xmlReaderTestLines(t)
   xmlReaderTestRefusals(t)
   xmlReaderTestEntityCap(t)

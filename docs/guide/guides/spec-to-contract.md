@@ -133,11 +133,28 @@ vector: spec extract: build it first: scripts/build-spec.sh specs/example-hex.md
 ```
 
 It refuses everything it cannot read, all at once, each refusal at
-`file:line`. Where the XML carries kramdown-rfc's `<?line?>` marks, a refusal
-names the markdown the XML was built from, `specs/<name>.md` beside it, at the
-markdown line; otherwise it names the XML at the XML line, so a refusal never
-names a file that is not there. Here a BCP 14 sentence is added to the XML
-with no anchor and no `Untested:` paragraph:
+`file:line`, or `file:line:col` when it knows the column (a malformed literal
+in a test vector's cell, a parse error in the `ts-interface` block, malformed
+XML). A refusal names the markdown the XML was built from, `specs/<name>.md`
+beside it, only at a line the XML vouches for. kramdown-rfc marks the XML with
+`<?line N?>` only where a part starts (the abstract, the middle, the back),
+not at every paragraph, and tables and other multi-line constructs move the
+lines after a mark apart. So a refusal on the line of a mark names
+the markdown line alone; any other names the markdown line of the last mark
+before it, with the XML line it is exactly on beside it:
+
+```text
+specs/<name>.md:<last mark's line> (specs/<name>.xml:<line>[:col])
+```
+
+The column, when there is one, counts along the XML line, so it is printed
+with an XML line and never with a markdown line alone. A refusal before any
+mark, past the end of the markdown, or with no markdown beside the XML names
+the XML alone, so a refusal never names a file that is not there or a line
+that is not in it. A refusal that cites a second place, such as an anchor used
+twice or a closing tag that does not match, prints it the same way. Here a
+BCP 14 sentence is added to the XML with no anchor and no `Untested:`
+paragraph:
 
 <!-- exit 1 -->
 ```sh
@@ -146,7 +163,7 @@ sed -i 's|return an empty array, not null.</t>|&\n<t>hexDecode <bcp14>MUST</bcp1
 ```
 
 ```text
-vector: specs/example-hex.md:131: BCP 14 sentence has no anchor and no Untested: paragraph after it: "hexDecode MUST be fast."
+vector: specs/example-hex.md:21 (specs/example-hex.xml:140): BCP 14 sentence has no anchor and no Untested: paragraph after it: "hexDecode MUST be fast."
 ```
 
 ```sh
