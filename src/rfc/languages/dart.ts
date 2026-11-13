@@ -43,8 +43,8 @@ export const dart: LanguageTable = {
       note: "null is the refusal (sound null safety)",
     },
     "optional-input": {
-      spelling: "[{T}? x]",
-      note: "an optional positional parameter; null is the absent argument",
+      spelling: "{T}? x",
+      note: "a required nullable parameter, valid in any position; null is the absent argument, passed explicitly. [{T}? x] (an optional positional parameter) may be used instead only when no required parameter follows it",
     },
   },
   literals: {

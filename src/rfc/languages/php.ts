@@ -44,8 +44,8 @@ export const php: LanguageTable = {
   outcomes: {
     "refusing-return": { spelling: "?{T}", note: "null is the refusal" },
     "optional-input": {
-      spelling: "?{T} $x = null",
-      note: "null is the absent argument",
+      spelling: "?{T} $x",
+      note: "null is the absent argument, passed explicitly; = null may be added only when every later parameter also has a default, as an optional parameter before a required one is deprecated (PHP 8.0, and for ?T $x = null since 8.3)",
     },
   },
   literals: {

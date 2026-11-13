@@ -41,7 +41,10 @@ export const swift: LanguageTable = {
   literals: {
     hex: { spelling: "[0x0b, 0x0b] as [UInt8]" },
     ascii: { spelling: 'Array("abc".utf8)' },
-    str: { spelling: '"abc"', note: "non-ASCII as \\u{…} escapes" },
+    str: {
+      spelling: '"abc"',
+      note: "non-ASCII as \\u{…} escapes; a backslash written \\\\, since \\( interpolates",
+    },
     int: { spelling: "UInt32(42)", note: "every width exact" },
     f64: {
       spelling: "Double(bitPattern: 0x3ff8000000000000)",

@@ -73,7 +73,7 @@ export const csharp: LanguageTable = {
     note: "a static class named for the last segment, in a namespace of the others, all PascalCase (Design Guidelines, Names of Namespaces): nish/crypto/hkdf → static class Hkdf in namespace Nish.Crypto",
   },
   nameRule:
-    "methods PascalCase and parameters camelCase: words split at each capital, a digit run stays on the word before it (hkdfExpandSha256 → HkdfExpandSha256), a two-letter acronym stays in capitals and a longer one is cased like a word (readIOStream → ReadIOStream, parseHTTPRequest → ParseHttpRequest). A name override always wins.",
+    "methods PascalCase and parameters camelCase: words split at each capital, a digit run stays on the word before it (hkdfExpandSha256 → HkdfExpandSha256), a two-letter acronym stays in capitals and a longer one is cased like a word (readIOStream → ReadIOStream, parseHTTPRequest → ParseHttpRequest). A parameter whose camelCase name is a keyword (in, out, string, object, params, event, base) is written with @ (@in) or takes a name override. A name override always wins.",
   name: (n, kind) =>
     kind === "function" ? pascal(n, "short-caps") : camel(n, "short-caps"),
   choices: [

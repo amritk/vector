@@ -479,12 +479,12 @@ const c: Gen = {
         return `static void show_${n}(${P}) { for (size_t i = 0; i < x_len; i++) printf("%02x", x[i]); putchar('\\n'); }
 static void r_${n}(${P}, uint8_t *out, size_t *out_len) { memcpy(out, x, x_len); *out_len = x_len; }
 static int f_${n}(${P}, bool ok, uint8_t *out, size_t *out_len) { if (!ok) return 1; r_${n}(x, x_len, out, out_len); return 0; }
-static bool o_${n}(${P}) { (void)x_len; return x != ${lit(t, "null")}; }`;
+static bool o_${n}(${P}, bool y) { (void)x_len; return y && x != ${lit(t, "null")}; }`;
       if (b === "string")
         return `static void show_${n}(${P}) { for (const char *p = x; *p; p++) printf("%02x", (unsigned char)*p); putchar('\\n'); }
 static void r_${n}(${P}, char *out, size_t out_cap) { snprintf(out, out_cap, "%s", x); }
 static int f_${n}(${P}, bool ok, char *out, size_t out_cap) { if (!ok) return 1; r_${n}(x, out, out_cap); return 0; }
-static bool o_${n}(${P}) { return x != ${lit(t, "null")}; }`;
+static bool o_${n}(${P}, bool y) { return y && x != ${lit(t, "null")}; }`;
       const body =
         b === "bool"
           ? 'puts(x ? "true" : "false");'
@@ -500,7 +500,7 @@ static bool o_${n}(${P}) { return x != ${lit(t, "null")}; }`;
       return `static void show_${n}(${P}) { ${body} }
 static ${T} r_${n}(${P}) { return x; }
 static ${refusing} { if (!ok) return 1; *out = x; return 0; }
-static bool o_${n}(${tpl(t, "optional-input", T)}x) { return x != ${lit(t, "null")}; }`;
+static bool o_${n}(${tpl(t, "optional-input", T)}x, bool y) { return y && x != ${lit(t, "null")}; }`;
     });
     const PA = '"present"';
     const AB = '"absent"';
@@ -510,17 +510,17 @@ static bool o_${n}(${tpl(t, "optional-input", T)}x) { return x != ${lit(t, "null
         return `{ uint8_t out[16]; size_t n; r_${n}(${e}, out, &n); show_${n}(out, n);
   if (f_${n}(${e}, true, out, &n) == 0) show_${n}(out, n);
   if (f_${n}(${e}, false, out, &n) != 0) puts("refused");
-  puts(${pres(`o_${n}(NULL, 0)`, PA, AB)}); puts(${pres(`o_${n}(${e})`, PA, AB)}); }`;
+  puts(${pres(`o_${n}(NULL, 0, true)`, PA, AB)}); puts(${pres(`o_${n}(${e}, true)`, PA, AB)}); }`;
       if (b === "string")
         return `{ char out[16]; r_${n}(${e}, out, sizeof out); show_${n}(out);
   if (f_${n}(${e}, true, out, sizeof out) == 0) show_${n}(out);
   if (f_${n}(${e}, false, out, sizeof out) != 0) puts("refused");
-  puts(${pres(`o_${n}(NULL)`, PA, AB)}); puts(${pres(`o_${n}(${e})`, PA, AB)}); }`;
+  puts(${pres(`o_${n}(NULL, true)`, PA, AB)}); puts(${pres(`o_${n}(${e}, true)`, PA, AB)}); }`;
       const T = spell(t, b);
       return `{ ${T} v; show_${n}(r_${n}(${e}));
   if (f_${n}(${e}, true, &v) == 0) show_${n}(v);
   if (f_${n}(${e}, false, &v) != 0) puts("refused");
-  puts(${pres(`o_${n}(NULL)`, PA, AB)}); puts(${pres(`o_${n}(&(${T}){${e}})`, PA, AB)}); }`;
+  puts(${pres(`o_${n}(NULL, true)`, PA, AB)}); puts(${pres(`o_${n}(&(${T}){${e}}, true)`, PA, AB)}); }`;
     });
     return `#include <inttypes.h>
 #include <stdbool.h>
@@ -596,15 +596,15 @@ const cpp: Gen = {
       return `static void show_${n}(${P} x) { ${body} }
 static ${R} r_${n}(${P} x) { ${r} }
 static ${tpl(t, "refusing-return", R)} f_${n}(${P} x, bool ok) { if (!ok) return ${lit(t, "null")}; return r_${n}(x); }
-static bool o_${n}(${tpl(t, "optional-input", P)} x) { return x.has_value(); }`;
+static bool o_${n}(${tpl(t, "optional-input", P)} x, bool y) { return y && x.has_value(); }`;
     });
     const main = positions.map(({ b, e }) => {
       const n = ident(b);
       return `  show_${n}(r_${n}(${e}));
   if (auto v = f_${n}(${e}, true)) show_${n}(*v);
   if (!f_${n}(${e}, false)) std::puts("refused");
-  std::puts(o_${n}(${lit(t, "null")}) ? "present" : "absent");
-  std::puts(o_${n}(${e}) ? "present" : "absent");`;
+  std::puts(o_${n}(${lit(t, "null")}, true) ? "present" : "absent");
+  std::puts(o_${n}(${e}, true) ? "present" : "absent");`;
     });
     return `#include <array>
 #include <bit>
@@ -662,7 +662,7 @@ const rust: Gen = {
       return `fn show_${n}(x: ${P}) { ${body} }
 fn r_${n}(x: ${P}) -> ${R} { ${r} }
 fn f_${n}(x: ${P}, ok: bool) -> ${tpl(t, "refusing-return", R)} { if ok { Some(r_${n}(x)) } else { ${lit(t, "null")} } }
-fn o_${n}(x: ${tpl(t, "optional-input", P)}) -> bool { x.is_some() }`;
+fn o_${n}(x: ${tpl(t, "optional-input", P)}, y: bool) -> bool { y && x.is_some() }`;
     });
     const main = positions.map(({ b, e }) => {
       const n = ident(b);
@@ -670,8 +670,8 @@ fn o_${n}(x: ${tpl(t, "optional-input", P)}) -> bool { x.is_some() }`;
       return `    show_${n}(${amp}r_${n}(${e}));
     if let Some(v) = f_${n}(${e}, true) { show_${n}(${amp}v); }
     if f_${n}(${e}, false).is_none() { println!("refused"); }
-    println!("{}", if o_${n}(${lit(t, "null")}) { "present" } else { "absent" });
-    println!("{}", if o_${n}(Some(${e})) { "present" } else { "absent" });`;
+    println!("{}", if o_${n}(${lit(t, "null")}, true) { "present" } else { "absent" });
+    println!("{}", if o_${n}(Some(${e}), true) { "present" } else { "absent" });`;
     });
     return `${fns.join("\n")}
 fn main() {
@@ -717,7 +717,7 @@ func f_${n}(x ${P}, ok bool) ${tpl(t, "refusing-return", P)} {
 	}
 	return r_${n}(x), nil
 }
-func o_${n}(x ${tpl(t, "optional-input", P)}) bool { return x != ${lit(t, "null")} }`;
+func o_${n}(x ${tpl(t, "optional-input", P)}, y bool) bool { return y && x != ${lit(t, "null")} }`;
     });
     const main = positions.map(({ b, e }) => {
       const n = ident(b);
@@ -728,8 +728,8 @@ func o_${n}(x ${tpl(t, "optional-input", P)}) bool { return x != ${lit(t, "null"
 	if _, err := f_${n}(${e}, false); err != nil {
 		fmt.Println("refused")
 	}
-	fmt.Println(present(o_${n}(${lit(t, "null")})))
-	fmt.Println(present(o_${n}(ptr(${e}))))`;
+	fmt.Println(present(o_${n}(${lit(t, "null")}, true)))
+	fmt.Println(present(o_${n}(ptr(${e}), true)))`;
     });
     return `package main
 
@@ -817,15 +817,15 @@ const java: Gen = {
       return `  static void show_${n}(${P} x) { System.out.println(${body}); }
   static ${P} r_${n}(${P} x) { return ${isBytes(b) ? "x.clone()" : "x"}; }
   static ${tpl(t, "refusing-return", box(P))} f_${n}(${P} x, boolean ok) { return ok ? Optional.of(r_${n}(x)) : Optional.empty(); }
-  static boolean o_${n}(${opt} x) { return x != ${lit(t, "null")}; }`;
+  static boolean o_${n}(${opt} x, boolean y) { return y && x != ${lit(t, "null")}; }`;
     });
     const main = positions.map(({ b, e }) => {
       const n = ident(b);
       return `    show_${n}(r_${n}(${e}));
     f_${n}(${e}, true).ifPresent(v -> show_${n}(v));
     if (f_${n}(${e}, false).isEmpty()) System.out.println("refused");
-    System.out.println(o_${n}(${lit(t, "null")}) ? "present" : "absent");
-    System.out.println(o_${n}(${e}) ? "present" : "absent");`;
+    System.out.println(o_${n}(${lit(t, "null")}, true) ? "present" : "absent");
+    System.out.println(o_${n}(${e}, true) ? "present" : "absent");`;
     });
     return `import java.lang.annotation.ElementType;
 import java.lang.annotation.Target;
@@ -856,7 +856,16 @@ const php: Gen = {
   file: "main.php",
   steps: [
     ["php", "-l", "main.php"],
-    ["php", "-d", "error_reporting=-1", "main.php"],
+    [
+      "php",
+      "-d",
+      "error_reporting=-1",
+      "-d",
+      "display_errors=stderr",
+      "-d",
+      "log_errors=0",
+      "main.php",
+    ],
   ],
   nanPayload: true,
   int: (t, v) =>
@@ -884,15 +893,15 @@ const php: Gen = {
       return `function show_${n}(${attr}${P} $x): void { echo ${body}, "\\n"; }
 function r_${n}(${attr}${P} $x): ${P} { return $x; }
 function f_${n}(${attr}${P} $x, bool $ok): ${tpl(t, "refusing-return", P)} { return $ok ? r_${n}($x) : null; }
-function o_${n}(${attr}${tpl(t, "optional-input", P)}): bool { return $x !== null; }`;
+function o_${n}(${attr}${tpl(t, "optional-input", P)}, bool $y): bool { return $y && $x !== null; }`;
     });
     const main = positions.map(({ b, e }) => {
       const n = ident(b);
       return `show_${n}(r_${n}(${e}));
 $v = f_${n}(${e}, true); if ($v !== null) show_${n}($v);
 if (f_${n}(${e}, false) === null) echo "refused\\n";
-echo o_${n}(${lit(t, "null")}) ? "present" : "absent", "\\n";
-echo o_${n}(${e}) ? "present" : "absent", "\\n";`;
+echo o_${n}(${lit(t, "null")}, true) ? "present" : "absent", "\\n";
+echo o_${n}(${e}, true) ? "present" : "absent", "\\n";`;
     });
     return `<?php
 declare(strict_types=1);
@@ -945,7 +954,7 @@ const ruby: Gen = {
 end
 def r_${n}(x) = x
 def f_${n}(x, ok) = ok ? r_${n}(x) : nil
-def o_${n}(x = nil) = !x.nil?`;
+def o_${n}(x, y) = y && !x.nil?`;
     });
     const main = positions.map(({ b, e }) => {
       const n = ident(b);
@@ -953,8 +962,8 @@ def o_${n}(x = nil) = !x.nil?`;
 v = f_${n}(${e}, true)
 show_${n}(v) unless v.nil?
 puts "refused" if f_${n}(${e}, false).nil?
-puts o_${n}(${lit(t, "null")}) ? "present" : "absent"
-puts o_${n}(${e}) ? "present" : "absent"`;
+puts o_${n}(${lit(t, "null")}, true) ? "present" : "absent"
+puts o_${n}(${e}, true) ? "present" : "absent"`;
     });
     return `${fns.join("\n")}
 a = ${ruby.hex([0x0b])}
@@ -1001,8 +1010,8 @@ def r_${n}(x: ${P}) -> ${P}:
     return x
 def f_${n}(x: ${P}, ok: bool) -> ${tpl(t, "refusing-return", P)}:
     return r_${n}(x) if ok else ${lit(t, "null")}
-def o_${n}(x: ${tpl(t, "optional-input", P)}) -> bool:
-    return x is not ${lit(t, "null")}`;
+def o_${n}(x: ${tpl(t, "optional-input", P)}, y: bool) -> bool:
+    return y and x is not ${lit(t, "null")}`;
     });
     const main = positions.map(({ b, e }) => {
       const n = ident(b);
@@ -1012,8 +1021,8 @@ if v is not None:
     show_${n}(v)
 if f_${n}(${e}, False) is None:
     print("refused")
-print("present" if o_${n}(${lit(t, "null")}) else "absent")
-print("present" if o_${n}(${e}) else "absent")`;
+print("present" if o_${n}(${lit(t, "null")}, True) else "absent")
+print("present" if o_${n}(${e}, True) else "absent")`;
     });
     return `import struct
 ${fns.join("\n")}
@@ -1071,15 +1080,15 @@ const typescript: Gen = {
       return `function show_${n}(x: ${P}): void ${body.startsWith("{") ? body : `{ ${body} }`}
 function r_${n}(x: ${P}): ${P} { return x; }
 function f_${n}(x: ${P}, ok: boolean): ${tpl(t, "refusing-return", P)} { return ok ? r_${n}(x) : ${lit(t, "null")}; }
-function o_${n}(x: ${tpl(t, "optional-input", P)}): boolean { return x !== undefined; }`;
+function o_${n}(x: ${tpl(t, "optional-input", P)}, y: boolean): boolean { return y && x !== undefined; }`;
     });
     const main = positions.map(({ b, e }) => {
       const n = ident(b);
       return `show_${n}(r_${n}(${e}));
 { const v = f_${n}(${e}, true); if (v !== null) show_${n}(v); }
 if (f_${n}(${e}, false) === null) console.log("refused");
-console.log(o_${n}(undefined) ? "present" : "absent");
-console.log(o_${n}(${e}) ? "present" : "absent");`;
+console.log(o_${n}(undefined, true) ? "present" : "absent");
+console.log(o_${n}(${e}, true) ? "present" : "absent");`;
     });
     return `${fns.join("\n")}
 const a: Uint8Array = ${typescript.hex([0x0b])};
@@ -1132,11 +1141,16 @@ describe("each table compiles and runs in its own language", () => {
   for (const g of GENS) {
     const tool = g.steps[0]?.[0] ?? "";
     const missing = Bun.which(tool) === null && !existsSync(tool);
-    if (missing)
+    // On CI a missing toolchain fails the check rather than skipping it, so a
+    // runner image that drops one cannot turn the check off unseen.
+    const ci = Boolean(process.env.CI);
+    if (missing && !ci)
       console.log(
         `skipping the ${g.id} compile check: ${tool} is not installed`,
       );
-    test.skipIf(missing)(g.id, () => {
+    test.skipIf(missing && !ci)(g.id, () => {
+      if (missing)
+        throw new Error(`the ${g.id} compile check needs ${tool} on CI`);
       const t = LANGUAGE_TABLES[g.id];
       const lits = LITS.filter((l) => kept(g, l));
       const bases = BASE_TYPES.filter((b) => "spelling" in t.types[b]);
@@ -1157,7 +1171,10 @@ describe("each table compiles and runs in its own language", () => {
             env: { ...process.env, GOCACHE: join(dir, ".gocache") },
           });
           const err = run.stderr.toString();
-          if (run.exitCode !== 0 || (g.id === "ruby" && err !== ""))
+          if (
+            run.exitCode !== 0 ||
+            ((g.id === "ruby" || g.id === "php") && err !== "")
+          )
             throw new Error(`${cmd.join(" ")} failed:\n${err}${run.stdout}`);
           out = run.stdout.toString();
         }

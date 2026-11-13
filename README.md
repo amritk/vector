@@ -985,11 +985,11 @@ The contract keeps all the data: an exact width, which outcome a `?` means, secr
 | C | `int f(..., {T} *out)` | `const {T} *` |
 | Java | `Optional<{T}>` | `@Nullable {T}` |
 | Kotlin | `{T}?` | `{T}? = null` |
-| Python | `{T} \| None` | `{T} \| None = None` |
+| Python | `{T} \| None` | `{T} \| None` |
 | TypeScript | `{T} \| null` | `{T} \| undefined` |
-| PHP | `?{T}` | `?{T} $x = null` |
+| PHP | `?{T}` | `?{T} $x` |
 | Swift | `{T}?` | `{T}? = nil` |
-| Dart | `{T}?` | `[{T}? x]` |
+| Dart | `{T}?` | `{T}? x` |
 
 ### Literals
 
@@ -1189,7 +1189,7 @@ Notes:
 
 Types: ECMA-334 (C# Language Specification), Types › Simple types and Nullable value types.
 
-Names: methods PascalCase and parameters camelCase: words split at each capital, a digit run stays on the word before it (hkdfExpandSha256 → HkdfExpandSha256), a two-letter acronym stays in capitals and a longer one is cased like a word (readIOStream → ReadIOStream, parseHTTPRequest → ParseHttpRequest). A name override always wins.
+Names: methods PascalCase and parameters camelCase: words split at each capital, a digit run stays on the word before it (hkdfExpandSha256 → HkdfExpandSha256), a two-letter acronym stays in capitals and a longer one is cased like a word (readIOStream → ReadIOStream, parseHTTPRequest → ParseHttpRequest). A parameter whose camelCase name is a keyword (in, out, string, object, params, event, base) is written with @ (@in) or takes a name override. A name override always wins.
 
 Modules (class): a static class named for the last segment, in a namespace of the others, all PascalCase (Design Guidelines, Names of Namespaces): nish/crypto/hkdf → static class Hkdf in namespace Nish.Crypto.
 
@@ -1304,10 +1304,10 @@ Notes:
 - type `f64`: IEEE 754 binary64
 - type `secret-bytes`: no secret type; secrecy is dropped (fill(0) can wipe a copy)
 - outcome `refusing-return`: null is the refusal
-- outcome `optional-input`: a nullable parameter, null the absent argument
+- outcome `optional-input`: a nullable parameter, null the absent argument; the default is allowed before a required parameter, which a caller then passes by name or passes null for x
 - literal `hex`: a byte above 0x7f as 0xff.toByte(); "0b0b".hexToByteArray() needs @OptIn(ExperimentalStdlibApi::class) in Kotlin 1.9
 - literal `str`: non-ASCII as \u escapes, a scalar above U+FFFF as its UTF-16 surrogate pair (Kotlin has no \U); $ escaped as \$
-- literal `int`: per width: i8 42.toByte(), i16 42.toShort(), i32 42, i64 42L, u8 42u.toUByte(), u16 42u.toUShort(), u32 42u, u64 42uL; the minimums as Int.MIN_VALUE and Long.MIN_VALUE, since -2147483648 is a Long and -9223372036854775808L does not compile
+- literal `int`: per width: i8 42.toByte(), i16 42.toShort() (a negative one parenthesised, (-128).toByte() and (-32768).toShort(), as -128.toByte() is -(128.toByte()), an Int), i32 42, i64 42L, u8 42u.toUByte(), u16 42u.toUShort(), u32 42u, u64 42uL; the minimums as Int.MIN_VALUE and Long.MIN_VALUE, since -2147483648 is a Long and -9223372036854775808L does not compile
 - literal `f64`: from its bits, so -0 and NaN payloads are exact; the bits are a ULong literal, as a hex Long literal with the sign bit set (-0, any negative value) does not compile
 - literal `concat`: ByteArray.plus
 
@@ -1341,7 +1341,7 @@ Notes:
 - type `u32`: arbitrary precision; the width is the implementation's to check
 - type `u64`: arbitrary precision; the width is the implementation's to check
 - outcome `refusing-return`: None is the refusal (PEP 604)
-- outcome `optional-input`: None is the absent argument
+- outcome `optional-input`: None is the absent argument, passed explicitly; = None may be added only when every later parameter also has a default, as a default before a parameter without one is a SyntaxError
 - literal `str`: non-ASCII and control characters as \u or \U escapes
 - literal `f64`: from its bits, so -0 and NaN payloads are exact
 
@@ -1405,7 +1405,7 @@ Notes:
 - type `u16`: a 64-bit build is assumed; the width is the implementation's to check
 - type `u32`: a 64-bit build is assumed; the width is the implementation's to check
 - outcome `refusing-return`: null is the refusal
-- outcome `optional-input`: null is the absent argument
+- outcome `optional-input`: null is the absent argument, passed explicitly; = null may be added only when every later parameter also has a default, as an optional parameter before a required one is deprecated (PHP 8.0, and for ?T $x = null since 8.3)
 - literal `str`: double-quoted, so $ is written \$ (a double-quoted string interpolates $x), \ as \\ and " as \"; non-ASCII and control characters as \u{…} escapes
 - literal `int`: i64's minimum as PHP_INT_MIN: -9223372036854775808 is the float negation of an overflowed literal
 - literal `f64`: from its bits (big-endian double), so -0 and NaN payloads are exact
@@ -1433,7 +1433,7 @@ Notes:
 - type `secret-bytes`: no secret type; secrecy is dropped (CryptoKit's SymmetricKey is one where available)
 - outcome `refusing-return`: nil is the refusal
 - outcome `optional-input`: nil is the absent argument
-- literal `str`: non-ASCII as \u{…} escapes
+- literal `str`: non-ASCII as \u{…} escapes; a backslash written \\, since \( interpolates
 - literal `int`: every width exact
 - literal `f64`: from its bits, so -0 and NaN payloads are exact
 
@@ -1466,7 +1466,7 @@ Notes:
 - type `u32`: the width is the implementation's to check
 - type `u64`: int is signed 64-bit, so the upper half of u64 needs BigInt
 - outcome `refusing-return`: null is the refusal (sound null safety)
-- outcome `optional-input`: an optional positional parameter; null is the absent argument
+- outcome `optional-input`: a required nullable parameter, valid in any position; null is the absent argument, passed explicitly. [{T}? x] (an optional positional parameter) may be used instead only when no required parameter follows it
 - literal `ascii`: dart:convert
 - literal `str`: non-ASCII as \u{…} escapes; $ escaped as \$
 - literal `int`: BigInt.parse('…') for u64

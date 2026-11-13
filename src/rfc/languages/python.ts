@@ -42,8 +42,8 @@ export const python: LanguageTable = {
       note: "None is the refusal (PEP 604)",
     },
     "optional-input": {
-      spelling: "{T} | None = None",
-      note: "None is the absent argument",
+      spelling: "{T} | None",
+      note: "None is the absent argument, passed explicitly; = None may be added only when every later parameter also has a default, as a default before a parameter without one is a SyntaxError",
     },
   },
   literals: {
