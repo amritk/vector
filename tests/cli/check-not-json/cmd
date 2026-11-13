@@ -1,0 +1,1 @@
+vector spec check --format json tests/cli/check-not-json/contract.txt

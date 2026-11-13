@@ -1,0 +1,1 @@
+vector: tests/cli/check-not-json/contract.txt: invalid JSON at byte 13 (code -2)
