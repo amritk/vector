@@ -128,6 +128,35 @@ export const main = (): i32 => {
   t.eqStr("amount*rate vs rate*amount: EQUIVALENT", mul.status, DIFF_EQUIVALENT)
   t.eqI32("amount*rate vs rate*amount: no float64 delta", toI32(mul.report.float64Deltas.length), 0)
 
+  // A requires window no random sample reaches: the solver's model of both
+  // requires seeds the sweep, which finds the float64 delta inside it.
+  const window = [bBin(">", x, bNum("3.1")), bBin("<", x, bNum("3.2"))]
+  const winOld = dcOne(window, bBin("+", bBin("+", x, bNum("0.1")), bNum("0.2")))
+  const winNew = dcOne(window, bBin("+", x, bNum("0.3")))
+  const win = dcRun(t, "narrow window", winOld, winNew)
+  t.eqStr("3.1 < x < 3.2, (x+0.1)+0.2 vs x+0.3: DIFFERENT", win.status, DIFF_DIFFERENT)
+  t.eqI32("narrow window: a float64 delta", toI32(win.report.float64Deltas.length), 1)
+  t.eqI32("narrow window: sampled", toI32(win.report.float64Unsampled.length), 0)
+  // The same window with one body is EQUIVALENT: the seed is compared too.
+  const winSame = dcRun(t, "narrow window, same body", winNew, winNew)
+  t.eqStr("narrow window, same body: EQUIVALENT", winSame.status, DIFF_EQUIVALENT)
+
+  // A domain non-empty over the reals but empty in float64 (the two bounds
+  // are adjacent doubles, so no double lies strictly between): nothing can be
+  // compared, so it fails closed as UNDECIDED rather than EQUIVALENT.
+  const sliver = [bBin(">", x, bNum("0.1")), bBin("<", x, bNum("0.10000000000000002"))]
+  const sliverOld = dcOne(sliver, bBin("+", bBin("+", x, bNum("0.1")), bNum("0.2")))
+  const sliverNew = dcOne(sliver, bBin("+", x, bNum("0.3")))
+  const unsampled = dcRun(t, "float64-empty domain", sliverOld, sliverNew)
+  t.eqStr("float64-empty domain: UNDECIDED", unsampled.status, DIFF_UNDECIDED)
+  t.ok("float64-empty domain: equal over the reals", unsampled.report.matched[0].equivalent)
+  t.eqI32("float64-empty domain: unsampled", toI32(unsampled.report.float64Unsampled.length), 1)
+  t.contains("float64-empty domain: says so", unsampled.summary, "UNDECIDED in float64")
+  // An empty shared domain makes zero comparisons vacuous: still EQUIVALENT.
+  const empty = [bBin(">", x, bNum("1")), bBin("<", x, bNum("0"))]
+  const vacuous = dcRun(t, "empty domain", dcOne(empty, bVar("x")), dcOne(empty, bBin("+", x, bNum("0"))))
+  t.eqStr("empty shared domain: EQUIVALENT", vacuous.status, DIFF_EQUIVALENT)
+
   // z3 answering unknown decides nothing.
   const oldP = bProgram(dcIdentity().programText())
   const newP = bProgram(dcOne(bNone(), bBin("+", x, bNum("0"))).programText())
@@ -166,12 +195,31 @@ export const main = (): i32 => {
   const oldPath = joinPath(dir.value, "old.json")
   t.ok("write old.json", writeFileSyncMode(oldPath, bodyOld.programText(), 0o644) >= 0)
   const run = runProcess(["env", `VECTOR_Z3=${fake}`, "dist/vector", "diff", "--json", oldPath, oldPath], "", 60000)
+  // A z3 that answers unknown to every query, end to end: UNDECIDED, exit 1.
+  // The golden runner cannot set VECTOR_Z3, so this spawn is the CLI case.
+  const unsure = joinPath(dir.value, "z3-unknown")
+  const unsureText = `#!/bin/sh
+"${z3.value}" "$@" | sed -e 's/^sat$/unknown/' -e 's/^unsat$/unknown/'
+`
+  t.ok("write the unknown z3", writeFileSyncMode(unsure, unsureText, 0o755) >= 0)
+  const undecided = runProcess(
+    ["env", `VECTOR_Z3=${unsure}`, "dist/vector", "diff", "--json", oldPath, oldPath],
+    "",
+    60000,
+  )
+  const undecidedText = runProcess(["env", `VECTOR_Z3=${unsure}`, "dist/vector", "diff", oldPath, oldPath], "", 60000)
   t.ok("remove the temp dir", bRemoveTree(dir.value))
-  if (run.isErr()) {
-    t.fail("dist/vector runs (build it first)", run.error)
+  if (run.isErr() || undecided.isErr() || undecidedText.isErr()) {
+    t.fail("dist/vector runs (build it first)", run.isErr() ? run.error : "")
     return t.done()
   }
   t.eqI32("a z3 error exits 2", run.value.status, 2)
   t.contains("a z3 error is ERROR", run.value.stdout, `"status": "${DIFF_ERROR}"`)
+  t.eqI32("z3 unknown exits 1", undecided.value.status, 1)
+  t.contains("z3 unknown is UNDECIDED", undecided.value.stdout, `"status": "${DIFF_UNDECIDED}"`)
+  t.contains("z3 unknown is not equivalent", undecided.value.stdout, `"equivalent": false`)
+  t.eqI32("z3 unknown exits 1 without --json", undecidedText.value.status, 1)
+  t.contains("z3 unknown says UNDECIDED", undecidedText.value.stdout, "Status: UNDECIDED")
+  t.contains("z3 unknown marks the pair", undecidedText.value.stdout, "UNDECIDED (not proven equivalent)")
   return t.done()
 }

@@ -6,7 +6,7 @@
  ✓ applyRate(amount: Real, rate: Real): Real — EQUIVALENT for all inputs
  ✓ usdToEur(amount: Real): Real — EQUIVALENT for all inputs
 
- Every shared function provably behaves identically — the
- regeneration is behavior-preserving; nothing to review.
+ Every shared function is proven equal over the reals and agreed
+ on every sampled float64 input; nothing to review.
  (Proven over exact rationals, then compared on sampled float64 inputs;
   assumes both versions pass vector verify.)

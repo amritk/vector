@@ -51,6 +51,7 @@ export const CHECK_UNKNOWN: string = "unknown"
 const DIFF_NARROWED: i32 = 1
 const DIFF_WIDENED: i32 = 2
 const DIFF_VALUE: i32 = 3
+const DIFF_DOMAIN: i32 = 4
 
 /** A function in both versions whose parameter and return types agree. */
 export class FunctionPair {
@@ -169,7 +170,7 @@ export const pairFunctions = (oldProgram: Program, newProgram: Program): Functio
 
 /** One z3 query of a diff script. */
 export class DiffQuery {
-  /** Which check it is: narrowed, widened or value. */
+  /** Which check it is: narrowed, widened, value or shared domain. */
   kind: i32
   /** The SMT constant of each parameter. */
   smtNames: string[]
@@ -202,7 +203,7 @@ export class DiffQuery {
 export class DiffScript {
   /** The SMT-LIB text. */
   text: string
-  /** Three queries per pair: narrowed, widened, value. */
+  /** Four queries per pair: narrowed, widened, value, shared domain. */
   queries: DiffQuery[]
 
   /**
@@ -245,7 +246,8 @@ const diffQuery = (lines: string[], queries: DiffQuery[], q: DiffQuery, asserts:
 /**
  * Builds the diff script: per pair, one shared set of input constants that
  * both versions' parameters map onto by position, then the narrowed, widened
- * and value queries. Both programs must be typechecked.
+ * and value queries, and a model of the shared domain that seeds the float64
+ * comparison. Both programs must be typechecked.
  *
  * @param pairs the pairs to compare
  * @param oldProgram the program before, whose functions old calls inline
@@ -311,6 +313,12 @@ export const emitDiffScript = (pairs: FunctionPair[], oldProgram: Program, newPr
     valueVars.push(oldResult)
     valueVars.push(newResult)
     diffQuery(lines, queries, new DiffQuery(DIFF_VALUE, smtNames, names, oldResult, newResult), value, valueVars)
+    // sat: an input both versions accept, where float64 sampling starts.
+    const shared: string[] = preOld.slice(0)
+    for (const p of preNew) {
+      shared.push(p)
+    }
+    diffQuery(lines, queries, new DiffQuery(DIFF_DOMAIN, smtNames, names, oldResult, newResult), shared, smtNames)
   }
   return new DiffScript(`${smtPreamble()}${lines.join("\n")}\n`, queries)
 }
@@ -398,6 +406,8 @@ export class MatchedFunctionDiff {
   domainWidened: DiffCheck
   /** Inputs where the two bodies disagree. */
   valueDiff: DiffCheck
+  /** An input both versions accept, or none when their shared domain is empty. */
+  sharedDomain: DiffCheck
   /** All three checks came back unsat. */
   equivalent: boolean
   /** Requires clauses only the new version has, in math style. */
@@ -425,6 +435,7 @@ export class MatchedFunctionDiff {
     this.domainNarrowed = narrowed
     this.domainWidened = widened
     this.valueDiff = value
+    this.sharedDomain = new DiffCheck(CHECK_UNKNOWN)
     this.equivalent = narrowed.status === CHECK_NONE && widened.status === CHECK_NONE && value.status === CHECK_NONE
     this.requiresAdded = []
     this.requiresRemoved = []
@@ -477,7 +488,7 @@ const diffPrettyEnsures = (fn: FnUnit): string[] => {
  * renames and the clause text that changed.
  *
  * @param pairs the compared pairs
- * @param queries the script's queries, three per pair
+ * @param queries the script's queries, four per pair
  * @param answers z3's answers, one per query
  * @returns a verdict per pair, or `Err` when the answers do not line up
  */
@@ -486,14 +497,14 @@ export const assembleDiffs = (
   queries: DiffQuery[],
   answers: QueryAnswer[],
 ): Result<MatchedFunctionDiff[], string> => {
-  if (queries.length !== pairs.length * 3 || answers.length !== queries.length) {
+  if (queries.length !== pairs.length * 4 || answers.length !== queries.length) {
     return Err(`diff: ${answers.length} answers for ${queries.length} queries over ${pairs.length} pairs`)
   }
   const out: MatchedFunctionDiff[] = []
   for (let idx = 0; idx < toI32(pairs.length); idx++) {
     const oldFn = pairs[idx].oldFn
     const newFn = pairs[idx].newFn
-    const base = idx * 3
+    const base = idx * 4
     const m = new MatchedFunctionDiff(
       newFn.name,
       signatureOf(newFn),
@@ -501,6 +512,7 @@ export const assembleDiffs = (
       diffCheck(queries[base + 1], answers[base + 1]),
       diffCheck(queries[base + 2], answers[base + 2]),
     )
+    m.sharedDomain = diffCheck(queries[base + 3], answers[base + 3])
     for (let i = 0; i < toI32(newFn.params.length); i++) {
       const oldName = oldFn.params[i].name
       if (oldName !== newFn.params[i].name) {
@@ -557,6 +569,11 @@ export class ProgramDiffReport {
   signatureChanged: SignatureChange[]
   /** The pairs equal over the reals but not in float64. */
   float64Deltas: Float64Diff[]
+  /**
+   * The pairs equal over the reals with a non-empty shared domain where no
+   * float64 input in that domain was compared: not proven, so UNDECIDED.
+   */
+  float64Unsampled: string[]
 
   /**
    * Makes an empty report.
@@ -573,6 +590,7 @@ export class ProgramDiffReport {
     this.removed = []
     this.signatureChanged = []
     this.float64Deltas = []
+    this.float64Unsampled = []
   }
 }
 
@@ -681,9 +699,20 @@ export const diffPrograms = (
   for (let i = 0; i < toI32(report.matched.length); i++) {
     if (report.matched[i].equivalent) {
       const pair = pairing.comparable[i]
-      const delta = findFloat64Delta(oldProgram, pair.oldFn, newProgram, pair.newFn)
+      const domain = report.matched[i].sharedDomain
+      const seed: string[] = []
+      for (const p of pair.newFn.params) {
+        const at = toI32(domain.inputs.names.indexOf(p.name))
+        seed.push(at < 0 ? "" : domain.inputs.values[at])
+      }
+      const delta = findFloat64Delta(oldProgram, pair.oldFn, newProgram, pair.newFn, seed)
       if (delta.found) {
         report.float64Deltas.push(new Float64Diff(report.matched[i].name, delta))
+      } else if (delta.compared === 0 && domain.status !== CHECK_NONE) {
+        // Fail closed: equal over the reals says nothing about float64, and
+        // no input both versions accept was run. Only an empty shared domain
+        // (unsat) makes zero comparisons vacuous.
+        report.float64Unsampled.push(report.matched[i].name)
       }
     }
   }
@@ -701,6 +730,7 @@ export const diffPrograms = (
     different = different || m.any(CHECK_WITNESS)
     unknown = unknown || m.any(CHECK_UNKNOWN)
   }
+  unknown = unknown || report.float64Unsampled.length > 0
   let status = DIFF_EQUIVALENT
   if (different) {
     status = DIFF_DIFFERENT
@@ -740,10 +770,14 @@ const diffDomainLines = (lines: string[], c: DiffCheck, was: string, now: string
 
 const diffMatchedLines = (lines: string[], report: ProgramDiffReport, m: MatchedFunctionDiff): void => {
   const f = diffFloat64Of(report, m.name)
+  const unsampled = report.float64Unsampled.indexOf(m.name) >= 0
   if (m.equivalent && f >= 0) {
     const d = report.float64Deltas[f].delta
     lines.push(` ✘ ${m.signature} — equal over the reals, but the emitted float64 code DIFFERS`)
     lines.push(`     float64: at ${diffInputs(d.inputs)} → old = ${d.oldResult}, new = ${d.newResult}`)
+  } else if (m.equivalent && unsampled) {
+    lines.push(` ? ${m.signature} — equal over the reals, but UNDECIDED in float64`)
+    lines.push("     float64: no sampled input reached the shared domain; nothing was compared")
   } else if (m.equivalent) {
     lines.push(` ✓ ${m.signature} — EQUIVALENT for all inputs`)
   } else if (m.any(CHECK_WITNESS)) {
@@ -806,11 +840,14 @@ export const renderDiffSummary = (status: string, report: ProgramDiffReport): st
   }
   lines.push("")
   if (status === DIFF_EQUIVALENT) {
-    lines.push(" Every shared function provably behaves identically — the")
-    lines.push(" regeneration is behavior-preserving; nothing to review.")
+    lines.push(" Every shared function is proven equal over the reals and agreed")
+    lines.push(" on every sampled float64 input; nothing to review.")
   } else if (status === DIFF_DIFFERENT) {
     lines.push(" Review each listed delta against the change you intended —")
     lines.push(" the witnesses above are the entire behavioral change.")
+  } else if (report.float64Unsampled.length > 0) {
+    lines.push(" No difference was found, but equivalence was not proven — no")
+    lines.push(" float64 sample reached a shared domain; test inside it by hand.")
   } else {
     lines.push(" No difference was found, but equivalence was not proven —")
     lines.push(" restate nonlinear bodies in linear arithmetic and re-run.")
@@ -902,6 +939,7 @@ export const diffReportJson = (report: ProgramDiffReport): OutJson => {
     .put("removed", outJsonStrings(report.removed))
     .put("signatureChanged", sigs)
     .put("float64Deltas", floats)
+    .put("float64Unsampled", outJsonStrings(report.float64Unsampled))
 }
 
 /**

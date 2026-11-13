@@ -175,6 +175,46 @@ export const main = (): i32 => {
       bBin("and", a, bUn("not", bBool(false))),
     ),
   )
+  // Grouping the emitter must keep: each subtree is the right operand of an
+  // operator that binds as tightly or tighter, so dropping its parentheses
+  // changes the value the interpreter computes.
+  const z = bVar("z")
+  const c = bVar("c")
+  const one = bNum("1")
+  ops.fn(
+    "group",
+    1,
+    ["x:Real", "y:Real", "z:Real"],
+    "Real",
+    bNone(),
+    emitSame(),
+    bIte(
+      bIte(bBin(">", x, y), bBin(">", y, z), bBin("<", x, z)),
+      bBin("*", bBin("+", x, y), z),
+      bIte(
+        bBin(">", z, bNum("0")),
+        bBin("-", x, bBin("+", y, z)),
+        bBin(
+          "-",
+          bBin("/", x, bBin("*", bBin("+", one, bUn("abs", y)), bBin("+", one, bUn("abs", z)))),
+          bUn("neg", bUn("neg", bBin("-", x, bUn("neg", y)))),
+        ),
+      ),
+    ),
+  )
+  ops.fn(
+    "logic",
+    1,
+    ["a:Bool", "b:Bool", "c:Bool"],
+    "Bool",
+    bNone(),
+    emitSame(),
+    bIte(
+      c,
+      bBin("and", bBin("or", a, b), bUn("not", bBin("and", a, b))),
+      bBin("or", bBin("and", a, bBin("implies", b, c)), bUn("not", bIte(a, b, c))),
+    ),
+  )
   const opsProgram = bProgram(ops.programText())
   if (opsProgram.isErr()) {
     t.fail("the operator program", opsProgram.error)
@@ -197,6 +237,8 @@ export const main = (): i32 => {
     'bools("true", true, 0)',
     "bools(null, true, 0)",
     "bools(true, false, NaN)",
+    "group(1, 2, NaN)",
+    "logic(true, 1, false)",
   ]
   emitAgree(t, "operators", opsProgram.value, probes)
   return t.done()

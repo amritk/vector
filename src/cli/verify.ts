@@ -7,7 +7,9 @@
  * program. Exit 2 is kept for bad usage, a file that cannot be read, and an
  * `--emit` file that cannot be written. `--emit` writes the TypeScript only
  * when the program is proven; on any other outcome it writes nothing and
- * leaves an existing file as it was.
+ * leaves an existing file as it was. The write goes to a temporary file
+ * beside the target, renamed over it, so a failed or interrupted write never
+ * leaves a truncated file behind.
  */
 
 import { Cli, ParseResult } from "nish/cli-args"
@@ -80,10 +82,7 @@ export class VerifyCommand {
     const emitPath = r.value(this.emitFlag) ?? ""
     let emitError = ""
     if (outcome.status === OUTCOME_PROVEN && emitPath !== "") {
-      const written = writeFileSyncMode(emitPath, outcome.emittedCode, 0o644)
-      if (written < 0) {
-        emitError = `verify: ${emitPath}: cannot write file (errno ${-written})`
-      }
+      emitError = verifyWriteAtomic(emitPath, outcome.emittedCode)
     }
     // The outcome prints even when --emit failed, so a --json reader still
     // gets the verdict; the write failure follows it on stderr, and exits 2.
@@ -118,6 +117,23 @@ const verifyPrintStyle = (outcome: VerifyOutcome): void => {
     console.log(`  ⚠ ${w.fn} ${w.axiomId}: ${w.property}`)
     console.log(`    ${w.hint}\n`)
   }
+}
+
+// Writes `data` to `path` atomically: a temporary beside it, then a rename.
+// Returns the error to report, or "" when the file was written.
+const verifyWriteAtomic = (path: string, data: string): string => {
+  const temp = `${path}.vector-tmp`
+  const written = writeFileSyncMode(temp, data, 0o644)
+  if (written < 0) {
+    unlinkSync(temp)
+    return `verify: ${path}: cannot write file (errno ${-written})`
+  }
+  const renamed = renameSync(temp, path)
+  if (renamed < 0) {
+    unlinkSync(temp)
+    return `verify: ${path}: cannot write file (errno ${-renamed})`
+  }
+  return ""
 }
 
 const verifyPrintText = (outcome: VerifyOutcome, emitPath: string): void => {

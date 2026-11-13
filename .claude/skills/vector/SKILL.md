@@ -95,14 +95,22 @@ regeneration behavior-preserving:
 vector diff <old-program.json> <new-program.json> --json
 ```
 
-- **`EQUIVALENT`** → report that behavior is provably unchanged for all
-  inputs; nothing to review.
+- **`EQUIVALENT`** → report that every shared function was proven equal over
+  exact rationals, then agreed on every sampled float64 input, assuming both
+  versions pass `vector verify`. Float64 agreement is sampled, not proven.
 - **`DIFFERENT`** → relay each witness verbatim (input → old vs new result;
-  domain narrowed/widened; removed functions; signature changes) and confirm
-  the deltas match what the user intended. The witnesses are the entire
-  behavioral change — never summarize them away.
-- **`UNDECIDED`** → equivalence wasn't proven (usually nonlinear arithmetic);
-  restate the bodies linearly and re-run. Do not report it as equivalent.
+  domain narrowed/widened; float64 deltas, where a pair equal over the reals
+  returns different doubles or throws in one version only; removed functions;
+  signature changes) and confirm the deltas match what the user intended. The
+  witnesses are the entire behavioral change — never summarize them away.
+- **`UNDECIDED`** → equivalence wasn't proven: z3 answered unknown (usually
+  nonlinear arithmetic; restate the bodies linearly and re-run), or a pair is
+  equal over the reals but no float64 input in the shared domain could be run
+  (`float64Unsampled` in the JSON; the domain is too thin for any double, so
+  test inside it by hand). Do not report it as equivalent.
+
+Float64 results compare as `Object.is` does: `NaN` equals `NaN`, and `-0`
+differs from `0`, so `-x` and `0 - x` differ at `x = 0`.
 
 `vector diff` exits `0` for `EQUIVALENT`, `1` for `DIFFERENT` or `UNDECIDED`,
 and `2` for `INVALID`, `ERROR`, bad usage or an unreadable file.
@@ -123,6 +131,10 @@ proof — surface them to the user instead of silently rewriting the spec.
   entire point of vector.
 - **Never edit the engine to make a proof pass.** If something can't be proven,
   the spec or the program is wrong, not the solver.
+- **Division and call hazards are checked conservatively.** Only an `ite`
+  narrows the path a hazard is checked on; `and`, `or` and `implies` do not,
+  even though the emitted code short-circuits. So `x != 0 and 1 / x > 0` is
+  reported as a division hazard: guard with an `ite` or a `requires` instead.
 - **Never force a proof through by tightening `requires`.** Contradictory
   preconditions are caught as *vacuous*; a `PROVEN` over an empty input region
   proves nothing.

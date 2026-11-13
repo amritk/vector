@@ -121,6 +121,23 @@ export const main = (): i32 => {
 
   // Traceability: a post axiom only assumed as a requires proves nothing.
   refInvalid(t, "post as requires", refSub(spec, '"f_R0","kind":"pre"', '"f_R0","kind":"post"'), program, '"post"')
+  // A pre axiom only checked as an ensures is never assumed by callers.
+  refInvalid(
+    t,
+    "pre as ensures",
+    refSub(spec, '"f_E0","kind":"post"', '"f_E0","kind":"pre"'),
+    program,
+    "a precondition must be enforced by a requires clause",
+  )
+  // A clause citing an axiom the spec does not have, which leaves the real
+  // axiom unenforced.
+  const lostReq = refSub(program, '"f_R0"', '"f_R9"')
+  refInvalid(t, "requires cites unknown", spec, lostReq, 'requires clause cites unknown axiom "f_R9"')
+  refInvalid(t, "requires cites unknown leaves f_R0", spec, lostReq, "axiom f_R0")
+  refInvalid(t, "requires cites unknown: unenforced", spec, lostReq, "is not enforced by any clause")
+  const lostEns = refSub(program, '"f_E0"', '"f_E9"')
+  refInvalid(t, "ensures cites unknown", spec, lostEns, 'ensures clause cites unknown axiom "f_E9"')
+  refInvalid(t, "ensures cites unknown: unenforced", spec, lostEns, "axiom f_E0")
 
   // The program implements exactly the spec plan's units.
   const two = refBase()

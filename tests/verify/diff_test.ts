@@ -40,6 +40,11 @@ const diffRun = (oldPath: string, newPath: string): DiffOutcome => {
   return diffPrograms(oldDoc, oldRoot.isOk() ? oldRoot.value : -1, newDoc, newRoot.isOk() ? newRoot.value : -1)
 }
 
+const diffNoSeed = (): string[] => {
+  const none: string[] = []
+  return none
+}
+
 export const main = (): i32 => {
   const t = new Suite("verify/diff")
   const oldP = diffLoad(t, "tests/fixtures/currency.json")
@@ -48,7 +53,7 @@ export const main = (): i32 => {
   t.eqI32("pairFunctions pairs both", toI32(pairing.comparable.length), toI32(oldP.functions.length))
   t.eqI32("pairFunctions adds nothing", toI32(pairing.added.length), 0)
   const script = emitDiffScript(pairing.comparable, oldP, newP)
-  t.eqI32("emitDiffScript asks three per pair", toI32(script.queries.length), toI32(pairing.comparable.length) * 3)
+  t.eqI32("emitDiffScript asks four per pair", toI32(script.queries.length), toI32(pairing.comparable.length) * 4)
   const run = runZ3(script.text, toI32(script.queries.length))
   if (run.isErr()) {
     t.fail("runZ3", run.error)
@@ -70,9 +75,9 @@ export const main = (): i32 => {
   t.ok("assembleDiffs refuses misaligned answers", assembleDiffs(noPairs, script.queries, run.value.answers).isErr())
 
   const last = toI32(oldP.functions.length) - 1
-  const delta = findFloat64Delta(oldP, oldP.functions[last], newP, newP.functions[last])
+  const delta = findFloat64Delta(oldP, oldP.functions[last], newP, newP.functions[last], diffNoSeed())
   t.ok("findFloat64Delta tells changed rates apart", delta.found)
-  const same = findFloat64Delta(oldP, oldP.functions[last], oldP, oldP.functions[last])
+  const same = findFloat64Delta(oldP, oldP.functions[last], oldP, oldP.functions[last], diffNoSeed())
   t.ok("findFloat64Delta finds nothing in one function", !same.found)
 
   const equal = diffRun("tests/fixtures/currency.json", "tests/fixtures/currency.json")

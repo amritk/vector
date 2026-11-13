@@ -80,7 +80,8 @@
     "added": [],
     "removed": [],
     "signatureChanged": [],
-    "float64Deltas": []
+    "float64Deltas": [],
+    "float64Unsampled": []
   },
   "summary": "── VECTOR DIFF ─────────────────────────────────────────\n old: usd_to_eur_converter   new: usd_to_eur_converter\n Solver: Z3 4.16.0 (native)\n Status: DIFFERENT\n\n ✓ applyRate(value: Real, rate: Real): Real — EQUIVALENT for all inputs\n     note:   param renamed amount → value\n     contract: + ensures result == value * rate\n     contract: − ensures result == amount * rate\n ✘ usdToEur(amount: Real): Real — BEHAVIOR DIFFERS\n     value:  at amount = 100 → old = 91, new = 92\n     domain: amount = 0 was accepted, now REJECTED\n     contract: + requires amount > 0\n     contract: − requires amount >= 0\n     contract: + ensures result == amount * 0.92\n     contract: − ensures result == amount * 0.91\n\n Review each listed delta against the change you intended —\n the witnesses above are the entire behavioral change.\n (Proven over exact rationals, then compared on sampled float64 inputs;\n  assumes both versions pass vector verify.)"
 }

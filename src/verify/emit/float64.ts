@@ -1045,6 +1045,11 @@ export class Float64Delta {
   oldResult: string
   /** What the new version returns or throws. */
   newResult: string
+  /**
+   * How many inputs both versions accepted and were run on. Zero with `found`
+   * false means float64 equivalence was not checked at all.
+   */
+  compared: i32
 
   /** Makes an empty delta, `found` false. */
   constructor() {
@@ -1052,6 +1057,7 @@ export class Float64Delta {
     this.inputs = new Counterexample("")
     this.oldResult = ""
     this.newResult = ""
+    this.compared = 0
   }
 }
 
@@ -1085,6 +1091,15 @@ const f64Run = (program: Program, fn: FnUnit, env: F64Env): F64Side => {
   // guard that differs in float64 is a difference in behaviour.
   for (const c of fn.requires) {
     const ok = f64Eval(ctx, c.expr, env)
+    if (ctx.threw && ctx.guard) {
+      // A callee in the requires throws, so the emitted guard throws too.
+      return new F64Side(
+        false,
+        false,
+        none,
+        `(throws — guard violated: ${ctx.guardCallee} requires ${ctx.guardPretty})`,
+      )
+    }
     if (ctx.threw) {
       return new F64Side(true, false, none, "")
     }
@@ -1107,7 +1122,9 @@ const f64Run = (program: Program, fn: FnUnit, env: F64Env): F64Side => {
   return new F64Side(false, true, v, "")
 }
 
-// Object.is: NaN equals NaN, and -0 differs from +0.
+// Object.is: NaN equals NaN, and -0 differs from +0. So `-x` and `0 - x` differ
+// at x = 0 (-0 against +0): deliberate, since `1 / r` and `Object.is` tell the
+// two apart in the emitted code.
 const f64SameValue = (a: F64Val, b: F64Val): boolean => {
   if (a.isBool || b.isBool) {
     return a.isBool === b.isBool && a.b === b.b
@@ -1147,6 +1164,7 @@ class F64Compare {
     if (a.skip || b.skip || (!a.ok && !b.ok)) {
       return false
     }
+    out.compared = out.compared + 1
     if (this.bases.length < 3) {
       this.bases.push(env)
     }
@@ -1168,23 +1186,43 @@ class F64Compare {
  * not bit-identical, or where one throws and the other does not. Equivalence
  * over the rationals says nothing about this: `x * 1.1 + 0.2` and `x * 1.1 +
  * 0.1 + 0.1` are one real function and two float64 functions. Parameters pair
- * by position.
+ * by position. The seed, a solver model of both requires, starts the dense
+ * sweep inside a domain too narrow for random samples to reach.
  *
  * @param oldProgram the program before
  * @param oldFn the function before
  * @param newProgram the program after
  * @param newFn the function after
- * @returns the delta; `found` is false when no sample told them apart
+ * @param seed model values by parameter position (`3`, `-7/2`); empty for none
+ * @returns the delta; `found` is false when no sample told them apart, and
+ *   `compared` says how many in-domain samples were run
  */
 export const findFloat64Delta = (
   oldProgram: Program,
   oldFn: FnUnit,
   newProgram: Program,
   newFn: FnUnit,
+  seed: string[],
 ): Float64Delta => {
   const out = new Float64Delta()
   const rand = new F64Rng(-2048144789)
   const cmp = new F64Compare(oldProgram, oldFn, newProgram, newFn)
+  const seedEnv = new F64Env()
+  for (let i = 0; i < toI32(oldFn.params.length) && i < toI32(seed.length); i++) {
+    const p = oldFn.params[i]
+    if (p.ty === "Bool") {
+      seedEnv.setBool(p.name, seed[i] === "true")
+    } else {
+      const x = float64ParseModel(seed[i])
+      if (!f64IsNaN(x)) {
+        seedEnv.setNum(p.name, p.ty === "Int" ? f64Round(x) : x)
+      }
+    }
+  }
+  const seeded = f64DomainViolation(oldFn.params, seedEnv) === ""
+  if (seeded && cmp.compare(seedEnv, out)) {
+    return out
+  }
   const samples = f64Samples(oldFn.params, rand)
   for (const env of samples) {
     if (cmp.compare(env, out)) {
@@ -1208,7 +1246,18 @@ export const findFloat64Delta = (
   }
   f64Literals(oldFn.body, literals)
   f64Literals(newFn.body, literals)
-  const dense = new F64Dense(oldFn.params, literals, cmp.bases, new F64Env(), rand)
+  // The seed is a base even when its rounding fell outside the domain: the
+  // sweep moves one parameter at a time and can step back in.
+  const bases = f64NoEnvs()
+  if (seeded) {
+    bases.push(seedEnv)
+  }
+  for (const b of cmp.bases) {
+    if (!(seeded && b === seedEnv)) {
+      bases.push(b)
+    }
+  }
+  const dense = new F64Dense(oldFn.params, literals, bases, seedEnv, rand)
   let env = dense.next()
   while (env !== null) {
     if (cmp.compare(env, out)) {
