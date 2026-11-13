@@ -17,13 +17,24 @@ export const main = (): i32 => {
   t.eqStr("basename trailing slash", basename("a/b/"), "b")
   t.eqStr("basename bare", basename("c"), "c")
 
+  // Write into and remove only directories this test made: no fallback to the
+  // working directory or a shared path.
   const tmp = makeTempDir("vector-test-")
-  t.ok("makeTempDir ok", tmp.isOk())
-  const dir = tmp.unwrapOr("")
+  if (tmp.isErr()) {
+    t.fail("makeTempDir ok", tmp.error)
+    return t.done()
+  }
+  t.pass("makeTempDir ok")
+  const dir = tmp.value
   t.ok("makeTempDir is a directory", isDirectorySync(dir))
   t.ok("makeTempDir is fresh", (readdirSync(dir)?.length ?? -1) === 0)
   const other = makeTempDir("vector-test-")
-  t.ok("makeTempDir names differ", other.unwrapOr(dir) !== dir)
+  if (other.isOk()) {
+    t.ok("makeTempDir names differ", other.value !== dir)
+    spawnSync(["rm", "-rf", other.value])
+  } else {
+    t.fail("makeTempDir names differ", other.error)
+  }
 
   const deep = joinPath(dir, "x/y/z")
   t.ok("mkdirAll ok", mkdirAll(deep, 0o755).isOk())
@@ -32,6 +43,6 @@ export const main = (): i32 => {
   const file = joinPath(dir, "file")
   writeFileSync(file, "x")
   t.ok("mkdirAll through a file", mkdirAll(joinPath(file, "sub"), 0o755).isErr())
-  spawnSync(["rm", "-rf", dir, other.unwrapOr(dir)])
+  spawnSync(["rm", "-rf", dir])
   return t.done()
 }

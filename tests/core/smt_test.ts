@@ -16,14 +16,29 @@ export const main = (): i32 => {
     t.eqStr("renderSexp negation", renderSexp(s), "-1/2")
   }
   const odd = parseSexp("(root-obj (+ (^ x 2) (- 2)) 1)")
-  if (odd !== null) {
+  if (odd === null) {
+    t.fail("renderSexp other", "parseSexp returned null")
+  } else {
     t.eqStr("renderSexp other", renderSexp(odd), "(root-obj (+ (^ x 2) -2) 1)")
   }
+
+  // A string, a quoted symbol and a comment can each hold a paren that is not one.
+  const err = parseSexp('(error "a ) b ""q"" (")')
+  t.ok("string is one atom", err !== null && err.items.length === 2 && err.items[1].atom === '"a ) b ""q"" ("')
+  const quoted = parseSexp("(|odd ) name| 1)")
+  t.ok(
+    "quoted symbol is one atom",
+    quoted !== null && quoted.items.length === 2 && quoted.items[0].atom === "|odd ) name|",
+  )
+  const commented = parseSexp("(a ; b ) (\n c)")
+  t.ok("comment is dropped", commented !== null && commented.items.length === 2 && commented.items[1].atom === "c")
+  t.ok("atom stops at a quote", (parseSexp('(a"b")')?.items.length ?? -1) === 2)
   t.ok("parseSexp unbalanced", parseSexp("((a b)") === null)
   t.ok("parseSexp stray close", parseSexp(")") === null)
   t.ok("parseSexp empty", parseSexp("   ") === null)
 
   const a = new QueryAnswer("sat")
+  // `(|odd name| 1)` is a pair, but its name is not a plain identifier.
   t.eqI32("parseModel count", parseModel(a, "((f0_x 0.0)\n (f0_result (/ (- 1) 2)) (|odd name| 1) (g 2 3))"), 2)
   t.eqStr("model x", a.value("f0_x") ?? "", "0")
   t.eqStr("model result", a.value("f0_result") ?? "", "-1/2")

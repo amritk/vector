@@ -2,8 +2,9 @@
  * `core/z3` — finding z3 and running one SMT-LIB2 script through it.
  *
  * z3 is found in this order: `$VECTOR_Z3` (which must name a file), `.z3/z3`
- * beside the repository the binary was built in (`dist/../.z3/z3`), `.z3/z3`
- * under the working directory, and finally `z3` on PATH. Each script runs in
+ * beside the repository the binary was built in (`dist/../.z3/z3`), and
+ * finally `z3` on PATH. The working directory is never searched: running
+ * vector inside a checkout must not run a z3 that checkout ships. Each script runs in
  * its own `z3 -in` process, and its answers are split by the `@@Q<i>` markers
  * (see `core/smt`).
  */
@@ -53,9 +54,6 @@ export const resolveZ3 = (): Result<string, string> => {
       return Ok(beside)
     }
   }
-  if (isExecutableSync(".z3/z3")) {
-    return Ok(".z3/z3")
-  }
   return Ok("z3")
 }
 
@@ -78,20 +76,35 @@ export class Z3Run {
   }
 }
 
+// What to quote when a run failed: z3's first `(error …)` line on stdout,
+// else the start of its stderr, else nothing.
+const z3FailureDetail = (out: ProcessResult): string => {
+  const at = out.stdout.startsWith("(error") ? 0 : toI32(out.stdout.indexOf("\n(error")) + 1
+  if (at > 0 || out.stdout.startsWith("(error")) {
+    const end = toI32(out.stdout.indexOf("\n", at))
+    const line = end < 0 ? out.stdout.substring(at) : out.stdout.substring(at, end)
+    return `: ${line.substring(0, 500)}`
+  }
+  return out.stderr.length === 0 ? "" : `: ${out.stderr.substring(0, 500)}`
+}
+
 /**
  * Reads the answers out of one finished `z3 -in` run.
  *
- * z3 exits 0 even when a command in the script fails, so the markers are
- * what is trusted: a script with queries whose output has no marker at all
- * means z3 never ran them, which is an error. A run the time limit killed is
- * an error too, however many markers it wrote: the queries it never reached
- * were not answered, and must not read as `unknown`.
+ * Each of these is an error, however many markers the run wrote, since the
+ * queries it never reached were not answered and must not read as `unknown`:
+ * the time limit killed it; it exited nonzero (or by a signal) before writing
+ * the last query's marker; or a script with queries produced no marker at
+ * all. A nonzero exit alone is not an error: z3 carries on past a failing
+ * command, such as `(get-model)` after `unsat`, and then exits 1. A message
+ * quotes z3's first `(error …)` line, or its stderr.
  *
  * @param out what the z3 process did
  * @param bin the z3 that ran, for messages
  * @param queryCount how many `@@Q` markers the script writes
  * @param limitMs the time limit the run had, for messages
- * @returns `Ok` with one answer per query, or `Err` when the run timed out or answered nothing
+ * @returns `Ok` with one answer per query, or `Err` when the run timed out,
+ *   stopped early, or answered nothing
  */
 export const z3Verdicts = (
   out: ProcessResult,
@@ -102,9 +115,11 @@ export const z3Verdicts = (
   if (out.timedOut) {
     return Err(`z3 (${bin}) did not finish ${queryCount} queries within ${limitMs} ms`)
   }
+  if (out.status !== 0 && queryCount > 0 && out.stdout.indexOf(`@@Q${queryCount - 1}\n`) < 0) {
+    return Err(`z3 (${bin}) exited ${out.status} before query ${queryCount - 1}${z3FailureDetail(out)}`)
+  }
   if (queryCount > 0 && out.stdout.indexOf("@@Q") < 0) {
-    const detail = out.stderr.length === 0 ? "" : `: ${out.stderr.substring(0, 500)}`
-    return Err(`z3 (${bin}) produced no verdicts${detail}`)
+    return Err(`z3 (${bin}) produced no verdicts${z3FailureDetail(out)}`)
   }
   return Ok(parseZ3Output(out.stdout, queryCount))
 }
@@ -116,7 +131,7 @@ export const z3Verdicts = (
  * @param script the SMT-LIB2 script
  * @param queryCount how many `@@Q` markers the script writes
  * @returns `Ok` with the answers, or `Err` when z3 cannot be found or run, runs
- *   out of time, or ran none of the queries
+ *   out of time, stops before its last query, or ran none of the queries
  */
 export const runZ3 = (script: string, queryCount: i32): Result<Z3Run, string> => {
   const bin = resolveZ3().orReturn()

@@ -41,7 +41,13 @@ export const main = (): i32 => {
   const bad = parseJson(doc, "{", "inline")
   t.ok("parseJson refuses", bad.isErr())
 
-  const dir = makeTempDir("vector-json-").unwrapOr("/tmp")
+  // Remove only a directory this test made: no fallback to a shared path.
+  const made = makeTempDir("vector-json-")
+  if (made.isErr()) {
+    t.fail("makeTempDir", made.error)
+    return t.done()
+  }
+  const dir = made.value
   const path = joinPath(dir, "out.json")
   const out = newJsonDocument()
   const o = out.newObject()

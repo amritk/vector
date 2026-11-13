@@ -36,5 +36,17 @@ export const main = (): i32 => {
   t.ok("a finished run is read", done.isOk() && done.value[0].result === "unsat")
   const none = z3Verdicts(new ProcessResult(0, "", "boom\n", false), "z3", 1, 60000)
   t.ok("no markers names stderr", none.isErr() && none.error.indexOf("boom") >= 0)
+  const failed = new ProcessResult(1, '@@Q0\nsat\n(error "line 3: bad")\n', "", false)
+  const crashed = z3Verdicts(failed, "z3", 2, 60000)
+  t.ok("a nonzero exit before the last query is an error", crashed.isErr())
+  if (crashed.isErr()) {
+    t.eqStr("nonzero exit message", crashed.error, 'z3 (z3) exited 1 before query 1: (error "line 3: bad")')
+  }
+  // z3 exits 1 after `(get-model)` fails on an unsat query, and keeps going.
+  const finished = new ProcessResult(1, '@@Q0\nunsat\n(error "model is not available")\n@@Q1\nsat\n', "", false)
+  const read = z3Verdicts(finished, "z3", 2, 60000)
+  t.ok("a nonzero exit after the last query is read", read.isOk() && read.value[1].result === "sat")
+  const quiet = z3Verdicts(new ProcessResult(0, '(error "no script")\n', "", false), "z3", 1, 60000)
+  t.ok("no markers quotes the error line", quiet.isErr() && quiet.error.indexOf("no script") >= 0)
   return t.done()
 }

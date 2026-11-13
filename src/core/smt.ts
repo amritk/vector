@@ -31,6 +31,11 @@ export class Sexp {
 
 const smtIsSpace = (c: i32): boolean => c === 32 || c === 9 || c === 10 || c === 13
 
+// Splits SMT-LIB2 text into `(`, `)` and atoms. A string literal ("…", with
+// `""` for a quote inside it) and a quoted symbol (|…|) are each one atom,
+// delimiters kept, so a paren inside either does not count. A `;` comment runs
+// to the end of the line and is dropped. An unclosed string or quoted symbol
+// runs to the end of the text.
 const smtTokens = (text: string): string[] => {
   const out: string[] = []
   const n = toI32(text.length)
@@ -39,12 +44,41 @@ const smtTokens = (text: string): string[] => {
     const c = text.charCodeAt(i)
     if (smtIsSpace(c)) {
       i = i + 1
+    } else if (c === 59) {
+      while (i < n && text.charCodeAt(i) !== 10) {
+        i = i + 1
+      }
     } else if (c === 40 || c === 41) {
       out.push(text.slice(i, i + 1))
       i = i + 1
+    } else if (c === 34) {
+      const start = i
+      i = i + 1
+      while (i < n) {
+        if (text.charCodeAt(i) === 34) {
+          if (i + 1 < n && text.charCodeAt(i + 1) === 34) {
+            i = i + 2
+            continue
+          }
+          i = i + 1
+          break
+        }
+        i = i + 1
+      }
+      out.push(text.slice(start, i))
+    } else if (c === 124) {
+      const start = i
+      i = i + 1
+      while (i < n && text.charCodeAt(i) !== 124) {
+        i = i + 1
+      }
+      i = Math.min(i + 1, n)
+      out.push(text.slice(start, i))
     } else {
       const start = i
-      while (i < n && !smtIsSpace(text.charCodeAt(i)) && text.charCodeAt(i) !== 40 && text.charCodeAt(i) !== 41) {
+      while (i < n) {
+        const d = text.charCodeAt(i)
+        if (smtIsSpace(d) || d === 40 || d === 41 || d === 34 || d === 124 || d === 59) break
         i = i + 1
       }
       out.push(text.slice(start, i))

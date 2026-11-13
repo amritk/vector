@@ -6,7 +6,7 @@
  */
 
 import { Cli, ParseResult } from "nish/cli-args"
-import { notImplemented } from "./common"
+import { report, usageError } from "../core/diag"
 
 /** The id `vector spec extract` is parsed to. */
 export const SPEC_EXTRACT_ID: i32 = 3
@@ -40,7 +40,7 @@ export class SpecExtractCommand {
    * @returns the exit code
    */
   run(_r: ParseResult): i32 {
-    return notImplemented("spec extract")
+    return report(usageError("spec extract: not implemented yet"))
   }
 }
 

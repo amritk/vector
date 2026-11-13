@@ -6,7 +6,7 @@
  */
 
 import { Cli, ParseResult } from "nish/cli-args"
-import { notImplemented } from "./common"
+import { report, usageError } from "../core/diag"
 
 /** The id `vector verify` is parsed to. */
 export const VERIFY_ID: i32 = 1
@@ -43,7 +43,7 @@ export class VerifyCommand {
    * @returns the exit code
    */
   run(_r: ParseResult): i32 {
-    return notImplemented("verify")
+    return report(usageError("verify: not implemented yet"))
   }
 }
 

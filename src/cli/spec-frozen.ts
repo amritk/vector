@@ -6,7 +6,7 @@
  */
 
 import { Cli, ParseResult } from "nish/cli-args"
-import { notImplemented } from "./common"
+import { report, usageError } from "../core/diag"
 
 /** The id `vector spec frozen` is parsed to. */
 export const SPEC_FROZEN_ID: i32 = 7
@@ -43,7 +43,7 @@ export class SpecFrozenCommand {
    * @returns the exit code
    */
   run(_r: ParseResult): i32 {
-    return notImplemented("spec frozen")
+    return report(usageError("spec frozen: not implemented yet"))
   }
 }
 

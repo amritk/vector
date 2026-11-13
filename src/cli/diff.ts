@@ -6,7 +6,7 @@
  */
 
 import { Cli, ParseResult } from "nish/cli-args"
-import { notImplemented } from "./common"
+import { report, usageError } from "../core/diag"
 
 /** The id `vector diff` is parsed to. */
 export const DIFF_ID: i32 = 2
@@ -40,7 +40,7 @@ export class DiffCommand {
    * @returns the exit code
    */
   run(_r: ParseResult): i32 {
-    return notImplemented("diff")
+    return report(usageError("diff: not implemented yet"))
   }
 }
 
