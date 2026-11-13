@@ -1,0 +1,233 @@
+/**
+ * `spec/check` — the pipeline every contract goes through: an ordered
+ * registry of gates, each a top-level function that reads the contract and
+ * returns its findings. checkContract runs them in order and collects every
+ * finding, so one run names them all.
+ *
+ * How a stage plugs in: write the gate as a top-level function of type
+ * CheckGate in its own module (`(ctx) => string[]`: it reads `ctx.contract`
+ * and returns one message per finding, empty when it passes), and add one
+ * `new CheckGateEntry(...)` line for it to checkGates, in the order it must
+ * run. A gate that later gates
+ * depend on (the shape gate: nothing after it can trust a malformed contract)
+ * is `blocking`, and stops the pipeline when it finds anything. A gate that
+ * chooses inputs for the generated test, such as boundary samples for a
+ * property, adds them to `ctx.samples`; emit reads them from the report. Only
+ * the shape gate is registered here; the other gates live with their stages.
+ */
+
+import { contractShapeErrors } from "./contract/shape"
+import { Contract, Literal } from "./contract/types"
+
+/** One sampled input of a property: the values its variables take, and why. */
+export class Sample {
+  /** The property's clause id. */
+  clause: string
+  /** The values of the property's variables, in `forall` order. */
+  args: Literal[]
+  /** Why this input was chosen: `min of n`, `solver: x + y overflows`, ... */
+  why: string
+  /**
+   * Makes a sample.
+   *
+   * @param clause the property's id
+   * @param args its variables' values, in order
+   * @param why why it was chosen
+   */
+  constructor(clause: string, args: Literal[], why: string) {
+    this.clause = clause
+    this.args = args
+    this.why = why
+  }
+}
+
+/** The samples the gates chose, which emit writes into the generated test. */
+export class SampleTable {
+  samples: Sample[]
+  /** Makes an empty table. */
+  constructor() {
+    this.samples = []
+  }
+}
+
+/**
+ * Adds a sample to a table.
+ *
+ * @param table the table
+ * @param sample the sample
+ */
+export const checkAddSample = (table: SampleTable, sample: Sample): void => {
+  table.samples.push(sample)
+}
+
+/**
+ * The samples of one property, in the order they were added.
+ *
+ * @param table the table
+ * @param clause the property's id
+ * @returns its samples; empty when it has none
+ */
+export const checkSamplesOf = (table: SampleTable, clause: string): Sample[] =>
+  table.samples.filter((s: Sample): boolean => s.clause === clause)
+
+/** What a check runs with: where the contract is, and what the gates produce. */
+export class CheckContext {
+  /** The contract's own path. */
+  contractPath: string
+  /** The repository root, which sources are read from inside. */
+  root: string
+  /** The contract being checked; checkContract sets it before the first gate. */
+  contract: Contract
+  /** The samples gates choose for the generated test; each run starts a new table. */
+  samples: SampleTable
+  /**
+   * Makes a context.
+   *
+   * @param contractPath the contract's path
+   * @param root the repository root
+   */
+  constructor(contractPath: string, root: string) {
+    this.contractPath = contractPath
+    this.root = root
+    this.contract = new Contract()
+    this.samples = new SampleTable()
+  }
+}
+
+/** A gate: every finding in `ctx.contract`, one message each; empty when it passes. */
+export type CheckGate = (ctx: CheckContext) => string[]
+
+/** A gate in the registry. */
+export class CheckGateEntry {
+  /** The name its findings are reported under. */
+  name: string
+  run: CheckGate
+  /** Whether a finding stops the gates after it. */
+  blocking: boolean
+  /**
+   * Makes a registry entry.
+   *
+   * @param name the gate's name
+   * @param run the gate
+   * @param blocking whether a finding stops the gates after it
+   */
+  constructor(name: string, run: CheckGate, blocking: boolean) {
+    this.name = name
+    this.run = run
+    this.blocking = blocking
+  }
+}
+
+/** One finding of one gate. */
+export class CheckFinding {
+  gate: string
+  message: string
+  /**
+   * Makes a finding.
+   *
+   * @param gate the gate's name
+   * @param message what it found
+   */
+  constructor(gate: string, message: string) {
+    this.gate = gate
+    this.message = message
+  }
+}
+
+/** What a check found. */
+export class CheckReport {
+  findings: CheckFinding[]
+  /** The gates that ran, in order. */
+  ran: string[]
+  /** The gates a blocking finding stopped. */
+  skipped: string[]
+  /** The samples the gates chose, for emit. */
+  samples: SampleTable
+  /**
+   * Makes an empty report.
+   *
+   * @param samples the table the gates add samples to
+   */
+  constructor(samples: SampleTable) {
+    this.findings = []
+    this.ran = []
+    this.skipped = []
+    this.samples = samples
+  }
+}
+
+/**
+ * The shape gate: every value the schema and the generated test constrain.
+ *
+ * @param ctx the check's context, holding the contract
+ * @returns each error
+ */
+export const checkShapeGate = (ctx: CheckContext): string[] => contractShapeErrors(ctx.contract)
+
+/**
+ * The registered gates, in the order they run.
+ *
+ * @returns the registry
+ */
+export const checkGates = (): CheckGateEntry[] => [new CheckGateEntry("shape", checkShapeGate, true)]
+
+/**
+ * Runs the given gates over a contract, in order, collecting every finding.
+ * A blocking gate that finds anything stops the gates after it, which the
+ * report lists as skipped. Each run starts with an empty sample table, so a
+ * context reused across contracts never carries one's samples into another.
+ *
+ * @param ctx the check's context
+ * @param contract the contract
+ * @param gates the gates to run
+ * @returns what they found
+ */
+export const checkContractWith = (ctx: CheckContext, contract: Contract, gates: CheckGateEntry[]): CheckReport => {
+  ctx.contract = contract
+  ctx.samples = new SampleTable()
+  const report = new CheckReport(ctx.samples)
+  let stopped = false
+  for (const g of gates) {
+    if (stopped) {
+      report.skipped.push(g.name)
+      continue
+    }
+    const run = g.run
+    const found = run(ctx)
+    report.ran.push(g.name)
+    for (const m of found) {
+      report.findings.push(new CheckFinding(g.name, m))
+    }
+    if (g.blocking && found.length > 0) {
+      stopped = true
+    }
+  }
+  return report
+}
+
+/**
+ * Runs every registered gate over a contract.
+ *
+ * @param ctx the check's context
+ * @param contract the contract
+ * @returns what the gates found
+ */
+export const checkContract = (ctx: CheckContext, contract: Contract): CheckReport =>
+  checkContractWith(ctx, contract, checkGates())
+
+/**
+ * Whether a check passed: no gate found anything.
+ *
+ * @param report the report
+ * @returns true when there is no finding
+ */
+export const checkPassed = (report: CheckReport): boolean => report.findings.length === 0
+
+/**
+ * A report's findings as lines, `<gate>: <message>`.
+ *
+ * @param report the report
+ * @returns one line per finding
+ */
+export const checkLines = (report: CheckReport): string[] =>
+  report.findings.map((f: CheckFinding): string => `${f.gate}: ${f.message}`)
