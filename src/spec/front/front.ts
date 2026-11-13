@@ -1288,9 +1288,11 @@ const frontAlphabet = (text: string, pos: FrontPos): Result<string[], FrontRefus
  */
 const frontBounded = (name: string, type: string, comment: FrontTok): Result<ForallVar, FrontRefusal> => {
   const pos = frontAt(comment)
+  // The type as the property spells it: a bytes variable is written u8[].
+  const shown = type === "bytes" ? "u8[]" : type
   const b = frontReadBounds(trim(comment.value))
   if (b === null) {
-    return Err(frontRefuse(`the bounds of \`${name}\` must read \`lo..hi\`, like /* 0..64 */`, pos))
+    return Err(frontRefuse(`the bounds of \`${name}\` (${shown}) must read \`lo..hi\`, like /* 0..64 */`, pos))
   }
   const alpha = b.alpha
   if (type !== "string" && alpha !== null) {
@@ -1307,7 +1309,7 @@ const frontBounded = (name: string, type: string, comment: FrontTok): Result<For
       vocabCompareDecimal(b.lo, b.hi) > 0 ||
       vocabCompareDecimal(b.hi, max) > 0
     ) {
-      return Err(frontRefuse(`the bounds of \`${name}\` must satisfy ${min} <= lo <= hi <= ${max}`, pos))
+      return Err(frontRefuse(`the bounds of \`${name}\` (${type}) must satisfy ${min} <= lo <= hi <= ${max}`, pos))
     }
     v.min = b.lo
     v.max = b.hi
@@ -1318,7 +1320,7 @@ const frontBounded = (name: string, type: string, comment: FrontTok): Result<For
   }
   const cap = `${SHAPE_MAX_LEN}`
   if (vocabCompareDecimal("0", b.lo) > 0 || vocabCompareDecimal(b.lo, b.hi) > 0 || vocabCompareDecimal(b.hi, cap) > 0) {
-    return Err(frontRefuse(`the length bounds of \`${name}\` must satisfy 0 <= lo <= hi <= ${cap}`, pos))
+    return Err(frontRefuse(`the length bounds of \`${name}\` (${shown}) must satisfy 0 <= lo <= hi <= ${cap}`, pos))
   }
   v.minLen = toI32(parseInt(b.lo))
   v.maxLen = toI32(parseInt(b.hi))
