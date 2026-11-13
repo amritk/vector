@@ -1,0 +1,1 @@
+vector: spec frozen: --base <ref> is required: the commit the change is against, such as origin/main

@@ -1,0 +1,1 @@
+vector: spec exports: --nish-root <dir> is required: the nish checkout holding the module

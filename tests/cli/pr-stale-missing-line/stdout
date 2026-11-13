@@ -1,0 +1,10 @@
+{
+  "gate": "stale",
+  "title": "spec stale tests/cli/pr-stale-missing-line/t.ts against tests/cli/pr-stale-ok/c.json",
+  "ok": false,
+  "items": [],
+  "notes": [],
+  "problems": [
+    "tests/cli/pr-stale-missing-line/t.ts: no `// vector-contract-sha256: <hex>` line: regenerate it with vector spec emit"
+  ]
+}
