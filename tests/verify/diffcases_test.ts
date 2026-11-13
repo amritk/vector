@@ -8,6 +8,7 @@ import { newJsonDocument, parseJson } from "../../src/core/json"
 import { runProcess } from "../../src/core/process"
 import { QueryAnswer } from "../../src/core/smt"
 import { resolveZ3 } from "../../src/core/z3"
+import { outJsonRender } from "../../src/verify/emit/outjson"
 import {
   CHECK_UNKNOWN,
   CHECK_WITNESS,
@@ -16,11 +17,15 @@ import {
   DIFF_ERROR,
   DIFF_INVALID,
   DIFF_UNDECIDED,
+  DiffCheck,
   DiffOutcome,
   assembleDiffs,
+  diffPairStatus,
   diffPrograms,
+  diffReportJson,
   emitDiffScript,
   pairFunctions,
+  renderDiffSummary,
 } from "../../src/verify/equiv/diff"
 import { BCase, bBin, bNone, bNum, bProgram, bRemoveTree, bVar } from "./build"
 
@@ -137,6 +142,12 @@ export const main = (): i32 => {
   t.eqStr("3.1 < x < 3.2, (x+0.1)+0.2 vs x+0.3: DIFFERENT", win.status, DIFF_DIFFERENT)
   t.eqI32("narrow window: a float64 delta", toI32(win.report.float64Deltas.length), 1)
   t.eqI32("narrow window: sampled", toI32(win.report.float64Unsampled.length), 0)
+  // The pair's own JSON verdict carries the float64 delta, not just the reals.
+  t.eqStr("narrow window: pair DIFFERENT", diffPairStatus(win.report, win.report.matched[0]), DIFF_DIFFERENT)
+  const winJson = outJsonRender(diffReportJson(win.report))
+  t.contains("narrow window: pair JSON status", winJson, '"status": "DIFFERENT"')
+  t.contains("narrow window: pair JSON not equivalent", winJson, '"equivalent": false')
+  t.contains("narrow window: pair JSON equal over the reals", winJson, '"equivalentOverReals": true')
   // The same window with one body is EQUIVALENT: the seed is compared too.
   const winSame = dcRun(t, "narrow window, same body", winNew, winNew)
   t.eqStr("narrow window, same body: EQUIVALENT", winSame.status, DIFF_EQUIVALENT)
@@ -152,10 +163,27 @@ export const main = (): i32 => {
   t.ok("float64-empty domain: equal over the reals", unsampled.report.matched[0].equivalent)
   t.eqI32("float64-empty domain: unsampled", toI32(unsampled.report.float64Unsampled.length), 1)
   t.contains("float64-empty domain: says so", unsampled.summary, "UNDECIDED in float64")
+  t.eqStr(
+    "float64-empty domain: pair UNDECIDED",
+    diffPairStatus(unsampled.report, unsampled.report.matched[0]),
+    DIFF_UNDECIDED,
+  )
+  t.contains("float64-empty domain: pair JSON", outJsonRender(diffReportJson(unsampled.report)), '"equivalent": false')
+  t.contains("float64-empty domain: unsampled hint", unsampled.summary, "No float64 sample reached")
+  t.ok("float64-empty domain: no solver hint", unsampled.summary.indexOf("nonlinear") < 0)
+  // One pair unsampled and one the solver could not decide: both hints stay.
+  const mixed = unsampled.report
+  mixed.matched.push(mixed.matched[0])
+  mixed.matched[1].valueDiff = new DiffCheck(CHECK_UNKNOWN)
+  const mixedText = renderDiffSummary(DIFF_UNDECIDED, mixed)
+  t.contains("unsampled and unknown: the float64 hint", mixedText, "No float64 sample reached")
+  t.contains("unsampled and unknown: the solver hint", mixedText, "restate nonlinear bodies")
   // An empty shared domain makes zero comparisons vacuous: still EQUIVALENT.
   const empty = [bBin(">", x, bNum("1")), bBin("<", x, bNum("0"))]
   const vacuous = dcRun(t, "empty domain", dcOne(empty, bVar("x")), dcOne(empty, bBin("+", x, bNum("0"))))
   t.eqStr("empty shared domain: EQUIVALENT", vacuous.status, DIFF_EQUIVALENT)
+  t.contains("empty shared domain: rests on verify", vacuous.summary, "rests on both passing vector verify")
+  t.contains("empty shared domain: JSON vacuous", outJsonRender(diffReportJson(vacuous.report)), '"vacuous": true')
 
   // z3 answering unknown decides nothing.
   const oldP = bProgram(dcIdentity().programText())

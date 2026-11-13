@@ -778,6 +778,9 @@ const diffMatchedLines = (lines: string[], report: ProgramDiffReport, m: Matched
   } else if (m.equivalent && unsampled) {
     lines.push(` ? ${m.signature} — equal over the reals, but UNDECIDED in float64`)
     lines.push("     float64: no sampled input reached the shared domain; nothing was compared")
+  } else if (diffVacuous(m)) {
+    lines.push(` ✓ ${m.signature} — EQUIVALENT: no input satisfies both versions' requires`)
+    lines.push("     float64: nothing to compare; this rests on both versions passing vector verify")
   } else if (m.equivalent) {
     lines.push(` ✓ ${m.signature} — EQUIVALENT for all inputs`)
   } else if (m.any(CHECK_WITNESS)) {
@@ -839,18 +842,31 @@ export const renderDiffSummary = (status: string, report: ProgramDiffReport): st
     lines.push(` + added:   ${s} (cannot affect existing callers)`)
   }
   lines.push("")
+  let solverUnknown = false
+  let vacuous = false
+  for (const m of report.matched) {
+    solverUnknown = solverUnknown || m.any(CHECK_UNKNOWN)
+    vacuous = vacuous || diffVacuous(m)
+  }
   if (status === DIFF_EQUIVALENT) {
     lines.push(" Every shared function is proven equal over the reals and agreed")
     lines.push(" on every sampled float64 input; nothing to review.")
   } else if (status === DIFF_DIFFERENT) {
     lines.push(" Review each listed delta against the change you intended —")
     lines.push(" the witnesses above are the entire behavioral change.")
-  } else if (report.float64Unsampled.length > 0) {
-    lines.push(" No difference was found, but equivalence was not proven — no")
-    lines.push(" float64 sample reached a shared domain; test inside it by hand.")
   } else {
-    lines.push(" No difference was found, but equivalence was not proven —")
-    lines.push(" restate nonlinear bodies in linear arithmetic and re-run.")
+    lines.push(" No difference was found, but equivalence was not proven.")
+    if (report.float64Unsampled.length > 0) {
+      lines.push(" - No float64 sample reached a shared domain; test inside it by hand.")
+    }
+    if (solverUnknown || report.float64Unsampled.length === 0) {
+      lines.push(" - The solver returned unknown; restate nonlinear bodies in linear")
+      lines.push("   arithmetic and re-run.")
+    }
+  }
+  if (vacuous) {
+    lines.push(" A function whose versions share no input over the reals is EQUIVALENT")
+    lines.push(" with nothing run in float64: that rests on both passing vector verify.")
   }
   lines.push(" (Proven over exact rationals, then compared on sampled float64 inputs;")
   lines.push("  assumes both versions pass vector verify.)")
@@ -877,7 +893,31 @@ const diffCheckJson = (c: DiffCheck): OutJson => {
   return out
 }
 
-const diffMatchedJson = (m: MatchedFunctionDiff): OutJson => {
+/**
+ * One matched pair's own verdict, with float64 folded in: DIFFERENT for a
+ * witness or a float64 delta, UNDECIDED for an unknown check or an unsampled
+ * shared domain, otherwise EQUIVALENT.
+ *
+ * @param report the findings the pair belongs to
+ * @param m the pair
+ * @returns `DIFF_EQUIVALENT`, `DIFF_DIFFERENT` or `DIFF_UNDECIDED`
+ */
+export const diffPairStatus = (report: ProgramDiffReport, m: MatchedFunctionDiff): string => {
+  if (m.any(CHECK_WITNESS) || diffFloat64Of(report, m.name) >= 0) {
+    return DIFF_DIFFERENT
+  }
+  if (m.any(CHECK_UNKNOWN) || report.float64Unsampled.indexOf(m.name) >= 0) {
+    return DIFF_UNDECIDED
+  }
+  return DIFF_EQUIVALENT
+}
+
+// A pair equal over the reals whose shared domain is empty: EQUIVALENT with
+// no float64 input compared, which rests on both versions passing verify.
+const diffVacuous = (m: MatchedFunctionDiff): boolean => m.equivalent && m.sharedDomain.status === CHECK_NONE
+
+const diffMatchedJson = (report: ProgramDiffReport, m: MatchedFunctionDiff): OutJson => {
+  const status = diffPairStatus(report, m)
   const renames = outJsonArray()
   for (const r of m.paramRenames) {
     renames.add(outJsonObject().put("oldName", outJsonString(r.oldName)).put("newName", outJsonString(r.newName)))
@@ -889,7 +929,10 @@ const diffMatchedJson = (m: MatchedFunctionDiff): OutJson => {
     .put("domainNarrowed", diffCheckJson(m.domainNarrowed))
     .put("domainWidened", diffCheckJson(m.domainWidened))
     .put("valueDiff", diffCheckJson(m.valueDiff))
-    .put("equivalent", outJsonBool(m.equivalent))
+    .put("status", outJsonString(status))
+    .put("equivalent", outJsonBool(status === DIFF_EQUIVALENT))
+    .put("equivalentOverReals", outJsonBool(m.equivalent))
+    .put("vacuous", outJsonBool(diffVacuous(m)))
     .put(
       "contractChanges",
       outJsonObject()
@@ -909,7 +952,7 @@ const diffMatchedJson = (m: MatchedFunctionDiff): OutJson => {
 export const diffReportJson = (report: ProgramDiffReport): OutJson => {
   const matched = outJsonArray()
   for (const m of report.matched) {
-    matched.add(diffMatchedJson(m))
+    matched.add(diffMatchedJson(report, m))
   }
   const sigs = outJsonArray()
   for (const s of report.signatureChanged) {

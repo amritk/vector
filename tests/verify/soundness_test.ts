@@ -143,6 +143,43 @@ const soundEmitRefuted = (t: Suite): void => {
   t.eqStr("REFUTED with --emit leaves a file as it was", keptText ?? "", "// before\n")
 }
 
+// `--emit` on PROVEN replaces a file at the path with the emitted code, and
+// leaves nothing else beside it: no temporary survives the rename.
+const soundEmitProven = (t: Suite): void => {
+  const dir = makeTempDir("vector-emit-proven-")
+  if (dir.isErr()) {
+    t.fail("a temp dir", dir.error)
+    return
+  }
+  const out = joinPath(dir.value, "out.ts")
+  t.ok("write out.ts", writeFileSyncMode(out, "// before\n", 0o644) >= 0)
+  const run = runProcess(
+    ["dist/vector", "verify", "--emit", out, "tests/fixtures/currency-spec.json", "tests/fixtures/currency.json"],
+    "",
+    60000,
+  )
+  const outText = readFileSyncOrNull(out)
+  const names = readdirSync(dir.value) ?? soundNoNames()
+  t.ok("remove the temp dir", bRemoveTree(dir.value))
+  if (run.isErr()) {
+    t.fail("dist/vector runs (build it first)", run.error)
+    return
+  }
+  t.eqI32("PROVEN with --emit exits 0", run.value.status, 0)
+  t.contains(
+    "PROVEN with --emit writes the program",
+    outText ?? "",
+    "export function usdToEur(amount: number): number {",
+  )
+  t.ok("PROVEN with --emit replaces the old file", (outText ?? "").indexOf("// before") < 0)
+  t.eqStr("PROVEN with --emit leaves no temporary", names.join(","), "out.ts")
+}
+
+const soundNoNames = (): string[] => {
+  const none: string[] = []
+  return none
+}
+
 export const main = (): i32 => {
   const t = new Suite("verify/soundness")
 
@@ -289,5 +326,6 @@ export const main = (): i32 => {
   t.eqI32("verifyExitCode ERROR", verifyExitCode(OUTCOME_ERROR), 1)
   soundRejectedScript(t)
   soundEmitRefuted(t)
+  soundEmitProven(t)
   return t.done()
 }

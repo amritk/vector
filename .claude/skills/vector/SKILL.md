@@ -98,6 +98,9 @@ vector diff <old-program.json> <new-program.json> --json
 - **`EQUIVALENT`** → report that every shared function was proven equal over
   exact rationals, then agreed on every sampled float64 input, assuming both
   versions pass `vector verify`. Float64 agreement is sampled, not proven.
+  A pair whose versions share no input over the reals (`"vacuous": true` in
+  the JSON) is EQUIVALENT with nothing run in float64; that rests entirely on
+  both versions passing `vector verify`, so say so.
 - **`DIFFERENT`** → relay each witness verbatim (input → old vs new result;
   domain narrowed/widened; float64 deltas, where a pair equal over the reals
   returns different doubles or throws in one version only; removed functions;
@@ -107,7 +110,9 @@ vector diff <old-program.json> <new-program.json> --json
   nonlinear arithmetic; restate the bodies linearly and re-run), or a pair is
   equal over the reals but no float64 input in the shared domain could be run
   (`float64Unsampled` in the JSON; the domain is too thin for any double, so
-  test inside it by hand). Do not report it as equivalent.
+  test inside it by hand). Do not report it as equivalent. Each entry of
+  `matched` in the JSON carries its own `status`, with float64 folded in;
+  `equivalentOverReals` is the rational result alone.
 
 Float64 results compare as `Object.is` does: `NaN` equals `NaN`, and `-0`
 differs from `0`, so `-x` and `0 - x` differ at `x = 0`.

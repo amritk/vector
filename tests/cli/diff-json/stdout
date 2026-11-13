@@ -23,7 +23,10 @@
         "valueDiff": {
           "status": "none"
         },
+        "status": "EQUIVALENT",
         "equivalent": true,
+        "equivalentOverReals": true,
+        "vacuous": false,
         "contractChanges": {
           "requiresAdded": [],
           "requiresRemoved": [],
@@ -60,7 +63,10 @@
             "newResult": "92"
           }
         },
+        "status": "DIFFERENT",
         "equivalent": false,
+        "equivalentOverReals": false,
+        "vacuous": false,
         "contractChanges": {
           "requiresAdded": [
             "amount > 0"

@@ -14,6 +14,7 @@
 
 import { Cli, ParseResult } from "nish/cli-args"
 import { EXIT_PASS, EXIT_REFUSED, report, usageError } from "../core/diag"
+import { toHex } from "../core/hex"
 import { newJsonDocument, readJsonFile } from "../core/json"
 import { outJsonRender } from "../verify/emit/outjson"
 import {
@@ -119,21 +120,35 @@ const verifyPrintStyle = (outcome: VerifyOutcome): void => {
   }
 }
 
-// Writes `data` to `path` atomically: a temporary beside it, then a rename.
+// Writes `data` to `path` atomically: a new temporary file beside it, made
+// exclusively under a random name (so a planted file or link there, or a
+// second run on the same path, is never written through), then a rename.
 // Returns the error to report, or "" when the file was written.
 const verifyWriteAtomic = (path: string, data: string): string => {
-  const temp = `${path}.vector-tmp`
-  const written = writeFileSyncMode(temp, data, 0o644)
-  if (written < 0) {
-    unlinkSync(temp)
-    return `verify: ${path}: cannot write file (errno ${-written})`
+  const bytes: u8[] = new Array<u8>(8)
+  for (let attempt = 0; attempt < 16; attempt++) {
+    crypto.getRandomValues(bytes)
+    const temp = `${path}.vector-${toHex(bytes)}.tmp`
+    const written = createFileExclusiveSync(temp, data, 0o644)
+    if (written === -17) {
+      continue
+    }
+    if (written < 0) {
+      // No space, an I/O error or a too-large file fail after the file was
+      // made, so only those leave a temporary of ours to remove.
+      if (written === -28 || written === -5 || written === -27) {
+        unlinkSync(temp)
+      }
+      return `verify: ${path}: cannot write file (errno ${-written})`
+    }
+    const renamed = renameSync(temp, path)
+    if (renamed < 0) {
+      unlinkSync(temp)
+      return `verify: ${path}: cannot write file (errno ${-renamed})`
+    }
+    return ""
   }
-  const renamed = renameSync(temp, path)
-  if (renamed < 0) {
-    unlinkSync(temp)
-    return `verify: ${path}: cannot write file (errno ${-renamed})`
-  }
-  return ""
+  return `verify: ${path}: cannot find a free temporary file name beside it`
 }
 
 const verifyPrintText = (outcome: VerifyOutcome, emitPath: string): void => {
