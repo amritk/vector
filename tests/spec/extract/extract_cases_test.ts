@@ -426,26 +426,24 @@ const extractCasesTestMissing = (x: ExtractCasesTestCtx): void => {
   }
 }
 
-/**
- * A committed contract is what its spec states, and two extracts are the same
- * bytes. (rfc5869-hkdf-sha256, since example-hex is refused by the
- * completeness gate until it splits a sentence before a lowercase word.)
- */
+/** Each committed contract is what its spec states, and two extracts are the same bytes. */
 const extractCasesTestCommitted = (x: ExtractCasesTestCtx): void => {
   const t = x.t
-  const spec = "specs/rfc5869-hkdf-sha256.xml"
-  const out = "contracts/rfc5869-hkdf-sha256.json"
-  t.eqLines(
-    `${out} is what ${spec} states`,
-    extractCasesTestErr(extractCasesTestCli(x, ["extract", spec, "-o", out, "--check"])),
-    ["exit 0"],
-  )
-  const a = extractCasesTestCli(x, ["extract", spec])
-  const b = extractCasesTestCli(x, ["extract", spec])
-  const name = `two extracts of ${spec} are byte-identical, and the committed file`
-  t.eqLines(`${name}: exit 0`, extractCasesTestErr(a), ["exit 0"])
-  t.ok(`${name}: byte-identical`, a.stdout === b.stdout)
-  t.ok(`${name}: the committed file`, a.stdout === (readFileSyncOrNull(out) ?? "<none>"))
+  for (const stem of ["example-hex", "rfc5869-hkdf-sha256", "rfc8439-chacha20-poly1305"]) {
+    const spec = `specs/${stem}.xml`
+    const out = `contracts/${stem}.json`
+    t.eqLines(
+      `${out} is what ${spec} states`,
+      extractCasesTestErr(extractCasesTestCli(x, ["extract", spec, "-o", out, "--check"])),
+      ["exit 0"],
+    )
+    const a = extractCasesTestCli(x, ["extract", spec])
+    const b = extractCasesTestCli(x, ["extract", spec])
+    const name = `two extracts of ${spec} are byte-identical, and the committed file`
+    t.eqLines(`${name}: exit 0`, extractCasesTestErr(a), ["exit 0"])
+    t.ok(`${name}: byte-identical`, a.stdout === b.stdout)
+    t.ok(`${name}: the committed file`, a.stdout === (readFileSyncOrNull(out) ?? "<none>"))
+  }
 }
 
 /** `vector spec extract`, run as a user runs it: stdout, -o, --check, the sidecar, and each refusal. */

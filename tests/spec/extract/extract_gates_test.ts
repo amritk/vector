@@ -1,14 +1,12 @@
 import { Suite } from "nish/testing"
 import { replaceAll } from "nish/text"
 import { joinPath, makeTempDir, mkdirAll } from "../../../src/core/fs"
-import { CheckContext, CheckFinding, CheckNote, CheckReport, SampleTable } from "../../../src/spec/check"
-import { contractLoadFile } from "../../../src/spec/contract/contract"
+import { CheckFinding, CheckNote, CheckReport, SampleTable } from "../../../src/spec/check"
 import {
   ExtractOutcome,
   extractContract,
   extractGateRefusals,
   extractReaders,
-  extractSourcesGate,
   extractUnifiedDiff,
 } from "../../../src/spec/extract"
 import { ProfileLocator } from "../../../src/spec/profile/profile"
@@ -152,38 +150,6 @@ const extractGatesTestMini = (t: Suite, readers: SourceReaders): void => {
   t.ok("no contract written", readFileSyncOrNull(out) === null)
 }
 
-/** The sources gate reads with extract's readers, records the set, and names what it cannot read. */
-const extractGatesTestSources = (t: Suite): void => {
-  const path = "tests/fixtures/rfc-main/contracts/mini-frame.json"
-  const c = contractLoadFile(path)
-  if (c.isErr()) {
-    t.fail("the fixture contract loads", c.error.join("; "))
-    return
-  }
-  const ctx = new CheckContext(path, "tests/fixtures/rfc-main")
-  ctx.contract = c.value
-  t.eqStr("the fixture's sources read", extractSourcesGate(ctx).join("\n"), "")
-  const set = ctx.sources
-  t.ok("the set is recorded", set !== null && set.sources.length >= 1)
-
-  const made = makeTempDir("vector-extract-sources-")
-  if (made.isErr()) {
-    t.fail("a temp dir", made.error)
-    return
-  }
-  const lone = joinPath(made.value, "mini-frame.json")
-  writeFileSync(lone, readFileSyncOrNull(path) ?? "")
-  const away = new CheckContext(lone, made.value)
-  away.contract = c.value
-  const found = extractSourcesGate(away)
-  t.eqI32("a source not there is one finding", found.length, 1)
-  t.ok(
-    "it says nothing citing it can be checked",
-    found.length === 1 && found[0].endsWith(", so nothing citing it can be checked"),
-  )
-  t.eqI32("noted under sources", away.notes.length, 1)
-}
-
 /** `p<i>` for i in 1..n, a line each. */
 const extractGatesTestLines = (p: string, n: i32): string => {
   const out: string[] = []
@@ -201,11 +167,10 @@ const extractGatesTestDiff = (t: Suite): void => {
   t.ok("insertions last", d.endsWith("+b3000\n"))
 }
 
-/** The gates' refusals as extract places them, the sources gate, and the diff past its cap. */
+/** The gates' refusals as extract places them, and the diff past its cap. */
 export const main = (): i32 => {
   const t = new Suite("spec/extract gates")
   extractGatesTestRows(t)
-  extractGatesTestSources(t)
   extractGatesTestDiff(t)
   const readers = extractReaders()
   if (readers.isErr()) {

@@ -1,1 +1,1 @@
-vector spec extract specs/rfc5869-hkdf-sha256.xml -o contracts/rfc5869-hkdf-sha256.json --check
+vector spec extract specs/example-hex.xml -o contracts/example-hex.json --check

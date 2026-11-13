@@ -12,10 +12,9 @@ import { JSON_VALUE_ARRAY, JSON_VALUE_OBJECT } from "nish/json-value"
 import { basename, dirname, joinPath } from "../core/fs"
 import { sha256Hex } from "../core/hex"
 import { jsonIntMember, jsonMember, jsonStringMember, newJsonDocument, parseJson } from "../core/json"
-import { CheckContext, CheckGateEntry, CheckNote, CheckReport, checkContractWith, checkGates } from "./check"
+import { CheckContext, CheckNote, CheckReport, checkAddReader, checkContractWith, checkGates } from "./check"
 import { AllowedSurvivor, Contract, SourceDecl } from "./contract/types"
 import { contractWrite } from "./contract/write"
-import { gateIssue } from "./gates/note"
 import {
   ProfileLocator,
   ProfileRead,
@@ -26,7 +25,7 @@ import {
   profileWhere,
 } from "./profile/profile"
 import { hiddenProblem } from "./source/hidden"
-import { SourceReaders, sourceLoadWith, sourceReaderFor, sourceReadersAdd, sourceReadersDefault } from "./source/load"
+import { SourceReaders, sourceReaderFor, sourceReadersAdd, sourceReadersDefault } from "./source/load"
 import { SourceRead, sourceCandidate, sourceLabel, sourceReadConfined } from "./source/path"
 import { RfcDocument } from "./source/rfc"
 import { xmlDocParse, xmlRead } from "./xml/doc"
@@ -401,30 +400,6 @@ export const extractContract = (
   return extractFinish(ctx, read.value, sha256Hex(text))
 }
 
-/**
- * The first gate extract runs: the contract's sources, read with extract's
- * readers (extractReaders), so the gates after it can read a spec's own XML
- * where `spec check`'s default readers hold only `.txt`. Each source that
- * cannot be read is a finding, as gateSources reports it.
- *
- * @param ctx the check's context, whose sources it sets
- * @returns each source that could not be read
- */
-export const extractSourcesGate = (ctx: CheckContext): string[] => {
-  const out: string[] = []
-  const readers = extractReaders()
-  if (readers.isErr()) {
-    gateIssue(ctx, out, "sources", "sources", readers.error)
-    return out
-  }
-  const set = sourceLoadWith(ctx.contract, ctx.contractPath, ctx.root, readers.value)
-  for (const p of set.problems) {
-    gateIssue(ctx, out, "sources", "sources", `${p}, so nothing citing it can be checked`)
-  }
-  ctx.sources = set
-  return out
-}
-
 /** A gate refusal before it is placed: its line, and whether it is the sidecar's. */
 class ExtractGateRow {
   refusal: ProfileRefusal
@@ -534,11 +509,12 @@ const extractFinish = (ctx: ExtractContext, read: ProfileRead, specSha: string):
     return out
   }
   const check = new CheckContext(ctx.contractPath, ctx.root)
-  const gates: CheckGateEntry[] = [new CheckGateEntry("sources", extractSourcesGate, false)]
-  for (const g of checkGates()) {
-    gates.push(g)
+  const added = checkAddReader(check, ".xml", xmlRead)
+  if (added.isErr()) {
+    out.errors.push(added.error)
+    return out
   }
-  const report = checkContractWith(check, c, gates)
+  const report = checkContractWith(check, c, checkGates())
   if (report.findings.length > 0) {
     out.refusals = extractGateRefusals(
       report,
