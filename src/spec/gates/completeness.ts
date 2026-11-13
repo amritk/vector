@@ -15,7 +15,7 @@ import { SourceSet, sourceFind } from "../source/load"
 import { RfcSection, rfcNormalize, rfcOwnSpans } from "../source/rfc"
 import { gateCiteLabel, gateCitedSection, gatePlace, gateQuoteMissing, gateSources } from "./cite"
 import { gateIssue, gateWarn } from "./note"
-import { gateKeywordName, gateKeywordUses, gateSentenceAt, gateSentenceSpan } from "./text"
+import { gateKeywordName, gateKeywordUses, gateParagraphStarts, gateSentenceSpan } from "./text"
 
 const GATE_COMPLETENESS: string = "completeness"
 
@@ -52,19 +52,20 @@ const gateSpanHolds = (spans: i32[], start: i32, end: i32): boolean => {
 }
 
 /**
- * Where the sentence around an offset starts and stops in a section's own
- * text, as gateSentenceSpan bounds it: without a list bullet or the
- * section's heading before it, and without its terminator, which a quote
- * may leave out.
+ * Where the sentence around an offset starts, stops and ends in a section's
+ * own text, as gateSentenceSpan bounds it: without a list bullet, or the
+ * section's heading before it when the heading shares its paragraph, and
+ * without its terminator (which a quote may leave out) before `stop`.
  */
-const gateSentenceBounds = (sec: RfcSection, text: string, at: i32): i32[] => {
-  const b = gateSentenceSpan(text, at)
+const gateSentenceBounds = (sec: RfcSection, text: string, paras: i32[], at: i32): i32[] => {
+  const b = gateSentenceSpan(text, paras, at)
   let start = b[0]
   const head = `${rfcNormalize(sec.title)} `
-  if (start > 0 && text.substring(start).startsWith(head)) {
+  const first = paras.length > 0 ? paras[0] : text.length
+  if (start > 0 && start < first && text.substring(start).startsWith(head)) {
     start = start + head.length
   }
-  return [start, b[1]]
+  return [start, b[1], b[2]]
 }
 
 /** Each exclusion's quote is in its section; each one found is a warning. */
@@ -88,13 +89,6 @@ const gateExclusions = (ctx: CheckContext, out: string[], set: SourceSet, ex: Ex
   }
 }
 
-/** The sentence around an offset, without the section's heading before it. */
-const gateBindingSentence = (sec: RfcSection, text: string, at: i32): string => {
-  const s = gateSentenceAt(text, at)
-  const head = `${rfcNormalize(sec.title)} `
-  return s.indexOf(head) === 0 && text.indexOf(s) > 0 ? s.substring(head.length) : s
-}
-
 /** Every binding keyword in a section's own text lies inside some quote cited to it. */
 const gateSectionComplete = (ctx: CheckContext, out: string[], set: SourceSet, sec: RfcSection): void => {
   const text = rfcNormalize(sec.ownLines.join("\n"))
@@ -102,6 +96,7 @@ const gateSectionComplete = (ctx: CheckContext, out: string[], set: SourceSet, s
   if (uses.length === 0) {
     return
   }
+  const paras = gateParagraphStarts(sec.ownLines)
   const spans: i32[] = []
   for (const q of gateSectionQuotes(ctx, set, sec.id)) {
     for (const s of rfcOwnSpans(sec, q)) {
@@ -109,14 +104,15 @@ const gateSectionComplete = (ctx: CheckContext, out: string[], set: SourceSet, s
     }
   }
   for (let i = 0; i + 1 < uses.length; i += 2) {
-    const b = gateSentenceBounds(sec, text, uses[i])
+    const b = gateSentenceBounds(sec, text, paras, uses[i])
     if (!gateSpanHolds(spans, b[0], b[1])) {
+      const sentence = text.substring(b[0], b[2])
       gateIssue(
         ctx,
         out,
         GATE_COMPLETENESS,
         `§${sec.id}`,
-        `${gateKeywordName(uses[i + 1])} sentence is neither a requirement nor an exclusion: ${jsonStringifyString(gateBindingSentence(sec, text, uses[i]))}`,
+        `${gateKeywordName(uses[i + 1])} sentence is neither a requirement nor an exclusion: ${jsonStringifyString(sentence)}`,
       )
     }
   }

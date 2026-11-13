@@ -8,10 +8,13 @@
  * subsection for a quote of its own. Every value of a cited vector is
  * printed whole in its section, under the label the contract gives it, and
  * all of them as one test case: on one line, or from one round of repeated
- * labels, with the expected value not also an input. A value printed for one
- * of several variants ("HMAC-SHA-256" beside "HMAC-SHA-512") must be the one
- * the called function names. An expected null, true or false must be stated
- * by a covered requirement (gateStatesResult).
+ * labels, with the expected value not also an input. In a source read from
+ * XML, a byte list such as `[00 0f f0 ff]` is a whole printed value, as
+ * `hexEncode([00 0f f0 ff])` prints one; in plain text, `[10]` is a
+ * reference. A value printed for one of several variants ("HMAC-SHA-256"
+ * beside "HMAC-SHA-512") must be the one the called function names. An
+ * expected null, true or false must be stated by a covered requirement
+ * (gateStatesResult).
  */
 
 import { jsonStringifyString } from "nish/json"
@@ -20,12 +23,12 @@ import { toHex, utf8Bytes } from "../../core/hex"
 import { CheckContext, CheckNote } from "../check"
 import { contractF64Bits, contractF64IsNaN, contractF64Parse } from "../contract/f64"
 import { Clause, ClauseKind, LitKind, Literal, VectorSourceKind } from "../contract/types"
-import { SourceSet } from "../source/load"
+import { SourceSet, sourceFind } from "../source/load"
 import { HexValue, RfcSection, rfcHexValues, rfcNormalize, rfcSectionText } from "../source/rfc"
 import { gateArgsAt, gateCitedSection, gatePlace, gateQuoteMissing, gateSources } from "./cite"
 import { gateIssue, gateWarn } from "./note"
 import { gateResultWord, gateStatesResult } from "./result"
-import { gateF64Printed, gateIntLabelCount, gateIntRounds, gateLines, gateTextLines } from "./text"
+import { gateByteLists, gateF64Printed, gateIntLabelCount, gateIntRounds, gateLines, gateTextLines } from "./text"
 
 /** Where one literal of a vector was found: under a label, or on lines. */
 class GateBound {
@@ -63,12 +66,25 @@ class GateLits {
   text: string
   lines: string
   bounds: GateBound[]
-  constructor(id: string, where: string, sec: RfcSection) {
+  /**
+   * @param id the vector's id
+   * @param where the section, for messages
+   * @param sec the section
+   * @param byteLists whether a bracketed byte list is a printed value: true for a source read from XML
+   */
+  constructor(id: string, where: string, sec: RfcSection, byteLists: boolean) {
     this.notes = []
     this.id = id
     this.where = where
     this.inSection = `${where} ("${sec.title}")`
     this.values = rfcHexValues(sec)
+    if (byteLists) {
+      for (const line of sec.lines) {
+        for (const hex of gateByteLists(line)) {
+          this.values.push(new HexValue(hex, null))
+        }
+      }
+    }
     this.text = rfcSectionText(sec)
     this.lines = gateLines(sec.lines)
     this.bounds = []
@@ -614,7 +630,9 @@ const gateFidelityVector = (ctx: CheckContext, out: string[], set: SourceSet, k:
     return
   }
   const where = gatePlace(set, at.source, at.section)
-  const l = new GateLits(k.id, where, sec)
+  const loaded = sourceFind(set, at.source)
+  const xml = loaded === null ? false : loaded.file.endsWith(".xml")
+  const l = new GateLits(k.id, where, sec, xml)
   for (let i = 0; i < k.args.length; i++) {
     gateLitCheck(l, k.args[i], `args[${i}]`)
   }
