@@ -334,8 +334,12 @@ export const xmlTrim = (s: string): string => {
   return s.substring(start, end)
 }
 
-/** xml2rfc's text writer for an `<xref>`, its content already rendered. */
-const xmlRenderXref = (t: XmlText, x: XmlNode, content: string): string => {
+/**
+ * xml2rfc's text writer for an `<xref>`: what goes before and after its
+ * content, which is already rendered and trimmed. With no content, the two
+ * joined are the whole of it.
+ */
+const xmlXrefWrap = (t: XmlText, x: XmlNode, has: boolean): string[] => {
   const info = t.xrefs.get(x)
   let reference = false
   let worked: string | null = null
@@ -344,96 +348,184 @@ const xmlRenderXref = (t: XmlText, x: XmlNode, content: string): string => {
     worked = info.reftext
   }
   const reftext = xmlTrim(xmlAttr(x, "derivedContent") ?? worked ?? xmlAttr(x, "target") ?? "")
-  const exp = content.length > 0 ? `${content} ` : ""
+  const gap = has ? " " : ""
   const section = xmlAttr(x, "section")
   if (section !== null) {
     const label = xmlStartsDigit(section) ? "Section" : xmlIsAppendix(section) ? "Appendix" : "Part"
     const fmt = xmlAttr(x, "sectionFormat") ?? "of"
     if (fmt === "comma") {
-      return `${exp}[${reftext}], ${label} ${section}`
+      return ["", `${gap}[${reftext}], ${label} ${section}`]
     }
     if (fmt === "parens") {
-      return `${exp}[${reftext}] (${label} ${section})`
+      return ["", `${gap}[${reftext}] (${label} ${section})`]
     }
     if (fmt === "bare") {
-      return content.length > 0 ? `${section} (${content})` : section
+      return has ? [`${section} (`, ")"] : [section, ""]
     }
-    return `${label} ${section} of ${exp}[${reftext}]`
+    return [`${label} ${section} of `, `${gap}[${reftext}]`]
   }
   const format = xmlAttr(x, "format") ?? "default"
   if (reftext.length === 0 || format === "none") {
-    return content
+    return ["", ""]
   }
   const bracket = reference && format !== "title"
-  if (content.length > 0) {
-    return bracket ? `${exp}[${reftext}]` : `${exp}(${reftext})`
+  if (has) {
+    return ["", bracket ? ` [${reftext}]` : ` (${reftext})`]
   }
-  return bracket ? `[${reftext}]` : reftext
+  return ["", bracket ? `[${reftext}]` : reftext]
 }
 
-/** xml2rfc's text writer for an `<eref>`, its content already rendered. */
-const xmlRenderEref = (e: XmlNode, content: string): string => {
+/** xml2rfc's text writer for an `<eref>`: what goes before and after its trimmed content. */
+const xmlErefWrap = (e: XmlNode, has: boolean): string[] => {
   const target = xmlAttr(e, "target") ?? ""
   if ((xmlAttr(e, "brackets") ?? "") === "none") {
-    return content.length > 0 ? `${content} (${target})` : target
+    return has ? ["", ` (${target})`] : ["", target]
   }
-  return content.length > 0 ? `${content} <${target}>` : `<${target}>`
+  return has ? ["", ` <${target}>`] : ["", `<${target}>`]
 }
 
-/** The children of `n` rendered, in order. */
-const xmlInner = (t: XmlText, n: XmlNode, found: XmlNode[] | null): string => {
-  const parts: string[] = []
-  let k = n.first
-  while (k !== null) {
-    parts.push(xmlRender(t, k, found))
-    k = k.next
+/** `s` without leading white space, as JS `trimStart` strips it; `s` itself when it has none. */
+const xmlTrimLead = (s: string): string => {
+  let start = 0
+  while (start < s.length) {
+    const w = xmlSpaceWidth(s, start)
+    if (w === 0) {
+      break
+    }
+    start = start + w
   }
-  return parts.join("")
+  return start === 0 ? s : s.substring(start, s.length)
+}
+
+/** `s` without trailing white space, as JS `trimEnd` strips it; `s` itself when it has none. */
+const xmlTrimTail = (s: string): string => {
+  let end = s.length
+  let more = true
+  while (more && end > 0) {
+    more = false
+    for (let w = 1; w <= 3; w++) {
+      if (end - w >= 0 && xmlSpaceWidth(s, end - w) === w) {
+        end = end - w
+        more = true
+        break
+      }
+    }
+  }
+  return end === s.length ? s : s.substring(0, end)
 }
 
 /**
- * A node's text before collapsing. Each `<bcp14>` met is pushed on `found`,
- * when it is not null, and its text is fenced by U+0001 and U+0002, which no
- * input holds (the reader refuses them).
+ * Trims, in place, the pieces of `out` after `from`, as `xmlTrim` would trim
+ * them joined. Trailing pieces left empty are dropped, and the first piece
+ * holding text moves up to `from`, so an enclosing `<xref>` or `<eref>`
+ * finds its edges at once: each piece is trimmed at most once per edge it
+ * reaches, and nesting never rescans text.
+ *
+ * @returns whether any text is left
  */
-const xmlRender = (t: XmlText, n: XmlNode, found: XmlNode[] | null): string => {
+const xmlTrimPieces = (out: string[], from: i32): boolean => {
+  while (out.length > from) {
+    const last = xmlTrimTail(out[out.length - 1])
+    if (last.length > 0) {
+      out[out.length - 1] = last
+      break
+    }
+    out.pop()
+  }
+  let k = from
+  while (k < out.length) {
+    const first = xmlTrimLead(out[k])
+    if (first.length > 0) {
+      out[k] = ""
+      out[from] = first
+      return true
+    }
+    out[k] = ""
+    k = k + 1
+  }
+  while (out.length > from) {
+    out.pop()
+  }
+  return false
+}
+
+/** The children of `n` rendered, in order, onto `out`. */
+const xmlInner = (t: XmlText, n: XmlNode, found: XmlNode[] | null, out: string[]): void => {
+  let k = n.first
+  while (k !== null) {
+    xmlRender(t, k, found, out)
+    k = k.next
+  }
+}
+
+/** An `<xref>` or `<eref>` rendered onto `out`: its content trimmed where it lies, then wrapped. */
+const xmlRenderLink = (t: XmlText, n: XmlNode, found: XmlNode[] | null, out: string[]): void => {
+  const at = out.length
+  out.push("")
+  xmlInner(t, n, found, out)
+  const has = xmlTrimPieces(out, at + 1)
+  const wrap = n.name === "xref" ? xmlXrefWrap(t, n, has) : xmlErefWrap(n, has)
+  out[at] = wrap[0]
+  if (wrap[1].length > 0) {
+    out.push(wrap[1])
+  }
+}
+
+/**
+ * A node's text before collapsing, pushed piece by piece onto `out`, so
+ * nested markup costs no copy per level. Each `<bcp14>` met is pushed on
+ * `found`, when it is not null, and its text is fenced by U+0001 and U+0002,
+ * which no input holds (the reader refuses them).
+ */
+const xmlRender = (t: XmlText, n: XmlNode, found: XmlNode[] | null, out: string[]): void => {
   const name = n.name
   if (name.length === 0) {
-    return n.text
+    if (n.text.length > 0) {
+      out.push(n.text)
+    }
+    return
   }
   if (name === "iref" || name === "cref") {
-    return ""
+    return
   }
   if (name === "br") {
-    return " "
+    out.push(" ")
+    return
   }
-  const inner = xmlInner(t, n, found)
+  if (name === "xref" || name === "eref") {
+    xmlRenderLink(t, n, found, out)
+    return
+  }
   if (name === "contact" || name === "author") {
-    return ` ${xmlAttr(n, "fullname") ?? ""} ${inner} `
+    out.push(` ${xmlAttr(n, "fullname") ?? ""} `)
+    xmlInner(t, n, found, out)
+    out.push(" ")
+    return
   }
-  if (name === "xref") {
-    return xmlRenderXref(t, n, xmlTrim(inner))
-  }
-  if (name === "eref") {
-    return xmlRenderEref(n, xmlTrim(inner))
-  }
-  if (name === "bcp14") {
-    if (found === null) {
-      return inner
-    }
+  if (name === "bcp14" && found !== null) {
     found.push(n)
-    return `\u0001${inner}\u0002`
+    out.push("\u0001")
+    xmlInner(t, n, found, out)
+    out.push("\u0002")
+    return
   }
-  return xmlIsBlock(name) ? ` ${inner} ` : inner
+  const block = xmlIsBlock(name)
+  if (block) {
+    out.push(" ")
+  }
+  xmlInner(t, n, found, out)
+  if (block) {
+    out.push(" ")
+  }
 }
 
 /** Nodes rendered one after another, then collapsed. */
 const xmlRunText = (t: XmlText, nodes: XmlNode[], found: XmlNode[] | null): string => {
-  const parts: string[] = []
+  const out: string[] = []
   for (const n of nodes) {
-    parts.push(xmlRender(t, n, found))
+    xmlRender(t, n, found, out)
   }
-  return xmlClean(parts.join(""))
+  return xmlClean(out.join(""))
 }
 
 /**
@@ -443,7 +535,7 @@ const xmlRunText = (t: XmlText, nodes: XmlNode[], found: XmlNode[] | null): stri
  * @param n the node
  * @returns its text
  */
-export const xmlPlainText = (t: XmlText, n: XmlNode): string => xmlClean(xmlRender(t, n, null))
+export const xmlPlainText = (t: XmlText, n: XmlNode): string => xmlRunText(t, [n], null)
 
 /**
  * Nodes' plain text, rendered one after another as xml2rfc's text writer

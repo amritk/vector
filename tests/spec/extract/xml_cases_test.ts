@@ -521,6 +521,43 @@ const xmlCasesTestFast = (t: Suite, name: string, start: f64): void => {
   t.ok(`${name}: ${ms} ms, linear`, ms < 10000)
 }
 
+/**
+ * `open` nested `depth` deep around `fill` repeated `n` times, in a
+ * paragraph, and how long reading it took at best of two, in milliseconds.
+ */
+const xmlCasesTestTime = (open: string, close: string, fill: string, depth: i32, n: i32): f64 => {
+  const doc = xmlCasesTestDoc(
+    `<section><t>${xmlCasesTestRepeat(open, depth)}${xmlCasesTestRepeat(fill, n)}${xmlCasesTestRepeat(close, depth)}</t></section>`,
+    "",
+  )
+  let best: f64 = 1e9
+  for (let k = 0; k < 2; k++) {
+    const start = Date.now()
+    const read = xmlDocParse(doc)
+    const ms = Date.now() - start
+    if (read.isErr() && read.error.message.length === 0) {
+      return -1.0
+    }
+    if (ms < best) {
+      best = ms
+    }
+  }
+  return best
+}
+
+/**
+ * The curve, not a wall clock: markup nested `d` deep around `n` bytes, then
+ * 8d deep around 8n. A linear reader takes about 8 times as long; one that
+ * copies the text once per level, 64 times. Pinned under 24, from a floor of
+ * 4 ms so a fast first run is not noise.
+ */
+const xmlCasesTestShape = (t: Suite, name: string, open: string, close: string, fill: string): void => {
+  const one = xmlCasesTestTime(open, close, fill, 31, 40000)
+  const eight = xmlCasesTestTime(open, close, fill, 248, 320000)
+  const base: f64 = one < 4.0 ? 4.0 : one
+  t.ok(`${name}: ${one} ms, then ${eight} ms at 8 times the depth and text, linear`, one >= 0.0 && eight < 24.0 * base)
+}
+
 /** 4000 xrefs to `target`, by title or not. */
 const xmlCasesTestXrefRun = (target: string, title: boolean): string =>
   xmlCasesTestRepeat(`<xref target="${target}"${title ? ' format="title"' : ""}/>`, 4000)
@@ -595,6 +632,9 @@ const xmlCasesTestLinear = (t: Suite): void => {
     '1:0 md=-1 <bcp14> holds "MUST x x x x x x x x x x x x x x x x x x...", which is not a BCP 14 keyword',
   )
   xmlCasesTestFast(t, "bcp14 nested deep", start)
+  xmlCasesTestShape(t, "bcp14 nested", "<bcp14> ", " </bcp14>", " MUST x")
+  xmlCasesTestShape(t, "eref nested", '<eref target="u">', "</eref>", " a b")
+  xmlCasesTestShape(t, "xref nested", '<xref target="u" format="none">', "</xref>", ' <iref item="i"/>')
 
   const many = xmlCasesTestRepeat("<t/>", 200000)
   const targets: string[][] = [
