@@ -17,6 +17,8 @@
  *                 in `<front>` names; it must be under `normative:` and cited
  *   property      a `ts-property` block, read by its front end
  *   vector        a row of a table headed Id | Call | Expected | Covers | Source | Title
+ *   tolerance     a `<t>` directly after the vector table (or another one)
+ *                 reading `Tolerance: V1 ulps 1, <xref>: "quote"`, or `abs 1e-9`
  *
  * Every BCP 14 sentence must be a requirement or an exclusion, every xref to
  * an RFC must have a `<reference>`, and every section cited must exist in
@@ -26,7 +28,8 @@
 
 import { split } from "nish/text"
 import { diagPlace } from "../../core/diag"
-import { charsFirstControl, charsIsId, charsIsSection } from "../contract/chars"
+import { charsFirstControl, charsIsAbs, charsIsId, charsIsSection } from "../contract/chars"
+import { contractF64Overflows } from "../contract/f64"
 import {
   RawCall,
   RawLiteral,
@@ -50,6 +53,7 @@ import {
   Requirement,
   SourceDecl,
   Target,
+  Tolerance,
   VectorSource,
   VectorSourceKind,
 } from "../contract/types"
@@ -64,6 +68,12 @@ import { XmlNormative, xmlCodeOf, xmlPlainText, xmlPlainTextOfNodes, xmlTrim } f
 const PROFILE_DEFINITION: string = "Definition: "
 const PROFILE_UNTESTED: string = "Untested: "
 const PROFILE_NOTE: string = "Note: "
+const PROFILE_TOLERANCE: string = "Tolerance: "
+const PROFILE_TOLERANCE_FORM: string =
+  'Tolerance: <vector id> ulps <n>, {{Section N of RFCx}}: "<the sentence that allows it>" (or abs <decimal>, or {{anchor}})'
+const PROFILE_ULPS_MAX: string = "9007199254740991"
+const PROFILE_STRAY_TOLERANCE: string =
+  "this Tolerance: paragraph follows no vector table; it must directly follow the vector table or another Tolerance: paragraph"
 const PROFILE_MAIN_KEY: string = "vector-main-"
 const PROFILE_ID_RULE: string = `is not letters, digits, ".", "_" and "-", starting with a letter or digit`
 
@@ -280,13 +290,15 @@ class ProfileSection {
   }
 }
 
-/** A table and the section it is in. */
+/** A table, the section it is in, and the Tolerance: paragraphs right after it. */
 class ProfileTable {
   node: XmlNode
   section: string
+  tolerances: XmlNode[]
   constructor(node: XmlNode, section: string) {
     this.node = node
     this.section = section
+    this.tolerances = []
   }
 }
 
@@ -317,6 +329,9 @@ class ProfileContext {
   vectorTable: XmlNode | null
   vectors: Clause[]
   vectorLocs: ProfileLoc[]
+  /** Each vector with a tolerance, and (alongside) its Tolerance: paragraph. */
+  toleranceIds: string[]
+  toleranceLocs: ProfileLoc[]
   properties: Clause[]
   propertyLocs: ProfileLoc[]
   constructor(doc: XmlDocument, xmlPath: string, md: ProfileMd | null, rfcs: ProfileRfcs) {
@@ -344,6 +359,8 @@ class ProfileContext {
     this.vectorTable = null
     this.vectors = []
     this.vectorLocs = []
+    this.toleranceIds = []
+    this.toleranceLocs = []
     this.properties = []
     this.propertyLocs = []
   }
@@ -1246,7 +1263,15 @@ const profileBlocks = (c: ProfileContext, parent: XmlNode, section: string): voi
   for (let i = 0; i < kids.length; i++) {
     const n = kids[i]
     if (n.name === "table") {
-      c.tables.push(new ProfileTable(n, section))
+      // The run of Tolerance: paragraphs right after it goes with it; a BCP 14
+      // keyword in one is quoted, not used.
+      const table = new ProfileTable(n, section)
+      for (let j = i + 1; j < kids.length && profileStartsWith(c, kids[j], PROFILE_TOLERANCE); j++) {
+        used.add(kids[j])
+        profileHandle(c, kids[j])
+        table.tolerances.push(kids[j])
+      }
+      c.tables.push(table)
       continue
     }
     if (n.name !== "t" && n.name !== "blockquote") {
@@ -1333,6 +1358,9 @@ const profileBlocks = (c: ProfileContext, parent: XmlNode, section: string): voi
       )
     } else if (profileStartsWith(c, n, PROFILE_NOTE)) {
       profileRefuse(c, n, "this Note: paragraph notes nothing; it must directly follow the requirement it notes")
+    } else if (profileStartsWith(c, n, PROFILE_TOLERANCE)) {
+      profileHandle(c, n)
+      profileRefuse(c, n, PROFILE_STRAY_TOLERANCE)
     }
   }
 }
@@ -1411,7 +1439,9 @@ const profileRowsOf = (table: XmlNode): XmlNode[] => profileNamed(table, "tr")
 const profileCellsOf = (tr: XmlNode): XmlNode[] =>
   xmlElements(tr).filter((k: XmlNode): boolean => k.name === "td" || k.name === "th")
 
-const profileReadTable = (c: ProfileContext, table: XmlNode, section: string): void => {
+const profileReadTable = (c: ProfileContext, t: ProfileTable): void => {
+  const table = t.node
+  const section = t.section
   const rows = profileRowsOf(table)
   const header: string[] =
     rows.length > 0 ? profileCellsOf(rows[0]).map((k: XmlNode): string => profileCellText(k)) : []
@@ -1426,6 +1456,9 @@ const profileReadTable = (c: ProfileContext, table: XmlNode, section: string): v
     }
   }
   if (like < 3) {
+    for (const p of t.tolerances) {
+      profileRefuse(c, p, PROFILE_STRAY_TOLERANCE)
+    }
     return
   }
   if (header.join("|") !== want.join("|")) {
@@ -1441,13 +1474,207 @@ const profileReadTable = (c: ProfileContext, table: XmlNode, section: string): v
     profileRefuse(c, table, "a vector table is in an unnumbered section; it needs a section number")
     return
   }
+  // Every row's id, read or refused, so a tolerance of a refused row is not
+  // refused again.
+  const rowIds = new Set<string>()
+  const read = new Map<string, Clause>()
   for (let i = 1; i < rows.length; i++) {
-    const v = profileReadRow(c, profileCellsOf(rows[i]), section, rows[i])
+    const cells = profileCellsOf(rows[i])
+    if (cells.length > 0) {
+      rowIds.add(profileCellText(cells[0]))
+    }
+    const v = profileReadRow(c, cells, section, rows[i])
     if (v !== null) {
       c.vectors.push(v)
       c.vectorLocs.push(profileLocOf(rows[i]))
+      read.set(v.id, v)
     }
   }
+  for (const p of t.tolerances) {
+    profileReadTolerance(c, p, section, rowIds, read)
+  }
+}
+
+/** Whether `s` is a section number at or under `parent` (`2.1` is under `2`). */
+const profileWithin = (s: string, parent: string): boolean => s === parent || s.startsWith(`${parent}.`)
+
+/** An ulps count: 1 to 2^53−1 in decimal digits, or -1. */
+const profileUlps = (s: string): i64 => {
+  if (s.length === 0 || s.length > PROFILE_ULPS_MAX.length || !profileAllDigits(s) || s.startsWith("0")) {
+    return -1
+  }
+  if (s.length === PROFILE_ULPS_MAX.length && profileCompare(s, PROFILE_ULPS_MAX) > 0) {
+    return -1
+  }
+  let n: i64 = 0
+  for (let i = 0; i < s.length; i++) {
+    n = n * 10 + toI64(s.charCodeAt(i) - 48)
+  }
+  return n
+}
+
+/** Whether decimal text is zero: no digit but 0 before any exponent. */
+const profileIsZero = (s: string): boolean => {
+  for (let i = 0; i < s.length; i++) {
+    const ch = s.charCodeAt(i)
+    if (ch === 0x65 || ch === 0x45) {
+      return true
+    }
+    if (ch >= 0x31 && ch <= 0x39) {
+      return false
+    }
+  }
+  return true
+}
+
+/**
+ * The bound a Tolerance: paragraph states before its citation, `V1 ulps 1,`
+ * or `V1 abs 1e-9,`, into `t`; the vector id, or null when refused.
+ */
+const profileToleranceBound = (c: ProfileContext, p: XmlNode, head: string, t: Tolerance): string | null => {
+  const words = split(profileTrim(head), " ").filter((w: string): boolean => w.length > 0)
+  if (words.length !== 3 || !words[2].endsWith(",")) {
+    profileRefuse(c, p, `a Tolerance: paragraph is ${PROFILE_TOLERANCE_FORM}`)
+    return null
+  }
+  const id = words[0]
+  const kind = words[1]
+  const value = words[2].substring(0, words[2].length - 1)
+  if (kind === "ulps") {
+    const n = profileUlps(value)
+    if (n < 0) {
+      profileRefuse(c, p, `${id}'s ulps tolerance is a whole number from 1 to ${PROFILE_ULPS_MAX}, not "${value}"`)
+      return null
+    }
+    t.isUlps = true
+    t.ulps = n
+    return id
+  }
+  if (kind === "abs") {
+    if (!charsIsAbs(value) || profileIsZero(value)) {
+      profileRefuse(c, p, `${id}'s abs tolerance is a decimal greater than 0, like 1e-9, not "${value}"`)
+      return null
+    }
+    if (contractF64Overflows(value)) {
+      profileRefuse(c, p, `${id}'s abs tolerance must be finite, but "${value}" rounds to Infinity`)
+      return null
+    }
+    t.abs = value
+    return id
+  }
+  profileRefuse(c, p, `${id}'s tolerance is ulps or abs, not "${kind}"`)
+  return null
+}
+
+/** The section a tolerance cites, into `t`; false when refused. */
+const profileToleranceCite = (c: ProfileContext, p: XmlNode, x: XmlNode, section: string, t: Tolerance): boolean => {
+  const target = xmlAttr(x, "target") ?? ""
+  const cited = xmlAttr(x, "section")
+  if (cited !== null) {
+    const n = profileCitedRfc(c, x)
+    if (n < 0) {
+      return false
+    }
+    c.cited.add(n)
+    t.section = cited
+    if (n !== c.mainRfc) {
+      t.source = `rfc${n}`
+    }
+    return true
+  }
+  const num = c.doc.sectionByAnchor.get(target)
+  if (num === undefined) {
+    profileRefuse(c, x, `the tolerance cites "${target}", which is no numbered section`)
+    return false
+  }
+  if (c.mainRfc >= 0) {
+    profileRefuse(c, x, profileOwnText(c, `the tolerance's section ${target}`))
+    return false
+  }
+  // The paragraph is printed in its own section, so there it would find its
+  // own quote.
+  if (profileWithin(section, num)) {
+    profileRefuse(
+      c,
+      x,
+      `the tolerance cites Section ${num}, which holds this Tolerance: paragraph, so its quote would be found in itself; cite the section that states the tolerance`,
+    )
+    return false
+  }
+  t.section = num
+  return true
+}
+
+/** A Tolerance: paragraph, set on the vector it names. */
+const profileReadTolerance = (
+  c: ProfileContext,
+  p: XmlNode,
+  section: string,
+  rowIds: Set<string>,
+  read: Map<string, Clause>,
+): void => {
+  const before: XmlNode[] = []
+  const after: XmlNode[] = []
+  let xref: XmlNode | null = null
+  let xrefs = 0
+  let k = p.first
+  while (k !== null) {
+    if (k.name === "xref") {
+      xrefs = xrefs + 1
+      xref = k
+    } else if (xrefs === 0) {
+      before.push(k)
+    } else {
+      after.push(k)
+    }
+    k = k.next
+  }
+  const x: XmlNode | null = xref
+  if (x === null || xrefs > 1) {
+    profileRefuse(c, p, `a tolerance cites exactly one section that allows it: ${PROFILE_TOLERANCE_FORM}`)
+    return
+  }
+  const t = new Tolerance()
+  const head = xmlPlainTextOfNodes(c.doc.text, before)
+  const id = profileToleranceBound(c, p, head.substring(PROFILE_TOLERANCE.length, head.length), t)
+  if (id === null) {
+    return
+  }
+  const tail = xmlPlainTextOfNodes(c.doc.text, after)
+  if (!tail.startsWith(': "') || !tail.endsWith('"') || tail.length <= 4) {
+    profileRefuse(
+      c,
+      p,
+      `${id}'s tolerance quotes the sentence that allows it after the citation: ${PROFILE_TOLERANCE_FORM}`,
+    )
+    return
+  }
+  t.quote = tail.substring(3, tail.length - 1)
+  profileCheckText(c, profileLocOf(p), `${id}'s tolerance quote`, t.quote)
+  if (!profileToleranceCite(c, p, x, section, t)) {
+    return
+  }
+  if (!rowIds.has(id)) {
+    profileRefuse(c, p, `Tolerance: names "${id}", which is no vector of the table`)
+    return
+  }
+  const v = read.get(id)
+  if (v === undefined) {
+    return
+  }
+  if (v.tolerance !== null) {
+    profileRefuse(c, p, `${id} has a tolerance already; a vector has at most one`)
+    return
+  }
+  const fn = profileFn(c, v.call)
+  const ret = fn !== null ? fn.returns : ""
+  if (ret !== "f64") {
+    profileRefuse(c, p, `${id}'s ${v.call} returns ${ret}, and only an f64 result is compared within a tolerance`)
+    return
+  }
+  v.tolerance = t
+  c.toleranceIds.push(id)
+  c.toleranceLocs.push(profileLocOf(p))
 }
 
 const profileCodeCell = (c: ProfileContext, td: XmlNode): string | null => {
@@ -1916,7 +2143,7 @@ export const profileRead = (
     c.ids.add(q.id)
   }
   for (const t of c.tables) {
-    profileReadTable(c, t.node, t.section)
+    profileReadTable(c, t)
   }
   profileReadProperties(c, code)
   profileCheckSections(c, xrefs)
@@ -1972,6 +2199,9 @@ export const profileRead = (
   }
   for (let i = 0; i < out.clauses.length; i++) {
     profilePut(c, l, out.clauses[i].id, clauseLocs[i])
+  }
+  for (let i = 0; i < c.toleranceIds.length; i++) {
+    profilePut(c, l, `${c.toleranceIds[i]}.tolerance`, c.toleranceLocs[i])
   }
   for (let i = 0; i < c.functions.length; i++) {
     profilePut(c, l, c.functions[i].name, c.fnLocs[i])

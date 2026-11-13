@@ -1307,7 +1307,7 @@ const frontBounded = (name: string, type: string, comment: FrontTok): Result<For
       vocabCompareDecimal(b.lo, b.hi) > 0 ||
       vocabCompareDecimal(b.hi, max) > 0
     ) {
-      return Err(frontRefuse(`the bounds of \`${name}\` must satisfy ${min} <= lo <= hi <= ${max}`, pos))
+      return Err(frontRefuse(`the bounds of \`${name}\` (${type}) must satisfy ${min} <= lo <= hi <= ${max}`, pos))
     }
     v.min = b.lo
     v.max = b.hi

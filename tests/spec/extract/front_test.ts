@@ -480,14 +480,15 @@ const frontTestRefusals = (t: Suite, fns: FnSig[]): void => {
     [`${h}forall (i: i32 /* 0..1 "a" */) => true`, "an alphabet applies only to string variables, not `i`", "/*"],
     [
       `${h}forall (i: i32 /* 2..1 */) => true`,
-      "the bounds of `i` must satisfy -2147483648 <= lo <= hi <= 2147483647",
+      "the bounds of `i` (i32) must satisfy -2147483648 <= lo <= hi <= 2147483647",
       "/*",
     ],
     [
       `${h}forall (i: i32 /* 0..2147483648 */) => true`,
-      "the bounds of `i` must satisfy -2147483648 <= lo <= hi <= 2147483647",
+      "the bounds of `i` (i32) must satisfy -2147483648 <= lo <= hi <= 2147483647",
       "/*",
     ],
+    [`${h}forall (a: u8 /* 0..256 */) => true`, "the bounds of `a` (u8) must satisfy 0 <= lo <= hi <= 255", "/*"],
     [`${h}forall (b: u8[] /* 0..4097 */) => true`, "the length bounds of `b` must satisfy 0 <= lo <= hi <= 4096", "/*"],
     [
       `${h}forall (s: string /* -1..2 digit */) => true`,
