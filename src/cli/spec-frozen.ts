@@ -38,7 +38,7 @@ export class SpecFrozenCommand {
     this.contractsArg = cli.argument(
       handle,
       "[contracts...]",
-      "the contracts to check (default: every contracts/*.json)",
+      "the contracts to check, from the repository's top (default: every contracts/*.json)",
     )
   }
 

@@ -79,6 +79,8 @@ const gitdiffTestRepo = (t: Suite): Result<boolean, string> => {
   t.ok("a refused base is an error", gitdiffChangedPaths(dir, "-x").isErr())
   const only = gitdiffChanged(dir, "main", ["a.ts"])
   t.ok("paths narrow it", only.isOk() && only.value.length === 1)
+  const glob = gitdiffChanged(dir, "main", ["*.ts"])
+  t.ok("a path is literal, not a pattern", glob.isOk() && glob.value.length === 0)
   if (fork.isOk()) {
     const old = gitdiffShow(dir, fork.value, "a.ts")
     const oldText: string | null = old.isOk() ? old.value : null
@@ -112,6 +114,16 @@ export const main = (): i32 => {
     t.ok("a changed line is touched", gitdiffTouches(p.value[0], 2))
     t.ok("a line outside is not", !gitdiffTouches(p.value[0], 4))
   }
+  const bin = gitdiffParse("diff --git a/x.bin b/x.bin\nindex 1..2 100644\nBinary files a/x.bin and b/x.bin differ\n")
+  t.ok("a binary change is refused", bin.isErr() && bin.error.indexOf("binary file") >= 0)
+  const mode = gitdiffParse("diff --git a/x b/x\nold mode 100644\nnew mode 100755\n")
+  t.ok("a mode-only change touches no line", mode.isOk() && mode.value.length === 0)
+  const crlf = gitdiffParse("diff --git a/x b/x\r\n--- a/x\r\n+++ b/x\r\n@@ -1 +1,2 @@\r\n-a\r\n+b\r\n+c\r\n")
+  t.eqStr(
+    "a CRLF diff reads the same",
+    crlf.isOk() && crlf.value.length === 1 ? `${crlf.value[0].path}:${gitdiffTestRanges(crlf.value[0].ranges)}` : "ERR",
+    "x:1,2",
+  )
   t.ok("a quoted path is refused", gitdiffParse('diff --git a/x b/x\n--- "a/\\tx"\n+++ b/x\n').isErr())
   t.eqStr("export const", gitdiffTestName("export const fooBar = (): i32 => 1"), "fooBar")
   t.eqStr("export async function", gitdiffTestName("export async function go() {"), "go")

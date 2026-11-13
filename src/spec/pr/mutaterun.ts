@@ -224,13 +224,7 @@ class MutaterunStep {
 }
 
 /** Handles a slot's step exiting with `status`: a built mutant moves on to its test, anything else settles it. */
-const mutaterunExited = (
-  run: MutateRun,
-  slot: MutaterunSlot,
-  mutants: MutateMutant[],
-  status: i32,
-  limitMs: i32,
-): MutaterunStep => {
+const mutaterunExited = (slot: MutaterunSlot, mutants: MutateMutant[], status: i32, limitMs: i32): MutaterunStep => {
   if (slot.building && status === 0) {
     const started = mutaterunStart(slot, mutaterunTestArgv(slot.dir), false, limitMs)
     if (started.isErr()) {
@@ -279,7 +273,7 @@ const mutaterunLoop = (
       reaped = w[0] > 0
       for (const slot of slots) {
         if (reaped && slot.pid === w[0]) {
-          const step = mutaterunExited(run, slot, mutants, w[1], limitMs)
+          const step = mutaterunExited(slot, mutants, w[1], limitMs)
           busy -= step.settled
           if (step.failure.length > 0) {
             failure = step.failure
@@ -292,7 +286,7 @@ const mutaterunLoop = (
       if (slot.pid !== 0 && now > slot.deadline) {
         const late = waitPid(slot.pid, 1)
         if (late[0] === slot.pid) {
-          const step = mutaterunExited(run, slot, mutants, late[1], limitMs)
+          const step = mutaterunExited(slot, mutants, late[1], limitMs)
           busy -= step.settled
           if (step.failure.length > 0) {
             failure = step.failure

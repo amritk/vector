@@ -45,9 +45,29 @@ export const main = (): i32 => {
   const fresh = `// header\n${STALE_PREFIX}${sha}\nconst x = 1\n`
   t.eqStr("sha lines", staleShaLines(fresh).join(","), sha)
   t.eqStr(
-    "a malformed sha line is not one",
+    "a malformed sha line is still one",
     staleShaLines(`${STALE_PREFIX}${sha.substring(0, 63)}G\n${STALE_PREFIX}abc\n`).join(","),
-    "",
+    `${sha.substring(0, 63)}G,abc`,
+  )
+  t.eqStr(
+    "a line after code is not the header's",
+    staleShaLines(`${fresh}const s = "\n${STALE_PREFIX}${sha}"\n`).join(","),
+    sha,
+  )
+  t.eqStr(
+    "a block comment is part of the header",
+    staleShaLines(`/**\n * x\n */\n${STALE_PREFIX}${sha}\nconst x = 1\n`).join(","),
+    sha,
+  )
+  t.eqStr(
+    "a malformed line is refused",
+    staleReason(`${STALE_PREFIX}abc\n`, contract) ?? "",
+    'its vector-contract-sha256 line holds "abc", not 64 lowercase hex digits: regenerate it with vector spec emit',
+  )
+  t.eqStr(
+    "a second, malformed line is refused",
+    staleReason(`${STALE_PREFIX}${sha}\n${STALE_PREFIX}zz\nconst x = 1\n`, contract) ?? "",
+    "2 vector-contract-sha256 lines: a test names one contract",
   )
   t.ok("a fresh test", staleReason(fresh, contract) === null)
   t.eqStr(
@@ -57,7 +77,7 @@ export const main = (): i32 => {
   )
   t.eqStr(
     "two lines",
-    staleReason(`${fresh}${STALE_PREFIX}${sha}\n`, contract) ?? "",
+    staleReason(`${STALE_PREFIX}${sha}\n${fresh}`, contract) ?? "",
     "2 vector-contract-sha256 lines: a test names one contract",
   )
   t.eqStr(

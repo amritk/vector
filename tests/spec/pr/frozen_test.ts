@@ -11,6 +11,7 @@ import {
   frozenDefaultContracts,
   frozenKindName,
   frozenPathKind,
+  frozenResolve,
 } from "../../../src/spec/pr/frozen"
 import { gitdiffTop } from "../../../src/spec/pr/gitdiff"
 import { STALE_PREFIX } from "../../../src/spec/pr/stale"
@@ -71,7 +72,7 @@ const frozenTestRepo = (t: Suite, dir: string): Result<boolean, string> => {
   t.eqStr(
     "its items",
     impl.isOk() ? impl.value.items.join(" | ") : "",
-    `✓ contract ${path} | neutral docs/guide.md | implementation src/x.ts`,
+    "✓ contract contracts/c.json | neutral docs/guide.md | implementation src/x.ts",
   )
 
   prTestWrite(dir, "specs/s.md", "s\n").orReturn()
@@ -103,7 +104,7 @@ const frozenTestRepo = (t: Suite, dir: string): Result<boolean, string> => {
 
   prTestWrite(dir, "rfcs/rfc4648.txt", replaceAll(FROZEN_TEST_RFC, "work", "fail")).orReturn()
   const moved = frozenTestVerdict(dir, [])
-  t.contains("a changed source fails", moved, `${path}: source rfc4648 (rfcs/rfc4648.txt) has SHA-256`)
+  t.contains("a changed source fails", moved, "contracts/c.json: source rfc4648 (rfcs/rfc4648.txt) has SHA-256")
   t.contains("naming the change", moved, "the source changed")
   frozenTestReset(dir).orReturn()
 
@@ -111,10 +112,10 @@ const frozenTestRepo = (t: Suite, dir: string): Result<boolean, string> => {
   t.eqStr(
     "an unpinned contract fails",
     frozenContractProblems(path, top).join(" | "),
-    `${path}: its main source is not pinned: record its SHA-256 in source.sha256`,
+    "contracts/c.json: its main source is not pinned: record its SHA-256 in source.sha256",
   )
   prTestWrite(dir, "contracts/c.json", "{\n").orReturn()
-  t.contains("an unreadable contract fails", frozenTestVerdict(dir, []), `${path}: not a contract: `)
+  t.contains("an unreadable contract fails", frozenTestVerdict(dir, []), "contracts/c.json: not a contract: ")
   frozenTestReset(dir).orReturn()
 
   t.eqStr(
@@ -126,6 +127,39 @@ const frozenTestRepo = (t: Suite, dir: string): Result<boolean, string> => {
   t.eqStr("no contracts", frozenTestVerdict(dir, []), "no contracts to check: give them, or keep them in contracts/")
   frozenTestReset(dir).orReturn()
 
+  t.eqStr("a relative contract is read from the top", frozenTestVerdict(`${dir}/src`, ["contracts/c.json"]), "OK")
+  t.eqStr("an absolute one inside the top is read", frozenTestVerdict(dir, [path]), "OK")
+  t.eqStr(
+    "a contract climbing out is refused",
+    frozenTestVerdict(dir, ["contracts/../../c.json"]),
+    "contracts/../../c.json: a contract path may not climb with ..: give it from the repository's top",
+  )
+  t.eqStr(
+    "an absolute contract elsewhere is refused",
+    frozenTestVerdict(dir, ["/etc/c.json"]),
+    `/etc/c.json: outside the repository at ${top}: the gate checks only its own contracts`,
+  )
+
+  prTestGit(dir, ["mv", "src/x.ts", "src/y.ts"]).orReturn()
+  prTestWrite(dir, "specs/s.md", "s\n").orReturn()
+  t.eqStr(
+    "a rename counts both of its paths",
+    frozenTestVerdict(dir, []),
+    "the change touches the spec side (specs/s.md) and the implementation (src/x.ts, src/y.ts): change them in separate PRs",
+  )
+  frozenTestReset(dir).orReturn()
+  prTestGit(dir, ["rm", "-q", "rfcs/rfc4648.txt"]).orReturn()
+  t.contains("a deleted source fails", frozenTestVerdict(dir, []), "contracts/c.json: ")
+  frozenTestReset(dir).orReturn()
+  prTestGit(dir, ["rm", "-q", "src/x.ts"]).orReturn()
+  prTestWrite(dir, "specs/s.md", "s\n").orReturn()
+  t.eqStr(
+    "a deleted implementation file is implementation",
+    frozenTestVerdict(dir, []),
+    "the change touches the spec side (specs/s.md) and the implementation (src/x.ts): change them in separate PRs",
+  )
+  frozenTestReset(dir).orReturn()
+
   t.eqStr("the tree is back", frozenTestVerdict(dir, []), "OK")
   const bad = frozenCheck(dir, "-x", [])
   t.ok("a base starting with - is refused", bad.isErr())
@@ -134,9 +168,20 @@ const frozenTestRepo = (t: Suite, dir: string): Result<boolean, string> => {
   return Ok(true)
 }
 
+/** A path resolved against the top "/r", or "ERR". */
+const frozenTestInTop = (given: string): string => {
+  const r = frozenResolve("/r", given)
+  return r.isOk() ? r.value : "ERR"
+}
+
 /** The PR gate that keeps the spec side and the implementation in separate PRs. */
 export const main = (): i32 => {
   const t = new Suite("spec/pr frozen")
+  t.eqStr("a relative contract resolves against the top", frozenTestInTop("contracts/a.json"), "/r/contracts/a.json")
+  t.eqStr("an absolute one inside stays", frozenTestInTop("/r/contracts/a.json"), "/r/contracts/a.json")
+  t.eqStr("a sibling of the top is outside", frozenTestInTop("/rx/a.json"), "ERR")
+  t.eqStr("a .. segment is refused", frozenTestInTop("contracts/../a.json"), "ERR")
+  t.eqStr("dots in a name are not a ..", frozenTestInTop("contracts/a..json"), "/r/contracts/a..json")
   t.ok("specs", frozenPathKind("specs/a.md") === FROZEN_SPEC && frozenPathKind("contracts/a.json") === FROZEN_SPEC)
   t.ok("rfcs", frozenPathKind("rfcs/rfc1.txt") === FROZEN_SPEC)
   t.ok("neutral", frozenPathKind("docs/a/b.md") === FROZEN_NEUTRAL && frozenPathKind("README.md") === FROZEN_NEUTRAL)

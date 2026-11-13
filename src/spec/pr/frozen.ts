@@ -9,6 +9,7 @@
  * a git error, an unreadable contract or a missing source is a failure.
  */
 
+import { split } from "nish/text"
 import { sha256Hex } from "../../core/hex"
 import { contractLoadFile } from "../contract/contract"
 import { Contract } from "../contract/types"
@@ -78,31 +79,61 @@ const frozenMainPinned = (c: Contract): boolean => {
   return c.source.sha256 !== null
 }
 
+/** `path` from the repository's top when it is inside it, else as given. */
+const frozenShown = (path: string, top: string): string =>
+  path.startsWith(`${top}/`) ? path.substring(top.length + 1) : path
+
+/**
+ * A contract path as given, made absolute against the repository's top:
+ * relative paths are read from the top, not the working directory, and no
+ * path may leave it, through `..` or by being absolute elsewhere.
+ *
+ * @param top the repository's top
+ * @param given the path as given
+ * @returns the absolute path, or `Err` naming why it is refused
+ */
+export const frozenResolve = (top: string, given: string): Result<string, string> => {
+  for (const seg of split(given, "/")) {
+    if (seg === "..") {
+      return Err(`${given}: a contract path may not climb with ..: give it from the repository's top`)
+    }
+  }
+  if (given.startsWith("/")) {
+    if (!given.startsWith(`${top}/`)) {
+      return Err(`${given}: outside the repository at ${top}: the gate checks only its own contracts`)
+    }
+    return Ok(given)
+  }
+  return Ok(`${top}/${given}`)
+}
+
 /**
  * Why a contract does not hold to the sources it records.
  *
  * @param path the contract file
  * @param top the repository's top, whose specs/ and rfcs/ hold its sources
- * @returns every problem, each prefixed with the contract's path; none when it holds
+ * @returns every problem, each prefixed with the contract's path from the
+ *   top; none when it holds
  */
 export const frozenContractProblems = (path: string, top: string): string[] => {
   const out: string[] = []
+  const name = frozenShown(path, top)
   const loaded = contractLoadFile(path)
   if (loaded.isErr()) {
     for (const e of loaded.error) {
-      out.push(`${path}: not a contract: ${e}`)
+      out.push(`${name}: not a contract: ${e}`)
     }
     return out
   }
   const c = loaded.value
   if (sourceMainId(c).length === 0) {
-    out.push(`${path}: names no main source: give source.rfc or source.main`)
+    out.push(`${name}: names no main source: give source.rfc or source.main`)
   } else if (!frozenMainPinned(c)) {
-    out.push(`${path}: its main source is not pinned: record its SHA-256 in source.sha256`)
+    out.push(`${name}: its main source is not pinned: record its SHA-256 in source.sha256`)
   }
   const set = sourceLoad(c, path, top)
   for (const p of set.problems) {
-    out.push(`${path}: ${p}`)
+    out.push(`${name}: ${p}`)
   }
   return out
 }
@@ -134,7 +165,8 @@ export const frozenDefaultContracts = (top: string): string[] => {
  *
  * @param repo the repository, or a directory inside it
  * @param base the ref the change is against
- * @param contracts the contracts to check; empty for frozenDefaultContracts
+ * @param contracts the contracts to check, from the repository's top
+ *   (frozenResolve); empty for frozenDefaultContracts
  * @returns the report, or `Err` when git fails or the base is refused
  */
 export const frozenCheck = (repo: string, base: string, contracts: string[]): Result<PrReport, string> => {
@@ -142,14 +174,18 @@ export const frozenCheck = (repo: string, base: string, contracts: string[]): Re
   const paths = gitdiffChangedPaths(top, base).orReturn()
   const r = new PrReport("frozen", `spec frozen against ${base}`)
   const files: string[] = []
+  const contractProblems: string[] = []
   const given = contracts.length > 0 ? contracts : frozenDefaultContracts(top)
-  for (const f of given) {
-    if (!f.endsWith(FROZEN_SIDECAR_SUFFIX)) {
-      files.push(f)
+  for (const g of given) {
+    const f = frozenResolve(top, g)
+    if (f.isErr()) {
+      r.items.push(`✗ contract ${g}`)
+      contractProblems.push(f.error)
+    } else if (!f.value.endsWith(FROZEN_SIDECAR_SUFFIX)) {
+      files.push(f.value)
     }
   }
-  const contractProblems: string[] = []
-  if (files.length === 0) {
+  if (files.length === 0 && contractProblems.length === 0) {
     contractProblems.push("no contracts to check: give them, or keep them in contracts/")
   }
   const shas = new Set<string>()
@@ -159,7 +195,7 @@ export const frozenCheck = (repo: string, base: string, contracts: string[]): Re
       shas.add(sha256Hex(text))
     }
     const problems = frozenContractProblems(f, top)
-    r.items.push(`${problems.length === 0 ? "✓" : "✗"} contract ${f}`)
+    r.items.push(`${problems.length === 0 ? "✓" : "✗"} contract ${frozenShown(f, top)}`)
     for (const p of problems) {
       contractProblems.push(p)
     }

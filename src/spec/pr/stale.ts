@@ -1,10 +1,11 @@
 /**
  * `spec/pr/stale` — whether a generated test was emitted from the contract
- * as it is now: its one `// vector-contract-sha256: <hex>` line must name the
- * SHA-256 of the contract file's bytes.
+ * as it is now: its header comment's one `// vector-contract-sha256: <hex>`
+ * line must name the SHA-256 of the contract file's bytes. A second such line,
+ * well-formed or not, is refused rather than ignored.
  */
 
-import { splitLines } from "nish/text"
+import { splitLines, trim } from "nish/text"
 import { sha256Hex } from "../../core/hex"
 
 /** The comment that opens the line naming a test's contract. */
@@ -24,21 +25,36 @@ const staleIsSha = (text: string): boolean => {
   return true
 }
 
+/** Whether `line` ends a block comment opened on an earlier line. */
+const staleClosesBlock = (line: string): boolean => line.indexOf("*/") >= 0
+
 /**
- * The contract SHA-256s a test names, one per `// vector-contract-sha256:`
- * line that holds exactly 64 lowercase hex digits.
+ * What every `// vector-contract-sha256:` line in a test's header comment
+ * names, well-formed or not: the text after the prefix. The header is the
+ * lines before the first line of code: blank lines, `//` lines and block
+ * comments. A line further down is code or a string, not the test's own.
  *
  * @param test the test's source
- * @returns the hashes, in order
+ * @returns the text after each prefix, in order
  */
 export const staleShaLines = (test: string): string[] => {
   const out: string[] = []
-  for (const line of splitLines(test)) {
-    if (line.startsWith(STALE_PREFIX)) {
-      const sha = line.substring(STALE_PREFIX.length)
-      if (staleIsSha(sha)) {
-        out.push(sha)
-      }
+  let inBlock = false
+  for (const raw of splitLines(test)) {
+    const line = trim(raw)
+    if (inBlock) {
+      inBlock = !staleClosesBlock(line)
+      continue
+    }
+    if (line.startsWith("/*")) {
+      inBlock = !staleClosesBlock(line.substring(2))
+      continue
+    }
+    if (line.length > 0 && !line.startsWith("//")) {
+      break
+    }
+    if (line.startsWith(trim(STALE_PREFIX))) {
+      out.push(trim(line.substring(trim(STALE_PREFIX).length)))
     }
   }
   return out
@@ -58,6 +74,9 @@ export const staleReason = (test: string, contract: string): string | null => {
   }
   if (found.length > 1) {
     return `${found.length} vector-contract-sha256 lines: a test names one contract`
+  }
+  if (!staleIsSha(found[0])) {
+    return `its vector-contract-sha256 line holds "${found[0]}", not 64 lowercase hex digits: regenerate it with vector spec emit`
   }
   const want = sha256Hex(contract)
   if (found[0] !== want) {

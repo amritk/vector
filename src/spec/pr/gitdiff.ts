@@ -38,14 +38,15 @@ export const gitdiffBaseProblem = (base: string): string | null => {
 }
 
 /**
- * Runs git in `repo` and returns what it printed.
+ * Runs git in `repo` and returns what it printed. Pathspecs are literal, so
+ * a path holding `*` or `:(` names that file, never a pattern.
  *
  * @param repo the repository's directory
- * @param args git's arguments, after `-C <repo>`
+ * @param args git's arguments, after `-C <repo> --literal-pathspecs`
  * @returns its standard output, or `Err` naming the command and what git said
  */
 export const gitdiffGit = (repo: string, args: string[]): Result<string, string> => {
-  const argv: string[] = ["git", "-C", repo]
+  const argv: string[] = ["git", "-C", repo, "--literal-pathspecs"]
   for (const a of args) {
     argv.push(a)
   }
@@ -183,7 +184,8 @@ export const gitdiffParse = (text: string): Result<GitdiffFile[], string> => {
   const files: GitdiffFile[] = []
   let oldPath = ""
   let cur: GitdiffFile | null = null
-  for (const line of splitLines(text)) {
+  for (const raw of splitLines(text)) {
+    const line = raw.endsWith("\r") ? raw.substring(0, raw.length - 1) : raw
     if (line.startsWith("diff --git ")) {
       cur = null
       oldPath = ""
