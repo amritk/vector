@@ -20,7 +20,7 @@ The 3 JSON Schemas in `schemas/`.
 
 <scalar-card title="Modules" icon="phosphor/regular/books" href="#modules">
 
-The 110 source files of `src/`, from their doc comments.
+The 111 source files of `src/`, from their doc comments.
 
 </scalar-card>
 
@@ -90,6 +90,7 @@ The 110 source files of `src/`, from their doc comments.
 | [`spec/emit/lit`](modules/spec/emit/lit.md) | contract values as Nish source text: integers at their type, f64s, string literals, and the bytes a literal stands for. |
 | [`spec/emit/packages`](modules/spec/emit/packages.md) | `--package <name>=<dir>`: where the modules of your own project live, so a test can import a module outside nish/. |
 | [`spec/emit/python`](modules/spec/emit/python.md) | a contract and its samples as a Python test. |
+| [`spec/emit/rust`](modules/spec/emit/rust.md) | a contract and its samples as a Rust test. |
 | [`spec/emit/target`](modules/spec/emit/target.md) | what a test is emitted for: a language, and the harness that runs it in that language. |
 | [`spec/extract`](modules/spec/extract.md) | `vector spec extract`: an RFC XML v3 spec (xml2rfc's output for a kramdown-rfc spec) to its canonical contract. |
 | [`spec/front/front`](modules/spec/front/front.md) | the TypeScript front end. |

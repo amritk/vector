@@ -1,1 +1,1 @@
-vector: spec emit: --lang cobol: not a language (vector emits: nish, python)
+vector: spec emit: --lang cobol: not a language (vector emits: nish, python, rust)

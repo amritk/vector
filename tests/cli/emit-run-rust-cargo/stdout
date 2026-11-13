@@ -1,0 +1,9 @@
+SATISFIED: rfc5869-hkdf-sha256 (exit 0)
+  pass  R-EXTRACT
+  pass  R-SALT
+  pass  R-PRK-LEN
+  pass  R-L
+  pass  R-INFO-EMPTY
+  pass  R-OKM-LEN
+  pass  R-OKM-FIRST
+  pass  R-T

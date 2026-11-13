@@ -457,6 +457,11 @@
                     "title": "spec/emit/python",
                     "filepath": "docs/reference/modules/spec/emit/python.md"
                   },
+                  "/spec-emit-rust": {
+                    "type": "page",
+                    "title": "spec/emit/rust",
+                    "filepath": "docs/reference/modules/spec/emit/rust.md"
+                  },
                   "/spec-emit-target": {
                     "type": "page",
                     "title": "spec/emit/target",

@@ -93,13 +93,37 @@ const runInScratch = (c: Contract, file: string, root: string): Result<RunResult
 export const runPython = (): string => getenv("VECTOR_PYTHON") ?? "python3"
 
 /**
+ * The compiler a Rust test builds with: `VECTOR_RUSTC`, else `rustc`.
+ *
+ * @returns the command
+ */
+export const runRustc = (): string => getenv("VECTOR_RUSTC") ?? "rustc"
+
+/**
+ * A Rust test compiled in a temporary directory with overflow checks on,
+ * then run with the nonce. A test that does not compile prints no
+ * transcript, so it is judged an error, with rustc's messages kept.
+ */
+const runRust = (c: Contract, file: string): Result<RunResult, string> => {
+  const dir = makeTempDir("vector-rs-").orReturn()
+  const bin = joinPath(dir, "test")
+  const script = '"$1" --edition 2021 --crate-name vector_test -C overflow-checks=on -o "$3" "$2" && exec "$3" "$4"'
+  const ran = runTestCommand(c, ["sh", "-c", script, "sh", runRustc(), file, bin], RUN_TIMEOUT_MS)
+  runDropTemp(dir)
+  return ran
+}
+
+/**
  * The test at `file` run in its language: Python by `runPython`, writing no
- * bytecode beside the modules it loads; Nish by
+ * bytecode beside the modules it loads; Rust compiled by `runRustc`; Nish by
  * `--nish` as it is, else in a scratch copy of the nish root.
  */
 const runWith = (req: RunRequest, target: EmitTarget, c: Contract, file: string): Result<RunResult, string> => {
   if (target.lang === "python") {
     return runTestCommand(c, [runPython(), "-B", file], RUN_TIMEOUT_MS)
+  }
+  if (target.lang === "rust") {
+    return runRust(c, file)
   }
   const nish = req.nish
   if (nish !== null) {

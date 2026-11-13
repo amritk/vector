@@ -133,18 +133,19 @@ written in, and `--harness <h>` the framework that runs it:
 | --- | --- | --- | --- |
 | Nish | `nish` (the default) | `standalone` | the nish root (see [Run it](#run-it)) |
 | Python | `python` | `standalone` (the default), `pytest` | `VECTOR_PYTHON`, else `python3` |
+| Rust | `rust` | `standalone` (the default), `cargo` | `VECTOR_RUSTC`, else `rustc` |
 
-The other languages vector has a naming table for (`rust`, `ruby`, `zig`,
-`go`, `cpp`, `csharp`, `c`, `java`, `kotlin`, `typescript`, `php`, `swift`
-and `dart`) have no emitter yet, and `--lang` says so (exit 2):
+The other languages vector has a naming table for (`ruby`, `zig`, `go`,
+`cpp`, `csharp`, `c`, `java`, `kotlin`, `typescript`, `php`, `swift` and
+`dart`) have no emitter yet, and `--lang` says so (exit 2):
 
 <!-- exit 2 -->
 ```sh
-./dist/vector spec emit contracts/vector-core-hex.json --lang rust -o hex_test.rs
+./dist/vector spec emit contracts/vector-core-hex.json --lang go -o hex_test.go
 ```
 
 ```text
-vector: spec emit: --lang rust: vector has no emitter for rust yet (it has: nish, python)
+vector: spec emit: --lang go: vector has no emitter for go yet (it has: nish, python, rust)
 ```
 
 A function is called by its name in the language, from the contract's
@@ -194,6 +195,7 @@ Every test is a standalone program, which is how `spec run` runs it. With
 clause, so pytest collects it with the rest of your suite, and a failing
 clause fails with the same detail the transcript prints:
 
+<!-- illustrative -->
 ```sh
 ./dist/vector spec emit contracts/vector-core-hex.json --lang python --harness pytest --package vector=src/py -o tests/test_hex.py
 pytest tests/test_hex.py
@@ -209,6 +211,58 @@ when they are not the defaults. A harness the language has not is bad usage:
 
 ```text
 vector: spec run: --harness junit: python tests run standalone or pytest
+```
+
+### Rust
+
+A Rust test is one file that needs the standard library alone. Each function
+is called by its Rust name (`to_hex`), from the module's crate path
+(`use nish::crypto::hkdf::{…}`), or, for a module `--package` places, from
+the `.rs` file there, loaded with `#[path]` relative to the test. A bytes
+input is passed as `&[u8]` and a string as `&str`; an optional input is an
+`Option<&[u8]>` or `Option<&str>`. A result may come back as any type that
+derefs to bytes or a string, so `Vec<u8>`, `[u8; 32]`, `String` and `&str`
+all check; an optional result is an `Option` of one. `tests/fixtures/rust/`
+holds the ports vector checks its Rust tests against:
+
+```sh
+./dist/vector spec run contracts/vector-core-hex.json --lang rust --package vector=tests/fixtures/rust/vector
+```
+
+```text
+SATISFIED: vector-core-hex (exit 0)
+  pass  R-HEX-LEN
+  pass  R-HEX-DIGITS
+  pass  R-SHA256
+```
+
+`spec run` compiles the test with `rustc --edition 2021 -C
+overflow-checks=on` in a temporary directory, then runs it; set
+`VECTOR_RUSTC` to build with another compiler. The contract's `+`, `-` and
+`*` wrap, so an implementation that overflows where the contract wraps
+panics, and that check fails with the panic's message (`panicked: attempt to
+add with overflow`). A test that does not compile prints no transcript, so
+its verdict is ERROR, with rustc's messages.
+
+With `--harness cargo` the file also holds a `#[test] fn test_<clause>` for
+each clause, so `cargo test` (or `rustc --test`) runs the same checks, and a
+failing clause panics with the detail the transcript prints. A property
+with no samples is `#[ignore]`d:
+
+```sh
+./dist/vector spec run contracts/rfc5869-hkdf-sha256.json --lang rust --harness cargo --package nish=tests/fixtures/rust/nish
+```
+
+```text
+SATISFIED: rfc5869-hkdf-sha256 (exit 0)
+  pass  R-EXTRACT
+  pass  R-SALT
+  pass  R-PRK-LEN
+  pass  R-L
+  pass  R-INFO-EMPTY
+  pass  R-OKM-LEN
+  pass  R-OKM-FIRST
+  pass  R-T
 ```
 
 ## Run it

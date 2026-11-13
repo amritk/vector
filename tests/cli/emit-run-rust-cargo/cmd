@@ -1,0 +1,1 @@
+vector spec run contracts/rfc5869-hkdf-sha256.json --lang rust --harness cargo --package nish=tests/fixtures/rust/nish

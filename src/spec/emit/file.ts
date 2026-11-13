@@ -13,6 +13,7 @@ import { sourceInstallRoot } from "../source/path"
 import { EmitOptions, emitProgram } from "./emit"
 import { EmitPackages, emitPackageFlags, emitParsePackages, emitResolveModules } from "./packages"
 import { emitPyProgram } from "./python"
+import { emitRsProgram } from "./rust"
 import { EmitTarget, emitTargetExt, emitTargetFlags, emitTargetParse } from "./target"
 
 /** A contract and the test emitted for it. */
@@ -88,7 +89,9 @@ export const emitContractFile = (
   const program =
     target.lang === "python"
       ? emitPyProgram(c, checked.samples, opts, target.harness)
-      : emitProgram(c, checked.samples, opts)
+      : target.lang === "rust"
+        ? emitRsProgram(c, checked.samples, opts, target.harness)
+        : emitProgram(c, checked.samples, opts)
   if (program.isErr()) {
     return Err(emitRefuseAll(path, program.error))
   }

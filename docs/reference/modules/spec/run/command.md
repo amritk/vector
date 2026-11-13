@@ -13,6 +13,7 @@ Generated from [src/spec/run/command.ts](https://github.com/amritk/vector/blob/m
 - [`RunRequest`](#runrequest)
 - [`runFindRoot`](#runfindroot)
 - [`runPython`](#runpython)
+- [`runRustc`](#runrustc)
 - [`runFormat`](#runformat)
 - [`runCommand`](#runcommand)
 
@@ -131,6 +132,20 @@ The interpreter a Python test runs with: `VECTOR_PYTHON`, else `python3`.
 
 ```ts
 function runPython(): string
+```
+
+<scalar-field name="returns" type="string">
+
+the command
+
+</scalar-field>
+
+### runRustc
+
+The compiler a Rust test builds with: `VECTOR_RUSTC`, else `rustc`.
+
+```ts
+function runRustc(): string
 ```
 
 <scalar-field name="returns" type="string">
