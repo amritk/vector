@@ -24,6 +24,7 @@ import { gateDomain } from "./gates/domain"
 import { gateFidelity } from "./gates/fidelity"
 import { gateIds } from "./gates/ids"
 import { gateProvenance } from "./gates/provenance"
+import { gateRunSources } from "./gates/run"
 import { gateSignatures } from "./gates/signatures"
 import { gateTyping } from "./gates/typing"
 import { SourceSet } from "./source/load"
@@ -180,6 +181,8 @@ export class CheckContext {
   runTimeoutMs: i32
   /** The module under test's file, for the signatures gate; null skips it. */
   moduleFile: string | null = null
+  /** The file `--spec` names, which must be the main source the contract records; null when none. */
+  specPath: string | null = null
   /** The Nish compiler's root, where a `nish/...` module is looked up; null when unknown. */
   nishRoot: string | null = null
   /** The report's format: "text", "markdown" or "json". */
@@ -291,6 +294,7 @@ export const checkGates = (): CheckGateEntry[] => [
   new CheckGateEntry("coverage", gateCoverage, false),
   new CheckGateEntry("fidelity", gateFidelity, false),
   new CheckGateEntry("completeness", gateCompleteness, false),
+  new CheckGateEntry("run-sources", gateRunSources, false),
   new CheckGateEntry("provenance", gateProvenance, false),
   new CheckGateEntry("signatures", gateSignatures, false),
   new CheckGateEntry("domain", gateDomain, false),

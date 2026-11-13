@@ -121,7 +121,7 @@ export const main = (): i32 => {
     const k = sampleIntIn(r1, toI64(-5), toI64(5))
     const z = sampleBiasedInt(r1, toI64(-1000), toI64(1000))
     const u = sampleBiasedInt(r1, toI64(0), big)
-    inRange = inRange && b >= 0 && b < 7 && k >= toI64(-5) && k <= toI64(5) && z >= toI64(-1000) && z <= toI64(1000)
+    inRange = inRange && b >= 0 && b < 7 && k >= toI64(-5) && k <= toI64(5) && z >= toI64(-1000) && toI64(1000) >= z
     inRange = inRange && !sampleIntLess(big, u, "u64")
   }
   t.ok("draws stay in range", inRange)

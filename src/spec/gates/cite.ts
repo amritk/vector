@@ -31,6 +31,14 @@ export const gateSources = (ctx: CheckContext, out: string[], gate: string): Sou
   for (const p of set.problems) {
     gateIssue(ctx, out, gate, "sources", `${p}, so nothing citing it can be checked`)
   }
+  // `--spec` never swaps the file read: it only asserts which one that is, so
+  // the confinement and the pins above still decide what is trusted.
+  const spec = ctx.specPath
+  const main = sourceFind(set, null)
+  const real: string | null = spec === null ? null : realpathSync(spec)
+  if (spec !== null && main !== null && (real === null || real !== main.file)) {
+    gateIssue(ctx, out, gate, "sources", `--spec ${spec} is not ${main.label}, the main source the contract records`)
+  }
   ctx.sources = set
   return set
 }

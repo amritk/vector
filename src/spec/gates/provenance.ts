@@ -45,7 +45,7 @@ const gateSpecSource = (ctx: CheckContext, out: string[], k: Clause, section: st
 
 /**
  * The provenance gate (see the module comment). It reads `ctx.sourceRuns`,
- * which the command fills before the gates when `--run-sources` is given.
+ * which the run-sources gate fills just before it.
  *
  * @param ctx the check's context, holding the contract
  * @returns each finding
