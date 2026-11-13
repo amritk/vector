@@ -2,6 +2,7 @@ import { Suite } from "nish/testing"
 import {
   XML_MAX_ATTRS,
   XML_MAX_DEPTH,
+  XML_MAX_ENTITIES,
   XML_MAX_INPUT_BYTES,
   XmlNode,
   xmlAttr,
@@ -154,7 +155,11 @@ const xmlReaderTestRefusals = (t: Suite): void => {
   attrs.pop()
   t.eqStr("XML_MAX_ATTRS itself", xmlReaderTestErr(`<rfc ${attrs.join(" ")}/>`), "ok <rfc>")
   const big = `<rfc>${xmlReaderTestRepeat("x", XML_MAX_INPUT_BYTES)}</rfc>`
-  t.contains("over XML_MAX_INPUT_BYTES", xmlReaderTestErr(big), "1:1 md=-1 ")
+  t.eqStr(
+    "over XML_MAX_INPUT_BYTES",
+    xmlReaderTestErr(big),
+    `1:1 md=-1 input is ${big.length} bytes, over the 8388608-byte limit (XML_MAX_INPUT_BYTES)`,
+  )
   t.ok("over XML_MAX_INPUT_BYTES is refused", xmlParse(big).isErr())
   const bad = String.fromBytes([0x3c, 0x72, 0x3e, 0x0a, 0x61, 0xff, 0x3c, 0x2f, 0x72, 0x3e], 0, 10)
   t.eqStr(
@@ -164,16 +169,20 @@ const xmlReaderTestRefusals = (t: Suite): void => {
   )
   const overlong = String.fromBytes([0x3c, 0x72, 0x3e, 0xc0, 0xaf, 0x3c, 0x2f, 0x72, 0x3e], 0, 9)
   t.contains("an overlong form", xmlReaderTestErr(overlong), "the input is not UTF-8")
-  t.contains("a control character", xmlReaderTestErr("<r>\u{1}</r>"), "1:4 md=-1 ")
+  t.eqStr("a control character", xmlReaderTestErr("<r>\u{1}</r>"), "1:4 md=-1 U+0001 is not an XML character")
   t.eqStr(
     "a duplicate attribute",
     xmlReaderTestErr('<r a="1" a="2"/>'),
     "1:10 md=-1 malformed XML: duplicate attribute a on <r>",
   )
   t.eqStr("no root element", xmlReaderTestErr("<!-- c -->"), "1:11 md=-1 malformed XML: no root element")
-  t.contains("an unclosed element", xmlReaderTestErr("<rfc>\n<a>"), "is never closed")
-  t.contains("an unterminated comment", xmlReaderTestErr("<rfc><!-- x"), "malformed XML: unterminated comment")
-  t.contains("text after the root", xmlReaderTestErr("<rfc/><b/>"), "malformed XML")
+  t.eqStr("an unclosed element", xmlReaderTestErr("<rfc>\n<a>"), "2:1 md=-1 malformed XML: <a> is never closed")
+  t.eqStr("an unterminated comment", xmlReaderTestErr("<rfc><!-- x"), "1:10 md=-1 malformed XML: unterminated comment")
+  t.eqStr(
+    "text after the root",
+    xmlReaderTestErr("<rfc/><b/>"),
+    "1:7 md=-1 malformed XML: content after the root element",
+  )
   t.contains(
     "a <?line?> past 999999999",
     xmlReaderTestErr("<rfc><?line 1000000000?></rfc>"),
@@ -189,6 +198,72 @@ const xmlReaderTestRefusals = (t: Suite): void => {
     xmlReaderTestErr("<rfc><?line -999999999?><?line -999999999?></rfc>"),
     "1:25 md=-1 <?line -999999999?> corrects lines by more than 999999999 in all",
   )
+}
+
+/** A DOCTYPE declaring `n` entities e0..e(n-1), each one per line and each "A". */
+const xmlReaderTestEntities = (n: i32): string => {
+  const decls: string[] = []
+  for (let k = 0; k < n; k++) {
+    decls.push(`<!ENTITY e${k} "&#65;">`)
+  }
+  return `<!DOCTYPE rfc [\n${decls.join("\n")}\n]>\n`
+}
+
+/** The DOCTYPE's entities: at most XML_MAX_ENTITIES, the one past it refused at its line. */
+const xmlReaderTestEntityCap = (t: Suite): void => {
+  t.eqStr(
+    "one entity past XML_MAX_ENTITIES",
+    xmlReaderTestErr(`${xmlReaderTestEntities(XML_MAX_ENTITIES + 1)}<rfc/>`),
+    `${XML_MAX_ENTITIES + 2}:1 md=-1 the DOCTYPE declares more than 256 entities (XML_MAX_ENTITIES)`,
+  )
+  t.eqStr(
+    "XML_MAX_ENTITIES itself",
+    xmlReaderTestErr(`${xmlReaderTestEntities(XML_MAX_ENTITIES)}<rfc>&e255;</rfc>`),
+    "ok <rfc>",
+  )
+}
+
+/** Fails `name` unless it ran in under ten seconds since `start`, a bound a quadratic step would pass. */
+const xmlReaderTestFast = (t: Suite, name: string, start: f64): void => {
+  const ms = Date.now() - start
+  t.ok(`${name}: ${ms} ms, linear`, ms < 10000)
+}
+
+/**
+ * Parses `<rfc>body</rfc>` after `prolog`, with `unit` repeated to fill
+ * the input up to a little under XML_MAX_INPUT_BYTES, and checks the root
+ * holds one text node `each` bytes long per unit, in under ten seconds.
+ */
+const xmlReaderTestFill = (t: Suite, name: string, prolog: string, unit: string, each: i32): void => {
+  const n = (XML_MAX_INPUT_BYTES - prolog.length - 4096) / unit.length
+  const text = `${prolog}<rfc>${xmlReaderTestRepeat(unit, n)}</rfc>`
+  const start = Date.now()
+  const r = xmlParse(text)
+  if (r.isErr()) {
+    t.fail(name, r.error.message)
+    return
+  }
+  const first = r.value.first
+  t.ok(
+    `${name}: one text node of ${n * each} bytes`,
+    first !== null && first.next === null && first.text.length === n * each,
+  )
+  xmlReaderTestFast(t, name, start)
+}
+
+/** Inputs near XML_MAX_INPUT_BYTES that cost their square when a step was quadratic. */
+const xmlReaderTestLinear = (t: Suite): void => {
+  xmlReaderTestFill(t, "adjacent CDATA sections", "", "<![CDATA[x]]>", 1)
+  xmlReaderTestFill(t, "adjacent entity references", "", "&amp;", 1)
+  xmlReaderTestFill(t, "alternating text and references", "", "x&lt;", 2)
+  xmlReaderTestFill(t, "alternating text and CDATA", "", "x<![CDATA[y]]>", 2)
+  xmlReaderTestFill(t, "references and CDATA", "", "&gt;<![CDATA[y]]>", 2)
+  const decls = xmlReaderTestEntities(XML_MAX_ENTITIES)
+  const refs: string[] = []
+  for (let k = XML_MAX_ENTITIES - 8; k < XML_MAX_ENTITIES; k++) {
+    refs.push(`&e${k};`)
+  }
+  xmlReaderTestFill(t, "references to the last of 256 entities", decls, refs.join(""), 8)
 }
 
 /** Inputs no parse may panic on: every prefix of a spec-shaped document. */
@@ -212,6 +287,8 @@ export const main = (): i32 => {
   xmlReaderTestTree(t)
   xmlReaderTestLines(t)
   xmlReaderTestRefusals(t)
+  xmlReaderTestEntityCap(t)
+  xmlReaderTestLinear(t)
   xmlReaderTestPrefixes(t)
   return t.done()
 }

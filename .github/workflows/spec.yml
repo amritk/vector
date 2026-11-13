@@ -47,9 +47,11 @@ jobs:
             [ "$got" = "$want" ] || { cat "$RUNNER_TEMP/err"; fail "$name: exit $got, not $want"; }
           }
           has() { grep -qF -- "$2" "$RUNNER_TEMP/$1" || fail "$3: $1 lacks: $2"; }
-          # copy <sed script>: a scratch copy of the fixture at $md, edited.
+          # copy <sed script>: a scratch copy of the fixture at $md, edited,
+          # in a directory under $RUNNER_TEMP that the next copy replaces.
           copy() {
-            d=$(mktemp -d); md=$d/spec.md; xml=$d/spec.xml
+            d=$RUNNER_TEMP/build-spec-copy; rm -rf "$d"; mkdir -p "$d"
+            md=$d/spec.md; xml=$d/spec.xml
             sed "$1" "$fx" >"$md"
           }
           ruby() { sed 's/(Ruby [^)]*)/(Ruby)/' "$1"; }
@@ -60,6 +62,7 @@ jobs:
           has err "is not a .md file" "not .md"
           set +e; PATH=/usr/bin:/bin bash scripts/build-spec.sh "$fx" 2>"$RUNNER_TEMP/err"; got=$?; set -e
           [ "$got" = 2 ] || fail "missing tools: exit $got"
+          has err "kramdown-rfc is not installed" "missing tools"
           has err "gem install kramdown-rfc -v 1.7.43 --no-document" "missing tools"
           has err "pip install xml2rfc==3.35.0" "missing tools"
 
@@ -107,6 +110,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
 
       - name: Install the LLVM toolchain nish links with
         run: |

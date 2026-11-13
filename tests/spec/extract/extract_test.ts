@@ -95,10 +95,10 @@ const extractTestTree = (t: Suite, readers: SourceReaders): void => {
   const out = extractDefaultContractPath(spec)
   writeFileSync(spec, readFileSyncOrNull(`${EXTRACT_TEST_MAIN}/specs/mini-frame.xml`) ?? "")
 
-  t.contains(
+  t.eqStr(
     "an RFC that is nowhere",
     extractTestOutcome(extractContract(spec, out, tmp, readers)),
-    "error rfc9990 not found; fetch it: ",
+    "error rfc9990 not found; fetch it: curl -sSfL -o rfcs/rfc9990.txt https://www.rfc-editor.org/rfc/rfc9990.txt",
   )
   mkdirAll(joinPath(tmp, "rfcs"), 0o755).expect("rfcs/")
   const rfc = joinPath(tmp, "rfcs/rfc9990.xml")

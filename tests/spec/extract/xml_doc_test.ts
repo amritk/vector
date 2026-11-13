@@ -84,6 +84,16 @@ const xmlDocTestRefusals = (t: Suite): void => {
       long.value.references.length === 1 &&
       long.value.references[0].rfc === -1,
   )
+  const zeros = xmlDocParse(
+    '<rfc number="0000004648"><back><references><reference anchor="R"><front><title>T</title></front><seriesInfo name="RFC" value="00000000002104"/></reference></references></back></rfc>',
+  )
+  t.eqStr(
+    "leading zeros are dropped before the nine-digit cap",
+    zeros.isOk() ? `${zeros.value.number} ${zeros.value.references[0].rfc}` : zeros.error.message,
+    "4648 2104",
+  )
+  const zero = xmlDocParse('<rfc number="0000000000"/>')
+  t.eqStr("all zeros read as 0", zero.isOk() ? `${zero.value.number}` : zero.error.message, "0")
 }
 
 /** Plain text, code blocks and section lines of hand-written elements. */

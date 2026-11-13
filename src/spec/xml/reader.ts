@@ -14,8 +14,11 @@
  *   - An `include` element (`xi:include`) with a non-empty href is refused:
  *     nothing is fetched.
  *   - Input over XML_MAX_INPUT_BYTES, elements nested deeper than
- *     XML_MAX_DEPTH and an element with more than XML_MAX_ATTRS attributes
- *     are refused before they can cost anything.
+ *     XML_MAX_DEPTH, an element with more than XML_MAX_ATTRS attributes and
+ *     a DOCTYPE declaring more than XML_MAX_ENTITIES entities are refused
+ *     before they can cost anything. Entities are looked up in a Map, and a
+ *     text node's pieces are joined once, so reading costs the input's
+ *     length.
  *   - The input must be UTF-8, and a character XML does not allow (U+0000 to
  *     U+0008, U+000B, U+000C, U+000E to U+001F, U+FFFE, U+FFFF) is refused
  *     wherever it stands, raw or as a character reference.
@@ -40,6 +43,8 @@ export const XML_MAX_INPUT_BYTES: i32 = 8 * 1024 * 1024
 export const XML_MAX_DEPTH: i32 = 256
 /** An element may carry this many attributes; one more is refused. */
 export const XML_MAX_ATTRS: i32 = 64
+/** A DOCTYPE may declare this many entities; one more is refused. */
+export const XML_MAX_ENTITIES: i32 = 256
 
 /** An element, or a run of character data (its `name` is ""). */
 export class XmlNode {
@@ -116,8 +121,14 @@ class XmlReader {
   piLine: i32
   /** The sum of the signed `<?line ±N?>` met so far. */
   correction: i32
-  entityNames: string[]
-  entityValues: string[]
+  /** The declared entities, the predefined five included: name to replacement text. */
+  entities: Map<string, string>
+  /** How many entities the DOCTYPE declared, which XML_MAX_ENTITIES caps. */
+  declared: i32
+  /** The pieces of the open text node, joined once when it closes. */
+  pieces: string[]
+  /** The open text node the pieces belong to; null when none is open. */
+  piecesNode: XmlNode | null = null
   ids: i32
   /** @param src the input, line ends already LF */
   constructor(src: string) {
@@ -128,8 +139,14 @@ class XmlReader {
     this.piN = -1
     this.piLine = 0
     this.correction = 0
-    this.entityNames = ["amp", "lt", "gt", "quot", "apos"]
-    this.entityValues = ["&", "<", ">", '"', "'"]
+    this.entities = new Map<string, string>()
+    this.entities.set("amp", "&")
+    this.entities.set("lt", "<")
+    this.entities.set("gt", ">")
+    this.entities.set("quot", '"')
+    this.entities.set("apos", "'")
+    this.declared = 0
+    this.pieces = []
     this.ids = 0
   }
 }
@@ -396,11 +413,11 @@ const xmlDecode = (r: XmlReader, raw: string, from: i32): Result<string, XmlErro
       if (body.length === 0 || xmlNameIn(body, 0).length !== body.length) {
         return Err(xmlErrAt(r, 'malformed XML: "&" starts no entity or character reference', from + amp))
       }
-      const k = r.entityNames.indexOf(body)
-      if (k < 0) {
+      const k = r.entities.get(body)
+      if (k === undefined) {
         return Err(xmlErrAt(r, `undefined entity &${body};`, from + amp))
       }
-      parts.push(r.entityValues[k])
+      parts.push(k)
     }
     i = semi + 1
     amp = raw.indexOf("&", i)
@@ -489,6 +506,10 @@ const xmlInternalSubset = (r: XmlReader): Result<boolean, XmlError> => {
     if (xmlAt(r, "%")) {
       return Err(xmlErrAt(r, "a parameter entity (<!ENTITY %) is refused", at))
     }
+    if (r.declared >= XML_MAX_ENTITIES) {
+      return Err(xmlErrAt(r, `the DOCTYPE declares more than ${XML_MAX_ENTITIES} entities (XML_MAX_ENTITIES)`, at))
+    }
+    r.declared = r.declared + 1
     const name = xmlName(r, "in <!ENTITY").orReturn()
     xmlSkipWs(r)
     if (xmlAt(r, "SYSTEM") || xmlAt(r, "PUBLIC")) {
@@ -497,7 +518,8 @@ const xmlInternalSubset = (r: XmlReader): Result<boolean, XmlError> => {
     const value = xmlQuoted(r, "in <!ENTITY").orReturn()
     xmlSkipWs(r)
     xmlExpect(r, ">", "to end <!ENTITY").orReturn()
-    const ok = value.length > 3 && value.charCodeAt(0) === 0x26 && value.charCodeAt(value.length - 1) === 0x3b
+    // One reference: `&`, then the only `;`, at the end; "&#160;&#160;" is two.
+    const ok = value.length > 3 && value.charCodeAt(0) === 0x26 && value.indexOf(";") === value.length - 1
     const c = ok ? xmlCharRef(value.substring(1, value.length - 1)) : ""
     if (!ok || value.charCodeAt(1) !== 0x23) {
       return Err(xmlErrAt(r, `entity &${name}; must be a single numeric character reference such as "&#160;"`, at))
@@ -506,9 +528,8 @@ const xmlInternalSubset = (r: XmlReader): Result<boolean, XmlError> => {
       return Err(xmlErrAt(r, `character reference ${value} names no XML character`, at))
     }
     // XML binds the first declaration; the predefined five stay as they are.
-    if (r.entityNames.indexOf(name) < 0) {
-      r.entityNames.push(name)
-      r.entityValues.push(c)
+    if (!r.entities.has(name)) {
+      r.entities.set(name, c)
     }
   }
 }
@@ -616,15 +637,33 @@ const xmlStartTag = (r: XmlReader, node: XmlNode, at: i32): Result<boolean, XmlE
   }
 }
 
+/**
+ * Closes the open text node: its pieces are joined once, so adjacent CDATA
+ * sections, references and text runs cost their length, not its square.
+ * Returns null, the open node after it.
+ */
+const xmlCloseText = (r: XmlReader): XmlNode | null => {
+  const t = r.piecesNode
+  if (t !== null && r.pieces.length > 1) {
+    t.text = r.pieces.join("")
+  }
+  r.piecesNode = null
+  r.pieces = []
+  return null
+}
+
 /** Appends `text` to the text node `open` (making it at `at` when null); the node now open. */
 const xmlAddText = (r: XmlReader, parent: XmlNode, open: XmlNode | null, text: string, at: i32): XmlNode => {
   if (open !== null) {
-    open.text = `${open.text}${text}`
+    r.pieces.push(text)
     return open
   }
+  xmlCloseText(r)
   const t = xmlNodeAt(r, "", at)
   t.text = text
   xmlAppend(parent, t)
+  r.piecesNode = t
+  r.pieces = [text]
   return t
 }
 
@@ -647,7 +686,7 @@ const xmlElement = (r: XmlReader): Result<XmlNode, XmlError> => {
       return Err(xmlErrAt(r, `malformed XML: <${node.name}> is never closed`, r.lineStarts[node.line - 1]))
     }
     if (xmlAt(r, "</")) {
-      open = null
+      open = xmlCloseText(r)
       r.pos = r.pos + 2
       const end = xmlName(r, "after </").orReturn()
       xmlSkipWs(r)
@@ -667,15 +706,15 @@ const xmlElement = (r: XmlReader): Result<XmlNode, XmlError> => {
       const data = xmlUntil(r, "]]>", "CDATA section").orReturn()
       open = xmlAddText(r, node, open, data, at)
     } else if (xmlAt(r, "<!--")) {
-      open = null
+      open = xmlCloseText(r)
       xmlComment(r).orReturn()
     } else if (xmlAt(r, "<?")) {
-      open = null
+      open = xmlCloseText(r)
       xmlPi(r).orReturn()
     } else if (xmlAt(r, "<!")) {
       return Err(xmlErrAt(r, "malformed XML: a declaration inside an element", r.pos))
     } else if (xmlAt(r, "<")) {
-      open = null
+      open = xmlCloseText(r)
       const at = r.pos
       if (depth >= XML_MAX_DEPTH) {
         return Err(xmlErrAt(r, `elements nest deeper than ${XML_MAX_DEPTH} (XML_MAX_DEPTH)`, at))

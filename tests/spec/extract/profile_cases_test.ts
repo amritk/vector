@@ -859,7 +859,17 @@ const profileCasesTestXrefs = (t: Suite, all: ProfileCasesTestRfcs): void => {
     t.fail("each RFC is asked for once: parses", twice.error.message)
   } else {
     const r = profileRead(twice.value, PROFILE_CASES_PATH, null, once)
-    t.ok("each RFC is asked for once: reads", r.isOk() || r.isErr())
+    t.eqStr(
+      "each RFC is asked for once: reads",
+      r.isOk()
+        ? "ok"
+        : r.error.map((f: ProfileRefusal): string => profileCasesTestOne(f, PROFILE_CASES_PATH)).join("\n"),
+      [
+        "7 Section 10 of RFC4648 does not exist",
+        "7 Section 4 of RFC4648 does not exist",
+        "8 Section 10 of RFC4648 does not exist",
+      ].join("\n"),
+    )
     t.eqStr("each RFC is asked for once", once.missing.map((n: i32): string => `${n}`).join(","), "4648")
   }
   profileCasesTestRefused(
@@ -1189,11 +1199,18 @@ const profileCasesTestVectors = (t: Suite, all: ProfileCasesTestRfcs): void => {
           profileCasesTestTable([
             profileCasesTestVectorId("V2", 'hexDecode("66")', "‖"),
             profileCasesTestVectorId("V3", 'nope("66")', '"f"'),
+            profileCasesTestVectorId("V4", "hexDecode", '"f"'),
+            profileCasesTestVectorId("V5", 'hexEncode(concat([00], "é"))', '"00"'),
           ]),
         "",
       ),
     ),
-    ["8:1 Expected: `‖` is not a literal; write concat(a, b)", `9 "nope" is not a function of the ts-interface block`],
+    [
+      "8:1 Expected: `‖` is not a literal; write concat(a, b)",
+      `9 "nope" is not a function of the ts-interface block`,
+      "10:1 Call: a call is `name(args...)`",
+      `11 Call: a quoted string is printable ASCII, tab, LF and CR only; "\\u00e9" is not`,
+    ],
   )
   profileCasesTestRefused(
     t,
@@ -1594,6 +1611,84 @@ const profileCasesTestMain = (t: Suite, all: ProfileCasesTestRfcs): void => {
   )
 }
 
+/** NBSP, U+3000 and U+FEFF, which JavaScript's trim strips, as XML character references. */
+const profileCasesTestSpaces = (): string[] => ["&#160;", "&#12288;", "&#65279;"]
+
+/** A cell, a title, a keyword or a section name padded with Unicode spaces reads as if it were not. */
+const profileCasesTestUnicodeSpaces = (t: Suite, all: ProfileCasesTestRfcs): void => {
+  const spaces = profileCasesTestSpaces()
+  const blank: string[] = []
+  const want: string[] = []
+  for (let i = 0; i < spaces.length; i++) {
+    blank.push(profileCasesTestSrc(profileCasesTestTt(spaces[i]), '"f"', `V${i + 1}`))
+    want.push(`${10 + i} Source: a command is a shell command, not blank`)
+  }
+  profileCasesTestRefused(
+    t,
+    all,
+    "a command source of NBSP, U+3000 or U+FEFF is blank",
+    profileCasesTestLines([PROFILE_CASES_REQ, profileCasesTestTable(blank)]),
+    want,
+  )
+  for (const sp of spaces) {
+    const c = profileCasesTestContract(
+      t,
+      all,
+      `cells padded with ${sp}`,
+      profileCasesTestSpec(
+        profileCasesTestSec(
+          `${PROFILE_CASES_REQ}<t anchor="R-B">hexEncode <bcp14>MUST</bcp14> work.</t>${profileCasesTestTable([
+            profileCasesTestCells(
+              `${sp}V1${sp}`,
+              `${sp}${profileCasesTestTt('hexDecode("66")')}${sp}`,
+              `${sp}${profileCasesTestTt('"f"')}${sp}`,
+              `${sp}R-A${sp},${sp}R-B${sp}`,
+              `${sp}${PROFILE_CASES_RFC10}${sp}`,
+              `${sp}a title${sp}`,
+            ),
+          ])}`,
+          "",
+        ),
+      ),
+    )
+    if (c !== null) {
+      const v = c.clauses[0]
+      t.eqStr(
+        `cells padded with ${sp}: read as unpadded`,
+        `[${v.id}] [${v.title}] [${v.covers.join(",")}] ${profileCasesTestSource(v.source)} ${v.call}`,
+        "[V1] [a title] [R-A,R-B] cite rfc4648 10 hexDecode",
+      )
+    }
+    profileCasesTestRefused(
+      t,
+      all,
+      `a title of ${sp}`,
+      replaceAll(profileCasesTestSpec(profileCasesTestMin()), "<title>T</title>", `<title>${sp}</title>`),
+      ["1 the title is empty"],
+    )
+    const main = profileCasesTestContract(
+      t,
+      all,
+      `a main-source keyword padded with ${sp}`,
+      replaceAll(
+        replaceAll(
+          profileCasesTestSpecMain(
+            profileCasesTestSec(profileCasesTestMainQuote(), ""),
+            `<keyword>${sp}vector-main-RFC8707${sp}</keyword>`,
+          ),
+          "<name>Normative References</name>",
+          `<name>${sp}Normative References${sp}</name>`,
+        ),
+        `section="2"/></t>`,
+        `section="2"/>${sp}</t>`,
+      ),
+    )
+    if (main !== null) {
+      t.eqStr(`a main-source keyword padded with ${sp}: its RFC`, `${main.source.rfc}`, "8707")
+    }
+  }
+}
+
 /** The profile's pinned cases. */
 export const main = (): i32 => {
   const t = new Suite("spec/extract profile cases")
@@ -1618,5 +1713,6 @@ export const main = (): i32 => {
   profileCasesTestMissing(t, all)
   profileCasesTestLocator(t, all)
   profileCasesTestMain(t, all)
+  profileCasesTestUnicodeSpaces(t, all)
   return t.done()
 }

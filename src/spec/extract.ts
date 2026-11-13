@@ -12,12 +12,21 @@ import { JSON_VALUE_ARRAY, JSON_VALUE_OBJECT } from "nish/json-value"
 import { basename, dirname, joinPath } from "../core/fs"
 import { sha256Hex } from "../core/hex"
 import { jsonIntMember, jsonMember, jsonStringMember, newJsonDocument, parseJson } from "../core/json"
-import { CheckContext, checkContract } from "./check"
+import { CheckContext, CheckGateEntry, CheckNote, CheckReport, checkContractWith, checkGates } from "./check"
 import { AllowedSurvivor, Contract, SourceDecl } from "./contract/types"
 import { contractWrite } from "./contract/write"
-import { ProfileRead, ProfileRefusal, ProfileRfcs, profileLocate, profileRead, profileWhere } from "./profile/profile"
+import { gateIssue } from "./gates/note"
+import {
+  ProfileLocator,
+  ProfileRead,
+  ProfileRefusal,
+  ProfileRfcs,
+  profileLocate,
+  profileRead,
+  profileWhere,
+} from "./profile/profile"
 import { hiddenProblem } from "./source/hidden"
-import { SourceReaders, sourceReaderFor, sourceReadersAdd, sourceReadersDefault } from "./source/load"
+import { SourceReaders, sourceLoadWith, sourceReaderFor, sourceReadersAdd, sourceReadersDefault } from "./source/load"
 import { SourceRead, sourceCandidate, sourceLabel, sourceReadConfined } from "./source/path"
 import { RfcDocument } from "./source/rfc"
 import { xmlDocParse, xmlRead } from "./xml/doc"
@@ -250,22 +259,34 @@ const extractSurvivors = (path: string): Result<AllowedSurvivor[] | null, string
   const out: AllowedSurvivor[] = []
   for (let i = 0; i < doc.length(list.value); i++) {
     const e = doc.at(list.value, i)
+    const at = `${path}: allowSurvivors[${i}]`
+    if (doc.kind(e) !== JSON_VALUE_OBJECT) {
+      return Err(`${at}: expected an object`)
+    }
+    // A member left out keeps its default, so the shape gate refuses each
+    // one missing, by name; one of the wrong type is an error here.
     const s = new AllowedSurvivor()
-    const file = jsonStringMember(doc, e, "file")
-    const line = jsonIntMember(doc, e, "line")
-    const reason = jsonStringMember(doc, e, "reason")
-    if (file.isErr()) {
-      return Err(`${path}: allowSurvivors[${i}]: ${file.error}`)
+    if (doc.kind(doc.get(e, "file")) !== 0) {
+      const file = jsonStringMember(doc, e, "file")
+      if (file.isErr()) {
+        return Err(`${at}: ${file.error}`)
+      }
+      s.file = file.value
     }
-    if (line.isErr()) {
-      return Err(`${path}: allowSurvivors[${i}]: ${line.error}`)
+    if (doc.kind(doc.get(e, "line")) !== 0) {
+      const line = jsonIntMember(doc, e, "line")
+      if (line.isErr()) {
+        return Err(`${at}: ${line.error}`)
+      }
+      s.line = line.value
     }
-    if (reason.isErr()) {
-      return Err(`${path}: allowSurvivors[${i}]: ${reason.error}`)
+    if (doc.kind(doc.get(e, "reason")) !== 0) {
+      const reason = jsonStringMember(doc, e, "reason")
+      if (reason.isErr()) {
+        return Err(`${at}: ${reason.error}`)
+      }
+      s.reason = reason.value
     }
-    s.file = file.value
-    s.line = line.value
-    s.reason = reason.value
     out.push(s)
   }
   return Ok(out)
@@ -277,9 +298,11 @@ const extractComplete = (ctx: ExtractContext, c: Contract, specSha: string): Res
   if (dirReal === null) {
     return Err(`${dirname(ctx.contractPath)}: no such directory, to write ${ctx.contractPath} in`)
   }
-  const rootReal = realpathSync(ctx.root) ?? ctx.root
   const rfcsReal = realpathSync(joinPath(dirReal, "../rfcs"))
-  c.schema = extractRelative(dirReal, joinPath(rootReal, "schemas/rfc-contract.json"))
+  // `$schema` and a spec's `path` are both lexical, as the old extractor's were,
+  // so one symlink names both from where the contract sees them.
+  const dirLex = extractAbsolute(dirname(ctx.contractPath))
+  c.schema = extractRelative(dirLex, extractAbsolute(joinPath(ctx.root, "schemas/rfc-contract.json")))
   const mainRfc = c.source.rfc
   c.source.sha256 = specSha
   const sources = c.sources
@@ -287,7 +310,7 @@ const extractComplete = (ctx: ExtractContext, c: Contract, specSha: string): Res
     for (const d of sources) {
       if (d.rfc < 1) {
         // Lexical, as the old extractor was, so a symlinked specs/ names the spec where the contract sees it.
-        d.path = extractRelative(extractAbsolute(dirname(ctx.contractPath)), extractAbsolute(ctx.xmlPath))
+        d.path = extractRelative(dirLex, extractAbsolute(ctx.xmlPath))
         continue
       }
       const got = ctx.rfcs.get(d.rfc)
@@ -378,6 +401,130 @@ export const extractContract = (
   return extractFinish(ctx, read.value, sha256Hex(text))
 }
 
+/**
+ * The first gate extract runs: the contract's sources, read with extract's
+ * readers (extractReaders), so the gates after it can read a spec's own XML
+ * where `spec check`'s default readers hold only `.txt`. Each source that
+ * cannot be read is a finding, as gateSources reports it.
+ *
+ * @param ctx the check's context, whose sources it sets
+ * @returns each source that could not be read
+ */
+export const extractSourcesGate = (ctx: CheckContext): string[] => {
+  const out: string[] = []
+  const readers = extractReaders()
+  if (readers.isErr()) {
+    gateIssue(ctx, out, "sources", "sources", readers.error)
+    return out
+  }
+  const set = sourceLoadWith(ctx.contract, ctx.contractPath, ctx.root, readers.value)
+  for (const p of set.problems) {
+    gateIssue(ctx, out, "sources", "sources", `${p}, so nothing citing it can be checked`)
+  }
+  ctx.sources = set
+  return out
+}
+
+/** A gate refusal before it is placed: its line, and whether it is the sidecar's. */
+class ExtractGateRow {
+  refusal: ProfileRefusal
+  sidecar: boolean
+  constructor(refusal: ProfileRefusal, sidecar: boolean) {
+    this.refusal = refusal
+    this.sidecar = sidecar
+  }
+}
+
+/** Adds a gate's finding as a row: the sidecar's, the main source's section's, or placed by its `at`. */
+const extractGateRowAdd = (
+  rows: ExtractGateRow[],
+  locator: ProfileLocator,
+  sidecar: string,
+  mainRfc: i32,
+  gate: string,
+  at: string,
+  message: string,
+): void => {
+  if (at.startsWith("allowSurvivors") || message.startsWith("allowSurvivors")) {
+    rows.push(new ExtractGateRow(new ProfileRefusal(sidecar, 0, 0, `${gate}: ${message}`), true))
+    return
+  }
+  // A section of the main source (`§2`) is no part of the spec: the line
+  // naming that source places it, and the message says which section.
+  if (at.startsWith("\u00a7")) {
+    const of = mainRfc >= 1 ? ` of RFC${mainRfc}` : ""
+    const w = profileLocate(locator, "source.main")
+    const text = `${gate}: Section ${at.substring("\u00a7".length)}${of}: ${message}`
+    rows.push(new ExtractGateRow(new ProfileRefusal(w.file, w.line, 0, text), false))
+    return
+  }
+  const text = `${gate}: ${message}`
+  const w = profileLocate(locator, at)
+  rows.push(new ExtractGateRow(new ProfileRefusal(w.file, w.line, 0, text), false))
+}
+
+/** Appends a refusal unless one with its file, line and message is there. */
+const extractGateKeep = (out: ProfileRefusal[], seen: Set<string>, r: ProfileRefusal): void => {
+  const key = `${r.file}\u0000${r.line}\u0000${r.message}`
+  if (!seen.has(key)) {
+    seen.add(key)
+    out.push(r)
+  }
+}
+
+/**
+ * The gates' findings as refusals, each at the line of the part it is about.
+ * A gate that places a finding (a note, gateIssue) is placed by the note's
+ * `at` through the locator; a finding no note places is at the spec's root.
+ * Each refusal is given once, since two fields of one part can break one
+ * rule on one line, and they are sorted by line. A finding about
+ * allowSurvivors is the sidecar's, so it names that file, after the rest.
+ *
+ * @param report what the gates found
+ * @param notes where they placed each finding, and their warnings
+ * @param locator where each part of the contract was read
+ * @param sidecar the sidecar's path
+ * @param mainRfc the main source's RFC number; 0 when the spec is its own
+ * @returns the refusals, in order
+ */
+export const extractGateRefusals = (
+  report: CheckReport,
+  notes: CheckNote[],
+  locator: ProfileLocator,
+  sidecar: string,
+  mainRfc: i32,
+): ProfileRefusal[] => {
+  const rows: ExtractGateRow[] = []
+  const placed = new Set<string>()
+  for (const n of notes) {
+    if (!n.warning) {
+      placed.add(`${n.gate}\u0000${n.at}: ${n.message}`)
+      extractGateRowAdd(rows, locator, sidecar, mainRfc, n.gate, n.at, n.message)
+    }
+  }
+  for (const f of report.findings) {
+    if (!placed.has(`${f.gate}\u0000${f.message}`)) {
+      extractGateRowAdd(rows, locator, sidecar, mainRfc, f.gate, "", f.message)
+    }
+  }
+  const out: ProfileRefusal[] = []
+  const seen = new Set<string>()
+  const main = rows.filter((r: ExtractGateRow): boolean => !r.sidecar)
+  main.sort(
+    (a: ExtractGateRow, b: ExtractGateRow): i32 =>
+      a.refusal.line < b.refusal.line ? -1 : a.refusal.line > b.refusal.line ? 1 : 0,
+  )
+  for (const r of main) {
+    extractGateKeep(out, seen, r.refusal)
+  }
+  for (const r of rows) {
+    if (r.sidecar) {
+      extractGateKeep(out, seen, r.refusal)
+    }
+  }
+  return out
+}
+
 const extractFinish = (ctx: ExtractContext, read: ProfileRead, specSha: string): ExtractOutcome => {
   const out = ctx.out
   const c = read.contract
@@ -386,22 +533,20 @@ const extractFinish = (ctx: ExtractContext, read: ProfileRead, specSha: string):
     out.errors.push(done.error)
     return out
   }
-  const report = checkContract(new CheckContext(ctx.contractPath, ctx.root), c)
+  const check = new CheckContext(ctx.contractPath, ctx.root)
+  const gates: CheckGateEntry[] = [new CheckGateEntry("sources", extractSourcesGate, false)]
+  for (const g of checkGates()) {
+    gates.push(g)
+  }
+  const report = checkContractWith(check, c, gates)
   if (report.findings.length > 0) {
-    const seen = new Set<string>()
-    for (const f of report.findings) {
-      const message = `${f.gate}: ${f.message}`
-      if (seen.has(message)) {
-        continue
-      }
-      seen.add(message)
-      if (f.message.startsWith("allowSurvivors")) {
-        out.refusals.push(new ProfileRefusal(extractSurvivorsPath(ctx.contractPath), 0, 0, message))
-      } else {
-        const w = profileLocate(read.locator, "")
-        out.refusals.push(new ProfileRefusal(w.file, w.line, 0, message))
-      }
-    }
+    out.refusals = extractGateRefusals(
+      report,
+      check.notes,
+      read.locator,
+      extractSurvivorsPath(ctx.contractPath),
+      c.source.rfc,
+    )
     return out
   }
   out.text = contractWrite(c)
@@ -449,6 +594,9 @@ const extractShown = (o: ExtractOp): string => {
   return t.endsWith(EXTRACT_NO_EOL) ? `${t.substring(0, t.length - 1)}\n\\ No newline at end of file` : t
 }
 
+/** The most cells extractUnifiedDiff's table may hold, past which it diffs the changed lines whole. */
+const EXTRACT_DIFF_CELLS: i32 = 4000000
+
 /**
  * A unified diff of `a` (the file `aName`) against `b` (`bName`), with three
  * lines of context, or "" when they are equal. Lines are matched by their
@@ -477,12 +625,17 @@ export const extractUnifiedDiff = (a: string, b: string, aName: string, bName: s
   const xm = x.length - suf
   const ym = y.length - suf
   const w = ym - pre + 1
+  // Past EXTRACT_DIFF_CELLS the table is not built (its i32 size could wrap, and
+  // it would hold too much): the changed lines are given as one hunk, every
+  // old line removed, then every new line added.
+  const whole = xm - pre > 0 && ym - pre > toI32(EXTRACT_DIFF_CELLS / (xm - pre))
   // lcs[(i - pre) * w + (j - pre)]: the longest common subsequence of x[i..xm] and y[j..ym].
   const lcs: i32[] = []
-  for (let k = 0; k < (xm - pre + 1) * w; k++) {
+  const cells = whole ? 0 : (xm - pre + 1) * w
+  for (let k = 0; k < cells; k++) {
     lcs.push(0)
   }
-  for (let i = xm - 1; i >= pre; i--) {
+  for (let i = whole ? pre - 1 : xm - 1; i >= pre; i--) {
     for (let j = ym - 1; j >= pre; j--) {
       const here = (i - pre) * w + (j - pre)
       if (x[i] === y[j]) {
@@ -505,7 +658,10 @@ export const extractUnifiedDiff = (a: string, b: string, aName: string, bName: s
       ops.push(new ExtractOp(" ", x[i], i, j))
       i = i + 1
       j = j + 1
-    } else if (i < xm && (j === ym || lcs[(i + 1 - pre) * w + (j - pre)] >= lcs[(i - pre) * w + (j + 1 - pre)])) {
+    } else if (
+      i < xm &&
+      (whole || j === ym || lcs[(i + 1 - pre) * w + (j - pre)] >= lcs[(i - pre) * w + (j + 1 - pre)])
+    ) {
       // A deletion before an insertion, as diff -u prints them.
       ops.push(new ExtractOp("-", x[i], i, j))
       i = i + 1

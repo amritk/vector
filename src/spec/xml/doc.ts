@@ -177,19 +177,28 @@ const xmlDocNumber = (
   return Ok(subs)
 }
 
-/** Whether `s` is one to nine ASCII digits, a number that fits an i32. */
-const xmlDocDigits = (s: string): boolean => {
-  // Nine digits at most, so parseInt stays in i32: no RFC number is longer, and a longer one reads as absent.
-  if (s.length === 0 || s.length > 9) {
-    return false
+/**
+ * The number `s` spells in ASCII digits, or -1 when it spells none. Leading
+ * zeros are dropped first, so "0000004648" is 4648; past that, nine digits
+ * at most, so parseInt stays in i32: no RFC number is longer, and a longer
+ * one reads as absent.
+ */
+const xmlDocDigits = (s: string): i32 => {
+  if (s.length === 0) {
+    return -1
   }
   for (let i = 0; i < s.length; i = i + 1) {
     const ch = s.charCodeAt(i)
     if (ch < 48 || ch > 57) {
-      return false
+      return -1
     }
   }
-  return true
+  let z = 0
+  while (z < s.length - 1 && s.charCodeAt(z) === 48) {
+    z = z + 1
+  }
+  const digits = s.substring(z)
+  return digits.length > 9 ? -1 : toI32(parseInt(digits))
 }
 
 /** Collects anchors, xrefs, figures, tables and references, in document order. */
@@ -227,8 +236,9 @@ const xmlDocWalk = (c: XmlDocContext, n: XmlNode, inCell: boolean): Result<boole
     for (const k of xmlElements(n)) {
       if (k.name === "seriesInfo" && (xmlAttr(k, "name") ?? "") === "RFC") {
         const v = xmlAttr(k, "value") ?? ""
-        if (xmlDocDigits(v)) {
-          ref.rfc = parseInt(v)
+        const n = xmlDocDigits(v)
+        if (n >= 0) {
+          ref.rfc = n
         }
         break
       }
@@ -417,8 +427,9 @@ export const xmlDocParse = (text: string): Result<XmlDocument, XmlError> => {
   doc.title = title !== null ? xmlPlainText(doc.text, title) : ""
   doc.docName = xmlAttr(root, "docName")
   const num = xmlAttr(root, "number") ?? ""
-  if (xmlDocDigits(num)) {
-    doc.number = parseInt(num)
+  const n = xmlDocDigits(num)
+  if (n >= 0) {
+    doc.number = n
   }
   return Ok(doc)
 }

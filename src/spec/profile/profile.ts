@@ -26,7 +26,7 @@
  * `<?line?>` inside one, so a refusal past it names the last line it wrote.
  */
 
-import { split, trim } from "nish/text"
+import { split } from "nish/text"
 import { charsFirstControl, charsIsId, charsIsSection } from "../contract/chars"
 import {
   RawCall,
@@ -371,6 +371,72 @@ const profileCompare = (a: string, b: string): i32 => {
 // ── Text ───────────────────────────────────────────────────────────────────
 
 /**
+ * How many bytes of white space, as JS `String.prototype.trim` counts it
+ * (ECMAScript WhiteSpace and LineTerminator), start at byte `i` of `s`; 0
+ * when none does. Nish's `trim` strips only space, tab, LF and CR, and the
+ * old extractor trimmed NBSP, U+3000, U+FEFF and the rest too.
+ */
+const profileSpaceWidth = (s: string, i: i32): i32 => {
+  const b = s.charCodeAt(i)
+  if (b === 32 || (b >= 9 && b <= 13)) {
+    return 1
+  }
+  const b1 = i + 1 < s.length ? s.charCodeAt(i + 1) : -1
+  const b2 = i + 2 < s.length ? s.charCodeAt(i + 2) : -1
+  if (b === 0xc2 && b1 === 0xa0) {
+    return 2
+  }
+  if (b === 0xe1 && b1 === 0x9a && b2 === 0x80) {
+    return 3
+  }
+  if (b === 0xe2 && b1 === 0x80 && ((b2 >= 0x80 && b2 <= 0x8a) || b2 === 0xa8 || b2 === 0xa9 || b2 === 0xaf)) {
+    return 3
+  }
+  if (b === 0xe2 && b1 === 0x81 && b2 === 0x9f) {
+    return 3
+  }
+  if (b === 0xe3 && b1 === 0x80 && b2 === 0x80) {
+    return 3
+  }
+  if (b === 0xef && b1 === 0xbb && b2 === 0xbf) {
+    return 3
+  }
+  return 0
+}
+
+/**
+ * `s` without leading and trailing white space, as JS `String.prototype.trim`
+ * strips it: ASCII space, tab, LF, VT, FF and CR, and NBSP, U+1680,
+ * U+2000–U+200A, U+2028, U+2029, U+202F, U+205F, U+3000 and U+FEFF.
+ *
+ * @param s the text
+ * @returns it trimmed
+ */
+export const profileTrim = (s: string): string => {
+  let start = 0
+  let end = s.length
+  while (start < end) {
+    const w = profileSpaceWidth(s, start)
+    if (w === 0) {
+      break
+    }
+    start = start + w
+  }
+  let more = true
+  while (more && end > start) {
+    more = false
+    for (let w = 1; w <= 3; w++) {
+      if (end - w >= start && profileSpaceWidth(s, end - w) === w) {
+        end = end - w
+        more = true
+        break
+      }
+    }
+  }
+  return s.substring(start, end)
+}
+
+/**
  * Why a string cannot be free text in a contract (blank, or holding a
  * control character), or null when it can.
  *
@@ -378,7 +444,7 @@ const profileCompare = (a: string, b: string): i32 => {
  * @returns the fault, or null
  */
 const profileTextFault = (s: string): string | null => {
-  if (trim(s).length === 0) {
+  if (profileTrim(s).length === 0) {
     return "is empty"
   }
   const ch = charsFirstControl(s)
@@ -573,7 +639,7 @@ const profileRawText = (n: XmlNode): string => {
   return parts.join("")
 }
 
-const profileCellText = (n: XmlNode): string => trim(profileRawText(n))
+const profileCellText = (n: XmlNode): string => profileTrim(profileRawText(n))
 
 /** The one element child of `n` when the text around it is blank; null otherwise. */
 const profileOnly = (n: XmlNode): XmlNode | null => {
@@ -585,7 +651,7 @@ const profileOnly = (n: XmlNode): XmlNode | null => {
         return null
       }
       found = k
-    } else if (trim(k.text).length > 0) {
+    } else if (profileTrim(k.text).length > 0) {
       return null
     }
     k = k.next
@@ -658,7 +724,7 @@ const profileMainKeys = (c: ProfileContext): XmlNode[] => {
   }
   const out: XmlNode[] = []
   for (const k of xmlElements(front)) {
-    if (k.name === "keyword" && profileLooksLikeMainKey(trim(xmlPlainText(c.doc.text, k)))) {
+    if (k.name === "keyword" && profileLooksLikeMainKey(profileTrim(xmlPlainText(c.doc.text, k)))) {
       out.push(k)
     }
   }
@@ -690,7 +756,7 @@ const profileNormativeRfcs = (c: ProfileContext): Set<i32> => {
   for (const r of profileNamed(c.doc.root, "references")) {
     let normative = false
     for (const k of xmlElements(r)) {
-      if (k.name === "name" && trim(xmlPlainText(c.doc.text, k)) === "Normative References") {
+      if (k.name === "name" && profileTrim(xmlPlainText(c.doc.text, k)) === "Normative References") {
         normative = true
       }
     }
@@ -765,14 +831,18 @@ const profileReadMain = (c: ProfileContext): void => {
   const normative = profileNormativeRfcs(c)
   for (let i = 1; i < keys.length; i++) {
     const k = keys[i]
-    profileRefuse(c, k, `a spec has one main source; keyword ${trim(xmlPlainText(c.doc.text, k))} names a second`)
+    profileRefuse(
+      c,
+      k,
+      `a spec has one main source; keyword ${profileTrim(xmlPlainText(c.doc.text, k))} names a second`,
+    )
   }
   if (keys.length === 0) {
     return
   }
   const key = keys[0]
   c.mainKey = key
-  const text = trim(xmlPlainText(c.doc.text, key))
+  const text = profileTrim(xmlPlainText(c.doc.text, key))
   const digits = profileMainKeyDigits(text)
   if (digits.length === 0) {
     profileRefuse(c, key, `the main-source keyword is ${PROFILE_MAIN_KEY}RFC<N>, not ${text}`)
@@ -1012,7 +1082,7 @@ const profileReadQuote = (c: ProfileContext, n: XmlNode, excluded: boolean): Pro
   if (last !== null) {
     let k = last.first
     while (k !== null) {
-      if (k.name.length > 0 || trim(k.text).length > 0) {
+      if (k.name.length > 0 || profileTrim(k.text).length > 0) {
         x = k
       }
       k = k.next
@@ -1344,7 +1414,8 @@ const profileReadRow = (c: ProfileContext, cells: XmlNode[], section: string, tr
     profileCheckText(c, profileLocOf(titleC), `vector ${id}'s title`, title)
   }
   const coversText = profileCellText(coversC)
-  const covers: string[] = coversText.length > 0 ? split(coversText, ",").map((k: string): string => trim(k)) : []
+  const covers: string[] =
+    coversText.length > 0 ? split(coversText, ",").map((k: string): string => profileTrim(k)) : []
   profileCheckCovers(c, covers, profileLocOf(coversC))
   const callText = profileCodeCell(c, callC)
   const expText = profileCodeCell(c, expC)
@@ -1416,7 +1487,7 @@ const profileSourceCell = (c: ProfileContext, td: XmlNode, expect: Literal | nul
   const el = profileOnly(td)
   if (el !== null && el.name === "tt") {
     const command = profileRawText(el)
-    if (trim(command).length === 0) {
+    if (profileTrim(command).length === 0) {
       profileRefuse(c, td, "Source: a command is a shell command, not blank")
       return null
     }
