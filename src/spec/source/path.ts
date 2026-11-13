@@ -4,7 +4,9 @@
  *
  * A source is located by its `path` (relative to the contract's directory)
  * or, for an RFC given by number, by looking for rfc<n>.xml then rfc<n>.txt
- * beside the contract, in ../rfcs, then in the root's rfcs/. Its `file` does
+ * beside the contract, in ../rfcs, then in the root's rfcs/. The root is
+ * where vector is installed (sourceInstallRoot), for every command, whatever
+ * the current directory. Its `file` does
  * not locate it: it records which file was read (sourceLabel), and a check
  * refuses a contract whose `file` names another.
  *
@@ -22,6 +24,18 @@ import { basename, dirname, joinPath } from "../../core/fs"
 import { toHex } from "../../core/hex"
 import { charsFirstControl } from "../contract/chars"
 import { SourceDecl } from "../contract/types"
+
+/**
+ * Where vector is installed, whose rfcs/ and specs/ sources are read from by
+ * every command that reads a contract: the directory above the running
+ * binary's (`dist/vector`), else the current directory.
+ *
+ * @returns the root
+ */
+export const sourceInstallRoot = (): string => {
+  const self = realpathSync("/proc/self/exe") ?? realpathSync(process.argv[0])
+  return self === null ? "." : dirname(dirname(self))
+}
 
 /**
  * Where an RFC's plain text is fetched to (sourceFetchHint).

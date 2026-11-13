@@ -12,7 +12,7 @@
 import { Cli, ParseResult } from "nish/cli-args"
 import { trim } from "nish/text"
 import { EXIT_PASS, EXIT_REFUSED, EXIT_USAGE, report, usageError } from "../core/diag"
-import { dirname, joinPath } from "../core/fs"
+import { joinPath } from "../core/fs"
 import { newJsonDocument, parseJson } from "../core/json"
 import { runProcess } from "../core/process"
 import { CheckContext, CheckReport, checkContract, checkGates, checkPassed, checkRefused } from "../spec/check"
@@ -23,6 +23,7 @@ import { reportSafe } from "../spec/report/common"
 import { reportJson } from "../spec/report/json"
 import { reportMarkdown } from "../spec/report/markdown"
 import { reportText } from "../spec/report/text"
+import { sourceInstallRoot } from "../spec/source/path"
 
 /** The id `vector spec check` is parsed to. */
 export const SPEC_CHECK_ID: i32 = 4
@@ -37,8 +38,6 @@ export class SpecCheckCommand {
   moduleFlag: i32
   /** The `--nish-root <dir>` flag. */
   nishRootFlag: i32
-  /** The `--nish <bin>` flag. */
-  nishFlag: i32
   /** The `--format <f>` flag. */
   formatFlag: i32
   /** The `<contract.json>` argument. */
@@ -65,7 +64,6 @@ export class SpecCheckCommand {
     this.runSourcesFlag = cli.flag(handle, "--run-sources", "run the vectors' command sources and check their output")
     this.moduleFlag = cli.flag(handle, "--module <file>", "the target module's source, for the signature gate")
     this.nishRootFlag = cli.flag(handle, "--nish-root <dir>", "a nish checkout: finds the module and the compiler")
-    this.nishFlag = cli.flag(handle, "--nish <bin>", "the nish compiler (default: nish)")
     this.formatFlag = cli.flag(handle, "--format <f>", "text (default), markdown (a PR comment) or json")
     this.contractJsonArg = cli.argument(handle, "<contract.json>", "the contract")
   }
@@ -86,7 +84,7 @@ export class SpecCheckCommand {
     if (spec !== null && realpathSync(spec) === null) {
       return report(usageError(`spec check: --spec ${spec} cannot be read`))
     }
-    const ctx = new CheckContext(path, specCheckRoot())
+    const ctx = new CheckContext(path, sourceInstallRoot())
     ctx.format = format
     ctx.specPath = spec
     ctx.moduleFile = r.value(this.moduleFlag)
@@ -135,18 +133,6 @@ export const specCheckRender = (ctx: CheckContext, found: CheckReport): string =
     return reportJson(ctx, found)
   }
   return ctx.format === "markdown" ? reportMarkdown(ctx, found) : reportText(ctx, found)
-}
-
-/**
- * Where vector is installed, whose rfcs/ and specs/ sources are read from:
- * the directory above the running binary's (`dist/vector`), else the current
- * directory.
- *
- * @returns the root
- */
-export const specCheckRoot = (): string => {
-  const self = realpathSync("/proc/self/exe") ?? realpathSync(process.argv[0])
-  return self === null ? "." : dirname(dirname(self))
 }
 
 /**

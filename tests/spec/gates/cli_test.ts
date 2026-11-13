@@ -1,5 +1,5 @@
 import { Suite } from "nish/testing"
-import { specCheckForeignWarning, specCheckRender, specCheckRepoTop, specCheckRoot } from "../../../src/cli/spec-check"
+import { specCheckForeignWarning, specCheckRender, specCheckRepoTop } from "../../../src/cli/spec-check"
 import { joinPath, makeTempDir } from "../../../src/core/fs"
 import { runProcess } from "../../../src/core/process"
 import { CheckContext, CheckReport, checkContract, checkGates, checkRefused } from "../../../src/spec/check"
@@ -39,7 +39,6 @@ const cliTestSpec = (spec: string): string => {
 export const main = (): i32 => {
   const t = new Suite("spec/gates/cli")
 
-  t.ok("the root holds the binary's directory", specCheckRoot() !== "")
   const top = specCheckRepoTop()
   const here = realpathSync(".") ?? "."
   t.eqStr("inside the repository", top === null ? "" : realpathSync(top) ?? "", here)
