@@ -1,0 +1,65 @@
+{
+  "contract": "rfc8707-resource",
+  "source": {
+    "title": "RFC 8707: Resource Indicators for OAuth 2.0",
+    "main": "rfc8707"
+  },
+  "sources": [
+    {
+      "id": "rfc8707",
+      "rfc": 8707
+    }
+  ],
+  "target": {
+    "module": "nish/oauth/resource"
+  },
+  "functions": [
+    {
+      "name": "checkResource",
+      "params": [
+        {
+          "name": "uri",
+          "type": "string"
+        }
+      ],
+      "returns": "string?"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "R-ABSOLUTE",
+      "section": "2",
+      "level": "MUST",
+      "quote": "Its value MUST be an absolute URI, as specified by Section 4.3 of [RFC3986]."
+    }
+  ],
+  "exclusions": [
+    {
+      "section": "2",
+      "quote": "The URI MUST NOT include a fragment component.",
+      "reason": "A constraint on the URI the caller passes in, not on what resourceParam returns."
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "V-NOT-ABSOLUTE",
+      "title": "RFC 8707 §2: a URI that is not absolute is refused with invalid_target",
+      "covers": ["R-ABSOLUTE"],
+      "source": {
+        "cite": {
+          "section": "2"
+        }
+      },
+      "call": "checkResource",
+      "args": [
+        {
+          "str": "resource"
+        }
+      ],
+      "expect": {
+        "str": "invalid_target"
+      }
+    }
+  ]
+}

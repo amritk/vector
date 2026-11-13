@@ -1,0 +1,3 @@
+#!/bin/sh
+# Stands in for the npm launcher of an unbuilt nish checkout.
+exit 3
