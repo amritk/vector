@@ -1,0 +1,1 @@
+vector spec check --format json tests/cli/check-invalid-structure/contract.json

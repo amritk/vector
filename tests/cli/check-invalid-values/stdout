@@ -1,0 +1,8 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ rfc5869-hkdf-sha256 · RFC 5869 (HMAC-based Extract-and-Expand Key Derivation Function (HKDF)) · nish/crypto/hkdf
+ Status: INVALID
+
+ Gate failures
+  ✘ shape: contract.source.sha256: 64 lowercase hex digits
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

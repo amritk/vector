@@ -1,0 +1,9 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ tests/cli/check-invalid-structure/contract.json · not a contract the schema accepts
+ Status: INVALID
+
+ Gate failures
+  ✘ shape: contract: unknown field "bogus"
+  ✘ shape: requirements[0].level: a string
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run
