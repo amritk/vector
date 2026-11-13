@@ -15,7 +15,7 @@
  * `<bcp14>` is recorded as normative at the level its markup names.
  */
 
-import { trim, trimEnd } from "nish/text"
+import { trimEnd } from "nish/text"
 import { vocabLevels } from "../contract/vocab"
 import { XmlError, XmlNode, xmlAttr, xmlElements } from "./reader"
 
@@ -268,6 +268,72 @@ const xmlIsAppendix = (s: string): boolean => {
   return c >= 65 && c <= 90 && (s.length === 1 || s.charCodeAt(1) === 0x2e)
 }
 
+/**
+ * How many bytes of white space, as JS `String.prototype.trim` counts it
+ * (ECMAScript WhiteSpace and LineTerminator), start at byte `i` of `s`; 0
+ * when none does. Nish's `trim` strips only space, tab, LF and CR, and the
+ * old extractor trimmed NBSP, U+3000, U+FEFF and the rest too.
+ */
+const xmlSpaceWidth = (s: string, i: i32): i32 => {
+  const b = s.charCodeAt(i)
+  if (b === 32 || (b >= 9 && b <= 13)) {
+    return 1
+  }
+  const b1 = i + 1 < s.length ? s.charCodeAt(i + 1) : -1
+  const b2 = i + 2 < s.length ? s.charCodeAt(i + 2) : -1
+  if (b === 0xc2 && b1 === 0xa0) {
+    return 2
+  }
+  if (b === 0xe1 && b1 === 0x9a && b2 === 0x80) {
+    return 3
+  }
+  if (b === 0xe2 && b1 === 0x80 && ((b2 >= 0x80 && b2 <= 0x8a) || b2 === 0xa8 || b2 === 0xa9 || b2 === 0xaf)) {
+    return 3
+  }
+  if (b === 0xe2 && b1 === 0x81 && b2 === 0x9f) {
+    return 3
+  }
+  if (b === 0xe3 && b1 === 0x80 && b2 === 0x80) {
+    return 3
+  }
+  if (b === 0xef && b1 === 0xbb && b2 === 0xbf) {
+    return 3
+  }
+  return 0
+}
+
+/**
+ * `s` without leading and trailing white space, as JS `String.prototype.trim`
+ * strips it: ASCII space, tab, LF, VT, FF and CR, and NBSP, U+1680,
+ * U+2000–U+200A, U+2028, U+2029, U+202F, U+205F, U+3000 and U+FEFF.
+ *
+ * @param s the text
+ * @returns it trimmed
+ */
+export const xmlTrim = (s: string): string => {
+  let start = 0
+  let end = s.length
+  while (start < end) {
+    const w = xmlSpaceWidth(s, start)
+    if (w === 0) {
+      break
+    }
+    start = start + w
+  }
+  let more = true
+  while (more && end > start) {
+    more = false
+    for (let w = 1; w <= 3; w++) {
+      if (end - w >= start && xmlSpaceWidth(s, end - w) === w) {
+        end = end - w
+        more = true
+        break
+      }
+    }
+  }
+  return s.substring(start, end)
+}
+
 /** xml2rfc's text writer for an `<xref>`, its content already rendered. */
 const xmlRenderXref = (t: XmlText, x: XmlNode, content: string): string => {
   const info = t.xrefs.get(x)
@@ -277,7 +343,7 @@ const xmlRenderXref = (t: XmlText, x: XmlNode, content: string): string => {
     reference = info.reference
     worked = info.reftext
   }
-  const reftext = trim(xmlAttr(x, "derivedContent") ?? worked ?? xmlAttr(x, "target") ?? "")
+  const reftext = xmlTrim(xmlAttr(x, "derivedContent") ?? worked ?? xmlAttr(x, "target") ?? "")
   const exp = content.length > 0 ? `${content} ` : ""
   const section = xmlAttr(x, "section")
   if (section !== null) {
@@ -346,10 +412,10 @@ const xmlRender = (t: XmlText, n: XmlNode, found: XmlNode[] | null): string => {
     return ` ${xmlAttr(n, "fullname") ?? ""} ${inner} `
   }
   if (name === "xref") {
-    return xmlRenderXref(t, n, trim(inner))
+    return xmlRenderXref(t, n, xmlTrim(inner))
   }
   if (name === "eref") {
-    return xmlRenderEref(n, trim(inner))
+    return xmlRenderEref(n, xmlTrim(inner))
   }
   if (name === "bcp14") {
     if (found === null) {

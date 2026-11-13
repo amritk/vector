@@ -40,6 +40,9 @@ const extractGatesTestRows = (t: Suite): void => {
   extractGatesTestIssue(report, notes, "shape", "", "the root")
   // A section of the main source is at the line naming it, and says which.
   extractGatesTestIssue(report, notes, "completeness", "\u00a72", "MUST sentence is neither")
+  // Notes the locator cannot place land at the root and keep their `at`, so two stay two.
+  extractGatesTestIssue(report, notes, "fidelity", "X9.call", "lost")
+  extractGatesTestIssue(report, notes, "fidelity", "X9.expect", "lost")
   // A finding no note placed lands at the root, once.
   report.findings.push(new CheckFinding("typing", "unplaced"))
   // A warning is never a refusal.
@@ -52,6 +55,8 @@ const extractGatesTestRows = (t: Suite): void => {
     got.join("\n"),
     [
       "s.xml:1: shape: the root",
+      "s.xml:1: fidelity: X9.call: lost",
+      "s.xml:1: fidelity: X9.expect: lost",
       "s.xml:1: typing: unplaced",
       "s.xml:5: completeness: Section 2 of RFC4648: MUST sentence is neither",
       `s.xml:7: fidelity: ${fid}`,

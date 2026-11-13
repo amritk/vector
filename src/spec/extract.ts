@@ -433,9 +433,31 @@ const extractGateRowAdd = (
     rows.push(new ExtractGateRow(new ProfileRefusal(w.file, w.line, 0, text), false))
     return
   }
-  const text = `${gate}: ${message}`
+  // A note the locator places is at its part's line, which says where; one
+  // it cannot place falls to the root, so its `at` stays in the text and two
+  // root notes with one message stay two.
+  const text = at.length > 0 && !extractPlaced(locator, at) ? `${gate}: ${at}: ${message}` : `${gate}: ${message}`
   const w = profileLocate(locator, at)
   rows.push(new ExtractGateRow(new ProfileRefusal(w.file, w.line, 0, text), false))
+}
+
+/** Whether the locator holds `at` or a dotted prefix of it, as profileLocate looks it up. */
+const extractPlaced = (locator: ProfileLocator, at: string): boolean => {
+  let k = at
+  while (k.length > 0) {
+    if (locator.at.has(k)) {
+      return true
+    }
+    let dot = k.length - 1
+    while (dot >= 0 && k.charCodeAt(dot) !== 0x2e) {
+      dot = dot - 1
+    }
+    if (dot < 0) {
+      return false
+    }
+    k = k.substring(0, dot)
+  }
+  return false
 }
 
 /** Appends a refusal unless one with its file, line and message is there. */
@@ -515,6 +537,11 @@ const extractFinish = (ctx: ExtractContext, read: ProfileRead, specSha: string):
     return out
   }
   const report = checkContractWith(check, c, checkGates())
+  const failure = check.toolFailure
+  if (failure !== null) {
+    out.errors.push(failure)
+    return out
+  }
   if (report.findings.length > 0) {
     out.refusals = extractGateRefusals(
       report,

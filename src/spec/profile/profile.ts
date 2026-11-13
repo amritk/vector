@@ -60,7 +60,7 @@ import { FrontRefusal, frontParseInterface, frontParseProperty, frontReads } fro
 import { RfcDocument, rfcNormalize, rfcSection, rfcSectionText } from "../source/rfc"
 import { XmlDocument } from "../xml/doc"
 import { XmlNode, xmlAttr, xmlElements } from "../xml/reader"
-import { XmlNormative, xmlCodeOf, xmlPlainText, xmlPlainTextOfNodes } from "../xml/text"
+import { XmlNormative, xmlCodeOf, xmlPlainText, xmlPlainTextOfNodes, xmlTrim } from "../xml/text"
 
 const PROFILE_DEFINITION: string = "Definition: "
 const PROFILE_UNTESTED: string = "Untested: "
@@ -371,70 +371,14 @@ const profileCompare = (a: string, b: string): i32 => {
 // ── Text ───────────────────────────────────────────────────────────────────
 
 /**
- * How many bytes of white space, as JS `String.prototype.trim` counts it
- * (ECMAScript WhiteSpace and LineTerminator), start at byte `i` of `s`; 0
- * when none does. Nish's `trim` strips only space, tab, LF and CR, and the
- * old extractor trimmed NBSP, U+3000, U+FEFF and the rest too.
- */
-const profileSpaceWidth = (s: string, i: i32): i32 => {
-  const b = s.charCodeAt(i)
-  if (b === 32 || (b >= 9 && b <= 13)) {
-    return 1
-  }
-  const b1 = i + 1 < s.length ? s.charCodeAt(i + 1) : -1
-  const b2 = i + 2 < s.length ? s.charCodeAt(i + 2) : -1
-  if (b === 0xc2 && b1 === 0xa0) {
-    return 2
-  }
-  if (b === 0xe1 && b1 === 0x9a && b2 === 0x80) {
-    return 3
-  }
-  if (b === 0xe2 && b1 === 0x80 && ((b2 >= 0x80 && b2 <= 0x8a) || b2 === 0xa8 || b2 === 0xa9 || b2 === 0xaf)) {
-    return 3
-  }
-  if (b === 0xe2 && b1 === 0x81 && b2 === 0x9f) {
-    return 3
-  }
-  if (b === 0xe3 && b1 === 0x80 && b2 === 0x80) {
-    return 3
-  }
-  if (b === 0xef && b1 === 0xbb && b2 === 0xbf) {
-    return 3
-  }
-  return 0
-}
-
-/**
  * `s` without leading and trailing white space, as JS `String.prototype.trim`
- * strips it: ASCII space, tab, LF, VT, FF and CR, and NBSP, U+1680,
- * U+2000–U+200A, U+2028, U+2029, U+202F, U+205F, U+3000 and U+FEFF.
+ * strips it (xmlTrim): the profile trims cells, keywords, names, covers and
+ * commands this way, as the old extractor did.
  *
  * @param s the text
  * @returns it trimmed
  */
-export const profileTrim = (s: string): string => {
-  let start = 0
-  let end = s.length
-  while (start < end) {
-    const w = profileSpaceWidth(s, start)
-    if (w === 0) {
-      break
-    }
-    start = start + w
-  }
-  let more = true
-  while (more && end > start) {
-    more = false
-    for (let w = 1; w <= 3; w++) {
-      if (end - w >= start && profileSpaceWidth(s, end - w) === w) {
-        end = end - w
-        more = true
-        break
-      }
-    }
-  }
-  return s.substring(start, end)
-}
+export const profileTrim = (s: string): string => xmlTrim(s)
 
 /**
  * Why a string cannot be free text in a contract (blank, or holding a

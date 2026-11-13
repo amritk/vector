@@ -1,13 +1,18 @@
 import { Suite } from "nish/testing"
 import { replaceAll, split } from "nish/text"
-import { joinPath, makeTempDir, mkdirAll } from "../../../src/core/fs"
+import { dirname, joinPath, makeTempDir, mkdirAll } from "../../../src/core/fs"
 import { sha256Hex } from "../../../src/core/hex"
+import { newJsonDocument, parseJson } from "../../../src/core/json"
 import { ProcessResult, runProcess } from "../../../src/core/process"
+import { CheckContext, checkAddReader, checkContractWith, checkGates, checkPassed } from "../../../src/spec/check"
+import { contractFromJson } from "../../../src/spec/contract/read"
 import { ExtractOutcome, extractContract, extractReaders, extractUnifiedDiff } from "../../../src/spec/extract"
 import { SourceReaders } from "../../../src/spec/source/load"
+import { xmlRead } from "../../../src/spec/xml/doc"
 
 const EXTRACT_CASES_TEST_MINI: string = "tests/fixtures/extract/extract-mini.xml"
 const EXTRACT_CASES_TEST_MAIN: string = "tests/fixtures/rfc-main"
+const EXTRACT_CASES_TEST_MINI_MD: string = "tests/fixtures/extract/extract-mini.md"
 
 /** specs/<name>.xml, contracts/ and (optionally) rfcs/rfc4648.txt, as vector lays them out. */
 class ExtractCasesTestTree {
@@ -88,8 +93,15 @@ const extractCasesTestTree = (
 }
 
 /** Runs `vector spec <args>`; a result with status -1 after failing the test when it cannot run. */
-const extractCasesTestCli = (x: ExtractCasesTestCtx, args: string[]): ProcessResult => {
-  const argv = [x.vector, "spec"]
+const extractCasesTestCli = (x: ExtractCasesTestCtx, args: string[]): ProcessResult =>
+  extractCasesTestRun(x, [x.vector, "spec"], args)
+
+/** Runs `<pre> <args>`; a result with status -1 after failing the test when it cannot run. */
+const extractCasesTestRun = (x: ExtractCasesTestCtx, pre: string[], args: string[]): ProcessResult => {
+  const argv: string[] = []
+  for (const a of pre) {
+    argv.push(a)
+  }
   for (const a of args) {
     argv.push(a)
   }
@@ -199,6 +211,29 @@ const extractCasesTestSourceKeys = (src: string): string => {
   return out.join(" ")
 }
 
+/** The gates' findings on the contract at `path`, its XML sources read as extract reads them; "pass" when none. */
+const extractCasesTestChecked = (path: string, root: string): string => {
+  const doc = newJsonDocument()
+  const parsed = parseJson(doc, readFileSyncOrNull(path) ?? "", path)
+  if (parsed.isErr()) {
+    return parsed.error
+  }
+  const c = contractFromJson(doc, parsed.value)
+  if (c.isErr()) {
+    return c.error.join("\n")
+  }
+  const ctx = new CheckContext(path, root)
+  const added = checkAddReader(ctx, ".xml", xmlRead)
+  if (added.isErr()) {
+    return added.error
+  }
+  const report = checkContractWith(ctx, c.value, checkGates())
+  if (checkPassed(report) && ctx.toolFailure === null) {
+    return "pass"
+  }
+  return report.findings.map((f): string => `${f.gate}: ${f.message}`).join("\n") + (ctx.toolFailure ?? "")
+}
+
 /** No -o writes the contract to stdout, the same bytes each run, with its keys and sources. */
 const extractCasesTestStdout = (x: ExtractCasesTestCtx): void => {
   const t = x.t
@@ -216,7 +251,15 @@ const extractCasesTestStdout = (x: ExtractCasesTestCtx): void => {
     extractCasesTestKeys(a.stdout),
     "$schema contract source sources target requirements exclusions functions clauses",
   )
-  t.ok(`${name}: $schema`, extractCasesTestField(a.stdout, "$schema").endsWith('/schemas/rfc-contract.json",'))
+  // In a temp tree `$schema` climbs out to vector's own schemas/; it names exactly that file.
+  // (Each committed contract pins it as "../schemas/rfc-contract.json", byte for byte.)
+  const schema = extractCasesTestField(a.stdout, "$schema")
+  t.ok(`${name}: $schema is a quoted relative path`, schema.startsWith('"../') && schema.endsWith('",'))
+  t.eqStr(
+    `${name}: $schema names vector's schemas/rfc-contract.json`,
+    realpathSync(joinPath(dirname(tr.out), schema.substring(1, schema.length - 2))) ?? "<none>",
+    realpathSync("schemas/rfc-contract.json") ?? "<missing>",
+  )
   t.eqStr(
     `${name}: source title`,
     extractCasesTestField(a.stdout, "title"),
@@ -248,6 +291,7 @@ const extractCasesTestOut = (x: ExtractCasesTestCtx): void => {
   t.eqStr(`${name}: rfc keys`, extractCasesTestSourceKeys(extractCasesTestSource(c, 1)), "id rfc path file sha256")
   t.contains(`${name}: rfc path`, extractCasesTestSource(c, 1), '"path": "../rfcs/rfc4648.txt"')
   t.contains(`${name}: spec path`, extractCasesTestSource(c, 0), '"path": "../specs/extract-mini.xml"')
+  t.eqStr(`${name}: the written contract passes the gates`, extractCasesTestChecked(tr.out, tr.dir), "pass")
 
   const deep = joinPath(tr.dir, "deep/dir/c.json")
   mkdirAll(joinPath(tr.dir, "deep/dir"), 0o755).expect("deep/dir")
@@ -310,8 +354,26 @@ const extractCasesTestSidecar = (x: ExtractCasesTestCtx): void => {
   const c = readFileSyncOrNull(tr.out) ?? ""
   const keys = split(extractCasesTestKeys(c), " ")
   t.eqStr(`${name}: last`, keys[keys.length - 1], "allowSurvivors")
-  t.contains(`${name}: verbatim`, c, '"reason": "one"')
-  t.contains(`${name}: verbatim, in order`, c.substring(c.indexOf('"one"')), '"reason": "two"')
+  t.eqStr(
+    `${name}: verbatim, in order`,
+    c.substring(c.indexOf('  "allowSurvivors": ')),
+    [
+      '  "allowSurvivors": [',
+      "    {",
+      '      "file": "std/hex.ts",',
+      '      "line": 31,',
+      '      "reason": "one"',
+      "    },",
+      "    {",
+      '      "file": "std/hex.ts",',
+      '      "line": 38,',
+      '      "reason": "two"',
+      "    }",
+      "  ]",
+      "}",
+      "",
+    ].join("\n"),
+  )
 
   writeFileSync(tr.side, '{"allowSurvivors":[{"line":3}]}')
   t.eqLines(
@@ -426,6 +488,80 @@ const extractCasesTestMissing = (x: ExtractCasesTestCtx): void => {
   }
 }
 
+/** An RFC as the main source, v3 XML or .txt: extract equals the committed contract, which passes the gates. */
+const extractCasesTestMain = (x: ExtractCasesTestCtx): void => {
+  for (const name of ["mini-frame", "mini-frame-txt", "mini-frame-excluded"]) {
+    const spec = `${EXTRACT_CASES_TEST_MAIN}/specs/${name}.xml`
+    const out = `${EXTRACT_CASES_TEST_MAIN}/contracts/${name}.json`
+    const o = extractContract(spec, out, ".", x.readers)
+    x.t.eqLines(`${name}: extracts`, extractCasesTestOutcome(o), ["ok"])
+    x.t.ok(`${name}: extract equals the committed contract`, o.text === (readFileSyncOrNull(out) ?? "<none>"))
+    x.t.eqStr(`${name}: passes the gates as committed`, extractCasesTestChecked(out, "."), "pass")
+  }
+}
+
+/** extract-mini.xml with `hexDecode("666F6F")`'s expected value broken; `and` the second's too. */
+const extractCasesTestBroken = (xml: string, and: boolean): string => {
+  const one = replaceAll(xml, 'hexDecode("666F6F")</tt>', 'hexDecode("666F6E")</tt>')
+  return and ? replaceAll(one, 'hexDecode("666F6F626172")</tt>', 'hexDecode("666F6F626171")</tt>') : one
+}
+
+/** A gate refusal is at the markdown's line when the .md is beside the XML, else at the XML's. */
+const extractCasesTestGate = (x: ExtractCasesTestCtx): void => {
+  const t = x.t
+  const fid = 'fidelity: the string "666F6E" is not printed in rfc4648 \u00a710 ("Test Vectors")'
+  const md = readFileSyncOrNull(EXTRACT_CASES_TEST_MINI_MD) ?? ""
+  for (const beside of [true, false]) {
+    const tr = extractCasesTestTree(
+      x,
+      extractCasesTestBroken(extractCasesTestClean(x.mini), false),
+      "extract-mini",
+      true,
+    )
+    if (tr === null) {
+      return
+    }
+    const mdPath = joinPath(tr.dir, "specs/extract-mini.md")
+    if (beside) {
+      writeFileSync(mdPath, md)
+    }
+    const name = beside ? "a gate refusal, at the markdown's line" : "a gate refusal, at the XML's line"
+    const r = extractCasesTestCli(x, ["extract", tr.xml, "-o", tr.out])
+    t.eqLines(name, extractCasesTestErr(r), [
+      "exit 1",
+      beside ? `vector: ${mdPath}:180: ${fid}` : `vector: ${tr.xml}:189: ${fid}`,
+    ])
+    t.eqStr(`${name}: nothing on stdout`, r.stdout, "")
+    t.ok(`${name}: no contract written`, readFileSyncOrNull(tr.out) === null)
+  }
+  const tr = extractCasesTestTree(x, extractCasesTestBroken(extractCasesTestClean(x.mini), true), "extract-mini", true)
+  if (tr === null) {
+    return
+  }
+  const name = "the gates' refusals: exit 1, all of them, each at its line, once"
+  const r = extractCasesTestCli(x, ["extract", tr.xml, "-o", tr.out])
+  t.eqLines(name, extractCasesTestErr(r), [
+    "exit 1",
+    `vector: ${tr.xml}:189: ${fid}`,
+    `vector: ${tr.xml}:200: fidelity: the string "666F6F626171" is not printed in rfc4648 \u00a710 ("Test Vectors")`,
+  ])
+  t.ok(`${name}: no contract written`, readFileSyncOrNull(tr.out) === null)
+}
+
+/** A solver that cannot run is a tool failure: exit 2 with its message, and no refusal. */
+const extractCasesTestZ3 = (x: ExtractCasesTestCtx): void => {
+  const r = extractCasesTestRun(
+    x,
+    ["/usr/bin/env", "VECTOR_Z3=/nonexistent", x.vector, "spec"],
+    ["extract", "specs/example-hex.xml"],
+  )
+  x.t.eqLines("a solver that cannot run: exit 2, no refusal", extractCasesTestErr(r), [
+    "exit 2",
+    "vector: spec extract: VECTOR_Z3 is /nonexistent, which is not a file",
+  ])
+  x.t.eqStr("a solver that cannot run: nothing on stdout", r.stdout, "")
+}
+
 /** Each committed contract is what its spec states, and two extracts are the same bytes. */
 const extractCasesTestCommitted = (x: ExtractCasesTestCtx): void => {
   const t = x.t
@@ -465,6 +601,9 @@ export const main = (): i32 => {
   extractCasesTestRfcs(x)
   extractCasesTestRefused(x)
   extractCasesTestMissing(x)
+  extractCasesTestMain(x)
+  extractCasesTestGate(x)
+  extractCasesTestZ3(x)
   extractCasesTestCommitted(x)
   return t.done()
 }
