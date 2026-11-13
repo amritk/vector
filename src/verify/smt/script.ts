@@ -14,7 +14,7 @@ import {
   EXPR_NUM,
   EXPR_UNOP,
   EXPR_VAR,
-  Expr,
+  LangExpr,
   Program,
   programFunctionIndex,
 } from "../lang/ast"
@@ -205,7 +205,7 @@ export class SmtEmitter {
    * @param path the path conditions it sits under
    * @returns the SMT term
    */
-  term(e: Expr, scope: SmtScope, path: string[]): string {
+  term(e: LangExpr, scope: SmtScope, path: string[]): string {
     if (e.kind === EXPR_NUM) {
       const neg = e.value.startsWith("-")
       const abs = neg ? e.value.slice(1) : e.value

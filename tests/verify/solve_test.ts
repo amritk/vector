@@ -10,7 +10,7 @@ import {
   verdictStatus,
 } from "../../src/verify/emit/dashboard"
 import { checkConformance } from "../../src/verify/emit/float64"
-import { EXPR_CALL, EXPR_VAR, Expr, Program } from "../../src/verify/lang/ast"
+import { EXPR_CALL, EXPR_VAR, LangExpr, Program } from "../../src/verify/lang/ast"
 import { typecheckProgram } from "../../src/verify/lang/check"
 import { readProgram } from "../../src/verify/lang/read"
 import { SmtEmitter, SmtScope, buildVerificationScript, smtPreamble, smtVarName } from "../../src/verify/smt/script"
@@ -38,21 +38,21 @@ const solveLoad = (t: Suite, path: string): Program => {
 // the emitter records it and poisons the script so z3 rejects it.
 const solveUntranslatable = (t: Suite): void => {
   const program = solveLoad(t, "tests/fixtures/currency.json")
-  const noArgs: Expr[] = []
+  const noArgs: LangExpr[] = []
   const em = new SmtEmitter(program, false)
   const scope = new SmtScope()
   t.contains(
     "unbound var is poisoned",
-    em.term(new Expr(EXPR_VAR, "", "", "ghost", noArgs), scope, smtVarNone()),
+    em.term(new LangExpr(EXPR_VAR, "", "", "ghost", noArgs), scope, smtVarNone()),
     "untranslatable",
   )
   t.contains(
     "unknown callee is poisoned",
-    em.term(new Expr(EXPR_CALL, "", "", "ghost", noArgs), scope, smtVarNone()),
+    em.term(new LangExpr(EXPR_CALL, "", "", "ghost", noArgs), scope, smtVarNone()),
     "untranslatable",
   )
   t.eqI32("both are recorded", toI32(em.errors.length), 2)
-  program.functions[0].body = new Expr(EXPR_VAR, "", "", "ghost", noArgs)
+  program.functions[0].body = new LangExpr(EXPR_VAR, "", "", "ghost", noArgs)
   const solved = solveProgram(program)
   t.ok("solveProgram refuses an untranslatable body", solved.isErr())
   if (solved.isErr()) {

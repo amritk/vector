@@ -5,7 +5,7 @@
  * downward, so the call graph is a DAG and inlining terminates), agreement
  * with the spec plan's units, and axiom traceability. Every error is
  * collected. Checking also records each numeric literal's type in
- * `Expr.numTy`, which the SMT translation reads.
+ * `LangExpr.numTy`, which the SMT translation reads.
  */
 
 import {
@@ -16,8 +16,8 @@ import {
   EXPR_NUM,
   EXPR_UNOP,
   EXPR_VAR,
-  Expr,
   FnUnit,
+  LangExpr,
   Program,
   SpecPlan,
 } from "./ast"
@@ -42,7 +42,7 @@ export const checkIsReserved = (name: string): boolean => checkReservedWords().i
  * @param e the expression
  * @returns true when it mentions `result`
  */
-export const mentionsResult = (e: Expr): boolean => {
+export const mentionsResult = (e: LangExpr): boolean => {
   if (e.kind === EXPR_VAR) {
     return e.name === RESULT_NAME
   }
@@ -100,7 +100,7 @@ class Checker {
 
   // Both operands of a numeric operator share one type; the non-literal side
   // is inferred first so a bare literal picks up Int from context.
-  numericPair(left: Expr, right: Expr | null, scope: CheckScope, expected: string): string {
+  numericPair(left: LangExpr, right: LangExpr | null, scope: CheckScope, expected: string): string {
     const hint = expected === "Int" || expected === "Real" ? expected : ""
     if (expected === "Bool") {
       this.fail("arithmetic expression where Bool expected")
@@ -122,7 +122,7 @@ class Checker {
     return ty
   }
 
-  infer(e: Expr, scope: CheckScope, expected: string): string {
+  infer(e: LangExpr, scope: CheckScope, expected: string): string {
     if (e.kind === EXPR_NUM) {
       if (expected === "Bool") {
         return this.fail(`numeric literal "${e.value}" where Bool expected`)
