@@ -237,7 +237,6 @@ git checkout -q contracts
 | `--run-sources` | run each vector's `command` source and compare what it prints (see below) |
 | `--module <file>` | the module source the signatures are checked against |
 | `--nish-root <dir>` | a nish checkout or install, whose `std/` holds the module under test |
-| `--nish <bin>` | accepted, and not read: `check` compiles nothing |
 | `--format <f>` | `text` (the default), `markdown` for a PR comment, or `json` |
 
 `--format markdown` prints the dashboard for a PR comment: each requirement's
@@ -346,9 +345,11 @@ anything else is refused. `.xml` sources are read everywhere a source is: by
 extract, check, emit, run, mutate and frozen.
 
 - **Linked RFCs** (`{"id": "rfc4648", "rfc": 4648}`) are looked up beside the
-  contract, then in `../rfcs/`, then in a third `rfcs/`: vector's own (the
-  directory above `dist/vector`) for `check`, and the current directory's for
-  `emit`, `run` and `mutate`, so run those from the repository root. At each
+  contract, then in `../rfcs/`, then in vector's own `rfcs/` (in the directory
+  above `dist/vector`; the current directory's for a binary installed outside
+  a `dist/`). That rule is the same for every command that reads a
+  contract (`check`, `emit`, `run`, `mutate`), whatever directory you run it
+  from. At each
   place `rfc<N>.xml` is read, and preferred over `rfc<N>.txt`, when it exists. Once a contract
   records a source's `file`, that name wins, and its recorded `sha256` must
   still match.
@@ -360,7 +361,7 @@ extract, check, emit, run, mutate and frozen.
   (`check`, `emit`, `run`, `mutate`) requires a `sources[].path` to lead,
   symlinks followed, to a file beside the contract or under a `specs/` or
   `rfcs/` beside the contract's directory, its parent or its grandparent (or
-  in the third place above), with no hidden directory (`.git`, `.ssh`, `.env`) on the way. Anything else
+  in vector's own `rfcs/` above), with no hidden directory (`.git`, `.ssh`, `.env`) on the way. Anything else
   is a usage error before the file is read. `--spec` is not limited: that
   path comes from you.
 

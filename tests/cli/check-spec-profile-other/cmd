@@ -1,0 +1,1 @@
+vector spec check contracts/example-hex.json --spec specs/rfc5869-hkdf-sha256.xml

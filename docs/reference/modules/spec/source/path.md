@@ -7,7 +7,9 @@ refusal of a file that is not spec text.
 
 A source is located by its `path` (relative to the contract's directory)
 or, for an RFC given by number, by looking for rfc&lt;n&gt;.xml then rfc&lt;n&gt;.txt
-beside the contract, in ../rfcs, then in the root's rfcs/. Its `file` does
+beside the contract, in ../rfcs, then in the root's rfcs/. The root is
+where vector is installed (sourceInstallRoot), for every command, whatever
+the current directory. Its `file` does
 not locate it: it records which file was read (sourceLabel), and a check
 refuses a contract whose `file` names another.
 
@@ -23,6 +25,7 @@ Generated from [src/spec/source/path.ts](https://github.com/amritk/vector/blob/m
 
 ## Exports
 
+- [`sourceInstallRoot`](#sourceinstallroot)
 - [`sourceRfcFile`](#sourcerfcfile)
 - [`sourceFetchHint`](#sourcefetchhint)
 - [`sourceNameProblem`](#sourcenameproblem)
@@ -35,6 +38,23 @@ Generated from [src/spec/source/path.ts](https://github.com/amritk/vector/blob/m
 - [`sourceReadConfined`](#sourcereadconfined)
 
 ## Declarations
+
+### sourceInstallRoot
+
+Where vector is installed, whose rfcs/ and specs/ sources are read from by
+every command that reads a contract: the directory above the running
+binary when that binary lives in a `dist/` (`<root>/dist/vector`), else the
+current directory (a test program built elsewhere, say).
+
+```ts
+function sourceInstallRoot(): string
+```
+
+<scalar-field name="returns" type="string">
+
+the root
+
+</scalar-field>
 
 ### sourceRfcFile
 

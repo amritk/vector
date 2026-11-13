@@ -28,13 +28,18 @@ import { SourceDecl } from "../contract/types"
 /**
  * Where vector is installed, whose rfcs/ and specs/ sources are read from by
  * every command that reads a contract: the directory above the running
- * binary's (`dist/vector`), else the current directory.
+ * binary when that binary lives in a `dist/` (`<root>/dist/vector`), else the
+ * current directory (a test program built elsewhere, say).
  *
  * @returns the root
  */
 export const sourceInstallRoot = (): string => {
   const self = realpathSync("/proc/self/exe") ?? realpathSync(process.argv[0])
-  return self === null ? "." : dirname(dirname(self))
+  if (self === null) {
+    return "."
+  }
+  const bin = dirname(self)
+  return basename(bin) === "dist" ? dirname(bin) : "."
 }
 
 /**

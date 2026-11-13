@@ -1,0 +1,1 @@
+vector spec check contracts/example-hex.json --spec specs/example-hex.xml

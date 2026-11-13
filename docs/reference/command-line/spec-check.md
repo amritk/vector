@@ -44,12 +44,6 @@ a nish checkout: finds the module and the compiler
 
 </scalar-field>
 
-<scalar-field name="--nish" type="&lt;bin&gt;">
-
-the nish compiler (default: nish)
-
-</scalar-field>
-
 <scalar-field name="--format" type="&lt;f&gt;">
 
 text (default), markdown (a PR comment) or json

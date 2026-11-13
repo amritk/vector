@@ -1,0 +1,36 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ example-hex · example-hex (Spec 0001: nish/hex — hexadecimal encoding and decoding) · nish/hex
+ Status: INVALID
+
+ Gate failures
+  ✘ fidelity sources: source example-hex (specs/example-hex.xml) has SHA-256 28fe198e11270e98e202ed9f8220f7eced51d14d4c4fe2460c3f32b06f33b2f3, but the contract pins 1c972eeca28874e9379542a3571f955dfb4f87262359484f86bbac1aede51c6b: the source changed, so nothing citing it can be checked
+
+ Requirements
+  ○ R-ENC-LEN  §3.1 MUST  "hexEncode MUST return exactly two characters per input byte."
+      ○ V5  ○ P-ENC-LEN (29 samples: 5 boundary)
+  ○ R-ENC-DIGITS  §3.2 MUST  "Each byte MUST be written high nibble first, using the digits 0…"
+      ○ V5  ○ P-CANONICAL (27 samples: 3 boundary)
+  ○ R-ENC-ONLY  §3.2 MUST NOT  "hexEncode MUST NOT emit uppercase digits, separators or a prefi…"
+      ○ V5  ○ P-ENC-LOWER (29 samples: 5 boundary)  ○ P-ROUND-TRIP (29 samples: 5 boundary)
+  ○ R-DEC-ACCEPT  §4.1 MUST  "hexDecode MUST accept the digits 0-9, a-f and A-F, in any mix o…"
+      ○ V2  ○ V3  ○ V4  ○ V6  ○ P-CANONICAL (27 samples: 3 boundary)  ○ P-ANY-CASE (27 samples: 3 boundary)
+  ○ R-DEC-REJECT  §4.2 MUST  "hexDecode MUST return null when the text has an odd length or c…"
+      ○ V7  ○ V8  ○ V9  ○ P-ODD (28 samples: 4 boundary)  ○ P-OTHER (35 samples: 11 boundary)  ○ P-OTHER-EDGE (35 samples: 11 boundary)  ○ P-PREFIX (26 samples: 2 boundary)
+  ○ R-DEC-EMPTY  §4.3 MUST  "hexDecode of the empty string MUST return an empty array, not n…"
+      ○ V1
+  ○ R-ROUND-TRIP  §4.4 MUST  "For all bytes b, hexDecode(hexEncode(b)) MUST equal b."
+      ○ V2  ○ P-ROUND-TRIP (29 samples: 5 boundary)
+
+ Vector sources run
+  · V5: $ python3 -c 'print(bytes([0,15,240,255]).hex())'
+  · V6: $ python3 -c 'print(bytes.fromhex("aBcD").hex())'
+
+ Not tested, by decision
+  §5 "hexDecode MUST NOT index a table by the value of a digi…" — A constraint on how hexDecode is written and on its timing, not on what it returns: no functional test observes a table lookup or a data-dependent running time. Review the implementation for it.
+
+ Warnings
+  ! V5.source: source command not run (pass --run-sources): the expected value is unverified: $ python3 -c 'print(bytes([0,15,240,255]).hex())'
+  ! V6.source: source command not run (pass --run-sources): the expected value is unverified: $ python3 -c 'print(bytes.fromhex("aBcD").hex())'
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

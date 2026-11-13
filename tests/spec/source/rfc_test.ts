@@ -92,6 +92,12 @@ const rfcTestLabelled = (label: string): string => {
   return rfcTestValues(rfcTestSection(rfcParse(text), "1"))
 }
 
+/** The values of a one-section RFC whose body is `body`, three-space indented. */
+const rfcTestBody = (body: string): string => {
+  const text = `Request for Comments: 1\n\f\n1.  Intro\n\n   ${body}\n`
+  return rfcTestValues(rfcTestSection(rfcParse(text), "1"))
+}
+
 /** Reading an RFC's text: sections, page furniture, quotes and printed hex. */
 export const main = (): i32 => {
   const t = new Suite("spec/source rfc")
@@ -165,6 +171,18 @@ export const main = (): i32 => {
   t.eqStr("base 100 is not decimal", rfcTestLabelled("In base 100"), "In base 100=1234")
   t.eqStr("test_number is not decimal", rfcTestLabelled("test_number"), "test_number=1234")
   t.eqStr("number_ is not decimal", rfcTestLabelled("Some number_"), "Some number_=1234")
+
+  // Labelled values whose label starts with a digit (#71).
+  t.eqStr(
+    "a label that starts with a digit names the value below it",
+    rfcTestBody("32-bit fixed-common part:\n   07 00 00 00"),
+    "32-bit fixed-common part=07000000",
+  )
+  t.eqStr("ending in =, too", rfcTestBody("32-bit =\n   07000000"), "32-bit=07000000")
+  t.eqStr("a label of digits alone names it as well", rfcTestBody("32:\n   07 00 00 00"), "32=07000000")
+  t.eqStr("inline, a digit-led label is not a labelled value", rfcTestBody("32-bit fixed-common part = 07000000"), "")
+  t.eqStr("nor is a label of digits alone", rfcTestBody("32 = 07000000"), "")
+  t.eqStr("a letter-led inline label is", rfcTestBody("IV = 4041424344454647"), "IV=4041424344454647")
 
   // Reading refuses what is not an RFC, and what hides text.
   t.ok("an RFC reads", rfcRead(rfcTestText(), "r.txt").isOk())

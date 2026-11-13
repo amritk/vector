@@ -22,7 +22,8 @@ const rootTestRun = (vector: string, dir: string, args: string): string => {
 /** check, emit and run find the RFC at the install root from another directory. */
 export const main = (): i32 => {
   const t = new Suite("spec/source root")
-  t.ok("the root holds the binary's directory", sourceInstallRoot() !== "")
+  // This program is built outside a dist/, so its root is the current directory.
+  t.eqStr("a binary outside a dist/ reads from the current directory", sourceInstallRoot(), ".")
   const vector = realpathSync("dist/vector")
   const dir = makeTempDir("vector-root-test-")
   if (vector === null) {
