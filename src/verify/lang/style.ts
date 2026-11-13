@@ -4,7 +4,7 @@
  * formula (`result == amount * rate`) and so restates the algorithm as spec.
  */
 
-import { EXPR_BINOP, EXPR_VAR, Expr, Program } from "./ast"
+import { EXPR_BINOP, EXPR_VAR, LangExpr, Program } from "./ast"
 import { RESULT_NAME } from "./check"
 import { prettyMath } from "./pretty"
 
@@ -39,12 +39,12 @@ export class StyleWarning {
   }
 }
 
-const styleIsResult = (e: Expr): boolean => e.kind === EXPR_VAR && e.name === RESULT_NAME
+const styleIsResult = (e: LangExpr): boolean => e.kind === EXPR_VAR && e.name === RESULT_NAME
 
 // A composite computes something: anything but a literal or a variable.
-const styleIsComposite = (e: Expr): boolean => toI32(e.args.length) > 0 || e.kind > EXPR_VAR
+const styleIsComposite = (e: LangExpr): boolean => toI32(e.args.length) > 0 || e.kind > EXPR_VAR
 
-const styleDefinitional = (e: Expr): boolean => {
+const styleDefinitional = (e: LangExpr): boolean => {
   if (e.kind === EXPR_BINOP && e.op === "==") {
     const l = e.args[0]
     const r = e.args[1]
