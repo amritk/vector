@@ -18,6 +18,8 @@ const GOLDEN: string = "tests/spec/emit/golden/example-hex.golden"
  * command's path, which refuses whatever check refuses.
  */
 const CHECKED: string = "contracts/rfc5869-hkdf-sha256.json"
+/** The ChaCha20-Poly1305 contract, run live in full: its vectors and properties all pass. */
+const CHACHA: string = "contracts/rfc8439-chacha20-poly1305.json"
 const REGENERATE: string = "vector spec emit contracts/example-hex.json -o tests/spec/emit/golden/example-hex.golden"
 
 const hex = (h: string): Literal => new Literal(LitKind.Hex, h)
@@ -119,6 +121,12 @@ export const main = (): i32 => {
   live.format = "json"
   t.ok("a test that holds exits 0", runCommand(live) === 0)
   t.ok("-o keeps the test", readFileSyncOrNull(`${dir}/kept.ts`) !== null)
+  // RFC 8439, run live the same way: SATISFIED is exit 0, so every vector
+  // and property passed.
+  const chacha = new RunRequest(CHACHA)
+  chacha.nishRoot = ".nish"
+  chacha.format = "json"
+  t.ok("the RFC 8439 contract is SATISFIED, every vector passing", runCommand(chacha) === 0)
   // The example-hex golden needs a nish without nish/hex, so that it cannot
   // compile; a pin that ships it skips the case instead of failing it.
   if (readFileSyncOrNull(".nish/std/hex.ts") !== null) {

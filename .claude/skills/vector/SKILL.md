@@ -52,10 +52,11 @@ the **numeric core**, offer that core, and don't force the rest through.
    clause tagged with the `axiomId` it formalizes. Every spec axiom must be
    enforced by some clause. Write it to e.g. `/tmp/vector-program.json`.
 
-3. **Verify (the veto).** Run:
+3. **Verify (the veto).** If `dist/vector` is missing, run `npm run build`
+   first. Then run:
 
    ```bash
-   vector verify /tmp/vector-spec.json /tmp/vector-program.json --json
+   ./dist/vector verify /tmp/vector-spec.json /tmp/vector-program.json --json
    ```
 
    No API key is needed — this stage is pure Z3 + validators. Parse the JSON
@@ -92,15 +93,15 @@ already has a proven `program.json`, don't make them re-review — prove the
 regeneration behavior-preserving:
 
 ```bash
-vector diff <old-program.json> <new-program.json> --json
+./dist/vector diff <old-program.json> <new-program.json> --json
 ```
 
 - **`EQUIVALENT`** → report that every shared function was proven equal over
   exact rationals, then agreed on every sampled float64 input, assuming both
-  versions pass `vector verify`. Float64 agreement is sampled, not proven.
+  versions pass `./dist/vector verify`. Float64 agreement is sampled, not proven.
   A pair whose versions share no input over the reals (`"vacuous": true` in
   the JSON) is EQUIVALENT with nothing run in float64; that rests entirely on
-  both versions passing `vector verify`, so say so.
+  both versions passing `./dist/vector verify`, so say so.
 - **`DIFFERENT`** → relay each witness verbatim (input → old vs new result;
   domain narrowed/widened; float64 deltas, where a pair equal over the reals
   returns different doubles or throws in one version only; removed functions;
@@ -117,15 +118,15 @@ vector diff <old-program.json> <new-program.json> --json
 Float64 results compare as `Object.is` does: `NaN` equals `NaN`, and `-0`
 differs from `0`, so `-x` and `0 - x` differ at `x = 0`.
 
-`vector diff` exits `0` for `EQUIVALENT`, `1` for `DIFFERENT` or `UNDECIDED`,
+`./dist/vector diff` exits `0` for `EQUIVALENT`, `1` for `DIFFERENT` or `UNDECIDED`,
 and `2` for `INVALID`, `ERROR`, bad usage or an unreadable file.
 
 ## Contract style (advisory)
 
-`vector verify` may return `styleWarnings` for **definitional** ensures —
+`./dist/vector verify` may return `styleWarnings` for **definitional** ensures —
 `result == <formula>`, the algorithm restated as spec. Prefer property-shaped
 axioms the user could have written in a ticket (bounds, monotonicity,
-conservation, error behavior) and let `vector diff` carry behavior between
+conservation, error behavior) and let `./dist/vector diff` carry behavior between
 regenerations; keep a definitional clause only when the formula itself is the
 requirement (a regulated fee, a fixed published rate). Warnings never block a
 proof — surface them to the user instead of silently rewriting the spec.
@@ -155,7 +156,7 @@ proof — surface them to the user instead of silently rewriting the spec.
 For a rendered dashboard + emitted file instead of machine JSON:
 
 ```bash
-vector verify /tmp/vector-spec.json /tmp/vector-program.json --emit converter.ts
+./dist/vector verify /tmp/vector-spec.json /tmp/vector-program.json --emit converter.ts
 ```
 
 `--emit` writes the file only when the status is `PROVEN`. On any other
