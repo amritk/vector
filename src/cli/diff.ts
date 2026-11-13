@@ -69,14 +69,26 @@ export class DiffCommand {
     } else {
       console.log(outcome.summary)
     }
-    if (outcome.status === DIFF_EQUIVALENT) {
-      return EXIT_PASS
-    }
-    if (outcome.status === DIFF_INVALID || outcome.status === DIFF_ERROR) {
-      return EXIT_USAGE
-    }
-    return EXIT_REFUSED
+    return diffExitCode(outcome.status)
   }
+}
+
+/**
+ * The exit code for a diff status: 0 for EQUIVALENT, 1 for DIFFERENT and
+ * UNDECIDED, 2 for INVALID and ERROR (the inputs or the solver failed, so
+ * nothing was compared).
+ *
+ * @param status one of the `DIFF_*` statuses
+ * @returns the exit code
+ */
+export const diffExitCode = (status: string): i32 => {
+  if (status === DIFF_EQUIVALENT) {
+    return EXIT_PASS
+  }
+  if (status === DIFF_INVALID || status === DIFF_ERROR) {
+    return EXIT_USAGE
+  }
+  return EXIT_REFUSED
 }
 
 /**

@@ -383,7 +383,7 @@ class LangReader {
       this.errors.push(`${where}: name must be an identifier`)
     }
     if (this.layer(o) === 0) {
-      this.errors.push(`${where}: layer must be an integer >= 1`)
+      this.errors.push(`${where}: layer must be an integer from 1 to 1000000`)
     }
     if (this.str(o, "purpose") === null) {
       this.errors.push(`${where}: purpose must be a string`)
@@ -488,9 +488,14 @@ class LangReader {
       }
     }
     const units = this.doc.get(root, "units")
-    if (this.doc.kind(units) !== JSON_VALUE_ARRAY || this.doc.length(units) < 1 || this.doc.length(units) > 4) {
+    if (this.doc.kind(units) !== JSON_VALUE_ARRAY) {
       this.errors.push("units must be an array of 1-4 entries")
       return plan
+    }
+    // Too many or too few units is one error; each unit is still read, so a
+    // repair sees every problem at once.
+    if (this.doc.length(units) < 1 || this.doc.length(units) > 4) {
+      this.errors.push(`units must be an array of 1-4 entries, got ${this.doc.length(units)}`)
     }
     for (let i = 0; i < this.doc.length(units); i++) {
       const u = this.doc.at(units, i)

@@ -167,6 +167,8 @@ export class SmtEmitter {
   divs: SmtHazard[]
   /** The callee preconditions emitted while recording. */
   pres: SmtHazard[]
+  /** Each expression it could not translate; empty for a typechecked program. */
+  errors: string[]
 
   /**
    * Makes an emitter over a program.
@@ -179,6 +181,20 @@ export class SmtEmitter {
     this.record = record
     this.divs = []
     this.pres = []
+    this.errors = []
+  }
+
+  /**
+   * Records an expression it cannot translate. The term it returns is an
+   * undeclared symbol, so z3 rejects the script and the run is ERROR rather
+   * than a proof about a malformed formula.
+   *
+   * @param message what was wrong
+   * @returns the poisoned term
+   */
+  untranslatable(message: string): string {
+    this.errors.push(message)
+    return `|vector: untranslatable: ${message}|`
   }
 
   /**
@@ -203,7 +219,8 @@ export class SmtEmitter {
       return e.value === "true" ? "true" : "false"
     }
     if (e.kind === EXPR_VAR) {
-      return scope.lookup(e.name)
+      const bound = scope.lookup(e.name)
+      return bound === "" ? this.untranslatable(`unbound variable ${e.name}`) : bound
     }
     if (e.kind === EXPR_UNOP) {
       const a = this.term(e.args[0], scope, path)
@@ -248,7 +265,7 @@ export class SmtEmitter {
     if (e.kind === EXPR_CALL) {
       const at = programFunctionIndex(this.program, e.name)
       if (at < 0) {
-        return ""
+        return this.untranslatable(`unknown function ${e.name}`)
       }
       const callee = this.program.functions[at]
       const inner = new SmtScope()
@@ -263,7 +280,7 @@ export class SmtEmitter {
       }
       return this.term(callee.body, inner, path)
     }
-    return ""
+    return this.untranslatable(`unknown expression kind ${e.kind}`)
   }
 }
 

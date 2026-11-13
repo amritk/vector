@@ -21,12 +21,14 @@ import { Program } from "../../src/verify/lang/ast"
 import { typecheckProgram } from "../../src/verify/lang/check"
 import { readProgram } from "../../src/verify/lang/read"
 
-const diffLoad = (path: string): Program => {
+const diffLoad = (t: Suite, path: string): Program => {
   const doc = newJsonDocument()
   const root = readJsonFile(doc, path)
+  t.ok(`read ${path}`, root.isOk())
   const errors: string[] = []
   const program = readProgram(doc, root.isOk() ? root.value : -1, errors)
-  typecheckProgram(program)
+  t.eqStr(`${path} is well-formed`, errors.join("; "), "")
+  t.eqStr(`${path} typechecks`, typecheckProgram(program).join("; "), "")
   return program
 }
 
@@ -40,8 +42,8 @@ const diffRun = (oldPath: string, newPath: string): DiffOutcome => {
 
 export const main = (): i32 => {
   const t = new Suite("verify/diff")
-  const oldP = diffLoad("tests/fixtures/currency.json")
-  const newP = diffLoad("tests/cli/diff-different/new.json")
+  const oldP = diffLoad(t, "tests/fixtures/currency.json")
+  const newP = diffLoad(t, "tests/cli/diff-different/new.json")
   const pairing = pairFunctions(oldP, newP)
   t.eqI32("pairFunctions pairs both", toI32(pairing.comparable.length), toI32(oldP.functions.length))
   t.eqI32("pairFunctions adds nothing", toI32(pairing.added.length), 0)

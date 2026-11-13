@@ -2,12 +2,16 @@
  * `cli/verify` — `vector verify`: prove a program meets its spec plan.
  *
  * The handler reads both files and runs the whole gate (`verify/verify`).
- * PROVEN exits 0; REFUTED, UNKNOWN and INVALID exit 1; a z3 failure exits 2.
- * `--emit` writes the TypeScript only when the program is proven.
+ * PROVEN exits 0. REFUTED, UNKNOWN, INVALID and ERROR (z3 failed or rejected
+ * the script) exit 1: none of them proved anything, so each refuses the
+ * program. Exit 2 is kept for bad usage, a file that cannot be read, and an
+ * `--emit` file that cannot be written. `--emit` writes the TypeScript only
+ * when the program is proven; on any other outcome it writes nothing and
+ * leaves an existing file as it was.
  */
 
 import { Cli, ParseResult } from "nish/cli-args"
-import { EXIT_PASS, EXIT_REFUSED, EXIT_USAGE, report, usageError } from "../core/diag"
+import { EXIT_PASS, EXIT_REFUSED, report, usageError } from "../core/diag"
 import { newJsonDocument, readJsonFile } from "../core/json"
 import { outJsonRender } from "../verify/emit/outjson"
 import {
@@ -74,26 +78,36 @@ export class VerifyCommand {
       `verify: ${programPath}`,
     )
     const emitPath = r.value(this.emitFlag) ?? ""
+    let emitError = ""
     if (outcome.status === OUTCOME_PROVEN && emitPath !== "") {
       const written = writeFileSyncMode(emitPath, outcome.emittedCode, 0o644)
       if (written < 0) {
-        return report(usageError(`verify: ${emitPath}: cannot write file (errno ${-written})`))
+        emitError = `verify: ${emitPath}: cannot write file (errno ${-written})`
       }
     }
+    // The outcome prints even when --emit failed, so a --json reader still
+    // gets the verdict; the write failure follows it on stderr, and exits 2.
     if (r.flag(this.jsonFlag)) {
       console.log(outJsonRender(verifyOutcomeJson(outcome)))
     } else {
-      verifyPrintText(outcome, emitPath)
+      verifyPrintText(outcome, emitError === "" ? emitPath : "")
     }
-    if (outcome.status === OUTCOME_PROVEN) {
-      return EXIT_PASS
+    if (emitError !== "") {
+      return report(usageError(emitError))
     }
-    if (outcome.status === OUTCOME_ERROR) {
-      return EXIT_USAGE
-    }
-    return EXIT_REFUSED
+    return verifyExitCode(outcome.status)
   }
 }
+
+/**
+ * The exit code for a verify outcome: 0 for PROVEN, 1 for everything else.
+ * ERROR is 1, not 2: z3 failing proved nothing, so the program is refused,
+ * the same as an UNKNOWN.
+ *
+ * @param status the outcome's status
+ * @returns `EXIT_PASS` or `EXIT_REFUSED`
+ */
+export const verifyExitCode = (status: string): i32 => (status === OUTCOME_PROVEN ? EXIT_PASS : EXIT_REFUSED)
 
 const verifyPrintStyle = (outcome: VerifyOutcome): void => {
   if (outcome.styleWarnings.length === 0) {

@@ -223,7 +223,11 @@ export const renderDashboard = (label: string, report: VerifyReport): string => 
   lines.push(dashFrame("╠", "═", "╣"))
   lines.push(dashRow(`VERDICT: ${dashVerdictLine(status, report)}`))
   lines.push(dashRow('"Testing shows the presence of bugs, never their absence."'))
-  lines.push(dashRow(" — proven over exact reals; float64 conformance-checked."))
+  // Only a proof has been checked against float64; a refuted or unknown
+  // verdict must not claim it.
+  if (status === STATUS_PROVEN) {
+    lines.push(dashRow(" — proven over exact reals; float64 conformance-checked."))
+  }
   lines.push(dashFrame("╚", "═", "╝"))
   return lines.join("\n")
 }

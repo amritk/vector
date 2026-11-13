@@ -63,7 +63,7 @@ the **numeric core**, offer that core, and don't force the rest through.
 
    - **`PROVEN`** → success. The result carries `dashboard` and `emittedCode`.
      Show the user the dashboard and the proven TypeScript (or write it out with
-     `--emit <file>` in a non-`--json` run). Done.
+     `--emit <file>`, which works with or without `--json`). Done.
    - **`REFUTED` / `UNKNOWN`** → read `feedback` and `items[]` (each has the
      `function`, `axiomId`, `property`, `issue`, a concrete `counterexample`,
      and a `hint`). Repair the **program** minimally — keep every clause that
@@ -74,6 +74,11 @@ the **numeric core**, offer that core, and don't force the rest through.
      sometimes the spec — and re-verify. This costs no solver time.
    - **`ERROR`** → solver infrastructure failure (`message`). Report it; don't
      loop.
+
+   The exit status agrees: `0` only for `PROVEN`; `1` for `REFUTED`,
+   `UNKNOWN`, `INVALID` and `ERROR`, so a script never mistakes an
+   unverified run for a pass; `2` for bad usage, an unreadable input file, or
+   an `--emit` file that cannot be written.
 
 4. **Bound the retries.** Give up after ~4 repair attempts and report the last
    `feedback` honestly rather than presenting unproven code. If Z3 keeps
@@ -98,6 +103,9 @@ vector diff <old-program.json> <new-program.json> --json
   behavioral change — never summarize them away.
 - **`UNDECIDED`** → equivalence wasn't proven (usually nonlinear arithmetic);
   restate the bodies linearly and re-run. Do not report it as equivalent.
+
+`vector diff` exits `0` for `EQUIVALENT`, `1` for `DIFFERENT` or `UNDECIDED`,
+and `2` for `INVALID`, `ERROR`, bad usage or an unreadable file.
 
 ## Contract style (advisory)
 
@@ -132,6 +140,10 @@ For a rendered dashboard + emitted file instead of machine JSON:
 ```bash
 vector verify /tmp/vector-spec.json /tmp/vector-program.json --emit converter.ts
 ```
+
+`--emit` writes the file only when the status is `PROVEN`. On any other
+status it writes nothing, and an existing file at that path is left exactly as
+it was, so a previously proven file is never replaced by unproven code.
 
 ## Reference example
 

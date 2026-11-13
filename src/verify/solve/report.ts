@@ -281,7 +281,7 @@ const reportCex = (program: Program, q: SmtQuery, a: QueryAnswer): Counterexampl
  *
  * @param program the program the script was built from
  * @param queries the script's queries
- * @param answers one answer per query
+ * @param answers one answer per query; a query past the last reads as unknown
  * @param solver the solver's label
  * @returns the report
  */
@@ -301,10 +301,16 @@ export const assembleReport = (
     }
     trivial.push(flags)
   }
-  const n = Math.min(toI32(queries.length), toI32(answers.length))
+  // A query z3 left unanswered proves nothing: it reads as unknown, never as
+  // a missing obligation.
+  const given: QueryAnswer[] = []
+  for (let i = 0; i < toI32(queries.length); i++) {
+    given.push(i < toI32(answers.length) ? answers[i] : new QueryAnswer("unknown"))
+  }
+  const n = toI32(queries.length)
   for (let i = 0; i < n; i++) {
     const q = queries[i]
-    const a = answers[i]
+    const a = given[i]
     if (q.kind === QUERY_REACHABLE) {
       if (a.result !== "sat") {
         report.functions[q.fnIndex].vacuous = true
@@ -317,7 +323,7 @@ export const assembleReport = (
   }
   for (let i = 0; i < n; i++) {
     const q = queries[i]
-    const a = answers[i]
+    const a = given[i]
     const fr = report.functions[q.fnIndex]
     if (q.kind === QUERY_ENSURES) {
       report.totalVcs = report.totalVcs + 1

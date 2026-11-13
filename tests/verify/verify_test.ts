@@ -50,8 +50,10 @@ export const main = (): i32 => {
   const doc = newJsonDocument()
   const root = readJsonFile(doc, "tests/fixtures/unsat.json")
   const errors: string[] = []
+  t.ok("read unsat.json", root.isOk())
   const program = readProgram(doc, root.isOk() ? root.value : -1, errors)
-  typecheckProgram(program)
+  t.eqStr("unsat.json is well-formed", errors.join("; "), "")
+  t.eqStr("unsat.json typechecks", typecheckProgram(program).join("; "), "")
   const report = solveProgram(program)
   if (report.isErr()) {
     t.fail("solveProgram", report.error)
