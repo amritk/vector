@@ -160,7 +160,8 @@ The gates' findings as refusals, each at the line of the part it is about.
 A gate that places a finding (a note, gateIssue) is placed by the note's
 `at` through the locator; a finding no note places is at the spec's root.
 Each refusal is given once, since two fields of one part can break one
-rule on one line, and they are sorted by line. A finding about
+rule on one line, and they are sorted by line, then XML line: two parts
+under one `<?line?>` mark share a markdown line but not an XML one. A finding about
 allowSurvivors is the sidecar's, so it names that file, after the rest.
 
 ```ts

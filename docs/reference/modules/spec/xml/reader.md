@@ -247,20 +247,20 @@ The enclosing element; null for the root.
 parent: XmlNode | null
 ```
 
+#### XmlNode.raw
+
+For character data, the XML it was read from, from `col` up to the next markup: equal to `text` where no reference, CDATA section or comment changed it.
+
+```ts
+raw: string
+```
+
 #### XmlNode.text
 
 Character data's text, references resolved; "" for an element.
 
 ```ts
 text: string
-```
-
-#### XmlNode.verbatim
-
-Whether character data is written in the XML as its text, character for character from `col`, no reference or CDATA section changing it.
-
-```ts
-verbatim: boolean
 ```
 
 ### XmlError
@@ -317,7 +317,7 @@ what is wrong
 
 #### XmlError.col
 
-The 1-based byte column in that line.
+The 1-based column in that line, counted in characters, not bytes.
 
 ```ts
 col: i32

@@ -69,20 +69,20 @@ const xmlReaderTestTree = (t: Suite): void => {
   const text: XmlNode | null = title === null ? null : title.first
   t.eqStr("character references resolve", text === null ? "<none>" : text.text, "T AB")
   t.ok("an element's column", front !== null && front.col === 3)
-  t.ok("text with references is not verbatim", text !== null && text.col === 17 && !text.verbatim)
+  t.ok("text with references is not its raw XML", text !== null && text.col === 17 && text.raw !== text.text)
 }
 
-/** Character data is verbatim when the XML holds its text as is, from its column on. */
-const xmlReaderTestVerbatim = (t: Suite): void => {
+/** Character data keeps the XML it was read from, from its column up to the next markup. */
+const xmlReaderTestRaw = (t: Suite): void => {
   const root = xmlReaderTestRoot(t, "<rfc>\n  <tt>a(b)</tt><tt><![CDATA[c]]></tt><tt>d&lt;</tt>\n</rfc>")
   if (root === null) {
     return
   }
   const got = xmlElements(root).map((n: XmlNode): string => {
     const k = n.first
-    return k === null ? "<none>" : `${k.text}@${k.line}:${k.col} ${k.verbatim}`
+    return k === null ? "<none>" : `${k.text}@${k.line}:${k.col} ${k.raw}`
   })
-  t.eqStr("plain, CDATA, a reference", got.join(", "), "a(b)@2:7 true, c@2:20 false, d<@2:42 false")
+  t.eqStr("plain, CDATA, a reference", got.join(", "), "a(b)@2:7 a(b), c@2:20 <![CDATA[c]]>, d<@2:42 d&lt;")
 }
 
 /** An error at a node takes its line and mark and no column; a second node rides along to be printed. */
@@ -320,7 +320,7 @@ const xmlReaderTestPrefixes = (t: Suite): void => {
 export const main = (): i32 => {
   const t = new Suite("spec/extract xml reader")
   xmlReaderTestTree(t)
-  xmlReaderTestVerbatim(t)
+  xmlReaderTestRaw(t)
   xmlReaderTestErrorAt(t)
   xmlReaderTestLines(t)
   xmlReaderTestRefusals(t)

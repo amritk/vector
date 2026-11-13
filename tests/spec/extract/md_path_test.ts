@@ -231,6 +231,10 @@ const mdPathTestProfile = (t: Suite, mini: string, md: string, readers: SourceRe
     t.eqStr(`${name}: lines`, mdPathTestLinesOf(r.md, 0), mdPathTestLinesOf(r.xml, 0))
     t.eqStr(`${name}: the sentence's XML line`, mdPathTestLinesOf([r.md[0]], 0), "64")
     t.contains(`${name}: at the sentence`, mdPathTestLineAt(xml, mdPathTestLineOf(r.xml[0])), "Each byte <bcp14>MUST")
+    // The markdown line printed is the mark's, 21, never past the sentence's, 52.
+    const printed = r.md[0].startsWith(`${r.withMd.md}:`) ? r.md[0].substring(r.withMd.md.length + 1) : ""
+    t.eqStr(`${name}: the printed md line`, printed.substring(0, printed.indexOf(" ")), "21")
+    t.contains(`${name}: the sentence's md line`, mdPathTestLineAt(md, 52), "Each byte MUST be written")
   }
 
   const bad = "export const hexDecode = (text: string): u8[] | null"

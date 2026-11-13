@@ -1002,6 +1002,34 @@ const profileCasesTestCode = (t: Suite, all: ProfileCasesTestRfcs): void => {
     ),
     ["2 missing `// module: <root>/<path>` first line"],
   )
+  profileCasesTestRefused(
+    t,
+    all,
+    "an interface without CDATA: the XML column where the line is written as is",
+    profileCasesTestSpecWith(
+      "",
+      "draft-t-00",
+      `<section><name>I</name><sourcecode type="ts-interface">
+// module: nish/hex
+export function g(a: string, b: @@): string
+</sourcecode></section>`,
+    ),
+    ["4:33 `@` is not in the ts-interface subset"],
+  )
+  profileCasesTestRefused(
+    t,
+    all,
+    "an interface with a reference before the fault: no column, since the XML's differs",
+    profileCasesTestSpecWith(
+      "",
+      "draft-t-00",
+      `<section><name>I</name><sourcecode type="ts-interface">
+// module: nish/hex
+export function g(a: &amp;&amp;&amp;, b: @@): string
+</sourcecode></section>`,
+    ),
+    ["4 `@` is not in the ts-interface subset"],
+  )
   profileCasesTestRefusedWith(
     t,
     all,

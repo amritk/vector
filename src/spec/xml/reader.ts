@@ -78,8 +78,8 @@ export class XmlNode {
   id: i32
   /** The 1-based column it starts at, on `line`. */
   col: i32 = 0
-  /** Whether character data is written in the XML as its text, character for character from `col`, no reference or CDATA section changing it. */
-  verbatim: boolean
+  /** For character data, the XML it was read from, from `col` up to the next markup: equal to `text` where no reference, CDATA section or comment changed it. */
+  raw: string
   /**
    * Makes a node.
    *
@@ -90,7 +90,7 @@ export class XmlNode {
    * @param id its number in the document
    */
   constructor(name: string, line: i32, mdLine: i32, markLine: i32, id: i32) {
-    this.verbatim = false
+    this.raw = ""
     this.name = name
     this.text = ""
     this.attrNames = []
@@ -106,7 +106,7 @@ export class XmlNode {
 export class XmlError {
   /** The 1-based XML line. */
   line: i32
-  /** The 1-based byte column in that line. */
+  /** The 1-based column in that line, counted in characters, not bytes. */
   col: i32
   /** The markdown line of the last `<?line N?>` at or before it; -1 when none. */
   mdLine: i32
@@ -701,8 +701,7 @@ const xmlCloseText = (r: XmlReader): XmlNode | null => {
     if (r.pieces.length > 1) {
       t.text = r.pieces.join("")
     }
-    const at = r.lineStarts[t.line - 1] + t.col - 1
-    t.verbatim = r.src.substring(at, at + t.text.length) === t.text
+    t.raw = r.src.substring(r.lineStarts[t.line - 1] + t.col - 1, r.pos)
   }
   r.piecesNode = null
   r.pieces = []

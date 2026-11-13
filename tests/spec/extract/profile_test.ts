@@ -94,6 +94,10 @@ const profileTestMdRead = (t: Suite): void => {
     writeFileSync(path, "one\ntwo")
     const two = profileMdRead(path)
     t.eqStr("its lines, the last with no newline", two !== null ? `${two.lines}` : "none", "2")
+    const empty = joinPath(dir.value, "empty.md")
+    writeFileSync(empty, "")
+    const none = profileMdRead(empty)
+    t.eqStr("an empty .md has no lines, so no place is in it", none !== null ? `${none.lines}` : "none", "0")
   }
   t.ok("no path, no record", profileMdRead(null) === null)
   t.ok("a missing file, no record", profileMdRead("tests/fixtures/xmlv3/absent.md") === null)

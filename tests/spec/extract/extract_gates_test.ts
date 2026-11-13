@@ -77,6 +77,34 @@ const extractGatesTestRows = (t: Suite): void => {
   )
 }
 
+/** A ProfileWhere at markdown line `md`, exactly at line `xml` of s.xml. */
+const extractGatesTestUnder = (md: i32, xml: i32): ProfileWhere => {
+  const w = new ProfileWhere("s.md", md)
+  w.exactFile = "s.xml"
+  w.exactLine = xml
+  return w
+}
+
+/** Two parts under one `<?line?>` mark share a markdown line: each is kept, in XML line order. */
+const extractGatesTestUnderOneMark = (t: Suite): void => {
+  const locator = new ProfileLocator(new ProfileWhere("s.xml", 1))
+  locator.at.set("V1", extractGatesTestUnder(30, 47))
+  locator.at.set("V2", extractGatesTestUnder(30, 41))
+  const report = new CheckReport(new SampleTable())
+  const notes: CheckNote[] = []
+  extractGatesTestIssue(report, notes, "fidelity", "V1.expect", "same")
+  extractGatesTestIssue(report, notes, "fidelity", "V2.expect", "same")
+  extractGatesTestIssue(report, notes, "fidelity", "V2.call", "same")
+  const got = extractGateRefusals(report, notes, locator, "c.survivors.json", 4648).map(
+    (r): string => `${r.file}:${r.line} (${r.exactFile}:${r.exactLine}): ${r.message}`,
+  )
+  t.eqStr(
+    "each XML line once, in order",
+    got.join("\n"),
+    ["s.md:30 (s.xml:41): fidelity: same", "s.md:30 (s.xml:47): fidelity: same"].join("\n"),
+  )
+}
+
 /** A tree holding extract-mini.xml as given, and RFC 4648. */
 const extractGatesTestTree = (t: Suite, xml: string): string | null => {
   const made = makeTempDir("vector-extract-gates-")
@@ -239,6 +267,7 @@ const extractGatesTestDiff = (t: Suite): void => {
 export const main = (): i32 => {
   const t = new Suite("spec/extract gates")
   extractGatesTestRows(t)
+  extractGatesTestUnderOneMark(t)
   extractGatesTestDiff(t)
   const readers = extractReaders()
   if (readers.isErr()) {

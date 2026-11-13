@@ -163,6 +163,9 @@ export const profileMdRead = (path: string | null): ProfileMd | null => {
   if (text === null) {
     return null
   }
+  if (text.length === 0) {
+    return new ProfileMd(path, 0)
+  }
   const lines = split(text, "\n").length
   return new ProfileMd(path, text.endsWith("\n") ? lines - 1 : lines)
 }
@@ -949,20 +952,35 @@ const profileFronted = (c: ProfileContext, node: XmlNode, kind: string): boolean
 }
 
 /**
- * Refuses a code block at each front end's place. A column on a line after
- * the first is the XML's; on the first it is only when the code starts a
- * line of its own, not after the opening tag.
+ * The XML column of column `col` of `line`, the text a text node holds from
+ * where its `i`th XML line starts in it; 0 unless the XML writes that line
+ * as is through `col`, with no reference, CDATA section or comment before it.
  */
+const profileXmlCol = (t: XmlNode, i: i32, line: string, col: i32): i32 => {
+  const raw = split(t.raw, "\n")
+  if (col <= 0 || i < 0 || i >= raw.length) {
+    return 0
+  }
+  const upTo = line.substring(0, col)
+  if (raw[i].substring(0, upTo.length) !== upTo) {
+    return 0
+  }
+  return (i === 0 ? t.col : 1) + col - 1
+}
+
+/** Refuses a code block at each front end's place, with the column where the XML holds the code as is. */
 const profileFrontRefuse = (c: ProfileContext, node: XmlNode, rs: FrontRefusal[]): void => {
   const code = xmlCodeOf(node)
   const at = new ProfileLoc(code.line, code.mdLine, code.markLine)
-  let k = node.first
-  while (k !== null && k.name.length !== 0) {
-    k = k.next
-  }
-  const ownLine = k === null || code.line > k.line
+  const t = node.first
+  const only: XmlNode | null = t !== null && t.next === null && t.name.length === 0 ? t : null
+  const lines = split(code.text, "\n")
   for (const r of rs) {
-    profileRefuseAt(c, profileBelow(at, r.line - 1), r.message, r.line > 1 || ownLine ? r.col : 0)
+    let col = 0
+    if (only !== null && r.line >= 1 && r.line <= lines.length) {
+      col = profileXmlCol(only, code.line + r.line - 1 - only.line, lines[r.line - 1], r.col)
+    }
+    profileRefuseAt(c, profileBelow(at, r.line - 1), r.message, col)
   }
 }
 
@@ -1449,8 +1467,9 @@ const profileCodeCell = (c: ProfileContext, td: XmlNode): string | null => {
 const profileRefuseInCell = (c: ProfileContext, td: XmlNode, message: string, col: i32): void => {
   const tt = profileOnly(td)
   const t: XmlNode | null = tt !== null ? tt.first : null
-  if (col > 0 && t !== null && t.next === null && t.verbatim && t.text.substring(0, col - 1).indexOf("\n") < 0) {
-    profileRefuseAt(c, profileLocOf(t), message, t.col + col - 1)
+  const at = t !== null && t.next === null ? profileXmlCol(t, 0, split(t.text, "\n")[0], col) : 0
+  if (t !== null && at > 0) {
+    profileRefuseAt(c, profileLocOf(t), message, at)
   } else {
     profileRefuseAt(c, profileLocOf(td), message, 0)
   }
