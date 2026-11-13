@@ -241,6 +241,9 @@ export class QueryAnswer {
 
 /**
  * Reads a `get-value` answer, `((x 0.0) (y (/ 1 2)))`, into `answer`'s model.
+ * Only names in `[A-Za-z_][A-Za-z0-9_]*` are read: any other pair, such as a
+ * `|quoted name|`, is skipped without a word, so a caller must mangle its
+ * variable names into that alphabet.
  *
  * @param answer the answer to fill
  * @param text the text after the verdict line
@@ -262,10 +265,13 @@ export const parseModel = (answer: QueryAnswer, text: string): i32 => {
   return count
 }
 
+// The next `@@Q` at the start of a line, so that text inside a model value or
+// an error message is never read as a marker.
 const smtMarker = (stdout: string, from: i32): i32 => {
   const n = toI32(stdout.length)
   for (let at = indexOfAny(stdout, "@", from); at >= 0 && at + 2 < n; at = indexOfAny(stdout, "@", at + 1)) {
-    if (stdout.charCodeAt(at + 1) === 64 && stdout.charCodeAt(at + 2) === 81) {
+    const lineStart = at === 0 || stdout.charCodeAt(at - 1) === 10
+    if (lineStart && stdout.charCodeAt(at + 1) === 64 && stdout.charCodeAt(at + 2) === 81) {
       return at
     }
   }
@@ -273,7 +279,32 @@ const smtMarker = (stdout: string, from: i32): i32 => {
 }
 
 /**
- * Splits z3's output into one answer per query, by the `@@Q<i>` markers. A
+ * Every line of z3's output that starts with `(error`, in order. z3 prints
+ * one for each command it rejects and carries on, so an assertion it dropped
+ * (an undeclared symbol, say) shows up only here: the line lands in the
+ * previous query's output, or before the first marker, and no verdict reflects it.
+ *
+ * @param stdout everything z3 printed
+ * @returns the error lines, without their newlines
+ */
+export const smtErrors = (stdout: string): string[] => {
+  const out: string[] = []
+  const n = toI32(stdout.length)
+  let start = 0
+  while (start < n) {
+    const nl = indexOfAny(stdout, "\n", start)
+    const end = nl < 0 ? n : nl
+    if (stdout.slice(start, end).startsWith("(error")) {
+      out.push(stdout.slice(start, end))
+    }
+    start = end + 1
+  }
+  return out
+}
+
+/**
+ * Splits z3's output into one answer per query, by the `@@Q<i>` markers, each
+ * at the start of a line. A
  * query with no marker, or no verdict after it, is `unknown`; a marker naming
  * no query is skipped.
  *

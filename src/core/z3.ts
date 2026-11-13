@@ -11,7 +11,7 @@
 
 import { dirname, joinPath } from "./fs"
 import { ProcessResult, runProcess } from "./process"
-import { QueryAnswer, parseZ3Output } from "./smt"
+import { QueryAnswer, parseZ3Output, smtErrors } from "./smt"
 
 const Z3_BASE_TIMEOUT_MS: i32 = 60000
 const Z3_PER_QUERY_MS: i32 = 3000
@@ -57,10 +57,19 @@ export const resolveZ3 = (): Result<string, string> => {
   return Ok("z3")
 }
 
-/** What one z3 run answered: a verdict per query, and how long it took. */
+/**
+ * What one z3 run answered: a verdict per query, every `(error …)` line z3
+ * printed, and how long it took.
+ */
 export class Z3Run {
   /** One answer per query, in query order. */
   answers: QueryAnswer[]
+  /**
+   * Every `(error …)` line z3 printed (see `smtErrors`). A rejected assertion
+   * appears only here, so a caller that needs every assertion to hold refuses
+   * a run with any; a failing `(get-model)` after `unsat` appears here too.
+   */
+  errors: string[]
   /** The wall-clock time the run took, in milliseconds. */
   millis: i32
 
@@ -68,10 +77,12 @@ export class Z3Run {
    * Makes a run.
    *
    * @param answers one answer per query
+   * @param errors every `(error …)` line z3 printed
    * @param millis the wall-clock time in milliseconds
    */
-  constructor(answers: QueryAnswer[], millis: i32) {
+  constructor(answers: QueryAnswer[], errors: string[], millis: i32) {
     this.answers = answers
+    this.errors = errors
     this.millis = millis
   }
 }
@@ -79,11 +90,9 @@ export class Z3Run {
 // What to quote when a run failed: z3's first `(error …)` line on stdout,
 // else the start of its stderr, else nothing.
 const z3FailureDetail = (out: ProcessResult): string => {
-  const at = out.stdout.startsWith("(error") ? 0 : toI32(out.stdout.indexOf("\n(error")) + 1
-  if (at > 0 || out.stdout.startsWith("(error")) {
-    const end = toI32(out.stdout.indexOf("\n", at))
-    const line = end < 0 ? out.stdout.substring(at) : out.stdout.substring(at, end)
-    return `: ${line.substring(0, 500)}`
+  const errors = smtErrors(out.stdout)
+  if (errors.length > 0) {
+    return `: ${errors[0].substring(0, 500)}`
   }
   return out.stderr.length === 0 ? "" : `: ${out.stderr.substring(0, 500)}`
 }
@@ -130,7 +139,8 @@ export const z3Verdicts = (
  *
  * @param script the SMT-LIB2 script
  * @param queryCount how many `@@Q` markers the script writes
- * @returns `Ok` with the answers, or `Err` when z3 cannot be found or run, runs
+ * @returns `Ok` with the answers and z3's `(error …)` lines, or `Err` when z3
+ *   cannot be found or run, runs
  *   out of time, stops before its last query, or ran none of the queries
  */
 export const runZ3 = (script: string, queryCount: i32): Result<Z3Run, string> => {
@@ -143,5 +153,5 @@ export const runZ3 = (script: string, queryCount: i32): Result<Z3Run, string> =>
   }
   const answers = z3Verdicts(ran.value, bin, queryCount, limitMs).orReturn()
   const millis = toI32((monotonicNanos() - started) / 1000000)
-  return Ok(new Z3Run(answers, millis))
+  return Ok(new Z3Run(answers, smtErrors(ran.value.stdout), millis))
 }

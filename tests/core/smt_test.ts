@@ -1,5 +1,13 @@
 import { Suite } from "nish/testing"
-import { QueryAnswer, normalizeValue, parseModel, parseSexp, parseZ3Output, renderSexp } from "../../src/core/smt"
+import {
+  QueryAnswer,
+  normalizeValue,
+  parseModel,
+  parseSexp,
+  parseZ3Output,
+  renderSexp,
+  smtErrors,
+} from "../../src/core/smt"
 
 export const main = (): i32 => {
   const t = new Suite("core/smt")
@@ -54,5 +62,15 @@ export const main = (): i32 => {
   t.eqStr("q2 unknown verdict", answers[2].result, "unknown")
   t.eqStr("q3 no marker", answers[3].result, "unknown")
   t.eqI32("parseZ3Output nothing", toI32(parseZ3Output("", 0).length), 0)
+
+  // A marker counts only at the start of a line.
+  const inside = parseZ3Output('@@Q0\nsat\n((s "x @@Q1\nunsat")))\n', 2)
+  t.eqStr("marker inside a value is not one", inside[1].result, "unknown")
+
+  const errs = smtErrors('(error "a")\n@@Q0\nsat\n  (error "b")\n(error "c")')
+  t.eqI32("smtErrors count", toI32(errs.length), 2)
+  t.eqStr("smtErrors first", errs[0], '(error "a")')
+  t.eqStr("smtErrors last", errs[1], '(error "c")')
+  t.eqI32("smtErrors none", toI32(smtErrors("@@Q0\nsat\n").length), 0)
   return t.done()
 }

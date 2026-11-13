@@ -49,7 +49,8 @@ export const dirname = (path: string): string => {
 }
 
 /**
- * The last part of a path, with trailing slashes dropped.
+ * The last part of a path, as POSIX `basename` answers it: trailing slashes
+ * are dropped, and a path of only slashes is "/". An empty path gives "".
  *
  * @param path the path to cut
  * @returns everything after the last `/`
@@ -58,6 +59,9 @@ export const basename = (path: string): string => {
   let end = toI32(path.length)
   while (end > 1 && path.charCodeAt(end - 1) === 47) {
     end = end - 1
+  }
+  if (end === 1 && path.charCodeAt(0) === 47) {
+    return "/"
   }
   let i = end - 1
   while (i >= 0 && path.charCodeAt(i) !== 47) {

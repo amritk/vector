@@ -21,6 +21,12 @@ export const main = (): i32 => {
   t.ok("q0 has x", run.value.answers[0].value("x") !== null)
   t.eqStr("q1 unsat", run.value.answers[1].result, "unsat")
   t.ok("millis", run.value.millis >= 0)
+  // Query 1's `(get-value)` after `unsat` is the run's only error line.
+  t.eqI32("get-value after unsat is an error line", toI32(run.value.errors.length), 1)
+  // An assertion z3 rejects is dropped, and shows up only in `errors`.
+  const dropped = runZ3('(declare-const x Int)\n(assert (> y 0))\n(echo "@@Q0")\n(check-sat)\n', 1)
+  t.ok("a dropped assertion still answers", dropped.isOk() && dropped.value.answers[0].result === "sat")
+  t.ok("a dropped assertion is in errors", dropped.isOk() && dropped.value.errors.length === 1)
   const silent = runZ3("(check-sat)\n", 1)
   t.ok("no markers is an error", silent.isErr())
 

@@ -16,6 +16,9 @@ export const main = (): i32 => {
   t.eqStr("basename", basename("a/b/c.txt"), "c.txt")
   t.eqStr("basename trailing slash", basename("a/b/"), "b")
   t.eqStr("basename bare", basename("c"), "c")
+  t.eqStr("basename root", basename("/"), "/")
+  t.eqStr("basename slashes", basename("///"), "/")
+  t.eqStr("basename at root", basename("/a"), "a")
 
   // Write into and remove only directories this test made: no fallback to the
   // working directory or a shared path.
