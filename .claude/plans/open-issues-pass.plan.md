@@ -136,9 +136,10 @@ Not planned: #46-2's "refusals come in stages" (XML, then profile, then gates). 
 
 ## RFC lookup root
 
-**Owns:** `src/cli/spec-check.ts`, `src/spec/emit/file.ts`, `src/spec/run/command.ts`, `src/spec/source/**`, `tests/spec/source/**`, `tests/spec/gates/cli_test.ts`, `tests/cli/register_test.ts`, `tests/cli/check-*/**`, `tests/cli/emit-run-*/**`, `tests/cli/root-*/**`, `docs/guide/guides/spec-to-contract.md`, `docs/guide/guides/testing.md`
+**Owns:** `src/cli/spec-check.ts`, `src/spec/emit/file.ts`, `src/spec/run/command.ts`, `src/spec/source/**`, `tests/spec/source/**`, `tests/spec/gates/cli_test.ts`, `tests/cli/register_test.ts`, `tests/cli/check-*/**`, `tests/cli/emit-run-*/**`, `tests/cli/root-*/**`, `docs/guide/guides/spec-to-contract.md`, `docs/guide/guides/testing.md`; from round 2, the RFC-lookup paragraphs of `docs/guide/guides/writing-a-spec.md` and `.claude/skills/vector-spec/SKILL.md`
 
-- #77-5: `emitContractFile` builds `new CheckContext(path, ".")` (`src/spec/emit/file.ts:56`), and `spec check` uses `specCheckRoot()` (`src/cli/spec-check.ts:147`). Move the root helper into `src/spec/source/` and use it in both. emit, run and mutate all go through `emitContractFile`, so `mutaterun.ts` does not change. Add a test that runs emit from a different cwd and finds the RFC at the install root.
+- #77-5 (amended in round 2): the lookup order is the same for all five commands: beside the contract, the contract's `../rfcs/`, the install root's `rfcs/` (`dirname(dirname(self))`), then the cwd's `rfcs/`. Nothing any command found before is lost.
+- #77-5 (original): `emitContractFile` builds `new CheckContext(path, ".")` (`src/spec/emit/file.ts:56`), and `spec check` uses `specCheckRoot()` (`src/cli/spec-check.ts:147`). Move the root helper into `src/spec/source/` and use it in both. emit, run and mutate all go through `emitContractFile`, so `mutaterun.ts` does not change. Add a test that runs emit from a different cwd and finds the RFC at the install root.
 - #77-4: delete `nishFlag` and its row in the flags table (`spec-to-contract.md:240`). `--nish` on `spec check` then fails as an unknown flag (exit 2).
 - #77-8: add a golden case that runs `spec check --spec <profile>.xml`. Port the labelled-value cases that #71 deferred to the check side.
 
