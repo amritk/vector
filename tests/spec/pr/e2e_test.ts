@@ -154,11 +154,11 @@ const e2eTestModule = (t: Suite, dir: string): Result<boolean, string> => {
     e2eTestRun(dir, ["spec", "exports", "--base", "main", "--nish-root", root, contract]),
     "exit 1\nspec exports of std/hex.ts against main: FAILED\n\n  added fresh\n\nproblems:\n  ✗ export fresh is added, but the contract neither tests it nor lists it in outOfScope with a reason\n",
   )
-  prTestWrite(dir, "nish/std/hex.ts", `${E2E_TEST_HEX}export const pair = f<A, B>(x)\n`).orReturn()
+  prTestWrite(dir, "nish/std/hex.ts", `${E2E_TEST_HEX}export const pair = x < 1, y > (z)\n`).orReturn()
   t.eqStr(
     "exports refuses an export it cannot split, naming its line",
     e2eTestRun(dir, ["spec", "exports", "--base", "main", "--nish-root", root, contract]),
-    "exit 1\nspec exports of std/hex.ts against main: FAILED\n\n  unnamed export const pair = f<A, B>(x)\n\nproblems:\n  ✗ line 3: an export it cannot split into names: export const pair = f<A, B>(x): a comma or an angle bracket it cannot place, so it may declare more than one name: give it a declaration of its own the contract can test, since the gate refuses what it cannot name\n",
+    "exit 1\nspec exports of std/hex.ts against main: FAILED\n\n  unnamed export const pair = x < 1, y > (z)\n\nproblems:\n  ✗ line 3: an export it cannot split into names: export const pair = x < 1, y > (z): a comma or an angle bracket it cannot place, so it may declare more than one name: give it a declaration of its own the contract can test, since the gate refuses what it cannot name\n",
   )
   return Ok(true)
 }

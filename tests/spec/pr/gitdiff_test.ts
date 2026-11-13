@@ -250,7 +250,23 @@ export const main = (): i32 => {
   t.eqStr("a value at column 0 goes on", gitdiffTestNames("export const a =\n1, b = 2\n"), "MANY")
   t.eqStr("two exports on one line", gitdiffTestNames("export const a = 1; export const b = 2\n"), "a,b")
   t.eqStr("a generic call then a comma", gitdiffTestNames("export const a = f<T>(x), b = 1\n"), "MANY")
-  t.eqStr("a generic call with two types", gitdiffTestNames("export const a = f<T, U>(x)\n"), "SPLIT")
+  t.eqStr("a generic call with two types", gitdiffTestNames("export const a = f<T, U>(x)\n"), "a")
+  t.eqStr(
+    "a member generic call with nested types",
+    gitdiffTestNames("export const a = ns.f<Map<K, V>, [A, B]>(x)\n"),
+    "a",
+  )
+  t.eqStr(
+    "a generic call with two types then a comma",
+    gitdiffTestNames("export const a = f<T, U>(x), b = 1\n"),
+    "MANY",
+  )
+  t.eqStr("a comparison then a comma is still refused", gitdiffTestNames("export const a = x < 1, y > (z)\n"), "SPLIT")
+  t.eqStr(
+    "a comparison with no call after is still refused",
+    gitdiffTestNames("export const a = x < y, z > w\n"),
+    "SPLIT",
+  )
   t.eqStr("an angle that never closes", gitdiffTestNames("export const a = new Foo<x, b = 2\n"), "SPLIT")
   t.eqStr("a comma in a template's substitution", gitdiffTestNames("export const a = `${x, y}`, b = 1\n"), "MANY")
   t.eqStr("a template alone is one name", gitdiffTestNames("export const a = `${f(x, y)}`\n"), "a")
@@ -277,11 +293,11 @@ export const main = (): i32 => {
   t.eqStr("an unclosed string is refused", gitdiffTestNames("export const a = 'x\n"), "READ")
   t.eqStr("an unclosed comment is refused", gitdiffTestNames("export const a = 1 /* x\n"), "READ")
   t.eqStr("an unclosed brace is refused", gitdiffTestNames("export const a = () => {\n"), "READ")
-  const unsplit = gitdiffExports("const z = 0\nexport const a = f<T, U>(x)\n")
+  const unsplit = gitdiffExports("const z = 0\nexport const a = x < 1, y > (z)\n")
   t.eqStr(
     "an unsplittable export names its line",
     unsplit.length === 1 ? `${unsplit[0].line}:${unsplit[0].problem}` : "ERR",
-    "2:an export it cannot split into names: export const a = f<T, U>(x): a comma or an angle bracket it cannot place, so it may declare more than one name",
+    "2:an export it cannot split into names: export const a = x < 1, y > (z): a comma or an angle bracket it cannot place, so it may declare more than one name",
   )
   const unread = gitdiffExports("export const a = 1\nexport const b = /x/\n")
   t.eqStr(
