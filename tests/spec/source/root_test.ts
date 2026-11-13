@@ -25,7 +25,11 @@ export const main = (): i32 => {
   t.eqStr("dist/vector's root is the directory above dist/", sourceRootOf("/opt/vector/dist/vector"), "/opt/vector")
   t.eqStr("a binary outside a dist/ has the same rule", sourceRootOf("/usr/local/bin/vector"), "/usr/local")
   t.eqStr("an unknown binary reads from the current directory", sourceRootOf(null), ".")
-  t.ok("the running binary has a root", sourceInstallRoot() !== "")
+  t.eqStr(
+    "the running binary's root is sourceRootOf its own path",
+    sourceInstallRoot(),
+    sourceRootOf(realpathSync("/proc/self/exe") ?? realpathSync(process.argv[0])),
+  )
   const vector = realpathSync("dist/vector")
   const dir = makeTempDir("vector-root-test-")
   if (vector === null) {

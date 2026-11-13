@@ -346,7 +346,8 @@ extract, check, emit, run, mutate and frozen.
 
 - **Linked RFCs** (`{"id": "rfc4648", "rfc": 4648}`) are looked up in four
   places, nearest first, the same for every command (`extract`, `check`,
-  `emit`, `run`, `mutate`):
+  `emit`, `run`, `mutate`, and `frozen`, which reads a contract's sources the
+  same way):
   1. beside the contract;
   2. the contract's `../rfcs/`;
   3. the `rfcs/` of vector's install root, the directory above the binary's

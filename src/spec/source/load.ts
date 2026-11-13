@@ -268,7 +268,7 @@ export const sourceRecordedProblem = (
   const file = decl.file
   if (file !== null) {
     if (label === null) {
-      return `source ${decl.id} was read from ${shown}, which its file cannot name: it is under no specs/ or rfcs/ of the contract's repo or of the root, nor beside the contract`
+      return `source ${decl.id} was read from ${shown}, which its file cannot name: it is under no specs/ or rfcs/ of the contract's repo, of the root or of the current directory, nor beside the contract`
     }
     if (label !== file) {
       return `source ${decl.id} was read from ${shown}, but its file is ${file}`
@@ -329,8 +329,8 @@ const sourceLoadOne = (
  *
  * @param contract the contract
  * @param contractPath the contract's own path, which `path` is relative to
- * @param root the root whose rfcs/ is searched last, and whose specs/ and
- *   rfcs/ a source may be read from
+ * @param root the install root, whose rfcs/ is searched third (before the
+ *   current directory's), and whose specs/ and rfcs/ a source may be read from
  * @returns the sources read, and a problem for each one that was not
  */
 export const sourceLoad = (contract: Contract, contractPath: string, root: string): SourceSet =>
@@ -346,8 +346,8 @@ export const sourceLoad = (contract: Contract, contractPath: string, root: strin
  *
  * @param contract the contract
  * @param contractPath the contract's own path, which `path` is relative to
- * @param root the root whose rfcs/ is searched last, and whose specs/ and
- *   rfcs/ a source may be read from
+ * @param root the install root, whose rfcs/ is searched third (before the
+ *   current directory's), and whose specs/ and rfcs/ a source may be read from
  * @param readers the readers, by extension
  * @returns the sources read, and a problem for each one that was not
  */

@@ -425,8 +425,8 @@ the contract's own path, which `path` is relative to
 
 <scalar-field name="root" type="string" required>
 
-the root whose rfcs/ is searched last, and whose specs/ and
-  rfcs/ a source may be read from
+the install root, whose rfcs/ is searched third (before the
+  current directory's), and whose specs/ and rfcs/ a source may be read from
 
 </scalar-field>
 
@@ -468,8 +468,8 @@ the contract's own path, which `path` is relative to
 
 <scalar-field name="root" type="string" required>
 
-the root whose rfcs/ is searched last, and whose specs/ and
-  rfcs/ a source may be read from
+the install root, whose rfcs/ is searched third (before the
+  current directory's), and whose specs/ and rfcs/ a source may be read from
 
 </scalar-field>
 
