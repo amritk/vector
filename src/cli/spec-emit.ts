@@ -23,6 +23,8 @@ export class SpecEmitCommand {
   nishFlag: i32
   /** The `--format <f>` flag. */
   formatFlag: i32
+  /** The repeatable `--package <name>=<dir>` flag. */
+  packageFlag: i32
   /** The `<contract.json>` argument. */
   contractJsonArg: i32
 
@@ -43,6 +45,12 @@ export class SpecEmitCommand {
     this.nishRootFlag = cli.flag(handle, "--nish-root <dir>", "a nish checkout: finds the module and the compiler")
     this.nishFlag = cli.flag(handle, "--nish <bin>", "the nish compiler (default: nish)")
     this.formatFlag = cli.flag(handle, "--format <f>", "text (default), markdown (a PR comment) or json")
+    this.packageFlag = cli.flag(
+      handle,
+      "--package <pkg>",
+      "a package of your own, <name>=<dir>: modules <name>/<path> are <dir>/<path>.ts (repeatable)",
+    )
+    cli.repeatable(this.packageFlag)
     this.contractJsonArg = cli.argument(handle, "<contract.json>", "the contract")
   }
 
@@ -55,7 +63,7 @@ export class SpecEmitCommand {
    * @returns the exit code
    */
   run(r: ParseResult): i32 {
-    return emitCommand(r.positional(this.contractJsonArg) ?? "", r.value(this.outFlag))
+    return emitCommand(r.positional(this.contractJsonArg) ?? "", r.value(this.outFlag), r.values(this.packageFlag))
   }
 }
 

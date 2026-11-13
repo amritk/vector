@@ -50,6 +50,12 @@ text (default), markdown (a PR comment) or json
 
 </scalar-field>
 
+<scalar-field name="--package" type="&lt;pkg&gt;">
+
+a package of your own, &lt;name&gt;=&lt;dir&gt;: modules &lt;name&gt;/&lt;path&gt; are &lt;dir&gt;/&lt;path&gt;.ts (repeatable) May be given more than once.
+
+</scalar-field>
+
 <scalar-field name="-h, --help">
 
 Show this command's help, and exit 0.

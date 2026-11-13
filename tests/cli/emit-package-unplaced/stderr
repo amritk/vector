@@ -1,0 +1,1 @@
+vector: contracts/vector-core-hex.json: vector/core/hex is not a nish/ module: give --package <name>=<dir> to say where your own modules live

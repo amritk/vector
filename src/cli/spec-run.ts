@@ -23,6 +23,8 @@ export class SpecRunCommand {
   nishFlag: i32
   /** The `--format <f>` flag. */
   formatFlag: i32
+  /** The repeatable `--package <name>=<dir>` flag. */
+  packageFlag: i32
   /** The `<contract.json>` argument. */
   contractJsonArg: i32
 
@@ -43,6 +45,12 @@ export class SpecRunCommand {
     this.nishRootFlag = cli.flag(handle, "--nish-root <dir>", "a nish checkout: finds the module and the compiler")
     this.nishFlag = cli.flag(handle, "--nish <bin>", "the nish compiler (default: nish)")
     this.formatFlag = cli.flag(handle, "--format <f>", "text (default), markdown (a PR comment) or json")
+    this.packageFlag = cli.flag(
+      handle,
+      "--package <pkg>",
+      "a package of your own, <name>=<dir>: modules <name>/<path> are <dir>/<path>.ts (repeatable)",
+    )
+    cli.repeatable(this.packageFlag)
     this.contractJsonArg = cli.argument(handle, "<contract.json>", "the contract")
   }
 
@@ -59,6 +67,7 @@ export class SpecRunCommand {
     req.nishRoot = r.value(this.nishRootFlag)
     req.nish = r.value(this.nishFlag)
     req.format = r.value(this.formatFlag) ?? "text"
+    req.packages = r.values(this.packageFlag)
     return runCommand(req)
   }
 }

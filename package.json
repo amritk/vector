@@ -12,7 +12,8 @@
     "test": "node tests/run.mjs",
     "lint": "biome check .",
     "format": "biome check --write .",
-    "tested-exports": "node scripts/tested-exports.mjs"
+    "tested-exports": "node scripts/tested-exports.mjs",
+    "dogfood": "node scripts/dogfood.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "1.8.3",

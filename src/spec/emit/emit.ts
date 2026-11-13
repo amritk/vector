@@ -33,20 +33,27 @@ export class EmitOptions {
   regenerate: string | null = null
   /** The sha256 of the contract file, written as `// vector-contract-sha256: <hex>`. */
   contractSha256: string
+  /** Modules outside nish/ the test may import, each beside its import path in `localImports`. */
+  localModules: string[]
+  /** How the test imports each of `localModules`: a relative path, such as `../../src/core/hex`. */
+  localImports: string[]
 
   /**
-   * Makes options with no regenerate line.
+   * Makes options with no regenerate line and only nish/ modules.
    *
    * @param contractSha256 the sha256 of the contract file's bytes, in hex
    */
   constructor(contractSha256: string) {
     this.contractSha256 = contractSha256
+    this.localModules = []
+    this.localImports = []
   }
 }
 
 /** What emitting one program has gathered so far. */
 class EmitContext {
   c: Contract
+  opts: EmitOptions
   /** The helpers used, in first-use order. */
   used: string[]
   /** What the program imports from nish:secret and nish:unsafe. */
@@ -60,8 +67,9 @@ class EmitContext {
   /** What Nish cannot express, found while emitting. */
   errors: string[]
 
-  constructor(c: Contract) {
+  constructor(c: Contract, opts: EmitOptions) {
     this.c = c
+    this.opts = opts
     this.used = []
     this.secretNames = []
     this.unsafeNames = []
@@ -746,17 +754,22 @@ const emitTypeRefusal = (at: string, t: string): string | null => {
   return null
 }
 
+/** The refusal of a module that is neither nish's nor placed by `--package`. */
+const emitNotPlaced = (m: string): string =>
+  `${m} is not a nish/ module: give --package <name>=<dir> to say where your own modules live`
+
 /**
  * What in a contract Nish cannot express, found before any output: a
- * module outside nish/, an i8 or i16, a nullable bool, integer or f64 (Nish
+ * module outside nish/ that is not one of `local`, an i8 or i16, a nullable bool, integer or f64 (Nish
  * has `T | null` only on a reference type), an f64 forall variable, two
  * clause ids that make the same function name, and a clause check or
  * `plain_` wrapper whose name a contract function already has.
  *
  * @param c the contract
+ * @param local the modules outside nish/ that `--package` places
  * @returns one message per refusal; empty when Nish can express it all
  */
-export const emitRefusals = (c: Contract): string[] => {
+export const emitRefusals = (c: Contract, local: string[]): string[] => {
   const out: string[] = []
   const modules: string[] = [c.target.module]
   for (const f of c.functions) {
@@ -766,8 +779,8 @@ export const emitRefusals = (c: Contract): string[] => {
     }
   }
   for (const m of modules) {
-    if (shapeNishModuleFile(m) === null) {
-      out.push(`Nish is the only emitter, and ${m} is not a nish/ module`)
+    if (shapeNishModuleFile(m) === null && local.indexOf(m) < 0 && out.indexOf(emitNotPlaced(m)) < 0) {
+      out.push(emitNotPlaced(m))
     }
   }
   for (const f of c.functions) {
@@ -849,7 +862,9 @@ const emitImports = (ctx: EmitContext, called: string[]): string => {
   for (const n of emitSortedUnique(called)) {
     const f = emitFn(ctx, n)
     const m: string | null = f === null ? null : f.module
-    const mod = m ?? ctx.c.target.module
+    const named = m ?? ctx.c.target.module
+    const local = ctx.opts.localModules.indexOf(named)
+    const mod = local < 0 ? named : ctx.opts.localImports[local]
     const at = modules.indexOf(mod)
     if (at < 0) {
       modules.push(mod)
@@ -908,15 +923,16 @@ const emitMain = (c: Contract): string => {
  *
  * @param c the contract, already checked
  * @param table the property samples `checkContract` chose
- * @param opts the header's regenerate command and the contract's sha256
+ * @param opts the header's regenerate command, the contract's sha256, and where
+ *   modules outside nish/ are imported from
  * @returns the program's text, or every reason Nish cannot express the contract
  */
 export const emitProgram = (c: Contract, table: SampleTable, opts: EmitOptions): Result<string, string[]> => {
-  const refused = emitRefusals(c)
+  const refused = emitRefusals(c, opts.localModules)
   if (refused.length > 0) {
     return Err(refused)
   }
-  const ctx = new EmitContext(c)
+  const ctx = new EmitContext(c, opts)
   const bodies: string[] = []
   const called: string[] = []
   for (const k of c.clauses) {

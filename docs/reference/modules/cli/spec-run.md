@@ -95,6 +95,14 @@ The `-o, --out <main.ts>` flag.
 outFlag: i32
 ```
 
+#### SpecRunCommand.packageFlag
+
+The repeatable `--package <name>=<dir>` flag.
+
+```ts
+packageFlag: i32
+```
+
 #### SpecRunCommand.specFlag
 
 The `--spec <file>` flag.

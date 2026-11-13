@@ -42,7 +42,7 @@ class EmitOptions
 
 #### new EmitOptions
 
-Makes options with no regenerate line.
+Makes options with no regenerate line and only nish/ modules.
 
 ```ts
 new EmitOptions(contractSha256: string): EmitOptions
@@ -60,6 +60,22 @@ The sha256 of the contract file, written as `// vector-contract-sha256: <hex>`.
 
 ```ts
 contractSha256: string
+```
+
+#### EmitOptions.localImports
+
+How the test imports each of `localModules`: a relative path, such as `../../src/core/hex`.
+
+```ts
+localImports: string[]
+```
+
+#### EmitOptions.localModules
+
+Modules outside nish/ the test may import, each beside its import path in `localImports`.
+
+```ts
+localModules: string[]
 ```
 
 #### EmitOptions.regenerate
@@ -181,18 +197,24 @@ the lines
 ### emitRefusals
 
 What in a contract Nish cannot express, found before any output: a
-module outside nish/, an i8 or i16, a nullable bool, integer or f64 (Nish
+module outside nish/ that is not one of `local`, an i8 or i16, a nullable bool, integer or f64 (Nish
 has `T | null` only on a reference type), an f64 forall variable, two
 clause ids that make the same function name, and a clause check or
 `plain_` wrapper whose name a contract function already has.
 
 ```ts
-function emitRefusals(c: Contract): string[]
+function emitRefusals(c: Contract, local: string[]): string[]
 ```
 
 <scalar-field name="c" type="Contract" required>
 
 the contract
+
+</scalar-field>
+
+<scalar-field name="local" type="string[]" required>
+
+the modules outside nish/ that `--package` places
 
 </scalar-field>
 
@@ -230,7 +252,8 @@ the property samples `checkContract` chose
 
 <scalar-field name="opts" type="EmitOptions" required>
 
-the header's regenerate command and the contract's sha256
+the header's regenerate command, the contract's sha256, and where
+  modules outside nish/ are imported from
 
 </scalar-field>
 

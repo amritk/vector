@@ -53,5 +53,8 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: vector's tests of itself match their specs
+        run: npm run dogfood
+
       - name: Smoke-run the binary
         run: ./dist/vector --version

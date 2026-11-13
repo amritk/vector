@@ -4,12 +4,14 @@
  */
 
 import { Diagnostic, EXIT_PASS, EXIT_USAGE, refusal, report, usageError } from "../../core/diag"
+import { dirname } from "../../core/fs"
 import { sha256Hex, toHex } from "../../core/hex"
 import { CheckContext, checkContract, checkLines, checkPassed } from "../check"
 import { contractLoad } from "../contract/contract"
 import { Contract } from "../contract/types"
 import { sourceInstallRoot } from "../source/path"
 import { EmitOptions, emitProgram } from "./emit"
+import { EmitPackages, emitPackageFlags, emitParsePackages, emitResolveModules } from "./packages"
 
 /** A contract and the test emitted for it. */
 export class EmitFile {
@@ -39,12 +41,21 @@ const emitRefuseAll = (path: string, messages: string[]): Diagnostic[] =>
  * or a tool the check needs (z3) that failed, is a usage error (exit 2), alone
  * and with no refusals; a contract that does not load, fails its check, or
  * that Nish cannot express is refused (exit 1), one diagnostic per reason.
+ * A module `--package` maps to a file that does not exist is a usage error.
  *
  * @param path the contract file
  * @param regenerate the command shown in the test's header, or null for none
+ * @param packages where the modules of your own project live
+ * @param fromDir the directory the test will be written in, which its imports
+ *   of those modules are relative to
  * @returns the contract and its test, or every diagnostic
  */
-export const emitContractFile = (path: string, regenerate: string | null): Result<EmitFile, Diagnostic[]> => {
+export const emitContractFile = (
+  path: string,
+  regenerate: string | null,
+  packages: EmitPackages,
+  fromDir: string,
+): Result<EmitFile, Diagnostic[]> => {
   const text = readFileSyncOrNull(path)
   if (text === null) {
     return Err([usageError(`${path}: cannot be read`)])
@@ -65,6 +76,10 @@ export const emitContractFile = (path: string, regenerate: string | null): Resul
   }
   const opts = new EmitOptions(sha256Hex(text))
   opts.regenerate = regenerate
+  const placed = emitResolveModules(packages, c, fromDir, opts)
+  if (placed.isErr()) {
+    return Err([usageError(placed.error)])
+  }
   const program = emitProgram(c, checked.samples, opts)
   if (program.isErr()) {
     return Err(emitRefuseAll(path, program.error))
@@ -128,13 +143,20 @@ export const emitReportAll = (ds: Diagnostic[]): i32 => {
  *
  * @param path the contract file
  * @param out where to write the test; null is a usage error
+ * @param packageFlags the `--package <name>=<dir>` flags' values
  * @returns the exit code
  */
-export const emitCommand = (path: string, out: string | null): i32 => {
+export const emitCommand = (path: string, out: string | null, packageFlags: string[]): i32 => {
   if (out === null) {
     return report(usageError("spec emit: -o <main.ts> is required"))
   }
-  const emitted = emitContractFile(path, `vector spec emit ${path} -o ${out}`)
+  const packages = emitParsePackages(packageFlags)
+  if (packages.isErr()) {
+    return report(usageError(`spec emit: ${packages.error}`))
+  }
+  const m = packages.value
+  const regenerate = `vector spec emit ${path}${emitPackageFlags(m)} -o ${out}`
+  const emitted = emitContractFile(path, regenerate, m, dirname(out))
   if (emitted.isErr()) {
     return emitReportAll(emitted.error)
   }

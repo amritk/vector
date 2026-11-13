@@ -67,11 +67,14 @@ Reads a contract file, checks it, and emits its test. An unreadable file,
 or a tool the check needs (z3) that failed, is a usage error (exit 2), alone
 and with no refusals; a contract that does not load, fails its check, or
 that Nish cannot express is refused (exit 1), one diagnostic per reason.
+A module `--package` maps to a file that does not exist is a usage error.
 
 ```ts
 function emitContractFile(
   path: string,
   regenerate: string | null,
+  packages: EmitPackages,
+  fromDir: string,
 ): Result<EmitFile, Diagnostic[]>
 ```
 
@@ -84,6 +87,19 @@ the contract file
 <scalar-field name="regenerate" type="string | null" required>
 
 the command shown in the test's header, or null for none
+
+</scalar-field>
+
+<scalar-field name="packages" type="EmitPackages" required>
+
+where the modules of your own project live
+
+</scalar-field>
+
+<scalar-field name="fromDir" type="string" required>
+
+the directory the test will be written in, which its imports
+  of those modules are relative to
 
 </scalar-field>
 
@@ -148,7 +164,11 @@ for bad usage, a file that cannot be read or written, or a tool (z3) that
 failed.
 
 ```ts
-function emitCommand(path: string, out: string | null): i32
+function emitCommand(
+  path: string,
+  out: string | null,
+  packageFlags: string[],
+): i32
 ```
 
 <scalar-field name="path" type="string" required>
@@ -160,6 +180,12 @@ the contract file
 <scalar-field name="out" type="string | null" required>
 
 where to write the test; null is a usage error
+
+</scalar-field>
+
+<scalar-field name="packageFlags" type="string[]" required>
+
+the `--package <name>=<dir>` flags' values
 
 </scalar-field>
 

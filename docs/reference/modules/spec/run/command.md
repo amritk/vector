@@ -78,6 +78,14 @@ Where to keep the emitted test, or null to keep none.
 out: string | null
 ```
 
+#### RunRequest.packages
+
+The `--package <name>=<dir>` flags' values.
+
+```ts
+packages: string[]
+```
+
 ### runFindRoot
 
 The nish checkout to run against: `--nish-root`, else `VECTOR_NISH_ROOT`,

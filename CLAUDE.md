@@ -15,6 +15,7 @@ read `.nish/docs/AI.md` (the language as rules, traps first).
 | `npm test` | every `tests/**/*_test.ts`, then every CLI golden case |
 | `npm run lint` | biome, over the Nish sources and the Node scripts |
 | `npm run tested-exports` | refuse an exported function no test calls by name |
+| `npm run dogfood` | refuse a `tests/dogfood/` test that is not what vector emits from its spec now |
 
 ## Layout
 
@@ -28,6 +29,9 @@ read `.nish/docs/AI.md` (the language as rules, traps first).
 - `tests/<area>/*_test.ts` are Nish programs built on `nish/testing`.
   `tests/cli/<case>/` is a golden case: `cmd` (`vector <args>`), `stdout`,
   an optional `stderr`, and `exit`, checked against `dist/vector`.
+- `tests/dogfood/` holds vector's tests of itself, emitted from its own specs
+  (`specs/vector-*.md`) with `--package vector=src`. They are generated, so
+  regenerate them; never edit them.
 
 ## Writing Nish
 
@@ -49,7 +53,8 @@ read `.nish/docs/AI.md` (the language as rules, traps first).
 ## Definition of done
 
 Locally, before pushing: `npm run build`, `node tests/run.mjs <filter>` for
-every area the change touches, `npm run lint`, and `npm run tested-exports`.
+every area the change touches, `npm run lint`, `npm run tested-exports`, and
+`npm run dogfood` when the emitter, a `specs/vector-*` spec or its module changed.
 **The full gate is CI** (`.github/workflows/ci.yml`): it builds, runs every
 test, lints and smoke-runs the binary on every push.
 
@@ -57,7 +62,7 @@ test, lints and smoke-runs the binary on every push.
 reports success when lint fails. Run it bare, or check `$?` / `PIPESTATUS`.
 
 **Generated files are regenerated, never edited by hand.** That covers
-`docs/reference/**` and its routes in `scalar.config.json`, `contracts/*.json`
+`docs/reference/**` and its routes in `scalar.config.json`, `tests/dogfood/**`, `contracts/*.json`
 (extracted from `specs/*.xml`) and `specs/*.xml` (built from `specs/*.md` by
 `scripts/build-spec.sh`). Change the source and rerun the generator.
 

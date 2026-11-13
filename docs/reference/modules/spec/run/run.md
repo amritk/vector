@@ -26,6 +26,7 @@ Generated from [src/spec/run/run.ts](https://github.com/amritk/vector/blob/main/
 - [`runDisposeScratch`](#rundisposescratch)
 - [`runMakeScratch`](#runmakescratch)
 - [`runTest`](#runtest)
+- [`runTestFile`](#runtestfile)
 - [`runEscape`](#runescape)
 - [`runFormatText`](#runformattext)
 - [`runFormatMarkdown`](#runformatmarkdown)
@@ -585,6 +586,51 @@ the contract the test was emitted from
 <scalar-field name="source" type="string" required>
 
 the test's text
+
+</scalar-field>
+
+<scalar-field name="nishBin" type="string" required>
+
+the compiler
+
+</scalar-field>
+
+<scalar-field name="timeoutMs" type="i32" required>
+
+the most milliseconds the build and run may take
+
+</scalar-field>
+
+<scalar-field name="returns" type="Result&lt;RunResult, string&gt;">
+
+the result, or `Err` when the compiler could not be started
+
+</scalar-field>
+
+### runTestFile
+
+Compiles and runs an emitted test already written to `file`, where its
+relative imports resolve, with `nish run <file> <nonce>`, and judges what
+it printed. The file is left where it is.
+
+```ts
+function runTestFile(
+  c: Contract,
+  file: string,
+  nishBin: string,
+  timeoutMs: i32,
+): Result<RunResult, string>
+```
+
+<scalar-field name="c" type="Contract" required>
+
+the contract the test was emitted from
+
+</scalar-field>
+
+<scalar-field name="file" type="string" required>
+
+the test
 
 </scalar-field>
 

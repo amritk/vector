@@ -55,6 +55,72 @@ A contract that does not check is refused (exit 1) and nothing is written.
 `emit` accepts `--spec`, `--nish-root`, `--nish` and `--format` but reads none
 of them: the sources are found from the contract, and nothing is compiled.
 
+## Test your own modules
+
+A contract whose module is not a `nish/` one is about a module of your own
+project. `--package <name>=<dir>` says where such modules live: the module
+`<name>/<path>` is the file `<dir>/<path>.ts`, and the test imports it by its
+path relative to the directory the test is written in. Give it once for each
+package; when two names match a module, the longer one wins. vector tests
+itself this way. Its own spec `specs/vector-core-hex.md` names the module
+`vector/core/hex`, which is `src/core/hex.ts`:
+
+```sh
+mkdir -p tests/dogfood
+./dist/vector spec emit contracts/vector-core-hex.json --package vector=src -o tests/dogfood/vector-core-hex_test.ts
+```
+
+```text
+wrote tests/dogfood/vector-core-hex_test.ts
+```
+
+```sh
+sed -n 3p tests/dogfood/vector-core-hex_test.ts
+sed -n 12p tests/dogfood/vector-core-hex_test.ts
+```
+
+```text
+//   vector spec emit contracts/vector-core-hex.json --package vector=src -o tests/dogfood/vector-core-hex_test.ts.
+import { sha256Hex, toHex } from "../../src/core/hex";
+```
+
+Without `--package`, such a module is refused, and nothing is written:
+
+<!-- exit 1 -->
+```sh
+./dist/vector spec emit contracts/vector-core-hex.json -o /tmp/hex_test.ts
+```
+
+```text
+vector: contracts/vector-core-hex.json: vector/core/hex is not a nish/ module: give --package <name>=<dir> to say where your own modules live
+```
+
+A flag that is not `<name>=<dir>`, a name of `nish`, or a name given twice
+is bad usage (exit 2), and so is a package that places a module at a file
+that does not exist:
+
+<!-- exit 2 -->
+```sh
+./dist/vector spec emit contracts/vector-core-hex.json --package vector=lib -o /tmp/hex_test.ts
+```
+
+```text
+vector: vector/core/hex: --package places it at lib/core/hex.ts, which does not exist
+```
+
+`spec run` takes the same flag. It writes the test to `-o`, or else to a fresh
+temporary directory, before it emits it, so the imports are relative to where
+the test runs. A test kept with `-o` has the same regenerate line `spec emit`
+writes.
+
+vector's own tests of itself live in `tests/dogfood/`, and `npm test` runs
+them. `npm run dogfood` checks that each one is what vector makes of its spec
+now: it extracts the spec's XML again and compares the contract, checks the
+contract with `--run-sources` and `--module`, runs `spec stale`, and reruns
+the test's regenerate command. A test that changes is left regenerated and
+reported, so a change to the emitter shows up in a diff of the tests it
+writes.
+
 ## Run it
 
 `spec run <contract.json>` emits the test to a temporary file (or to `-o`),

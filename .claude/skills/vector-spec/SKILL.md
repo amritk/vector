@@ -366,6 +366,13 @@ missing, or appears twice. In a repository that does not install vector,
 same exit codes. A test in `test/spec/` counts as spec side only while
 `stale` passes it.
 
+A module outside `nish/` is one of your project's own: give
+`--package <name>=<dir>` to `emit` and `run` (the module `<name>/<path>` is
+`<dir>/<path>.ts`), and the test imports it by a relative path, so emit it
+into the directory it will run from. vector's own `specs/vector-*.md` work
+this way: their tests are in `tests/dogfood/`, and `npm run dogfood` refuses
+one that is not what vector emits now.
+
 ### 5. Implement, then `run`
 
 The implementation PR touches the code and nothing on the spec side

@@ -362,6 +362,11 @@
                     "title": "spec/emit/lit",
                     "filepath": "docs/reference/modules/spec/emit/lit.md"
                   },
+                  "/spec-emit-packages": {
+                    "type": "page",
+                    "title": "spec/emit/packages",
+                    "filepath": "docs/reference/modules/spec/emit/packages.md"
+                  },
                   "/spec-extract": {
                     "type": "page",
                     "title": "spec/extract",

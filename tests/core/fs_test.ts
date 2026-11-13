@@ -1,5 +1,5 @@
 import { Suite } from "nish/testing"
-import { basename, dirname, joinPath, makeTempDir, mkdirAll } from "../../src/core/fs"
+import { basename, dirname, joinPath, makeTempDir, mkdirAll, relativePath } from "../../src/core/fs"
 
 export const main = (): i32 => {
   const t = new Suite("core/fs")
@@ -19,6 +19,12 @@ export const main = (): i32 => {
   t.eqStr("basename root", basename("/"), "/")
   t.eqStr("basename slashes", basename("///"), "/")
   t.eqStr("basename at root", basename("/a"), "a")
+  t.eqStr("relativePath below", relativePath("/r/tests", "/r/tests/x/y"), "./x/y")
+  t.eqStr("relativePath beside", relativePath("/r/tests/core", "/r/src/core/hex"), "../../src/core/hex")
+  t.eqStr("relativePath from root", relativePath("/", "/a/b"), "./a/b")
+  t.eqStr("relativePath to root", relativePath("/a/b", "/"), "../..")
+  t.eqStr("relativePath same", relativePath("/a/b/", "/a/b"), ".")
+  t.eqStr("relativePath shared prefix is not a part", relativePath("/a/bc", "/a/b/c"), "../b/c")
 
   // Write into and remove only directories this test made: no fallback to the
   // working directory or a shared path.

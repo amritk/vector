@@ -20,7 +20,7 @@ The 3 JSON Schemas in `schemas/`.
 
 <scalar-card title="Modules" icon="phosphor/regular/books" href="#modules">
 
-The 90 source files of `src/`, from their doc comments.
+The 91 source files of `src/`, from their doc comments.
 
 </scalar-card>
 
@@ -71,6 +71,7 @@ The 90 source files of `src/`, from their doc comments.
 | [`spec/emit/file`](modules/spec/emit/file.md) | from a contract file to its test's text, and the test written to disk: what `vector spec emit` and `vector spec run` share. |
 | [`spec/emit/helpers`](modules/spec/emit/helpers.md) | the Nish helpers an emitted test may define. |
 | [`spec/emit/lit`](modules/spec/emit/lit.md) | contract values as Nish source text: integers at their type, f64s, string literals, and the bytes a literal stands for. |
+| [`spec/emit/packages`](modules/spec/emit/packages.md) | `--package <name>=<dir>`: where the modules of your own project live, so a test can import a module outside nish/. |
 | [`spec/extract`](modules/spec/extract.md) | `vector spec extract`: an RFC XML v3 spec (xml2rfc's output for a kramdown-rfc spec) to its canonical contract. |
 | [`spec/front/front`](modules/spec/front/front.md) | the TypeScript front end. |
 | [`spec/gates/cite`](modules/spec/gates/cite.md) | what the gates that read a contract's sources share: reading them once a run, finding the section a citation names, and naming a citation in a message ("RFC §2.2" in the main RFC, "rfc2104 §2" in another source). |

@@ -1,0 +1,1 @@
+vector: vector/core/hex: --package places it at lib/core/hex.ts, which does not exist
