@@ -7,8 +7,8 @@
  */
 
 import { CheckContext } from "../check"
-import { TypeEnv, typeEnvBind, typeLiteralFits, typeOf, typeOfLiteral } from "../contract/typing"
 import { Clause, ClauseKind, FnSig, LitKind, Literal } from "../contract/types"
+import { TypeEnv, typeEnvBind, typeLiteralFits, typeOf, typeOfLiteral } from "../contract/typing"
 import { vocabBaseOf, vocabIntMax, vocabIntMin, vocabIsIntType, vocabValueType } from "../contract/vocab"
 import { gateIssue } from "./note"
 

@@ -44,6 +44,10 @@ export const main = (): i32 => {
   t.ok("a non-bool where", all.indexOf("P1: where: must be bool, got u8") >= 0)
   t.ok("a non-bool assert", all.indexOf("P1: assert: must be bool, got u8") >= 0)
   t.ok("every finding is noted", ctx.notes.length === found.length)
-  t.eqStr("misfit names a non-int's type", gateMisfit(contractParse(TYPING_TEST_BAD, "b").expect("p").clauses[1].args[0], "bytes"), "string")
+  t.eqStr(
+    "misfit names a non-int's type",
+    gateMisfit(contractParse(TYPING_TEST_BAD, "b").expect("p").clauses[1].args[0], "bytes"),
+    "string",
+  )
   return t.done()
 }
