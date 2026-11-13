@@ -2,6 +2,8 @@ import { Suite } from "nish/testing"
 import {
   gitdiffBaseProblem,
   gitdiffChanged,
+  gitdiffChangedPaths,
+  gitdiffCompare,
   gitdiffExportName,
   gitdiffExports,
   gitdiffForkPoint,
@@ -53,6 +55,13 @@ const gitdiffTestRepo = (t: Suite): Result<boolean, string> => {
       "a.ts|false|false|2,2,4,4 dir name/new.ts|true|false|1,2 gone.ts|false|true| loose.ts|true|false|1,1",
     )
   }
+  const paths = gitdiffChangedPaths(dir, "main")
+  t.eqStr(
+    "every path the change touches, untracked too, sorted",
+    paths.isOk() ? paths.value.join(",") : "<err>",
+    "a.ts,dir name/new.ts,gone.ts,loose.ts",
+  )
+  t.ok("a refused base is an error", gitdiffChangedPaths(dir, "-x").isErr())
   const only = gitdiffChanged(dir, "main", ["a.ts"])
   t.ok("paths narrow it", only.isOk() && only.value.length === 1)
   if (fork.isOk()) {
@@ -75,6 +84,7 @@ export const main = (): i32 => {
   t.ok("a range is refused", gitdiffBaseProblem("a..b") !== null)
   t.ok("empty is refused", gitdiffBaseProblem("") !== null)
   t.ok("a space is refused", gitdiffBaseProblem("a b") !== null)
+  t.ok("bytes order", gitdiffCompare("B", "a") < 0 && gitdiffCompare("ab", "a") > 0 && gitdiffCompare("x", "x") === 0)
   const h = gitdiffHunk("@@ -3,0 +4,2 @@ ctx")
   t.ok("a hunk header", h !== null && h[0] === 4 && h[1] === 2)
   const h1 = gitdiffHunk("@@ -3 +4 @@")

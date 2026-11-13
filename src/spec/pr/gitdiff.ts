@@ -266,20 +266,87 @@ export const gitdiffChanged = (repo: string, base: string, paths: string[]): Res
   }
   const files = gitdiffParse(gitdiffGit(top, args).orReturn()).orReturn()
   const untracked = gitdiffGit(top, others).orReturn()
-  for (const p of split(untracked, String.fromCharCode(0))) {
-    if (p.length > 0) {
-      const f = new GitdiffFile(p)
-      f.added = true
-      const text = readFileSyncOrNull(`${top}/${p}`)
-      const n = text === null ? 0 : gitdiffLineCount(text)
-      if (n > 0) {
-        f.ranges.push(1)
-        f.ranges.push(n)
-      }
-      files.push(f)
+  for (const p of gitdiffNulList(untracked)) {
+    const f = new GitdiffFile(p)
+    f.added = true
+    const text = readFileSyncOrNull(`${top}/${p}`)
+    const n = text === null ? 0 : gitdiffLineCount(text)
+    if (n > 0) {
+      f.ranges.push(1)
+      f.ranges.push(n)
     }
+    files.push(f)
   }
   return Ok(files)
+}
+
+/** The non-empty parts of NUL-separated git output. */
+const gitdiffNulList = (text: string): string[] => {
+  const out: string[] = []
+  for (const p of split(text, String.fromCharCode(0))) {
+    if (p.length > 0) {
+      out.push(p)
+    }
+  }
+  return out
+}
+
+/**
+ * The paths a change touches against `base`, from the repository's top:
+ * those `git diff --name-only` shows from the fork point to the work tree,
+ * and the untracked files git does not ignore, sorted, each once.
+ *
+ * @param repo the repository
+ * @param base the ref the change is against
+ * @returns the paths, or `Err` when git fails or the base is refused
+ */
+export const gitdiffChangedPaths = (repo: string, base: string): Result<string[], string> => {
+  const fork = gitdiffForkPoint(repo, base).orReturn()
+  const top = gitdiffTop(repo).orReturn()
+  const names = gitdiffGit(top, [
+    "diff",
+    "--name-only",
+    "-z",
+    "--no-renames",
+    "--end-of-options",
+    fork,
+    "--",
+  ]).orReturn()
+  const others = gitdiffGit(top, ["ls-files", "--others", "--exclude-standard", "--full-name", "-z"]).orReturn()
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const p of gitdiffNulList(names)) {
+    if (!seen.has(p)) {
+      seen.add(p)
+      out.push(p)
+    }
+  }
+  for (const p of gitdiffNulList(others)) {
+    if (!seen.has(p)) {
+      seen.add(p)
+      out.push(p)
+    }
+  }
+  out.sort(gitdiffCompare)
+  return Ok(out)
+}
+
+/**
+ * Orders two strings by their bytes, for sort.
+ *
+ * @param a one string
+ * @param b the other
+ * @returns negative when `a` sorts first, positive when `b` does, 0 when equal
+ */
+export const gitdiffCompare = (a: string, b: string): i32 => {
+  const n = a.length < b.length ? a.length : b.length
+  for (let i = 0; i < n; i++) {
+    const d = a.charCodeAt(i) - b.charCodeAt(i)
+    if (d !== 0) {
+      return d
+    }
+  }
+  return a.length - b.length
 }
 
 /**

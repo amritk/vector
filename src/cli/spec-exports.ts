@@ -1,8 +1,9 @@
 /**
  * `cli/spec-exports` — `vector spec exports`: refuse a new export its contract does not cover.
  *
- * Only the command's shape is declared so far; its handler is a stub that
- * exits 2.
+ * The check lives in `spec/pr/exports`; this handler exits 2 until the
+ * contract model's class names stop clashing with verify's, so main can
+ * import it.
  */
 
 import { Cli, ParseResult } from "nish/cli-args"
@@ -43,7 +44,7 @@ export class SpecExportsCommand {
    * @returns the exit code
    */
   run(_r: ParseResult): i32 {
-    return report(usageError("spec exports: not implemented yet"))
+    return report(usageError("spec exports: not wired in yet: see spec/pr/exports"))
   }
 }
 

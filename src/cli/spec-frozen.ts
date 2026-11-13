@@ -1,8 +1,9 @@
 /**
  * `cli/spec-frozen` — `vector spec frozen`: refuse a change that edits a frozen contract.
  *
- * Only the command's shape is declared so far; its handler is a stub that
- * exits 2.
+ * The check lives in `spec/pr/frozen`; this handler exits 2 until the
+ * contract model's class names stop clashing with verify's, so main can
+ * import it.
  */
 
 import { Cli, ParseResult } from "nish/cli-args"
@@ -33,7 +34,11 @@ export class SpecFrozenCommand {
     this.baseFlag = cli.flag(handle, "--base <ref>", "the commit the change is against")
     this.repoFlag = cli.flag(handle, "--repo <dir>", "the repository (default: the current directory)")
     this.formatFlag = cli.flag(handle, "--format <f>", "text (default), markdown (a PR comment) or json")
-    this.contractsArg = cli.argument(handle, "[contracts...]", "the contracts to check (default: every changed one)")
+    this.contractsArg = cli.argument(
+      handle,
+      "[contracts...]",
+      "the contracts to check (default: every contracts/*.json)",
+    )
   }
 
   /**
@@ -43,7 +48,7 @@ export class SpecFrozenCommand {
    * @returns the exit code
    */
   run(_r: ParseResult): i32 {
-    return report(usageError("spec frozen: not implemented yet"))
+    return report(usageError("spec frozen: not wired in yet: see spec/pr/frozen"))
   }
 }
 

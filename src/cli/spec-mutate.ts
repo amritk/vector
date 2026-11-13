@@ -1,8 +1,9 @@
 /**
  * `cli/spec-mutate` — `vector spec mutate`: mutate the changed lines and refuse mutants the test misses.
  *
- * Only the command's shape is declared so far; its handler is a stub that
- * exits 2.
+ * The check lives in `spec/pr/mutate`; this handler exits 2 until the
+ * contract model's class names stop clashing with verify's, so main can
+ * import it.
  */
 
 import { Cli, ParseResult } from "nish/cli-args"
@@ -57,7 +58,7 @@ export class SpecMutateCommand {
    * @returns the exit code
    */
   run(_r: ParseResult): i32 {
-    return report(usageError("spec mutate: not implemented yet"))
+    return report(usageError("spec mutate: not wired in yet: see spec/pr/mutate"))
   }
 }
 
