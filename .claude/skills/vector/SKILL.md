@@ -55,7 +55,7 @@ the **numeric core**, offer that core, and don't force the rest through.
 3. **Verify (the veto).** Run:
 
    ```bash
-   bun run vector --verify /tmp/vector-spec.json /tmp/vector-program.json --json
+   vector verify /tmp/vector-spec.json /tmp/vector-program.json --json
    ```
 
    No API key is needed — this stage is pure Z3 + validators. Parse the JSON
@@ -87,7 +87,7 @@ already has a proven `program.json`, don't make them re-review — prove the
 regeneration behavior-preserving:
 
 ```bash
-bun run vector --diff <old-program.json> <new-program.json> --json
+vector diff <old-program.json> <new-program.json> --json
 ```
 
 - **`EQUIVALENT`** → report that behavior is provably unchanged for all
@@ -101,10 +101,10 @@ bun run vector --diff <old-program.json> <new-program.json> --json
 
 ## Contract style (advisory)
 
-`--verify` may return `styleWarnings` for **definitional** ensures —
+`vector verify` may return `styleWarnings` for **definitional** ensures —
 `result == <formula>`, the algorithm restated as spec. Prefer property-shaped
 axioms the user could have written in a ticket (bounds, monotonicity,
-conservation, error behavior) and let `--diff` carry behavior between
+conservation, error behavior) and let `vector diff` carry behavior between
 regenerations; keep a definitional clause only when the formula itself is the
 requirement (a regulated fee, a fixed published rate). Warnings never block a
 proof — surface them to the user instead of silently rewriting the spec.
@@ -130,10 +130,10 @@ proof — surface them to the user instead of silently rewriting the spec.
 For a rendered dashboard + emitted file instead of machine JSON:
 
 ```bash
-bun run vector --verify /tmp/vector-spec.json /tmp/vector-program.json --emit converter.ts
+vector verify /tmp/vector-spec.json /tmp/vector-program.json --emit converter.ts
 ```
 
 ## Reference example
 
-`test/fixtures/currency-spec.json` + `test/fixtures/currency.json` are a spec +
+`tests/fixtures/currency-spec.json` + `tests/fixtures/currency.json` are a spec +
 program pair that proves clean — mirror their structure for a first artifact.
