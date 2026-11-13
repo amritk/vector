@@ -26,7 +26,7 @@ import {
   isIntTy,
   typeOf,
 } from "./contract.ts";
-import { INT_RANGE, type IntType } from "./vocab.ts";
+import { INT_RANGE, INT_TYPES, type IntType } from "./vocab.ts";
 
 /**
  * A value as the evaluator holds it: an integer of up to 32 bits is a
@@ -423,10 +423,7 @@ function bvEncoding(ty: IntType): Encoding {
 }
 
 const ENCODINGS = new Map(
-  (Object.keys(INT_RANGE) as IntType[]).map((ty) => [
-    ty,
-    ty === "i32" ? INT_ENCODING : bvEncoding(ty),
-  ]),
+  INT_TYPES.map((ty) => [ty, ty === "i32" ? INT_ENCODING : bvEncoding(ty)]),
 );
 const enc = (ty: IntType) => ENCODINGS.get(ty) as Encoding;
 
@@ -490,16 +487,14 @@ function intTerm(e: Expr, sk: Skeleton, ty: IntType): string | null {
   return null;
 }
 
-const len = (n: number) => String(n);
-
 /** The length term of a bytes or string expression (one byte per character). */
 function lenTerm(e: Expr, sk: Skeleton): string | null {
   if ("var" in e) {
     const v = sk.vars.get(e.var);
     return v && !isIntTy(v.type) ? smtName(v) : null;
   }
-  if ("hex" in e) return len((e.hex.length / 2) * (e.repeat ?? 1));
-  if ("str" in e) return len(e.str.length);
+  if ("hex" in e) return String((e.hex.length / 2) * (e.repeat ?? 1));
+  if ("str" in e) return String(e.str.length);
   if (!("op" in e)) return null;
   if (e.op === "concat" || e.op === "strConcat") {
     const l = lenTerm(e.args[0], sk);
@@ -515,7 +510,7 @@ function lenTerm(e: Expr, sk: Skeleton): string | null {
   if (e.op === "fill") return nonNeg(intTerm(e.args[1], sk, "i32"));
   if (["flipBit", "lower", "upper", "utf8"].includes(e.op))
     return lenTerm(e.args[0], sk);
-  if (e.op === "le64") return len(8);
+  if (e.op === "le64") return String(8);
   if (e.op === "charAt") {
     const l = lenTerm(e.args[0], sk);
     const i = intTerm(e.args[1], sk, "i32");

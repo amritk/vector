@@ -24,6 +24,7 @@ import {
   type SigType,
   SIG_TYPES as VOCAB_SIG_TYPES,
   baseOf,
+  isOptional,
 } from "./vocab.ts";
 
 /**
@@ -37,10 +38,6 @@ export const SIG_TYPES = VOCAB_SIG_TYPES;
 export type SigTy = SigType;
 
 /** The types a value has in the contract: every SigTy but the secret ones. */
-export const VALUE_TYPES = SIG_TYPES.filter(
-  (t): t is Exclude<SigTy, "secret-bytes" | "secret-bytes?"> =>
-    baseOf(t) !== "secret-bytes",
-);
 export type ValueTy = Exclude<SigTy, "secret-bytes" | "secret-bytes?">;
 
 /** What a parameter or result of type `t` is in the contract. */
@@ -491,9 +488,6 @@ export function citeLabel(c: RfcContract, at: Citation): string {
     ? `§${at.section}`
     : `${src} §${at.section}`;
 }
-export const I32_MIN = -2147483648;
-export const I32_MAX = 2147483647;
-
 export const isLiteral = (e: Expr): e is Literal =>
   "hex" in e ||
   "ascii" in e ||
@@ -516,7 +510,8 @@ export const intJson = (n: bigint): number | string =>
 
 /** `ty` when it is an integer type, or an optional one, read as its base. */
 export const intBase = (ty: string | null | undefined): IntType | null => {
-  const b = ty?.endsWith("?") ? ty.slice(0, -1) : ty;
+  if (!ty || ty === "null") return null;
+  const b = baseOf(ty as SigType);
   return isIntTy(b) ? b : null;
 };
 
@@ -1475,7 +1470,7 @@ export interface TypeEnv {
 /** Can a value of type `from` be passed where `to` is expected? */
 export function assignable(from: ExprTy, to: ValueTy): boolean {
   if (from === to) return true;
-  if (to.endsWith("?")) return from === "null" || from === to.slice(0, -1);
+  if (isOptional(to)) return from === "null" || from === baseOf(to);
   if (to === "u32") return from === "i32";
   return false;
 }

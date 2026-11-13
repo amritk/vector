@@ -45,6 +45,7 @@ import {
   withoutControlChars,
 } from "./contract.ts";
 import type { PropertySamples } from "./sample.ts";
+import { baseOf, isOptional } from "./vocab.ts";
 
 /**
  * Each contract type as Nish spells it. Nish has no i8 or i16, and `T | null`
@@ -134,11 +135,13 @@ export function f64Lit(x: number): string {
  * The contract's \`a % b\` at each integer type but i32 (remI32): truncating,
  * and 0 when \`b\` is 0, or -1 for a signed type, as evalPure has it.
  */
+const remName = (t: IntType) => `rem${t[0].toUpperCase()}${t.slice(1)}`;
+
 function remHelpers(): Record<string, string> {
   const out: Record<string, string> = {};
   for (const t of ["i64", "u8", "u16", "u32", "u64"] as const) {
     const to = TO_INT[t];
-    const name = `rem${t[0].toUpperCase()}${t.slice(1)}`;
+    const name = remName(t);
     const zero =
       t === "i64" ? "b === toI64(0) || b === toI64(-1)" : `b === ${to}(0)`;
     out[name] = `const ${name} = (a: ${t}, b: ${t}): ${t} => {
@@ -681,7 +684,7 @@ class Emitter {
         // Through a helper, so a computed zero divisor gives 0 here exactly as
         // evalPure gives it when sampling `where`.
         const t = operands() as IntType;
-        const h = this.use(`rem${t[0].toUpperCase()}${t.slice(1)}`);
+        const h = this.use(remName(t));
         return wrapU32(`${h}(${a(0, t)}, ${a(1, t)})`);
       }
       case "le64":
@@ -985,13 +988,10 @@ function refusals(c: RfcContract): void {
       ...f.params.map((p) => [`${f.name}(${p.name})`, p.type] as const),
       [`${f.name}'s result`, f.returns] as const,
     ]) {
-      const base = t.replace(/\?$/, "");
+      const base = baseOf(t);
       if (base === "i8" || base === "i16")
         throw new NishRefusal(`${at} is ${t}: ${NO_SMALL_INT}`);
-      if (
-        t.endsWith("?") &&
-        (base === "bool" || base === "f64" || isIntTy(base))
-      )
+      if (isOptional(t) && (base === "bool" || base === "f64" || isIntTy(base)))
         throw new NishRefusal(
           `${at} is ${t}: Nish has \`T | null\` only on a reference type`,
         );

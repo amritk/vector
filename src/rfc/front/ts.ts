@@ -14,6 +14,7 @@ import {
   type FnSig,
   ID_RE,
   INT_RANGE,
+  INT_TYPES,
   type IntType,
   type Literal,
   MAX_BYTES_LEN,
@@ -292,7 +293,7 @@ const TS_BASES = {
   bytes: "u8[]",
   string: "string",
   bool: "boolean",
-  ...Object.fromEntries(Object.keys(INT_RANGE).map((t) => [t, t])),
+  ...Object.fromEntries(INT_TYPES.map((t) => [t, t])),
   f64: "f64",
   "secret-bytes": "Secret<u8[]>",
 } as Record<string, string>;
@@ -667,7 +668,7 @@ class PropertyParser {
           : undefined;
     if (!type)
       throw new Refusal(
-        `\`${tsName}\` is not a forall type; use u8[], string or an integer type (${Object.keys(INT_RANGE).join(", ")})`,
+        `\`${tsName}\` is not a forall type; use u8[], string or an integer type (${INT_TYPES.join(", ")})`,
         pos,
       );
     const raw = c.raw();
