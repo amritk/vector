@@ -261,6 +261,10 @@ Expressions are JSON. Besides bytes and integers they have:
   only when its section prints `L = 42`, `L: 42` or `L 42` (decimal or `0x`).
   A bare number proves nothing — every section prints small integers — so an
   unlabelled int is reported as a warning, unchecked.
+- **labelled f64s** — `{"f64":"0.5","label":"L"}` passes fidelity only when
+  its section prints `L = ` then a decimal that reads to the same binary64
+  (`0.50` matches `0.5`; any NaN matches a NaN). An unlabelled f64 is a
+  warning, unchecked, like an unlabelled int.
 
 ### Writing a spec (kramdown-rfc)
 
@@ -421,7 +425,7 @@ Rules the profile enforces:
 | `[00 0f f0 ff]` | bytes: lowercase hex pairs, separated by single spaces |
 | `[]`, `(empty)` | empty bytes |
 | `null`, `true`, `false` | themselves |
-| `42`, `-1` | a decimal integer, in range for the parameter (`i32`, or `u32` 0..4294967295) |
+| `42`, `-1` | a decimal integer, in range for the parameter's type (`i8` … `u64`, e.g. `u8` 0..255, `i64` -9223372036854775808..9223372036854775807); where the type is `f64` it is that f64 |
 | `Key = 0b0b0b` | labelled bytes: lowercase hex pairs, no spaces; the label is the name the cited section prints the value under. A label may be several words, and its first word may start with digits joined to a letter (`32-bit fixed-common part = 07000000`); a bare number is not a label |
 | `L = 42` | a labelled decimal integer, checked against the cited section's "L = 42". Where the parameter (or return) type is an integer type it is the int; anywhere else digits that are also hex pairs (`42`) are labelled bytes, and digits with a leading zero are never an int: `L = 00` is bytes, and `L = 042` (not whole hex pairs) is refused |
 | `22 × 0b`, `22 x 0b`, `IKM = 22 × 0b` | a run of bytes written that many times (`{hex, repeat}`), as RFCs print runs; optionally labelled. `22×0b` also reads. The count is at least 1, the run lowercase hex pairs, and the expansion at most 65536 bytes |
@@ -471,12 +475,18 @@ The profile reads every spelling in the table, and `| null` on each.
   (IEEE 754-2019 §5.12.2, §4.3.1), or `NaN`, `Infinity`, `-Infinity`; `-0` is
   negative zero. `bits`, when given, is the binary64 encoding as 16
   lowercase hex digits, big-endian (§3.4), and must be the one the text
-  converts to; for `NaN` it fixes the payload.
+  converts to; for `NaN` it fixes the payload. Decimal text past binary64's
+  largest finite value (`1e400`) is refused, since it would round to an
+  infinity (§7.4): write `Infinity` when one is meant.
 - **A vector's `tolerance`** says how close an f64 result must be: `{"ulps":
   n}` units in the last place, or `{"abs": "1e-9"}` (a decimal string, so it
   is not itself rounded), with the `section` and `quote` of the source that
-  allows it. Without one an f64 result is compared bit for bit, so a NaN
-  equals a NaN of the same bits.
+  allows it; the `quote` must appear in that section, and a tolerance on a
+  non-`f64` result is refused. Without one an f64 result is compared bit for
+  bit, so a NaN equals a NaN of the same bits; an expected NaN or infinity is
+  compared bit for bit even with a tolerance. In a property body `==` on f64
+  is IEEE 754-2019 equality (§5.11): `NaN == NaN` is false and `-0 == 0` is
+  true.
 
 The profile has no spelling for a tolerance *yet*, and vector does *not yet*
 sample a `forall` over `f64`: the schema records such a domain (`{"type":
@@ -493,8 +503,11 @@ but no `i8` or `i16`, and `| null` only on reference types (`u8[]`, `string`,
 Nish lacks, and a target module outside `nish/`. A 64-bit int is written as
 `hi·2^32 + lo` so no literal passes 2^53; an f64 is its shortest round-tripping
 decimal, or, for `-0`, `NaN` and the infinities, its bits.
-Where the contract wraps, Nish's signed arithmetic panics on overflow, so a
-test whose `i64` property overflows fails loudly rather than wrongly.
+Where the contract wraps, `i64` `+ - *` are emitted as `wrappingAdd`,
+`wrappingSub` and `wrappingMul` from `nish:unsafe`, so the test computes what
+the evaluator does; `u64` operators already wrap. `i32` arithmetic is emitted
+as plain operators, which panic on overflow, so such a property fails loudly
+rather than wrongly.
 
 **Modules and names.** `target.module` and a reference function's `module`
 are a neutral path: two or more lowercase segments joined by `/`

@@ -999,7 +999,7 @@
       "description": "The name the spec prints right before the value (`Key = 00:01:…`, `L = 42`); fidelity checks the pair."
     },
     "tolerance": {
-      "description": "How far an f64 result may be from `expect`: `abs`, an absolute difference as decimal text, or `ulps`, a count of binary64 units in the last place. It must come from the spec: `quote` is the sentence that states it, in `section` (of `source`, default the main one), checked like a requirement's quote. Without a tolerance an f64 expect is compared bit for bit (IEEE 754-2019 §3.4 encodings), so NaN equals a NaN of the same bits.",
+      "description": "How far an f64 result may be from `expect`: `abs`, an absolute difference as decimal text, or `ulps`, a count of binary64 units in the last place. It must come from the spec: `quote` is the sentence that states it, in `section` (of `source`, default the main one), checked like a requirement's quote. Without a tolerance an f64 expect is compared bit for bit (IEEE 754-2019 §3.4 encodings), so NaN equals a NaN of the same bits. Only an f64 result takes a tolerance, and an expected NaN or infinity is compared bit for bit even with one.",
       "anyOf": [
         {
           "type": "object",

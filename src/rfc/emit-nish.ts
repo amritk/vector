@@ -135,6 +135,13 @@ export function f64Lit(x: number): string {
  * The contract's \`a % b\` at each integer type but i32 (remI32): truncating,
  * and 0 when \`b\` is 0, or -1 for a signed type, as evalPure has it.
  */
+/** nish:unsafe's wrapping form of each i64 operator (docs/LANGUAGE.md). */
+const WRAPPING = {
+  "+": "wrappingAdd",
+  "-": "wrappingSub",
+  "*": "wrappingMul",
+} as const;
+
 const remName = (t: IntType) => `rem${t[0].toUpperCase()}${t.slice(1)}`;
 
 function remHelpers(): Record<string, string> {
@@ -489,6 +496,8 @@ class Emitter {
 
   /** What the test imports from nish:secret. */
   readonly secretNames = new Set<string>();
+  /** What the test imports from nish:unsafe: the wrapping i64 operators. */
+  readonly unsafeNames = new Set<string>();
   /** Plain-bytes wrappers of the functions that take or return a Secret. */
   readonly plainWrappers = new Map<string, string>();
 
@@ -678,6 +687,13 @@ class Emitter {
       case "-":
       case "*": {
         const t = operands();
+        if (t === "i64") {
+          // Signed overflow panics in Nish; the contract wraps (evalPure), so
+          // i64 goes through nish:unsafe's two's-complement wrap.
+          const w = WRAPPING[e.op];
+          this.unsafeNames.add(w);
+          return `${w}(${a(0, t)}, ${a(1, t)})`;
+        }
         return wrapU32(`(${a(0, t)} ${e.op} ${a(1, t)})`);
       }
       case "%": {
@@ -825,14 +841,14 @@ function emitVector(em: Emitter, k: VectorClause): string {
     case "f64": {
       const want = em.literal(k.expect, "f64");
       const tol = k.tolerance;
-      if (!tol) body = `${em.use("eqF64Bits")}(t, ${name}, ${call}, ${want})`;
-      else if (tol.abs !== undefined) {
-        // nearF64 fails a NaN and equal infinities, so a non-finite expected
-        // value is checked bit for bit instead.
-        body = Number.isFinite(f64Value(k.expect as { f64: string }))
-          ? `t.nearF64(${name}, ${call}, ${want}, ${f64Lit(parseF64(tol.abs))})`
-          : `${em.use("eqF64Bits")}(t, ${name}, ${call}, ${want})`;
-      } else
+      // nearF64 fails equal infinities and nearUlpsF64 fails every NaN, so a
+      // non-finite expected value is checked bit for bit whatever the
+      // tolerance (IEEE 754-2019 §5.11: a NaN is unordered with everything).
+      if (!tol || !Number.isFinite(f64Value(k.expect as { f64: string })))
+        body = `${em.use("eqF64Bits")}(t, ${name}, ${call}, ${want})`;
+      else if (tol.abs !== undefined)
+        body = `t.nearF64(${name}, ${call}, ${want}, ${f64Lit(parseF64(tol.abs))})`;
+      else
         body = `${em.use("nearUlpsF64")}(t, ${name}, ${call}, ${want}, ${intLit(BigInt(tol.ulps), "i64")})`;
       break;
     }
@@ -1059,6 +1075,11 @@ export function emitNishTest(
     ...(em.secretNames.size > 0
       ? [
           `import { ${["Secret", "expose", "secret", "wipe"].filter((n) => em.secretNames.has(n)).join(", ")} } from "nish:secret";`,
+        ]
+      : []),
+    ...(em.unsafeNames.size > 0
+      ? [
+          `import { ${[...em.unsafeNames].sort().join(", ")} } from "nish:unsafe";`,
         ]
       : []),
   ];

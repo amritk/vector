@@ -1,6 +1,23 @@
-import { describe, expect, test } from "bun:test";
-import { readFileSync, readdirSync } from "node:fs";
+import { afterAll, describe, expect, test } from "bun:test";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  type PropertyClause,
+  type RfcContract,
+  validateContractShape,
+} from "../src/rfc/contract.ts";
+import { NishRefusal, emitNishTest } from "../src/rfc/emit-nish.ts";
+import { extract } from "../src/rfc/extract.ts";
+import { sampleContract } from "../src/rfc/sample.ts";
 import {
   BASE_TYPES,
   INT_RANGE,
@@ -242,6 +259,87 @@ describe("the committed contracts validate", () => {
       const c = JSON.parse(readFileSync(join(ROOT, "contracts", f), "utf8"));
       expect(check(SCHEMA, c)).toEqual([]);
     });
+});
+
+describe("a spec over the new types, end to end", () => {
+  // extract-mini.xml with its interface on a non-nish module and three more
+  // functions over i8, i16, u16, u64, i64, f64 and `T | null`, and a property
+  // over the new integer widths.
+  const xml = readFileSync(
+    join(ROOT, "test/fixtures/extract/extract-mini.xml"),
+    "utf8",
+  )
+    .replace("// module: nish/hex\n", "// module: lib/hex\n")
+    .replace(
+      "export const hexDecode = (text: string): u8[] | null\n",
+      `export const hexDecode = (text: string): u8[] | null
+export const widen = (a: i8, b: i16, c: u16, d: u64): i64
+export const half = (x: f64): f64
+export const low = (x: u32 | null): u8 | null
+`,
+    )
+    .replace(
+      "forall (b: u8[] /* 0..64 */) => hexEncode(b).length === 2 * b.length\n]]></sourcecode>",
+      `forall (b: u8[] /* 0..64 */) => hexEncode(b).length === 2 * b.length
+]]></sourcecode>
+        <sourcecode type="ts-property"><![CDATA[
+// P-WIDEN covers R-ENC-LEN — every width reaches i64
+forall (a: i8 /* -128..127 */, b: i16 /* -32768..32767 */, c: u16 /* 0..65535 */, d: u64 /* 0..18446744073709551615 */) => widen(a, b, c, d) >= -9223372036854775808
+]]></sourcecode>`,
+    );
+  const d = mkdtempSync(join(tmpdir(), "vector-type-flow-"));
+  afterAll(() => rmSync(d, { recursive: true, force: true }));
+  for (const sub of ["specs", "contracts", "rfcs"]) mkdirSync(join(d, sub));
+  cpSync(join(ROOT, "rfcs/rfc4648.txt"), join(d, "rfcs/rfc4648.txt"));
+  writeFileSync(join(d, "specs/extract-mini.xml"), xml);
+
+  test("extracts, validates against the schema and the shape check, and samples every width", async () => {
+    expect(xml).toContain("P-WIDEN");
+    expect(xml).toContain("// module: lib/hex");
+    const r = extract(
+      join(d, "specs/extract-mini.xml"),
+      join(d, "contracts/extract-mini.json"),
+    );
+    if (!("text" in r)) throw new Error(r.refusals.join("\n"));
+    const c = JSON.parse(r.text) as RfcContract;
+    expect(check(SCHEMA, c)).toEqual([]);
+    expect(validateContractShape(c)).toEqual([]);
+    expect(c.target.module).toBe("lib/hex");
+    const sig = (n: string) => c.functions.find((f) => f.name === n);
+    expect(sig("widen")).toEqual({
+      name: "widen",
+      params: [
+        { name: "a", type: "i8" },
+        { name: "b", type: "i16" },
+        { name: "c", type: "u16" },
+        { name: "d", type: "u64" },
+      ],
+      returns: "i64",
+    });
+    expect(sig("half")?.returns).toBe("f64");
+    expect(sig("low")?.params[0]?.type).toBe("u32?");
+    expect(sig("low")?.returns).toBe("u8?");
+    const p = c.clauses.find((k) => k.id === "P-WIDEN") as PropertyClause;
+    expect(
+      p.forall.map((f) => [f.type, "min" in f && f.min, "max" in f && f.max]),
+    ).toEqual([
+      ["i8", -128, 127],
+      ["i16", -32768, 32767],
+      ["u16", 0, 65535],
+      ["u64", 0, "18446744073709551615"],
+    ]);
+    const s = await sampleContract(c);
+    const rows = s.properties.get("P-WIDEN")?.samples ?? [];
+    expect(rows.map((x) => x.a)).toContain(-128);
+    expect(rows.map((x) => x.b)).toContain(32767);
+    expect(rows.map((x) => x.d)).toContain(18446744073709551615n);
+    // Nish is the only emitter: a lib/ module is refused, with its name.
+    expect(() => emitNishTest(c, s.properties)).toThrow(
+      new NishRefusal(
+        "Nish is the only emitter, and lib/hex is not a nish/ module",
+      ),
+    );
+  });
 });
 
 describe("each new shape has a valid and an invalid example", () => {

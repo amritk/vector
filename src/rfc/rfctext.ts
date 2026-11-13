@@ -385,6 +385,31 @@ export function intRounds(
   );
 }
 
+// `label` then a decimal number (IEEE 754-2019 §5.12 decimal character
+// sequence), or an infinity or NaN, captured as printed.
+const f64LabelRe = (label: string) =>
+  new RegExp(
+    `(?<![0-9A-Za-z_.-])${escapeRe(normalizeText(label))}(?:[ \\t]*[=:][ \\t]*|[ \\t]+)([-+]?(?:(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?|Infinity|NaN))(?![0-9A-Za-z_]|[.,:/-]\\d)`,
+    "g",
+  );
+
+/**
+ * At which of `label`'s printings (counting from 0, every `label` followed
+ * by some decimal number) does the printed number satisfy `same`? Empty
+ * when none. The caller says what "the same binary64" means.
+ */
+export function f64Rounds(
+  text: string,
+  label: string,
+  same: (printed: string) => boolean,
+): { rounds: number[]; of: number } {
+  const all = [...text.matchAll(f64LabelRe(label))];
+  return {
+    rounds: all.flatMap((m, i) => (same(m[1] as string) ? [i] : [])),
+    of: all.length,
+  };
+}
+
 /** How many times `label` is printed followed by some integer. */
 export function intLabelCount(text: string, label: string): number {
   return [...text.matchAll(intLabelRe(label))].length;

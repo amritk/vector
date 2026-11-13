@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import hkdfContract from "../contracts/rfc5869-hkdf-sha256.json";
 import {
   type Expr,
@@ -34,6 +35,7 @@ import {
   settle,
   settleVector,
 } from "../src/rfc/literals.ts";
+import { parseRfc } from "../src/rfc/rfctext.ts";
 import { evalPure, sampleContract, wrapInt } from "../src/rfc/sample.ts";
 
 // The integer widths i8 … u64 and f64 carried from a literal through the
@@ -124,6 +126,17 @@ describe("int literals per width", () => {
 });
 
 describe("f64 literals", () => {
+  test("decimal text past binary64's largest finite value is refused (IEEE 754-2019 §7.4)", () => {
+    const c = structuredClone(hkdf);
+    const k = c.clauses.find((x) => x.kind === "vector") as VectorClause;
+    k.args = [{ f64: "-1e400" } as Literal, ...k.args.slice(1)];
+    expect(validateContractShape(c).join("\n")).toContain(
+      `.f64: "-1e400" is past binary64's largest finite value and rounds to an infinity (IEEE 754-2019 §7.4)`,
+    );
+    k.args = [{ f64: "1.7976931348623157e308" } as Literal, ...k.args.slice(1)];
+    expect(validateContractShape(c).join("\n")).not.toContain("largest finite");
+  });
+
   test("decimal text, NaN and the infinities are read as f64", () => {
     for (const t of ["1.5", "-2e-3", "NaN", "Infinity", "-Infinity", "1E10"])
       expect(raw(t)).toEqual({ kind: "f64", text: t });
@@ -157,15 +170,22 @@ describe("f64 literals", () => {
 });
 
 describe("evaluation wraps per width", () => {
-  const add = (ty: IntType, x: number | bigint, y: number | bigint) =>
+  const arith = (
+    o: "+" | "-" | "*",
+    ty: IntType,
+    x: number | bigint,
+    y: number | bigint,
+  ) =>
     evalPure(
-      op("+", v("x"), v("y")),
+      op(o, v("x"), v("y")),
       { x, y },
       new Map([
         ["x", ty],
         ["y", ty],
       ]),
     );
+  const add = (ty: IntType, x: number | bigint, y: number | bigint) =>
+    arith("+", ty, x, y);
 
   test("wrapInt reduces modulo 2^N, two's complement for iN", () => {
     for (const ty of INT_TYPES) {
@@ -185,6 +205,18 @@ describe("evaluation wraps per width", () => {
     expect(add("i32", 2147483647, 1)).toBe(-2147483648);
     expect(add("i64", 9223372036854775807n, 1n)).toBe(-9223372036854775808n);
     expect(add("u64", 18446744073709551615n, 1n)).toBe(0n);
+    expect(arith("-", "i64", -9223372036854775808n, 1n)).toBe(
+      9223372036854775807n,
+    );
+    expect(arith("-", "u64", 0n, 1n)).toBe(18446744073709551615n);
+    expect(arith("*", "i64", 4294967296n, 2147483648n)).toBe(
+      -9223372036854775808n,
+    );
+    expect(arith("*", "i64", 9223372036854775807n, 2n)).toBe(-2n);
+    expect(arith("*", "u64", 4294967296n, 4294967296n)).toBe(0n);
+    expect(arith("*", "u64", 18446744073709551615n, 3n)).toBe(
+      18446744073709551613n,
+    );
     const types = new Map<string, IntType>([
       ["x", "u8"],
       ["y", "u8"],
@@ -280,6 +312,17 @@ function numContract(): RfcContract {
         quote,
       },
     ),
+    vec(
+      "V-FU2",
+      "half",
+      { f64: "3" },
+      { f64: "1.5" },
+      {
+        ulps: 2,
+        ...at,
+        quote,
+      },
+    ),
     vec("V-U8", "lo8", { int: 65535 }, { int: 255 }),
     {
       kind: "property",
@@ -291,7 +334,7 @@ function numContract(): RfcContract {
           name: "x",
           type: "i64",
           min: "-9223372036854775808",
-          max: "9223372036854775806",
+          max: "9223372036854775807",
         },
         { name: "y", type: "u64", min: 0, max: "18446744073709551615" },
         { name: "z", type: "u8", min: 0, max: 255 },
@@ -315,13 +358,81 @@ describe("a contract over the new types", () => {
     expect(runGates(c).issues.filter((i) => i.gate === "typing")).toEqual([]);
   });
 
+  test("the fidelity gate checks tolerance quotes and labelled f64 values", () => {
+    const rfc = parseRfc(readFileSync("rfcs/rfc5869.txt", "utf8"));
+    const fid = (c: RfcContract) => {
+      const r = runGates(c, { rfc });
+      return {
+        issues: r.issues.filter((i) => i.gate === "fidelity"),
+        warnings: r.warnings.map((w) => `${w.at}: ${w.message}`),
+      };
+    };
+    const base = fid(numContract());
+    expect(base.issues).toEqual([]);
+    // An f64 with no label is said to be unchecked, never passed silently.
+    expect(base.warnings).toContain(
+      'V-FA.args[0]: not checked against the RFC: the f64 1.5 has no "label" to find it by',
+    );
+
+    const c = numContract();
+    const fa = c.clauses.find((k) => k.id === "V-FA") as VectorClause;
+    (fa.tolerance as { quote: string }).quote = "within one part in a trillion";
+    expect(fid(c).issues).toEqual([
+      {
+        gate: "fidelity",
+        at: "V-FA.tolerance",
+        message:
+          'quote not found in RFC §2.2 ("Step 1: Extract"): "within one part in a trillion"',
+      },
+    ]);
+
+    // Appendix A.1 prints "L    = 42": a labelled f64 is found by value.
+    const labelled = (n: string) => {
+      const d = numContract();
+      d.clauses = [
+        {
+          kind: "vector",
+          id: "V-L",
+          title: "L",
+          covers: [R],
+          source: { cite: { section: "A.1" } },
+          call: "half",
+          args: [{ f64: "84", unchecked: "twice L" }],
+          expect: { f64: n, label: "L" },
+        },
+      ];
+      return fid(d).issues.map((i) => i.message);
+    };
+    expect(labelled("42")).toEqual([]);
+    expect(labelled("4.2e1")).toEqual([]);
+    expect(labelled("43")).toEqual([
+      'RFC §A.1 does not print "L" followed by 43',
+    ]);
+  });
+
+  test("a tolerance on a non-f64 result and an int out of range are typing errors", () => {
+    const c = numContract();
+    const v64 = c.clauses.find((k) => k.id === "V-I64") as VectorClause;
+    v64.tolerance = { ulps: 1, ...at, quote: hkdf.requirements[0].quote };
+    const u8 = c.clauses.find((k) => k.id === "V-U8") as VectorClause;
+    u8.expect = { int: 256 };
+    expect(
+      runGates(c)
+        .issues.filter((i) => i.gate === "typing")
+        .map((i) => `${i.at}: ${i.message}`),
+    ).toEqual([
+      "V-I64: tolerance: inc64 returns i64, and only an f64 result is compared within a tolerance",
+      "V-U8: expect: lo8 returns u8, got 256, outside u8's 0..255",
+    ]);
+  });
+
   test("samples each integer width at its min and max", async () => {
     const s = await sampleContract(numContract());
     expect(s.ok).toBe(true);
     const rows = s.properties.get("P-I64")?.samples ?? [];
     const col = (k: string) => rows.map((r) => BigInt(r[k] as number | bigint));
     expect(col("x")).toContain(-9223372036854775808n);
-    expect(col("x")).toContain(9223372036854775806n);
+    expect(col("x")).toContain(9223372036854775807n);
     expect(col("y")).toContain(0n);
     expect(col("y")).toContain(18446744073709551615n);
     expect(col("z")).toContain(0n);
@@ -332,12 +443,45 @@ describe("a contract over the new types", () => {
     }
   });
 
+  test("samples i8, i16 and u16 at their min and max", async () => {
+    const c = numContract();
+    const p = c.clauses.at(-1) as PropertyClause;
+    p.forall = (["i8", "i16", "u16"] as const).map((type, i) => ({
+      name: `w${i}`,
+      type,
+      min: intJson(INT_RANGE[type].min),
+      max: intJson(INT_RANGE[type].max),
+    }));
+    p.assert = op(
+      "and",
+      ...p.forall.map((f) => op("==", v(f.name), v(f.name))),
+    );
+    const s = await sampleContract(c);
+    expect(s.ok).toBe(true);
+    const rows = s.properties.get("P-I64")?.samples ?? [];
+    for (const f of p.forall) {
+      const col = rows.map((r) => r[f.name]);
+      const ty = f.type as IntType;
+      expect(col).toContain(Number(INT_RANGE[ty].min));
+      expect(col).toContain(Number(INT_RANGE[ty].max));
+    }
+  });
+
   test("an f64 forall bound cannot be NaN", () => {
     const c = numContract();
     const p = c.clauses.at(-1) as PropertyClause;
     p.forall = [{ name: "f", type: "f64", min: "NaN", max: "1" }];
     expect(validateContractShape(c).join("\n")).toContain(
       "a bound cannot be NaN",
+    );
+  });
+
+  test("an f64 forall bound cannot overflow binary64", () => {
+    const c = numContract();
+    const p = c.clauses.at(-1) as PropertyClause;
+    p.forall = [{ name: "f", type: "f64", min: "0", max: "2e308" }];
+    expect(validateContractShape(c).join("\n")).toContain(
+      `.max: "2e308" is past binary64's largest finite value`,
     );
   });
 });
@@ -412,8 +556,12 @@ describe("the Nish emitter", () => {
     expect(src).toContain(
       'eqF64Bits(t, "[V-FN] V-FN (R-EXTRACT)", half(bitsToF64((toI64(2146435072) * 4294967296 + 0))), bitsToF64((toI64(2146435072) * 4294967296 + 0)));',
     );
+    // nearUlpsF64 fails every NaN, so a NaN expect with ulps is also by bits.
     expect(src).toContain(
-      'nearUlpsF64(t, "[V-FU] V-FU (R-EXTRACT)", half(bitsToF64((toI64(2146959360) * 4294967296 + 0))), bitsToF64((toI64(2146959360) * 4294967296 + 0)), toI64(2));',
+      'eqF64Bits(t, "[V-FU] V-FU (R-EXTRACT)", half(bitsToF64((toI64(2146959360) * 4294967296 + 0))), bitsToF64((toI64(2146959360) * 4294967296 + 0)));',
+    );
+    expect(src).toContain(
+      'nearUlpsF64(t, "[V-FU2] V-FU2 (R-EXTRACT)", half(toF64(3)), toF64(1.5), toI64(2));',
     );
     expect(src).toContain(
       't.eqStr("[V-U8] V-U8 (R-EXTRACT)", `${lo8(toU16(65535))}`, "255");',
@@ -422,13 +570,77 @@ describe("the Nish emitter", () => {
     expect(src).toContain("(toI64(-2147483648) * 4294967296 + 0)");
     expect(src).toMatch(/const table_y: u64\[\] = \[/);
     expect(src).toMatch(/const table_z: u8\[\] = \[/);
-    expect(src).toContain("(inc64(v_x) === (v_x + toI64(1)))");
+    expect(src).toContain("(inc64(v_x) === wrappingAdd(v_x, toI64(1)))");
+    expect(src).toContain('import { wrappingAdd } from "nish:unsafe";');
     expect(src).toContain("(incU64(v_y) >= toU64(0))");
     expect(src).toContain("remU8(v_z, toU8(7))");
     expect(src).toContain("const remU8 = (a: u8, b: u8): u8 => {");
     expect(src).not.toContain("const remI64");
     for (const h of ["eqF64Bits", "nearUlpsF64"])
       expect(src.match(new RegExp(`const ${h} =`, "g"))?.length).toBe(1);
+  });
+
+  test("the emitted f64 checks pass a NaN only by bits, and ulps by distance", () => {
+    const src = emitNishTest(numContract(), new Map());
+    // Run the emitted helpers as JavaScript: i64 is a bigint, as in evalPure.
+    const helper = (h: string) => {
+      const m = src.match(new RegExp(`const ${h} = [\\s\\S]*?\\n};`));
+      if (!m) throw new Error(`no ${h}`);
+      const js = new Bun.Transpiler({ loader: "ts" })
+        .transformSync(
+          m[0].replace(/-9007199254740992/, "$&n").replace("<< 10", "<< 10n"),
+        )
+        .replace(/^const \w+ = /, "return ");
+      const f64ToBits = (x: number) => {
+        const d = new DataView(new ArrayBuffer(8));
+        d.setFloat64(0, x);
+        return d.getBigInt64(0);
+      };
+      return new Function("f64ToBits", "toI64", js)(f64ToBits, BigInt);
+    };
+    const t = { pass: () => true, fail: () => false };
+    const eq = helper("eqF64Bits");
+    const near = helper("nearUlpsF64");
+    expect(eq(t, "n", Number.NaN, Number.NaN)).toBe(true);
+    expect(near(t, "n", Number.NaN, Number.NaN, 2n)).toBe(false);
+    expect(eq(t, "n", 0, -0)).toBe(false);
+    const up = (x: number, k: number) => {
+      const d = new DataView(new ArrayBuffer(8));
+      d.setFloat64(0, x);
+      d.setBigInt64(0, d.getBigInt64(0) + BigInt(k));
+      return d.getFloat64(0);
+    };
+    expect(near(t, "n", up(1.5, 2), 1.5, 2n)).toBe(true);
+    expect(near(t, "n", up(1.5, 3), 1.5, 2n)).toBe(false);
+    expect(near(t, "n", up(1.5, -2), 1.5, 2n)).toBe(true);
+    expect(near(t, "n", 0, -0, 0n)).toBe(true);
+    expect(near(t, "n", Number.MIN_VALUE, -Number.MIN_VALUE, 2n)).toBe(true);
+    expect(near(t, "n", Number.MIN_VALUE, -Number.MIN_VALUE, 1n)).toBe(false);
+  });
+
+  test("i64 + - * wrap through nish:unsafe, as the contract does", async () => {
+    const c = numContract();
+    const p = c.clauses.at(-1) as PropertyClause;
+    p.assert = op(
+      "and",
+      op("==", op("-", v("x"), { int: 1 }), op("*", v("x"), { int: 2 })),
+      op("==", op("+", v("y"), { int: 1 }), op("*", v("y"), { int: 2 })),
+    );
+    const src = emitNishTest(c, (await sampleContract(c)).properties);
+    expect(src).toContain(
+      'import { wrappingMul, wrappingSub } from "nish:unsafe";',
+    );
+    expect(src).toContain(
+      "(wrappingSub(v_x, toI64(1)) === wrappingMul(v_x, toI64(2)))",
+    );
+    // u64 already wraps in Nish.
+    expect(src).toContain("((v_y + toU64(1)) === (v_y * toU64(2)))");
+  });
+
+  test("a contract without i64 arithmetic imports nothing from nish:unsafe", () => {
+    const c = numContract();
+    c.clauses = c.clauses.filter((k) => k.kind === "vector");
+    expect(emitNishTest(c, new Map())).not.toContain("nish:unsafe");
   });
 
   test("a signed remainder helper guards b = 0 and b = -1", async () => {

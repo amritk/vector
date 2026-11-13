@@ -28,6 +28,7 @@ import {
   type Citation,
   type Clause,
   type FnSig,
+  INT_RANGE,
   type Literal,
   type RfcContract,
   type SigTy,
@@ -38,8 +39,12 @@ import {
   callsIn,
   citeLabel,
   declaredSources,
+  f64Bits,
+  f64Value,
+  isIntTy,
   literalBytes,
   literalFits,
+  parseF64,
   sourceOf,
   targetFunctions,
   typeOf,
@@ -53,6 +58,7 @@ import {
   KEYWORD_RE,
   type RfcDocument,
   type RfcSection,
+  f64Rounds,
   findSection,
   hexPrinted,
   hexValues,
@@ -207,6 +213,20 @@ export function runGates(input: unknown, opts: GateOptions = {}): GateResult {
   return { ok: issues.length === 0, issues, warnings, coverage };
 }
 
+/**
+ * What a literal that does not fit `want` is: an integer out of an integer
+ * type's range names its value and that range (ISO C11 §7.20.2.1), anything
+ * else its own type.
+ */
+function misfit(lit: Literal, want: ValueTy): string {
+  const base = want.replace(/\?$/, "");
+  if ("int" in lit && isIntTy(base)) {
+    const r = INT_RANGE[base];
+    return `${lit.int}, outside ${base}'s ${r.min}..${r.max}`;
+  }
+  return typeOfLiteral(lit);
+}
+
 function checkTyping(c: RfcContract, issues: GateIssue[]): void {
   const fns = new Map<string, FnSig>(c.functions.map((f) => [f.name, f]));
   for (const f of c.functions) {
@@ -237,13 +257,18 @@ function checkTyping(c: RfcContract, issues: GateIssue[]): void {
           const p = sig.params[i];
           if (p && !literalFits(a, valueTy(p.type))) {
             errors.push(
-              `args[${i}]: ${k.call}(${p.name}) wants ${valueTy(p.type)}, got ${typeOfLiteral(a)}`,
+              `args[${i}]: ${k.call}(${p.name}) wants ${valueTy(p.type)}, got ${misfit(a, valueTy(p.type))}`,
             );
           }
         });
         if (!literalFits(k.expect, valueTy(sig.returns))) {
           errors.push(
-            `expect: ${k.call} returns ${valueTy(sig.returns)}, got ${typeOfLiteral(k.expect)}`,
+            `expect: ${k.call} returns ${valueTy(sig.returns)}, got ${misfit(k.expect, valueTy(sig.returns))}`,
+          );
+        }
+        if (k.tolerance && valueTy(sig.returns) !== "f64") {
+          errors.push(
+            `tolerance: ${k.call} returns ${valueTy(sig.returns)}, and only an f64 result is compared within a tolerance`,
           );
         }
       }
@@ -412,6 +437,21 @@ function checkFidelity(
   }
   for (const k of c.clauses) {
     if (k.kind !== "vector") continue;
+    // A tolerance is a claim about the source, quoted like a requirement.
+    const tol = k.tolerance;
+    const tolSec =
+      tol && citedSection(c, docs, tol, `${k.id}.tolerance`, issues);
+    if (
+      tol &&
+      tolSec &&
+      !sectionText(tolSec).includes(normalizeText(tol.quote))
+    ) {
+      issues.push({
+        gate: "fidelity",
+        at: `${k.id}.tolerance`,
+        message: `quote not found in ${place(c, docs, tol)} ("${tolSec.title}"): ${JSON.stringify(tol.quote)}`,
+      });
+    }
     const at = vectorArgsAt(k);
     const sec = citedSection(c, docs, at, k.id, issues);
     if (!sec) continue;
@@ -1011,6 +1051,31 @@ function literalCheck(
           `${where} does not print "${lit.label}" followed by ${lit.int}`,
         );
       const of = intLabelCount(lines, lit.label);
+      return [{ at, label: lit.label, ...rounds(lit.label, of, has) }];
+    }
+    if ("f64" in lit) {
+      if (lit.label === undefined) {
+        warnings.push({
+          at: `${id}.${at}`,
+          message: `not checked against the RFC: the f64 ${lit.f64} has no "label" to find it by`,
+        });
+        return [];
+      }
+      // The printed decimal must read (roundTiesToEven, IEEE 754-2019
+      // §5.12.2) to the literal's binary64; any NaN matches a NaN.
+      const want = f64Value(lit);
+      const same = (printed: string) => {
+        const x = parseF64(printed);
+        return Number.isNaN(want)
+          ? Number.isNaN(x)
+          : f64Bits(x) === f64Bits(want);
+      };
+      const { rounds: has, of } = f64Rounds(lines, lit.label, same);
+      if (has.length === 0)
+        return fail(
+          at,
+          `${where} does not print "${lit.label}" followed by ${lit.f64}`,
+        );
       return [{ at, label: lit.label, ...rounds(lit.label, of, has) }];
     }
     return [];

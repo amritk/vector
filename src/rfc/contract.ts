@@ -645,6 +645,12 @@ const F64_TEXT_WANT =
   "decimal text (RFC 8259 §6 number syntax), NaN, Infinity or -Infinity";
 export const isF64Text = (v: unknown): v is string =>
   typeof v === "string" && F64_TEXT_RE.test(v);
+/** Decimal text past binary64's largest finite value, which rounds to an
+ * infinity (IEEE 754-2019 §7.4): write Infinity when an infinity is meant. */
+const overflows = (t: string): boolean =>
+  /^-?[0-9]/.test(t) && !Number.isFinite(Number(t));
+const OVERFLOW_WANT =
+  "is past binary64's largest finite value and rounds to an infinity (IEEE 754-2019 §7.4); write Infinity or -Infinity if that is meant";
 const F64_BITS_RE = /^[0-9a-f]{16}$/;
 const F64_BITS_WANT =
   "the binary64 encoding as 16 lowercase hex digits (IEEE 754-2019 §3.4)";
@@ -685,6 +691,8 @@ function shapeLiteral(v: unknown, at: string, errors: string[]): void {
     checkKeys(v, ["f64", "bits", "label", "unchecked"], at, errors);
     checkLabel(v, at, errors);
     if (!isF64Text(v.f64)) errors.push(`${at}.f64: ${F64_TEXT_WANT}`);
+    else if (overflows(v.f64))
+      errors.push(`${at}.f64: "${v.f64}" ${OVERFLOW_WANT}`);
     else if (v.bits !== undefined) {
       if (typeof v.bits !== "string" || !F64_BITS_RE.test(v.bits))
         errors.push(`${at}.bits: ${F64_BITS_WANT}`);
@@ -1163,6 +1171,8 @@ export function validateContractShape(input: unknown): string[] {
                   errors.push(
                     `${vat}.${k}: ${F64_TEXT_WANT.replace(", NaN", "")} (a bound cannot be NaN: it orders nothing, IEEE 754-2019 §5.11)`,
                   );
+                else if (overflows(v[k] as string))
+                  errors.push(`${vat}.${k}: "${v[k]}" ${OVERFLOW_WANT}`);
               }
               if (
                 isF64Text(v.min) &&

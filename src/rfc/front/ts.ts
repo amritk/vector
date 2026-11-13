@@ -305,13 +305,13 @@ const SIG_TYPES: Record<string, SigTy> = Object.fromEntries(
   ]),
 );
 
-const TS_NAMES: Record<string, string> = {
-  bytes: "u8[]",
-  "bytes?": "u8[] | null",
-  string: "string",
-  "string?": "string | null",
-  bool: "boolean",
-};
+/** Each expression type's TypeScript spelling: `T?` prints `T | null`. */
+const TS_NAMES: Record<string, string> = Object.fromEntries(
+  Object.entries(TS_BASES).flatMap(([t, ts]) => [
+    [t, ts],
+    [`${t}?`, `${ts} | null`],
+  ]),
+);
 
 /** An expression type as the block's author wrote it. */
 const tsTy = (t: ExprTy) => TS_NAMES[t] ?? t;
@@ -367,7 +367,7 @@ function parseInterface(text: string): {
   c.skipRaw();
   const functions: FnSig[] = [];
   const lines: number[] = [];
-  // A later `// module: nish/<other>` line: the functions after it are
+  // A later `// module: <root>/<other>` line: the functions after it are
   // reference functions of that module, which properties call but the test
   // does not test. Any other comment is skipped.
   let from = m[1];

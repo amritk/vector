@@ -370,11 +370,11 @@ interface Encoding {
   read(raw: string): bigint | null;
 }
 
-const intLit = (x: bigint) => (x < 0n ? `(- ${-x})` : String(x));
+const smtInt = (x: bigint) => (x < 0n ? `(- ${-x})` : String(x));
 
 const INT_ENCODING: Encoding = {
   sort: "Int",
-  lit: intLit,
+  lit: smtInt,
   arith: { "+": "+", "-": "-", "*": "*" },
   order: { "<": "<", "<=": "<=", ">": ">", ">=": ">=" },
   rem(l, d) {
@@ -385,7 +385,7 @@ const INT_ENCODING: Encoding = {
     return `(ite (>= ${l} 0) (mod ${l} ${d.int}) (- (mod (- ${l}) ${d.int})))`;
   },
   diff: (l, r) => `(- ${l} ${r})`,
-  offset: intLit,
+  offset: smtInt,
   read: (raw) => (/^-?\d+$/.test(raw) ? BigInt(raw) : null),
 };
 
