@@ -27,7 +27,6 @@ import {
   BINDING_LEVELS,
   type Citation,
   type Clause,
-  type ExprTy,
   type FnSig,
   type Literal,
   type RfcContract,
@@ -35,12 +34,12 @@ import {
   type TypeEnv,
   type ValueTy,
   type VectorClause,
-  assignable,
   bytesToHex,
   callsIn,
   citeLabel,
   declaredSources,
   literalBytes,
+  literalFits,
   sourceOf,
   targetFunctions,
   typeOf,
@@ -268,17 +267,6 @@ function checkTyping(c: RfcContract, issues: GateIssue[]): void {
     for (const m of errors)
       issues.push({ gate: "typing", at: k.id, message: m });
   }
-}
-
-/** A literal can stand for a value of type `ty` (u32 takes any non-negative int). */
-function literalFits(lit: Literal, ty: ValueTy): boolean {
-  const t: ExprTy = typeOfLiteral(lit);
-  if ("int" in lit) {
-    if (ty === "u32") return lit.int >= 0 && lit.int <= 4294967295;
-    if (ty === "i32") return lit.int >= -2147483648 && lit.int <= 2147483647;
-    return false;
-  }
-  return assignable(t, ty);
 }
 
 function checkCoverage(
@@ -1402,7 +1390,12 @@ const NISH_TYPES: Record<string, SigTy> = {
   "string | null": "string?",
   "null | string": "string?",
   i32: "i32",
+  i64: "i64",
+  u8: "u8",
+  u16: "u16",
   u32: "u32",
+  u64: "u64",
+  f64: "f64",
   boolean: "bool",
 };
 

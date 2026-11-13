@@ -124,7 +124,9 @@ describe("string values", () => {
       "string needs integer 0 <= minLen <= maxLen <= 4096",
     );
     expect(bad({ extra: 1 })).toContain('unknown field "extra"');
-    expect(bad({ type: "text" })).toContain('"i32", "bytes" or "string"');
+    expect(bad({ type: "text" })).toContain(
+      `an integer type (i8 i16 i32 i64 u8 u16 u32 u64), "f64", "bytes" or "string"`,
+    );
   });
 
   test("alphabets spell their classes once, and refuse an unknown one", () => {
@@ -170,7 +172,9 @@ describe("string values", () => {
     );
     expect(
       validateContractShape(langContract({ text: "x" } as never)).join("\n"),
-    ).toContain("not a literal (hex, ascii, str, int, bool, null, concat)");
+    ).toContain(
+      "not a literal (hex, ascii, str, int, f64, bool, null, concat)",
+    );
     for (const part of [
       { int: 5 },
       { str: "a" },
@@ -188,7 +192,7 @@ describe("string values", () => {
       ).toContain(".concat[1]: a bytes literal (hex, ascii, concat)");
     }
     expect(bad(op("isNull", v("s")))).toContain(
-      "isNull wants bytes? or string?, got string",
+      "isNull wants an optional (T?), got string",
     );
     expect(bad(op("==", { null: true }, { null: true }))).toContain(
       "cannot compare null with null",

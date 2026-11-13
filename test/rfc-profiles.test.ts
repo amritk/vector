@@ -397,9 +397,9 @@ export function frame(data: u8[]): u8[] | null`;
 
   for (const [why, code, message] of [
     [
-      "a module outside nish",
-      `${IFACE}\n// module: std/len\nexport function len(data: u8[]): i32`,
-      "`std/len` is not a nish module; write nish/<path>",
+      "a module that is not a module path",
+      `${IFACE}\n// module: Std/len\nexport function len(data: u8[]): i32`,
+      "`Std/len` is not a module path; write <root>/<path>, lowercase segments split by /",
     ],
     [
       "a module line in a block comment",
@@ -419,7 +419,7 @@ export function frame(data: u8[]): u8[] | null`;
         [
           `the near-miss \`${line}\``,
           `${IFACE}\n${line}\nexport function len(data: u8[]): i32`,
-          `a module line is \`// module: nish/<path>\`, one module, not \`${line}\``,
+          `a module line is \`// module: <root>/<path>\`, one module, not \`${line}\``,
         ] as const,
     ),
     [

@@ -231,7 +231,12 @@ describe("the committed contracts validate", () => {
   const files = readdirSync(join(ROOT, "contracts")).filter(
     (f) => f.endsWith(".json") && !f.endsWith(".survivors.json"),
   );
-  test("there are three", () => expect(files).toHaveLength(3));
+  test("they are the three committed contracts", () =>
+    expect(files.sort()).toEqual([
+      "example-hex.json",
+      "rfc5869-hkdf-sha256.json",
+      "rfc8439-chacha20-poly1305.json",
+    ]));
   for (const f of files)
     test(f, () => {
       const c = JSON.parse(readFileSync(join(ROOT, "contracts", f), "utf8"));
@@ -368,6 +373,11 @@ describe("each new shape has a valid and an invalid example", () => {
     expect(
       valid("propertyClause", property([{ ...f, min: -1.5 }])),
     ).not.toEqual([]);
+    for (const nan of [
+      { ...f, min: "NaN" },
+      { ...f, max: "NaN" },
+    ])
+      expect(valid("propertyClause", property([nan]))).not.toEqual([]);
   });
 
   test("functions and params take names, the target takes modules", () => {

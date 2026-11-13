@@ -21,8 +21,8 @@ import {
   LANGUAGES,
   type ModuleOverrides,
   type NameOverrides,
-  SIG_TYPES as VOCAB_SIG_TYPES,
   type SigType,
+  SIG_TYPES as VOCAB_SIG_TYPES,
   baseOf,
 } from "./vocab.ts";
 
@@ -408,6 +408,13 @@ export const TEST_NAMES = new Set([
   "flipBit",
   "bitwiseBytes",
   "remI32",
+  "remI64",
+  "remU8",
+  "remU16",
+  "remU32",
+  "remU64",
+  "eqF64Bits",
+  "nearUlpsF64",
   "le64",
   "strEq",
   "isNullStr",
@@ -438,6 +445,14 @@ export const TEST_NAMES = new Set([
   "process",
   "console",
   "toI32",
+  "toI64",
+  "toU8",
+  "toU16",
+  "toU32",
+  "toU64",
+  "toF64",
+  "f64ToBits",
+  "bitsToF64",
 ]);
 export const TEST_PREFIXES = ["plain_", "clause_", "table_", "v_", "a_", "s_"];
 export const SECTION_RE = /^(?:\d+(?:\.\d+)*|[A-Z](?:\.\d+)*)$/;
@@ -494,6 +509,16 @@ export const JSON_SAFE_MAX = 9007199254740991n;
 
 /** An int literal's (or bound's) exact value: a JSON integer or a decimal string. */
 export const intValue = (v: number | string): bigint => BigInt(v);
+
+/** An exact int in its JSON form: a number within ±(2^53−1), else a decimal string (RFC 7493 §2.2). */
+export const intJson = (n: bigint): number | string =>
+  n <= JSON_SAFE_MAX && n >= -JSON_SAFE_MAX ? Number(n) : n.toString();
+
+/** `ty` when it is an integer type, or an optional one, read as its base. */
+export const intBase = (ty: string | null | undefined): IntType | null => {
+  const b = ty?.endsWith("?") ? ty.slice(0, -1) : ty;
+  return isIntTy(b) ? b : null;
+};
 
 /** Whether `v` lies in `ty`'s range (vocab.ts INT_RANGE), compared exactly. */
 export const fitsInt = (v: number | string | bigint, ty: IntType): boolean => {
@@ -623,7 +648,7 @@ const F64_TEXT_RE =
   /^(?:-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|NaN|Infinity|-Infinity)$/;
 const F64_TEXT_WANT =
   "decimal text (RFC 8259 §6 number syntax), NaN, Infinity or -Infinity";
-const isF64Text = (v: unknown): v is string =>
+export const isF64Text = (v: unknown): v is string =>
   typeof v === "string" && F64_TEXT_RE.test(v);
 const F64_BITS_RE = /^[0-9a-f]{16}$/;
 const F64_BITS_WANT =
@@ -668,11 +693,17 @@ function shapeLiteral(v: unknown, at: string, errors: string[]): void {
     else if (v.bits !== undefined) {
       if (typeof v.bits !== "string" || !F64_BITS_RE.test(v.bits))
         errors.push(`${at}.bits: ${F64_BITS_WANT}`);
-      else if (!Number.isNaN(parseF64(v.f64)) && f64Bits(parseF64(v.f64)) !== v.bits)
+      else if (
+        !Number.isNaN(parseF64(v.f64)) &&
+        f64Bits(parseF64(v.f64)) !== v.bits
+      )
         errors.push(
           `${at}.bits: ${v.f64} reads as ${f64Bits(parseF64(v.f64))} (roundTiesToEven, IEEE 754-2019 §5.12.2), not ${v.bits}`,
         );
-      else if (Number.isNaN(parseF64(v.f64)) && !Number.isNaN(f64FromBits(v.bits)))
+      else if (
+        Number.isNaN(parseF64(v.f64)) &&
+        !Number.isNaN(f64FromBits(v.bits))
+      )
         errors.push(`${at}.bits: ${v.bits} is not a NaN encoding`);
     }
   } else if ("bool" in v) {
@@ -879,7 +910,7 @@ function shapeTolerance(
   sourceRef: (v: unknown, at: string) => void,
   errors: string[],
 ): void {
-  if (!isObj(v) || ("abs" in v) === ("ulps" in v)) {
+  if (!isObj(v) || "abs" in v === "ulps" in v) {
     errors.push(`${at}: an object with one of "abs" or "ulps"`);
     return;
   }
@@ -973,7 +1004,12 @@ export function validateContractShape(input: unknown): string[] {
         errors.push(`${at}: an object`);
         return;
       }
-      checkKeys(f, ["name", "params", "returns", "module", "names"], at, errors);
+      checkKeys(
+        f,
+        ["name", "params", "returns", "module", "names"],
+        at,
+        errors,
+      );
       if (f.module !== undefined) shapeModule(f.module, `${at}.module`, errors);
       shapeOverrides(f.names, `${at}.names`, errors);
       if (typeof f.name !== "string" || !IDENT_RE.test(f.name)) {
@@ -1117,7 +1153,9 @@ export function validateContractShape(input: unknown): string[] {
               shapeIntValue(v.min, `${vat}.min`, errors);
               shapeIntValue(v.max, `${vat}.max`, errors);
               if (errors.length > n) return;
-              const [lo, hi] = [v.min, v.max].map((x) => intValue(x as number | string));
+              const [lo, hi] = [v.min, v.max].map((x) =>
+                intValue(x as number | string),
+              );
               const r = INT_RANGE[v.type];
               if (lo < r.min || hi > r.max || lo > hi)
                 errors.push(
@@ -1136,7 +1174,8 @@ export function validateContractShape(input: unknown): string[] {
                 isF64Text(v.max) &&
                 !(parseF64(v.min) <= parseF64(v.max))
               )
-                errors.push(`${vat}: f64 needs min <= max`);            } else if (v.type === "bytes") {
+                errors.push(`${vat}: f64 needs min <= max`);
+            } else if (v.type === "bytes") {
               checkKeys(v, ["name", "type", "minLen", "maxLen"], vat, errors);
               shapeLengths(v, vat, "bytes", errors);
             } else if (v.type === "string") {
@@ -1436,11 +1475,20 @@ export interface TypeEnv {
 /** Can a value of type `from` be passed where `to` is expected? */
 export function assignable(from: ExprTy, to: ValueTy): boolean {
   if (from === to) return true;
-  if (to === "bytes?") return from === "bytes" || from === "null";
-  if (to === "string?") return from === "string" || from === "null";
+  if (to.endsWith("?")) return from === "null" || from === to.slice(0, -1);
   if (to === "u32") return from === "i32";
   return false;
 }
+
+/** The type an int literal takes on its own: i32 when it fits, else i64, else u64. */
+const intLiteralTy = (v: number | string): IntType | null =>
+  fitsInt(v, "i32")
+    ? "i32"
+    : fitsInt(v, "i64")
+      ? "i64"
+      : fitsInt(v, "u64")
+        ? "u64"
+        : null;
 
 /** bytes, bytes? or null (bytes with a null on the other side). */
 export const isBytesLike = (t: ExprTy) =>
@@ -1449,10 +1497,20 @@ export const isBytesLike = (t: ExprTy) =>
 export const isStringLike = (t: ExprTy) =>
   t === "string" || t === "string?" || t === "null";
 
+/** Does `lit` stand for a value of type `ty`? An int must be in `ty`'s range. */
+export function literalFits(lit: Literal, ty: ValueTy): boolean {
+  if ("int" in lit) {
+    const int = intBase(ty);
+    return int !== null && fitsInt(lit.int, int);
+  }
+  return assignable(typeOfLiteral(lit), ty);
+}
+
 export function typeOfLiteral(lit: Literal): ExprTy {
   if ("hex" in lit || "ascii" in lit || "concat" in lit) return "bytes";
   if ("str" in lit) return "string";
-  if ("int" in lit) return "i32";
+  if ("int" in lit) return intLiteralTy(lit.int) ?? "i64";
+  if ("f64" in lit) return "f64";
   if ("bool" in lit) return "bool";
   return "null";
 }
@@ -1465,10 +1523,8 @@ export function typeOf(
   errors: string[],
 ): ExprTy | null {
   if (isLiteral(e)) {
-    if ("int" in e && (e.int < I32_MIN || e.int > I32_MAX)) {
-      errors.push(
-        `${at}: int ${e.int} is outside i32 (u32 values belong in vectors)`,
-      );
+    if ("int" in e && intLiteralTy(e.int) === null) {
+      errors.push(`${at}: int ${e.int} is outside every integer type`);
       return null;
     }
     return typeOfLiteral(e);
@@ -1521,8 +1577,16 @@ export function typeOf(
     e.args.forEach((a, i) => {
       const t = typeOf(a, env, `${at}.args[${i}]`, errors);
       const want = valueTy(sig.params[i].type);
+      const wantInt = intBase(want);
       if (t === null) ok = false;
-      else if (!assignable(t, want)) {
+      else if (isLiteral(a) && "int" in a && wantInt) {
+        if (!fitsInt(a.int, wantInt)) {
+          ok = false;
+          errors.push(
+            `${at}.args[${i}]: ${e.call}(${sig.params[i].name}) wants ${want}, and ${a.int} is outside it`,
+          );
+        }
+      } else if (!assignable(t, want)) {
         ok = false;
         errors.push(
           `${at}.args[${i}]: ${e.call}(${sig.params[i].name}) wants ${want}, got ${t}${t === "bytes?" ? ' — wrap it in {"op":"unwrap"}' : ""}`,
@@ -1533,6 +1597,32 @@ export function typeOf(
   }
   const ts = e.args.map((a, i) => typeOf(a, env, `${at}.args[${i}]`, errors));
   if (ts.some((t) => t === null)) return null;
+  // An int literal takes the integer type of the other operand when it fits
+  // there, so `x + 1` is a u8 when x is (ISO C11 §6.4.4.1 types a constant
+  // by its value; here the context gives the type instead).
+  if (ts.length === 2)
+    for (const [i, j] of [
+      [0, 1],
+      [1, 0],
+    ]) {
+      const a = e.args[i];
+      const other = intBase(ts[j]);
+      if (isLiteral(a) && "int" in a && other && !isLiteral(e.args[j]))
+        if (fitsInt(a.int, other)) ts[i] = other;
+        else {
+          errors.push(`${at}.args[${i}]: ${a.int} is outside ${other}`);
+          return null;
+        }
+    }
+  // Two integers of one type: the first integer operand's (i32 when neither
+  // is one), with the error at the operand that differs.
+  const sameInt = () => {
+    const a = ts.find(isIntTy) ?? "i32";
+    const i = ts.findIndex((t) => t !== a);
+    if (i < 0) return a;
+    errors.push(`${at}.args[${i}]: ${e.op} wants ${a}, got ${ts[i]}`);
+    return null;
+  };
   const want = (n: number) => {
     if (ts.length !== n) {
       errors.push(`${at}: ${e.op} takes ${n} argument(s), got ${ts.length}`);
@@ -1577,24 +1667,24 @@ export function typeOf(
     case "isNull":
     case "notNull":
       if (!want(1)) return null;
-      if (ts[0] !== "bytes?" && ts[0] !== "string?") {
-        errors.push(`${at}: ${e.op} wants bytes? or string?, got ${ts[0]}`);
+      if (!ts[0]?.endsWith("?")) {
+        errors.push(`${at}: ${e.op} wants an optional (T?), got ${ts[0]}`);
         return null;
       }
       if (e.op !== "unwrap") return "bool";
-      return ts[0] === "bytes?" ? "bytes" : "string";
+      return (ts[0] as string).slice(0, -1) as ValueTy;
     case "+":
     case "-":
     case "*":
     case "%":
-      return want(2) && expect(0, "i32") && expect(1, "i32") ? "i32" : null;
+      return want(2) ? sameInt() : null;
     case "le64":
       return want(1) && expect(0, "i32") ? "bytes" : null;
     case "<":
     case "<=":
     case ">":
     case ">=":
-      return want(2) && expect(0, "i32") && expect(1, "i32") ? "bool" : null;
+      return want(2) && sameInt() ? "bool" : null;
     case "==":
     case "!=": {
       if (!want(2)) return null;
@@ -1604,8 +1694,10 @@ export function typeOf(
         (isStringLike(a) &&
           isStringLike(b) &&
           !(a === "null" && b === "null")) ||
-        (a === "i32" && b === "i32") ||
-        (a === "bool" && b === "bool");
+        (a === b && a !== "null") ||
+        (a !== "null" && b !== "null" && (a === `${b}?` || b === `${a}?`)) ||
+        (a === "null" && b.endsWith("?")) ||
+        (b === "null" && a.endsWith("?"));
       if (!same) {
         errors.push(`${at}: cannot compare ${a} with ${b}`);
         return null;

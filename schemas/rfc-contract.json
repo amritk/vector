@@ -313,6 +313,11 @@
       "pattern": "^(?:-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|NaN|Infinity|-Infinity)$",
       "description": "An IEEE 754-2019 binary64 value as text: a decimal, converted to the nearest double with roundTiesToEven (§4.3.1, §5.12.2), or NaN, Infinity, -Infinity; -0 is negative zero."
     },
+    "f64Bound": {
+      "type": "string",
+      "pattern": "^(?:-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|Infinity|-Infinity)$",
+      "description": "An f64Text that is not NaN, for a bound of an f64 domain: NaN is unordered (IEEE 754-2019 §5.11), so it bounds nothing."
+    },
     "f64Bits": {
       "type": "string",
       "pattern": "^[0-9a-f]{16}$",
@@ -835,10 +840,10 @@
                     "const": "f64"
                   },
                   "min": {
-                    "$ref": "#/$defs/f64Text"
+                    "$ref": "#/$defs/f64Bound"
                   },
                   "max": {
-                    "$ref": "#/$defs/f64Text"
+                    "$ref": "#/$defs/f64Bound"
                   }
                 },
                 "required": ["name", "type", "min", "max"]

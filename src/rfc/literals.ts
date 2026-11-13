@@ -10,14 +10,14 @@
 
 import {
   type FnSig,
-  I32_MAX,
-  I32_MIN,
   type Literal,
   STRING_CHAR_RE,
   type ValueTy,
-  assignable,
+  intBase,
+  intJson,
   isBytesLike,
   isStringLike,
+  literalFits,
   typeOfLiteral,
   valueTy,
 } from "./contract.ts";
@@ -30,10 +30,18 @@ export type RawLiteral =
   | { kind: "empty" }
   | { kind: "null" }
   | { kind: "bool"; value: boolean }
-  | { kind: "int"; value: number }
+  /** An int in its JSON form: a decimal string beyond ±(2^53−1) (RFC 7493 §2.2). */
+  | { kind: "int"; value: number | string }
+  /** `1.5`, `-2e-3`, `NaN`, `Infinity`: an f64's decimal text. */
+  | { kind: "f64"; text: string }
   | { kind: "labelled"; label: string; hex: string }
   /** `L = 42`; `hex` when the digits are also hex pairs (`L = 42`, not `L = 7`). */
-  | { kind: "labelled-int"; label: string; value: number; hex?: string }
+  | {
+      kind: "labelled-int";
+      label: string;
+      value: number | string;
+      hex?: string;
+    }
   /** `22 × 0b`: `hex` written `count` times, optionally labelled. */
   | { kind: "repeat"; count: number; hex: string; label?: string }
   | { kind: "concat"; parts: RawLiteral[] };
@@ -57,6 +65,12 @@ const STRING_RE = /^"(?:[^"\\\n]|\\.)*"/;
 /** A decimal integer with no leading zero; the one grammar for every int. */
 const INT = "(?:0|-?[1-9][0-9]*)";
 const INT_RE = new RegExp(`^${INT}(?![0-9A-Za-z_])`);
+/**
+ * An f64's text: an int with a fraction or an exponent (RFC 8259 §6), or
+ * NaN, Infinity, -Infinity. A plain integer is read as an int.
+ */
+const F64_RE =
+  /^(?:-?(?:0|[1-9][0-9]*)(?:\.[0-9]+(?:[eE][+-]?[0-9]+)?|[eE][+-]?[0-9]+)|NaN|-?Infinity)(?![0-9A-Za-z_.])/;
 const WORD_RE = /^(null|true|false)(?![0-9A-Za-z_])/;
 /**
  * `Label = `: words of letters, digits, `_` and `-`. The first word starts
@@ -197,16 +211,21 @@ class Reader {
       return {
         kind: "labelled-int",
         label,
-        value: Number(text),
+        value: intJson(BigInt(text)),
         ...(isHex ? { hex: text } : {}),
       };
     }
     const run = this.repeat();
     if (run) return run;
+    const f64 = rest.match(F64_RE);
+    if (f64) {
+      this.i += f64[0].length;
+      return { kind: "f64", text: f64[0] };
+    }
     const int = rest.match(INT_RE);
     if (int) {
       this.i += int[0].length;
-      return { kind: "int", value: Number(int[0]) };
+      return { kind: "int", value: intJson(BigInt(int[0])) };
     }
     if (rest.startsWith("‖"))
       throw new Fail("`‖` is not a literal; write concat(a, b)", at);
@@ -251,20 +270,9 @@ export function parseLiteral(text: string): RawLiteral | LiteralError {
 export const isLiteralError = (x: object): x is LiteralError =>
   "message" in x && "col" in x;
 
-const U32_MAX = 4294967295;
-
 /** What a literal is, as a refusal names it: "an int", "bytes", "null", … */
 export const kindOf = (lit: Literal): string =>
   "int" in lit ? "an int" : typeOfLiteral(lit);
-
-/** Does `lit` stand for a value of type `ty`? An int must be in range. */
-function fits(lit: Literal, ty: ValueTy): boolean {
-  if ("int" in lit) {
-    if (ty === "u32") return lit.int >= 0 && lit.int <= U32_MAX;
-    return ty === "i32" && lit.int >= I32_MIN && lit.int <= I32_MAX;
-  }
-  return assignable(typeOfLiteral(lit), ty);
-}
 
 const STRING_SET = "a quoted string is printable ASCII, tab, LF and CR only";
 
@@ -294,12 +302,17 @@ export function settle(
     case "bool":
       return { bool: raw.value };
     case "int":
-      return { int: raw.value };
+      // An integer where an f64 goes is that f64's decimal text.
+      return ty === "f64" || ty === "f64?"
+        ? { f64: String(raw.value) }
+        : { int: raw.value };
+    case "f64":
+      return { f64: raw.text };
     case "labelled":
       return { hex: raw.hex, label: raw.label };
     case "labelled-int":
       // An int where the signature takes one; hex pairs anywhere else.
-      if (raw.hex === undefined || ty === "i32" || ty === "u32")
+      if (raw.hex === undefined || intBase(ty) !== null)
         return { int: raw.value, label: raw.label };
       return { hex: raw.hex, label: raw.label };
     case "repeat":
@@ -330,9 +343,7 @@ export interface CellError {
 
 /** Why digits where an int goes were read as bytes: a leading zero. */
 const zeroHint = (raw: RawLiteral, ty: ValueTy | undefined) =>
-  raw.kind === "labelled" &&
-  /^[0-9]+$/.test(raw.hex) &&
-  (ty === "i32" || ty === "u32")
+  raw.kind === "labelled" && /^[0-9]+$/.test(raw.hex) && intBase(ty) !== null
     ? ` (\`${raw.label} = ${raw.hex}\` has a leading zero, so it is bytes)`
     : "";
 
@@ -358,7 +369,7 @@ export function settleVector(
     const ty = p && valueTy(p.type);
     const lit = settle(a, ty);
     if (typeof lit === "string") call(lit);
-    else if (ty !== undefined && !fits(lit, ty))
+    else if (ty !== undefined && !literalFits(lit, ty))
       call(
         `argument ${i + 1} of ${fn.name} (${p.name}) is ${ty}, not ${kindOf(lit)}${"int" in lit ? ` ${lit.int}` : ""}${zeroHint(a, ty)}`,
       );
@@ -367,7 +378,7 @@ export function settleVector(
   const ret = valueTy(fn.returns);
   const e = settle(expect, ret);
   if (typeof e === "string") errors.push({ cell: "Expected", message: e });
-  else if (!fits(e, ret))
+  else if (!literalFits(e, ret))
     errors.push({
       cell: "Expected",
       message: `${fn.name} returns ${ret}, not ${kindOf(e)}${"int" in e ? ` ${e.int}` : ""}${zeroHint(expect, ret)}`,

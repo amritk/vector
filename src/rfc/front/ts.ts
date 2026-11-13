@@ -12,11 +12,12 @@ import {
   type Expr,
   type ExprTy,
   type FnSig,
-  I32_MAX,
-  I32_MIN,
   ID_RE,
+  INT_RANGE,
+  type IntType,
   type Literal,
   MAX_BYTES_LEN,
+  MODULE_RE,
   type Op,
   STRING_CHAR_RE,
   type SigTy,
@@ -24,8 +25,10 @@ import {
   type ValueTy,
   type Var,
   assignable,
-  nishModuleFile,
+  intJson,
+  isIntTy,
   typeOf,
+  typeOfLiteral,
   valueTy,
 } from "../contract.ts";
 import type { FrontEnd, FrontRefusal, ParsedProperty } from "./index.ts";
@@ -284,17 +287,22 @@ const shown = (t: Tok) => (t.kind === "eof" ? "end of block" : `\`${t.text}\``);
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-const SIG_TYPES: Record<string, SigTy> = {
-  "u8[]": "bytes",
-  "u8[] | null": "bytes?",
+/** Each base type's TypeScript spelling; `T | null` spells `T?`. */
+const TS_BASES = {
+  bytes: "u8[]",
   string: "string",
-  "string | null": "string?",
-  i32: "i32",
-  u32: "u32",
-  boolean: "bool",
-  "Secret<u8[]>": "secret-bytes",
-  "Secret<u8[]> | null": "secret-bytes?",
-};
+  bool: "boolean",
+  ...Object.fromEntries(Object.keys(INT_RANGE).map((t) => [t, t])),
+  f64: "f64",
+  "secret-bytes": "Secret<u8[]>",
+} as Record<string, string>;
+
+const SIG_TYPES: Record<string, SigTy> = Object.fromEntries(
+  Object.entries(TS_BASES).flatMap(([t, ts]) => [
+    [ts, t as SigTy],
+    [`${ts} | null`, `${t}?` as SigTy],
+  ]),
+);
 
 const TS_NAMES: Record<string, string> = {
   bytes: "u8[]",
@@ -350,12 +358,11 @@ function parseInterface(text: string): {
       ? head.value.match(/^\s*module:\s*(\S+)\s*$/)
       : null;
   if (!m || head.line !== 1)
-    throw new Refusal("missing `// module: nish/<name>` first line", at(head));
-  if (!nishModuleFile(m[1]))
     throw new Refusal(
-      `\`${m[1]}\` is not a nish module; write nish/<path>`,
+      "missing `// module: <root>/<path>` first line",
       at(head),
     );
+  if (!MODULE_RE.test(m[1])) throw new Refusal(notModule(m[1]), at(head));
   c.skipRaw();
   const functions: FnSig[] = [];
   const lines: number[] = [];
@@ -367,11 +374,7 @@ function parseInterface(text: string): {
     for (let t = c.raw(); t.kind === "comment"; t = c.raw()) {
       const r = moduleLine(t);
       if (r) {
-        if (!nishModuleFile(r[1]))
-          throw new Refusal(
-            `\`${r[1]}\` is not a nish module; write nish/<path>`,
-            at(t),
-          );
+        if (!MODULE_RE.test(r[1])) throw new Refusal(notModule(r[1]), at(t));
         if (r[1] === from)
           throw new Refusal(
             `the functions above are already from ${r[1]}`,
@@ -414,13 +417,13 @@ function parseInterface(text: string): {
           at(p),
         );
       c.expect(":");
-      const type = sigType(c, false);
+      const type = sigType(c);
       params.push({ name: p.text, type });
       if (!c.eat(",")) break;
     }
     c.expect(")");
     c.expect(":");
-    const returns = sigType(c, true);
+    const returns = sigType(c);
     // Look past comments without reading them: a `// module:` line may follow.
     const body = c.look();
     if (body.text === "=>" || body.text === "{")
@@ -457,8 +460,11 @@ function parseInterface(text: string): {
   return { module: m[1], functions, lines };
 }
 
+const notModule = (m: string) =>
+  `\`${m}\` is not a module path; write <root>/<path>, lowercase segments split by /`;
+
 /**
- * The module a `// module: nish/<path>` comment names, or undefined for any
+ * The module a `// module: <root>/<path>` comment names, or undefined for any
  * other comment. Refuses a comment meant as one that is not: a block comment,
  * or a comment of any style or case that starts `module:` or `module nish/`
  * but does not parse, so the functions after it never silently keep the
@@ -473,31 +479,25 @@ function moduleLine(t: Tok): RegExpMatchArray | undefined {
     );
   if (r) return r;
   // A comment of any style or case whose text, past leading `/` and `*`, starts
-  // `module:` or `module nish/` was meant as a module line; passing over it
+  // `module:` or `module <root>/` was meant as a module line; passing over it
   // would leave its functions in the module before it.
   const body = t.value.replace(/^[\s/*]*/, "");
-  if (/^module(?:\s*:|\s+nish\/)/i.test(body))
+  if (/^module(?:\s*:|\s+[a-z][a-z0-9_]*\/)/i.test(body))
     throw new Refusal(
-      `a module line is \`// module: nish/<path>\`, one module, not \`${t.lineComment ? `//${t.value}` : `/*${t.value}*/`}\``,
+      `a module line is \`// module: <root>/<path>\`, one module, not \`${t.lineComment ? `//${t.value}` : `/*${t.value}*/`}\``,
       at(t),
     );
   return undefined;
 }
 
-function sigType(c: Cursor, result: boolean): SigTy {
+function sigType(c: Cursor): SigTy {
   const { name, pos } = readType(c);
   if (!Object.hasOwn(SIG_TYPES, name))
     throw new Refusal(
-      `\`${name}\` is not a ts-interface type; use u8[], string, i32, u32, boolean or Secret<u8[]>, with \`| null\` on u8[], string or a Secret<u8[]> result`,
+      `\`${name}\` is not a ts-interface type; use ${Object.values(TS_BASES).join(", ")}, each optionally \`| null\``,
       pos,
     );
-  const t = SIG_TYPES[name];
-  if (t === "secret-bytes?" && !result)
-    throw new Refusal(
-      "`Secret<u8[]> | null` is allowed only as a result type",
-      pos,
-    );
-  return t;
+  return SIG_TYPES[name];
 }
 
 // ── ts-property ────────────────────────────────────────────────────────────
@@ -654,15 +654,20 @@ class PropertyParser {
     this.bind(name);
     c.expect(":");
     const { name: tsName, pos } = readType(c);
+    if (tsName === "f64")
+      throw new Refusal(
+        "properties over f64 are not sampled yet; give f64 cases as vectors",
+        pos,
+      );
     const type =
       tsName === "u8[]"
         ? "bytes"
-        : tsName === "string" || tsName === "i32"
+        : tsName === "string" || isIntTy(tsName)
           ? tsName
           : undefined;
     if (!type)
       throw new Refusal(
-        `\`${tsName}\` is not a forall type; use u8[], string or i32`,
+        `\`${tsName}\` is not a forall type; use u8[], string or an integer type (${Object.keys(INT_RANGE).join(", ")})`,
         pos,
       );
     const raw = c.raw();
@@ -867,7 +872,7 @@ class PropertyParser {
           at(t),
         );
       c.next();
-      return int(-Number(n.text), `-${n.text}`, at(t));
+      return int(`-${n.text}`, at(t));
     }
     if (t.kind === "punct" && ["+", "~", "++", "--", "..."].includes(t.text))
       throw new Refusal(
@@ -908,7 +913,7 @@ class PropertyParser {
           at(argsAt),
         );
       for (const a of op === "slice" ? args : [])
-        if ("int" in a.e && a.e.int < 0)
+        if ("int" in a.e && BigInt(a.e.int) < 0n)
           throw new Refusal(
             "a negative `.slice` index counts from the end in TypeScript and clamps to 0 in the contract",
             a.pos,
@@ -939,7 +944,7 @@ class PropertyParser {
     const pos = at(t);
     switch (t.kind) {
       case "num":
-        return int(Number(t.text), t.text, pos);
+        return int(t.text, pos);
       case "str":
         if (!STRING_CHAR_RE.test(t.value))
           throw new Refusal(
@@ -1057,10 +1062,20 @@ function asBytes(v: V): V {
     : { e: { ascii: v.str }, t: "bytes", pos: v.pos };
 }
 
-function int(n: number, text: string, pos: Pos): V {
-  if (n < I32_MIN || n > I32_MAX)
-    throw new Refusal(`\`${text}\` is outside i32`, pos);
-  return { e: { int: n } satisfies Literal, t: "i32", pos };
+/**
+ * An integer literal, read exactly: a JSON number within ±(2^53−1), else a
+ * decimal string (RFC 7493 §2.2). Its type is the first of i32, i64, u64 it
+ * fits; `typeOf` gives it the other operand's type where it fits there.
+ */
+function int(text: string, pos: Pos): V {
+  const n = BigInt(text);
+  if (n < INT_RANGE.i64.min || n > INT_RANGE.u64.max)
+    throw new Refusal(
+      `\`${text}\` is outside every integer type (${INT_RANGE.i64.min}..${INT_RANGE.u64.max})`,
+      pos,
+    );
+  const e = { int: intJson(n) } satisfies Literal;
+  return { e, t: typeOfLiteral(e), pos };
 }
 
 /**
@@ -1068,7 +1083,11 @@ function int(n: number, text: string, pos: Pos): V {
  * string, value for i32), then for a string its alphabet, as class names or
  * one JSON string whose characters are the alphabet in order.
  */
-function bounded(name: string, type: "bytes" | "string" | "i32", c: Tok): Var {
+function bounded(
+  name: string,
+  type: "bytes" | "string" | IntType,
+  c: Tok,
+): Var {
   const pos = at(c);
   const m = c.value.trim().match(/^(-?\d+)\.\.(-?\d+)(?:\s+([\s\S]*))?$/);
   if (!m)
@@ -1076,34 +1095,36 @@ function bounded(name: string, type: "bytes" | "string" | "i32", c: Tok): Var {
       `the bounds of \`${name}\` must read \`lo..hi\`, like /* 0..64 */`,
       pos,
     );
-  const lo = Number(m[1]);
-  const hi = Number(m[2]);
+  const lo = BigInt(m[1]);
+  const hi = BigInt(m[2]);
   const alpha = m[3];
   if (type !== "string" && alpha !== undefined)
     throw new Refusal(
       `an alphabet applies only to string variables, not \`${name}\``,
       pos,
     );
-  if (type === "i32") {
-    if (!(I32_MIN <= lo && lo <= hi && hi <= I32_MAX))
+  if (isIntTy(type)) {
+    const { min, max } = INT_RANGE[type];
+    if (!(min <= lo && lo <= hi && hi <= max))
       throw new Refusal(
-        `the bounds of \`${name}\` must satisfy ${I32_MIN} <= lo <= hi <= ${I32_MAX}`,
+        `the bounds of \`${name}\` must satisfy ${min} <= lo <= hi <= ${max}`,
         pos,
       );
-    return { name, type, min: lo, max: hi };
+    return { name, type, min: intJson(lo), max: intJson(hi) };
   }
-  if (!(0 <= lo && lo <= hi && hi <= MAX_BYTES_LEN))
+  if (!(0n <= lo && lo <= hi && hi <= BigInt(MAX_BYTES_LEN)))
     throw new Refusal(
       `the length bounds of \`${name}\` must satisfy 0 <= lo <= hi <= ${MAX_BYTES_LEN}`,
       pos,
     );
-  if (type === "bytes") return { name, type, minLen: lo, maxLen: hi };
+  const [minLen, maxLen] = [Number(lo), Number(hi)];
+  if (type === "bytes") return { name, type, minLen, maxLen };
   if (alpha === undefined)
     throw new Refusal(
       `\`${name}\` needs an alphabet after its bounds: class names (${Object.keys(ALPHABET_CLASSES).join(", ")}) or a JSON string`,
       pos,
     );
-  return { name, type, minLen: lo, maxLen: hi, alphabet: alphabet(alpha, pos) };
+  return { name, type, minLen, maxLen, alphabet: alphabet(alpha, pos) };
 }
 
 function alphabet(text: string, pos: Pos): string[] {
