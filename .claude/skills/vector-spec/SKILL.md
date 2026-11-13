@@ -102,8 +102,12 @@ export function hexDecode(text: string): u8[] | null
 ~~~
 ````
 
-The types are `u8[]`, `string`, `i32`, `u32`, `boolean` and `Secret<u8[]>`.
-Add `| null` to `u8[]` or `string`, and to `Secret<u8[]>` as a result only.
+The types are those of the table in [Writing a
+spec](../../../docs/guide/guides/writing-a-spec.md#types): `u8[]`, `string`,
+`boolean`, `Secret<u8[]>`, the fixed-width integers `i8` … `i64` and
+`u8` … `u64`, and `f64`. A Nish test can hold all but `i8` and `i16`, which
+Nish lacks, so the emitter refuses them. Add `| null` to `u8[]` or `string`,
+and to `Secret<u8[]>` as a result only.
 
 A property may compare the module with another nish module (HKDF with
 HMAC). Declare that module's functions after a second `// module:` line,
@@ -268,9 +272,11 @@ vector's, not JavaScript's. For example, `.slice` clamps, `a % 0` is 0, and
 
 **Linked RFCs.** The RFC text must be in `rfcs/`, unmodified. The IETF Trust
 allows copying an RFC whole. Extract's missing-RFC message gives the `curl`
-command: `rfc<N>.xml` for N ≥ 8700, `.txt` below 8650, and both between.
-The lookup goes nearest place first (beside the contract, `../rfcs/`, then
-vector's `rfcs/`), and at each place `.xml` before `.txt`. A `file` the
+command, which fetches `rfc<N>.txt`; the `.txt` works for every RFC, and an
+`rfc<N>.xml` is read instead when present. The lookup goes nearest place
+first (beside the contract, `../rfcs/`, then a third `rfcs/`: vector's own
+for `check`, the current directory's for `emit`, `run` and `mutate`, so run
+those from the repository root), and at each place `.xml` before `.txt`. A `file` the
 contract already records wins: adding an `.xml` later does not displace a
 recorded `.txt`, and `check` and `frozen` verify the recorded bytes.
 
@@ -309,8 +315,9 @@ you pass `--run-sources`: it runs on your machine, as you, with your files and
 network. Only the 30 s timeout kills the command's process group: a command
 that exits quickly can leave background children running, and a process that
 detaches with `setsid` is never contained. With no module yet, `check`
-warns that signatures were not checked. That is expected here: `run
---nish-root` (step 5) checks them against the implementation.
+warns that signatures were not checked. That is expected here: once the
+module exists (step 5), `check --nish-root` or `check --module` checks them
+against it. No other command does.
 
 Commit `specs/<name>.md`, `specs/<name>.xml` and `contracts/<name>.json`
 together. Then show the spec to
@@ -365,11 +372,14 @@ The implementation PR touches the code and nothing on the spec side
 (`frozen` refuses it otherwise). Then:
 
 ```bash
+./dist/vector spec check contracts/<name>.json --nish-root ../nish
 ./dist/vector spec run contracts/<name>.json --nish-root ../nish [--format markdown]
 ```
 
-It re-runs every `check` gate, now including the signature gate against the
-module, then runs the test.
+`check --nish-root` (or `--module <src.ts>`) is the only command that checks
+the declared signatures against the module's exports. `run` re-runs the other
+`check` gates, but not the signature gate, and says nothing about it; then
+it runs the test.
 
 - **Exit 0** is `SATISFIED`: every clause passed.
 - **Exit 1** is `VIOLATED` (a clause failed, shown with its sample) or

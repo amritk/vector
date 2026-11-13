@@ -22,9 +22,9 @@ and [Your first proof](docs/guide/getting-started/first-proof.md).
 
 ## Install
 
-You need Node 22, Python 3 with pip (for z3), and clang with lld (LLVM 15 or
-newer). The two fetch scripts install the pinned compiler into `.nish/` and
-the pinned z3 into `.z3/`; the build compiles `src/main.ts`:
+You need Node 22, Python 3 with pip (for z3), and clang with lld from LLVM 18
+(what CI installs). The two fetch scripts install the pinned compiler into
+`.nish/` and the pinned z3 into `.z3/`; the build compiles `src/main.ts`:
 
 <!-- illustrative -->
 ```sh

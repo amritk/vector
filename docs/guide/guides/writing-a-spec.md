@@ -316,16 +316,18 @@ A spec cites an RFC by listing it under `normative:` and writing
 vector Source can cite it. Each cited RFC becomes a `sources[]` entry.
 
 Its text is looked up in three places, nearest first: beside the contract,
-in `../rfcs/`, then in vector's own `rfcs/`. At each place `rfc<N>.xml` is
-preferred over `rfc<N>.txt`, so the order is `./rfc<N>.xml`, `./rfc<N>.txt`,
+in `../rfcs/`, then in a third `rfcs/`: vector's own for `check` (and
+`extract`), the current directory's for `emit`, `run` and `mutate`, so run
+those from the repository root. At each place `rfc<N>.xml` is preferred over
+`rfc<N>.txt`, so the order is `./rfc<N>.xml`, `./rfc<N>.txt`,
 `../rfcs/rfc<N>.xml`, and so on.
 
 - Once a contract records a source's `file`, that name wins: a contract that
   recorded `rfcs/rfc4648.txt` keeps reading it even after an `rfc4648.xml` is
   added at that place or a nearer one.
-- A missing RFC exits 2 with the command that fetches it:
-  `curl -sSfL -o rfcs/rfc<N>.xml https://www.rfc-editor.org/rfc/rfc<N>.xml`
-  for N ≥ 8700, `.txt` below 8650, and either between.
+- A missing RFC exits 2 with the command that fetches its plain text:
+  `curl -sSfL -o rfcs/rfc<N>.txt https://www.rfc-editor.org/rfc/rfc<N>.txt`.
+  The `.txt` works for every RFC; an `rfc<N>.xml` beside it is read instead.
 - An RFC listed but never cited needs no file.
 - Commit the file to `rfcs/`. Its `sha256` is in the contract, so `check`
   and `frozen` fail if its bytes change.

@@ -12,7 +12,8 @@
  *
  * An expected output whose last line is `…` alone need only start the actual
  * output. The workspace's own path prints as /path/to/vector, and trailing
- * spaces and blank lines are ignored.
+ * spaces and blank lines are ignored. Examples run under bash with
+ * `set -o pipefail`, so `vector … | head` exits with vector's status.
  *
  * Each page runs in a fresh workspace: a copy of the repository's files (as
  * git sees the working tree), with the built dist/vector copied in and .nish
@@ -138,9 +139,36 @@ const guideMatches = (expected: string, actual: string): boolean => {
   return expected === actual
 }
 
-/** Runs `script` in `dir` with sh, stderr folded into stdout. */
+/**
+ * Runs `script` in `dir` with bash and pipefail, so a pipeline exits with the
+ * status of the last command in it that failed; stderr is folded into stdout.
+ */
 const guideRun = (dir: string, script: string): Result<ProcessResult, string> =>
-  runProcess(["sh", "-c", `cd ${guideQuote(dir)} || exit 99\nexec 2>&1\n${script}`], "", GUIDE_TIMEOUT_MS)
+  runProcess(
+    ["bash", "-c", `set -o pipefail\ncd ${guideQuote(dir)} || exit 99\nexec 2>&1\n${script}`],
+    "",
+    GUIDE_TIMEOUT_MS,
+  )
+
+/** Runs one example in `ws`, and answers why it failed, or "" when it passed. */
+const guideCheckExample = (ws: string, ex: GuideExample): string => {
+  const r = guideRun(ws, `${GUIDE_GIT_ENV}\n${ex.script}`)
+  if (r.isErr()) {
+    return r.error
+  }
+  const actual = guideNormal(r.value.stdout, ws)
+  const expected = guideNormal(ex.expected, ws)
+  if (r.value.timedOut) {
+    return `ran past ${GUIDE_TIMEOUT_MS} ms:\n${actual}`
+  }
+  if (r.value.status !== ex.exit) {
+    return `exit ${r.value.status}, want ${ex.exit}:\n${actual}`
+  }
+  if (!guideMatches(expected, actual)) {
+    return `output differs:\n--- want\n${expected}\n--- got\n${actual}`
+  }
+  return ""
+}
 
 /** Makes a fresh workspace from the repository at `root`, and answers its path. */
 const guideWorkspace = (root: string): Result<string, string> => {
@@ -210,21 +238,11 @@ const guideCheckPage = (t: Suite, root: string, page: string): void => {
       }
       ws = made.value
     }
-    const r = guideRun(ws, `${GUIDE_GIT_ENV}\n${ex.script}`)
-    if (r.isErr()) {
-      t.fail(name, r.error)
-      continue
-    }
-    const actual = guideNormal(r.value.stdout, ws)
-    const expected = guideNormal(ex.expected, ws)
-    if (r.value.timedOut) {
-      t.fail(name, `ran past ${GUIDE_TIMEOUT_MS} ms:\n${actual}`)
-    } else if (r.value.status !== ex.exit) {
-      t.fail(name, `exit ${r.value.status}, want ${ex.exit}:\n${actual}`)
-    } else if (!guideMatches(expected, actual)) {
-      t.fail(name, `output differs:\n--- want\n${expected}\n--- got\n${actual}`)
-    } else {
+    const why = guideCheckExample(ws, ex)
+    if (why === "") {
       t.pass(name)
+    } else {
+      t.fail(name, why)
     }
   }
   if (ws !== "") {
@@ -235,9 +253,29 @@ const guideCheckPage = (t: Suite, root: string, page: string): void => {
   }
 }
 
+/** Checks the harness itself: a failure inside a pipeline must fail an example. */
+const guideSelfTest = (t: Suite): void => {
+  const dir = makeTempDir("vector-guide-self-")
+  if (dir.isErr()) {
+    t.fail("self-test", dir.error)
+    return
+  }
+  const piped = new GuideExample(1, "false | cat", 0, false)
+  const why = guideCheckExample(dir.value, piped)
+  t.contains("self-test: `false | cat` expecting exit 0 fails", why, "exit 1, want 0")
+  const passing = new GuideExample(1, "echo hi | cat", 0, false)
+  passing.expected = "hi"
+  t.eqStr("self-test: `echo hi | cat` passes", guideCheckExample(dir.value, passing), "")
+  const removed = runProcess(["rm", "-rf", dir.value], "", GUIDE_TIMEOUT_MS)
+  if (removed.isErr() || removed.value.status !== 0) {
+    t.fail("self-test: clean up", `cannot remove ${dir.value}`)
+  }
+}
+
 /** Checks every example, page by page. */
 export const main = (): i32 => {
   const t = new Suite("guide examples")
+  guideSelfTest(t)
   const root = realpathSync(".")
   if (root === null || !isExecutableSync(joinPath(root, "dist/vector"))) {
     t.fail("dist/vector", "no dist/vector: run npm run build")

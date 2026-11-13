@@ -37,7 +37,7 @@ contract](spec-to-contract.md), [Testing an implementation](testing.md) and
 vector runs z3 for every proof and for every contract it checks. It looks in
 this order:
 
-1. `$VECTOR_Z3`, which must name a file;
+1. `$VECTOR_Z3`, which must name a file (set but empty, it is skipped);
 2. `.z3/z3` beside the repository the binary was built in (`dist/../.z3/z3`),
    where `scripts/fetch-z3.sh` puts the pinned z3;
 3. `z3` on `PATH`.

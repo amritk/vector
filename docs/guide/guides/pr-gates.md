@@ -40,7 +40,9 @@ to 7 without touching anything on the spec side.
 into a class:
 
 - **spec**: `specs/`, `contracts/` and `rfcs/`;
-- **generated**: a test in `test/spec/` that is its contract's current output;
+- **generated**: a test in `test/spec/` whose `// vector-contract-sha256:`
+  line names a contract the gate checks. It counts on the spec side, so it
+  lands with its contract, not with the implementation;
 - **neutral**: `docs/` and the top-level `*.md` files;
 - **implementation**: everything else.
 
@@ -323,7 +325,8 @@ in a spec-side PR before the implementation.
 
 - `--max <n>` runs at most `n` mutants, spread over the changed lines, and
   notes how many it dropped (`6 of 8 mutants were not run: --max kept 2`).
-- `--jobs <n>` runs that many mutants at once (default 1).
+- `--jobs <n>` runs that many mutants at once (default 1), at most one per
+  CPU: a larger `n` is cut to the CPU count.
 - `--test <file>` runs that test program against each mutant. Without it,
   mutate emits the contract's test as `spec emit` does, checking the contract
   with the current directory as the repository's top, so run it from there,
@@ -339,10 +342,13 @@ Besides survivors, mutate refuses (exit 1):
 - `every mutant that built ran its test past its time`: run with fewer
   `--jobs`;
 - more than 10% of the mutants' builds, or of their tests, running past their
-  time, since a survivor may hide among them.
+  time, since a survivor may hide among them;
+- a stale `allowSurvivors` entry: one whose line had mutants this run and the
+  test killed them all. Remove it, or move it to the line it means. An entry
+  whose line had no mutant run is only a note (`STALE?`).
 
-A build or a test may take three times as long as the unmutated one's, and at
-least 10 seconds. Mutate exits 2 for bad usage (`--nish-root` is required,
+A build or a test may take three times as long as the unmutated module's
+build and test together, and at least 10 seconds. Mutate exits 2 for bad usage (`--nish-root` is required,
 and `VECTOR_NISH_ROOT` is not read), a contract, module or test that cannot be
 read, a git failure, a compiler that fails for a reason the mutant did not
 cause (the check above included), and a z3 failure while it emits the test.

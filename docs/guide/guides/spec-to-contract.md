@@ -48,11 +48,29 @@ pip install xml2rfc==3.35.0
 ```
 
 The edit loop is: edit the `.md`, rebuild, re-extract, and commit all three.
+Rebuilding needs the pinned tools above:
 
 <!-- illustrative -->
 ```sh
 scripts/build-spec.sh specs/example-hex.md     # writes specs/example-hex.xml
+```
+
+Extract writes the contract and prints nothing when it succeeds; on a
+committed spec it reproduces the committed contract byte for byte:
+
+```sh
 ./dist/vector spec extract specs/example-hex.xml -o contracts/example-hex.json
+git diff --exit-code contracts/example-hex.json && echo "unchanged"
+```
+
+```text
+unchanged
+```
+
+Then commit the three files:
+
+<!-- illustrative -->
+```sh
 git add specs/example-hex.md specs/example-hex.xml contracts/example-hex.json
 ```
 
@@ -189,8 +207,9 @@ given, so the signatures were not checked:
 
 A contract edited by hand fails. Changing one word of a quote breaks both
 fidelity (the quote is no longer in its section) and completeness (the
-section's sentence is no longer quoted):
+section's sentence is no longer quoted), and `check` exits 1:
 
+<!-- exit 1 -->
 ```sh
 sed -i 's/MUST return exactly two characters/MUST return exactly 2 characters/' contracts/example-hex.json
 ./dist/vector spec check contracts/example-hex.json | sed -n '3,7p'
@@ -204,15 +223,10 @@ sed -i 's/MUST return exactly two characters/MUST return exactly 2 characters/' 
   ✘ completeness §3.1: MUST sentence is neither a requirement nor an exclusion: "hexEncode MUST return exactly two characters per input byte."
 ```
 
-On its own, `spec check` exits 1 here:
+Put the contract back:
 
 ```sh
-./dist/vector spec check contracts/example-hex.json > /dev/null; echo "exit $?"
 git checkout -q contracts
-```
-
-```text
-exit 1
 ```
 
 ### Flags
@@ -223,7 +237,7 @@ exit 1
 | `--run-sources` | run each vector's `command` source and compare what it prints (see below) |
 | `--module <file>` | the module source the signatures are checked against |
 | `--nish-root <dir>` | a nish checkout or install, whose `std/` holds the module under test |
-| `--nish <bin>` | the compiler, for the emitted test's type check |
+| `--nish <bin>` | accepted, and not read: `check` compiles nothing |
 | `--format <f>` | `text` (the default), `markdown` for a PR comment, or `json` |
 
 `--format markdown` prints the dashboard for a PR comment: each requirement's
@@ -249,10 +263,12 @@ module's export. The pinned compiler in `.nish/` is a nish install whose
 warnings:
 
 ```sh
-./dist/vector spec check contracts/rfc5869-hkdf-sha256.json --nish-root .nish | grep '^  !' || echo "no warnings"
+out=$(./dist/vector spec check contracts/rfc5869-hkdf-sha256.json --nish-root .nish); echo "exit $?"
+printf '%s\n' "$out" | grep '^  !' || echo "no warnings"
 ```
 
 ```text
+exit 0
 no warnings
 ```
 
@@ -284,8 +300,10 @@ so a forked grandchild dies with it. But only the deadline kills the group: a
 command that exits in time can leave a background child running, and a
 process that leaves the group on purpose, with `setsid`, is never contained.
 Read every command before you pass the flag, above all in a contract you did
-not write. When the contract is not in the current directory's `contracts/`,
-check prints the commands on stderr before it runs them:
+not write. When the contract is not in the `contracts/` at the top of the git
+repository you run from (`git rev-parse --show-toplevel`), check prints the
+commands on stderr before it runs them. Outside a git repository every
+contract with commands gets the warning:
 
 ```sh
 mkdir review && cp contracts/example-hex.json review/
@@ -328,18 +346,21 @@ anything else is refused. `.xml` sources are read everywhere a source is: by
 extract, check, emit, run, mutate and frozen.
 
 - **Linked RFCs** (`{"id": "rfc4648", "rfc": 4648}`) are looked up beside the
-  contract, then in `../rfcs/`, then in vector's own `rfcs/`. At each place
-  `rfc<N>.xml` is preferred over `rfc<N>.txt` when both exist. Once a contract
+  contract, then in `../rfcs/`, then in a third `rfcs/`: vector's own (the
+  directory above `dist/vector`) for `check`, and the current directory's for
+  `emit`, `run` and `mutate`, so run those from the repository root. At each
+  place `rfc<N>.xml` is read, and preferred over `rfc<N>.txt`, when it exists. Once a contract
   records a source's `file`, that name wins, and its recorded `sha256` must
   still match.
-- **A missing RFC** exits 2 with the command that fetches it, such as
-  `curl -sSfL -o rfcs/rfc<N>.xml https://www.rfc-editor.org/rfc/rfc<N>.xml`
-  (`.xml` for N ≥ 8700, `.txt` below 8650, either between).
+- **A missing RFC** exits 2 with the command that fetches its plain text,
+  `curl -sSfL -o rfcs/rfc<N>.txt https://www.rfc-editor.org/rfc/rfc<N>.txt`.
+  The `.txt` works for every RFC; drop in `rfc<N>.xml` too and it is read
+  instead.
 - **Paths are input from anyone.** Every command that reads a contract
   (`check`, `emit`, `run`, `mutate`) requires a `sources[].path` to lead,
   symlinks followed, to a file beside the contract or under a `specs/` or
-  `rfcs/` beside the contract's directory or its parent (or vector's own),
-  with no hidden directory (`.git`, `.ssh`, `.env`) on the way. Anything else
+  `rfcs/` beside the contract's directory, its parent or its grandparent (or
+  in the third place above), with no hidden directory (`.git`, `.ssh`, `.env`) on the way. Anything else
   is a usage error before the file is read. `--spec` is not limited: that
   path comes from you.
 
