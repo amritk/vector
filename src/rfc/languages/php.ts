@@ -29,7 +29,10 @@ export const php: LanguageTable = {
     },
     i16: { spelling: "int", note: WIDTH },
     i32: { spelling: "int", note: WIDTH },
-    i64: { spelling: "int", note: "exact on a 64-bit build (PHP_INT_SIZE 8)" },
+    i64: {
+      spelling: "int",
+      note: "exact on a 64-bit build (PHP_INT_SIZE 8); its minimum is written PHP_INT_MIN",
+    },
     u8: { spelling: "int", note: WIDTH },
     u16: { spelling: "int", note: WIDTH },
     u32: { spelling: "int", note: WIDTH },
@@ -49,7 +52,10 @@ export const php: LanguageTable = {
     hex: { spelling: 'hex2bin("0b0b")' },
     ascii: { spelling: "'abc'" },
     str: { spelling: '"abc"', note: "non-ASCII as \\u{…} escapes" },
-    int: { spelling: "42" },
+    int: {
+      spelling: "42",
+      note: "i64's minimum as PHP_INT_MIN: -9223372036854775808 is the float negation of an overflowed literal",
+    },
     f64: {
       spelling: "unpack('E', hex2bin('3ff8000000000000'))[1]",
       note: "from its bits (big-endian double), so -0 and NaN payloads are exact",

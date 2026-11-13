@@ -93,7 +93,11 @@ describe("every language has a table over the whole vocabulary", () => {
 
   test("PHP is the one language that cannot hold u64", () => {
     const unsupported = tables().flatMap((t) =>
-      Object.entries(t.types)
+      [
+        ...Object.entries(t.types),
+        ...Object.entries(t.outcomes),
+        ...Object.entries(t.literals),
+      ]
         .filter(([, m]) => "unsupported" in m)
         .map(([k]) => `${t.id}:${k}`),
     );
@@ -164,7 +168,9 @@ describe("every function of the three contracts, named in every language", () =>
   test.each(tables().map((t) => [t.id, t] as const))(
     "%s names acronyms and digits by its rule",
     (_, t) => {
-      for (const [n, want] of Object.entries(expected.rules[t.id] ?? {}))
+      const rules = expected.rules[t.id];
+      expect(rules).toBeDefined();
+      for (const [n, want] of Object.entries(rules ?? {}))
         expect({
           function: t.name(n, "function"),
           param: t.name(n, "param"),

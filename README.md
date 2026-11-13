@@ -1000,10 +1000,10 @@ The contract keeps all the data: an exact width, which outcome a `?` means, secr
 | Zig | `&[_]u8{ 0x0b, 0x0b }` | `"abc"` | `"abc"` | `@as(u32, 42)` | `@as(f64, @bitCast(@as(u64, 0x3ff8000000000000)))` | `true` | `null` | `a ++ b` |
 | Go | `[]byte{0x0b, 0x0b}` | `[]byte("abc")` | `"abc"` | `uint32(42)` | `math.Float64frombits(0x3ff8000000000000)` | `true` | `nil` | `append(append([]byte{}, a...), b...)` |
 | C++ | `std::array<std::uint8_t, 2>{0x0b, 0x0b}` | `std::array<std::uint8_t, 3>{'a', 'b', 'c'}` | `"abc"` | `std::uint32_t{42}` | `std::bit_cast<double>(std::uint64_t{0x3ff8000000000000})` | `true` | `std::nullopt` | `std::array<std::uint8_t, 2>{0x0b, 0x61}` |
-| C# | `new byte[] { 0x0b, 0x0b }` | `"abc"u8.ToArray()` | `"abc"` | `42u` | `BitConverter.Int64BitsToDouble(0x3ff8000000000000)` | `true` | `null` | `[.. a, .. b]` |
+| C# | `new byte[] { 0x0b, 0x0b }` | `"abc"u8.ToArray()` | `"abc"` | `42u` | `BitConverter.UInt64BitsToDouble(0x3ff8000000000000UL)` | `true` | `null` | `[.. a, .. b]` |
 | C | `(const uint8_t[]){0x0b, 0x0b}` | `(const uint8_t[]){"abc"}` | `"abc"` | `UINT32_C(42)` | `memcpy(&d, &(uint64_t){0x3ff8000000000000}, 8)` | `true` | `NULL` | `(const uint8_t[]){0x0b, 0x61}` |
 | Java | `HexFormat.of().parseHex("0b0b")` | `"abc".getBytes(StandardCharsets.US_ASCII)` | `"abc"` | `42L` | `Double.longBitsToDouble(0x3ff8000000000000L)` | `true` | `null` | `ByteBuffer.allocate(n).put(a).put(b).array()` |
-| Kotlin | `"0b0b".hexToByteArray()` | `"abc".toByteArray(Charsets.US_ASCII)` | `"abc"` | `42u` | `Double.fromBits(0x3ff8000000000000L)` | `true` | `null` | `a + b` |
+| Kotlin | `byteArrayOf(0x0b, 0x0b)` | `"abc".toByteArray(Charsets.US_ASCII)` | `"abc"` | `42u` | `Double.fromBits(0x3ff8000000000000uL.toLong())` | `true` | `null` | `a + b` |
 | Python | `bytes.fromhex("0b0b")` | `b"abc"` | `"abc"` | `42` | `struct.unpack(">d", bytes.fromhex("3ff8000000000000"))[0]` | `True` | `None` | `a + b` |
 | TypeScript | `Uint8Array.of(0x0b, 0x0b)` | `new TextEncoder().encode("abc")` | `"abc"` | `42` | `new DataView(Uint8Array.of(0x3f, 0xf8, 0, 0, 0, 0, 0, 0).buffer).getFloat64(0)` | `true` | `null` | `Uint8Array.of(...a, ...b)` |
 | PHP | `hex2bin("0b0b")` | `'abc'` | `"abc"` | `42` | `unpack('E', hex2bin('3ff8000000000000'))[1]` | `true` | `null` | `$a . $b` |
@@ -1026,7 +1026,7 @@ Every rule starts from one word split: a capital starts a word, a run of capital
 | Java | `hkdfExpandSha256` | `parseHttpRequest` | `userId` | `nish.crypto.Hkdf` | `nish.crypto.Hkdf.hkdfExpandSha256` | Google Java Style Guide, §5.3 Camel case: defined (acronyms cased as words) |
 | Kotlin | `hkdfExpandSha256` | `parseHttpRequest` | `userId` | `nish.crypto.Hkdf` | `nish.crypto.Hkdf.hkdfExpandSha256` | Kotlin Coding Conventions, Naming rules (lowerCamelCase functions; two-letter acronyms in capitals) |
 | Python | `hkdf_expand_sha256` | `parse_http_request` | `user_id` | `nish.crypto.hkdf` | `nish.crypto.hkdf.hkdf_expand_sha256` | PEP 8, Naming Conventions › Function and Variable Names |
-| TypeScript | `hkdfExpandSha256` | `parseHTTPRequest` | `userId` | `nish/crypto/hkdf` | `hkdf.hkdfExpandSha256` | TypeScript Handbook and Google TypeScript Style Guide, Identifiers › Naming style (lowerCamelCase; acronyms as written by the contract) |
+| TypeScript | `hkdfExpandSha256` | `parseHttpRequest` | `userId` | `nish/crypto/hkdf` | `hkdf.hkdfExpandSha256` | Google TypeScript Style Guide, Identifiers › Naming style and Camel case (lowerCamelCase; acronyms cased as whole words) |
 | PHP | `hkdfExpandSha256` | `parseHTTPRequest` | `userId` | `Nish\Crypto\Hkdf` | `\Nish\Crypto\Hkdf::hkdfExpandSha256` | PSR-1 Basic Coding Standard, §4.3 Methods (camelCase) and PSR-4 Autoloader |
 | Swift | `hkdfExpandSha256` | `parseHTTPRequest` | `userId` | `NishCryptoHkdf` | `NishCryptoHkdf.hkdfExpandSha256` | Swift API Design Guidelines, Conventions › General Conventions (lowerCamelCase; acronyms uniformly cased as written) |
 | Dart | `hkdfExpandSha256` | `parseHttpRequest` | `userId` | `package:nish/crypto/hkdf.dart` | `hkdf.hkdfExpandSha256` | Effective Dart: Style, Identifiers (lowerCamelCase; acronyms longer than two letters capitalized like words) |
@@ -1149,7 +1149,7 @@ Notes:
 - type `secret-bytes`: no secret type; secrecy is dropped
 - outcome `refusing-return`: a non-nil error is the refusal; which error it is is outside the contract
 - outcome `optional-input`: nil is the absent argument
-- literal `str`: non-ASCII as \u escapes
+- literal `str`: non-ASCII as \u escapes, a scalar above U+FFFF as \U
 - literal `int`: converted to its type, so every width is exact
 - literal `f64`: from its bits, so -0 and NaN payloads are exact
 
@@ -1177,8 +1177,8 @@ Notes:
 - type `i8`: the exact-width types are optional in the standard; every mainstream target has them
 - outcome `refusing-return`: std::nullopt is the refusal
 - outcome `optional-input`: std::nullopt is the absent argument
-- literal `str`: non-ASCII as \u escapes in a u8 literal
-- literal `int`: braced, so a value out of range is a compile error
+- literal `str`: non-ASCII as its UTF-8 bytes in \x escapes ("\xc3\xa9" for é), split where a hex digit follows; a u8 literal is char8_t in C++20 and does not convert to std::string_view
+- literal `int`: braced, so a value out of range is a compile error; a minimum as -MAX - 1 (std::int64_t{-9223372036854775807 - 1}), and a u64 above INT64_MAX with a u suffix (std::uint64_t{18446744073709551615u})
 - literal `f64`: from its bits (C++20 [bit.cast]), so -0 and NaN payloads are exact
 - literal `concat`: no array concatenation in a literal; the joined bytes are written as one array
 
@@ -1208,9 +1208,9 @@ Notes:
 - outcome `optional-input`: null is the absent argument
 - literal `hex`: or Convert.FromHexString("0b0b")
 - literal `ascii`: a UTF-8 literal (C# 11), ASCII being a subset
-- literal `str`: non-ASCII as \u escapes
-- literal `int`: a suffix or a cast gives each width, so every width is exact
-- literal `f64`: from its bits, so -0 and NaN payloads are exact
+- literal `str`: non-ASCII as \u escapes, a scalar above U+FFFF as \U
+- literal `int`: per width: sbyte, short, byte and ushort by a cast ((sbyte)-128), int bare, uint 42u, long 42L, ulong 42UL; -2147483648 and -9223372036854775808 are valid as written
+- literal `f64`: from its bits (.NET 6), so -0 and NaN payloads are exact; Int64BitsToDouble would not take a hex literal with the sign bit set, which is a ulong (C# spec §6.4.5.3)
 - literal `concat`: a collection expression (C# 12)
 
 </details>
@@ -1233,16 +1233,16 @@ Choices:
 Notes:
 
 - type `bytes`: a pointer and a length; a returned value goes through out-parameters uint8_t \*out, size_t \*out_len
-- type `string`: NUL-terminated UTF-8, so a string holding U+0000 cannot be passed; that value is dropped
+- type `string`: NUL-terminated UTF-8, so a string holding U+0000 cannot be passed; that value is dropped. A returned string goes into a caller-supplied buffer char \*out, size_t out_cap, so the caller owns it
 - type `bool`: &lt;stdbool.h>
 - type `f64`: binary64 where __STDC_IEC_559__ is defined (Annex F)
 - type `secret-bytes`: no secret type; secrecy is dropped (C23 memset_explicit can wipe a copy)
 - outcome `refusing-return`: returns 0 with the value in \*out, or a nonzero status for the refusal; which nonzero value is outside the contract
 - outcome `optional-input`: NULL is the absent argument; for bytes, a NULL pointer (its length ignored), so absent and empty stay distinct
-- literal `hex`: a compound literal, with its length sizeof'd
+- literal `hex`: a compound literal, with its length sizeof'd; empty bytes as a non-NULL pointer and length 0, as C before C23 has no empty initializer
 - literal `ascii`: without the terminating NUL in its length
-- literal `str`: non-ASCII as \u escapes in a u8 literal
-- literal `int`: &lt;stdint.h> constant macros give each width; INT64_MIN is written (-INT64_MAX - 1)
+- literal `str`: non-ASCII as its UTF-8 bytes in \x escapes ("\xc3\xa9" for é), split where a hex digit follows; a u8 literal is char8_t, not char, in C23
+- literal `int`: &lt;stdint.h> constant macros give each width; a minimum is its INTn_MIN macro, or (-INT64_MAX - 1)
 - literal `f64`: from its bits, so -0 and NaN payloads are exact
 - literal `concat`: no concatenation of arrays; the joined bytes are written as one array
 
@@ -1272,11 +1272,11 @@ Notes:
 - type `u16`: widened to int, as char is not a number here
 - type `u32`: widened to long
 - type `u64`: the same 64 bits read unsigned, with Long.compareUnsigned, Long.divideUnsigned and Long.toUnsignedString (JLS has no wider primitive)
-- outcome `refusing-return`: Optional.empty() is the refusal; java.util.Optional's API note names it the return type for 'no result'
-- outcome `optional-input`: a boxed or reference type where null is the absent argument; Optional is not used for parameters
+- outcome `refusing-return`: {T} boxed (boolean → Boolean, byte → Byte, short → Short, int → Integer, long → Long, double → Double; byte[] and String as they are), since a type argument is a reference type (JLS §4.5.1). Optional.empty() is the refusal; java.util.Optional's API note names it the return type for 'no result'
+- outcome `optional-input`: org.jspecify.annotations.Nullable (JSpecify 1.0), on {T} boxed as for a refusing return; null is the absent argument, and Optional is not used for parameters
 - literal `hex`: java.util.HexFormat (Java 17)
-- literal `str`: non-ASCII as \u escapes
-- literal `int`: an unsigned u64 above Long.MAX_VALUE as Long.parseUnsignedLong("…")
+- literal `str`: non-ASCII as \u escapes, a scalar above U+FFFF as its UTF-16 surrogate pair
+- literal `int`: per width: i8 (byte) 42, i16 (short) 42, i32, u8 and u16 42, i64, u32 and u64 42L; the minimums -2147483648 and -9223372036854775808L are valid as written, and a u64 above Long.MAX_VALUE is its bits as a hex long (0xffffffffffffffffL)
 - literal `f64`: from its bits; a NaN payload may not survive arithmetic, but is kept by the conversion
 - literal `null`: Optional.empty() where the refusal is meant
 
@@ -1304,10 +1304,10 @@ Notes:
 - type `secret-bytes`: no secret type; secrecy is dropped (fill(0) can wipe a copy)
 - outcome `refusing-return`: null is the refusal
 - outcome `optional-input`: a nullable parameter, null the absent argument
-- literal `hex`: kotlin.text HexFormat (Kotlin 1.9)
+- literal `hex`: a byte above 0x7f as 0xff.toByte(); "0b0b".hexToByteArray() needs @OptIn(ExperimentalStdlibApi::class) in Kotlin 1.9
 - literal `str`: non-ASCII as \u escapes; $ escaped as \$
-- literal `int`: u/L/uL suffixes and toByte() give each width exactly
-- literal `f64`: from its bits, so -0 and NaN payloads are exact
+- literal `int`: per width: i8 42.toByte(), i16 42.toShort(), i32 42, i64 42L, u8 42u.toUByte(), u16 42u.toUShort(), u32 42u, u64 42uL; the minimums as Int.MIN_VALUE and Long.MIN_VALUE, since -2147483648 is a Long and -9223372036854775808L does not compile
+- literal `f64`: from its bits, so -0 and NaN payloads are exact; the bits are a ULong literal, as a hex Long literal with the sign bit set (-0, any negative value) does not compile
 - literal `concat`: ByteArray.plus
 
 </details>
@@ -1350,7 +1350,7 @@ Notes:
 
 Types: ECMA-262 (ECMAScript 2024), §6.1.6.1 The Number Type, §6.1.6.2 The BigInt Type, §25.2 TypedArray (Uint8Array).
 
-Names: functions and parameters lowerCamelCase with words as the contract writes them: the first word lowercased, the rest unchanged (parseHTTPRequest → parseHTTPRequest, hkdfExpandSha256 → hkdfExpandSha256). A name that is a reserved word takes a name override.
+Names: functions and parameters lowerCamelCase, an acronym cased as a whole word (the guide's loadHttpUrl): words split at each capital, a digit run stays on the word before it (parseHTTPRequest → parseHttpRequest, readIOStream → readIoStream, hkdfExpandSha256 → hkdfExpandSha256). A name that is a reserved word takes a name override.
 
 Modules (file): an ES module at the neutral path, imported as a namespace named for its last segment: nish/crypto/hkdf → import \* as hkdf from "nish/crypto/hkdf", called hkdf.&lt;name>.
 
@@ -1399,13 +1399,14 @@ Notes:
 - type `i8`: a 64-bit build is assumed; the width is the implementation's to check
 - type `i16`: a 64-bit build is assumed; the width is the implementation's to check
 - type `i32`: a 64-bit build is assumed; the width is the implementation's to check
-- type `i64`: exact on a 64-bit build (PHP_INT_SIZE 8)
+- type `i64`: exact on a 64-bit build (PHP_INT_SIZE 8); its minimum is written PHP_INT_MIN
 - type `u8`: a 64-bit build is assumed; the width is the implementation's to check
 - type `u16`: a 64-bit build is assumed; the width is the implementation's to check
 - type `u32`: a 64-bit build is assumed; the width is the implementation's to check
 - outcome `refusing-return`: null is the refusal
 - outcome `optional-input`: null is the absent argument
 - literal `str`: non-ASCII as \u{…} escapes
+- literal `int`: i64's minimum as PHP_INT_MIN: -9223372036854775808 is the float negation of an overflowed literal
 - literal `f64`: from its bits (big-endian double), so -0 and NaN payloads are exact
 
 </details>

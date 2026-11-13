@@ -96,7 +96,10 @@ export const go: LanguageTable = {
   literals: {
     hex: { spelling: "[]byte{0x0b, 0x0b}" },
     ascii: { spelling: '[]byte("abc")' },
-    str: { spelling: '"abc"', note: "non-ASCII as \\u escapes" },
+    str: {
+      spelling: '"abc"',
+      note: "non-ASCII as \\u escapes, a scalar above U+FFFF as \\U",
+    },
     int: {
       spelling: "uint32(42)",
       note: "converted to its type, so every width is exact",

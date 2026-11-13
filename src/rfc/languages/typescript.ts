@@ -6,7 +6,7 @@ export const typescript: LanguageTable = {
   typeStandard:
     "ECMA-262 (ECMAScript 2024), §6.1.6.1 The Number Type, §6.1.6.2 The BigInt Type, §25.2 TypedArray (Uint8Array)",
   nameStandard:
-    "TypeScript Handbook and Google TypeScript Style Guide, Identifiers › Naming style (lowerCamelCase; acronyms as written by the contract)",
+    "Google TypeScript Style Guide, Identifiers › Naming style and Camel case (lowerCamelCase; acronyms cased as whole words)",
   types: {
     bytes: { spelling: "Uint8Array" },
     string: {
@@ -62,8 +62,8 @@ export const typescript: LanguageTable = {
     note: 'an ES module at the neutral path, imported as a namespace named for its last segment: nish/crypto/hkdf → import * as hkdf from "nish/crypto/hkdf", called hkdf.<name>',
   },
   nameRule:
-    "functions and parameters lowerCamelCase with words as the contract writes them: the first word lowercased, the rest unchanged (parseHTTPRequest → parseHTTPRequest, hkdfExpandSha256 → hkdfExpandSha256). A name that is a reserved word takes a name override.",
-  name: (n) => camel(n, "as-written"),
+    "functions and parameters lowerCamelCase, an acronym cased as a whole word (the guide's loadHttpUrl): words split at each capital, a digit run stays on the word before it (parseHTTPRequest → parseHttpRequest, readIOStream → readIoStream, hkdfExpandSha256 → hkdfExpandSha256). A name that is a reserved word takes a name override.",
+  name: (n) => camel(n, "word"),
   choices: [
     "Widths up to 32 bits are number, and i64/u64 are bigint, so every integer is exact; the type no longer states the width.",
     "f64 is number: every binary64 value but a NaN's payload is kept. That payload is dropped.",

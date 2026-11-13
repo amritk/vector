@@ -47,14 +47,17 @@ export const csharp: LanguageTable = {
       spelling: '"abc"u8.ToArray()',
       note: "a UTF-8 literal (C# 11), ASCII being a subset",
     },
-    str: { spelling: '"abc"', note: "non-ASCII as \\u escapes" },
+    str: {
+      spelling: '"abc"',
+      note: "non-ASCII as \\u escapes, a scalar above U+FFFF as \\U",
+    },
     int: {
       spelling: "42u",
-      note: "a suffix or a cast gives each width, so every width is exact",
+      note: "per width: sbyte, short, byte and ushort by a cast ((sbyte)-128), int bare, uint 42u, long 42L, ulong 42UL; -2147483648 and -9223372036854775808 are valid as written",
     },
     f64: {
-      spelling: "BitConverter.Int64BitsToDouble(0x3ff8000000000000)",
-      note: "from its bits, so -0 and NaN payloads are exact",
+      spelling: "BitConverter.UInt64BitsToDouble(0x3ff8000000000000UL)",
+      note: "from its bits (.NET 6), so -0 and NaN payloads are exact; Int64BitsToDouble would not take a hex literal with the sign bit set, which is a ulong (C# spec §6.4.5.3)",
     },
     bool: { spelling: "true" },
     null: { spelling: "null" },

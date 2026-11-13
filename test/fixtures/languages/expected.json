@@ -1770,8 +1770,8 @@
     },
     "typescript": {
       "parseHTTPRequest": {
-        "function": "parseHTTPRequest",
-        "param": "parseHTTPRequest"
+        "function": "parseHttpRequest",
+        "param": "parseHttpRequest"
       },
       "userId": {
         "function": "userId",
@@ -1782,8 +1782,8 @@
         "param": "utf8Decode"
       },
       "readIOStream": {
-        "function": "readIOStream",
-        "param": "readIOStream"
+        "function": "readIoStream",
+        "param": "readIoStream"
       },
       "x25519_publicKey": {
         "function": "x25519PublicKey",

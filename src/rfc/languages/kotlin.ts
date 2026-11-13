@@ -40,8 +40,8 @@ export const kotlin: LanguageTable = {
   },
   literals: {
     hex: {
-      spelling: '"0b0b".hexToByteArray()',
-      note: "kotlin.text HexFormat (Kotlin 1.9)",
+      spelling: "byteArrayOf(0x0b, 0x0b)",
+      note: 'a byte above 0x7f as 0xff.toByte(); "0b0b".hexToByteArray() needs @OptIn(ExperimentalStdlibApi::class) in Kotlin 1.9',
     },
     ascii: { spelling: '"abc".toByteArray(Charsets.US_ASCII)' },
     str: {
@@ -50,11 +50,11 @@ export const kotlin: LanguageTable = {
     },
     int: {
       spelling: "42u",
-      note: "u/L/uL suffixes and toByte() give each width exactly",
+      note: "per width: i8 42.toByte(), i16 42.toShort(), i32 42, i64 42L, u8 42u.toUByte(), u16 42u.toUShort(), u32 42u, u64 42uL; the minimums as Int.MIN_VALUE and Long.MIN_VALUE, since -2147483648 is a Long and -9223372036854775808L does not compile",
     },
     f64: {
-      spelling: "Double.fromBits(0x3ff8000000000000L)",
-      note: "from its bits, so -0 and NaN payloads are exact",
+      spelling: "Double.fromBits(0x3ff8000000000000uL.toLong())",
+      note: "from its bits, so -0 and NaN payloads are exact; the bits are a ULong literal, as a hex Long literal with the sign bit set (-0, any negative value) does not compile",
     },
     bool: { spelling: "true" },
     null: { spelling: "null" },

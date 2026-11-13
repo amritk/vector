@@ -14,7 +14,7 @@ export const c: LanguageTable = {
     },
     string: {
       spelling: "const char *",
-      note: "NUL-terminated UTF-8, so a string holding U+0000 cannot be passed; that value is dropped",
+      note: "NUL-terminated UTF-8, so a string holding U+0000 cannot be passed; that value is dropped. A returned string goes into a caller-supplied buffer char *out, size_t out_cap, so the caller owns it",
     },
     bool: { spelling: "bool", note: "<stdbool.h>" },
     f64: {
@@ -47,7 +47,7 @@ export const c: LanguageTable = {
   literals: {
     hex: {
       spelling: "(const uint8_t[]){0x0b, 0x0b}",
-      note: "a compound literal, with its length sizeof'd",
+      note: "a compound literal, with its length sizeof'd; empty bytes as a non-NULL pointer and length 0, as C before C23 has no empty initializer",
     },
     ascii: {
       spelling: '(const uint8_t[]){"abc"}',
@@ -55,11 +55,11 @@ export const c: LanguageTable = {
     },
     str: {
       spelling: '"abc"',
-      note: "non-ASCII as \\u escapes in a u8 literal",
+      note: 'non-ASCII as its UTF-8 bytes in \\x escapes ("\\xc3\\xa9" for é), split where a hex digit follows; a u8 literal is char8_t, not char, in C23',
     },
     int: {
       spelling: "UINT32_C(42)",
-      note: "<stdint.h> constant macros give each width; INT64_MIN is written (-INT64_MAX - 1)",
+      note: "<stdint.h> constant macros give each width; a minimum is its INTn_MIN macro, or (-INT64_MAX - 1)",
     },
     f64: {
       spelling: "memcpy(&d, &(uint64_t){0x3ff8000000000000}, 8)",

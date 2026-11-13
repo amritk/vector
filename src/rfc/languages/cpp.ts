@@ -52,11 +52,11 @@ export const cpp: LanguageTable = {
     ascii: { spelling: "std::array<std::uint8_t, 3>{'a', 'b', 'c'}" },
     str: {
       spelling: '"abc"',
-      note: "non-ASCII as \\u escapes in a u8 literal",
+      note: 'non-ASCII as its UTF-8 bytes in \\x escapes ("\\xc3\\xa9" for é), split where a hex digit follows; a u8 literal is char8_t in C++20 and does not convert to std::string_view',
     },
     int: {
       spelling: "std::uint32_t{42}",
-      note: "braced, so a value out of range is a compile error",
+      note: "braced, so a value out of range is a compile error; a minimum as -MAX - 1 (std::int64_t{-9223372036854775807 - 1}), and a u64 above INT64_MAX with a u suffix (std::uint64_t{18446744073709551615u})",
     },
     f64: {
       spelling: "std::bit_cast<double>(std::uint64_t{0x3ff8000000000000})",
