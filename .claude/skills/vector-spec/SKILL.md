@@ -16,8 +16,6 @@ description: >-
 
 # vector spec — spec → contract → Nish test, and the PR that implements it
 
-`vector rfc` is the same command under its old name.
-
 **You** write the spec. **`vector spec extract`** writes the contract from it.
 **The RFC text and Z3 hold the veto**, and **nish runs the test.** Never write
 or edit `contracts/<name>.json` by hand: change the spec, rebuild, and
@@ -29,12 +27,12 @@ spec). Show it, and never weaken a clause to pass.
 
 Exit codes, for every command: **0** pass, **1** refused (extract's refusals,
 `INVALID`, `VIOLATED`, `ERROR`, a stale test, an unlisted export, a survivor),
-**2** a usage error, a missing file or RFC, the wrong build tools, or a git
-error.
+**2** a usage error, a missing file or RFC, the wrong build tools, a z3
+failure (`check`, `extract`, `emit`, `run` and `mutate`), or a git error.
 
-The README's [Writing a spec (kramdown-rfc)](../../../README.md#writing-a-spec-kramdown-rfc)
-is the reference for every construct below.
-`test/fixtures/profile/profile-hex.md` is a spec that uses all of them.
+[Writing a spec](../../../docs/guide/guides/writing-a-spec.md) is the
+reference for every construct below.
+`tests/fixtures/profile/profile-hex.md` is a spec that uses all of them.
 
 ## The PR workflow, in order
 
@@ -236,8 +234,9 @@ extracts to.
   - Take the arguments and the expected value from one test case.
   - Where a case is printed for several variants, use the row whose number
     is in the function's name.
-  - The README's "What a printed value is" and "When a section states
-    `null`, `true` or `false`" give the full rules.
+  - [Writing a spec](../../../docs/guide/guides/writing-a-spec.md)'s "What a
+    printed value is" and "When a section states `null`, `true` or `false`"
+    give the full rules.
 
 **Properties.** Each is a `ts-property` block. Line 1 is
 `// P-ID covers R-ID, … — title`, where the separator is exactly ` — `
@@ -261,7 +260,8 @@ Write the spec's definitions as checks over a typed domain:
 - tamper rejection;
 - the construction rebuilt from other functions.
 
-Use the README's ts-property list for the subset: operators, operations,
+Use the [Properties](../../../docs/guide/guides/writing-a-spec.md#properties)
+section of Writing a spec for the subset: operators, operations,
 `where`, and the forms that are refused. Remember that its semantics are
 vector's, not JavaScript's. For example, `.slice` clamps, `a % 0` is 0, and
 `===` on bytes compares contents.
@@ -278,8 +278,8 @@ recorded `.txt`, and `check` and `frozen` verify the recorded bytes.
 
 ```bash
 scripts/build-spec.sh specs/<name>.md         # writes specs/<name>.xml
-bun run vector spec extract specs/<name>.xml -o contracts/<name>.json
-bun run vector spec check contracts/<name>.json --run-sources
+./dist/vector spec extract specs/<name>.xml -o contracts/<name>.json
+./dist/vector spec check contracts/<name>.json --run-sources
 ```
 
 **build-spec.sh**
@@ -306,8 +306,9 @@ bun run vector spec check contracts/<name>.json --run-sources
 
 **check --run-sources** runs the `command` sources. Read every command before
 you pass `--run-sources`: it runs on your machine, as you, with your files and
-network. On Linux nothing it starts outlives it; elsewhere, a process it
-detaches with `setsid` outlives the 30 s timeout. With no module yet, `check`
+network. Only the 30 s timeout kills the command's process group: a command
+that exits quickly can leave background children running, and a process that
+detaches with `setsid` is never contained. With no module yet, `check`
 warns that signatures were not checked. That is expected here: `run
 --nish-root` (step 5) checks them against the implementation.
 
@@ -324,7 +325,7 @@ Nothing after this step may change the spec.
 ### 3. Freeze
 
 ```bash
-bun run vector spec frozen --base origin/main contracts/<name>.json
+./dist/vector spec frozen --base origin/main contracts/<name>.json
 ```
 
 Run it last, after step 4's `emit` and `stale`, so it sees the whole PR.
@@ -337,15 +338,20 @@ Run it last, after step 4's `emit` and `stale`, so it sees the whole PR.
   - a `sha256` is missing;
   - no contract was found.
 
+Its positional arguments are the contracts to check, from the repository's
+top; with none, it checks every `contracts/*.json`. `--repo <dir>` names the
+repository (default: the current directory).
+
 From here, the spec and contract change only in a PR of their own.
 
 ### 4. Emit the test, and keep it fresh
 
 ```bash
-bun run vector spec emit contracts/<name>.json -o test/spec/<name>.ts
-bun run vector spec stale test/spec/<name>.ts contracts/<name>.json
+./dist/vector spec emit contracts/<name>.json -o test/spec/<name>.ts
+./dist/vector spec stale test/spec/<name>.ts contracts/<name>.json
 ```
 
+`emit` does not make directories: `mkdir -p test/spec` first.
 `emit` writes `// vector-contract-sha256: <hex>` into the test's header.
 `stale` exits 1 when that line names other bytes than the contract's, or is
 missing, or appears twice. In a repository that does not install vector,
@@ -359,7 +365,7 @@ The implementation PR touches the code and nothing on the spec side
 (`frozen` refuses it otherwise). Then:
 
 ```bash
-bun run vector spec run contracts/<name>.json --nish-root ../nish [--format markdown]
+./dist/vector spec run contracts/<name>.json --nish-root ../nish [--format markdown]
 ```
 
 It re-runs every `check` gate, now including the signature gate against the
@@ -369,13 +375,15 @@ module, then runs the test.
 - **Exit 1** is `VIOLATED` (a clause failed, shown with its sample) or
   `ERROR` (the test did not build, or finished early).
 
-`--nish-root` uses `build/nish`, which tests the working tree's std. Without
-it, the seed tests the last release's std and warns.
+`--nish-root <root>` builds with the seed compiler, `<root>/libexec/nish` if
+it exists (a nish install, such as `.nish/`) and `<root>/build/seed`
+otherwise (a checkout), with the root's own `std/` overlaid, so it tests that
+root's std. `--nish <bin>` builds with that compiler as it is.
 
 ### 6. Check the exports
 
 ```bash
-bun run vector spec exports contracts/<name>.json --nish-root ../nish --base origin/main
+./dist/vector spec exports contracts/<name>.json --nish-root ../nish --base origin/main
 ```
 
 Every export the diff adds to or changes in the target module must be a
@@ -389,7 +397,7 @@ in a spec-side PR.
 ### 7. Mutate the diff
 
 ```bash
-bun run vector spec mutate contracts/<name>.json --nish-root ../nish --base origin/main \
+./dist/vector spec mutate contracts/<name>.json --nish-root ../nish --base origin/main \
   [--jobs N] [--max N] [--format markdown]
 ```
 
@@ -411,8 +419,23 @@ belongs in a spec-side PR.
 `mutate` also exits 1 in these cases:
 
 - there are zero mutants;
-- every mutant is stillborn;
-- the test fails on the unmutated module.
+- every mutant is stillborn or its build ran past its time;
+- too many builds or tests (over 10%) ran past their time;
+- the test fails on the unmutated module, or the unmutated module does not
+  build because of an error in it.
+
+It exits 2 for bad usage, a git error, a z3 failure, or a compiler failure the
+mutant did not cause. Two compiler traps:
+
+- **The compiler must read the copy.** `mutate` builds each mutant in a copy
+  of the root, and first checks (the canary) that the compiler fails on a
+  copy whose module is made unparseable. An installed `bin/nish`, such as
+  `.nish/bin/nish`, is a wrapper that execs another install by absolute path
+  and fails the canary: give `--nish libexec/nish` for an install, or use a
+  real nish checkout.
+- **Run it from the repository's top.** Without `--test`, `mutate` emits the
+  contract's test as `emit` does, checking the contract with the current
+  directory as the repository's top, as CI runs it.
 
 ### 8. Report
 

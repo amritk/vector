@@ -9,7 +9,7 @@ must be current and every link must land.
 
 | Directory | What it holds |
 | --- | --- |
-| [`guide/`](guide/index.md) | The user guide, written by hand: the landing page and getting started. |
+| [`guide/`](guide/index.md) | The user guide, written by hand: the landing page, getting started, and the guides (proving, specs and contracts, testing, PR gates, exit codes, file formats). |
 | [`reference/`](reference/index.md) | The reference, generated: the command line, the file formats and the modules. |
 | [`site/`](site/) | The site's look: the mark, the header logos and the theme. |
 

@@ -60,6 +60,7 @@ vector hands each clause to z3 and prints a proof report. Here every postconditi
 ║ "Testing shows the presence of bugs, never their absence."         ║
 ║  — proven over exact reals; float64 conformance-checked.           ║
 ╚════════════════════════════════════════════════════════════════════╝
+…
 ```
 
 Below the report it prints style advice, which does not affect the proof, and the verified program as TypeScript. `--json` prints the result as JSON instead, and `--emit <file>` writes the TypeScript to a file when the program is proved.
@@ -68,6 +69,7 @@ Below the report it prints style advice, which does not affect the proof, and th
 
 [tests/fixtures/unsat.json](https://github.com/amritk/vector/blob/main/tests/fixtures/unsat.json) claims its result is greater than the amount, which fails at 0. Verify it against its plan, [tests/fixtures/unsat-spec.json](https://github.com/amritk/vector/blob/main/tests/fixtures/unsat-spec.json):
 
+<!-- exit 1 -->
 ```sh
 ./dist/vector verify tests/fixtures/unsat-spec.json tests/fixtures/unsat.json
 ```
