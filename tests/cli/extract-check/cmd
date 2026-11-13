@@ -1,0 +1,1 @@
+vector spec extract specs/example-hex.xml -o contracts/example-hex.json --check

@@ -1,12 +1,22 @@
 /**
  * `cli/spec-extract` — `vector spec extract`: extract a contract from a kramdown-rfc spec's XML.
  *
- * Only the command's shape is declared so far; its handler is a stub that
- * exits 2.
+ * The contract goes to stdout, or to `-o`; with `--check` nothing is written,
+ * and a diff against `-o` exits 1. Refusals exit 1, each `file:line: message`
+ * at the markdown line when the `.md` is beside the spec; an input or RFC that
+ * cannot be read exits 2.
  */
 
 import { Cli, ParseResult } from "nish/cli-args"
-import { report, usageError } from "../core/diag"
+import { EXIT_PASS, EXIT_REFUSED, EXIT_USAGE, formatDiagnostic, refusal, report, usageError } from "../core/diag"
+import { dirname } from "../core/fs"
+import {
+  EXTRACT_SIDECAR_SUFFIX,
+  extractContract,
+  extractDefaultContractPath,
+  extractReaders,
+  extractUnifiedDiff,
+} from "../spec/extract"
 
 /** The id `vector spec extract` is parsed to. */
 export const SPEC_EXTRACT_ID: i32 = 3
@@ -36,12 +46,85 @@ export class SpecExtractCommand {
   /**
    * Runs the command.
    *
-   * @param _r the parsed arguments (unread until the handler lands)
+   * @param r the parsed arguments
    * @returns the exit code
    */
-  run(_r: ParseResult): i32 {
-    return report(usageError("spec extract: not implemented yet"))
+  run(r: ParseResult): i32 {
+    const xml = r.positional(this.specXmlArg) ?? ""
+    const outArg = r.value(this.outFlag)
+    const check = r.flag(this.checkFlag)
+    // extract reads only xml2rfc's output, and never runs it.
+    if (xml.endsWith(".md")) {
+      return report(usageError(`spec extract: build it first: scripts/build-spec.sh ${xml}`))
+    }
+    if (!xml.endsWith(".xml")) {
+      return report(usageError(`spec extract: reads an RFC XML v3 spec (.xml), not ${xml}`))
+    }
+    if (check && outArg === null) {
+      return report(usageError("spec extract: --check needs -o <contract.json>"))
+    }
+    // -o is overwritten: never the spec, nor the sidecar extract reads.
+    if (outArg !== null) {
+      const outReal = realpathSync(outArg) ?? ""
+      if (outArg === xml || (outReal !== "" && outReal === (realpathSync(xml) ?? ""))) {
+        return report(usageError(`spec extract: -o ${outArg} is the spec extract reads`))
+      }
+      if (outArg.endsWith(".md")) {
+        return report(usageError(`spec extract: -o ${outArg} is markdown, not a contract`))
+      }
+      if (outArg.endsWith(EXTRACT_SIDECAR_SUFFIX)) {
+        return report(usageError(`spec extract: -o ${outArg} is an allowSurvivors sidecar, not a contract`))
+      }
+    }
+    const readers = extractReaders()
+    if (readers.isErr()) {
+      return report(usageError(`spec extract: ${readers.error}`))
+    }
+    const self = realpathSync("/proc/self/exe") ?? realpathSync(process.argv[0]) ?? "."
+    const contractPath = outArg ?? extractDefaultContractPath(xml)
+    const got = extractContract(xml, contractPath, dirname(dirname(self)), readers.value)
+    if (got.errors.length > 0) {
+      for (const e of got.errors) {
+        console.error(formatDiagnostic(usageError(`spec extract: ${e}`)))
+      }
+      return EXIT_USAGE
+    }
+    if (got.refusals.length > 0) {
+      for (const f of got.refusals) {
+        console.error(formatDiagnostic(refusal(f.file, f.line, f.message)))
+      }
+      return EXIT_REFUSED
+    }
+    if (outArg === null) {
+      specExtractPrint(got.text)
+      return EXIT_PASS
+    }
+    if (check) {
+      // A contract not there yet is empty; one there that cannot be read is an error.
+      const read = readFileSyncOrNull(outArg)
+      if (read === null && realpathSync(outArg) !== null) {
+        return report(usageError(`spec extract: cannot read ${outArg}`))
+      }
+      const now = read ?? ""
+      const diff = extractUnifiedDiff(now, got.text, outArg, `${outArg} (extracted from ${xml})`)
+      if (diff.length === 0) {
+        return EXIT_PASS
+      }
+      specExtractPrint(diff)
+      return report(refusal(outArg, 0, `is not what ${xml} states; run: vector spec extract ${xml} -o ${outArg}`))
+    }
+    // writeFileSync aborts the process on failure, so refuse what is there but not a readable file first.
+    if (readFileSyncOrNull(outArg) === null && realpathSync(outArg) !== null) {
+      return report(usageError(`spec extract: cannot write ${outArg}`))
+    }
+    writeFileSync(outArg, got.text)
+    return EXIT_PASS
   }
+}
+
+/** Prints text that ends in a newline to stdout, as it is. */
+const specExtractPrint = (text: string): void => {
+  console.log(text.endsWith("\n") ? text.substring(0, text.length - 1) : text)
 }
 
 /**

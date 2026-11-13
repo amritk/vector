@@ -1,0 +1,1 @@
+vector: spec extract: build it first: scripts/build-spec.sh tests/fixtures/xmlv3/kramdown.md

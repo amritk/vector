@@ -1,0 +1,1 @@
+vector: spec extract: -o specs/example-hex.md is markdown, not a contract

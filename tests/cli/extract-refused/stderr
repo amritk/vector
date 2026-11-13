@@ -1,0 +1,3 @@
+vector: tests/fixtures/xmlv3/kramdown.xml:15: a spec has exactly one ts-interface block; this one has 0
+vector: tests/fixtures/xmlv3/kramdown.xml:15: docName "draft-test-00" names contract "test", but the file is kramdown.xml
+vector: tests/fixtures/xmlv3/kramdown.md:25: a <texttable> is v2 XML; write a v3 <table> (xml2rfc --v2v3 converts one)
