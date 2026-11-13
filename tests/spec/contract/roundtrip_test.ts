@@ -1,6 +1,7 @@
 import { Suite } from "nish/testing"
 import { splitLines } from "nish/text"
-import { contractParse } from "../../../src/spec/contract/read"
+import { newJsonDocument, parseJson } from "../../../src/core/json"
+import { contractFromJson, contractParse } from "../../../src/spec/contract/read"
 import { contractWrite } from "../../../src/spec/contract/write"
 
 /** The committed contracts, and nish's own when it is checked out beside vector. */
@@ -38,5 +39,12 @@ export const main = (): i32 => {
     t.eqLines(`${files[i]} writes back line for line`, splitLines(written), splitLines(text))
     t.ok(`${files[i]} writes back byte for byte`, written === text)
   }
+  // An already-parsed JSON value reads the same, and a wrong one says where.
+  const doc = newJsonDocument()
+  const bad = contractFromJson(doc, parseJson(doc, '{"contract": 1}', "inline").expect("json"))
+  t.ok(
+    "a wrong value is refused with paths",
+    bad.isErr() && bad.error.length > 0 && bad.error[0].startsWith("contract"),
+  )
   return t.done()
 }

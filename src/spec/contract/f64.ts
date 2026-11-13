@@ -57,7 +57,7 @@ export const contractF64Overflows = (text: string): boolean => {
     return false
   }
   const bits = f64ToBits(parseFloat(text))
-  return ((bits >> toI64(52)) & toI64(0x7ff)) === toI64(0x7ff) && (bits << toI64(12)) === toI64(0)
+  return ((bits >> toI64(52)) & toI64(0x7ff)) === toI64(0x7ff) && bits << toI64(12) === toI64(0)
 }
 
 /**
@@ -68,5 +68,5 @@ export const contractF64Overflows = (text: string): boolean => {
  */
 export const contractF64IsNaN = (x: f64): boolean => {
   const bits = f64ToBits(x)
-  return ((bits >> toI64(52)) & toI64(0x7ff)) === toI64(0x7ff) && (bits << toI64(12)) !== toI64(0)
+  return ((bits >> toI64(52)) & toI64(0x7ff)) === toI64(0x7ff) && bits << toI64(12) !== toI64(0)
 }
