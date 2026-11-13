@@ -82,7 +82,11 @@ export class SpecMutateCommand {
     if (root === null) {
       return report(usageError("spec mutate: --nish-root <dir> is required: the nish checkout holding the module"))
     }
-    const test = r.value(this.testFlag) ?? ""
+    const given = r.value(this.testFlag)
+    if (given !== null && given.length === 0) {
+      return report(usageError("spec mutate: --test takes a file; leave the flag out to emit the contract's test"))
+    }
+    const test = given ?? ""
     const jobs = specMutateCount(r.value(this.jobsFlag), 1)
     if (jobs < 1) {
       return report(usageError("spec mutate: --jobs takes a whole number of at least 1"))

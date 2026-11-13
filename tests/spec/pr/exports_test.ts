@@ -122,6 +122,13 @@ const exportsTestRepo = (t: Suite, dir: string): Result<boolean, string> => {
     missing.isOk() ? exportsTestReport(missing.value) : missing.error,
     "std/hex.ts exists neither at the fork point nor now",
   )
+  prTestRemove(`${root}/std/hex.ts`)
+  prTestWrite(dir, "nish/std/hex.ts/inner", "").orReturn()
+  const unreadable = exportsCheck(contract, root, "main")
+  t.ok(
+    "a module that exists but cannot be read is an error, not a deletion",
+    unreadable.isErr() && unreadable.error.indexOf("exists but cannot be read") >= 0,
+  )
   return Ok(true)
 }
 

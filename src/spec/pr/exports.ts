@@ -180,7 +180,7 @@ export const exportsJudge = (r: PrReport, c: Contract, changes: ExportsChange[])
  * @param nishRoot the nish checkout, a git work tree, whose std/ holds the module
  * @param base the ref the change is against
  * @returns the report, or `Err` when the contract cannot be read, its target
- *   is outside nish, or git fails
+ *   is outside nish, the module exists but cannot be read, or git fails
  */
 export const exportsCheck = (contractPath: string, nishRoot: string, base: string): Result<PrReport, string> => {
   const loaded = contractLoadFile(contractPath)
@@ -197,6 +197,11 @@ export const exportsCheck = (contractPath: string, nishRoot: string, base: strin
   const top = gitdiffTop(nishRoot).orReturn()
   const before = gitdiffShow(top, fork, `${prefix}${file}`).orReturn()
   const after = readFileSyncOrNull(`${nishRoot}/${file}`)
+  if (after === null && realpathSync(`${nishRoot}/${file}`) !== null) {
+    return Err(
+      `${nishRoot}/${file} exists but cannot be read as text: it is not deleted, so its exports cannot be judged`,
+    )
+  }
   const r = new PrReport("exports", `spec exports of ${file} against ${base}`)
   if (before === null && after === null) {
     r.problems.push(`${file} exists neither at the fork point nor now: is ${nishRoot} the nish checkout?`)

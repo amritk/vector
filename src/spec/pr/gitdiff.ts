@@ -68,13 +68,39 @@ const gitdiffLine = (text: string): string => {
 }
 
 /**
+ * `-c safe.directory=<dir>` for `repo`'s real path and each directory above
+ * it. With the global config skipped, a user's own safe.directory no longer
+ * applies, so a checkout another user owns (a container job, a bind mount)
+ * would fail as "dubious ownership"; git honours the setting from its
+ * command line, and its top is one of these directories.
+ */
+const gitdiffSafe = (repo: string): string[] => {
+  const out: string[] = []
+  let p = realpathSync(repo) ?? repo
+  while (p.length > 0) {
+    out.push("-c")
+    out.push(`safe.directory=${p}`)
+    let at = p.length - 1
+    while (at > 0 && p.charCodeAt(at) !== 0x2f) {
+      at--
+    }
+    if (at <= 0) {
+      break
+    }
+    p = p.substring(0, at)
+  }
+  return out
+}
+
+/**
  * Runs git in `repo` and returns what it printed. Pathspecs are literal, so
  * a path holding `*` or `:(` names that file, never a pattern. The GIT_*
  * variables that redirect git (GIT_DIR, GIT_WORK_TREE and the like) are
  * cleared, as are those that add config or an external diff, and the
  * system and global configs are skipped (a global core.excludesFile would
  * hide untracked files), so `repo` alone says which repository is read and
- * how.
+ * how. The repository is trusted whoever owns it (gitdiffSafe): the caller
+ * named it.
  *
  * @param repo the repository's directory
  * @param args git's arguments, after `-C <repo> --literal-pathspecs`
@@ -86,7 +112,13 @@ export const gitdiffGit = (repo: string, args: string[]): Result<string, string>
     argv.push("-u")
     argv.push(v)
   }
-  for (const a of ["GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "git", "-C", repo, "--literal-pathspecs"]) {
+  for (const a of ["GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "git"]) {
+    argv.push(a)
+  }
+  for (const a of gitdiffSafe(repo)) {
+    argv.push(a)
+  }
+  for (const a of ["-C", repo, "--literal-pathspecs"]) {
     argv.push(a)
   }
   for (const a of args) {

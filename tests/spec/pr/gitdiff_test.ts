@@ -1,4 +1,5 @@
 import { Suite } from "nish/testing"
+import { runProcess } from "../../../src/core/process"
 import {
   GitdiffExport,
   gitdiffBaseProblem,
@@ -117,6 +118,30 @@ const gitdiffTestRepo = (t: Suite): Result<boolean, string> => {
   t.eqStr("the top's prefix is empty", atTop.isOk() ? atTop.value : "<err>", "")
   const below = gitdiffPrefix(`${dir}/dir name`)
   t.eqStr("a directory's prefix ends in a slash", below.isOk() ? below.value : "<err>", "dir name/")
+  prTestRemove(dir)
+  return gitdiffTestForeign(t)
+}
+
+/**
+ * A repository someone else owns is still read: the caller named it, so
+ * gitdiffGit trusts it (safe.directory). Only root can give it away; any
+ * other runner checks the repository it owns.
+ */
+const gitdiffTestForeign = (t: Suite): Result<boolean, string> => {
+  const dir = prTestRepo("vector-gitdiff-foreign-").orReturn()
+  prTestWrite(dir, "a/b.ts", "x\n").orReturn()
+  prTestCommit(dir, "base").orReturn()
+  const id = runProcess(["id", "-u"], "", 10000).orReturn()
+  const root = id.stdout === "0\n"
+  if (root) {
+    const chown = runProcess(["chown", "-R", "65534:65534", "--", dir], "", 10000).orReturn()
+    t.ok("the repository is given away", chown.status === 0)
+    t.ok("plain git refuses it", prTestGit(dir, ["status"]).isErr())
+  }
+  t.ok("its top is found", gitdiffTop(dir).isOk())
+  t.ok("from a directory below it too", gitdiffTop(`${dir}/a`).isOk())
+  const paths = gitdiffChangedPaths(dir, "main")
+  t.ok("and its change is read", paths.isOk() && paths.value.length === 0)
   prTestRemove(dir)
   return Ok(true)
 }
