@@ -1,0 +1,12 @@
+vector 0.1.0  Prove small programs correct, and hold implementations to their specs
+
+usage: vector <command> [flags]
+
+Commands
+  verify         Prove a program meets its spec plan
+  diff           Prove two programs equivalent, or show where they differ
+  spec           Turn a spec into a contract and a test, and gate changes on it
+
+Flags
+  -h, --help     show help
+  -v, --version  show the version

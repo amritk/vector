@@ -2,64 +2,86 @@
 
 vector itself is MIT-licensed (see `LICENSE`, © 2026 Amrit Kahlon). This file
 covers everything in this repository, and in the compiled `dist/vector` binary,
-that someone else wrote. The compiled binary prints this file, after vector's
-own `LICENSE`, when run as `vector --licenses`.
+that someone else wrote.
 
 | Component | Where it ends up | License |
 |---|---|---|
-| Bun runtime | compiled binary | MIT; statically links LGPL-2 JavaScriptCore/WebKit, LGPL-2.1 TinyCC and others (see below) |
-| Z3 4.16.0 | compiled binary (`z3` + `libz3`) | MIT |
-| RFC 4648, RFC 5869, RFC 8439, RFC 8707 | `rfcs/`, excerpts in `contracts/` and `test/` | IETF Trust Legal Provisions |
-| nish v0.34.0 excerpts | `test/fixtures/mutate/` | MIT |
-
-`test/notices.test.ts` bundles the CLI and fails if the set of npm packages in
-the bundle differs from the `npm:` sections below, so this file cannot silently
-fall behind a dependency change.
+| Nish runtime and standard library | compiled binary | MIT; parts under BSL-1.0 and the fdlibm notice (see below) |
+| Z3 4.16.0 | fetched into `.z3/`, run as a separate process | MIT |
+| RFC 4648, RFC 5869, RFC 8439, RFC 8707 | `rfcs/`, excerpts in `contracts/` and `tests/` | IETF Trust Legal Provisions |
+| nish v0.34.0 excerpts | `tests/fixtures/mutate/` | MIT |
 
 ---
 
-## Runtimes and native code in the compiled binary
+## Code in the compiled binary
 
-### Bun
+### Nish runtime and standard library
 
-`bun build --compile` produces an executable that contains the Bun runtime of
-the `bun` that ran the build; `vector --licenses` prints that version. Bun is
-MIT-licensed, and its full license and third-party list, for the version that
-built a given binary, is at
-`https://github.com/oven-sh/bun/blob/bun-v<version>/LICENSE.md`.
+`npm run build` compiles vector's Nish source with the nish compiler pinned in
+`scripts/fetch-nish.sh`. The binary it links holds vector's own code plus the
+parts of nish's C runtime and standard library that vector uses
+(<https://github.com/amritk/nish>), under nish's MIT license:
 
-Bun statically links libraries under other licenses. The ones with obligations
-beyond keeping a notice are:
+```
+MIT License
 
-- **JavaScriptCore and WebCore (WebKit), LGPL-2.** Bun's patched WebKit is
-  published at <https://github.com/oven-sh/WebKit>. To relink vector against a
-  modified JavaScriptCore: build a modified `bun` as described in Bun's
-  `LICENSE.md` (clone that WebKit fork into `vendor/WebKit`, run
-  `bun sync-webkit-source`, then `bun run build:local`), then rebuild vector
-  from this repository's source with that `bun`
-  (`bun install && bun run fetch-z3 && bun run build`). vector's complete source
-  is in this repository, so the application part of the binary is always
-  available for relinking.
-- **TinyCC, LGPL-2.1.** The same applies; TinyCC's source is at
-  <https://github.com/tinycc/tinycc>, and Bun's build pins the version it links.
+Copyright (c) 2026 Nish contributors
 
-The other statically linked libraries (BoringSSL, brotli, c-ares, ICU,
-libarchive, libdeflate, mimalloc, simdutf, uSockets/uWebSockets, zlib-ng,
-zstd and the rest) are under permissive licenses, listed with links to their
-texts in Bun's `LICENSE.md`. As of Bun 1.4.4, which built the binaries this
-repository's CI tests, that file reads, in part:
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-> Bun itself is MIT-licensed.
->
-> Bun statically links JavaScriptCore (and WebKit) which is LGPL-2 licensed.
-> WebCore files from WebKit are also licensed under LGPL2.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-### Z3
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
 
-The binary embeds the `z3` executable and `libz3` shared library from the
-`z3-solver==4.16.0` wheel (`bun run fetch-z3`) and unpacks them on first use.
-The wheel ships no license file; this is the license from the Z3 4.16.0 source
-release (<https://github.com/Z3Prover/z3/blob/z3-4.16.0/LICENSE.txt>):
+Some of that code carries its own license, kept beside it in the compiler
+release (`.nish/runtime/LICENSE-*`, `.nish/std/LICENSE-*`):
+
+- **zmij** (float-to-string, `.nish/runtime/LICENSE-zmij`) and **fast_float**
+  (string-to-float, `.nish/std/LICENSE-fast-float`) are under the Boost
+  Software License 1.0, which requires no notice in machine-executable object
+  code.
+- **fdlibm** (the math functions in `std/math.ts`) asks that its notice be
+  preserved:
+
+```
+====================================================
+Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+
+Developed at SunPro, a Sun Microsystems, Inc. business.
+Permission to use, copy, modify, and distribute this
+software is freely granted, provided that this notice
+is preserved.
+====================================================
+
+====================================================
+Copyright (C) 2004 by Sun Microsystems, Inc. All rights reserved.
+
+Permission to use, copy, modify, and distribute this
+software is freely granted, provided that this notice
+is preserved.
+====================================================
+```
+
+### Z3 (run, not linked)
+
+vector runs `z3` as a child process; it is not part of `dist/vector`.
+`scripts/fetch-z3.sh` fetches the `z3` executable and `libz3` from the
+`z3-solver==4.16.0` wheel into the git-ignored `.z3/`. The wheel ships no
+license file; this is the license from the Z3 4.16.0 source release
+(<https://github.com/Z3Prover/z3/blob/z3-4.16.0/LICENSE.txt>):
 
 ```
 Z3
@@ -76,12 +98,11 @@ THE SOFTWARE IS PROVIDED *AS IS*, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ---
 
-## npm packages bundled into the binary
+## npm packages
 
-None. vector calls no model API, so it has no SDK, and nothing the CLI runs
-imports an npm package: the binary is vector's own code, Bun and Z3. If that
-changes, the package gets an `### npm:` section here (the drift test above
-requires it).
+None ships: the binary is native code compiled from Nish, and nothing in it
+imports an npm package. The npm dependencies in `package.json` are development
+tools, listed under "Used, not redistributed" below.
 
 ---
 
@@ -98,8 +119,7 @@ legends and authors' addresses intact. `rfcs/rfc8707.xml` is likewise the RFC
 Editor's published RFC XML v3 (RFC 7991) source, byte-identical to
 <https://www.rfc-editor.org/rfc/rfc8707.xml>, with its boilerplate intact.
 Every contract records the SHA-256 of the RFC it was checked against, so a
-modified copy is caught; `test/xmlv3.test.ts` pins the SHA-256 of
-`rfcs/rfc8707.xml` the same way.
+modified copy is caught.
 
 | RFC | Title | Stream | Copyright |
 |---|---|---|---|
@@ -114,7 +134,7 @@ Relating to IETF Documents (<https://trustee.ietf.org/license-info>), §3.c.i:
 Documents in full and without modification".
 
 The contracts in `contracts/` (and the Nish tests `vector spec emit` writes from
-them), and `test/xmlv3.test.ts`, quote short, unmodified portions of these RFCs: requirement sentences and
+them), quote short, unmodified portions of these RFCs: requirement sentences and
 their known-answer test vectors. That is permitted by §3.c.iii provided each
 portion is attributed to the IETF and names the RFC it came from. Every contract
 names its RFC in `source` / `sources`, and every requirement and vector cites
@@ -142,10 +162,10 @@ RFC 8439 is an IRTF-stream document, for which TLP §4's BSD grant may not
 apply (§8); its excerpts rely on §3.c.iii alone. These portions are derived
 from IETF RFC 4648, 5869, 8439 and 8707; please reproduce this note if possible.
 
-### kramdown-rfc output (`test/fixtures/xmlv3/`)
+### kramdown-rfc output (`tests/fixtures/xmlv3/`)
 
-`test/fixtures/xmlv3/kramdown.md` was written for vector.
-`test/fixtures/xmlv3/kramdown.xml` is what kramdown-rfc 1.7.43 produces from it,
+`tests/fixtures/xmlv3/kramdown.md` was written for vector.
+`tests/fixtures/xmlv3/kramdown.xml` is what kramdown-rfc 1.7.43 produces from it,
 with two edits: the compressed markdown-source comment is removed, and the
 `<reference anchor="RFC2119">` it fetched from bib.ietf.org is replaced by a
 hand-written stub (title and `seriesInfo` only). The generated XML is the
@@ -178,17 +198,17 @@ vector commits fetched BibXML in two places:
 
 Each holds the bibliographic metadata listed above and the cited RFC's
 abstract, and is redistributed under the IETF Trust Legal Provisions that
-cover the RFC it describes. The `test/fixtures/xmlv3/` fixture uses a
-hand-written stub in place of fetched BibXML. The `test/fixtures/rfc-main/`
+cover the RFC it describes. The `tests/fixtures/xmlv3/` fixture uses a
+hand-written stub in place of fetched BibXML. The `tests/fixtures/rfc-main/`
 fixture's RFC 9990 and RFC 9991 are not IETF documents: vector wrote them, and
 their `<reference>`s, as test input, under vector's license. A `<reference>` committed in a
 published RFC's own XML (its back matter, as in `rfcs/rfc8707.xml`) is part of
 that document and is redistributed with it under the same terms.
 
-### nish (`test/fixtures/mutate/`)
+### nish (`tests/fixtures/mutate/`)
 
-`test/fixtures/mutate/cli-style.ts.txt` and
-`test/fixtures/mutate/json-number.ts.txt` are excerpts of nish v0.34.0
+`tests/fixtures/mutate/cli-style.ts.txt` and
+`tests/fixtures/mutate/json-number.ts.txt` are excerpts of nish v0.34.0
 (`std/cli.ts` lines 60–126 and `std/json-typed.ts` lines 151–181), cut short to
 exercise the mutation engine's parser. Each file's opening comment says so.
 <https://github.com/amritk/nish>:
@@ -217,7 +237,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-The rest of `test/fixtures/` (including `nish-hex/`) and `specs/` was written
+The rest of `tests/fixtures/` (including `nish-hex/`) and `specs/` was written
 for vector and is under vector's own license.
 
 ---
@@ -225,14 +245,11 @@ for vector and is under vector's own license.
 ## Used, not redistributed
 
 These are used to build, test or develop vector, but none of their code is in
-this repository, the npm package's runtime, or the compiled binary, so they
-impose no notice obligation here: TypeScript (Apache-2.0), Biome (MIT OR
-Apache-2.0), `bun-types` and `@types/node` (MIT), `@amritk/mjst` and its
-generators (MIT; `src/generated/` is its output from `schemas/`), `@amritk/helpers`
-(MIT; imported by `src/generated/`, which only the tests run), the
-`z3-solver` wheel (MIT) as fetched into the git-ignored `.z3/`, and nish itself,
-which `vector spec run` runs but does not ship. The RFC XML v3 reader
-(`src/rfc/xmlv3.ts`) is vector's own code; its plain-text rendering was checked
-against xml2rfc 3.35.0 (BSD-3-Clause, © 2022 IETF Trust) and its line mapping
-against kramdown-rfc 1.7.43 (MIT, © 2010-2015 Carsten Bormann), neither of
-which is copied, imported or shipped.
+this repository or the compiled binary, so they impose no notice obligation
+here: the nish compiler itself (MIT; only the runtime and library code it links
+in ships, as above), clang and lld (Apache-2.0 WITH LLVM-exception), which link
+the binary, TypeScript (Apache-2.0), TypeDoc (Apache-2.0) and Biome (MIT OR
+Apache-2.0). vector's RFC XML v3 rendering was checked against xml2rfc 3.35.0
+(BSD-3-Clause, © 2022 IETF Trust) and its line mapping against kramdown-rfc
+1.7.43 (MIT, © 2010-2015 Carsten Bormann), neither of which is copied,
+imported or shipped.

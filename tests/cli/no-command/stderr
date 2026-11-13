@@ -1,0 +1,2 @@
+vector: missing command (one of: verify, diff, spec)
+Run 'vector --help' for usage.

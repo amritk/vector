@@ -18,10 +18,10 @@ export const EXIT_USAGE: i32 = 2
 export class Diagnostic {
   /** The file (or other source) the problem is in; empty when there is none. */
   file: string
-  /** The 1-based line, or 0 when the problem has no line. */
-  line: i32
   /** The text shown to the user. */
   message: string
+  /** The 1-based line, or 0 when the problem has no line. */
+  line: i32
   /** `EXIT_REFUSED` or `EXIT_USAGE`. */
   code: i32
 

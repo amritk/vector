@@ -1,9 +1,21 @@
 {
   "$schema": "https://biomejs.dev/schemas/1.8.3/schema.json",
   "files": {
-    "ignore": ["src/generated/**"]
+    "ignore": [
+      ".nish/**",
+      "dist/**",
+      ".z3/**",
+      "node_modules/**",
+      "contracts/**",
+      "specs/**",
+      "rfcs/**",
+      "schemas/**",
+      "tests/fixtures/**"
+    ]
   },
-  "organizeImports": { "enabled": true },
+  "organizeImports": {
+    "enabled": true
+  },
   "linter": {
     "enabled": true,
     "rules": {
@@ -25,5 +37,26 @@
     "enabled": true,
     "indentStyle": "space",
     "indentWidth": 2
-  }
+  },
+  "overrides": [
+    {
+      "include": ["src/**/*.ts", "tests/**/*.ts"],
+      "formatter": {
+        "lineWidth": 120
+      },
+      "javascript": {
+        "formatter": {
+          "semicolons": "asNeeded"
+        }
+      },
+      "linter": {
+        "rules": {
+          "style": {
+            "useImportType": "off",
+            "useNumberNamespace": "off"
+          }
+        }
+      }
+    }
+  ]
 }

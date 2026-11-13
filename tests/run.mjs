@@ -1,0 +1,126 @@
+#!/usr/bin/env node
+// Runs vector's tests: every tests/**/*_test.ts with `nish run`, then every
+// CLI golden case in tests/cli/<case>/ against dist/vector.
+//
+//   node tests/run.mjs            every test
+//   node tests/run.mjs smt        only tests whose path contains "smt"
+//
+// A golden case is a directory holding `cmd` (one line: `vector <args>`,
+// split on whitespace, with '…' or "…" quoting), `stdout`, an optional
+// `stderr`, and `exit` (the expected status). Each case runs from the
+// repository root. The runner exits 1 if anything failed, 2 if it could not
+// run (no compiler, no dist/vector when a case needs it).
+
+import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = fileURLToPath(new URL("..", import.meta.url));
+const testsDir = join(root, "tests");
+const filter = process.argv[2] ?? "";
+const nish = process.env.NISH ?? join(root, ".nish/bin/nish");
+const vector = join(root, "dist/vector");
+
+const walk = (dir) =>
+  readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name);
+    return statSync(path).isDirectory() ? [path, ...walk(path)] : [path];
+  });
+
+const all = walk(testsDir).filter(
+  (p) => !p.startsWith(join(testsDir, "fixtures")),
+);
+const matches = (p) => relative(root, p).includes(filter);
+const units = all.filter((p) => p.endsWith("_test.ts") && matches(p)).sort();
+const cases = all
+  .filter((p) => existsSync(join(p, "cmd")) && matches(p))
+  .sort();
+
+if (units.length + cases.length === 0) {
+  console.error(`no tests match ${JSON.stringify(filter)}`);
+  process.exit(2);
+}
+if (units.length > 0 && !existsSync(nish)) {
+  console.error(`no compiler at ${nish}: run bash scripts/fetch-nish.sh`);
+  process.exit(2);
+}
+if (cases.length > 0 && !existsSync(vector)) {
+  console.error(`no ${relative(root, vector)}: run npm run build`);
+  process.exit(2);
+}
+
+const failed = [];
+
+for (const file of units) {
+  const name = relative(root, file);
+  const r = spawnSync(nish, ["run", name], {
+    cwd: root,
+    encoding: "utf8",
+    maxBuffer: 64 << 20,
+  });
+  const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+  if (r.status === 0) {
+    const summary = (r.stdout ?? "").trimEnd().split("\n").pop();
+    console.log(`ok    ${name}  ${summary}`);
+  } else {
+    failed.push(name);
+    console.log(`FAIL  ${name} (exit ${r.status ?? r.signal})`);
+    console.log(
+      out
+        .split("\n")
+        .filter((line) => !line.startsWith("PASS"))
+        .join("\n"),
+    );
+  }
+}
+
+/** Splits a `cmd` line into words: whitespace separates, quotes group. */
+const words = (line) => {
+  const out = [];
+  const re = /'([^']*)'|"([^"]*)"|(\S+)/g;
+  for (let m = re.exec(line); m !== null; m = re.exec(line))
+    out.push(m[1] ?? m[2] ?? m[3]);
+  return out;
+};
+
+const read = (dir, name) => {
+  const path = join(dir, name);
+  return existsSync(path) ? readFileSync(path, "utf8") : null;
+};
+
+for (const dir of cases) {
+  const name = relative(root, dir);
+  const argv = words(read(dir, "cmd").trim());
+  if (argv[0] !== "vector") {
+    failed.push(name);
+    console.log(
+      `FAIL  ${name}: cmd must start with "vector", not ${JSON.stringify(argv[0])}`,
+    );
+    continue;
+  }
+  const r = spawnSync(vector, argv.slice(1), { cwd: root, encoding: "utf8" });
+  const problems = [];
+  const wantExit = Number.parseInt(read(dir, "exit") ?? "", 10);
+  if (Number.isNaN(wantExit))
+    problems.push("exit file is missing or not a number");
+  else if (r.status !== wantExit)
+    problems.push(`exit ${r.status ?? r.signal}, want ${wantExit}`);
+  const wantOut = read(dir, "stdout");
+  if (wantOut === null) problems.push("stdout file is missing");
+  else if (r.stdout !== wantOut)
+    problems.push(`stdout differs:\n--- want\n${wantOut}--- got\n${r.stdout}`);
+  const wantErr = read(dir, "stderr");
+  if (wantErr !== null && r.stderr !== wantErr)
+    problems.push(`stderr differs:\n--- want\n${wantErr}--- got\n${r.stderr}`);
+  if (problems.length === 0) {
+    console.log(`ok    ${name}`);
+  } else {
+    failed.push(name);
+    console.log(`FAIL  ${name}\n${problems.join("\n")}`);
+  }
+}
+
+const total = units.length + cases.length;
+console.log(`\n${total - failed.length} passed, ${failed.length} failed`);
+process.exit(failed.length === 0 ? 0 : 1);
