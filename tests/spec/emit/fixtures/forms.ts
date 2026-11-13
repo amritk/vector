@@ -6,7 +6,7 @@
  */
 
 import { Secret, expose, secret } from "nish:secret"
-import { wrappingAdd } from "nish:unsafe"
+import { wrappingAdd, wrappingMul, wrappingSub } from "nish:unsafe"
 
 const formsCopy = (b: u8[]): u8[] => {
   const out: u8[] = []
@@ -18,6 +18,15 @@ const formsCopy = (b: u8[]): u8[] => {
 
 /** `x` as it is. */
 export const idI32 = (x: i32): i32 => x
+
+/** `a + b`, wrapping. */
+export const addI32 = (a: i32, b: i32): i32 => wrappingAdd(a, b)
+
+/** `a - b`, wrapping. */
+export const subI32 = (a: i32, b: i32): i32 => wrappingSub(a, b)
+
+/** `a * b`, wrapping. */
+export const mulI32 = (a: i32, b: i32): i32 => wrappingMul(a, b)
 
 /** `a + b`, wrapping. */
 export const addI64 = (a: i64, b: i64): i64 => wrappingAdd(a, b)

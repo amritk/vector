@@ -128,6 +128,48 @@
         }
       ],
       "returns": "bytes?"
+    },
+    {
+      "name": "addI32",
+      "params": [
+        {
+          "name": "a",
+          "type": "i32"
+        },
+        {
+          "name": "b",
+          "type": "i32"
+        }
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "subI32",
+      "params": [
+        {
+          "name": "a",
+          "type": "i32"
+        },
+        {
+          "name": "b",
+          "type": "i32"
+        }
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "mulI32",
+      "params": [
+        {
+          "name": "a",
+          "type": "i32"
+        },
+        {
+          "name": "b",
+          "type": "i32"
+        }
+      ],
+      "returns": "i32"
     }
   ],
   "clauses": [
@@ -272,6 +314,112 @@
               },
               {
                 "var": "b"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-WRAP32",
+      "title": "P-WRAP32 holds",
+      "covers": ["R-ALL"],
+      "forall": [
+        {
+          "name": "a",
+          "type": "i32",
+          "min": -2147483648,
+          "max": 2147483647
+        },
+        {
+          "name": "b",
+          "type": "i32",
+          "min": -2147483648,
+          "max": 2147483647
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "addI32",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "+",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "subI32",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "-",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "mulI32",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "*",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
               }
             ]
           }

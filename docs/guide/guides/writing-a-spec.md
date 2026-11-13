@@ -216,11 +216,10 @@ Nish lacks, and a target module outside `nish/`.
 - A 64-bit int is written as `hi·2^32 + lo`, so no literal passes 2^53.
 - An f64 is its shortest round-tripping decimal, or, for `-0`, `NaN` and the
   infinities, its bits.
-- `i64` `+ - *` are emitted as `wrappingAdd`, `wrappingSub` and
+- `i32` and `i64` `+ - *` are emitted as `wrappingAdd`, `wrappingSub` and
   `wrappingMul` from `nish:unsafe`, so the test computes what the evaluator
-  does; `u64` operators already wrap. `i32` arithmetic is emitted as plain
-  operators, which panic on overflow, so such a property fails loudly rather
-  than wrongly.
+  and the sampler do, and a sample that overflows wraps instead of
+  panicking; `u64` operators already wrap.
 
 ### Modules and names
 
