@@ -1,8 +1,11 @@
 /**
  * `cli/spec-emit` — `vector spec emit`: emit the Nish test a contract implies.
  *
- * Only the command's shape is declared so far; its handler is a stub that
- * exits 2.
+ * Only the command's shape is declared here; the handler still exits 2. The
+ * command itself is `emitCommand` in `spec/emit/file`, which the binary cannot link yet:
+ * `spec/contract/types` and `verify/lang/ast` both declare `Expr`, `Param`
+ * and `Clause`, and a Nish class name must be unique across the program.
+ * Once one side is renamed, `run` calls `emitCommand`.
  */
 
 import { Cli, ParseResult } from "nish/cli-args"

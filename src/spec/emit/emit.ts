@@ -16,21 +16,13 @@
  */
 
 import { Sample, SampleTable, checkSamplesOf } from "../check"
+import { shapeNishModuleFile } from "../contract/shape"
 import { ClauseKind, ExprKind, LitKind } from "../contract/types"
 import { Clause, Contract, Expr, FnSig, Literal } from "../contract/types"
 import { TypeEnv, typeCallsIn, typeEnvBind, typeIntBase, typeOf } from "../contract/typing"
-import { shapeNishModuleFile } from "../contract/shape"
 import { vocabBaseOf, vocabIsIntType, vocabIsOptional, vocabValueType } from "../contract/vocab"
 import { emitHelperDeps, emitHelperNames, emitHelperText } from "./helpers"
-import {
-  emitCommentText,
-  emitF64IsFinite,
-  emitF64Lit,
-  emitIntLit,
-  emitLiteralHex,
-  emitQuote,
-  emitToInt,
-} from "./lit"
+import { emitCommentText, emitF64IsFinite, emitF64Lit, emitIntLit, emitLiteralHex, emitQuote, emitToInt } from "./lit"
 
 const EMIT_NO_F64_FORALL: string = "the sampler has no f64 forall variable yet, so Nish has no samples to check"
 const EMIT_NO_SMALL_INT: string = "Nish has no i8 or i16: write the parameter as i32"
@@ -534,7 +526,7 @@ const emitSourceName = (c: Contract, id: string | null): string => {
   }
   const main = c.source.main
   if (id === null || (main !== null && id === main)) {
-    return c.source.rfc > 0 ? `RFC ${c.source.rfc}` : (main ?? "the spec")
+    return c.source.rfc > 0 ? `RFC ${c.source.rfc}` : main ?? "the spec"
   }
   return id
 }
@@ -709,7 +701,9 @@ const emitProperty = (ctx: EmitContext, k: Clause, samples: Sample[]): string =>
     } else {
       out.push(`    const v_${v.name}: ${v.type} = table_${v.name}[i];`)
     }
-    shown.push(vocabIsIntType(v.type) ? `${v.name} = \${v_${v.name}}` : `len(${v.name}) = \${toI32(v_${v.name}.length)}`)
+    shown.push(
+      vocabIsIntType(v.type) ? `${v.name} = \${v_${v.name}}` : `len(${v.name}) = \${toI32(v_${v.name}.length)}`,
+    )
   }
   if (usesUnwrap) {
     out.push("    const u: Unwrap = new Unwrap();")

@@ -1,8 +1,11 @@
 /**
  * `cli/spec-run` — `vector spec run`: emit a contract's Nish test and run it.
  *
- * Only the command's shape is declared so far; its handler is a stub that
- * exits 2.
+ * Only the command's shape is declared here; the handler still exits 2. The
+ * command itself is `runCommand` in `spec/run/command`, which the binary cannot link yet:
+ * `spec/contract/types` and `verify/lang/ast` both declare `Expr`, `Param`
+ * and `Clause`, and a Nish class name must be unique across the program.
+ * Once one side is renamed, `run` calls `runCommand`.
  */
 
 import { Cli, ParseResult } from "nish/cli-args"

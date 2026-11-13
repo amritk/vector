@@ -1,6 +1,6 @@
 import { Suite } from "nish/testing"
-import { contractLoadFile } from "../../../src/spec/contract/contract"
 import { SampleTable } from "../../../src/spec/check"
+import { contractLoadFile } from "../../../src/spec/contract/contract"
 import { EmitOptions, emitProgram } from "../../../src/spec/emit/emit"
 
 /** Emitting contracts/example-hex.json. */

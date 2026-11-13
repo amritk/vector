@@ -85,7 +85,7 @@ const emitBitsDecimal = (bits: string): string => {
     const d = c >= 97 ? c - 87 : c - 48
     u = (u << toU64(4)) | toU64(d)
   }
-  if ((u >> toU64(63)) === toU64(0)) {
+  if (u >> toU64(63) === toU64(0)) {
     return `${u}`
   }
   return `-${~u + toU64(1)}`
