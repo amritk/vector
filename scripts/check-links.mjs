@@ -9,8 +9,8 @@
 // the target file (GitHub slug rules: lower-case, punctuation deleted, each
 // remaining space to one `-`, duplicates suffixed `-1`, `-2`, ... -- see
 // headingSlugs below, which is written to agree with github-slugger rather than
-// to approximate it). A bare `#fragment` refers to the current file. Absolute
-// paths and directories are allowed as targets.
+// to approximate it). A bare `#fragment` refers to the current file. A
+// `<scalar-card>`'s href must be such a `#fragment`.
 //
 // A link to this repository on github.com at `main`
 // (`https://github.com/amritk/vector/blob/main/<path>`, or `tree/main/` for a
@@ -78,16 +78,8 @@ const proseLines = (text) => {
 // between two spaces leaves both spaces behind and the slug keeps a hyphen for
 // each: `G5 — Distribution` is `g5--distribution`, with two.
 //
-// This checker used to collapse whitespace runs instead (`.replace(/\s+/g,
-// "-")`), which is the same answer for every heading whose words are separated
-// by one space and a different one for every heading containing an em dash, a
-// slash or any other deleted character with a space on both sides. Every anchor
-// of that shape passed here and landed nowhere on github.com -- a link gate
-// that is green while the links are broken, which is worth more attention than
-// the five links it was hiding. It also dropped `_`, which GitHub keeps.
-//
 // The character class below is `[^\p{L}\p{N}\p{M}\p{Pc}\- ]`, which agrees with
-// github-slugger 2.0.0 on all 886 headings in this repository. It is not
+// github-slugger 2.0.0 on the headings of these docs. It is not
 // character-for-character that package's 8 KB generated table: the table is
 // generated against the Unicode version of the day and deletes code points
 // unassigned back then that are letters now, which is a difference in scripts
@@ -122,7 +114,7 @@ const headingSlugs = (text) => {
 // and a space, turns each space into `-`, then collapses each run of `-` to
 // one and trims `-` from both ends, so `` `--fix` `` is `fix` there and
 // `--fix` on GitHub, and "4. Exit codes" keeps its dot. Only headings of levels
-// 1 to 4 get an ID at all (ported from nish, measured on its site). A link that has to land on both sites names a
+// 1 to 4 get an ID at all. A link that has to land on both sites names a
 // heading whose two slugs agree, or an `<a id="...">` written above it.
 /** The docs site's heading IDs for a Markdown file. */
 const scalarHeadingSlugs = (text) => {
@@ -175,6 +167,8 @@ const slugsOf = (file) => {
 // Inline links `[text](target)` (target up to the first unbalanced `)`) and reference definitions `[ref]: target`.
 const INLINE = /\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
 const REFDEF = /^\s*\[[^\]]+\]:\s*(\S+)/;
+// The href of a `<scalar-card>`.
+const CARD = /<scalar-card\b[^>]*\shref="([^"]*)"/g;
 
 // This repository's files on github.com, at main.
 const REPO_URL =
@@ -209,6 +203,18 @@ for (const file of files) {
     const ref = REFDEF.exec(line);
     if (ref) {
       targets.push(ref[1]);
+    }
+    // A card's href. The site is only known to resolve an anchor of the page
+    // there (a relative path may land nowhere, and GitHub drops the element),
+    // so a card for another page links it in its body instead.
+    for (const m of line.matchAll(CARD)) {
+      if (m[1].startsWith("#")) {
+        targets.push(m[1]);
+      } else {
+        problems.push(
+          `${path.relative(root, file)}:${index + 1}: card href \`${m[1]}\` is not an anchor of this page; drop it and link the page from the card's body`,
+        );
+      }
     }
     for (let target of targets) {
       target = target.replace(/^<|>$/g, "");

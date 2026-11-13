@@ -30,6 +30,6 @@ The program, [tests/fixtures/currency.json](https://github.com/amritk/vector/blo
 ./dist/vector verify tests/fixtures/currency-spec.json tests/fixtures/currency.json
 ```
 
-vector hands each clause to z3. It exits 0 when every postcondition is proved, and 1 with a counterexample when one is not. `--json` prints the result as JSON, and `--emit <file>` writes the verified program's TypeScript to a file. [tests/fixtures/unsat.json](https://github.com/amritk/vector/blob/main/tests/fixtures/unsat.json) is a program that fails its plan, to see a refusal.
+vector hands each clause to z3. It exits 0 when every postcondition is proved, and 1 with a counterexample when one is not. `--json` prints the result as JSON, and `--emit <file>` writes the verified program's TypeScript to a file. To see a refusal, verify the plan [tests/fixtures/unsat-spec.json](https://github.com/amritk/vector/blob/main/tests/fixtures/unsat-spec.json) against [tests/fixtures/unsat.json](https://github.com/amritk/vector/blob/main/tests/fixtures/unsat.json), a program that fails it.
 
 The [`vector verify` reference](../../reference/command-line/verify.md) lists its flags.

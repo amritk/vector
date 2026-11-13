@@ -43,6 +43,10 @@ these rules:
   of `-`, and gives a heading below level 4 none. A link between routed pages
   to such a heading needs `<a id="<github-slug>"></a>` on its own line above
   it. `node scripts/check-links.mjs` names each anchor that needs one.
+- **A card's `href` is an anchor of its own page.** The site is only known to
+  resolve `#anchor` there, so a `<scalar-card>` for another page drops `href`
+  and links the page in its body. `node scripts/check-links.mjs` refuses any
+  other `href`.
 
 ## The reference
 
@@ -72,6 +76,12 @@ list and on a line that is no longer a gap. Document the declaration and
 delete its line, or run `node scripts/gen-reference.mjs --update-baseline`,
 which rewrites the file but refuses to add a line. `--grow-baseline` adds
 lines too, and is only for a change to the rule itself.
+
+The gap detector tests itself on each run: it reads a fixture with a known set
+of gaps (an export without a comment, a missing `@param`, a missing
+`@returns`, an undocumented member, a bare `@internal`) alongside `src/`, and
+fails unless it finds exactly those. An `@internal` export is documented like
+any other.
 
 ## The site's look
 

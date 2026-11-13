@@ -12,9 +12,14 @@
 //
 //   Command line  the command tree src/main.ts declares on `nish/cli-args`,
 //                 read from the TypeScript AST: `new Cli(...)`, `cli.group`,
-//                 `cli.command`, `cli.flag`, `cli.argument` and the rest, and
-//                 each `registerX(cli, parent)` followed into the file it
-//                 imports. The exit codes are src/core/diag.ts's `EXIT_*`.
+//                 `cli.command`, `cli.flag`, `cli.argument` and the rest. Each
+//                 call that is handed the cli is followed into the function
+//                 it names, in this file or through a named relative import,
+//                 with the cli and the parent handle bound to its parameters.
+//                 A shape it cannot follow, a handle it cannot resolve, a
+//                 duplicate sibling, or a count of `.command(`/`.group(` calls
+//                 that differs from the tree is an error, not a missing page.
+//                 The exit codes are src/core/diag.ts's `EXIT_*`.
 //   File formats  one page per schemas/*.json.
 //   Modules       one page per src/**/*.ts, by TypeDoc, with nish's runtime
 //                 declarations and its `nish/*` → .nish/std/* mapping. A public
@@ -252,29 +257,77 @@ const assignedTo = (call) => {
   return null;
 };
 
-/** The relative file an identifier imported into `sf` comes from, or null. */
-const importedFrom = (sf, name) => {
+/**
+ * The declaration `name` refers to in `sf`, as the function the walker
+ * follows: a function, a `const` arrow or function, or a class (its
+ * constructor). A name imported from a relative module is resolved there;
+ * any other import shape fails, so a command cannot drop out unseen.
+ */
+const resolveCallable = (sf, name, at) => {
   for (const st of sf.statements) {
-    if (!ts.isImportDeclaration(st) || !st.importClause?.namedBindings) {
-      continue;
+    if (ts.isFunctionDeclaration(st) && st.name?.text === name && st.body) {
+      return { sf, name, params: st.parameters, body: st.body };
     }
-    const spec = st.moduleSpecifier.text;
-    const bindings = st.importClause.namedBindings;
-    if (
-      spec.startsWith(".") &&
-      ts.isNamedImports(bindings) &&
-      bindings.elements.some((e) => e.name.text === name)
-    ) {
-      const base = path.posix.join(
-        path.posix.dirname(posix(sf.fileName)),
-        spec,
-      );
-      return [`${base}.ts`, base, `${base}/index.ts`].find(
-        (f) => f.endsWith(".ts") && fs.existsSync(path.join(root, f)),
-      );
+    if (ts.isClassDeclaration(st) && st.name?.text === name) {
+      const ctor = st.members.find((m) => ts.isConstructorDeclaration(m));
+      return ctor?.body
+        ? { sf, name, params: ctor.parameters, body: ctor.body }
+        : fail(
+            `${where(sf, st)}: class \`${name}\` has no constructor to declare commands in`,
+          );
+    }
+    if (ts.isVariableStatement(st)) {
+      for (const d of st.declarationList.declarations) {
+        const init = d.initializer;
+        if (
+          d.name.getText() === name &&
+          init &&
+          (ts.isArrowFunction(init) || ts.isFunctionExpression(init))
+        ) {
+          return { sf, name, params: init.parameters, body: init.body };
+        }
+      }
+    }
+    if (ts.isImportDeclaration(st) && st.importClause) {
+      const spec = st.moduleSpecifier.text;
+      const clause = st.importClause;
+      const bindings = clause.namedBindings;
+      const named =
+        bindings && ts.isNamedImports(bindings)
+          ? bindings.elements.find((e) => e.name.text === name)
+          : null;
+      const other =
+        clause.name?.text === name ||
+        (bindings &&
+          ts.isNamespaceImport(bindings) &&
+          bindings.name.text === name);
+      if (other) {
+        return fail(
+          `${where(sf, at)}: \`${name}\` is a default or namespace import; the command-line reference follows only named imports`,
+        );
+      }
+      if (named && spec.startsWith(".")) {
+        const base = path.posix.join(
+          path.posix.dirname(posix(sf.fileName)),
+          spec,
+        );
+        const file = [`${base}.ts`, `${base}/index.ts`].find((f) =>
+          fs.existsSync(path.join(root, f)),
+        );
+        if (!file) {
+          return fail(`${where(sf, at)}: cannot find the module \`${spec}\``);
+        }
+        return resolveCallable(
+          parseTs(file),
+          (named.propertyName ?? named.name).text,
+          at,
+        );
+      }
     }
   }
-  return null;
+  return fail(
+    `${where(sf, at)}: \`${name}\` is passed the \`Cli\` but is no function, class or named relative import the command-line reference can follow`,
+  );
 };
 
 /** A flag spec, `-o, --out <file>`, as its names and its value's placeholder. */
@@ -288,9 +341,12 @@ const splitSpec = (spec) => {
 /**
  * The command tree src/main.ts declares: the root, with its name and
  * description, its global flags, and its commands and groups in declaration
- * order. Every `registerX(cli, parent)` call whose function is imported from
- * a relative module is followed into that module, which declares its commands
- * under `parent`.
+ * order. Every call handed the `Cli` (`registerX(cli, parent)`,
+ * `new XCommand(cli, parent)`, a helper in the same file) is followed into the
+ * function it calls, with its parameters bound to the call's arguments, so
+ * a handle always names the command it was declared as. A call the walker
+ * cannot follow, a handle it cannot resolve and a command declared twice all
+ * fail, and the commands found must match every `.command(` call in src/.
  */
 const readCommandTree = () => {
   const node = (kind, name, description, parent, file) => ({
@@ -306,20 +362,18 @@ const readCommandTree = () => {
     children: [],
   });
   const tree = { root: null, globals: [] };
-  const visiting = new Set();
-  const walk = (file, outerParent) => {
-    if (visiting.has(file)) {
+  const active = new Set();
+  // Walk `body` of `sf`, where `clis` are the names the `Cli` goes by and
+  // `handles` maps a name to the command node it stands for.
+  const walk = (sf, body, clis, handles, key) => {
+    if (active.has(key)) {
       fail(
-        `${file}: registered from itself; the command-line reference cannot follow the cycle`,
+        `${key}: calls itself; the command-line reference cannot follow the cycle`,
       );
     }
-    visiting.add(file);
-    const sf = parseTs(file);
-    // The names a `Cli` goes by here: a parameter typed `Cli`, or a variable made with `new Cli(...)`.
-    const clis = new Set();
-    const handles = new Map();
+    active.add(key);
     const flags = new Map();
-    const parentOf = (sf, arg) => {
+    const parentOf = (arg) => {
       const t = arg.getText();
       if (handles.has(t)) {
         return handles.get(t);
@@ -327,22 +381,52 @@ const readCommandTree = () => {
       if (t === "ROOT") {
         return tree.root;
       }
-      if (ts.isIdentifier(arg) && outerParent) {
-        return outerParent;
-      }
       return fail(
         `${where(sf, arg)}: \`${t}\` names no command handle the reference can follow`,
       );
     };
-    const flagOf = (sf, arg) =>
+    const flagOf = (arg) =>
       flags.get(arg.getText()) ??
       fail(
         `${where(sf, arg)}: \`${arg.getText()}\` names no flag the reference can follow`,
       );
-    const visit = (n) => {
-      if (ts.isParameter(n) && n.type?.getText() === "Cli") {
-        clis.add(n.name.getText());
+    const isCli = (a) => clis.has(a.getText());
+    const follow = (n, name) => {
+      const fn = resolveCallable(sf, name, n);
+      const innerClis = new Set();
+      const innerHandles = new Map();
+      fn.params.forEach((p, i) => {
+        const a = n.arguments?.[i];
+        if (!a) {
+          return;
+        }
+        const pname = p.name.getText();
+        if (isCli(a)) {
+          innerClis.add(pname);
+        } else if (
+          ts.isIdentifier(a) &&
+          (handles.has(a.text) || a.text === "ROOT")
+        ) {
+          innerHandles.set(pname, parentOf(a));
+        }
+      });
+      walk(
+        fn.sf,
+        fn.body,
+        innerClis,
+        innerHandles,
+        `${posix(fn.sf.fileName)}#${fn.name}`,
+      );
+    };
+    const add = (parent, child, at) => {
+      if (parent.children.some((c) => c.name === child.name)) {
+        fail(
+          `${where(sf, at)}: \`${child.name}\` is declared twice under the same parent`,
+        );
       }
+      parent.children.push(child);
+    };
+    const visit = (n) => {
       if (ts.isNewExpression(n) && n.expression.getText() === "Cli") {
         const name = assignedTo(n);
         if (name) {
@@ -358,98 +442,112 @@ const readCommandTree = () => {
           literal(sf, n.arguments?.[0], "the program's name"),
           "",
           null,
-          file,
+          posix(sf.fileName),
         );
         tree.root.description = literal(
           sf,
           n.arguments?.[2],
           "the program's description",
         );
-      }
-      if (ts.isCallExpression(n)) {
-        const callee = n.expression;
+      } else if (
+        ts.isCallExpression(n) &&
+        ts.isPropertyAccessExpression(n.expression) &&
+        isCli(n.expression.expression) &&
+        CLI_METHODS.has(n.expression.name.text)
+      ) {
+        const method = n.expression.name.text;
         const args = n.arguments;
-        if (
-          ts.isPropertyAccessExpression(callee) &&
-          clis.has(callee.expression.getText()) &&
-          CLI_METHODS.has(callee.name.text)
-        ) {
-          const method = callee.name.text;
-          const handle = assignedTo(n);
-          if (method === "group" || method === "command") {
-            const parent = parentOf(sf, args[0]);
-            const desc = literal(
+        const handle = assignedTo(n);
+        if (method === "group" || method === "command") {
+          const parent = parentOf(args[0]);
+          const child = node(
+            method,
+            literal(sf, args[1], `the ${method}'s name`),
+            literal(
               sf,
               args[method === "group" ? 2 : 3],
               `the ${method}'s description`,
-            );
-            const child = node(
-              method,
-              literal(sf, args[1], `the ${method}'s name`),
-              desc,
-              parent,
-              file,
-            );
-            parent.children.push(child);
-            if (handle) {
-              handles.set(handle, child);
-            }
-          } else if (method === "flag" || method === "globalFlag") {
-            const owner = method === "flag" ? parentOf(sf, args[0]) : null;
-            const [specArg, descArg] =
-              method === "flag" ? [args[1], args[2]] : [args[0], args[1]];
-            const flag = {
-              ...splitSpec(literal(sf, specArg, "the flag's spec")),
-              description: literal(sf, descArg, "the flag's description"),
-              default: null,
-              required: false,
-              repeatable: false,
-              negatable: false,
-            };
-            (owner ? owner.flags : tree.globals).push(flag);
-            if (handle) {
-              flags.set(handle, flag);
-            }
-          } else if (method === "argument") {
-            parentOf(sf, args[0]).args.push({
-              spec: literal(sf, args[1], "the argument's spec"),
-              description: literal(sf, args[2], "the argument's description"),
-            });
-          } else if (method === "alias") {
-            parentOf(sf, args[0]).aliases.push(
-              literal(sf, args[1], "the alias"),
-            );
-          } else if (method === "epilog") {
-            parentOf(sf, args[0]).epilog = literal(sf, args[1], "the epilog");
-          } else if (method === "defaultValue") {
-            flagOf(sf, args[0]).default = literal(
-              sf,
-              args[1],
-              "the default value",
-            );
-          } else {
-            flagOf(sf, args[0])[method] = true;
+            ),
+            parent,
+            posix(sf.fileName),
+          );
+          add(parent, child, n);
+          if (handle) {
+            handles.set(handle, child);
           }
-        } else if (
-          ts.isIdentifier(callee) &&
-          args.some((a) => clis.has(a.getText()))
-        ) {
-          const target = importedFrom(sf, callee.text);
-          if (target) {
-            const parentArg = args.find((a) => !clis.has(a.getText()));
-            walk(target, parentArg ? parentOf(sf, parentArg) : tree.root);
+        } else if (method === "flag" || method === "globalFlag") {
+          const owner = method === "flag" ? parentOf(args[0]) : null;
+          const [specArg, descArg] =
+            method === "flag" ? [args[1], args[2]] : [args[0], args[1]];
+          const flag = {
+            ...splitSpec(literal(sf, specArg, "the flag's spec")),
+            description: literal(sf, descArg, "the flag's description"),
+            default: null,
+            required: false,
+            repeatable: false,
+            negatable: false,
+          };
+          (owner ? owner.flags : tree.globals).push(flag);
+          if (handle) {
+            flags.set(handle, flag);
           }
+        } else if (method === "argument") {
+          parentOf(args[0]).args.push({
+            spec: literal(sf, args[1], "the argument's spec"),
+            description: literal(sf, args[2], "the argument's description"),
+          });
+        } else if (method === "alias") {
+          parentOf(args[0]).aliases.push(literal(sf, args[1], "the alias"));
+        } else if (method === "epilog") {
+          parentOf(args[0]).epilog = literal(sf, args[1], "the epilog");
+        } else if (method === "defaultValue") {
+          flagOf(args[0]).default = literal(sf, args[1], "the default value");
+        } else {
+          flagOf(args[0])[method] = true;
         }
+      } else if (
+        (ts.isCallExpression(n) || ts.isNewExpression(n)) &&
+        (n.arguments ?? []).some(isCli)
+      ) {
+        if (!ts.isIdentifier(n.expression)) {
+          fail(
+            `${where(sf, n)}: \`${n.expression.getText()}\` is passed the \`Cli\`; the command-line reference follows only a call by plain name`,
+          );
+        }
+        follow(n, n.expression.text);
+      }
+      ts.forEachChild(n, visit);
+    };
+    visit(body);
+    active.delete(key);
+  };
+  walk(parseTs(mainFile), parseTs(mainFile), new Set(), new Map(), mainFile);
+  if (!tree.root) {
+    fail(
+      `${mainFile}: no \`new Cli(...)\`; the command-line reference starts from it`,
+    );
+  }
+  // Cross-check: a command declared in a way the walker missed would vanish
+  // from the reference without this.
+  const declared = [];
+  for (const file of sourceFiles()) {
+    const sf = parseTs(file);
+    const visit = (n) => {
+      if (
+        ts.isCallExpression(n) &&
+        ts.isPropertyAccessExpression(n.expression) &&
+        ["command", "group"].includes(n.expression.name.text)
+      ) {
+        declared.push(where(sf, n));
       }
       ts.forEachChild(n, visit);
     };
     visit(sf);
-    visiting.delete(file);
-  };
-  walk(mainFile, null);
-  if (!tree.root) {
+  }
+  const found = commandsOf(tree).length;
+  if (found !== declared.length) {
     fail(
-      `${mainFile}: no \`new Cli(...)\`; the command-line reference starts from it`,
+      `src/: ${declared.length} \`.command(\`/\`.group(\` calls (${declared.join(", ")}) but ${found} commands reached from ${mainFile}; declare every command through a call the reference can follow`,
     );
   }
   return tree;
@@ -630,7 +728,7 @@ const renderCommand = (tree, words, n) => {
   }
   parts.push(
     "## Exit codes",
-    `0 when the check passed, 1 when \`${tree.root.name}\` refused the input, 2 for bad usage or an I/O or tool failure; see [exit codes](${back}#exit-codes).`,
+    `See [exit codes](${back}#exit-codes) for what each status means.`,
   );
   return page(header(n.file, `the command's declaration in ${n.file}`), parts);
 };
@@ -959,6 +1057,58 @@ const modulePage = (file) =>
   `${moduleDir}/${file.replace(/^src\//, "").replace(/\.ts$/, "")}.md`;
 const moduleName = (file) => file.replace(/^src\//, "").replace(/\.ts$/, "");
 
+// The gap detector's self-test: a module with a known set of gaps, read with
+// src/ in the same TypeDoc run. With an empty baseline nothing else would
+// notice the detector going blind. It lives in the repository, so that the
+// modules' common directory and so their names stay the same, under the
+// ignored dist/ (TypeDoc does not validate a file under node_modules/).
+const fixtureDir = "dist/gen-reference";
+const GAP_FIXTURE = `/**
+ * A documented module.
+ *
+ * @module
+ */
+
+export function undocumentedFn(a: number): number {
+  return a
+}
+
+/**
+ * Has no param tag for b.
+ *
+ * @returns b
+ */
+export function noParam(b: number): number {
+  return b
+}
+
+/**
+ * Has no returns tag.
+ *
+ * @param c the value
+ */
+export function noReturns(c: number): number {
+  return c
+}
+
+/** A documented class. */
+export class Holder {
+  field = 0
+}
+
+/** @internal */
+export const hidden = 1
+`;
+const GAP_FIXTURE_GAPS = [
+  "undocumentedFn",
+  "undocumentedFn#param:a",
+  "undocumentedFn#returns",
+  "noParam#param:b",
+  "noReturns#returns",
+  "Holder.field",
+  "hidden",
+];
+
 const readProject = async (files) => {
   const nishTypes = path.join(root, ".nish/runtime/nish.d.ts");
   if (!fs.existsSync(nishTypes)) {
@@ -966,11 +1116,17 @@ const readProject = async (files) => {
       ".nish/runtime/nish.d.ts is missing; run `bash scripts/fetch-nish.sh` first, the module reference needs it",
     );
   }
+  fs.mkdirSync(path.join(root, fixtureDir), { recursive: true });
+  const fixture = path.join(root, fixtureDir, "gap-fixture.ts");
+  fs.writeFileSync(fixture, GAP_FIXTURE);
   const app = await Application.bootstrapWithPlugins(
     {
-      entryPoints: [...files.map((f) => path.join(root, f)), nishTypes],
+      entryPoints: [
+        ...files.map((f) => path.join(root, f)),
+        nishTypes,
+        fixture,
+      ],
       excludePrivate: true,
-      excludeInternal: true,
       disableGit: true,
       // TypeDoc keeps each reflection's `sources` only with a template under
       // disableGit. No page prints the line: a page changes only when its
@@ -1032,15 +1188,28 @@ const readProject = async (files) => {
     fail(`TypeDoc reported ${app.logger.errorCount} error(s)`);
   }
   app.validate(project);
+  fs.rmSync(path.join(root, fixtureDir), { recursive: true, force: true });
   if (unresolved.length > 0) {
     fail(`a \`{@link}\` names nothing:\n${unresolved.join("\n")}`);
   }
-  return { project, gaps: findGaps(project, undocumented) };
+  const fixtureGaps = findGaps(project, undocumented, inDir(fixtureDir));
+  const fixtureModule = (project.children ?? []).find((m) =>
+    (m.children ?? []).some(inDir(fixtureDir)),
+  );
+  const seen = fixtureGaps.map((g) =>
+    g.slice(fixtureModule ? fixtureModule.name.length + 1 : 0),
+  );
+  if (seen.join("\n") !== [...GAP_FIXTURE_GAPS].sort().join("\n")) {
+    fail(
+      `the gap detector is broken: in its fixture it found [${seen.join(", ")}], not [${[...GAP_FIXTURE_GAPS].sort().join(", ")}]`,
+    );
+  }
+  return { project, gaps: findGaps(project, undocumented, inDir("src")) };
 };
 
-/** Whether a reflection is declared in src/ (not in nish's runtime or TypeScript's lib). */
-const inSrc = (r) => {
-  const src = path.join(root, "src") + path.sep;
+/** Whether a reflection is declared under `dir` of the repo (src/, not nish's runtime or TypeScript's lib). */
+const inDir = (dir) => (r) => {
+  const src = path.join(root, dir) + path.sep;
   for (let at = r; at && !at.isProject(); at = at.parent) {
     const files = (at.sources ?? []).map((s) => s.fullFileName);
     if (files.length > 0) {
@@ -1057,7 +1226,7 @@ const inSrc = (r) => {
  * and `module.Name#returns` for a signature returning other than `void` or
  * `never` with no `@returns`.
  */
-const findGaps = (project, undocumented) => {
+const findGaps = (project, undocumented, within) => {
   const byName = new Map();
   for (const r of Object.values(project.reflections)) {
     const name = r.getFriendlyFullName();
@@ -1065,7 +1234,7 @@ const findGaps = (project, undocumented) => {
   }
   const gaps = new Set();
   for (const name of undocumented) {
-    if ((byName.get(name) ?? []).some(inSrc)) {
+    if ((byName.get(name) ?? []).some(within)) {
       gaps.add(name);
     }
   }
@@ -1082,7 +1251,7 @@ const findGaps = (project, undocumented) => {
       r.setSignature,
     ].filter(Boolean);
     for (const sig of sigs) {
-      if (!inSrc(sig)) {
+      if (!within(sig)) {
         continue;
       }
       for (const p of sig.parameters ?? []) {
@@ -1363,10 +1532,12 @@ const renderModule = (file, mod, routed) => {
 // ---- The overview and the routes --------------------------------------------
 
 const renderIndex = (tree, formats, modules, exits) => {
+  // A card's href is only ever an anchor of this page, the one form the site is
+  // known to resolve there; a card for another page links it in its body.
   const card = (title, icon, href, body) =>
     tag(
       "scalar-card",
-      `title="${attr(title)}" icon="${icon}" href="${href}"`,
+      `title="${attr(title)}" icon="${icon}"${href ? ` href="${href}"` : ""}`,
       body,
     );
   const rel = (f) => path.posix.relative(outDir, f);
@@ -1393,8 +1564,8 @@ const renderIndex = (tree, formats, modules, exits) => {
           card(
             "Command line",
             "phosphor/regular/terminal-window",
-            rel(commandLinePage),
-            `Every command \`${tree.root.name}\` declares, its flags and arguments, and the ${exits.length} exit codes.`,
+            "",
+            `[Every command](${rel(commandLinePage)}) \`${tree.root.name}\` declares, its flags and arguments, and the ${exits.length} exit codes.`,
           ),
           card(
             "File formats",

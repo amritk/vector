@@ -4,15 +4,15 @@ vector is a deterministic judge for code a model writes. It proves small numeric
 
 <scalar-grid cols="2">
 
-<scalar-card title="Getting started" icon="phosphor/regular/rocket-launch" href="getting-started/installation.md">
+<scalar-card title="Getting started" icon="phosphor/regular/rocket-launch">
 
-Install the pinned Nish compiler and z3, build `dist/vector`, and prove your first program.
+[Install](getting-started/installation.md) the pinned Nish compiler and z3, build `dist/vector`, and prove your first program.
 
 </scalar-card>
 
-<scalar-card title="Reference" icon="phosphor/regular/book-open" href="../reference/index.md">
+<scalar-card title="Reference" icon="phosphor/regular/book-open">
 
-Every command and flag, the JSON files vector reads and writes, and the modules it is built from, generated from the source.
+[Every command and flag](../reference/index.md), the JSON files vector reads and writes, and the modules it is built from, generated from the source.
 
 </scalar-card>
 
@@ -24,4 +24,4 @@ Every command and flag, the JSON files vector reads and writes, and the modules 
 - **`vector diff`** proves two programs equivalent, or shows an input on which they differ.
 - **`vector spec`** turns a spec into a contract and a Nish test, and gates a change on it: a frozen contract, a stale test, an uncovered export or a mutant the test misses is refused.
 
-Every command ends with exit 0 when the check passed, 1 when vector refused the input, and 2 for bad usage or an I/O or tool failure.
+A command that checks something exits 0 when the check passed, 1 when vector refused the input, and 2 for bad usage or an I/O or tool failure; [exit codes](../reference/command-line.md#exit-codes) lists them.

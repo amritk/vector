@@ -46,4 +46,4 @@ Show this command's help, and exit 0.
 
 ## Exit codes
 
-0 when the check passed, 1 when `vector` refused the input, 2 for bad usage or an I/O or tool failure; see [exit codes](../command-line.md#exit-codes).
+See [exit codes](../command-line.md#exit-codes) for what each status means.

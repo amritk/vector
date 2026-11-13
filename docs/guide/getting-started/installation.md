@@ -6,7 +6,18 @@ vector is written in [Nish](https://github.com/amritk/nish), a static subset of 
 
 - Node 22, for the build and test scripts.
 - Python 3 with pip, which installs z3 from its wheel on PyPI.
-- clang with lld, LLVM 15 or newer, which Nish links with.
+- clang and lld from LLVM 18 (Xcode's command-line tools on macOS), which Nish compiles and links with.
+
+## Install LLVM
+
+Nish runs `clang` from your `PATH`, or the compiler `CC` names when it is set. On Ubuntu or Debian:
+
+```sh
+sudo apt-get install -y clang-18 lld-18 llvm-18
+export CC=clang-18           # add this line to your shell profile
+```
+
+These packages install only versioned commands (`clang-18`, `ld.lld-18`), not a plain `clang`, which is why `CC` names the versioned one. On macOS, `xcode-select --install`: Xcode's command-line tools are enough.
 
 ## Install the toolchain
 

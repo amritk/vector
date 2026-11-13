@@ -6,9 +6,9 @@ What `vector` declares, generated from its source: the commands and their flags,
 
 <scalar-grid cols="3">
 
-<scalar-card title="Command line" icon="phosphor/regular/terminal-window" href="command-line.md">
+<scalar-card title="Command line" icon="phosphor/regular/terminal-window">
 
-Every command `vector` declares, its flags and arguments, and the 3 exit codes.
+[Every command](command-line.md) `vector` declares, its flags and arguments, and the 3 exit codes.
 
 </scalar-card>
 
