@@ -52,19 +52,19 @@ text (default), markdown (a PR comment) or json
 
 <scalar-field name="--package" type="&lt;pkg&gt;">
 
-a package of your own, &lt;name&gt;=&lt;dir&gt;: modules &lt;name&gt;/&lt;path&gt; are &lt;dir&gt;/&lt;path&gt;.ts, .py in python, .rs in rust (repeatable) May be given more than once.
+a package of your own, &lt;name&gt;=&lt;dir&gt;: modules &lt;name&gt;/&lt;path&gt; are &lt;dir&gt;/&lt;path&gt;.ts, .py in python, .rs in rust, .go in go (repeatable) May be given more than once.
 
 </scalar-field>
 
 <scalar-field name="--lang" type="&lt;id&gt;">
 
-the test's language: nish (default), python, rust or typescript
+the test's language: nish (default), python, rust, go or typescript
 
 </scalar-field>
 
 <scalar-field name="--harness" type="&lt;h&gt;">
 
-standalone (default), or the test framework the test plugs into: pytest for python, cargo for rust, node for typescript
+standalone (default), or the test framework the test plugs into: pytest for python, cargo for rust, gotest for go, node for typescript
 
 </scalar-field>
 

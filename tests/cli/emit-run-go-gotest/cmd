@@ -1,0 +1,1 @@
+vector spec run contracts/rfc5869-hkdf-sha256.json --lang go --harness gotest --package nish=tests/fixtures/go/nish

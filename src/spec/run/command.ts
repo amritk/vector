@@ -122,9 +122,46 @@ const runRust = (c: Contract, file: string): Result<RunResult, string> => {
 }
 
 /**
+ * The toolchain a Go test builds with: `VECTOR_GO`, else `go`.
+ *
+ * @returns the command
+ */
+export const runGo = (): string => getenv("VECTOR_GO") ?? "go"
+
+/**
+ * A Go test built in a temporary module, then run with the nonce. Each
+ * `--package name=dir` is copied in as its own module, `name`, one package
+ * per `.go` file at the file's path without the extension, so the test
+ * imports `name/<module path>`. Nothing is fetched: the build is offline and
+ * on the local toolchain. A test that does not build prints no transcript,
+ * so it is judged an error, with go's messages kept.
+ */
+const runGoTest = (c: Contract, file: string, packages: string[]): Result<RunResult, string> => {
+  const dir = makeTempDir("vector-go-").orReturn()
+  const script = [
+    'go="$1"; test="$2"; tmp="$3"; pkgs="$4"; nonce="$5"',
+    "printf 'module vectortest\\n\\ngo 1.21\\n' > \"$tmp/go.mod\"",
+    "printf '%s\\n' \"$pkgs\" | while IFS='=' read -r name src; do",
+    '  [ -n "$name" ] || continue',
+    "  find \"$src\" -name '*.go' -type f | while read -r f; do",
+    '    rel=${f#"$src"/}; d="$tmp/$name/${rel%.go}"; mkdir -p "$d" && cp "$f" "$d/" || exit 1',
+    "  done || exit 1",
+    '  printf \'module %s\\n\\ngo 1.21\\n\' "$name" > "$tmp/$name/go.mod"',
+    '  printf \'require %s v0.0.0\\nreplace %s => ./%s\\n\' "$name" "$name" "$name" >> "$tmp/go.mod"',
+    "done || exit 2",
+    'cp "$test" "$tmp/main.go" || exit 2',
+    'cd "$tmp" && GOTOOLCHAIN=local GOPROXY=off GOFLAGS=-mod=mod "$go" build -o test . && exec ./test "$nonce"',
+  ].join("\n")
+  const ran = runTestCommand(c, ["sh", "-c", script, "sh", runGo(), file, dir, packages.join("\n")], RUN_TIMEOUT_MS)
+  runDropTemp(dir)
+  return ran
+}
+
+/**
  * The test at `file` run in its language: Python by `runPython`, writing no
- * bytecode beside the modules it loads; Rust compiled by `runRustc`;
- * TypeScript by `runNode`, its type stripping's warning silenced; Nish by
+ * bytecode beside the modules it loads; Rust compiled by `runRustc`; Go
+ * built by `runGo` in a module of its own with the packages; TypeScript by
+ * `runNode`, its type stripping's warning silenced; Nish by
  * `--nish` as it is, else in a scratch copy of the nish root.
  */
 const runWith = (req: RunRequest, target: EmitTarget, c: Contract, file: string): Result<RunResult, string> => {
@@ -133,6 +170,9 @@ const runWith = (req: RunRequest, target: EmitTarget, c: Contract, file: string)
   }
   if (target.lang === "rust") {
     return runRust(c, file)
+  }
+  if (target.lang === "go") {
+    return runGoTest(c, file, req.packages)
   }
   if (target.lang === "typescript") {
     return runTestCommand(c, [runNode(), "--disable-warning=ExperimentalWarning", file], RUN_TIMEOUT_MS)

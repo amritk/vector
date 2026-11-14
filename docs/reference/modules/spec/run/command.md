@@ -15,6 +15,7 @@ Generated from [src/spec/run/command.ts](https://github.com/amritk/vector/blob/m
 - [`runPython`](#runpython)
 - [`runRustc`](#runrustc)
 - [`runNode`](#runnode)
+- [`runGo`](#rungo)
 - [`runFormat`](#runformat)
 - [`runCommand`](#runcommand)
 
@@ -162,6 +163,20 @@ The runtime a TypeScript test runs with, by its built-in type stripping:
 
 ```ts
 function runNode(): string
+```
+
+<scalar-field name="returns" type="string">
+
+the command
+
+</scalar-field>
+
+### runGo
+
+The toolchain a Go test builds with: `VECTOR_GO`, else `go`.
+
+```ts
+function runGo(): string
 ```
 
 <scalar-field name="returns" type="string">

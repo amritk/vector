@@ -20,7 +20,7 @@ The 3 JSON Schemas in `schemas/`.
 
 <scalar-card title="Modules" icon="phosphor/regular/books" href="#modules">
 
-The 112 source files of `src/`, from their doc comments.
+The 113 source files of `src/`, from their doc comments.
 
 </scalar-card>
 
@@ -86,6 +86,7 @@ The 112 source files of `src/`, from their doc comments.
 | [`spec/contract/write`](modules/spec/contract/write.md) | a contract written back as canonical JSON, the bytes `contracts/*.json` holds. |
 | [`spec/emit/emit`](modules/spec/emit/emit.md) | a contract and its samples as a Nish test program. |
 | [`spec/emit/file`](modules/spec/emit/file.md) | from a contract file to its test's text, and the test written to disk: what `vector spec emit` and `vector spec run` share. |
+| [`spec/emit/go`](modules/spec/emit/go.md) | a contract and its samples as a Go test. |
 | [`spec/emit/helpers`](modules/spec/emit/helpers.md) | the Nish helpers an emitted test may define. |
 | [`spec/emit/lit`](modules/spec/emit/lit.md) | contract values as Nish source text: integers at their type, f64s, string literals, and the bytes a literal stands for. |
 | [`spec/emit/packages`](modules/spec/emit/packages.md) | `--package <name>=<dir>`: where the modules of your own project live, so a test can import a module outside nish/. |

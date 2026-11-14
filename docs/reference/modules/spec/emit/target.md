@@ -8,7 +8,7 @@ harness that runs it in that language.
 Every emitted test is a standalone program that `vector spec run` executes
 and judges by its transcript. A harness other than `standalone` adds the
 hooks a language's test framework discovers (pytest's `test_*` functions, cargo's `#[test]` functions,
-node:test's `test()` calls),
+`go test`'s `Test*` functions, node:test's `test()` calls),
 so the same file also runs under that framework.
 
 Generated from [src/spec/emit/target.ts](https://github.com/amritk/vector/blob/main/src/spec/emit/target.ts).
@@ -170,6 +170,6 @@ a language id
 
 <scalar-field name="returns" type="string">
 
-`.ts` for nish and typescript, `.py` for python, `.rs` for rust
+`.ts` for nish and typescript, `.py` for python, `.rs` for rust, `.go` for go
 
 </scalar-field>
