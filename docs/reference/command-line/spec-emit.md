@@ -58,13 +58,13 @@ a package of your own, &lt;name&gt;=&lt;dir&gt;: modules &lt;name&gt;/&lt;path&g
 
 <scalar-field name="--lang" type="&lt;id&gt;">
 
-the test's language: nish (default), python or rust
+the test's language: nish (default), python, rust or typescript
 
 </scalar-field>
 
 <scalar-field name="--harness" type="&lt;h&gt;">
 
-standalone (default), or the test framework the test plugs into: pytest for python, cargo for rust
+standalone (default), or the test framework the test plugs into: pytest for python, cargo for rust, node for typescript
 
 </scalar-field>
 

@@ -20,7 +20,7 @@ The 3 JSON Schemas in `schemas/`.
 
 <scalar-card title="Modules" icon="phosphor/regular/books" href="#modules">
 
-The 111 source files of `src/`, from their doc comments.
+The 112 source files of `src/`, from their doc comments.
 
 </scalar-card>
 
@@ -92,6 +92,7 @@ The 111 source files of `src/`, from their doc comments.
 | [`spec/emit/python`](modules/spec/emit/python.md) | a contract and its samples as a Python test. |
 | [`spec/emit/rust`](modules/spec/emit/rust.md) | a contract and its samples as a Rust test. |
 | [`spec/emit/target`](modules/spec/emit/target.md) | what a test is emitted for: a language, and the harness that runs it in that language. |
+| [`spec/emit/typescript`](modules/spec/emit/typescript.md) | a contract and its samples as a TypeScript test. |
 | [`spec/extract`](modules/spec/extract.md) | `vector spec extract`: an RFC XML v3 spec (xml2rfc's output for a kramdown-rfc spec) to its canonical contract. |
 | [`spec/front/front`](modules/spec/front/front.md) | the TypeScript front end. |
 | [`spec/gates/cite`](modules/spec/gates/cite.md) | what the gates that read a contract's sources share: reading them once a run, finding the section a citation names, and naming a citation in a message ("RFC §2.2" in the main RFC, "rfc2104 §2" in another source). |

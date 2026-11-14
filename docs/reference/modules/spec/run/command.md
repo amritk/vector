@@ -14,6 +14,7 @@ Generated from [src/spec/run/command.ts](https://github.com/amritk/vector/blob/m
 - [`runFindRoot`](#runfindroot)
 - [`runPython`](#runpython)
 - [`runRustc`](#runrustc)
+- [`runNode`](#runnode)
 - [`runFormat`](#runformat)
 - [`runCommand`](#runcommand)
 
@@ -146,6 +147,21 @@ The compiler a Rust test builds with: `VECTOR_RUSTC`, else `rustc`.
 
 ```ts
 function runRustc(): string
+```
+
+<scalar-field name="returns" type="string">
+
+the command
+
+</scalar-field>
+
+### runNode
+
+The runtime a TypeScript test runs with, by its built-in type stripping:
+`VECTOR_NODE`, else `node`.
+
+```ts
+function runNode(): string
 ```
 
 <scalar-field name="returns" type="string">
