@@ -8,8 +8,7 @@
   "exports": {
     ".": {
       "nish": "./src/index.ts"
-    },
-    "./package.json": "./package.json"
+    }
   },
   "files": ["src"],
   "engines": {
