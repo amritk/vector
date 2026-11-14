@@ -52,14 +52,18 @@ export class SpecEmitCommand {
     this.packageFlag = cli.flag(
       handle,
       "--package <pkg>",
-      "a package of your own, <name>=<dir>: modules <name>/<path> are <dir>/<path>.ts, .py in python, .rs in rust (repeatable)",
+      "a package of your own, <name>=<dir>: modules <name>/<path> are <dir>/<path>.ts, .py in python, .rs in rust, .go in go (repeatable)",
     )
     cli.repeatable(this.packageFlag)
-    this.langFlag = cli.flag(handle, "--lang <id>", "the test's language: nish (default), python, rust or typescript")
+    this.langFlag = cli.flag(
+      handle,
+      "--lang <id>",
+      "the test's language: nish (default), python, rust, go or typescript",
+    )
     this.harnessFlag = cli.flag(
       handle,
       "--harness <h>",
-      "standalone (default), or the test framework the test plugs into: pytest for python, cargo for rust, node for typescript",
+      "standalone (default), or the test framework the test plugs into: pytest for python, cargo for rust, gotest for go, node for typescript",
     )
     this.contractJsonArg = cli.argument(handle, "<contract.json>", "the contract")
   }

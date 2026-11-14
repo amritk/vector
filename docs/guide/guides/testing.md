@@ -134,10 +134,11 @@ written in, and `--harness <h>` the framework that runs it:
 | Nish | `nish` (the default) | `standalone` | the nish root (see [Run it](#run-it)) |
 | Python | `python` | `standalone` (the default), `pytest` | `VECTOR_PYTHON`, else `python3` |
 | Rust | `rust` | `standalone` (the default), `cargo` | `VECTOR_RUSTC`, else `rustc` |
+| Go | `go` | `standalone` (the default), `gotest` | `VECTOR_GO`, else `go` |
 | TypeScript | `typescript` | `standalone` (the default), `node` | `VECTOR_NODE`, else `node` |
 
-The other languages vector has a naming table for (`ruby`, `zig`, `go`,
-`cpp`, `csharp`, `c`, `java`, `kotlin`, `php`, `swift` and `dart`) have no emitter yet, and `--lang` says so (exit 2):
+The other languages vector has a naming table for (`ruby`, `zig`, `cpp`,
+`csharp`, `c`, `java`, `kotlin`, `php`, `swift` and `dart`) have no emitter yet, and `--lang` says so (exit 2):
 
 <!-- exit 2 -->
 ```sh
@@ -145,7 +146,7 @@ The other languages vector has a naming table for (`ruby`, `zig`, `go`,
 ```
 
 ```text
-vector: spec emit: --lang zig: vector has no emitter for zig yet (it has: nish, python, rust, typescript)
+vector: spec emit: --lang zig: vector has no emitter for zig yet (it has: nish, python, rust, go, typescript)
 ```
 
 A function is called by its name in the language, from the contract's
@@ -251,6 +252,60 @@ with no samples is `#[ignore]`d:
 
 ```sh
 ./dist/vector spec run contracts/rfc5869-hkdf-sha256.json --lang rust --harness cargo --package nish=tests/fixtures/rust/nish
+```
+
+```text
+SATISFIED: rfc5869-hkdf-sha256 (exit 0)
+  pass  R-EXTRACT
+  pass  R-SALT
+  pass  R-PRK-LEN
+  pass  R-L
+  pass  R-INFO-EMPTY
+  pass  R-OKM-LEN
+  pass  R-OKM-FIRST
+  pass  R-T
+```
+
+### Go
+
+A Go test is one `package main` file that needs the standard library alone.
+Each function is called by its exported Go name (`ToHex`, `HkdfExpandSha256`;
+`IDI32` for `idI32`, since ID is an initialism), through its module's import
+path: `vector/core/hex` is `import "vector/core/hex"`. A name that is not
+exported, such as one a `go` override spells in lower case, is refused
+(exit 1). A bytes value is a `[]byte` and a string a `string`; an optional
+input is a `*[]byte` or `*string`, nil when absent, and a result that may
+refuse is `(T, error)`, any non-nil error being the refusal.
+`tests/fixtures/go/` holds the ports vector checks its Go tests against:
+
+```sh
+./dist/vector spec run contracts/vector-core-hex.json --lang go --package vector=tests/fixtures/go/vector
+```
+
+```text
+SATISFIED: vector-core-hex (exit 0)
+  pass  R-HEX-LEN
+  pass  R-HEX-DIGITS
+  pass  R-SHA256
+```
+
+`spec run` builds the test with `go build` in a temporary module, offline
+and on the local toolchain, then runs it; set `VECTOR_GO` to build with
+another `go`. Each `--package <name>=<dir>` becomes a module of its own,
+`<name>`, with one package per `.go` file at the file's path: `--package
+vector=src/go` puts `src/go/core/hex.go` at `vector/core/hex`. The contract's
+`+`, `-` and `*` wrap, as Go's do, and an f64 compares bit for bit unless the
+clause gives a tolerance. A check that panics fails with the panic's
+message, and a test that does not build prints no transcript, so its verdict
+is ERROR, with go's messages.
+
+With `--harness gotest` the file also holds a `func Test_<clause>(*testing.T)`
+for each clause, so `go test` runs the same checks when the file is saved as
+a `_test.go` file in the package, and a failing clause fails with the detail
+the transcript prints. A property with no samples is skipped:
+
+```sh
+./dist/vector spec run contracts/rfc5869-hkdf-sha256.json --lang go --harness gotest --package nish=tests/fixtures/go/nish
 ```
 
 ```text

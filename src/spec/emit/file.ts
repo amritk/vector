@@ -11,6 +11,7 @@ import { contractLoad } from "../contract/contract"
 import { Contract } from "../contract/types"
 import { sourceInstallRoot } from "../source/path"
 import { EmitOptions, emitProgram } from "./emit"
+import { emitGoProgram } from "./go"
 import { EmitPackages, emitPackageFlags, emitParsePackages, emitResolveModules } from "./packages"
 import { emitPyProgram } from "./python"
 import { emitRsProgram } from "./rust"
@@ -92,9 +93,11 @@ export const emitContractFile = (
       ? emitPyProgram(c, checked.samples, opts, target.harness)
       : target.lang === "rust"
         ? emitRsProgram(c, checked.samples, opts, target.harness)
-        : target.lang === "typescript"
-          ? emitTsProgram(c, checked.samples, opts, target.harness)
-          : emitProgram(c, checked.samples, opts)
+        : target.lang === "go"
+          ? emitGoProgram(c, checked.samples, opts, target.harness)
+          : target.lang === "typescript"
+            ? emitTsProgram(c, checked.samples, opts, target.harness)
+            : emitProgram(c, checked.samples, opts)
   if (program.isErr()) {
     return Err(emitRefuseAll(path, program.error))
   }

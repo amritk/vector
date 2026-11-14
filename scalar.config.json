@@ -437,6 +437,11 @@
                     "title": "spec/emit/file",
                     "filepath": "docs/reference/modules/spec/emit/file.md"
                   },
+                  "/spec-emit-go": {
+                    "type": "page",
+                    "title": "spec/emit/go",
+                    "filepath": "docs/reference/modules/spec/emit/go.md"
+                  },
                   "/spec-emit-helpers": {
                     "type": "page",
                     "title": "spec/emit/helpers",

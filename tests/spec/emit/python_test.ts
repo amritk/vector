@@ -60,7 +60,7 @@ const pyEmitForms = (c: Contract, dir: string, harness: string): string => {
 
 /** `--lang` and `--harness`: what they accept, their defaults, and the flags that rebuild them. */
 const pyTargets = (t: Suite): void => {
-  t.eqStr("the languages, nish first", emitTargetLanguages().join(","), "nish,python,rust,typescript")
+  t.eqStr("the languages, nish first", emitTargetLanguages().join(","), "nish,python,rust,go,typescript")
   t.eqStr("python's harnesses", emitTargetHarnesses("python").join(","), "standalone,pytest")
   t.eqStr("a language with no emitter has none", `${emitTargetHarnesses("cobol").length}`, "0")
   const d = emitTargetParse(null, null).expect("defaults")
@@ -71,13 +71,13 @@ const pyTargets = (t: Suite): void => {
   t.eqStr(
     "a language vector names but has no emitter for",
     known.isErr() ? known.error : "",
-    "--lang zig: vector has no emitter for zig yet (it has: nish, python, rust, typescript)",
+    "--lang zig: vector has no emitter for zig yet (it has: nish, python, rust, go, typescript)",
   )
   const unknown = emitTargetParse("cobol", null)
   t.eqStr(
     "not a language",
     unknown.isErr() ? unknown.error : "",
-    "--lang cobol: not a language (vector emits: nish, python, rust, typescript)",
+    "--lang cobol: not a language (vector emits: nish, python, rust, go, typescript)",
   )
   const bad = emitTargetParse("nish", "pytest")
   t.eqStr("a harness the language has not", bad.isErr() ? bad.error : "", "--harness pytest: nish tests run standalone")
