@@ -7,8 +7,8 @@
 # smoke-test every target without releasing anything.
 #
 # npm trusted publishing is configured against THIS file, `release.yml`, with
-# the environment `npm`. The first publish of each package needs the
-# NPM_TOKEN secret (amritk/workflows' README, "npm").
+# the environment `npm`, which also holds NPM_TOKEN for each package's first
+# publish only (amritk/workflows' README, "npm").
 
 name: Release
 
@@ -27,16 +27,13 @@ permissions: {}
 
 jobs:
   release:
-    uses: amritk/workflows/.github/workflows/release.yml@2fbbf857f0a1d2792087b3a4c08f574c76f656e2
+    uses: amritk/workflows/.github/workflows/release.yml@2229a74c6a8a63f72b4fbd3e4fb688d328fb9948
     permissions:
       contents: write
       id-token: write
       attestations: write
     with:
-      bin: vector
       summary: Prove small programs correct, and hold implementations to their specs
       stage: bash scripts/release-stage.sh
       smoke: bash "$REPO/scripts/release-smoke.sh"
       npm: true
-    secrets:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
