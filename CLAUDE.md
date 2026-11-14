@@ -88,7 +88,7 @@ version with a hyphen (`v1.2.0-rc.1`) is a prerelease, published under npm's
 `next` dist-tag. Attestations and npm provenance exist only while the
 repository is public. A pull request that touches the release packs the
 package without releasing it. Dependabot (`.github/dependabot.yml`) proposes
-updates to the pin.
+updates to the pin once a release is 5 days old.
 
 ## Commits and PRs
 
