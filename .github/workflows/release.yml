@@ -27,7 +27,7 @@ permissions: {}
 
 jobs:
   release:
-    uses: amritk/workflows/.github/workflows/release.yml@fc01c0bdec68cd8a28d21034112eee1069de1849
+    uses: amritk/workflows/.github/workflows/release.yml@5afc2423291d38a47a685e8759244344aa3a4b31
     permissions:
       contents: write
       id-token: write
