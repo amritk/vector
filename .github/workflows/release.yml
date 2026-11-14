@@ -11,9 +11,10 @@
 # A pull request that changes the release, and a manual run, pack the package
 # without releasing anything.
 #
-# npm trusted publishing is configured against THIS file, `release.yml`, with
-# the environment `npm`, which also holds NPM_TOKEN for the first publish only
-# (amritk/workflows' README, "npm").
+# npm publishes through trusted publishing (OIDC) alone; no npm token is stored.
+# The trusted publisher on npmjs.com names THIS file, `release.yml`, and the
+# environment `npm`. npm cannot trust a workflow for a package that does not
+# exist yet, so the package was created once by hand (CLAUDE.md, "Releasing").
 
 name: Release
 

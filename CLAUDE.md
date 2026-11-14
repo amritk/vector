@@ -90,6 +90,14 @@ repository is public. A pull request that touches the release packs the
 package without releasing it. Dependabot (`.github/dependabot.yml`) proposes
 updates to the pin once a release is 5 days old.
 
+npm publishes through trusted publishing alone: no npm token is stored, in
+GitHub or anywhere else. The trusted publisher for `@amritk/vector` on
+npmjs.com names repository `amritk/vector`, workflow file `release.yml` and
+environment `npm`, which is limited to `v*` tags in Settings, Environments.
+npm cannot trust a workflow for a package that does not exist, so a new
+package is created once by hand: publish a placeholder `0.0.0` from your own
+npm login, add the trusted publisher, then tag the real release.
+
 ## Commits and PRs
 
 Commits and PR titles are conventional, `type(scope): imperative subject`:
