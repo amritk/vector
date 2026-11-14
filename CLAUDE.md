@@ -69,6 +69,8 @@ reports success when lint fails. Run it bare, or check `$?` / `PIPESTATUS`.
 `docs/reference/**` and its routes in `scalar.config.json`, `tests/dogfood/**`, `contracts/*.json`
 (extracted from `specs/*.xml`) and `specs/*.xml` (built from `specs/*.md` by
 `scripts/build-spec.sh`). Change the source and rerun the generator.
+`CHANGELOG.md` and every version bump are release-please's: never edit the
+version or the changelog by hand.
 
 **A change a user sees updates its guide page in the same PR**: a command, a
 flag, an exit code, an install step, or a message a guide page shows.
@@ -78,25 +80,36 @@ the docs, `.claude/`, `CLAUDE.md` and source comments for the old location.
 
 ## Releasing
 
-Push a tag `v<version>` equal to `package.json`'s version (and `VECTOR_VERSION`
-in `src/index.ts`). `.github/workflows/release.yml` calls the reusable
-release workflow in [amritk/workflows](https://github.com/amritk/workflows),
-pinned by commit, in library mode: it packs `@amritk/vector`, the Nish source
-under `src/`, as `npm publish` would, attaches it with `SHA256SUMS` to a GitHub
-release, and publishes it to npm. Nothing is built, and no binary ships. A
-version with a hyphen (`v1.2.0-rc.1`) is a prerelease, published under npm's
-`next` dist-tag. Attestations and npm provenance exist only while the
-repository is public. A pull request that touches the release packs the
-package without releasing it. Dependabot (`.github/dependabot.yml`) proposes
-updates to the pin once a release is 5 days old.
+Releases are cut by [release-please](https://github.com/googleapis/release-please),
+through the reusable workflows in [amritk/workflows](https://github.com/amritk/workflows)
+that `.github/workflows/release.yml` calls, pinned by commit:
+
+1. Every push to `main` updates one open **release PR**. It bumps
+   `package.json`, `package-lock.json`, `VECTOR_VERSION` in `src/index.ts`
+   and the version test in `tests/package/index_test.ts` (each line marked
+   `x-release-please-version`), and `CHANGELOG.md`, from the conventional
+   commits since the last release.
+2. Merging the release PR tags `v<version>`, creates the GitHub release, and
+   starts `release.yml` on the tag.
+3. That run packs `@amritk/vector` (the Nish source under `src/`, as
+   `npm publish` would), attaches it with `SHA256SUMS` to the release, and
+   publishes it to npm. Nothing is built, and no binary ships.
+
+Config is `.github/release-please-config.json`, with the current version in
+`.github/.release-please-manifest.json`; the release workflow checks both on
+every pull request that touches the release. A version with a hyphen
+(`1.2.0-rc.1`) is a prerelease, published under npm's `next` dist-tag.
+Attestations and npm provenance exist only while the repository is public.
+Dependabot (`.github/dependabot.yml`) proposes updates to the pin once a
+release is 5 days old.
+
+The release PR is opened with `GITHUB_TOKEN`, so CI does not run on it by
+itself; close and reopen it to run the checks before merging.
 
 npm publishes through trusted publishing alone: no npm token is stored, in
 GitHub or anywhere else. The trusted publisher for `@amritk/vector` on
 npmjs.com names repository `amritk/vector`, workflow file `release.yml` and
 environment `npm`, which is limited to `v*` tags in Settings, Environments.
-npm cannot trust a workflow for a package that does not exist, so a new
-package is created once by hand: publish a placeholder `0.0.0` from your own
-npm login, add the trusted publisher, then tag the real release.
 
 ## Commits and PRs
 
@@ -110,6 +123,10 @@ What changed, and why this way.
 
 - **type**: `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`,
   `ci`, `chore`, `style` or `revert`. `pr-title.yml` checks the PR title,
-  which a squash merge lands.
+  which a squash merge lands. The type is not decoration: release-please
+  reads it to pick the next version (`fix` a patch, `feat` a minor, `!` or a
+  `BREAKING CHANGE` footer a major, which is a minor before 1.0), and
+  `feat`, `fix`, `perf`, `refactor` and `revert` reach the changelog. A
+  feature merged as `chore` ships without a bump.
 - **scope** (optional): the area, such as `cli`, `core`, `spec` or a
   command name.

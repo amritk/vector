@@ -24,8 +24,8 @@ import { outJsonRender } from "./verify/emit/outjson"
 import { diffOutcomeJson, diffPrograms } from "./verify/equiv/diff"
 import { verifyOutcomeJson, verifySpecAndProgram } from "./verify/verify"
 
-/** The version `vector --version` prints; kept equal to package.json's. */
-export const VECTOR_VERSION: string = "0.1.0"
+/** The version `vector --version` prints; kept equal to package.json's by release-please, which bumps the line marked x-release-please-version. */
+export const VECTOR_VERSION: string = "0.1.0" // x-release-please-version
 
 /**
  * Runs vector's command line over `args`, as `vector <args>` would: it
