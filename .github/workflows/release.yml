@@ -1,14 +1,19 @@
-# Releases vector with amritk/workflows' release workflow: on a `v*` tag
-# matching package.json's version, build the native binary for every target
-# with z3 bundled beside it, attach the tarballs to a GitHub release, and
-# publish @amritk/vector to npm.
+# Releases vector with amritk/workflows' release workflow, in library mode: on
+# a `v*` tag matching package.json's version, pack @amritk/vector (its Nish
+# source, `src/`, as `npm publish` would pack it), attach the package and
+# SHA256SUMS to a GitHub release, and publish it to npm. Nothing is built: a
+# Nish library ships as source.
 #
-# A pull request that changes the release, and a manual run, build and
-# smoke-test every target without releasing anything.
+# A version with a hyphen (`1.2.0-rc.1`) is a prerelease: the GitHub release is
+# marked as one and npm publishes it under the `next` dist-tag. Attestations
+# and npm provenance exist only while the repository is public.
+#
+# A pull request that changes the release, and a manual run, pack the package
+# without releasing anything.
 #
 # npm trusted publishing is configured against THIS file, `release.yml`, with
-# the environment `npm`, which also holds NPM_TOKEN for each package's first
-# publish only (amritk/workflows' README, "npm").
+# the environment `npm`, which also holds NPM_TOKEN for the first publish only
+# (amritk/workflows' README, "npm").
 
 name: Release
 
@@ -18,9 +23,7 @@ on:
   pull_request:
     paths:
       - .github/workflows/release.yml
-      - .nish-version
-      - scripts/fetch-z3.sh
-      - scripts/release-*.sh
+      - package.json
   workflow_dispatch:
 
 permissions: {}
@@ -33,7 +36,4 @@ jobs:
       id-token: write
       attestations: write
     with:
-      summary: Prove small programs correct, and hold implementations to their specs
-      stage: bash scripts/release-stage.sh
-      smoke: bash "$REPO/scripts/release-smoke.sh"
-      npm: true
+      mode: library

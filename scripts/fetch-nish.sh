@@ -1,8 +1,7 @@
 #!/bin/bash
 # Installs the pinned Nish compiler into .nish/, which `npm run build` and the
-# test runner use. The pin is .nish-version, which the release workflow
-# (amritk/workflows) builds with too. NISH_VERSION overrides it for trying
-# another release.
+# test runner use. The pin is .nish-version, the file amritk/workflows' setup-nish
+# reads too. NISH_VERSION overrides it for trying another release.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
