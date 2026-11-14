@@ -1,6 +1,22 @@
 # Installation
 
-vector is written in [Nish](https://github.com/amritk/nish), a static subset of TypeScript compiled ahead of time to a native binary. You build it from source with a pinned compiler, and it runs a pinned z3.
+vector is written in [Nish](https://github.com/amritk/nish), a static subset of TypeScript compiled ahead of time to a native binary, and it runs a pinned z3. Install a release, which carries both, or build it from source.
+
+## Install a release
+
+Every release publishes a prebuilt `vector` for Linux and macOS on x86_64 and ARM64, with z3 4.16.0 bundled. From npm:
+
+<!-- illustrative -->
+```sh
+npm install -g @amritk/vector
+vector --version
+```
+
+npm installs the package holding the binary for your machine, `@amritk/vector-<platform>`, as an optional dependency, so an install with `--omit=optional` has no binary and `vector` says so.
+
+Or download `vector-<version>-<platform>.tar.gz` from the [GitHub releases](https://github.com/amritk/vector/releases), where `<platform>` is `x86_64-linux`, `aarch64-linux`, `x86_64-darwin` or `aarch64-darwin`. `SHA256SUMS` beside it lists every file's digest, and `gh attestation verify <file> --repo amritk/vector` checks the file was built by the release workflow. Unpack it anywhere and run `bin/vector` inside it: z3 sits at `.z3/z3` in the same directory, where vector looks for it. On macOS vector finds that z3 only when it is run by its path; run as a bare `vector` from your `PATH`, it uses the `z3` on `PATH` instead, so set `VECTOR_Z3` to the bundled one (`export VECTOR_Z3=<unpacked>/.z3/z3`). An npm install has no such gap.
+
+The rest of this page builds vector from source.
 
 ## What you need
 
@@ -31,7 +47,7 @@ bash scripts/fetch-z3.sh     # z3 4.16.0, into .z3/
 npm ci
 ```
 
-Both scripts are pinned and idempotent: run again, they report the version already installed and exit. `NISH_VERSION` overrides the compiler's pin, to try another release.
+Both scripts are pinned and idempotent: run again, they report the version already installed and exit. The compiler's pin is `.nish-version`; `NISH_VERSION` overrides it, to try another release.
 
 vector runs the z3 that `VECTOR_Z3` names, if set; otherwise `.z3/z3` in the checkout it was built from, and failing that `z3` on your `PATH`. It never runs a z3 from the directory you run it in.
 

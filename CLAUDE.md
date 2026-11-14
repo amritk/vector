@@ -2,7 +2,8 @@
 
 vector is written in [Nish](https://github.com/amritk/nish), a static subset
 of TypeScript compiled ahead of time to a native binary, `dist/vector`. The
-compiler is pinned in `scripts/fetch-nish.sh` and lives in `.nish/`; z3 is
+compiler is pinned in `.nish-version` (read by `scripts/fetch-nish.sh` and the
+release's `setup-nish` action) and lives in `.nish/`; z3 is
 pinned in `scripts/fetch-z3.sh` and lives in `.z3/`. Before writing Nish,
 read `.nish/docs/AI.md` (the language as rules, traps first).
 
@@ -74,6 +75,17 @@ flag, an exit code, an install step, or a message a guide page shows.
 
 **Moving where a fact lives moves every pointer to it in the same PR.** Grep
 the docs, `.claude/`, `CLAUDE.md` and source comments for the old location.
+
+## Releasing
+
+Push a tag `v<version>` equal to `package.json`'s version (and `VECTOR_VERSION`
+in `src/index.ts`). `.github/workflows/release.yml` calls the reusable
+`nish-release.yml`, which builds `vector` on every target with z3 bundled at
+`.z3/z3` (`scripts/release-stage.sh`), smoke-tests it from the tarball and from
+an npm install (`scripts/release-smoke.sh`), attaches the tarballs with
+SHA256SUMS and provenance to a GitHub release, and publishes `@amritk/vector`
+plus one `@amritk/vector-<asset>` per platform. A pull request that touches the
+release runs all of it except releasing and publishing.
 
 ## Commits and PRs
 

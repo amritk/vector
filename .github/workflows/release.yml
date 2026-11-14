@@ -1,0 +1,43 @@
+# Releases vector: on a `v*` tag matching package.json's version, build the
+# native binary for every target with z3 bundled beside it, attach the
+# tarballs to a GitHub release, and publish @amritk/vector to npm.
+#
+# A pull request that changes the release, and a manual run, build and
+# smoke-test every target without releasing anything.
+#
+# npm trusted publishing is configured against THIS file, `release.yml`, with
+# the environment `npm` (see nish-release.yml's header for a first publish).
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - .github/workflows/nish-release.yml
+      - .github/nish-release/**
+      - .github/actions/setup-nish/**
+      - .nish-version
+      - scripts/fetch-z3.sh
+      - scripts/release-*.sh
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  release:
+    uses: ./.github/workflows/nish-release.yml
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    with:
+      bin: vector
+      stage: bash scripts/release-stage.sh
+      smoke: bash "$REPO/scripts/release-smoke.sh"
+      npm: true
+      publish: ${{ github.ref_type == 'tag' }}
+    secrets:
+      npm-token: ${{ secrets.NPM_TOKEN }}

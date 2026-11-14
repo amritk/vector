@@ -18,7 +18,7 @@ that someone else wrote.
 ### Nish runtime and standard library
 
 `npm run build` compiles vector's Nish source with the nish compiler pinned in
-`scripts/fetch-nish.sh`. The binary it links holds vector's own code plus the
+`.nish-version`. The binary it links holds vector's own code plus the
 parts of nish's C runtime and standard library that vector uses
 (<https://github.com/amritk/nish>), under nish's MIT license:
 
@@ -79,7 +79,9 @@ is preserved.
 
 vector runs `z3` as a child process; it is not part of `dist/vector`.
 `scripts/fetch-z3.sh` fetches the `z3` executable and `libz3` from the
-`z3-solver==4.16.0` wheel into the git-ignored `.z3/`. The wheel ships no
+`z3-solver==4.16.0` wheel into the git-ignored `.z3/`. A release tarball and
+each `@amritk/vector-<platform>` npm package carry that `z3` executable at
+`.z3/z3`, unmodified, with this file beside it. The wheel ships no
 license file; this is the license from the Z3 4.16.0 source release
 (<https://github.com/Z3Prover/z3/blob/z3-4.16.0/LICENSE.txt>):
 

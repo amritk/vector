@@ -1,10 +1,12 @@
 #!/bin/bash
 # Installs the pinned Nish compiler into .nish/, which `npm run build` and the
-# test runner use. NISH_VERSION overrides the pin for trying another release.
+# test runner use. The pin is .nish-version, which the release workflow's
+# setup-nish action reads too. NISH_VERSION overrides it for trying another
+# release.
 set -euo pipefail
 
-version="${NISH_VERSION:-0.39.0}"
 root="$(cd "$(dirname "$0")/.." && pwd)"
+version="${NISH_VERSION:-$(tr -d '[:space:]' < "$root/.nish-version")}"
 dir="$root/.nish"
 
 if [ -x "$dir/bin/nish" ] && [ "$("$dir/bin/nish" --version)" = "nish $version" ]; then
