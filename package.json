@@ -1,10 +1,20 @@
 {
-  "name": "vector",
+  "name": "@amritk/vector",
   "version": "0.1.0",
   "description": "vector — a deterministic judge: prove a spec plan and program with Z3, and check implementations against spec and RFC contracts. Written in Nish; it never calls a model.",
   "license": "MIT",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": {
+      "nish": "./src/index.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": ["src"],
+  "engines": {
+    "nish": ">=0.39.0"
+  },
   "scripts": {
     "fetch-nish": "bash scripts/fetch-nish.sh",
     "fetch-z3": "bash scripts/fetch-z3.sh",

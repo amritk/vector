@@ -17,7 +17,7 @@
 // alias, exported or not), since Nish names are program-wide. Each clash is
 // printed with both file paths.
 //
-// It also fails when src/main.ts's VECTOR_VERSION differs from package.json's
+// It also fails when src/index.ts's VECTOR_VERSION differs from package.json's
 // version, which `vector --version` is meant to print.
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -155,16 +155,16 @@ if (clashes.length > 0) {
   failed = true;
 }
 
-const mainText = readFileSync(join(root, "src/main.ts"), "utf8");
+const indexText = readFileSync(join(root, "src/index.ts"), "utf8");
 const binVersion = /VECTOR_VERSION\s*:\s*string\s*=\s*"([^"]*)"/.exec(
-  mainText,
+  indexText,
 )?.[1];
 const pkgVersion = JSON.parse(
   readFileSync(join(root, "package.json"), "utf8"),
 ).version;
 if (binVersion !== pkgVersion) {
   console.error(
-    `src/main.ts VECTOR_VERSION is ${binVersion}, package.json's version is ${pkgVersion}`,
+    `src/index.ts VECTOR_VERSION is ${binVersion}, package.json's version is ${pkgVersion}`,
   );
   failed = true;
 }

@@ -2,28 +2,17 @@
 
 # main
 
-`vector` — the command-line entry point. It declares every command, parses
-the arguments, and hands the matched command its parsed arguments. `--help`
-and `--version` are answered here; everything else belongs to a command.
+`vector` — the binary's entry point. It hands the process's arguments to
+`vectorRun` (`src/index.ts`, the package's entry), which declares every
+command, parses the arguments and runs the matched command.
 
 Generated from [src/main.ts](https://github.com/amritk/vector/blob/main/src/main.ts).
 
 ## Exports
 
-- [`VECTOR_VERSION`](#vector_version)
 - [`main`](#main)
 
 ## Declarations
-
-<a id="vector_version"></a>
-
-### VECTOR_VERSION
-
-The version `vector --version` prints; kept equal to package.json's.
-
-```ts
-const VECTOR_VERSION: string = "0.1.0"
-```
 
 ### main
 

@@ -20,7 +20,7 @@ The 3 JSON Schemas in `schemas/`.
 
 <scalar-card title="Modules" icon="phosphor/regular/books" href="#modules">
 
-The 113 source files of `src/`, from their doc comments.
+The 114 source files of `src/`, from their doc comments.
 
 </scalar-card>
 
@@ -55,6 +55,7 @@ The 113 source files of `src/`, from their doc comments.
 | [`core/process`](modules/core/process.md) | running a child process with its input given and its output collected. |
 | [`core/smt`](modules/core/smt.md) | reading what z3 prints: s-expressions, the numerals in a model, and a whole run's output split into one answer per query by the `(echo "@@Q<i>")` markers the script writes before each `(check-sat)`. |
 | [`core/z3`](modules/core/z3.md) | finding z3 and running one SMT-LIB2 script through it. |
+| [`index`](modules/index.md) | the package's entry point, the module a Nish program reaches with `import { … } from "@amritk/vector"`. |
 | [`lang/c`](modules/lang/c.md) | the C table: how C writes each construct of the contract vocabulary, and what it drops. |
 | [`lang/cpp`](modules/lang/cpp.md) | the C++ table: how C++ writes each construct of the contract vocabulary, and what it drops. |
 | [`lang/csharp`](modules/lang/csharp.md) | the C# table: how C# writes each construct of the contract vocabulary, and what it drops. |
@@ -72,7 +73,7 @@ The 113 source files of `src/`, from their doc comments.
 | [`lang/tables`](modules/lang/tables.md) | the fourteen language tables, one for each language of `vocabLanguages`, in its order. |
 | [`lang/typescript`](modules/lang/typescript.md) | the TypeScript table: how TypeScript writes each construct of the contract vocabulary, and what it drops. |
 | [`lang/zig`](modules/lang/zig.md) | the Zig table: how Zig writes each construct of the contract vocabulary, and what it drops. |
-| [`main`](modules/main.md) | the command-line entry point. |
+| [`main`](modules/main.md) | the binary's entry point. |
 | [`spec/check`](modules/spec/check.md) | the pipeline every contract goes through: an ordered registry of gates, each a top-level function that reads the contract and returns its findings. |
 | [`spec/contract/chars`](modules/spec/contract/chars.md) | the character-level checks a contract's text needs: UTF-8 decoding one code point at a time, control characters, and the patterns its ids, sections and numbers are written in. |
 | [`spec/contract/contract`](modules/spec/contract/contract.md) | the entry to a contract: read its JSON, check its values, and hand back the model of `spec/contract/types`. |

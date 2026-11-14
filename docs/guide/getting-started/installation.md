@@ -75,6 +75,46 @@ Flags
 
 `--help` after any command shows that command's flags and arguments; the [command-line reference](../../reference/command-line.md) lists them all.
 
+## Use vector from a Nish program
+
+vector is also a Nish package, `@amritk/vector`, whose entry is `src/index.ts`. A Nish package is its source, so a git dependency is all it takes; `npm install` puts it in `node_modules`, where a Nish import finds it:
+
+<!-- illustrative -->
+```sh
+npm install github:amritk/vector
+```
+
+The package reads files, runs z3, writes files and reaches the network (`vector spec mutate` opens pull requests), so the program importing it must grant those in its own `package.json`, or the compiler refuses the import:
+
+```json
+{
+  "nish": {
+    "capabilities": {
+      "dependencies": {
+        "@amritk/vector": ["fs.read", "fs.write", "process.spawn", "net", "unsafe"]
+      }
+    }
+  }
+}
+```
+
+It exports the command line, `vectorRun(args)`, which runs `vector <args>` and returns its exit code, and the two proofs as functions of JSON text, `vectorVerifyJson(specText, programText)` and `vectorDiffJson(oldText, newText)`. Each returns the JSON `--json` prints, or an `Err` when a text is not JSON:
+
+<!-- illustrative -->
+```ts
+import { vectorVerifyJson } from "@amritk/vector"
+
+export const main = (): i32 => {
+  const spec = readFileSyncOrNull("currency-spec.json") ?? ""
+  const program = readFileSyncOrNull("currency.json") ?? ""
+  const outcome = vectorVerifyJson(spec, program)
+  console.log(outcome.isOk() ? outcome.value : outcome.error)
+  return 0
+}
+```
+
+Proofs run z3 as the binary does: the one `VECTOR_Z3` names, or else `z3` on your `PATH`. The [module reference](../../reference/modules/index.md) documents each export.
+
 ## Next
 
 [Your first proof](first-proof.md) runs `vector verify` on a program.
