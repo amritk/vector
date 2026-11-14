@@ -18,7 +18,7 @@ that someone else wrote.
 ### Nish runtime and standard library
 
 `npm run build` compiles vector's Nish source with the nish compiler pinned in
-`scripts/fetch-nish.sh`. The binary it links holds vector's own code plus the
+`.nish-version`. The binary it links holds vector's own code plus the
 parts of nish's C runtime and standard library that vector uses
 (<https://github.com/amritk/nish>), under nish's MIT license:
 

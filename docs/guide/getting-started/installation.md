@@ -1,6 +1,6 @@
 # Installation
 
-vector is written in [Nish](https://github.com/amritk/nish), a static subset of TypeScript compiled ahead of time to a native binary. You build it from source with a pinned compiler, and it runs a pinned z3.
+vector is written in [Nish](https://github.com/amritk/nish), a static subset of TypeScript compiled ahead of time to a native binary. You build it from source with a pinned compiler, and it runs a pinned z3. Releases publish vector's source as a Nish library, `@amritk/vector`, not a prebuilt binary ([Use vector from a Nish program](#use-vector-from-a-nish-program)).
 
 ## What you need
 
@@ -31,7 +31,7 @@ bash scripts/fetch-z3.sh     # z3 4.16.0, into .z3/
 npm ci
 ```
 
-Both scripts are pinned and idempotent: run again, they report the version already installed and exit. `NISH_VERSION` overrides the compiler's pin, to try another release.
+Both scripts are pinned and idempotent: run again, they report the version already installed and exit. The compiler's pin is `.nish-version`; `NISH_VERSION` overrides it, to try another release.
 
 vector runs the z3 that `VECTOR_Z3` names, if set; otherwise `.z3/z3` in the checkout it was built from, and failing that `z3` on your `PATH`. It never runs a z3 from the directory you run it in.
 
@@ -77,12 +77,14 @@ Flags
 
 ## Use vector from a Nish program
 
-vector is also a Nish package, `@amritk/vector`, whose entry is `src/index.ts`. A Nish package is its source, so a git dependency is all it takes; `npm install` puts it in `node_modules`, where a Nish import finds it:
+vector is also a Nish package, `@amritk/vector`, whose entry is `src/index.ts`. A Nish package is its source: every release publishes `src/` to npm, and `npm install` puts it in `node_modules`, where a Nish import finds it:
 
 <!-- illustrative -->
 ```sh
-npm install github:amritk/vector
+npm install @amritk/vector
 ```
+
+The package installs no `vector` command; build that from source as above. A version with a hyphen, such as `1.2.0-rc.1`, is a prerelease, published under npm's `next` dist-tag (`npm install @amritk/vector@next`), so a plain install stays on the last full release. Each release on [GitHub](https://github.com/amritk/vector/releases) attaches the same package as a `.tgz`, with `SHA256SUMS`. While the repository is public, the release also carries signed build provenance, which `gh attestation verify <file> --repo amritk/vector` checks, and the npm package carries npm provenance, which `npm audit signatures` checks. A git dependency, `npm install github:amritk/vector`, tracks a branch instead of a release.
 
 The package reads files, runs z3, writes files and reaches the network (`vector spec mutate` opens pull requests), so the program importing it must grant those in its own `package.json`, or the compiler refuses the import:
 

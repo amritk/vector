@@ -1,0 +1,51 @@
+# Releases vector with amritk/workflows' reusable workflows, in library mode.
+#
+# release-please.yml: every push to main keeps a release PR open, bumping
+# package.json, VECTOR_VERSION and CHANGELOG.md from the conventional commits
+# since the last release. Merging it tags v<version>, creates the GitHub
+# release, and starts this workflow on the tag.
+#
+# release.yml: on a v<version> tag (release-please's, or one pushed by hand),
+# pack @amritk/vector (its Nish source, src/) as `npm publish` would, attach it
+# with SHA256SUMS to the release, and publish it to npm through trusted
+# publishing (OIDC) alone; no npm token is stored. The trusted publisher on
+# npmjs.com names THIS file, `release.yml`, and the environment `npm`. A
+# hyphenated version (1.2.0-rc.1) publishes under npm's `next` dist-tag.
+# Attestations and npm provenance exist only while the repository is public.
+#
+# A pull request that changes the release packs the package without releasing
+# it, and checks the release-please config.
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - .github/release-please-config.json
+      - .github/.release-please-manifest.json
+      - package.json
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  release-please:
+    uses: amritk/workflows/.github/workflows/release-please.yml@20254d947b74d07a4ccf632c120f09642480827f
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: write
+  release:
+    uses: amritk/workflows/.github/workflows/release.yml@20254d947b74d07a4ccf632c120f09642480827f
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    with:
+      mode: library
+      versioning: release-please

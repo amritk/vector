@@ -39,7 +39,7 @@ jobs:
           path: |
             .nish
             .z3
-          key: toolchain-${{ runner.os }}-${{ hashFiles('scripts/fetch-nish.sh', 'scripts/fetch-z3.sh') }}
+          key: toolchain-${{ runner.os }}-${{ hashFiles('.nish-version', 'scripts/fetch-nish.sh', 'scripts/fetch-z3.sh') }}
 
       - name: Fetch the pinned nish compiler
         run: bash scripts/fetch-nish.sh

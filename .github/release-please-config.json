@@ -1,0 +1,29 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "$comment": "Read by amritk/workflows' release-please.yml (see .github/workflows/release.yml). include-component-in-tag false is load-bearing: the release runs only on a v<version> tag. bootstrap-sha is the commit 0.1.0 was published to npm from by hand, before there were tags.",
+  "bootstrap-sha": "68a5532e72c66df7177655305457f91b81bf011a",
+  "packages": {
+    ".": {
+      "release-type": "node",
+      "package-name": "@amritk/vector",
+      "changelog-path": "CHANGELOG.md",
+      "include-component-in-tag": false,
+      "include-v-in-tag": true,
+      "bump-minor-pre-major": true,
+      "extra-files": ["src/index.ts", "tests/package/index_test.ts"],
+      "changelog-sections": [
+        { "type": "feat", "section": "Features" },
+        { "type": "fix", "section": "Bug Fixes" },
+        { "type": "perf", "section": "Performance" },
+        { "type": "refactor", "section": "Refactors" },
+        { "type": "revert", "section": "Reverts" },
+        { "type": "docs", "section": "Documentation", "hidden": true },
+        { "type": "test", "section": "Tests", "hidden": true },
+        { "type": "build", "section": "Build", "hidden": true },
+        { "type": "ci", "section": "CI", "hidden": true },
+        { "type": "chore", "section": "Chores", "hidden": true },
+        { "type": "style", "section": "Style", "hidden": true }
+      ]
+    }
+  }
+}
