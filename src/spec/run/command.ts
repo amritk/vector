@@ -100,6 +100,14 @@ export const runPython = (): string => getenv("VECTOR_PYTHON") ?? "python3"
 export const runRustc = (): string => getenv("VECTOR_RUSTC") ?? "rustc"
 
 /**
+ * The runtime a TypeScript test runs with, by its built-in type stripping:
+ * `VECTOR_NODE`, else `node`.
+ *
+ * @returns the command
+ */
+export const runNode = (): string => getenv("VECTOR_NODE") ?? "node"
+
+/**
  * A Rust test compiled in a temporary directory with overflow checks on,
  * then run with the nonce. A test that does not compile prints no
  * transcript, so it is judged an error, with rustc's messages kept.
@@ -115,7 +123,8 @@ const runRust = (c: Contract, file: string): Result<RunResult, string> => {
 
 /**
  * The test at `file` run in its language: Python by `runPython`, writing no
- * bytecode beside the modules it loads; Rust compiled by `runRustc`; Nish by
+ * bytecode beside the modules it loads; Rust compiled by `runRustc`;
+ * TypeScript by `runNode`, its type stripping's warning silenced; Nish by
  * `--nish` as it is, else in a scratch copy of the nish root.
  */
 const runWith = (req: RunRequest, target: EmitTarget, c: Contract, file: string): Result<RunResult, string> => {
@@ -124,6 +133,9 @@ const runWith = (req: RunRequest, target: EmitTarget, c: Contract, file: string)
   }
   if (target.lang === "rust") {
     return runRust(c, file)
+  }
+  if (target.lang === "typescript") {
+    return runTestCommand(c, [runNode(), "--disable-warning=ExperimentalWarning", file], RUN_TIMEOUT_MS)
   }
   const nish = req.nish
   if (nish !== null) {

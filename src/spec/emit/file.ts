@@ -15,6 +15,7 @@ import { EmitPackages, emitPackageFlags, emitParsePackages, emitResolveModules }
 import { emitPyProgram } from "./python"
 import { emitRsProgram } from "./rust"
 import { EmitTarget, emitTargetExt, emitTargetFlags, emitTargetParse } from "./target"
+import { emitTsProgram } from "./typescript"
 
 /** A contract and the test emitted for it. */
 export class EmitFile {
@@ -91,7 +92,9 @@ export const emitContractFile = (
       ? emitPyProgram(c, checked.samples, opts, target.harness)
       : target.lang === "rust"
         ? emitRsProgram(c, checked.samples, opts, target.harness)
-        : emitProgram(c, checked.samples, opts)
+        : target.lang === "typescript"
+          ? emitTsProgram(c, checked.samples, opts, target.harness)
+          : emitProgram(c, checked.samples, opts)
   if (program.isErr()) {
     return Err(emitRefuseAll(path, program.error))
   }

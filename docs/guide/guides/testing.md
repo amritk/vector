@@ -134,10 +134,10 @@ written in, and `--harness <h>` the framework that runs it:
 | Nish | `nish` (the default) | `standalone` | the nish root (see [Run it](#run-it)) |
 | Python | `python` | `standalone` (the default), `pytest` | `VECTOR_PYTHON`, else `python3` |
 | Rust | `rust` | `standalone` (the default), `cargo` | `VECTOR_RUSTC`, else `rustc` |
+| TypeScript | `typescript` | `standalone` (the default), `node` | `VECTOR_NODE`, else `node` |
 
 The other languages vector has a naming table for (`ruby`, `zig`, `go`,
-`cpp`, `csharp`, `c`, `java`, `kotlin`, `typescript`, `php`, `swift` and
-`dart`) have no emitter yet, and `--lang` says so (exit 2):
+`cpp`, `csharp`, `c`, `java`, `kotlin`, `php`, `swift` and `dart`) have no emitter yet, and `--lang` says so (exit 2):
 
 <!-- exit 2 -->
 ```sh
@@ -145,7 +145,7 @@ The other languages vector has a naming table for (`ruby`, `zig`, `go`,
 ```
 
 ```text
-vector: spec emit: --lang zig: vector has no emitter for zig yet (it has: nish, python, rust)
+vector: spec emit: --lang zig: vector has no emitter for zig yet (it has: nish, python, rust, typescript)
 ```
 
 A function is called by its name in the language, from the contract's
@@ -251,6 +251,58 @@ with no samples is `#[ignore]`d:
 
 ```sh
 ./dist/vector spec run contracts/rfc5869-hkdf-sha256.json --lang rust --harness cargo --package nish=tests/fixtures/rust/nish
+```
+
+```text
+SATISFIED: rfc5869-hkdf-sha256 (exit 0)
+  pass  R-EXTRACT
+  pass  R-SALT
+  pass  R-PRK-LEN
+  pass  R-L
+  pass  R-INFO-EMPTY
+  pass  R-OKM-LEN
+  pass  R-OKM-FIRST
+  pass  R-T
+```
+
+### TypeScript
+
+A TypeScript test is one `.ts` file that Node runs as it is, with its
+built-in type stripping: it needs no npm package and no tsc. Each function is
+called by its TypeScript name (`toHex`), imported from the module's path, or,
+for a module `--package` places, from the `.ts` file there, imported by a
+path relative to the test. A bytes value is a `Uint8Array`, an integer up to
+32 bits a `number` and an i64 or u64 a `bigint`; a function that refuses
+returns `null`, and an absent optional input is passed as `undefined`. A
+bytes result may come back as any typed-array view or an `ArrayBuffer`.
+`tests/fixtures/typescript/` holds the ports vector checks its TypeScript
+tests against:
+
+```sh
+./dist/vector spec run contracts/vector-core-hex.json --lang typescript --package vector=tests/fixtures/typescript/vector
+```
+
+```text
+SATISFIED: vector-core-hex (exit 0)
+  pass  R-HEX-LEN
+  pass  R-HEX-DIGITS
+  pass  R-SHA256
+```
+
+`spec run` writes the test to a temporary directory and runs it with `node`;
+set `VECTOR_NODE` to run it with another. JavaScript's numbers are binary64,
+so the test writes the contract's arithmetic out: `+`, `-` and `*` are exact
+in bigint and wrap to their operands' width, `%` truncates and is 0 on a zero
+divisor, and string lengths count UTF-8 bytes. A test Node cannot load prints
+no transcript, so its verdict is ERROR, with Node's messages.
+
+With `--harness node` the file also holds a `test()` from `node:test` for
+each clause, so `node --test` runs the same checks with the rest of your
+suite, and a failing clause fails with the detail the transcript prints. A
+property with no samples is skipped:
+
+```sh
+./dist/vector spec run contracts/rfc5869-hkdf-sha256.json --lang typescript --harness node --package nish=tests/fixtures/typescript/nish
 ```
 
 ```text

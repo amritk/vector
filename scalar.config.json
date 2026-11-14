@@ -467,6 +467,11 @@
                     "title": "spec/emit/target",
                     "filepath": "docs/reference/modules/spec/emit/target.md"
                   },
+                  "/spec-emit-typescript": {
+                    "type": "page",
+                    "title": "spec/emit/typescript",
+                    "filepath": "docs/reference/modules/spec/emit/typescript.md"
+                  },
                   "/spec-extract": {
                     "type": "page",
                     "title": "spec/extract",

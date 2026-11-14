@@ -4,7 +4,8 @@
  *
  * Every emitted test is a standalone program that `vector spec run` executes
  * and judges by its transcript. A harness other than `standalone` adds the
- * hooks a language's test framework discovers (pytest's `test_*` functions, cargo's `#[test]` functions),
+ * hooks a language's test framework discovers (pytest's `test_*` functions, cargo's `#[test]` functions,
+ * node:test's `test()` calls),
  * so the same file also runs under that framework.
  */
 
@@ -34,7 +35,7 @@ export class EmitTarget {
  *
  * @returns the language ids
  */
-export const emitTargetLanguages = (): string[] => ["nish", "python", "rust"]
+export const emitTargetLanguages = (): string[] => ["nish", "python", "rust", "typescript"]
 
 /**
  * The harnesses a language's test can plug into, `standalone` first: the
@@ -52,6 +53,9 @@ export const emitTargetHarnesses = (lang: string): string[] => {
   }
   if (lang === "rust") {
     return ["standalone", "cargo"]
+  }
+  if (lang === "typescript") {
+    return ["standalone", "node"]
   }
   return []
 }
@@ -97,7 +101,7 @@ export const emitTargetFlags = (t: EmitTarget): string => {
  * The extension of a module's source file, and of the test, in a language.
  *
  * @param lang a language id
- * @returns `.ts` for nish, `.py` for python, `.rs` for rust
+ * @returns `.ts` for nish and typescript, `.py` for python, `.rs` for rust
  */
 export const emitTargetExt = (lang: string): string => {
   if (lang === "python") {

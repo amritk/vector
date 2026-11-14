@@ -55,11 +55,11 @@ export class SpecRunCommand {
       "a package of your own, <name>=<dir>: modules <name>/<path> are <dir>/<path>.ts, .py in python, .rs in rust (repeatable)",
     )
     cli.repeatable(this.packageFlag)
-    this.langFlag = cli.flag(handle, "--lang <id>", "the test's language: nish (default), python or rust")
+    this.langFlag = cli.flag(handle, "--lang <id>", "the test's language: nish (default), python, rust or typescript")
     this.harnessFlag = cli.flag(
       handle,
       "--harness <h>",
-      "standalone (default), or the test framework the test plugs into: pytest for python, cargo for rust",
+      "standalone (default), or the test framework the test plugs into: pytest for python, cargo for rust, node for typescript",
     )
     this.contractJsonArg = cli.argument(handle, "<contract.json>", "the contract")
   }
