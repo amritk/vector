@@ -282,6 +282,11 @@
                     "title": "core/z3",
                     "filepath": "docs/reference/modules/core/z3.md"
                   },
+                  "/index": {
+                    "type": "page",
+                    "title": "index",
+                    "filepath": "docs/reference/modules/index.md"
+                  },
                   "/lang-c": {
                     "type": "page",
                     "title": "lang/c",

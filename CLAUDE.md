@@ -19,8 +19,11 @@ read `.nish/docs/AI.md` (the language as rules, traps first).
 
 ## Layout
 
-- `src/main.ts` declares the commands, parses the arguments and dispatches.
-  It handles `--help` and `--version`; everything else is a command's.
+- `src/index.ts` is the package's entry (`@amritk/vector`, the `nish`
+  condition in `package.json`). Its `vectorRun` declares the commands, parses
+  the arguments and dispatches; it handles `--help` and `--version`, and
+  everything else is a command's. `src/main.ts` is the binary's entry: it
+  hands the process's arguments to `vectorRun`.
 - `src/cli/<command>.ts` exports `register<Command>(cli, parent)`, which
   declares the command's flags and arguments and returns the object whose
   `run(r)` is its handler.

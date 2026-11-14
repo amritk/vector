@@ -12,7 +12,7 @@
 // The reference has three parts, each read from what defines it, so the
 // script needs no list of today's commands, schemas or modules:
 //
-//   Command line  the command tree src/main.ts declares on `nish/cli-args`,
+//   Command line  the command tree src/index.ts declares on `nish/cli-args`,
 //                 read from the TypeScript AST: `new Cli(...)`, `cli.group`,
 //                 `cli.command`, `cli.flag`, `cli.argument` and the rest. Each
 //                 call that is handed the cli is followed into the function
@@ -43,7 +43,7 @@ const outDir = "docs/reference";
 const configFile = "scalar.config.json";
 const baselineFile = "scripts/undocumented.txt";
 const repoUrl = "https://github.com/amritk/vector/blob/main";
-const mainFile = "src/main.ts";
+const mainFile = "src/index.ts";
 const diagFile = "src/core/diag.ts";
 // biome's default line width for JSON, so the file stays formatted as `npm run lint` wants it.
 const width = 80;
@@ -342,7 +342,7 @@ const splitSpec = (spec) => {
 };
 
 /**
- * The command tree src/main.ts declares: the root, with its name and
+ * The command tree src/index.ts declares: the root, with its name and
  * description, its global flags, and its commands and groups in declaration
  * order. Every call handed the `Cli` (`registerX(cli, parent)`,
  * `new XCommand(cli, parent)`, a helper in the same file) is followed into the
