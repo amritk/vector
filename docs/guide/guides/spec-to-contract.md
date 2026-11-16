@@ -65,7 +65,9 @@ back in:
   `bytes` and `secret-bytes` interchange), a name a parameter of its own
   parameter's type.
 - **slow** (`true`, or left out) marks a count too long to run on every test
-  run.
+  run. `spec emit` and `spec run` skip a slow vector, with the reason `slow:
+  pass --slow to run`, unless `--slow` is passed; see [Slow
+  vectors](testing.md#slow-vectors).
 
 `spec check` binds the count to the cited section:
 

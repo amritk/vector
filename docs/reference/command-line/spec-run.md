@@ -68,6 +68,12 @@ standalone (default), or the test framework the test plugs into: pytest for pyth
 
 </scalar-field>
 
+<scalar-field name="--slow">
+
+run slow iterated vectors too, rather than skip them
+
+</scalar-field>
+
 <scalar-field name="-h, --help">
 
 Show this command's help, and exit 0.

@@ -22,9 +22,9 @@ import { contractF64Bits, contractF64Parse } from "../contract/f64"
 import { ClauseKind, ExprKind, LitKind } from "../contract/types"
 import { Clause, Contract, Expr, FnSig, Literal } from "../contract/types"
 import { TypeEnv, typeCallsIn, typeEnvBind, typeIntBase, typeOf } from "../contract/typing"
-import { vocabIsIntType, vocabValueType } from "../contract/vocab"
+import { vocabIsIntType, vocabIsOptional, vocabValueType } from "../contract/vocab"
 import { EmitOptions, emitClauseFn, emitClauseLines, emitHeaderLines, emitSortedUnique, emitTestName } from "./emit"
-import { emitF64IsFinite, emitLiteralHex, emitQuote } from "./lit"
+import { EMIT_SLOW_SKIP, emitF64IsFinite, emitLiteralHex, emitQuote } from "./lit"
 
 /** What emitting one Python test has gathered so far. */
 class EmitPyContext {
@@ -449,8 +449,13 @@ const emitPyVector = (ctx: EmitPyContext, k: Clause): string => {
   for (const a of k.args) {
     args.push(emitPyLiteral(a))
   }
-  const call = emitPyCall(sig, args)
   const name = emitQuote(emitTestName(k))
+  const it = k.iterate
+  if ((it?.slow ?? false) && !ctx.opts.slow) {
+    return `def ${emitClauseFn(k)}(t):\n    return t.skip(${name}, "${EMIT_SLOW_SKIP}")`
+  }
+  const steps = emitPyIterate(k, sig, args, name)
+  const call = it === null ? emitPyCall(sig, args) : "it_r"
   const ret = vocabValueType(sig.returns)
   let body = ""
   if (ret === "bytes") {
@@ -472,7 +477,50 @@ const emitPyVector = (ctx: EmitPyContext, k: Clause): string => {
   } else {
     ctx.errors.push(`${k.id}: Python cannot check a ${sig.returns} result`)
   }
-  return `def ${emitClauseFn(k)}(t):\n    return ${body}`
+  const lines = steps.length > 0 ? `${steps.join("\n")}\n` : ""
+  return `def ${emitClauseFn(k)}(t):\n${lines}    return ${body}`
+}
+
+/**
+ * An iterated vector's calls, up to the last result bound as `it_r`: the
+ * arguments (`it_a<i>`, by position) start as the vector's and are rebound to
+ * its `next` after each call; a None result at any step fails the clause,
+ * naming the step. Empty for a vector that is not iterated.
+ */
+const emitPyIterate = (k: Clause, sig: FnSig, args: string[], name: string): string[] => {
+  const it = k.iterate
+  if (it === null) {
+    return []
+  }
+  const lines: string[] = []
+  const vars: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    vars.push(`it_a${i}`)
+    lines.push(`    it_a${i} = ${args[i]}`)
+  }
+  const optional = vocabIsOptional(vocabValueType(sig.returns))
+  lines.push(`    for it_i in range(1, ${it.count}):`)
+  lines.push(`        it_s = ${emitPyCall(sig, vars)}`)
+  if (optional) {
+    emitPyIterateNull(lines, "        ", name, "it_s", `{it_i} of ${it.count}`, sig.name)
+  }
+  const next: string[] = []
+  for (const e of it.next) {
+    next.push(e.kind === ExprKind.Call ? "it_s" : `it_a${toI32(it.names.indexOf(e.name))}`)
+  }
+  lines.push(`        ${vars.join(", ")} = ${next.join(", ")}`)
+  lines.push(`    it_r = ${emitPyCall(sig, vars)}`)
+  if (optional) {
+    emitPyIterateNull(lines, "    ", name, "it_r", `${it.count} of ${it.count}`, sig.name)
+  }
+  return lines
+}
+
+/** Fails the clause `name` when step `step`'s result `v` is None; `f` is "f" when `step` holds a placeholder. */
+const emitPyIterateNull = (lines: string[], pad: string, name: string, v: string, step: string, fn: string): void => {
+  const f = step.indexOf("{") >= 0 ? "f" : ""
+  lines.push(`${pad}if ${v} is None:`)
+  lines.push(`${pad}    return t.fail(${name}, ${f}"step ${step}: ${fn} returned null")`)
 }
 
 /**

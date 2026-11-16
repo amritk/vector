@@ -93,7 +93,7 @@ The 114 source files of `src/`, from their doc comments.
 | [`spec/emit/packages`](modules/spec/emit/packages.md) | `--package <name>=<dir>`: where the modules of your own project live, so a test can import a module outside nish/. |
 | [`spec/emit/python`](modules/spec/emit/python.md) | a contract and its samples as a Python test. |
 | [`spec/emit/rust`](modules/spec/emit/rust.md) | a contract and its samples as a Rust test. |
-| [`spec/emit/target`](modules/spec/emit/target.md) | what a test is emitted for: a language, and the harness that runs it in that language. |
+| [`spec/emit/target`](modules/spec/emit/target.md) | what a test is emitted for: a language, the harness that runs it in that language, and whether its slow vectors run. |
 | [`spec/emit/typescript`](modules/spec/emit/typescript.md) | a contract and its samples as a TypeScript test. |
 | [`spec/extract`](modules/spec/extract.md) | `vector spec extract`: an RFC XML v3 spec (xml2rfc's output for a kramdown-rfc spec) to its canonical contract. |
 | [`spec/front/front`](modules/spec/front/front.md) | the TypeScript front end. |

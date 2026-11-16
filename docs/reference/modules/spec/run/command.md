@@ -107,6 +107,14 @@ The `--package <name>=<dir>` flags' values.
 packages: string[]
 ```
 
+#### RunRequest.slow
+
+The `--slow` flag: whether slow iterated vectors run.
+
+```ts
+slow: boolean
+```
+
 ### runFindRoot
 
 The nish checkout to run against: `--nish-root`, else `VECTOR_NISH_ROOT`,

@@ -1,0 +1,159 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "sha256-chain",
+  "source": {
+    "title": "Chained SHA-256: Test Vectors",
+    "main": "chain",
+    "sha256": "de0e599beb56aaf93049e1f9fc3e24c152c6a33754b20443861eeec0795b3522"
+  },
+  "sources": [
+    {
+      "id": "chain",
+      "path": "../rfcs/chain.txt",
+      "sha256": "de0e599beb56aaf93049e1f9fc3e24c152c6a33754b20443861eeec0795b3522"
+    }
+  ],
+  "target": {
+    "module": "vector/core/hex"
+  },
+  "requirements": [
+    {
+      "id": "R-CHAIN",
+      "section": "1",
+      "level": "DEFINITION",
+      "quote": "For each iteration, set the text to the result of calling sha256Hex on it."
+    },
+    {
+      "id": "R-LOWER",
+      "section": "1",
+      "level": "MUST",
+      "quote": "Every digest a chain feeds back MUST be written in the digits 0-9 and a-f, as sha256Hex writes it."
+    }
+  ],
+  "functions": [
+    {
+      "name": "sha256Hex",
+      "params": [
+        {
+          "name": "text",
+          "type": "string"
+        }
+      ],
+      "returns": "string"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "CHAIN-1",
+      "title": "sha256Hex of \"abc\", once",
+      "covers": [
+        "R-CHAIN"
+      ],
+      "source": {
+        "command": "python3 -c 'import hashlib\nx = \"abc\"\nfor _ in range(1): x = hashlib.sha256(x.encode()).hexdigest()\nprint(x)'"
+      },
+      "section": "1",
+      "call": "sha256Hex",
+      "args": [
+        {
+          "str": "abc"
+        }
+      ],
+      "expect": {
+        "str": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+      },
+      "iterate": {
+        "count": 1,
+        "names": [
+          "text"
+        ],
+        "next": [
+          {
+            "call": "sha256Hex",
+            "args": [
+              {
+                "var": "text"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "CHAIN-1000",
+      "title": "sha256Hex chained 1,000 times from \"abc\": each digest hashed as text",
+      "covers": [
+        "R-CHAIN"
+      ],
+      "source": {
+        "command": "python3 -c 'import hashlib\nx = \"abc\"\nfor _ in range(1000): x = hashlib.sha256(x.encode()).hexdigest()\nprint(x)'"
+      },
+      "section": "1",
+      "call": "sha256Hex",
+      "args": [
+        {
+          "str": "abc"
+        }
+      ],
+      "expect": {
+        "str": "a933137af5731d3425d5119ebcae5f5580730859d8dd751eb9fec030167c92df"
+      },
+      "iterate": {
+        "count": 1000,
+        "names": [
+          "text"
+        ],
+        "next": [
+          {
+            "call": "sha256Hex",
+            "args": [
+              {
+                "var": "text"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "CHAIN-100000",
+      "title": "sha256Hex chained 100,000 times from \"abc\", every digest's digits fed back",
+      "covers": [
+        "R-LOWER"
+      ],
+      "source": {
+        "command": "python3 -c 'import hashlib\nx = \"abc\"\nfor _ in range(100000): x = hashlib.sha256(x.encode()).hexdigest()\nprint(x)'"
+      },
+      "section": "1",
+      "call": "sha256Hex",
+      "args": [
+        {
+          "str": "abc"
+        }
+      ],
+      "expect": {
+        "str": "73ea48fec15cc6261dc5aeeaafdb469b94fe3384e264dab224a2b06f7917a3e1"
+      },
+      "iterate": {
+        "count": 100000,
+        "names": [
+          "text"
+        ],
+        "next": [
+          {
+            "call": "sha256Hex",
+            "args": [
+              {
+                "var": "text"
+              }
+            ]
+          }
+        ],
+        "slow": true
+      }
+    }
+  ]
+}

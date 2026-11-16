@@ -1,0 +1,29 @@
+Test Fixture                                                      vector
+Request for Comments: 99999                               Not an RFC
+Category: Informational                                  November 2026
+
+
+                     Chained SHA-256: Test Vectors
+
+Abstract
+
+   This text is a test fixture for vector's iterated vectors, laid out
+   as an RFC's plain text so that vector reads it.  It is not an RFC.
+
+1.  Chaining
+
+   A chain starts from the text "abc".  For each iteration, set the
+   text to the result of calling sha256Hex on it.  The final result is
+   the text left after the last iteration.
+
+   Every digest a chain feeds back MUST be written in the digits 0-9
+   and a-f, as sha256Hex writes it.
+
+   Chains are run for 1 iteration, for 1,000 iterations and for
+   100,000 iterations.
+
+
+
+
+vector                        Informational                     [Page 1]
+

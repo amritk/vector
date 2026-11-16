@@ -441,6 +441,55 @@ vector: spec run: /path/to/vector/src is neither a nish install (libexec/nish) n
 `--nish <bin>` skips all of this and builds with that compiler as it is, with
 whatever std it reads. `--spec` is accepted and not read.
 
+### Slow vectors
+
+An [iterated vector](spec-to-contract.md#an-iterated-vector) marked `slow`,
+such as RFC 7748's million X25519 calls, is too long to run on every test
+run. Without `--slow`, `spec emit` writes it skipped, with the reason `slow:
+pass --slow to run` (Rust's `#[ignore]` and node:test's `skip` carry the same
+reason), and `spec run` lists it as skipped, never as passed. A requirement
+that only skipped vectors cover is skipped too, and `SATISFIED` is judged over
+what ran. Here `CHAIN-100000` hashes 100,000 times and is the only vector
+covering `R-LOWER`:
+
+```sh
+./dist/vector spec run tests/fixtures/iterate-emit/contracts/sha256-chain.json --package vector=src --nish-root .nish
+```
+
+```text
+SATISFIED: sha256-chain (exit 0)
+  pass  R-CHAIN
+  skip  R-LOWER
+  skip  CHAIN-100000 (slow; pass --slow)
+```
+
+`--slow` runs it, and a Nish test it runs is built with `--profile speed`,
+which costs about a second more to compile and runs a long loop some ten
+times faster (RFC 7748's 1,000,000 iterations take about 105 seconds):
+
+```sh
+./dist/vector spec run tests/fixtures/iterate-emit/contracts/sha256-chain.json --package vector=src --nish-root .nish --slow
+```
+
+```text
+SATISFIED: sha256-chain (exit 0)
+  pass  R-CHAIN
+  pass  R-LOWER
+```
+
+Only a Nish test is built optimized. A test in another language is built as
+its harness always builds it, so a million-step vector can take longer than
+`spec run`'s 600-second limit there.
+
+A run whose every vector was skipped as slow is an `ERROR`: nothing ran, and
+the text report says so on its own line:
+
+```text
+every vector was skipped as slow, so nothing ran: pass --slow
+```
+
+In `--json`, each clause skipped as slow also has `"slow": true`.
+
 ## A planted bug
 
 Copy the install, then let HKDF-Expand accept one octet more than RFC 5869
@@ -489,7 +538,7 @@ rebuilds the MAC input from the other functions, catches it.
 
 | Verdict | Means | Exit |
 | --- | --- | --- |
-| `SATISFIED` | the test built, ran, and every clause passed | 0 |
+| `SATISFIED` | the test built, ran, and every clause that ran passed (a [slow vector](#slow-vectors) skipped without `--slow` did not run) | 0 |
 | `VIOLATED` | a clause failed; each failure prints with its sample | 1 |
 | `ERROR` | the test did not build, ran past its time, or printed a transcript vector cannot trust | 1 |
 | refused | the contract does not check, so no test was emitted | 1 |

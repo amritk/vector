@@ -2,8 +2,8 @@
 
 # spec/emit/target
 
-`spec/emit/target` — what a test is emitted for: a language, and the
-harness that runs it in that language.
+`spec/emit/target` — what a test is emitted for: a language, the harness
+that runs it in that language, and whether its slow vectors run.
 
 Every emitted test is a standalone program that `vector spec run` executes
 and judges by its transcript. A harness other than `standalone` adds the
@@ -26,7 +26,7 @@ Generated from [src/spec/emit/target.ts](https://github.com/amritk/vector/blob/m
 
 ### EmitTarget
 
-A test's language and harness.
+A test's language and harness, and whether its slow vectors run.
 
 ```ts
 class EmitTarget
@@ -66,6 +66,14 @@ The language's vocabulary id: `nish` or one of `vocabLanguages`.
 
 ```ts
 lang: string
+```
+
+#### EmitTarget.slow
+
+Whether an iterated vector marked slow runs (`--slow`); when false it is emitted skipped.
+
+```ts
+slow: boolean
 ```
 
 ### emitTargetLanguages
@@ -135,8 +143,8 @@ the target, or why it is not one vector emits
 
 ### emitTargetFlags
 
-The `--lang` and `--harness` flags that rebuild a target, for a regenerate
-command: only those that differ from their default.
+The `--lang`, `--harness` and `--slow` flags that rebuild a target, for a
+regenerate command: only those that differ from their default.
 
 ```ts
 function emitTargetFlags(t: EmitTarget): string
@@ -150,7 +158,7 @@ the target
 
 <scalar-field name="returns" type="string">
 
-` --lang <id>` and ` --harness <h>` as needed; empty for the defaults
+` --lang <id>`, ` --harness <h>` and ` --slow` as needed; empty for the defaults
 
 </scalar-field>
 

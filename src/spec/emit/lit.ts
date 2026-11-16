@@ -10,6 +10,13 @@ import { LitKind, Literal } from "../contract/types"
 import { vocabCompareDecimal, vocabFitsInt } from "../contract/vocab"
 
 /**
+ * Why an emitted test skips an iterated vector marked slow, in every
+ * language: `spec run` reads a skip with this reason as one left out on
+ * purpose, not as a gap.
+ */
+export const EMIT_SLOW_SKIP: string = "slow: pass --slow to run"
+
+/**
  * Nish's conversion into an integer type other than i32: `toI64`, `toU8`, ….
  *
  * @param t an integer type

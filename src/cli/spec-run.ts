@@ -27,6 +27,8 @@ export class SpecRunCommand {
   packageFlag: i32
   /** The `--lang <id>` flag. */
   langFlag: i32
+  /** The `--slow` flag. */
+  slowFlag: i32
   /** The `--harness <h>` flag. */
   harnessFlag: i32
   /** The `<contract.json>` argument. */
@@ -65,6 +67,7 @@ export class SpecRunCommand {
       "--harness <h>",
       "standalone (default), or the test framework the test plugs into: pytest for python, cargo for rust, gotest for go, node for typescript",
     )
+    this.slowFlag = cli.flag(handle, "--slow", "run slow iterated vectors too, rather than skip them")
     this.contractJsonArg = cli.argument(handle, "<contract.json>", "the contract")
   }
 
@@ -84,6 +87,7 @@ export class SpecRunCommand {
     req.packages = r.values(this.packageFlag)
     req.lang = r.value(this.langFlag)
     req.harness = r.value(this.harnessFlag)
+    req.slow = r.flag(this.slowFlag)
     return runCommand(req)
   }
 }
