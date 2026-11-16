@@ -8,7 +8,7 @@ that someone else wrote.
 |---|---|---|
 | Nish runtime and standard library | compiled binary | MIT; parts under BSL-1.0 and the fdlibm notice (see below) |
 | Z3 4.16.0 | fetched into `.z3/`, run as a separate process | MIT |
-| RFC 4648, RFC 5869, RFC 8439, RFC 8707 | `rfcs/`, excerpts in `contracts/` and `tests/` | IETF Trust Legal Provisions |
+| RFC 4648, RFC 5869, RFC 7748, RFC 8032, RFC 8439, RFC 8707 | `rfcs/`, excerpts in `contracts/` and `tests/` | IETF Trust Legal Provisions |
 | nish v0.34.0 excerpts | `tests/fixtures/mutate/` | MIT |
 | RFC 7748 excerpt, nish v0.39.0 `std/crypto/x25519.ts` | `tests/fixtures/x25519/` | IETF Trust Legal Provisions; MIT |
 
@@ -119,6 +119,9 @@ to <https://www.rfc-editor.org/rfc/rfc4648.txt>,
 legends and authors' addresses intact. `rfcs/rfc8707.xml` is likewise the RFC
 Editor's published RFC XML v3 (RFC 7991) source, byte-identical to
 <https://www.rfc-editor.org/rfc/rfc8707.xml>, with its boilerplate intact.
+`rfcs/rfc7748.txt` and `rfcs/rfc8032.txt` are the RFC Editor's plain-text
+publications too, copied byte for byte from amritk/nish's `rfcs/`, with their
+copyright notices, legends and authors' addresses intact.
 Every contract records the SHA-256 of the RFC it was checked against, so a
 modified copy is caught.
 
@@ -126,6 +129,8 @@ modified copy is caught.
 |---|---|---|---|
 | 4648 | The Base16, Base32, and Base64 Data Encodings | IETF | © The Internet Society (2006) |
 | 5869 | HMAC-based Extract-and-Expand Key Derivation Function (HKDF) | IETF | © 2010 IETF Trust and the persons identified as the document authors |
+| 7748 | Elliptic Curves for Security | IRTF | © 2016 IETF Trust and the persons identified as the document authors |
+| 8032 | Edwards-Curve Digital Signature Algorithm (EdDSA) | IRTF | © 2017 IETF Trust and the persons identified as the document authors |
 | 8439 | ChaCha20 and Poly1305 for IETF Protocols | IRTF | © 2018 IETF Trust and the persons identified as the document authors |
 | 8707 | Resource Indicators for OAuth 2.0 | IETF | © 2020 IETF Trust and the persons identified as the document authors |
 
@@ -159,9 +164,10 @@ Trust's Legal Provisions Relating to IETF Documents
 (http://trustee.ietf.org/license-info).
 ```
 
-RFC 8439 is an IRTF-stream document, for which TLP §4's BSD grant may not
-apply (§8); its excerpts rely on §3.c.iii alone. These portions are derived
-from IETF RFC 4648, 5869, 8439 and 8707; please reproduce this note if possible.
+RFC 7748, RFC 8032 and RFC 8439 are IRTF-stream documents, for which TLP §4's
+BSD grant may not apply (§8); their excerpts rely on §3.c.iii alone. These
+portions are derived from IETF RFC 4648, 5869, 7748, 8032, 8439 and 8707; please
+reproduce this note if possible.
 
 ### kramdown-rfc output (`tests/fixtures/xmlv3/`)
 

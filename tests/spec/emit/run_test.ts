@@ -334,4 +334,17 @@ const runTestSlow = (t: Suite, nonce: string): void => {
     runFormatText(all).join("\n"),
     "\nevery vector was skipped as slow, so nothing ran: pass --slow",
   )
+  t.contains("and so does the markdown", runFormatMarkdown(all), "\n\nevery vector was skipped as slow")
+  const mixed = new RunResult("sha256-chain", 0, "", "")
+  for (const k of allSlow) {
+    mixed.clauses.push(k)
+  }
+  mixed.clauses[0] = new RunClause("CHAIN-1")
+  mixed.verdict = runJudge(c, mixed.clauses, 0, [])
+  t.eqStr("a slow skip beside a clause that did not run is an ERROR", mixed.verdict.status, "ERROR")
+  t.ok(
+    "but not one with nothing but slow skips",
+    runFormatText(mixed).join("\n").indexOf("every vector was skipped as slow") < 0 &&
+      runFormatMarkdown(mixed).indexOf("every vector was skipped as slow") < 0,
+  )
 }

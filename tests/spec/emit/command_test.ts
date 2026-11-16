@@ -4,6 +4,7 @@ import { Diagnostic, EXIT_REFUSED, EXIT_USAGE, refusal, usageError } from "../..
 import { makeTempDir } from "../../../src/core/fs"
 import { sha256Hex } from "../../../src/core/hex"
 import { runProcess } from "../../../src/core/process"
+import { vectorRun } from "../../../src/index"
 import { Sample, SampleTable, checkAddSample } from "../../../src/spec/check"
 import { contractLoadFile } from "../../../src/spec/contract/contract"
 import { LitKind, Literal } from "../../../src/spec/contract/types"
@@ -131,6 +132,22 @@ export const main = (): i32 => {
     quickText,
     `//   vector spec emit ${chain} --package vector=src -o ${quick}.\n`,
   )
+
+  const cliSlow = `${dir}/chain_cli_slow.ts`
+  const cliQuick = `${dir}/chain_cli_quick.ts`
+  t.ok(
+    "vector spec emit --slow exits 0",
+    vectorRun(["spec", "emit", chain, "--slow", "--package", "vector=src", "-o", cliSlow]) === 0,
+  )
+  t.ok("and without it", vectorRun(["spec", "emit", chain, "--package", "vector=src", "-o", cliQuick]) === 0)
+  const cliSlowText = readFileSyncOrNull(cliSlow) ?? ""
+  t.ok("the --slow flag reaches the emitter", cliSlowText.indexOf(EMIT_SLOW_SKIP) < 0)
+  t.contains(
+    "and the regenerate line",
+    cliSlowText,
+    `//   vector spec emit ${chain} --slow --package vector=src -o ${cliSlow}.\n`,
+  )
+  t.contains("without it the vector is skipped", readFileSyncOrNull(cliQuick) ?? "", `"${EMIT_SLOW_SKIP}"`)
 
   t.ok("a missing nish root is an error", runFindRoot("tests/no-such-dir").isErr())
   t.ok("a given nish root is used", runFindRoot("tests").isOk())

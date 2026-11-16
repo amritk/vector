@@ -755,18 +755,14 @@ const runTail = (text: string, n: i32): string[] => {
 /** Why a run whose only clauses were slow skips is an ERROR. */
 const RUN_SLOW_ONLY: string = "every vector was skipped as slow, so nothing ran: pass --slow"
 
-/** Whether no clause passed and one was a slow vector skipped: runJudge's ERROR for a run with nothing to judge. */
+/** Whether every clause was a slow vector skipped for want of `--slow`: runJudge's ERROR for a run with nothing to judge. */
 const runSlowOnly = (clauses: RunClause[]): boolean => {
-  let slow = false
   for (const k of clauses) {
-    if (k.outcome === RunOutcome.Pass) {
+    if (!k.slow || k.outcome !== RunOutcome.Skip) {
       return false
     }
-    if (k.slow) {
-      slow = true
-    }
   }
-  return slow
+  return clauses.length > 0
 }
 
 /**
@@ -837,6 +833,10 @@ export const runFormatMarkdown = (r: RunResult): string => {
   if (slow.length > 0) {
     out.push("")
     out.push(`Skipped as slow (pass \`--slow\` to run): ${slow.join(", ")}`)
+  }
+  if (r.verdict.status === "ERROR" && runSlowOnly(r.clauses)) {
+    out.push("")
+    out.push(RUN_SLOW_ONLY)
   }
   for (const k of r.clauses) {
     if (k.outcome === RunOutcome.Fail) {
