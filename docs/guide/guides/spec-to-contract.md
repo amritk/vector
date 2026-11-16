@@ -527,6 +527,7 @@ two minutes rather than about three seconds.
 
 A vector is compared with its expected value whole, so a result the RFC
 prints truncated (RFC 4231 test case 5, the first 128 bits of the HMAC)
-still cannot be compared: exclude it with `Untested:`.
+still cannot be compared. Leave that vector out of the table, and put an
+`Untested:` paragraph after the requirement it would have tested, saying why.
 
 [schema]: https://github.com/amritk/vector/blob/main/schemas/rfc-contract.json

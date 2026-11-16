@@ -119,9 +119,10 @@ to <https://www.rfc-editor.org/rfc/rfc4648.txt>,
 legends and authors' addresses intact. `rfcs/rfc8707.xml` is likewise the RFC
 Editor's published RFC XML v3 (RFC 7991) source, byte-identical to
 <https://www.rfc-editor.org/rfc/rfc8707.xml>, with its boilerplate intact.
-`rfcs/rfc7748.txt` and `rfcs/rfc8032.txt` are the RFC Editor's plain-text
-publications too, copied byte for byte from amritk/nish's `rfcs/`, with their
-copyright notices, legends and authors' addresses intact.
+`rfcs/rfc7748.txt` and `rfcs/rfc8032.txt` are likewise complete, unmodified
+copies of the RFC Editor's published plain text of RFC 7748 and RFC 8032, with
+their copyright notices, legends and authors' addresses intact; they were copied
+byte for byte from amritk/nish's `rfcs/`.
 Every contract records the SHA-256 of the RFC it was checked against, so a
 modified copy is caught.
 
@@ -195,12 +196,14 @@ an excerpt covered by the IETF Trust Legal Provisions above.
 vector commits fetched BibXML in two places:
 
 - `.refcache/reference.RFC.2119.xml`, `.refcache/reference.RFC.4648.xml`,
-  `.refcache/reference.RFC.5869.xml`, `.refcache/reference.RFC.8174.xml` and
-  `.refcache/reference.RFC.8439.xml` are the `<reference>`s kramdown-rfc
-  fetched from bib.ietf.org when it built `specs/*.xml`, kept unedited so a
-  rebuild needs no network.
+  `.refcache/reference.RFC.5869.xml`, `.refcache/reference.RFC.7748.xml`,
+  `.refcache/reference.RFC.8174.xml` and `.refcache/reference.RFC.8439.xml`
+  are the `<reference>`s kramdown-rfc fetched from bib.ietf.org when it built
+  `specs/*.xml` and `tests/fixtures/rfc7748/specs/rfc7748-iterated.xml`, kept
+  unedited so a rebuild needs no network.
 - Each built spec XML (`specs/example-hex.xml`,
-  `specs/rfc5869-hkdf-sha256.xml`, `specs/rfc8439-chacha20-poly1305.xml`)
+  `specs/rfc5869-hkdf-sha256.xml`, `specs/rfc8439-chacha20-poly1305.xml`,
+  `tests/fixtures/rfc7748/specs/rfc7748-iterated.xml`)
   embeds those `<reference>`s in its back matter, as kramdown-rfc wrote them.
 
 Each holds the bibliographic metadata listed above and the cited RFC's

@@ -494,4 +494,5 @@ marked `slow` (`Iterate: <id> 1,000,000 times, slow, …`) is skipped, and
 reported as skipped, never passed, unless `spec emit` / `spec run` get
 `--slow`; say so when a run reports a skip. A truncated result (RFC 4231
 test case 5, the first 128 bits of the HMAC) still cannot be compared:
-exclude it with `Untested:`.
+leave that vector out of the table and put an `Untested:` paragraph after the
+requirement it would have tested, saying why.
