@@ -463,7 +463,9 @@ const literalsGroupedEnd = (r: LiteralsReader, j: i32): i32 => {
  * letter, or with digits then a letter (`32-bit fixed-common part`, as RFC
  * 8439 prints it), so `22 x 0b` and `42` stay a run and an int. A later word
  * may be a comma-grouped number (`After 1,000 iterations`, as RFC 7748
- * prints it).
+ * prints it), and one later word may be a parenthesised group of such words
+ * (`MESSAGE (length 1 byte)`, as RFC 8032 prints it), so the comma and paren
+ * inside it do not end the argument.
  */
 const literalsLabelEnd = (r: LiteralsReader, j: i32): i32 => {
   let k = j
@@ -479,21 +481,61 @@ const literalsLabelEnd = (r: LiteralsReader, j: i32): i32 => {
   while (literalsIsLabelChar(literalsByte(r, k))) {
     k++
   }
+  let grouped = false
   for (;;) {
     if (literalsHas(r, k, " = ")) {
       return k
     }
-    if (literalsByte(r, k) !== 0x20 || !literalsIsLabelChar(literalsByte(r, k + 1))) {
+    if (literalsByte(r, k) !== 0x20) {
       return -1
     }
     k++
-    const grouped = literalsGroupedEnd(r, k)
-    if (grouped >= 0) {
-      k = grouped
+    if (literalsByte(r, k) === 0x28 && !grouped) {
+      grouped = true
+      k = literalsGroupEnd(r, k + 1)
+      if (k < 0) {
+        return -1
+      }
+    } else {
+      k = literalsLabelWordEnd(r, k)
+      if (k < 0) {
+        return -1
+      }
     }
-    while (literalsIsLabelChar(literalsByte(r, k))) {
-      k++
+  }
+}
+
+/** The end of one later label word at `j` (a comma-grouped number, or label characters), or -1. */
+const literalsLabelWordEnd = (r: LiteralsReader, j: i32): i32 => {
+  if (!literalsIsLabelChar(literalsByte(r, j))) {
+    return -1
+  }
+  const grouped = literalsGroupedEnd(r, j)
+  let k = grouped >= 0 ? grouped : j
+  while (literalsIsLabelChar(literalsByte(r, k))) {
+    k++
+  }
+  return k
+}
+
+/**
+ * The end of a label's parenthesised group, past its `)`, from `j` just after
+ * its `(`: label words one space apart, at least one, with no paren inside.
+ * -1 when there is none.
+ */
+const literalsGroupEnd = (r: LiteralsReader, j: i32): i32 => {
+  let k = literalsLabelWordEnd(r, j)
+  for (;;) {
+    if (k < 0) {
+      return -1
     }
+    if (literalsByte(r, k) === 0x29) {
+      return k + 1
+    }
+    if (literalsByte(r, k) !== 0x20) {
+      return -1
+    }
+    k = literalsLabelWordEnd(r, k + 1)
   }
 }
 
@@ -639,6 +681,14 @@ const literalsLabelled = (r: LiteralsReader, labelEnd: i32): RawLiteral | null =
   }
   if (r.message !== "") {
     return null
+  }
+  // A value printed as `LABEL (length 0 bytes):` with no lines after it.
+  const none = literalsHas(r, r.i, "(empty)") ? 7 : literalsHas(r, r.i, "[]") ? 2 : 0
+  if (none > 0) {
+    r.i = r.i + none
+    const lit = new RawLiteral(RawKind.Labelled, "")
+    lit.label = label
+    return lit
   }
   const end = literalsValueEnd(r, r.i)
   const text = r.text.substring(r.i, end)

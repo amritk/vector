@@ -14,6 +14,7 @@ import {
   rfcRead,
   rfcSection,
   rfcSectionText,
+  rfcUnvaluedLabels,
 } from "../../../src/spec/source/rfc"
 
 /** A small RFC: a title page, page furniture, numbered sections, an appendix and hex in each shape. */
@@ -96,6 +97,12 @@ const rfcTestLabelled = (label: string): string => {
 const rfcTestBody = (body: string): string => {
   const text = `Request for Comments: 1\n\f\n1.  Intro\n\n   ${body}\n`
   return rfcTestValues(rfcTestSection(rfcParse(text), "1"))
+}
+
+/** The labels printed with no value below them in a one-section RFC whose body is `body`, joined by `|`. */
+const rfcTestUnvalued = (body: string): string => {
+  const text = `Request for Comments: 1\n\f\n1.  Intro\n\n   ${body}\n`
+  return rfcUnvaluedLabels(rfcTestSection(rfcParse(text), "1")).join("|")
 }
 
 /** Reading an RFC's text: sections, page furniture, quotes and printed hex. */
@@ -182,6 +189,36 @@ export const main = (): i32 => {
   t.eqStr("a label of digits alone names it as well", rfcTestBody("32:\n   07 00 00 00"), "32=07000000")
   t.eqStr("inline, a digit-led label is not a labelled value", rfcTestBody("32-bit fixed-common part = 07000000"), "")
   t.eqStr("nor is a label of digits alone", rfcTestBody("32 = 07000000"), "")
+  // RFC 8032 prints an empty message as a label with nothing below it.
+  const ed = "SECRET KEY:\n   9d61\n\n   MESSAGE (length 0 bytes):\n\n   SIGNATURE:\n   e556"
+  t.eqStr("a label with nothing below it is unvalued", rfcTestUnvalued(ed), "MESSAGE (length 0 bytes)")
+  t.eqStr("and holds no value", rfcTestBody(ed), "SECRET KEY=9d61 SIGNATURE=e556")
+  t.eqStr(
+    "a last label with nothing below it",
+    rfcTestUnvalued("K:\n   9d61\n\n   MESSAGE (length 0 bytes):"),
+    "MESSAGE (length 0 bytes)",
+  )
+  t.eqStr(
+    "a group label keeps its one-byte value",
+    rfcTestBody("MESSAGE (length 1 byte):\n   72"),
+    "MESSAGE (length 1 byte)=72",
+  )
+  t.eqStr("a valued label is not unvalued", rfcTestUnvalued("MESSAGE (length 1 byte):\n   72"), "")
+  t.eqStr(
+    "a label before an inline labelled value is unvalued",
+    rfcTestUnvalued("MESSAGE (length 0 bytes):\n   SIGNATURE: e556"),
+    "MESSAGE (length 0 bytes)",
+  )
+  t.eqStr(
+    "and the inline value keeps its own label",
+    rfcTestBody("MESSAGE (length 0 bytes):\n   SIGNATURE: e556"),
+    "SIGNATURE=e556",
+  )
+  t.eqStr(
+    "a label before a prefixed value is unvalued",
+    rfcTestUnvalued("MESSAGE (length 0 bytes):\n   SIGNATURE = 0xe556"),
+    "MESSAGE (length 0 bytes)",
+  )
   t.eqStr("a letter-led inline label is", rfcTestBody("IV = 4041424344454647"), "IV=4041424344454647")
 
   // Reading refuses what is not an RFC, and what hides text.

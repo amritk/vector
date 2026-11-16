@@ -1,0 +1,17 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ labels-ed25519 · RFC 8032 (Labels fixture: Ed25519 TEST 1 and TEST 2, with an empty and a one-byte message) · nish/crypto/ed25519
+ Status: CONTRACT_VALID
+
+ Requirements
+  ○ R-SIGN  §5.1.6 DEFINITION  "The inputs to the signing procedure is the private key, a 32-oc…"
+      ○ V1  ○ V2
+
+ Not tested, by decision
+  §5.1 "The context (if present at all) MUST be empty." — ed25519Sign takes no context, so there is none to be empty.
+  §8.7 "In particular, unless the underlying protocol does not …" — a receiver's buffering is not ed25519Sign's.
+
+ Warnings
+  ! clauses: no property clauses: the contract checks only the RFC's own vectors
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run
