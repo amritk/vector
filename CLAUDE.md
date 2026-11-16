@@ -87,8 +87,13 @@ that `.github/workflows/release.yml` calls, pinned by commit:
 1. Every push to `main` updates one open **release PR**. It bumps
    `package.json`, `package-lock.json`, `VECTOR_VERSION` in `src/index.ts`
    and the version test in `tests/package/index_test.ts` (each line marked
-   `x-release-please-version`), and `CHANGELOG.md`, from the conventional
-   commits since the last release.
+   `x-release-please-version`), the `vector --version` and `--help` output
+   in `README.md` and the installation guide (between
+   `x-release-please-start-version` and `x-release-please-end`), and
+   `CHANGELOG.md`, from the conventional commits since the last release.
+   Nothing else may hold the version: a golden writes it `{{version}}`, and
+   the generated reference leaves out a marked value. A release commit that
+   leaves CI red on `main` means a copy was missed.
 2. Merging the release PR tags `v<version>`, creates the GitHub release, and
    starts `release.yml` on the tag.
 3. That run packs `@amritk/vector` (the Nish source under `src/`, as

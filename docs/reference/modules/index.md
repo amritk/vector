@@ -26,7 +26,7 @@ Generated from [src/index.ts](https://github.com/amritk/vector/blob/main/src/ind
 The version `vector --version` prints; kept equal to package.json's.
 
 ```ts
-const VECTOR_VERSION: string = "0.1.0"
+const VECTOR_VERSION: string
 ```
 
 ### vectorRun
