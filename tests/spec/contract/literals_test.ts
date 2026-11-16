@@ -223,6 +223,38 @@ export const main = (): i32 => {
     litTestParse("After 1,000,000 iterations = 7c39"),
     "labelled:7c39 label=After 1,000,000 iterations",
   )
+  t.eqStr(
+    "a label as RFC 8032 prints one, with a parenthesised group",
+    litTestParse("MESSAGE (length 1 byte) = 72"),
+    "labelled-int:72 label=MESSAGE (length 1 byte) hex=72",
+  )
+  t.eqStr(
+    "the comma and paren in a group do not split a call",
+    litTestCall("f(K = 4c, M (after 1,000 runs) = 72, L = 0b)"),
+    "f(labelled:4c label=K, labelled-int:72 label=M (after 1,000 runs) hex=72, labelled:0b label=L)",
+  )
+  t.eqStr(
+    "a group with no comma in a call",
+    litTestCall("f(SECRET KEY = 4c, MESSAGE (length 1 byte) = 72)"),
+    "f(labelled:4c label=SECRET KEY, labelled-int:72 label=MESSAGE (length 1 byte) hex=72)",
+  )
+  t.eqStr("a group is not the first label word", litTestParse("(length 1 byte) = 72"), "not a literal @1")
+  t.eqStr("a bare comma in a group is no label", litTestCall("f(K = 4c, M (length 1, byte) = 72)"), "not a literal @11")
+  t.eqStr("a second group is no label", litTestParse("M (a) (b) = 72"), "not a literal @1")
+  t.eqStr("an unclosed group is no label", litTestParse("M (length 1 byte = 72"), "not a literal @1")
+  t.eqStr("an empty group is no label", litTestParse("M () = 72"), "not a literal @1")
+  t.eqStr("a nested group is no label", litTestParse("M (a (b)) = 72"), "not a literal @1")
+  t.eqStr("a group with a comma-grouped count", litTestParse("M (after 1,000 runs) = 72"), "labelled-int:72 label=M (after 1,000 runs) hex=72")
+  t.eqStr("a labelled empty value", litTestParse("MESSAGE (length 0 bytes) = (empty)"), "labelled: label=MESSAGE (length 0 bytes)")
+  t.eqStr("a labelled empty value as []", litTestParse("MESSAGE (length 0 bytes) = []"), "labelled: label=MESSAGE (length 0 bytes)")
+  t.eqStr("settled empty bytes", litTestSettle("MESSAGE (length 0 bytes) = (empty)", "bytes"), "{hex: label:MESSAGE (length 0 bytes)}")
+  t.eqStr("72 settled where bytes go", litTestSettle("MESSAGE (length 1 byte) = 72", "bytes"), "{hex:72 label:MESSAGE (length 1 byte)}")
+  t.eqStr(
+    "an empty value in a call",
+    litTestCall("f(K = 9d, MESSAGE (length 0 bytes) = [])"),
+    "f(labelled:9d label=K, labelled: label=MESSAGE (length 0 bytes))",
+  )
+  t.eqStr("text after (empty) is refused", litTestParse("M = (empty) x"), "unexpected text after the value @13")
   t.eqStr("a badly grouped number is no label word", litTestParse("After 1,00 iterations = 7c39"), "not a literal @1")
   t.eqStr("a bare number is no label", litTestParse("1,000 = 7c39"), "unexpected text after the value @2")
   t.eqStr("an int where an i32 goes", litTestSettle("L = 42", "i32"), "{int:42 label:L}")

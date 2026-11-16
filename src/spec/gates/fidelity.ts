@@ -273,10 +273,9 @@ const gateF64Has = (lit: Literal, printed: string[]): i32[] => {
 
 /** Whether a label states a length of zero: `0` before `byte`, `bytes`, `octet` or `octets` (`MESSAGE (length 0 bytes)`). */
 const gateZeroLength = (label: string): boolean => {
-  const ts = gateFidTokens(asciiLower(label))
+  const ts = gateFidTokens(label)
   for (let i = 0; i + 1 < ts.length; i++) {
-    const w = ts[i + 1]
-    if (ts[i] === "0" && (w === "byte" || w === "bytes" || w === "octet" || w === "octets")) {
+    if (ts[i] === "0" && gateFidLengthWord(ts[i + 1])) {
       return true
     }
   }
@@ -696,6 +695,31 @@ const gateGrouped = (d: string): string => {
   return out
 }
 
+/** Whether `w` is a word that a length in bytes ends with: "byte", "bytes", "octet" or "octets". */
+const gateFidLengthWord = (w: string): boolean => {
+  const l = asciiLower(w)
+  return l === "byte" || l === "bytes" || l === "octet" || l === "octets"
+}
+
+/**
+ * A label with every length in bytes cut out, number and word
+ * (`MESSAGE (length 2 bytes)` is `MESSAGE (length )`): a value's length is
+ * checked by the value itself, so it is no variant's number.
+ */
+const gateLabelUnsized = (label: string): string => {
+  const spans = gateFidSpans(label)
+  let out = ""
+  let from = 0
+  for (let i = 0; i + 3 < spans.length; i = i + 2) {
+    const n = gateFidNumber(label.substring(spans[i], spans[i + 1]))
+    if (n.length > 0 && spans[i] >= from && gateFidLengthWord(label.substring(spans[i + 2], spans[i + 3]))) {
+      out = `${out}${label.substring(from, spans[i])}`
+      from = spans[i + 3]
+    }
+  }
+  return `${out}${label.substring(from, label.length)}`
+}
+
 /** Whether `w` is a word that counts rounds: "iteration", "iterations" or "times". */
 const gateFidRoundsWord = (w: string): boolean => {
   const l = asciiLower(w)
@@ -778,7 +802,8 @@ const gateIterateCount = (
   const want = `${it.count}`
   let printed = false
   for (let i = 0; i < sec.lines.length && !printed; i++) {
-    printed = !gateFidHeading(sec.lines[i]) && gateWholeNumbers(sec.lines[i]).indexOf(want) >= 0
+    // The cheap test first: a heading is read only when its line holds the count.
+    printed = gateWholeNumbers(sec.lines[i]).indexOf(want) >= 0 && !gateFidHeading(sec.lines[i])
   }
   if (!printed) {
     gateIssue(ctx, out, GATE_FIDELITY, k.id, `the count ${gateGrouped(want)} is not printed in ${where}`)
@@ -803,7 +828,8 @@ const gateIterateCount = (
  * A value printed under one of several labels that differ only in a number
  * ("HMAC-SHA-256", "HMAC-SHA-512") must be the variant the called function
  * names: another variant's number in the name is refused, none of them is a
- * warning.
+ * warning. A length in bytes (`MESSAGE (length 2 bytes)`) is no variant's
+ * number (`gateLabelUnsized`).
  */
 const gateOwnVariant = (l: GateLits, k: Clause, sec: RfcSection): void => {
   const printed: string[] = []
@@ -826,13 +852,13 @@ const gateOwnVariant = (l: GateLits, k: Clause, sec: RfcSection): void => {
     // its count, and the round number of every label beside it, are cut out,
     // and the rest of the label is still its own variant's.
     const rounds = b.at === "expect" && gateLabelIsCount(k, shown)
-    const label = rounds ? gateLabelUncounted(shown) : shown
+    const label = gateLabelUnsized(rounds ? gateLabelUncounted(shown) : shown)
     const mine = gateDigitRuns(label)
     const shape = gateSkeleton(label)
     const siblings: string[] = []
     const shownAll = [shown]
     for (const p of printed) {
-      const q = rounds ? gateLabelUncounted(p) : p
+      const q = gateLabelUnsized(rounds ? gateLabelUncounted(p) : p)
       if (gateSkeleton(q) === shape && !gateSameLabel(p, shown)) {
         siblings.push(q)
         shownAll.push(p)
