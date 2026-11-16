@@ -27,6 +27,7 @@ Generated from [src/spec/run/run.ts](https://github.com/amritk/vector/blob/main/
 - [`runDisposeScratch`](#rundisposescratch)
 - [`runMakeScratch`](#runmakescratch)
 - [`runTest`](#runtest)
+- [`runNishArgv`](#runnishargv)
 - [`runTestFile`](#runtestfile)
 - [`runTestCommand`](#runtestcommand)
 - [`runEscape`](#runescape)
@@ -140,6 +141,14 @@ Its outcome; `NotRun` when no line reported it.
 
 ```ts
 outcome: RunOutcome
+```
+
+#### RunClause.slow
+
+Whether it is a slow iterated vector the test skipped because `--slow` was not passed.
+
+```ts
+slow: boolean
 ```
 
 ### RunVerdict
@@ -288,7 +297,8 @@ verdict: RunVerdict
 Reads a test's output: each clause's outcome from the line that reports
 it (`PASS  [id] …`, `FAIL  [id] …` with its reason indented on the next
 line, `SKIP  [id] …`). A line naming no clause of the contract is ignored;
-a clause no line names is not-run.
+a clause no line names is not-run. A skip of a vector the contract marks
+slow, with the slow reason, is marked slow: left out on purpose.
 
 ```ts
 function runParse(c: Contract, stdout: string): RunClause[]
@@ -363,9 +373,11 @@ each reason the transcript cannot be trusted; empty when it can
 ### runJudge
 
 Judges a run. Each requirement takes the worst outcome of the clauses that
-cover it (not-run when none does). The run is an ERROR when its transcript
-cannot be trusted; else VIOLATED when a clause failed; else an ERROR when a
-clause did not pass or the test exited nonzero; else SATISFIED.
+cover it (not-run when none does), leaving out a slow vector skipped for
+want of `--slow`: one covered only by those is a skip. The run is an ERROR
+when its transcript cannot be trusted; else VIOLATED when a clause failed;
+else an ERROR when a clause other than a slow skip did not pass, every
+clause was a slow skip, or the test exited nonzero; else SATISFIED, over what ran.
 
 ```ts
 function runJudge(
@@ -629,10 +641,45 @@ the result, or `Err` when the compiler could not be started
 
 </scalar-field>
 
+### runNishArgv
+
+The command that builds and runs a Nish test: `nish run <file>`, or, when
+slow vectors run, `nish run --profile speed <file>`. An optimized build
+costs about a second more to compile, and runs a long iterated vector some
+ten times faster, so only a run with `--slow` pays for it.
+
+```ts
+function runNishArgv(nishBin: string, file: string, slow: boolean): string[]
+```
+
+<scalar-field name="nishBin" type="string" required>
+
+the compiler
+
+</scalar-field>
+
+<scalar-field name="file" type="string" required>
+
+the test
+
+</scalar-field>
+
+<scalar-field name="slow" type="boolean" required>
+
+whether the test runs its slow vectors
+
+</scalar-field>
+
+<scalar-field name="returns" type="string[]">
+
+the command, without the nonce
+
+</scalar-field>
+
 ### runTestFile
 
 Compiles and runs an emitted test already written to `file`, where its
-relative imports resolve, with `nish run <file> <nonce>`, and judges what
+relative imports resolve, with `runNishArgv` and a nonce, and judges what
 it printed. The file is left where it is.
 
 ```ts
@@ -641,6 +688,7 @@ function runTestFile(
   file: string,
   nishBin: string,
   timeoutMs: i32,
+  slow: boolean,
 ): Result<RunResult, string>
 ```
 
@@ -665,6 +713,12 @@ the compiler
 <scalar-field name="timeoutMs" type="i32" required>
 
 the most milliseconds the build and run may take
+
+</scalar-field>
+
+<scalar-field name="slow" type="boolean" required>
+
+whether the test runs its slow vectors, built optimized
 
 </scalar-field>
 
@@ -736,8 +790,9 @@ the line as a report shows it
 
 ### runFormatText
 
-A run's result as text: the verdict, each requirement's outcome, each
-failed clause with its reason, and why the transcript cannot be trusted.
+A run's result as text: the verdict, each requirement's outcome, each slow
+vector skipped, each failed clause with its reason, and why the transcript
+cannot be trusted.
 An ERROR with no clause run shows the end of the compiler's output.
 
 ```ts
@@ -759,7 +814,8 @@ the report, one line per entry
 ### runFormatMarkdown
 
 A run's result as a markdown section for a PR comment: the verdict, then a
-table of the requirements and their outcomes, then each failure. What the
+table of the requirements and their outcomes, then each slow vector
+skipped, then each failure. What the
 module printed goes only inside code spans, escaped by runEscape (which
 leaves no backtick), so it cannot add links, HTML or table cells.
 

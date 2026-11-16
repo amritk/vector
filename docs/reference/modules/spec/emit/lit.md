@@ -9,6 +9,7 @@ Generated from [src/spec/emit/lit.ts](https://github.com/amritk/vector/blob/main
 
 ## Exports
 
+- [`EMIT_SLOW_SKIP`](#emit_slow_skip)
 - [`emitToInt`](#emittoint)
 - [`emitIntLit`](#emitintlit)
 - [`emitF64IsFinite`](#emitf64isfinite)
@@ -18,6 +19,18 @@ Generated from [src/spec/emit/lit.ts](https://github.com/amritk/vector/blob/main
 - [`emitLiteralHex`](#emitliteralhex)
 
 ## Declarations
+
+<a id="emit_slow_skip"></a>
+
+### EMIT_SLOW_SKIP
+
+Why an emitted test skips an iterated vector marked slow, in every
+language: `spec run` reads a skip with this reason as one left out on
+purpose, not as a gap.
+
+```ts
+const EMIT_SLOW_SKIP: string = "slow: pass --slow to run"
+```
 
 ### emitToInt
 
