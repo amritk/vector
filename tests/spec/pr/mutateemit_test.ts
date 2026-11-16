@@ -13,18 +13,25 @@ import { MutateRun, mutateCheck } from "../../../src/spec/pr/mutaterun"
 import { prTestCommit, prTestGit, prTestRemove, prTestRepo, prTestWrite } from "./repo"
 
 /** The plain text of a one-section RFC 9999. */
-const MUTATEEMIT_TEST_RFC: string = "Request for Comments: 9999\n\f\n1.  Introduction\n\n   It MUST work.\n"
+const MUTATEEMIT_TEST_RFC: string =
+  "Request for Comments: 9999\n\f\n1.  Introduction\n\n   It MUST work, iterated 3 times.\n"
 
-/** A contract on nish/m testing that `k()` is 7, whose source pins `sha`. */
+/** A contract on nish/m testing that `k()` is 7, and a slow iterated `id`, whose source pins `sha`. */
 const mutateemitTestContract = (sha: string): string => `{
   "contract": "c1",
   "source": {"title": "T", "rfc": 9999, "sha256": "${sha}"},
   "target": {"module": "nish/m"},
-  "requirements": [{"id": "R1", "section": "1", "level": "MUST", "quote": "It MUST work."}],
-  "functions": [{"name": "k", "params": [], "returns": "i32"}],
+  "requirements": [{"id": "R1", "section": "1", "level": "MUST", "quote": "It MUST work, iterated 3 times."}],
+  "functions": [
+    {"name": "k", "params": [], "returns": "i32"},
+    {"name": "id", "params": [{"name": "x", "type": "i32"}], "returns": "i32"}
+  ],
   "clauses": [
     {"kind": "vector", "id": "V1", "title": "t", "covers": ["R1"],
-     "source": {"cite": {"section": "1"}}, "call": "k", "args": [], "expect": {"int": 7}}
+     "source": {"cite": {"section": "1"}}, "call": "k", "args": [], "expect": {"int": 7}},
+    {"kind": "vector", "id": "V2", "title": "t", "covers": ["R1"],
+     "source": {"cite": {"section": "1"}}, "call": "id", "args": [{"int": 7}], "expect": {"int": 7},
+     "iterate": {"count": 3, "names": ["x"], "next": [{"call": "id", "args": [{"var": "x"}]}], "slow": true}}
   ]
 }
 `
@@ -160,6 +167,11 @@ export const main = (): i32 => {
       "killed std/m.ts:1:29 int: export const k = (): i32 => 8 | killed std/m.ts:1:29 int: export const k = (): i32 => 6 || ",
     )
     t.ok("and the gate passes", r.isOk() && r.value.problems.length === 0)
+    t.eqStr(
+      "the slow vector the emitted test skips is noted",
+      r.isOk() ? r.value.notes.join(" | ") : r.error,
+      "slow vector V2 was not run against the mutants: the emitted test skips it, as spec emit does without --slow",
+    )
   }
   prTestRemove(d)
   const hex = mutateemitTestHex(t)

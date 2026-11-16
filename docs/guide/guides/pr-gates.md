@@ -367,7 +367,10 @@ in a spec-side PR before the implementation.
 - `--test <file>` runs that test program against each mutant. Without it,
   mutate emits the contract's test as `spec emit` does, checking the contract
   with the current directory as the repository's top, so run it from there,
-  as CI does.
+  as CI does. That test skips a slow vector, as `spec emit` does without
+  `--slow`, and mutate notes each one it skipped
+  (`slow vector CHAIN-100000 was not run against the mutants: …`): no mutant
+  meets it, so a bug only it would catch survives.
 
 ### When it refuses, and when it exits 2
 
