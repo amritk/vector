@@ -1913,10 +1913,30 @@ const profileReadIterate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, 
   if (lhs.startsWith("slow,")) {
     it.slow = true
     lhs = profileTrim(lhs.substring("slow,".length, lhs.length))
+    if (lhs.startsWith("slow,")) {
+      profileRefuse(c, p, `${id}'s Iterate: paragraph says "slow," twice; once is enough: ${PROFILE_ITERATE_FORM}`)
+      return
+    }
   }
   // Only slow may stand between "times," and the names.
   const open = lhs.indexOf("(")
   const comma = lhs.indexOf(",")
+  if (open < 0 && comma >= 0 && split(lhs, ",").every((n: string): boolean => charsIsIdent(profileTrim(n)))) {
+    profileRefuse(
+      c,
+      p,
+      `${id}'s names "${lhs}" are more than one, so they stand in parentheses, (${lhs}): ${PROFILE_ITERATE_FORM}`,
+    )
+    return
+  }
+  if (open === 0 && !lhs.endsWith(")")) {
+    profileRefuse(
+      c,
+      p,
+      `${id}'s Iterate: paragraph has "${lhs}" before "<-"; the names end at their ")", and "slow," stands before them: ${PROFILE_ITERATE_FORM}`,
+    )
+    return
+  }
   const extra = open >= 0 ? lhs.substring(0, open) : comma >= 0 ? lhs.substring(0, comma + 1) : ""
   if (profileTrim(extra).length > 0) {
     profileRefuse(

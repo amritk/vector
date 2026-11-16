@@ -16,6 +16,11 @@ const PROFILE_ITER_P2: string = "<t>Iterate: 5.2-ITER-1M 1000000 times, slow, (k
 const PROFILE_ITER_FORM: string = "Iterate: V1 1,000 times, (k, u) <- (f(k, u), k)"
 const PROFILE_ITER_STRAY: string =
   "this Iterate: paragraph follows no vector table; it must directly follow the vector table or a Tolerance: or Iterate: paragraph, like Iterate: V1 1,000 times, (k, u) <- (f(k, u), k)"
+const PROFILE_ITER_F64: string = "tests/fixtures/profile/profile-tolerance.xml"
+const PROFILE_ITER_TOL_V1: string =
+  '<t>Tolerance: V1 ulps 1, <xref target="accuracy"/>: "within one unit in the last place of the exact square root"</t>'
+const PROFILE_ITER_TOL_V2: string =
+  '<t>Tolerance: V2 abs 1e-9, <xref target="accuracy"/>: "within 1e-9 of half its argument"</t>'
 const PROFILE_ITER_TOL: string =
   '<t>Tolerance: 5.2-ITER-1000 ulps 1, <xref section="5.2" sectionFormat="of" target="ECC"/>: "For each iteration"</t>'
 
@@ -100,6 +105,19 @@ const profileIterTestReads = (t: Suite, xml: string): void => {
     mixed,
     "96 5.2-ITER-1000's x25519 returns bytes, and only an f64 result is compared within a tolerance",
   )
+  // The paragraph's text is collapsed first: a hard wrap, a tab, a double space.
+  const spaced: string[] = ["5.2-ITER-1000 1,000 times,\n      (k, u)", "5.2-ITER-1000\t1,000  times, (k, u)"]
+  const spacedNames: string[] = ["a hard wrap after times,", "a tab and a double space"]
+  for (let i = 0; i < spaced.length; i++) {
+    const w = profileIterTestContract(
+      t,
+      spacedNames[i],
+      replaceAll(xml, PROFILE_ITER_P1, `<t>Iterate: ${spaced[i]} &lt;- (x25519(k, u), k)</t>`),
+    )
+    if (w !== null) {
+      t.eqStr(spacedNames[i], profileIterTestOf(w, "5.2-ITER-1000"), "1000 (k, u) <- (x25519(k, u), k)")
+    }
+  }
   const largest = profileIterTestContract(
     t,
     "1,000,000,000",
@@ -225,12 +243,38 @@ const profileIterTestRefusals = (t: Suite, xml: string): void => {
     `95 5.2-ITER-1000's next calls x448(k, u); a call there is the row's x25519(k, u): ${PROFILE_ITER_FORM}`,
   )
   // What the profile reads but the shape gate refuses, at the paragraph's line.
-  const shaped = profileIterTestP1(xml, "5.2-ITER-1000 1,000 times, (k, u) &lt;- (u, k)")
-  t.ok("no call: refused", shaped !== "ok")
-  t.ok("no call: at the paragraph's line", shaped.startsWith("95 "))
-  const repeated = profileIterTestP1(xml, "5.2-ITER-1000 1,000 times, (k, k) &lt;- (x25519(k, k), k)")
-  t.ok("a repeated name: refused", repeated !== "ok")
-  t.ok("a repeated name: at the paragraph's line", repeated.startsWith("95 "))
+  t.eqStr(
+    "no call",
+    profileIterTestP1(xml, "5.2-ITER-1000 1,000 times, (k, u) &lt;- (u, k)"),
+    "95 the contract read here is not valid: clauses[0].iterate.next: no element is x25519 on the names, so nothing feeds the result back",
+  )
+  t.eqStr(
+    "a repeated name",
+    profileIterTestP1(xml, "5.2-ITER-1000 1,000 times, (k, k) &lt;- (x25519(k, k), k)"),
+    '95 the contract read here is not valid: clauses[0].iterate.names[1]: "k" repeats names[0]',
+  )
+  // A bare "Iterate:" is no Iterate: paragraph but prose, so the one after it is stray.
+  t.eqStr("a bare Iterate:", profileIterTestP1(xml, ""), `96 ${PROFILE_ITER_STRAY}`)
+  t.eqStr(
+    "a bare tuple",
+    profileIterTestP1(xml, "5.2-ITER-1000 1,000 times, k, u &lt;- (x25519(k, u), k)"),
+    `95 5.2-ITER-1000's names "k, u" are more than one, so they stand in parentheses, (k, u): ${PROFILE_ITER_FORM}`,
+  )
+  t.eqStr(
+    "slow twice",
+    profileIterTestP1(xml, `5.2-ITER-1000 1,000 times, slow, slow, ${call}`),
+    `95 5.2-ITER-1000's Iterate: paragraph says "slow," twice; once is enough: ${PROFILE_ITER_FORM}`,
+  )
+  t.eqStr(
+    "SLOW,",
+    profileIterTestP1(xml, `5.2-ITER-1000 1,000 times, SLOW, ${call}`),
+    `95 5.2-ITER-1000's Iterate: paragraph has "SLOW," after "times,", where only "slow," may stand: ${PROFILE_ITER_FORM}`,
+  )
+  t.eqStr(
+    "slow after the tuple",
+    profileIterTestP1(xml, "5.2-ITER-1000 1,000 times, (k, u), slow &lt;- (x25519(k, u), k)"),
+    `95 5.2-ITER-1000's Iterate: paragraph has "(k, u), slow" before "<-"; the names end at their ")", and "slow," stands before them: ${PROFILE_ITER_FORM}`,
+  )
   t.eqStr(
     "a stray one in another section",
     profileIterTestRead(
@@ -260,6 +304,60 @@ const profileIterTestRefusals = (t: Suite, xml: string): void => {
   t.ok("a refused row's iterate: not refused itself", refused.indexOf("Iterate") < 0)
 }
 
+/** The profile's refusals of the f64 tolerance fixture `xml`; "ok" when it reads. */
+const profileIterTestF64 = (xml: string): string => {
+  const doc = xmlDocParse(xml)
+  if (doc.isErr()) {
+    return `xml ${doc.error.line} ${doc.error.message}`
+  }
+  const r = new ProfileRfcs()
+  r.docs.set(4648, rfcParse(readFileSyncOrNull("rfcs/rfc4648.txt") ?? ""))
+  const read = profileRead(doc.value, "specs/profile-tolerance.xml", null, r)
+  if (read.isErr()) {
+    return read.error.map((f: ProfileRefusal): string => `${f.line} ${f.message}`).join("\n")
+  }
+  return "ok"
+}
+
+/**
+ * Iterate: beside Tolerance: on the f64 fixture: each on its own vector reads
+ * in either order, and what only the shape gate refuses lands on the Iterate: line.
+ */
+const profileIterTestBesideTolerance = (t: Suite): void => {
+  const xml = readFileSyncOrNull(PROFILE_ITER_F64) ?? ""
+  t.ok("the f64 fixture holds V2's tolerance", xml.indexOf(PROFILE_ITER_TOL_V2) > 0)
+  const iterV2 = "<t>Iterate: V2 3 times, x &lt;- fmathHalf(x)</t>"
+  t.eqStr("Tolerance: then Iterate:", profileIterTestF64(replaceAll(xml, PROFILE_ITER_TOL_V2, iterV2)), "ok")
+  t.eqStr(
+    "Iterate: then Tolerance:",
+    profileIterTestF64(
+      replaceAll(replaceAll(xml, PROFILE_ITER_TOL_V2, ""), PROFILE_ITER_TOL_V1, `${iterV2}${PROFILE_ITER_TOL_V1}`),
+    ),
+    "ok",
+  )
+  t.eqStr(
+    "a tolerance on an iterated row",
+    profileIterTestF64(
+      replaceAll(xml, PROFILE_ITER_TOL_V2, `${PROFILE_ITER_TOL_V2}\n<t>Iterate: V1 3 times, x &lt;- fmathSqrt(x)</t>`),
+    ),
+    "95 the contract read here is not valid: clauses[0].iterate: an iterated vector compares its last result exactly; drop the tolerance",
+  )
+  const bool = replaceAll(
+    replaceAll(
+      replaceAll(xml, "fmathHalf(x: f64): f64", "fmathHalf(x: f64): boolean"),
+      "<tt>0.5</tt>",
+      "<tt>true</tt>",
+    ),
+    PROFILE_ITER_TOL_V2,
+    "<t>Iterate: V2 3 times, x &lt;- fmathHalf(x)</t>",
+  )
+  t.eqStr(
+    "a bool expected on an iterated row",
+    profileIterTestF64(bool),
+    "94 the contract read here is not valid: clauses[1].iterate: an iterated vector's expect is a value its call returns, not null or a bool",
+  )
+}
+
 /** The 1-based line of `xml` that holds `marker`, or 0 when none does. */
 const profileIterTestLine = (xml: string, marker: string): i32 => {
   const at = xml.indexOf(marker)
@@ -281,5 +379,6 @@ export const main = (): i32 => {
   t.eqStr("the fixture reads", profileIterTestRead(xml), "ok")
   profileIterTestReads(t, xml)
   profileIterTestRefusals(t, xml)
+  profileIterTestBesideTolerance(t)
   return t.done()
 }
