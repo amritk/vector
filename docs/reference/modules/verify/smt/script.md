@@ -4,9 +4,18 @@
 
 `verify/smt/script` — translates a typechecked vector-lang program into one
 SMT-LIB2 script for z3: per function, a reachability query, a proof and a
-triviality query per ensures clause, and a query per division and per
-callee precondition the body evaluates. Reals stay exact rationals; calls
-are inlined, which layering makes finite.
+triviality query per ensures clause, and a query per division, per callee
+precondition and per Int operation the emitted code evaluates. Reals stay
+exact rationals and Ints unbounded; calls are inlined, which layering makes
+finite.
+
+The Int queries close the gap between the proof and the code: an Int is a
+float64 when the emitted TypeScript runs, exact only within ±(2^53−1). Each
+`+`, `-` and `*` over Int is proven to stay inside that range on its path.
+Parameters are guarded to safe integers and the reader refuses a literal a
+float64 cannot hold, and float64 `+`, `-` and `*` round correctly, so when
+every exact result is a safe integer each operation is exact, and the code
+computes what z3 proved.
 
 Generated from [src/verify/smt/script.ts](https://github.com/amritk/vector/blob/main/src/verify/smt/script.ts).
 
@@ -17,6 +26,8 @@ Generated from [src/verify/smt/script.ts](https://github.com/amritk/vector/blob/
 - [`QUERY_TRIVIAL`](#query_trivial)
 - [`QUERY_DIV`](#query_div)
 - [`QUERY_PRE`](#query_pre)
+- [`QUERY_RANGE`](#query_range)
+- [`SMT_SAFE_INT_MAX`](#smt_safe_int_max)
 - [`SmtQuery`](#smtquery)
 - [`SmtScript`](#smtscript)
 - [`SmtHazard`](#smthazard)
@@ -76,6 +87,26 @@ A callee's requires can fail at a call site: anything but `unsat` is a hazard.
 
 ```ts
 const QUERY_PRE: i32 = 5
+```
+
+<a id="query_range"></a>
+
+### QUERY_RANGE
+
+An Int value can leave ±(2^53−1) on its path: anything but `unsat` is a hazard.
+
+```ts
+const QUERY_RANGE: i32 = 6
+```
+
+<a id="smt_safe_int_max"></a>
+
+### SMT_SAFE_INT_MAX
+
+The largest integer float64 holds exactly with every smaller one, 2^53−1.
+
+```ts
+const SMT_SAFE_INT_MAX: string = "9007199254740991"
 ```
 
 ### SmtQuery
@@ -139,7 +170,7 @@ the callee, or ""
 
 #### SmtQuery.axiomId
 
-The axiom of an ensures or trivial query; `(reachable)`, `(division)` or `(calls F)` otherwise.
+The axiom of an ensures or trivial query; `(reachable)`, `(division)`, `(calls F)` or `(range)` otherwise.
 
 ```ts
 axiomId: string
@@ -231,7 +262,7 @@ text: string
 
 ### SmtHazard
 
-A division or call-site precondition met while emitting a body.
+A division, call-site precondition or Int operation met while emitting a body.
 
 ```ts
 class SmtHazard
@@ -300,7 +331,7 @@ pretty: string
 
 #### SmtHazard.term
 
-The denominator term, or the callee's requires under its arguments.
+The denominator term, the callee's requires under its arguments, or the Int term.
 
 ```ts
 term: string
@@ -382,7 +413,9 @@ its term, or "" when unbound
 
 Turns expressions into SMT terms, the one translation the verifier and the
 differ share, so the two never disagree on semantics. While `record` is on
-it collects every division and call-site precondition it emits.
+it collects every division, call-site precondition and Int operation it
+emits, each under the path the emitted code reaches it on: the branch of an
+ite, and the left side of a short-circuit `and`, `or` or `implies`.
 
 ```ts
 class SmtEmitter
@@ -438,6 +471,14 @@ The program whose functions calls inline.
 
 ```ts
 program: Program
+```
+
+#### SmtEmitter.ranges
+
+The Int `+`, `-` and `*` emitted while recording.
+
+```ts
+ranges: SmtHazard[]
 ```
 
 #### SmtEmitter.record
@@ -548,8 +589,12 @@ the constant's name
 
 Builds the verification script of a typechecked program. Each function sits
 in its own `(push 1)` frame, so a contradictory requires cannot leak into
-the next function's verdicts. Divisions and callee preconditions inside an
-ensures clause are proof-only and are not queried.
+the next function's verdicts. An Int parameter is assumed a safe integer,
+as the emitted domain guard enforces. The emitted code checks its requires in
+order, so a hazard inside one is queried under the requires before it
+alone; a hazard in the body is queried under all of them. Divisions,
+callee preconditions and Int operations inside an ensures clause are
+proof-only and are not queried.
 
 ```ts
 function buildVerificationScript(program: Program): SmtScript

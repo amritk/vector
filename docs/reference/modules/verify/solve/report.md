@@ -6,7 +6,7 @@
 reads the answers into a report. It fails closed: a function is vacuous
 unless its requires are shown satisfiable, a clause is trivial unless it is
 shown to depend on the body, a clause is proven only on `unsat`, and a
-division or call site is a hazard unless it is shown safe.
+division, call site or Int operation is a hazard unless it is shown safe.
 
 Generated from [src/verify/solve/report.ts](https://github.com/amritk/vector/blob/main/src/verify/solve/report.ts).
 
@@ -193,7 +193,8 @@ trivial: boolean
 
 ### Hazard
 
-A division that may be by zero, or a call that may break its callee's requires.
+A division that may be by zero, a call that may break its callee's
+requires, or an Int value that may leave ±(2^53−1).
 
 ```ts
 class Hazard
@@ -221,7 +222,7 @@ the expression in math style
 
 #### Hazard.callee
 
-The callee; "" for a division.
+The callee; "" for a division or an Int value.
 
 ```ts
 callee: string
@@ -245,7 +246,7 @@ hasCex: boolean
 
 #### Hazard.pretty
 
-The division or the callee's requires, in math style.
+The division, the callee's requires or the Int expression, in math style.
 
 ```ts
 pretty: string
@@ -319,6 +320,14 @@ The call-site precondition hazards.
 
 ```ts
 pres: Hazard[]
+```
+
+#### FnReport.ranges
+
+The Int values that may leave ±(2^53−1).
+
+```ts
+ranges: Hazard[]
 ```
 
 #### FnReport.requiresPretty
@@ -505,6 +514,14 @@ How many call-site precondition hazards there are.
 
 ```ts
 preCount: i32
+```
+
+#### VerifyReport.rangeCount
+
+How many Int range hazards there are.
+
+```ts
+rangeCount: i32
 ```
 
 #### VerifyReport.satCount

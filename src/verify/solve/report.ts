@@ -3,7 +3,7 @@
  * reads the answers into a report. It fails closed: a function is vacuous
  * unless its requires are shown satisfiable, a clause is trivial unless it is
  * shown to depend on the body, a clause is proven only on `unsat`, and a
- * division or call site is a hazard unless it is shown safe.
+ * division, call site or Int operation is a hazard unless it is shown safe.
  */
 
 import { runProcess } from "../../core/process"
@@ -16,6 +16,7 @@ import {
   QUERY_DIV,
   QUERY_ENSURES,
   QUERY_PRE,
+  QUERY_RANGE,
   QUERY_REACHABLE,
   QUERY_TRIVIAL,
   SmtQuery,
@@ -83,11 +84,14 @@ export class ClauseVerdict {
   }
 }
 
-/** A division that may be by zero, or a call that may break its callee's requires. */
+/**
+ * A division that may be by zero, a call that may break its callee's
+ * requires, or an Int value that may leave ±(2^53−1).
+ */
 export class Hazard {
-  /** The callee; "" for a division. */
+  /** The callee; "" for a division or an Int value. */
   callee: string
-  /** The division or the callee's requires, in math style. */
+  /** The division, the callee's requires or the Int expression, in math style. */
   pretty: string
   /** Whether `cex` holds an example input. */
   hasCex: boolean
@@ -126,6 +130,8 @@ export class FnReport {
   divs: Hazard[]
   /** The call-site precondition hazards. */
   pres: Hazard[]
+  /** The Int values that may leave ±(2^53−1). */
+  ranges: Hazard[]
   /** Whether the requires were not shown satisfiable. */
   vacuous: boolean
   /** An input inside the requires, from the reachability model; empty when there is none. */
@@ -148,6 +154,7 @@ export class FnReport {
     this.ensures = []
     this.divs = []
     this.pres = []
+    this.ranges = []
     this.vacuous = false
     this.witness = new Counterexample("?")
   }
@@ -202,6 +209,8 @@ export class VerifyReport {
   divCount: i32
   /** How many call-site precondition hazards there are. */
   preCount: i32
+  /** How many Int range hazards there are. */
+  rangeCount: i32
   /** How many proven clauses are trivial. */
   trivialCount: i32
   /** How many functions are vacuous. */
@@ -225,6 +234,7 @@ export class VerifyReport {
     this.unknownCount = 0
     this.divCount = 0
     this.preCount = 0
+    this.rangeCount = 0
     this.trivialCount = 0
     this.vacuousCount = 0
     this.conformance = []
@@ -242,6 +252,7 @@ export class VerifyReport {
       this.unknownCount === 0 &&
       this.divCount === 0 &&
       this.preCount === 0 &&
+      this.rangeCount === 0 &&
       this.trivialCount === 0 &&
       this.vacuousCount === 0 &&
       this.conformance.length === 0
@@ -345,7 +356,7 @@ export const assembleReport = (
         report.unknownCount = report.unknownCount + 1
         fr.ensures.push(new ClauseVerdict(q.axiomId, q.pretty, CLAUSE_UNKNOWN))
       }
-    } else if ((q.kind === QUERY_DIV || q.kind === QUERY_PRE) && a.result !== "unsat") {
+    } else if ((q.kind === QUERY_DIV || q.kind === QUERY_PRE || q.kind === QUERY_RANGE) && a.result !== "unsat") {
       const h = new Hazard(q.callee, q.pretty)
       if (a.result === "sat") {
         h.hasCex = true
@@ -354,6 +365,9 @@ export const assembleReport = (
       if (q.kind === QUERY_DIV) {
         report.divCount = report.divCount + 1
         fr.divs.push(h)
+      } else if (q.kind === QUERY_RANGE) {
+        report.rangeCount = report.rangeCount + 1
+        fr.ranges.push(h)
       } else {
         report.preCount = report.preCount + 1
         fr.pres.push(h)

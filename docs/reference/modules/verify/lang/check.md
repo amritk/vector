@@ -8,7 +8,8 @@ monomorphic types, `result` only in ensures, layering (calls go strictly
 downward, so the call graph is a DAG and inlining terminates), agreement
 with the spec plan's units, and axiom traceability. Every error is
 collected. Checking also records each numeric literal's type in
-`LangExpr.numTy`, which the SMT translation reads.
+`LangExpr.numTy` and every expression's type in `LangExpr.ty`, which the
+SMT translation reads.
 
 Generated from [src/verify/lang/check.ts](https://github.com/amritk/vector/blob/main/src/verify/lang/check.ts).
 

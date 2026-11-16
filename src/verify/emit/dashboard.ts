@@ -38,6 +38,7 @@ const dashViolations = (report: VerifyReport): i32 =>
   report.satCount +
   report.divCount +
   report.preCount +
+  report.rangeCount +
   report.trivialCount +
   report.vacuousCount +
   toI32(report.conformance.length)
@@ -162,6 +163,10 @@ const dashFunction = (lines: string[], fn: FnReport): void => {
   for (const h of fn.pres) {
     const eg = h.hasCex && h.cex.names.length > 0 ? ` (e.g. ${dashInputs(h.cex)})` : ""
     dashPush(lines, `✘ call to ${h.callee} may violate its precondition ${h.pretty}${eg}`, "  ")
+  }
+  for (const h of fn.ranges) {
+    const eg = h.hasCex && h.cex.names.length > 0 ? ` (e.g. ${dashInputs(h.cex)})` : ""
+    dashPush(lines, `✘ Int overflow: ${h.pretty} may leave ±(2^53−1), where float64 rounds${eg}`, "  ")
   }
   if (fn.requiresPretty.length > 0) {
     dashPush(

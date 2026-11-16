@@ -31,11 +31,11 @@ export const OUTCOME_ERROR: string = "ERROR"
 export class FeedbackItem {
   /** The function it concerns. */
   fn: string
-  /** The axiom, or `(reachable)`, `(division)`, `(calls f)` or `(requires)`. */
+  /** The axiom, or `(reachable)`, `(division)`, `(calls f)`, `(range)` or `(requires)`. */
   axiomId: string
   /** The property, in math style. */
   property: string
-  /** `counterexample`, `unknown`, `division-hazard`, `precondition-hazard`, `vacuous`, `trivial` or `conformance`. */
+  /** `counterexample`, `unknown`, `division-hazard`, `precondition-hazard`, `range-hazard`, `vacuous`, `trivial` or `conformance`. */
   issue: string
   /** Whether `cex` is meaningful. */
   hasCex: boolean
@@ -197,6 +197,16 @@ export const collectFeedbackItems = (report: VerifyReport): FeedbackItem[] => {
       )
       items.push(h.hasCex ? item.withCex(h.cex) : item)
     }
+    for (const h of fn.ranges) {
+      const item = new FeedbackItem(
+        fn.name,
+        "(range)",
+        h.pretty,
+        "range-hazard",
+        "An Int is a float64 in the emitted code, exact only within ±(2^53−1), and this value can leave that range for the input shown. Rewrite it so no intermediate grows past its operands (low + (high - low) * k, not (low + high) * k), or bound the parameters with requires clauses.",
+      )
+      items.push(h.hasCex ? item.withCex(h.cex) : item)
+    }
   }
   for (const c of report.conformance) {
     let hint =
@@ -251,6 +261,11 @@ export const formatReportFeedback = (report: VerifyReport): string => {
     for (const h of fn.pres) {
       lines.push(
         `Function ${fn.name}: the call to ${h.callee} can violate its precondition ${h.pretty} (e.g. ${verifyCexOrNone(h.hasCex, h.cex)}) — strengthen this function's requires or guard the call with an ite.`,
+      )
+    }
+    for (const h of fn.ranges) {
+      lines.push(
+        `Function ${fn.name}: Int overflow — ${h.pretty} can leave ±(2^53−1), where float64 rounds (e.g. ${verifyCexOrNone(h.hasCex, h.cex)}) — rewrite it so no intermediate grows past its operands, or bound the parameters with requires clauses.`,
       )
     }
   }

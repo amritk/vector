@@ -1,0 +1,90 @@
+{
+  "programName": "span_sum",
+  "functions": [
+    {
+      "name": "spanEnd",
+      "layer": 1,
+      "purpose": "Recover the end of a span from its start and its width.",
+      "params": [
+        {
+          "name": "low",
+          "type": "Int"
+        },
+        {
+          "name": "high",
+          "type": "Int"
+        }
+      ],
+      "returnType": "Int",
+      "requires": [
+        {
+          "axiomId": "AX-ORDER",
+          "expr": {
+            "kind": "binop",
+            "op": "<=",
+            "left": {
+              "kind": "var",
+              "name": "low"
+            },
+            "right": {
+              "kind": "var",
+              "name": "high"
+            }
+          }
+        },
+        {
+          "axiomId": "AX-LOW",
+          "expr": {
+            "kind": "binop",
+            "op": ">=",
+            "left": {
+              "kind": "var",
+              "name": "low"
+            },
+            "right": {
+              "kind": "num",
+              "value": "0"
+            }
+          }
+        }
+      ],
+      "ensures": [
+        {
+          "axiomId": "AX-WIDTH",
+          "expr": {
+            "kind": "binop",
+            "op": "==",
+            "left": {
+              "kind": "var",
+              "name": "result"
+            },
+            "right": {
+              "kind": "var",
+              "name": "high"
+            }
+          }
+        }
+      ],
+      "body": {
+        "kind": "binop",
+        "op": "+",
+        "left": {
+          "kind": "var",
+          "name": "low"
+        },
+        "right": {
+          "kind": "binop",
+          "op": "-",
+          "left": {
+            "kind": "var",
+            "name": "high"
+          },
+          "right": {
+            "kind": "var",
+            "name": "low"
+          }
+        }
+      }
+    }
+  ]
+}
