@@ -3,6 +3,7 @@ import { CheckContext } from "../../../src/spec/check"
 import { contractParse } from "../../../src/spec/contract/read"
 import { gateQuoteWhole } from "../../../src/spec/gates/cite"
 import { gateFidelity } from "../../../src/spec/gates/fidelity"
+import { gateWarnings } from "../../../src/spec/gates/note"
 import { LoadedSource, SourceSet } from "../../../src/spec/source/load"
 import { rfcParse } from "../../../src/spec/source/rfc"
 
@@ -267,18 +268,18 @@ const fidelityTestHas = (all: string[], head: string, body: string): boolean =>
   all.some((f: string): boolean => f.indexOf(head) === 0 && f.indexOf(body) >= 0)
 
 /**
- * The findings for one iterated vector of x25519, citing section `id` of an
+ * The check of one iterated vector of x25519, citing section `id` of an
  * RFC whose section opens with `heading` and prints `body`, its expected
  * value `hex` under `label`, iterated `count` times.
  */
-const fidelityTestRow = (
+const fidelityTestRowCtx = (
   id: string,
   heading: string,
   body: string,
   hex: string,
   label: string,
   count: i32,
-): string[] => {
+): CheckContext => {
   const contract = `{
   "contract": "c3",
   "source": {"title": "T", "rfc": 9997},
@@ -308,7 +309,32 @@ ${body}
   set.main = "rfc9997"
   set.sources.push(new LoadedSource("rfc9997", "r.txt", "r.txt", rfcParse(rfc)))
   ctx.sources = set
-  return gateFidelity(ctx)
+  return ctx
+}
+
+/** The findings for one iterated vector of x25519 (see `fidelityTestRowCtx`). */
+const fidelityTestRow = (id: string, heading: string, body: string, hex: string, label: string, count: i32): string[] =>
+  gateFidelity(fidelityTestRowCtx(id, heading, body, hex, label, count))
+
+/** The warnings, not the findings, for one iterated vector of x25519 (see `fidelityTestRowCtx`). */
+const fidelityTestRowWarned = (
+  id: string,
+  heading: string,
+  body: string,
+  hex: string,
+  label: string,
+  count: i32,
+): string[] => {
+  const ctx = fidelityTestRowCtx(id, heading, body, hex, label, count)
+  const found = gateFidelity(ctx)
+  const out: string[] = []
+  for (const n of gateWarnings(ctx)) {
+    out.push(n.message)
+  }
+  for (const f of found) {
+    out.push(f)
+  }
+  return out
 }
 
 /**
@@ -339,7 +365,7 @@ const fidelityTestTable = (t: Suite): void => {
       t,
       `another variant, "${w}"`,
       fidelityTestRow("1", "1.  Rounds", body, "5555", `X448${w}`, 1000),
-      refused,
+      `${refused}, as in "X25519${w}"`,
     )
   }
   const grouped = "   After 1,000 iterations = 0x2222\n   After 1,000,000 iterations = 0x3333"
@@ -368,7 +394,68 @@ const fidelityTestTable = (t: Suite): void => {
     t,
     "two numbers and no word: compared whole",
     fidelityTestRow("1", "1.  Rounds", cases, "2222", "Case 448 of 1,000", 1000),
-    refused,
+    `${refused}, as in "Case 25519 of 1,000"`,
+  )
+  const sized = "   X25519 (32 bytes) = 0x2222\n   X448 (56 bytes) = 0x5555"
+  fidelityTestRowIs(
+    t,
+    "a length in bytes is no variant's number",
+    fidelityTestRow("1", "1.  Rounds", sized, "2222", "X25519 (32 bytes)", 32),
+    "",
+  )
+  fidelityTestRowIs(
+    t,
+    "beside a length, another variant is still refused",
+    fidelityTestRow("1", "1.  Rounds", sized, "5555", "X448 (56 bytes)", 56),
+    `${refused}, as in "X25519 (32 bytes)"`,
+  )
+  // A label that counts its rounds with no word (X448 1,000) is compared
+  // whole: where neither variant is the function's, it is only warned of.
+  fidelityTestRowIs(
+    t,
+    "a count with no word, beside a variant the name does not say",
+    fidelityTestRowWarned(
+      "1",
+      "1.  Rounds",
+      "   Run it 1,000 times.\n   X7 1,000 = 0x2222\n   X9 1,000 = 0x5555",
+      "2222",
+      "X7 1,000",
+      1000,
+    ),
+    `one of "X7 1,000" or "X9 1,000" in RFC §1 ("Rounds"), and nothing in the name x25519 says which variant it computes`,
+  )
+  fidelityTestRowIs(
+    t,
+    "a count with no word, beside another count",
+    fidelityTestRowWarned(
+      "1",
+      "1.  Rounds",
+      "   Run it 1,000 times.\n   After 1,000 = 0x2222\n   After 5,000 = 0x5555",
+      "2222",
+      "After 1,000",
+      1000,
+    ),
+    `one of "After 1,000" or "After 5,000" in RFC §1 ("Rounds"), and nothing in the name x25519 says which variant it computes`,
+  )
+  // A letter-led hyphen chain is one token, so its last number is no count.
+  fidelityTestRowIs(
+    t,
+    "not a count: a letter-led hyphen chain",
+    fidelityTestRow(
+      "1",
+      "1.  Rounds",
+      "   Vector-2-1000 iterations = 0x2222",
+      "2222",
+      "Vector-2-1000 iterations",
+      1000,
+    ),
+    "the count 1,000 is not printed in RFC §1",
+  )
+  fidelityTestRowIs(
+    t,
+    "a count past a heading's line",
+    fidelityTestRow("1", "1.  Run 1000 times", "   Result = 0x2222", "2222", "Result", 1000),
+    "the count 1,000 is not printed in RFC §1",
   )
   const named = "   SHA-256-128 and AES-128-GCM-96 = 0x2222"
   fidelityTestRowIs(
@@ -402,6 +489,137 @@ const fidelityTestTable = (t: Suite): void => {
     fidelityTestRow("A.2", "A.2.  Test Case 2", "   Run it 2 times.\n   Result = 0x2222", "2222", "Result", 2),
     "",
   )
+}
+
+/** RFC 8032 §7.1's first three Ed25519 tests, as printed: TEST 1 signs the empty message. */
+const FIDELITY_TEST_ED_RFC: string = `Request for Comments: 8032
+
+7.1.  Test Vectors for Ed25519
+
+   These test vectors are taken from [ED25519-TEST-VECTORS].
+
+   -----TEST 1
+
+   ALGORITHM:
+   Ed25519
+
+   SECRET KEY:
+   9d61b19deffd5a60ba844af492ec2cc4
+   4449c5697b326919703bac031cae7f60
+
+   MESSAGE (length 0 bytes):
+
+   SIGNATURE:
+   e5564300c360ac729086e2cc806e828a
+   84877f1eb8e5d974d873e06522490155
+
+   -----TEST 2
+
+   ALGORITHM:
+   Ed25519
+
+   SECRET KEY:
+   4ccd089b28ff96da9db6c346ec114e0f
+   5b8a319f35aba624da8cf6ed4fb8a6fb
+
+   MESSAGE (length 1 byte):
+   72
+
+   SIGNATURE:
+   92a009a9f0d4cab8720e820b5f642540
+   a2b27b5416503f8fb3762223ebdb69da
+
+   -----TEST 3
+
+   SECRET KEY:
+   c5aa8df43f9f837bedb7442f31dcb7b1
+   66d38535076f094b85ce3a2e0b4458f7
+
+   MESSAGE (length 2 bytes):
+   af82
+
+   SIGNATURE:
+   6291d657deec24024827e69c3abe01a3
+   0ce548a284743a445e3680d7db5ac3ac
+
+   NOTE (length 2 bytes):
+
+   NOTE (length 0 octets):
+
+   NOTE (length 0 byte):
+`
+
+/** TEST 1's secret key and signature, the arguments and result around an empty message. */
+const FIDELITY_TEST_ED_SK1: string = "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60"
+const FIDELITY_TEST_ED_SIG1: string = "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e06522490155"
+
+/**
+ * The findings for one Ed25519 vector citing RFC 8032 §7.1: a secret key,
+ * then the message `msg` and the expected signature, each a contract
+ * literal's JSON.
+ */
+const fidelityTestEd = (sk: string, msg: string, sig: string): string[] => {
+  const contract = `{
+  "contract": "c4",
+  "source": {"title": "EdDSA", "rfc": 8032},
+  "target": {"module": "nish/ed"},
+  "requirements": [{"id": "R1", "section": "7.1", "level": "MUST", "quote": "These test vectors are taken from"}],
+  "functions": [
+    {"name": "ed25519Sign", "params": [{"name": "sk", "type": "bytes"}, {"name": "m", "type": "bytes"}], "returns": "bytes"}
+  ],
+  "clauses": [
+    {"kind": "vector", "id": "E1", "title": "t", "covers": ["R1"], "source": {"cite": {"section": "7.1"}}, "call": "ed25519Sign",
+     "args": [{"hex": "${sk}", "label": "SECRET KEY"}, ${msg}], "expect": {"hex": "${sig}", "label": "SIGNATURE"}}
+  ]
+}`
+  const ctx = new CheckContext("contracts/c4.json", ".")
+  ctx.contract = contractParse(contract, "c4").expect("parse")
+  const set = new SourceSet()
+  set.main = "rfc8032"
+  set.sources.push(new LoadedSource("rfc8032", "r.txt", "r.txt", rfcParse(FIDELITY_TEST_ED_RFC)))
+  ctx.sources = set
+  return gateFidelity(ctx)
+}
+
+/** An Ed25519 vector's findings: exactly the one holding `want`, or none when `want` is empty. */
+const fidelityTestEdIs = (t: Suite, name: string, msg: string, want: string): void => {
+  fidelityTestRowIs(t, name, fidelityTestEd(FIDELITY_TEST_ED_SK1, msg, FIDELITY_TEST_ED_SIG1), want)
+}
+
+/** Empty values printed as a label with nothing below it, and labels with a parenthesised group. */
+const fidelityTestEmpty = (t: Suite): void => {
+  fidelityTestEdIs(t, "TEST 1's empty message", `{"hex": "", "label": "MESSAGE (length 0 bytes)"}`, "")
+  fidelityTestRowIs(
+    t,
+    "TEST 2's one-byte message",
+    fidelityTestEd(
+      "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
+      `{"hex": "72", "label": "MESSAGE (length 1 byte)"}`,
+      "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da",
+    ),
+    "",
+  )
+  fidelityTestEdIs(
+    t,
+    "empty under a label printed with a value",
+    `{"hex": "", "label": "MESSAGE (length 1 byte)"}`,
+    `E1.args[1]: "MESSAGE (length 1 byte)" is printed with a 1-byte value in RFC §7.1 ("Test Vectors for Ed25519"), so the value is not empty`,
+  )
+  fidelityTestEdIs(
+    t,
+    "empty under a label with nothing below it and another length",
+    `{"hex": "", "label": "NOTE (length 2 bytes)"}`,
+    `"NOTE (length 2 bytes)" is printed with nothing below it in RFC §7.1 ("Test Vectors for Ed25519"), but does not state a length of 0 bytes`,
+  )
+  fidelityTestEdIs(
+    t,
+    "empty under a label that is not printed",
+    `{"hex": "", "label": "MESSAGE (length 9 bytes)"}`,
+    `the empty value is not printed in RFC §7.1 ("Test Vectors for Ed25519") under "MESSAGE (length 9 bytes)" with nothing below it`,
+  )
+  fidelityTestEdIs(t, "empty under a length in octets", `{"hex": "", "label": "NOTE (length 0 octets)"}`, "")
+  fidelityTestEdIs(t, "empty under the singular byte", `{"hex": "", "label": "NOTE (length 0 byte)"}`, "")
+  fidelityTestEdIs(t, "an unlabelled empty value", `{"hex": ""}`, "the empty value is not printed")
 }
 
 /** The fidelity gate. */
@@ -485,6 +703,7 @@ export const main = (): i32 => {
   )
   t.ok("two numbers and no word: unchecked", !fidelityTestHas(it, "I25", ""))
   fidelityTestTable(t)
+  fidelityTestEmpty(t)
   t.ok("iterated findings", it.length === 19)
   if (it.length !== 19) {
     console.log(it.join("\n"))

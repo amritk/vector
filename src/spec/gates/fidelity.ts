@@ -24,7 +24,15 @@ import { CheckContext, CheckNote } from "../check"
 import { contractF64Bits, contractF64IsNaN, contractF64Parse } from "../contract/f64"
 import { Clause, ClauseKind, Iterate, LitKind, Literal, VectorSourceKind } from "../contract/types"
 import { SourceSet, sourceFind } from "../source/load"
-import { HexValue, RfcSection, rfcHexValues, rfcNormalize, rfcParse, rfcSectionText } from "../source/rfc"
+import {
+  HexValue,
+  RfcSection,
+  rfcHexValues,
+  rfcNormalize,
+  rfcParse,
+  rfcSectionText,
+  rfcUnvaluedLabels,
+} from "../source/rfc"
 import { gateArgsAt, gateCitedSection, gatePlace, gateQuoteMissing, gateSources } from "./cite"
 import { gateIssue, gateWarn } from "./note"
 import { gateResultWord, gateStatesResult } from "./result"
@@ -62,6 +70,8 @@ class GateLits {
   where: string
   /** `RFC §2.2 ("Title")`. */
   inSection: string
+  /** The section, read again only for an empty labelled value (gateEmptyCheck). */
+  sec: RfcSection
   values: HexValue[]
   text: string
   lines: string
@@ -78,6 +88,7 @@ class GateLits {
     this.where = where
     this.inSection = `${where} ("${sec.title}")`
     this.values = rfcHexValues(sec)
+    this.sec = sec
     if (byteLists) {
       for (const line of sec.lines) {
         for (const hex of gateByteLists(line)) {
@@ -268,6 +279,54 @@ const gateF64Has = (lit: Literal, printed: string[]): i32[] => {
   return has
 }
 
+/** Whether a label states a length of zero: `0` before `byte`, `bytes`, `octet` or `octets` (`MESSAGE (length 0 bytes)`). */
+const gateZeroLength = (label: string): boolean => {
+  const ts = gateFidTokens(label)
+  for (let i = 0; i + 1 < ts.length; i++) {
+    if (ts[i] === "0" && gateFidLengthWord(ts[i + 1])) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * An empty value under a label: the label is printed with nothing below it
+ * (`MESSAGE (length 0 bytes):`), and states a length of zero.
+ */
+const gateEmptyCheck = (l: GateLits, at: string, label: string): void => {
+  const under = l.values.filter((v: HexValue): boolean => {
+    const vl = v.label
+    return vl !== null && gateSameLabel(vl, label)
+  })
+  if (under.length > 0) {
+    gateLitFail(
+      l,
+      at,
+      `"${label}" is printed with a ${under[0].hex.length / 2}-byte value in ${l.inSection}, so the value is not empty`,
+    )
+    return
+  }
+  const of = rfcUnvaluedLabels(l.sec).filter((u: string): boolean => gateSameLabel(u, label)).length
+  if (of === 0) {
+    gateLitFail(l, at, `the empty value is not printed in ${l.inSection} under "${label}" with nothing below it`)
+    return
+  }
+  if (!gateZeroLength(label)) {
+    gateLitFail(
+      l,
+      at,
+      `"${label}" is printed with nothing below it in ${l.inSection}, but does not state a length of 0 bytes, so nothing says the value is empty`,
+    )
+    return
+  }
+  const has: i32[] = []
+  for (let i = 0; i < of; i++) {
+    has.push(i)
+  }
+  gateRounds(l, new GateBound(at, label), toI32(of), has)
+}
+
 /** Checks one literal (and a concat's parts) against the section, adding its bounds. */
 const gateLitCheck = (l: GateLits, lit: Literal, at: string): void => {
   if (lit.kind === LitKind.Concat) {
@@ -282,6 +341,11 @@ const gateLitCheck = (l: GateLits, lit: Literal, at: string): void => {
     return
   }
   const bytes = lit.kind === LitKind.Hex || lit.kind === LitKind.Ascii
+  const named = lit.label
+  if (bytes && lit.text.length === 0 && named !== null) {
+    gateEmptyCheck(l, at, named)
+    return
+  }
   if ((bytes || lit.kind === LitKind.Str) && lit.text.length === 0) {
     // "" is in every text and no bytes in every value, so an empty value is
     // found only where the section prints one.
@@ -639,6 +703,31 @@ const gateGrouped = (d: string): string => {
   return out
 }
 
+/** Whether `w` is a word that a length in bytes ends with: "byte", "bytes", "octet" or "octets". */
+const gateFidLengthWord = (w: string): boolean => {
+  const l = asciiLower(w)
+  return l === "byte" || l === "bytes" || l === "octet" || l === "octets"
+}
+
+/**
+ * A label with every length in bytes cut out, number and word
+ * (`MESSAGE (length 2 bytes)` is `MESSAGE (length )`): a value's length is
+ * checked by the value itself, so it is no variant's number.
+ */
+const gateLabelUnsized = (label: string): string => {
+  const spans = gateFidSpans(label)
+  let out = ""
+  let from = 0
+  for (let i = 0; i + 3 < spans.length; i = i + 2) {
+    const n = gateFidNumber(label.substring(spans[i], spans[i + 1]))
+    if (n.length > 0 && spans[i] >= from && gateFidLengthWord(label.substring(spans[i + 2], spans[i + 3]))) {
+      out = `${out}${label.substring(from, spans[i])}`
+      from = spans[i + 3]
+    }
+  }
+  return `${out}${label.substring(from, label.length)}`
+}
+
 /** Whether `w` is a word that counts rounds: "iteration", "iterations" or "times". */
 const gateFidRoundsWord = (w: string): boolean => {
   const l = asciiLower(w)
@@ -721,7 +810,8 @@ const gateIterateCount = (
   const want = `${it.count}`
   let printed = false
   for (let i = 0; i < sec.lines.length && !printed; i++) {
-    printed = !gateFidHeading(sec.lines[i]) && gateWholeNumbers(sec.lines[i]).indexOf(want) >= 0
+    // The cheap test first: a heading is read only when its line holds the count.
+    printed = gateWholeNumbers(sec.lines[i]).indexOf(want) >= 0 && !gateFidHeading(sec.lines[i])
   }
   if (!printed) {
     gateIssue(ctx, out, GATE_FIDELITY, k.id, `the count ${gateGrouped(want)} is not printed in ${where}`)
@@ -746,7 +836,8 @@ const gateIterateCount = (
  * A value printed under one of several labels that differ only in a number
  * ("HMAC-SHA-256", "HMAC-SHA-512") must be the variant the called function
  * names: another variant's number in the name is refused, none of them is a
- * warning.
+ * warning. A length in bytes (`MESSAGE (length 2 bytes)`) is no variant's
+ * number (`gateLabelUnsized`).
  */
 const gateOwnVariant = (l: GateLits, k: Clause, sec: RfcSection): void => {
   const printed: string[] = []
@@ -769,13 +860,13 @@ const gateOwnVariant = (l: GateLits, k: Clause, sec: RfcSection): void => {
     // its count, and the round number of every label beside it, are cut out,
     // and the rest of the label is still its own variant's.
     const rounds = b.at === "expect" && gateLabelIsCount(k, shown)
-    const label = rounds ? gateLabelUncounted(shown) : shown
+    const label = gateLabelUnsized(rounds ? gateLabelUncounted(shown) : shown)
     const mine = gateDigitRuns(label)
     const shape = gateSkeleton(label)
     const siblings: string[] = []
     const shownAll = [shown]
     for (const p of printed) {
-      const q = rounds ? gateLabelUncounted(p) : p
+      const q = gateLabelUnsized(rounds ? gateLabelUncounted(p) : p)
       if (gateSkeleton(q) === shape && !gateSameLabel(p, shown)) {
         siblings.push(q)
         shownAll.push(p)

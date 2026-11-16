@@ -205,10 +205,10 @@ These are what Call and Expected cells may hold:
 |---|---|
 | `"text"` | a JSON string of printable ASCII, tab, LF and CR. Where the signature takes bytes it is the ASCII bytes (`{ascii}`); where it takes a string, the string (`{str}`); anywhere else it is refused |
 | `[00 0f f0 ff]` | bytes: lowercase hex pairs, separated by single spaces |
-| `[]`, `(empty)` | empty bytes |
+| `[]`, `(empty)` | empty bytes; labelled (`MESSAGE (length 0 bytes) = (empty)`), the empty value a section prints under that label (see [What a printed value is](#what-a-printed-value-is)) |
 | `null`, `true`, `false` | themselves |
 | `42`, `-1` | a decimal integer, in range for the parameter's type (`i8` … `u64`, e.g. `u8` 0..255); where the type is `f64` it is that f64 |
-| `Key = 0b0b0b` | labelled bytes: lowercase hex pairs, no spaces. The label is the name the cited section prints the value under. A label may be several words, and its first word may start with digits joined to a letter (`32-bit fixed-common part = 07000000`); a bare number is not a label |
+| `Key = 0b0b0b` | labelled bytes: lowercase hex pairs, no spaces. The label is the name the cited section prints the value under. A label may be several words, and its first word may start with digits joined to a letter (`32-bit fixed-common part = 07000000`); a bare number is not a label. A later word may be a comma-grouped number (`After 1,000 iterations`), and one later word may be a parenthesised group of such words (`MESSAGE (length 1 byte) = 72`, as RFC 8032 prints it). A group may not come first, hold a bare comma or a paren, be empty, be left open, or be followed by a second group |
 | `L = 42` | a labelled decimal integer, checked against the cited section's "L = 42". Where the parameter (or return) type is an integer type it is the int; anywhere else digits that are also hex pairs (`42`) are labelled bytes, and digits with a leading zero are never an int: `L = 00` is bytes, and `L = 042` (not whole hex pairs) is refused |
 | `22 × 0b`, `22 x 0b`, `IKM = 22 × 0b` | a run of bytes written that many times (`{hex, repeat}`), as RFCs print runs; optionally labelled. `22×0b` also reads. The count is at least 1, the run lowercase hex pairs, and the expansion at most 65536 bytes |
 | `concat([00], Key = ff)` | the parts joined, all bytes; one level (`concat` does not nest), at least one part. `‖` is refused |
@@ -472,6 +472,15 @@ of matching bytes:
   line such as `Plaintext:` above a dump) must give that name:
   `{"hex": "0b0b…", "label": "Key"}`. A label the section does not print the
   value under is refused.
+- **Empty values.** A section prints an empty value as a label with nothing
+  below it, its length stated as 0 (`MESSAGE (length 0 bytes):`, or
+  `octets`). Empty bytes bind only under such a label:
+  `{"hex": "", "label": "MESSAGE (length 0 bytes)"}`, written
+  `MESSAGE (length 0 bytes) = (empty)` or `= []`. Under a label printed with
+  a value (`MESSAGE (length 1 byte):` above `72`), under a label printed
+  nowhere with nothing below it, or under one that states no length of 0
+  bytes, empty bytes are refused. With no label, they bind only where the
+  section prints `""` or `(0 octets)`.
 - **One test case.** The expected value may not be bound to the same label
   as an argument (a key used as the expected MAC). Strings must share a
   printed line (`BASE64("f") = "Zg=="`). A label printed several times in
@@ -486,7 +495,13 @@ of matching bytes:
   `HMAC-SHA-512`), the label's number must be in the called function's name:
   the `HMAC-SHA-384` row as `hmacSha512`'s expected value is refused. A
   function named for none of them (`hmac`) gets a warning, since nothing says
-  which variant it computes.
+  which variant it computes. A length in bytes inside a label (`X25519 (32
+  bytes)`, `MESSAGE (length 2 bytes)`) is not a variant's number, so labels
+  that differ only there are one variant.
+- **Counts.** An iterated vector's count must be printed as a whole number
+  on a line that is not a heading. A number inside a letter-led hyphen chain
+  (`Vector-2-1000 iterations`) is part of a word, not a number, so that
+  count reads as not printed.
 
 <a id="when-a-section-states-null-true-or-false"></a>
 
