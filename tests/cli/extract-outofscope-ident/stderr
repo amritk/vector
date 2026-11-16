@@ -1,0 +1,1 @@
+vector: tests/fixtures/profile/profile-outofscope-ident.md:18 (tests/fixtures/profile/profile-outofscope-ident.xml:48): out-of-scope export "half bits" is not an identifier: Out of scope: <export>, <the reason no clause tests it>

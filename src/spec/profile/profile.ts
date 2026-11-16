@@ -19,6 +19,8 @@
  *   vector        a row of a table headed Id | Call | Expected | Covers | Source | Title
  *   tolerance     a `<t>` directly after the vector table (or another one)
  *                 reading `Tolerance: V1 ulps 1, <xref>: "quote"`, or `abs 1e-9`
+ *   out of scope  a `<t>` anywhere reading `Out of scope: <export>, <reason>`:
+ *                 an export of the target the contract does not test
  *
  * Every BCP 14 sentence must be a requirement or an exclusion, every xref to
  * an RFC must have a `<reference>`, and every section cited must exist in
@@ -28,7 +30,7 @@
 
 import { split } from "nish/text"
 import { diagPlace } from "../../core/diag"
-import { charsFirstControl, charsIsAbs, charsIsId, charsIsSection } from "../contract/chars"
+import { charsFirstControl, charsIsAbs, charsIsId, charsIsIdent, charsIsSection } from "../contract/chars"
 import { contractF64Overflows, contractF64Parse } from "../contract/f64"
 import {
   RawCall,
@@ -49,6 +51,7 @@ import {
   Exclusion,
   FnSig,
   LitKind,
+  OutOfScope,
   Literal,
   Requirement,
   SourceDecl,
@@ -71,6 +74,8 @@ const PROFILE_NOTE: string = "Note: "
 const PROFILE_TOLERANCE: string = "Tolerance: "
 const PROFILE_TOLERANCE_FORM: string =
   'Tolerance: <vector id> ulps <n>, {{Section N of RFCx}}: "<the sentence that allows it>" (or abs <decimal>, or {{anchor}})'
+const PROFILE_OUT_OF_SCOPE: string = "Out of scope: "
+const PROFILE_OUT_OF_SCOPE_FORM: string = "Out of scope: <export>, <the reason no clause tests it>"
 const PROFILE_ULPS_MAX: string = "9007199254740991"
 const PROFILE_STRAY_TOLERANCE: string =
   "this Tolerance: paragraph follows no vector table; it must directly follow the vector table or another Tolerance: paragraph"
@@ -334,6 +339,9 @@ class ProfileContext {
   toleranceLocs: ProfileLoc[]
   properties: Clause[]
   propertyLocs: ProfileLoc[]
+  /** Each export out of scope, and (alongside) its Out of scope: paragraph. */
+  outOfScope: OutOfScope[]
+  outOfScopeLocs: ProfileLoc[]
   constructor(doc: XmlDocument, xmlPath: string, md: ProfileMd | null, rfcs: ProfileRfcs) {
     this.doc = doc
     this.xmlPath = xmlPath
@@ -363,6 +371,8 @@ class ProfileContext {
     this.toleranceLocs = []
     this.properties = []
     this.propertyLocs = []
+    this.outOfScope = []
+    this.outOfScopeLocs = []
   }
 }
 
@@ -1255,6 +1265,65 @@ const profileExcludeParagraph = (c: ProfileContext, n: XmlNode, next: XmlNode, s
   c.exclusions.push(q)
 }
 
+/**
+ * An Out of scope: paragraph: the export before the first comma, and the
+ * reason after it. Whether the export is tested is checked once the clauses
+ * are read (profileCheckOutOfScope).
+ */
+const profileReadOutOfScope = (c: ProfileContext, n: XmlNode): void => {
+  const body = profileAfter(c, n, PROFILE_OUT_OF_SCOPE)
+  const comma = body.indexOf(",")
+  if (comma < 0) {
+    profileRefuse(c, n, `an Out of scope: paragraph gives a reason after a comma: ${PROFILE_OUT_OF_SCOPE_FORM}`)
+    return
+  }
+  const name = profileTrim(body.substring(0, comma))
+  const reason = profileTrim(body.substring(comma + 1, body.length))
+  if (!charsIsIdent(name)) {
+    profileRefuse(c, n, `out-of-scope export "${name}" is not an identifier: ${PROFILE_OUT_OF_SCOPE_FORM}`)
+    return
+  }
+  if (reason.length === 0) {
+    profileRefuse(c, n, `${name} is out of scope with no reason: ${PROFILE_OUT_OF_SCOPE_FORM}`)
+    return
+  }
+  profileCheckText(c, profileLocOf(n), `${name}'s out-of-scope reason`, reason)
+  for (const o of c.outOfScope) {
+    if (o.name === name) {
+      profileRefuse(c, n, `${name} is already out of scope; give each export one Out of scope: paragraph`)
+      return
+    }
+  }
+  const o = new OutOfScope()
+  o.name = name
+  o.reason = reason
+  c.outOfScope.push(o)
+  c.outOfScopeLocs.push(profileLocOf(n))
+}
+
+/** An export out of scope is neither a function under test nor one a clause calls. */
+const profileCheckOutOfScope = (c: ProfileContext): void => {
+  for (let i = 0; i < c.outOfScope.length; i++) {
+    const name = c.outOfScope[i].name
+    const loc = c.outOfScopeLocs[i]
+    if (c.functions.some((f: FnSig): boolean => f.module === null && f.name === name)) {
+      profileRefuseAt(c, loc, `${name} is a function under test, so it cannot be out of scope`, 0)
+      continue
+    }
+    for (const k of c.vectors) {
+      if (k.call === name) {
+        profileRefuseAt(c, loc, `${name} is called by vector ${k.id}, so it cannot be out of scope`, 0)
+      }
+    }
+    for (const k of c.properties) {
+      const a = k.assert
+      if (a !== null && vocabHas(typeCallsIn(a), name)) {
+        profileRefuseAt(c, loc, `${name} is called by property ${k.id}, so it cannot be out of scope`, 0)
+      }
+    }
+  }
+}
+
 /** The blocks of a section (or of an element in it), read in order. */
 const profileBlocks = (c: ProfileContext, parent: XmlNode, section: string): void => {
   const kids = xmlElements(parent).filter((k: XmlNode): boolean => k.name !== "name" && k.name !== "section")
@@ -1279,6 +1348,12 @@ const profileBlocks = (c: ProfileContext, parent: XmlNode, section: string): voi
       continue
     }
     if (used.has(n)) {
+      continue
+    }
+    if (profileStartsWith(c, n, PROFILE_OUT_OF_SCOPE)) {
+      used.add(n)
+      profileHandle(c, n)
+      profileReadOutOfScope(c, n)
       continue
     }
     const next: XmlNode | null = i + 1 < kids.length ? kids[i + 1] : null
@@ -2013,6 +2088,9 @@ const profileBuild = (c: ProfileContext, name: string): Contract => {
   for (const k of c.properties) {
     out.clauses.push(k)
   }
+  if (c.outOfScope.length > 0) {
+    out.outOfScope = c.outOfScope
+  }
   return out
 }
 
@@ -2044,6 +2122,7 @@ const profileShapeRefusals = (c: ProfileContext, out: Contract, clauseLocs: Prof
     const e = profileIssueIndex(issue, "exclusions")
     const k = profileIssueIndex(issue, "clauses")
     const f = profileIssueIndex(issue, "functions")
+    const o = profileIssueIndex(issue, "outOfScope")
     if (r >= 0 && r < reqLocs.length) {
       loc = reqLocs[r]
     } else if (e >= 0 && e < exLocs.length) {
@@ -2052,6 +2131,8 @@ const profileShapeRefusals = (c: ProfileContext, out: Contract, clauseLocs: Prof
       loc = clauseLocs[k]
     } else if (f >= 0 && f < c.fnLocs.length) {
       loc = c.fnLocs[f]
+    } else if (o >= 0 && o < c.outOfScopeLocs.length) {
+      loc = c.outOfScopeLocs[o]
     }
     shape.push(profileRefusalAt(profileWhereOf(c, loc), 0, `the contract read here is not valid: ${issue}`))
   }
@@ -2132,6 +2213,7 @@ export const profileRead = (
     profileReadTable(c, t)
   }
   profileReadProperties(c, code)
+  profileCheckOutOfScope(c)
   profileCheckSections(c, xrefs)
 
   if (c.refusals.length > 0) {
@@ -2191,6 +2273,9 @@ export const profileRead = (
   }
   for (let i = 0; i < c.functions.length; i++) {
     profilePut(c, l, c.functions[i].name, c.fnLocs[i])
+  }
+  for (let i = 0; i < c.outOfScope.length; i++) {
+    profilePut(c, l, `outOfScope[${i}]`, c.outOfScopeLocs[i])
   }
   return Ok(new ProfileRead(out, l))
 }

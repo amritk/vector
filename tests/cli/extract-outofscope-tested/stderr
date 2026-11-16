@@ -1,0 +1,1 @@
+vector: tests/fixtures/profile/profile-outofscope-tested.md:18 (tests/fixtures/profile/profile-outofscope-tested.xml:48): fmathHalf is a function under test, so it cannot be out of scope
