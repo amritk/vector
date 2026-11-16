@@ -3,6 +3,10 @@
   "version": "0.3.0",
   "description": "vector — a deterministic judge: prove a spec plan and program with Z3, and check implementations against spec and RFC contracts. Written in Nish; it never calls a model.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/amritk/vector.git"
+  },
   "private": true,
   "type": "module",
   "exports": {
