@@ -207,7 +207,7 @@ export const main = (): i32 => {
   )
   t.ok(
     "a domain smaller than its samples is noted, not refused",
-    o8.samples.length === 1 && o8.stat.notes.indexOf("asked for 4 samples; the domain gave 1") >= 0,
+    o8.samples.length === 1 && o8.stat.notes.indexOf("asked for 4 samples; found 1") >= 0,
   )
   const o64 = bitvecTestSample(1)
   const v64 = bitvecTestValues(o64)

@@ -1,0 +1,1 @@
+vector spec check --format json tests/fixtures/core-hex-samples/contracts/core-hex-samples.json

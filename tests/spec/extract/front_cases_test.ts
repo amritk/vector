@@ -129,6 +129,11 @@ const frontCasesTestSamples = (t: Suite): void => {
       "the samples line goes on line 2, after the covers line @3:1",
     ],
     ["another comment on line 2", `${head}// a note\n${body}`, "samples -1"],
+    ["a word that only starts with samples", `${head}// samplesheet: 3\n${body}`, "samples -1"],
+    ["a capitalised samples line", `${head}// Samples: 5\n${body}`, `${decimal} @2:1`],
+    ["an uppercase samples line", `${head}// SAMPLES: 5\n${body}`, `${decimal} @2:1`],
+    ["a block-comment samples line", `${head}/* samples: 5 */\n${body}`, `${decimal} @2:1`],
+    ["prose that starts with samples", `${head}// samples are drawn at random\n${body}`, `${decimal} @2:1`],
   ]
   for (const k of cases) {
     t.eqStr(`samples line: ${k[0]}`, frontCasesTestSamplesOf(k[1]), k[2])

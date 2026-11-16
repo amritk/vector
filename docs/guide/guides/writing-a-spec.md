@@ -290,10 +290,11 @@ forall (b: u8[] /* 0..64 */) => {
   Z3's boundary samples come first (at most N of them), then seeded random
   ones until there are N. Without the line, a property gets every boundary
   sample plus 24 random, at most 96 in all. When the domain holds fewer
-  than N inputs, the property gets every one and `spec check` notes
-  `asked for N samples; the domain gave M`. Extract refuses 0, anything
-  past 256, anything but plain digits (`12.5`, `-1`, `096`), and a
-  `// samples` line anywhere but line 2.
+  than N inputs, or a `where` refuses most of N × 20 draws, the property
+  gets what was found and `spec check` notes
+  `asked for N samples; found M`. Extract refuses 0, anything
+  past 256, anything but plain digits (`12.5`, `-1`, `096`), a samples
+  line in another case or a block comment, and one anywhere but line 2.
 - **`forall (var, …) => body`**, optionally followed by `where expr`. Each
   variable has a bound in a comment:
   - `b: u8[] /* lo..hi */`: a length, with 0 ≤ lo ≤ hi ≤ 4096.

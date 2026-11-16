@@ -337,37 +337,38 @@ export const sampleProperty = (contract: string, k: Clause): Result<SampleOutcom
 }
 
 /**
+ * Seeded random draws, until `want` of them were kept or the run holds
+ * `total` samples, within `want * 20` tries; Err "where: ..." when `where`
+ * cannot be evaluated.
+ */
+const sampleDraw = (run: SampleRun, want: i32, total: i32): Result<boolean, string> => {
+  for (let tries = 0; run.out.stat.random < want && tries < want * 20 && run.out.samples.length < total; tries++) {
+    if (sampleAdd(run, sampleFill(run, new Map<string, i64>()), "random").orReturn()) {
+      run.out.stat.random = run.out.stat.random + 1
+    }
+  }
+  return Ok(true)
+}
+
+/**
  * The boundaries, then the random draws; Err "where: ..." when `where`
  * cannot be evaluated. Without its own `samples` a property gets every
  * boundary and up to SAMPLE_DEFAULT_RANDOM draws, at most SAMPLE_MAX in all;
  * with `samples` N it gets at most N boundaries, then draws until it has N,
- * and a note when the domain gave fewer.
+ * and a note when it found fewer.
  */
 const sampleRun = (run: SampleRun, whereTerm: string | null, queries: SampleQuery[]): Result<boolean, string> => {
   sampleInDomain(run, sampleFill(new SampleRun(run.k, run.ranges, "probe"), new Map<string, i64>())).orReturn()
   const n = run.k.samples
   if (n < 0) {
     const unsat = sampleBoundaries(run, whereTerm, queries, SAMPLE_NO_CAP).orReturn()
-    const want = SAMPLE_DEFAULT_RANDOM
-    for (
-      let tries = 0;
-      run.out.stat.random < want && tries < want * 20 && run.out.samples.length < SAMPLE_MAX;
-      tries++
-    ) {
-      if (sampleAdd(run, sampleFill(run, new Map<string, i64>()), "random").orReturn()) {
-        run.out.stat.random = run.out.stat.random + 1
-      }
-    }
+    sampleDraw(run, SAMPLE_DEFAULT_RANDOM, SAMPLE_MAX).orReturn()
     return Ok(unsat)
   }
   const unsat = sampleBoundaries(run, whereTerm, queries, n).orReturn()
-  for (let tries = 0; run.out.samples.length < n && tries < n * 20; tries++) {
-    if (sampleAdd(run, sampleFill(run, new Map<string, i64>()), "random").orReturn()) {
-      run.out.stat.random = run.out.stat.random + 1
-    }
-  }
+  sampleDraw(run, n, n).orReturn()
   if (run.out.samples.length < n) {
-    run.out.stat.notes.push(`asked for ${n} samples; the domain gave ${run.out.samples.length}`)
+    run.out.stat.notes.push(`asked for ${n} samples; found ${run.out.samples.length}`)
   }
   return Ok(unsat)
 }

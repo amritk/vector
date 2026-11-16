@@ -1412,9 +1412,25 @@ const FRONT_SAMPLES_MAX: i32 = 256
 
 const FRONT_SAMPLES_HINT: string = "samples takes a decimal integer, 1..256, as `// samples: N`"
 
-/** Whether a token is a line comment whose text, trimmed, starts with `samples`. */
-const frontIsSamplesLine = (t: FrontTok): boolean =>
-  t.kind === FrontKind.Comment && t.lineComment && trim(t.value).startsWith("samples")
+/**
+ * Whether a token is a comment whose text, trimmed, starts with the word
+ * `samples` in any case: followed by a colon, a space or nothing, so that
+ * `// samplesheet` stays an ordinary comment and `// Samples: 5` is refused
+ * rather than ignored.
+ */
+const frontIsSamplesLine = (t: FrontTok): boolean => {
+  const s = trim(t.value)
+  if (t.kind !== FrontKind.Comment || s.length < 7) {
+    return false
+  }
+  const word = "samples"
+  for (let k = 0; k < 7; k++) {
+    if ((s.charCodeAt(k) | 0x20) !== word.charCodeAt(k)) {
+      return false
+    }
+  }
+  return s.length === 7 || frontHas(s, 7, ":") || frontHas(s, 7, " ") || frontHas(s, 7, "\t")
+}
 
 /**
  * The count of a `// samples: N` line: N in decimal, with no sign, leading
@@ -1423,7 +1439,7 @@ const frontIsSamplesLine = (t: FrontTok): boolean =>
 const frontSamplesOf = (t: FrontTok): Result<i32, FrontRefusal> => {
   const s = trim(t.value)
   const pos = frontAt(t)
-  if (!frontHas(s, 7, ":")) {
+  if (!t.lineComment || !s.startsWith("samples") || !frontHas(s, 7, ":")) {
     return Err(frontRefuse(FRONT_SAMPLES_HINT, pos))
   }
   const n = trim(s.substring(8, s.length))

@@ -37,7 +37,10 @@ export const main = (): i32 => {
   t.eqStr("P-ENC-LEN gets 200", `${checkSamplesOf(report.samples, "P-ENC-LEN").length}`, "200")
   for (const s of ctx.sampleStats) {
     if (s.clause === "P-ROUND-TRIP" || s.clause === "P-ENC-LEN") {
-      t.ok(`${s.clause}: boundary and random make the total`, s.boundary > 0 && s.random > 0)
+      t.ok(
+        `${s.clause}: boundary and random, both drawn, make the total`,
+        s.boundary > 0 && s.random > 0 && s.boundary + s.random === checkSamplesOf(report.samples, s.clause).length,
+      )
       t.ok(
         `${s.clause}: no note`,
         s.notes.every((n: string): boolean => !n.startsWith("asked for")),
