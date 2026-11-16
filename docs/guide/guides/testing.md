@@ -477,7 +477,18 @@ SATISFIED: sha256-chain (exit 0)
   pass  R-LOWER
 ```
 
-A run whose every vector was skipped as slow is an `ERROR`: nothing ran.
+Only a Nish test is built optimized. A test in another language is built as
+its harness always builds it, so a million-step vector can take longer than
+`spec run`'s 600-second limit there.
+
+A run whose every vector was skipped as slow is an `ERROR`: nothing ran, and
+the text report says so on its own line:
+
+```text
+every vector was skipped as slow, so nothing ran: pass --slow
+```
+
+In `--json`, each clause skipped as slow also has `"slow": true`.
 
 ## A planted bug
 

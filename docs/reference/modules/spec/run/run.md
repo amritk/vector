@@ -838,7 +838,8 @@ the markdown
 ### runFormatJson
 
 A run's result as JSON: `{contract, status, exit, requirements: {id:
-outcome}, clauses: [{id, outcome, detail}], integrity: [...]}`.
+outcome}, clauses: [{id, outcome, detail}], integrity: [...]}`. A slow
+vector skipped for want of `--slow` also has `"slow": true`.
 
 ```ts
 function runFormatJson(r: RunResult): string

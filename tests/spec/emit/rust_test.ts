@@ -63,6 +63,12 @@ const rsTargets = (t: Suite): void => {
   t.eqStr("rust's harnesses", emitTargetHarnesses("rust").join(","), "standalone,cargo")
   t.eqStr("rust's extension", emitTargetExt("rust"), ".rs")
   t.eqStr("cargo is a flag", emitTargetFlags(new EmitTarget("rust", "cargo")), " --lang rust --harness cargo")
+  const slowTarget = new EmitTarget("rust", "cargo")
+  slowTarget.slow = true
+  t.eqStr("--slow is a flag after the others", emitTargetFlags(slowTarget), " --lang rust --harness cargo --slow")
+  const slowNish = new EmitTarget("nish", "standalone")
+  slowNish.slow = true
+  t.eqStr("--slow alone for the default target", emitTargetFlags(slowNish), " --slow")
 }
 
 /** What the forms contract's Rust test says, form by form. */

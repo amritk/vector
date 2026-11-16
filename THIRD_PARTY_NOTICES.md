@@ -243,9 +243,9 @@ SOFTWARE.
 `tests/fixtures/x25519/rfcs/rfc7748.txt` is an excerpt of RFC 7748, "Elliptic
 Curves for Security" (IRTF, © 2016 IETF Trust and the persons identified as
 the document authors), from <https://www.rfc-editor.org/rfc/rfc7748.txt>: its
-first-page header and title, the opening of Section 5, and the lines of Section 5.2 that give the
-iterated test vectors, verbatim, redistributed under the IETF Trust Legal
-Provisions. `tests/fixtures/x25519/fixture/x25519.ts` is a copy of nish
+first-page header and title, the opening of Section 5, and the lines of
+Section 5.2 that give the iterated test vectors, excerpted unchanged and
+redistributed under the IETF Trust Legal Provisions. `tests/fixtures/x25519/fixture/x25519.ts` is a copy of nish
 v0.39.0's `std/crypto/x25519.ts`, unchanged below an opening comment that says
 so, under nish's MIT license (the text is in the section above).
 

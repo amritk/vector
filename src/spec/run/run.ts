@@ -752,6 +752,23 @@ const runTail = (text: string, n: i32): string[] => {
   return lines.slice(from, lines.length)
 }
 
+/** Why a run whose only clauses were slow skips is an ERROR. */
+const RUN_SLOW_ONLY: string = "every vector was skipped as slow, so nothing ran: pass --slow"
+
+/** Whether no clause passed and one was a slow vector skipped: runJudge's ERROR for a run with nothing to judge. */
+const runSlowOnly = (clauses: RunClause[]): boolean => {
+  let slow = false
+  for (const k of clauses) {
+    if (k.outcome === RunOutcome.Pass) {
+      return false
+    }
+    if (k.slow) {
+      slow = true
+    }
+  }
+  return slow
+}
+
 /**
  * A run's result as text: the verdict, each requirement's outcome, each slow
  * vector skipped, each failed clause with its reason, and why the transcript
@@ -778,6 +795,9 @@ export const runFormatText = (r: RunResult): string[] => {
   }
   for (const m of r.integrity) {
     out.push(`integrity: ${runEscape(m)}`)
+  }
+  if (r.verdict.status === "ERROR" && runSlowOnly(r.clauses)) {
+    out.push(RUN_SLOW_ONLY)
   }
   let anyRan = false
   for (const k of r.clauses) {
@@ -836,7 +856,8 @@ export const runFormatMarkdown = (r: RunResult): string => {
 
 /**
  * A run's result as JSON: `{contract, status, exit, requirements: {id:
- * outcome}, clauses: [{id, outcome, detail}], integrity: [...]}`.
+ * outcome}, clauses: [{id, outcome, detail}], integrity: [...]}`. A slow
+ * vector skipped for want of `--slow` also has `"slow": true`.
  *
  * @param r the result
  * @returns the JSON text, without a trailing newline
@@ -848,8 +869,9 @@ export const runFormatJson = (r: RunResult): string => {
   }
   const clauses: string[] = []
   for (const k of r.clauses) {
+    const slow = k.slow ? `, "slow": true` : ""
     clauses.push(
-      `{"id": ${emitQuote(k.id)}, "outcome": ${emitQuote(runOutcomeName(k.outcome))}, "detail": ${emitQuote(k.detail)}}`,
+      `{"id": ${emitQuote(k.id)}, "outcome": ${emitQuote(runOutcomeName(k.outcome))}, "detail": ${emitQuote(k.detail)}${slow}}`,
     )
   }
   const integrity: string[] = []

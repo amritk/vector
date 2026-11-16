@@ -319,5 +319,19 @@ const runTestSlow = (t: Suite, nonce: string): void => {
     k.slow = true
     allSlow.push(k)
   }
-  t.eqStr("a run whose every clause was a slow skip is an ERROR", runJudge(c, allSlow, 0, []).status, "ERROR")
+  t.ok("the json marks the slow skip", runFormatJson(r).indexOf(`"detail": "", "slow": true}`) > 0)
+  const json = runFormatJson(r)
+  t.ok("and only it", json.indexOf(`"slow": true`, json.indexOf(`"slow": true`) + 1) < 0)
+  t.ok("a run with passes states no all-slow reason", text.indexOf("every vector was skipped as slow") < 0)
+  const all = new RunResult("sha256-chain", 0, "", "")
+  all.verdict = runJudge(c, allSlow, 0, [])
+  t.eqStr("a run whose every clause was a slow skip is an ERROR", all.verdict.status, "ERROR")
+  for (const k of allSlow) {
+    all.clauses.push(k)
+  }
+  t.contains(
+    "and the text says why",
+    runFormatText(all).join("\n"),
+    "\nevery vector was skipped as slow, so nothing ran: pass --slow",
+  )
 }
