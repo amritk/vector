@@ -13,15 +13,33 @@ jobs:
 
       - name: Every action is pinned to a commit SHA
         run: |
-          bad=$(grep -nE '^[[:space:]-]*uses[:]' .github/workflows/*.yml \
-            | sed -E 's/[[:space:]]+#.*$//' \
-            | grep -vE '@[0-9a-f]{40}$' || true)
-          if [ -n "$bad" ]; then
-            echo "$bad" | while IFS=: read -r f l rest; do
-              echo "::error file=$f,line=$l::not pinned to a 40-hex commit SHA:$rest"
-            done
+          shopt -s nullglob
+          files=(.github/workflows/*.yml .github/workflows/*.yaml)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::no workflow files found under .github/workflows"
             exit 1
           fi
+          bad=0
+          for f in "${files[@]}"; do
+            rc=0
+            hits=$(grep -nE '^[[:space:]-]*uses[:]' "$f") || rc=$?
+            if [ "$rc" -gt 1 ]; then
+              echo "::error file=$f::grep failed with exit $rc"
+              exit 1
+            fi
+            while IFS= read -r hit; do
+              [ -n "$hit" ] || continue
+              n=${hit%%:*}
+              ref=$(printf '%s' "${hit#*:}" \
+                | sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]-]*uses[:][[:space:]]*//; s/[[:space:]]+$//' \
+                | tr -d "\"'")
+              if ! [[ $ref =~ @[0-9a-f]{40}$ ]]; then
+                echo "::error file=$f,line=$n::\"$ref\" is not pinned to a 40-hex commit SHA (local ./ and docker:// refs are refused too)"
+                bad=1
+              fi
+            done <<< "$hits"
+          done
+          exit "$bad"
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
