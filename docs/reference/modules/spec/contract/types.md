@@ -29,6 +29,7 @@ Generated from [src/spec/contract/types.ts](https://github.com/amritk/vector/blo
 - [`VectorSourceKind`](#vectorsourcekind)
 - [`VectorSource`](#vectorsource)
 - [`Tolerance`](#tolerance)
+- [`Iterate`](#iterate)
 - [`ForallVar`](#forallvar)
 - [`ClauseKind`](#clausekind)
 - [`Clause`](#clause)
@@ -908,6 +909,54 @@ An ulps tolerance; -1 when absent.
 ulps: i64
 ```
 
+### Iterate
+
+A vector that feeds its call its own result: the call runs `count` times, and the last result is the expect.
+
+```ts
+class Iterate
+```
+
+#### new Iterate
+
+Starts with no count, names or next.
+
+```ts
+new Iterate(): Iterate
+```
+
+#### Iterate.count
+
+How many times the call runs, 1..1000000000.
+
+```ts
+count: i64
+```
+
+#### Iterate.names
+
+One name per parameter of the call, each the previous call's argument there.
+
+```ts
+names: string[]
+```
+
+#### Iterate.next
+
+One expression per parameter: a name, or the call on the names (the previous call's result).
+
+```ts
+next: Expr[]
+```
+
+#### Iterate.slow
+
+Whether a test runs the vector only when asked.
+
+```ts
+slow: boolean
+```
+
 ### ForallVar
 
 A variable a property quantifies over, and its domain.
@@ -1100,6 +1149,14 @@ A stable id for the clause.
 
 ```ts
 id: string
+```
+
+#### Clause.iterate
+
+A vector's iteration; null when the call runs once.
+
+```ts
+iterate: Iterate | null
 ```
 
 #### Clause.kind

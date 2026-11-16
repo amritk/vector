@@ -454,6 +454,7 @@ A known answer: call(args) == expect. The args are printed in the cited section 
 | `args` | [`literal`](#def-literal)[] | yes |  |
 | `expect` | [`literal`](#def-literal) | yes |  |
 | `tolerance` | [`tolerance`](#def-tolerance) | no |  |
+| `iterate` | [`iterate`](#def-iterate) | no |  |
 
 No other property is allowed.
 
@@ -607,6 +608,52 @@ No other property is allowed.
 The name the spec prints right before the value (`Key = 00:01:…`, `L = 42`); fidelity checks the pair.
 
 `string`; matches `[A-Za-z]`; at least 1 characters.
+
+<a id="def-iterate"></a>
+
+### `iterate`
+
+Feed the call its own result `count` times: the first call takes `args`; each later call takes `next`, where a name is that parameter's previous argument and the element `{call, args: names}` is the previous call's result. The vector passes when the last result equals `expect`. `names` and `next` are one per parameter of `call`; each element's type must equal its parameter's (`bytes` and `secret-bytes` interchange, and a nullable result feeds its base type); at least one element is the call. The count must be printed in the cited section (commas ignored), and when the expect's label holds a number it must be the count. Not with `tolerance`, nor on a null or bool expect. `slow` marks a vector a test runs only when asked; it is written only when true.
+
+| Property | Type | Required | Description |
+| --- | --- | --- | --- |
+| `count` | `integer` | yes | at least 1; at most 1000000000. |
+| `names` | [`ident`](#def-ident)[] | yes | at least 1 items. |
+| `next` | [object[]](#def-iterate-next-variant-1) | yes | at least 1 items. |
+| `slow` | `boolean` | no |  |
+
+No other property is allowed.
+
+<a id="def-iterate-next-variant-1"></a>
+
+#### `next[] (variant 1)`
+
+| Property | Type | Required | Description |
+| --- | --- | --- | --- |
+| `var` | [`ident`](#def-ident) | yes |  |
+
+No other property is allowed.
+
+<a id="def-iterate-next-variant-2"></a>
+
+#### `next[] (variant 2)`
+
+| Property | Type | Required | Description |
+| --- | --- | --- | --- |
+| `call` | `string` | yes |  |
+| `args` | [object[]](#def-iterate-next-variant-2-args) | yes |  |
+
+No other property is allowed.
+
+<a id="def-iterate-next-variant-2-args"></a>
+
+#### `next[] (variant 2).args[]`
+
+| Property | Type | Required | Description |
+| --- | --- | --- | --- |
+| `var` | [`ident`](#def-ident) | yes |  |
+
+No other property is allowed.
 
 <a id="def-tolerance"></a>
 

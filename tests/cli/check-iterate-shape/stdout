@@ -1,0 +1,10 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ x25519-iterate-shape · RFC 7748 (Elliptic Curves for Security) · nish/crypto/x25519
+ Status: INVALID
+
+ Gate failures
+  ✘ shape: clauses[0].iterate.names: one name per parameter of x25519: 2, got 1
+  ✘ shape: clauses[0].iterate.next[0]: a call is x25519 on the names, in order
+  ✘ shape: clauses[1].iterate.next[1]: a name or x25519 on the names
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

@@ -1,0 +1,44 @@
+Internet Research Task Force (IRTF)                           A. Langley
+Request for Comments: 7748                                        Google
+Category: Informational                                       M. Hamburg
+ISSN: 2070-1721                                 Rambus Cryptography Research
+                                                               S. Turner
+                                                              IECA, Inc.
+                                                            January 2016
+
+
+                      Elliptic Curves for Security
+
+5.  The X25519 and X448 Functions
+
+   The "X25519" and "X448" functions perform scalar multiplication on
+   the Montgomery form of the above curves.
+
+5.2.  Test Vectors
+
+   The second type of test vector consists of the result of calling the
+   function in question a specified number of times.  Initially, set k
+   and u to be the following values:
+
+   For X25519:
+     0900000000000000000000000000000000000000000000000000000000000000
+
+   For each iteration, set k to be the result of calling the function
+   and u to be the old value of k.  The final result is the value left
+   in k.
+
+   X25519:
+
+   After one iteration:
+       422c8e7a6227d7bca1350b3e2bb7279f7897b87bb6854b783c60e80311ae3079
+   After 1,000 iterations:
+       684cf59ba83309552800ef566f2f4d3c1c3887c49360e3875f2eb94d99532c51
+   After 1,000,000 iterations:
+       7c3911e0ab2586fd864497297e575e6f3bc601c0883c30df5f4dd2d24f665424
+
+
+
+
+
+Langley, et al.               Informational                     [Page 1]
+

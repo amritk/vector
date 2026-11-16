@@ -1,5 +1,5 @@
 import { Suite } from "nish/testing"
-import { splitLines } from "nish/text"
+import { replaceAll, splitLines } from "nish/text"
 import { newJsonDocument, parseJson } from "../../../src/core/json"
 import { contractFromJson, contractParse } from "../../../src/spec/contract/read"
 import { contractWrite } from "../../../src/spec/contract/write"
@@ -72,6 +72,17 @@ export const main = (): i32 => {
   for (let i = 0; i < foreign.length; i++) {
     roundtripByValue(t, foreign[i])
   }
+  // An iterated vector keeps its iterate, and writes slow only when it is true.
+  const iterDir = "tests/fixtures/iterate-contract/contracts"
+  roundtripByValue(t, `${iterDir}/x25519-iterate.json`)
+  roundtripByValue(t, `${iterDir}/x25519-iterate-count.json`)
+  const iter = readFileSyncOrNull(`${iterDir}/x25519-iterate.json`) ?? ""
+  const fast = contractWrite(contractParse(iter, "iterate").expect("parse"))
+  t.ok("an iterated vector writes its iterate", fast.indexOf('"iterate": {') >= 0 && fast.indexOf('"count": 1000') >= 0)
+  t.ok("a fast iterated vector writes no slow", fast.indexOf('"slow"') < 0)
+  const slowText = replaceAll(iter, '"count": 1000,', '"count": 1000, "slow": true,')
+  const slow = contractWrite(contractParse(slowText, "iterate").expect("parse"))
+  t.ok("a slow iterated vector writes slow", slow.indexOf('"slow": true') >= 0)
   // An already-parsed JSON value reads the same, and a wrong one says where.
   const doc = newJsonDocument()
   const bad = contractFromJson(doc, parseJson(doc, '{"contract": 1}', "inline").expect("json"))

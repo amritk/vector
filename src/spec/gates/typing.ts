@@ -7,7 +7,7 @@
  */
 
 import { CheckContext } from "../check"
-import { Clause, ClauseKind, FnSig, LitKind, Literal } from "../contract/types"
+import { Clause, ClauseKind, ExprKind, FnSig, Iterate, LitKind, Literal } from "../contract/types"
 import { TypeEnv, typeEnvBind, typeLiteralFits, typeOf, typeOfLiteral } from "../contract/typing"
 import { vocabBaseOf, vocabIntMax, vocabIntMin, vocabIsIntType, vocabValueType } from "../contract/vocab"
 import { gateIssue } from "./note"
@@ -62,6 +62,40 @@ const gateTypingVector = (k: Clause, fns: FnSig[], errors: string[]): void => {
   }
   if (k.tolerance !== null && ret !== "f64") {
     errors.push(`tolerance: ${k.call} returns ${ret}, and only an f64 result is compared within a tolerance`)
+  }
+  const it = k.iterate
+  if (it !== null) {
+    gateTypingIterate(k, it, sig, errors)
+  }
+}
+
+/**
+ * An iterated vector's next elements against the parameters they feed: the
+ * call feeds a parameter of its return type (a nullable result its base
+ * type), and a name feeds a parameter of its own parameter's type.
+ */
+const gateTypingIterate = (k: Clause, it: Iterate, sig: FnSig, errors: string[]): void => {
+  const ret = vocabValueType(vocabBaseOf(sig.returns))
+  for (let j = 0; j < it.next.length && j < sig.params.length; j++) {
+    const p = sig.params[j]
+    const want = vocabValueType(p.type)
+    const e = it.next[j]
+    if (e.kind === ExprKind.Call) {
+      // A result is never null once it feeds the next step, so a nullable parameter takes it too.
+      if (ret !== vocabBaseOf(want)) {
+        errors.push(`iterate.next[${j}]: ${k.call} returns ${ret}, and ${k.call}(${p.name}) wants ${want}`)
+      }
+    } else if (e.kind === ExprKind.Var) {
+      const m = it.names.indexOf(e.name)
+      if (m >= 0 && m < sig.params.length) {
+        const from = vocabValueType(sig.params[m].type)
+        if (from !== want) {
+          errors.push(
+            `iterate.next[${j}]: ${e.name} is ${k.call}(${sig.params[m].name}), a ${from}, and ${k.call}(${p.name}) wants ${want}`,
+          )
+        }
+      }
+    }
   }
 }
 

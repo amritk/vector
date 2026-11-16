@@ -18,11 +18,11 @@
  */
 
 import { jsonStringifyString } from "nish/json"
-import { asciiLower } from "nish/text"
+import { asciiLower, trim } from "nish/text"
 import { toHex, utf8Bytes } from "../../core/hex"
 import { CheckContext, CheckNote } from "../check"
 import { contractF64Bits, contractF64IsNaN, contractF64Parse } from "../contract/f64"
-import { Clause, ClauseKind, LitKind, Literal, VectorSourceKind } from "../contract/types"
+import { Clause, ClauseKind, Iterate, LitKind, Literal, VectorSourceKind } from "../contract/types"
 import { SourceSet, sourceFind } from "../source/load"
 import { HexValue, RfcSection, rfcHexValues, rfcNormalize, rfcSectionText } from "../source/rfc"
 import { gateArgsAt, gateCitedSection, gatePlace, gateQuoteMissing, gateSources } from "./cite"
@@ -512,6 +512,242 @@ const gateCounts = (labels: string[], i: i32): boolean => {
   return hi - lo + 1 === toF64(ns.length)
 }
 
+/** Whether `c` is a digit. */
+const gateFidDigit = (c: i32): boolean => c >= 48 && c <= 57
+
+/** Whether `c` is an ASCII letter or `_`. */
+const gateFidLetter = (c: i32): boolean => (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95
+
+/**
+ * Whether the byte at `i` of `s` belongs to a token: a letter, digit, `_`,
+ * `.` or `,`, or a `-` that joins a name to what follows it (`SHA-256`). A
+ * `-` after a digit, a non-ASCII byte (an en dash) and anything else bound a
+ * token, so `1,000-iteration` and `1,000–2,000` hold whole numbers while
+ * `5.2`, `X25519` and `SHA-256` hold none.
+ */
+const gateFidTokenAt = (s: string, i: i32): boolean => {
+  const c = s.charCodeAt(i)
+  if (gateFidDigit(c) || gateFidLetter(c) || c === 46 || c === 44) {
+    return true
+  }
+  return (
+    c === 45 &&
+    i > 0 &&
+    gateFidLetter(s.charCodeAt(i - 1)) &&
+    i + 1 < s.length &&
+    (gateFidLetter(s.charCodeAt(i + 1)) || gateFidDigit(s.charCodeAt(i + 1)))
+  )
+}
+
+/**
+ * Where the tokens of `s` are, as start and end pairs, each without the `.`
+ * and `,` that end a sentence or a list item.
+ */
+const gateFidSpans = (s: string): i32[] => {
+  const out: i32[] = []
+  let i = 0
+  while (i < s.length) {
+    if (!gateFidTokenAt(s, i)) {
+      i = i + 1
+      continue
+    }
+    let j = i
+    while (j < s.length && gateFidTokenAt(s, j)) {
+      j = j + 1
+    }
+    let e = j
+    while (e > i && (s.charCodeAt(e - 1) === 46 || s.charCodeAt(e - 1) === 44)) {
+      e = e - 1
+    }
+    if (e > i) {
+      out.push(i)
+      out.push(e)
+    }
+    i = j
+  }
+  return out
+}
+
+/** The tokens of `s` (`gateFidSpans`). */
+const gateFidTokens = (s: string): string[] => {
+  const spans = gateFidSpans(s)
+  const out: string[] = []
+  for (let i = 0; i + 1 < spans.length; i = i + 2) {
+    out.push(s.substring(spans[i], spans[i + 1]))
+  }
+  return out
+}
+
+/**
+ * The whole number a token is, its commas dropped, or "" when it is none: a
+ * run of digits, or one to three digits then groups of a comma and three
+ * digits ("1,000,000"). A malformed group ("1,00", "10,00,000") is no number.
+ */
+const gateFidNumber = (t: string): string => {
+  let digits = ""
+  let group = -1
+  for (let i = 0; i < t.length; i++) {
+    const c = t.charCodeAt(i)
+    if (gateFidDigit(c)) {
+      digits = `${digits}${t.substring(i, i + 1)}`
+      group = group < 0 ? group : group + 1
+      if (group > 3) {
+        return ""
+      }
+    } else if (c === 44) {
+      if ((group < 0 && (digits.length === 0 || digits.length > 3)) || (group >= 0 && group !== 3)) {
+        return ""
+      }
+      group = 0
+    } else {
+      return ""
+    }
+  }
+  return digits.length === 0 || (group >= 0 && group !== 3) ? "" : digits
+}
+
+/**
+ * Whether `line` is a numbered section heading, as an RFC prints one: a
+ * number at the margin (`\d+(\.\d+)*`), a ".", whitespace and a title
+ * ("5.2.  Test Vectors"). A heading's number is not a count printed in the
+ * section.
+ */
+const gateFidHeading = (line: string): boolean => {
+  let i = 0
+  while (true) {
+    const start = i
+    while (i < line.length && gateFidDigit(line.charCodeAt(i))) {
+      i = i + 1
+    }
+    if (i === start || i >= line.length || line.charCodeAt(i) !== 46) {
+      return false
+    }
+    i = i + 1
+    if (i >= line.length || !gateFidDigit(line.charCodeAt(i))) {
+      break
+    }
+  }
+  if (i >= line.length || (line.charCodeAt(i) !== 32 && line.charCodeAt(i) !== 9)) {
+    return false
+  }
+  return trim(line.substring(i, line.length)).length > 0
+}
+
+/** The whole numbers in `s`, each a whole token and with its commas dropped ("1,000" is "1000"). */
+const gateWholeNumbers = (s: string): string[] => {
+  const out: string[] = []
+  for (const t of gateFidTokens(s)) {
+    const n = gateFidNumber(t)
+    if (n.length > 0) {
+      out.push(n)
+    }
+  }
+  return out
+}
+
+/** A whole number's digits as English prints them, grouped by commas in threes: "1000" is "1,000". */
+const gateGrouped = (d: string): string => {
+  let out = ""
+  for (let i = 0; i < d.length; i++) {
+    if (i > 0 && (d.length - i) % 3 === 0) {
+      out = `${out},`
+    }
+    out = `${out}${d.substring(i, i + 1)}`
+  }
+  return out
+}
+
+/**
+ * Where the number that counts rounds is in a label, as a token index into
+ * `gateFidSpans`: the one before "iteration", "iterations" or "times"
+ * (`After 1,000 iterations` counts 1000), else, with `only`, the label's only
+ * number; else -1.
+ */
+const gateLabelCountAt = (label: string, only: boolean): i32 => {
+  const ts = gateFidTokens(label)
+  for (let i = 0; i + 1 < ts.length; i++) {
+    const w = asciiLower(ts[i + 1])
+    if (gateFidNumber(ts[i]).length > 0 && (w === "iteration" || w === "iterations" || w === "times")) {
+      return i
+    }
+  }
+  let at = -1
+  let n = 0
+  for (let i = 0; i < ts.length; i++) {
+    if (gateFidNumber(ts[i]).length > 0) {
+      at = i
+      n = n + 1
+    }
+  }
+  return only && n === 1 ? at : -1
+}
+
+/**
+ * The number a label counts rounds with (`gateLabelCountAt`), else null:
+ * with two numbers and no word to say which counts, it is not checked.
+ */
+const gateLabelCount = (label: string): string | null => {
+  const at = gateLabelCountAt(label, true)
+  return at < 0 ? null : gateFidNumber(gateFidTokens(label)[at])
+}
+
+/**
+ * A label with the number that counts rounds (`gateLabelCountAt`) cut out,
+ * so the rest of it can still be compared with its variants.
+ */
+const gateLabelUncounted = (label: string, only: boolean): string => {
+  const at = gateLabelCountAt(label, only)
+  if (at < 0) {
+    return label
+  }
+  const spans = gateFidSpans(label)
+  return `${label.substring(0, spans[2 * at])} ${label.substring(spans[2 * at + 1], label.length)}`
+}
+
+/** Whether an iterated vector's expected label counts its rounds: `After 1,000 iterations` for 1000. */
+const gateLabelIsCount = (k: Clause, label: string): boolean => {
+  const it = k.iterate
+  const n = gateLabelCount(label)
+  return it !== null && n !== null && n === `${it.count}`
+}
+
+/**
+ * An iterated vector's count against its section: the count is printed
+ * there as a whole number (commas ignored), outside a heading, and the number the expected
+ * label counts rounds with (`gateLabelCount`) is the count.
+ */
+const gateIterateCount = (
+  ctx: CheckContext,
+  out: string[],
+  k: Clause,
+  it: Iterate,
+  sec: RfcSection,
+  where: string,
+): void => {
+  const want = `${it.count}`
+  let printed = false
+  for (let i = 0; i < sec.lines.length && !printed; i++) {
+    printed = !gateFidHeading(sec.lines[i]) && gateWholeNumbers(sec.lines[i]).indexOf(want) >= 0
+  }
+  if (!printed) {
+    gateIssue(ctx, out, GATE_FIDELITY, k.id, `the count ${gateGrouped(want)} is not printed in ${where}`)
+  }
+  const expect = k.expect
+  const label: string | null = expect === null ? null : expect.label
+  if (label !== null) {
+    const n = gateLabelCount(label)
+    if (n !== null && n !== want) {
+      gateIssue(
+        ctx,
+        out,
+        GATE_FIDELITY,
+        `${k.id}.expect`,
+        `the expected label "${label}" counts ${gateGrouped(n)}, but the vector iterates ${gateGrouped(want)} times`,
+      )
+    }
+  }
+}
+
 /**
  * A value printed under one of several labels that differ only in a number
  * ("HMAC-SHA-256", "HMAC-SHA-512") must be the variant the called function
@@ -531,13 +767,26 @@ const gateOwnVariant = (l: GateLits, k: Clause, sec: RfcSection): void => {
   const named = gateDigitRuns(k.call)
   const inSection = `${l.where} ("${sec.title}")`
   for (const b of l.bounds) {
-    const label = b.label
-    if (label === null) {
+    const shown = b.label
+    if (shown === null) {
       continue
     }
+    // An iterated vector's rounds (After 1,000 iterations) are not variants:
+    // its count, and the round number of every label beside it, are cut out,
+    // and the rest of the label is still its own variant's.
+    const rounds = b.at === "expect" && gateLabelIsCount(k, shown)
+    const label = rounds ? gateLabelUncounted(shown, true) : shown
     const mine = gateDigitRuns(label)
     const shape = gateSkeleton(label)
-    const siblings = printed.filter((p: string): boolean => gateSkeleton(p) === shape && !gateSameLabel(p, label))
+    const siblings: string[] = []
+    const shownAll = [shown]
+    for (const p of printed) {
+      const q = rounds ? gateLabelUncounted(p, false) : p
+      if (gateSkeleton(q) === shape && !gateSameLabel(p, shown)) {
+        siblings.push(q)
+        shownAll.push(p)
+      }
+    }
     if (siblings.length === 0) {
       continue
     }
@@ -548,8 +797,8 @@ const gateOwnVariant = (l: GateLits, k: Clause, sec: RfcSection): void => {
     const own: string[] = []
     const theirs: string[] = []
     const from: string[] = []
-    for (const sib of siblings) {
-      const ds = gateDigitRuns(sib)
+    for (let si = 0; si < siblings.length; si++) {
+      const ds = gateDigitRuns(siblings[si])
       for (let i = 0; i < ds.length; i++) {
         const m = i < mine.length ? mine[i] : ""
         if (ds[i] === m || gateCounts(all, i)) {
@@ -560,7 +809,7 @@ const gateOwnVariant = (l: GateLits, k: Clause, sec: RfcSection): void => {
         }
         if (theirs.indexOf(ds[i]) < 0) {
           theirs.push(ds[i])
-          from.push(sib)
+          from.push(shownAll[si + 1])
         }
       }
     }
@@ -577,14 +826,14 @@ const gateOwnVariant = (l: GateLits, k: Clause, sec: RfcSection): void => {
       gateNote(
         l,
         `${k.id}.${b.at}`,
-        `the value is printed under "${label}" in ${inSection}, but ${k.call} names ${theirs[other]}, as in "${from[other]}": a vector uses the value printed for the variant its function computes`,
+        `the value is printed under "${shown}" in ${inSection}, but ${k.call} names ${theirs[other]}, as in "${from[other]}": a vector uses the value printed for the variant its function computes`,
         false,
       )
     } else {
       gateNote(
         l,
         `${k.id}.${b.at}`,
-        `the value is printed under "${label}", one of ${gateQuoted(all)} in ${inSection}, and nothing in the name ${k.call} says which variant it computes: not checked that this is its own`,
+        `the value is printed under "${shown}", one of ${gateQuoted(shownAll)} in ${inSection}, and nothing in the name ${k.call} says which variant it computes: not checked that this is its own`,
         true,
       )
     }
@@ -647,6 +896,10 @@ const gateFidelityVector = (ctx: CheckContext, out: string[], set: SourceSet, k:
   }
   gateOneTestCase(l, args, sec)
   gateOwnVariant(l, k, sec)
+  const it = k.iterate
+  if (it !== null) {
+    gateIterateCount(ctx, out, k, it, sec, where)
+  }
   for (const n of l.notes) {
     if (n.warning) {
       gateWarn(ctx, g, n.at, n.message)

@@ -1,0 +1,18 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ x25519-iterate-count · RFC 7748 (Elliptic Curves for Security) · nish/crypto/x25519
+ Status: INVALID
+
+ Gate failures
+  ✘ fidelity 5.2-ITER-2000: the count 2,000 is not printed in RFC §5.2
+  ✘ fidelity 5.2-ITER-2000.expect: the expected label "After 1,000 iterations" counts 1,000, but the vector iterates 2,000 times
+  ✘ fidelity 5.2-ITER-LABEL.expect: the expected label "After 1,000,000 iterations" counts 1,000,000, but the vector iterates 1,000 times
+
+ Requirements
+  ○ R-ITERATE  §5.2 DEFINITION  "For each iteration, set k to be the result of calling the funct…"
+      ○ 5.2-ITER-2000  ○ 5.2-ITER-LABEL
+
+ Warnings
+  ! clauses: no property clauses: the contract checks only the RFC's own vectors
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run
