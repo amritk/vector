@@ -34,14 +34,14 @@ permissions: {}
 
 jobs:
   release-please:
-    uses: amritk/workflows/.github/workflows/release-please.yml@cf32263a2294146a948dd7bb80c2c1803dc996aa
+    uses: amritk/workflows/.github/workflows/release-please.yml@c20c512afd4838c8c2a4e1de48df727e699f6e58
     permissions:
       contents: write
       pull-requests: write
       issues: write
       actions: write
   release:
-    uses: amritk/workflows/.github/workflows/release.yml@cf32263a2294146a948dd7bb80c2c1803dc996aa
+    uses: amritk/workflows/.github/workflows/release.yml@c20c512afd4838c8c2a4e1de48df727e699f6e58
     permissions:
       contents: write
       id-token: write
