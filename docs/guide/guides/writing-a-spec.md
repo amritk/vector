@@ -295,6 +295,9 @@ forall (b: u8[] /* 0..64 */) => {
   `asked for N samples; found M`. Extract refuses 0, anything
   past 256, anything but plain digits (`12.5`, `-1`, `096`), a samples
   line in another case or a block comment, and one anywhere but line 2.
+  Any comment in the block whose first word is `samples` is a samples
+  line, so `// samples are drawn small` is refused too: on line 2 as not
+  a count, anywhere else as out of place.
 - **`forall (var, …) => body`**, optionally followed by `where expr`. Each
   variable has a bound in a comment:
   - `b: u8[] /* lo..hi */`: a length, with 0 ≤ lo ≤ hi ≤ 4096.

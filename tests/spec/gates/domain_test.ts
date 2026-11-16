@@ -99,6 +99,13 @@ export const main = (): i32 => {
   t.ok("sampling is reproducible", again === order.map(domainTestKey).join(" "))
   const empty = domainTestSample(1)
   t.ok("an outcome carries its issue", empty.issue !== null && empty.samples.length === 0)
+  const ke = contractParse(DOMAIN_TEST_C, "c1").expect("parse")
+  ke.clauses[1].samples = 8
+  const asked = sampleProperty(ke.contract, ke.clauses[1]).expect("sample")
+  t.ok(
+    "an empty domain that asked for samples gets its issue and no note",
+    asked.issue !== null && asked.stat.notes.every((n: string): boolean => !n.startsWith("asked for")),
+  )
   const c = contractParse(DOMAIN_TEST_C, "c1").expect("parse")
   t.eqStr("an alphabet's characters, each once", sampleAlphabet(c.clauses[2].forall[1]).join(""), "ab")
   const printable = c.clauses[2].forall[1]

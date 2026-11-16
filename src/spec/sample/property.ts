@@ -338,8 +338,8 @@ export const sampleProperty = (contract: string, k: Clause): Result<SampleOutcom
 
 /**
  * Seeded random draws, until `want` of them were kept or the run holds
- * `total` samples, within `want * 20` tries; Err "where: ..." when `where`
- * cannot be evaluated.
+ * `total` samples, within `want * 20` tries. Ok(true), the repo's Ok for
+ * a step with no value; Err "where: ..." when `where` cannot be evaluated.
  */
 const sampleDraw = (run: SampleRun, want: i32, total: i32): Result<boolean, string> => {
   for (let tries = 0; run.out.stat.random < want && tries < want * 20 && run.out.samples.length < total; tries++) {
@@ -355,7 +355,7 @@ const sampleDraw = (run: SampleRun, want: i32, total: i32): Result<boolean, stri
  * cannot be evaluated. Without its own `samples` a property gets every
  * boundary and up to SAMPLE_DEFAULT_RANDOM draws, at most SAMPLE_MAX in all;
  * with `samples` N it gets at most N boundaries, then draws until it has N,
- * and a note when it found fewer.
+ * and a note when it found some, but fewer.
  */
 const sampleRun = (run: SampleRun, whereTerm: string | null, queries: SampleQuery[]): Result<boolean, string> => {
   sampleInDomain(run, sampleFill(new SampleRun(run.k, run.ranges, "probe"), new Map<string, i64>())).orReturn()
@@ -367,7 +367,8 @@ const sampleRun = (run: SampleRun, whereTerm: string | null, queries: SampleQuer
   }
   const unsat = sampleBoundaries(run, whereTerm, queries, n).orReturn()
   sampleDraw(run, n, n).orReturn()
-  if (run.out.samples.length < n) {
+  // An empty domain is an issue of its own; a note on top says nothing more.
+  if (run.out.samples.length > 0 && run.out.samples.length < n) {
     run.out.stat.notes.push(`asked for ${n} samples; found ${run.out.samples.length}`)
   }
   return Ok(unsat)

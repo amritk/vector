@@ -362,6 +362,8 @@ there are N, within N × 20 tries. A domain with fewer than N inputs, or a
 notes `asked for N samples; found M`. Extract refuses
 a count outside 1..256 (`samples must be 1..256, not 0`), one that is not
 plain digits, and a samples line anywhere but line 2, each at its line.
+Any comment in a ts-property block whose first word is `samples` counts as
+a samples line, prose included, so word such a comment another way.
 
 ## Sources
 
