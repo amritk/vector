@@ -18,6 +18,7 @@ import {
   Expr,
   ExprKind,
   ForallVar,
+  Iterate,
   LitKind,
   Literal,
   NameOverride,
@@ -185,6 +186,21 @@ const writeTolerance = (t: Tolerance): WriteNode => {
   return o
 }
 
+const writeIterate = (it: Iterate): WriteNode => {
+  const o = writeObj()
+  writeSet(o, "count", writeRaw(`${it.count}`))
+  writeSet(o, "names", writeStrings(it.names))
+  const next = writeArr()
+  for (let i = 0; i < it.next.length; i++) {
+    next.items.push(writeExpr(it.next[i]))
+  }
+  writeSet(o, "next", next)
+  if (it.slow) {
+    writeSet(o, "slow", writeRaw("true"))
+  }
+  return o
+}
+
 const writeForall = (x: ForallVar): WriteNode => {
   const o = writeObj()
   writeSet(o, "name", writeStr(x.name))
@@ -229,6 +245,10 @@ const writeClause = (c: Clause): WriteNode => {
     const tol = c.tolerance
     if (tol !== null) {
       writeSet(o, "tolerance", writeTolerance(tol))
+    }
+    const it = c.iterate
+    if (it !== null) {
+      writeSet(o, "iterate", writeIterate(it))
     }
     return o
   }

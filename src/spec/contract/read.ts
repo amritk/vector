@@ -38,6 +38,7 @@ import {
   Param,
   Requirement,
   SourceDecl,
+  Iterate,
   Tolerance,
   VectorSource,
   VectorSourceKind,
@@ -601,6 +602,33 @@ const readTolerance = (r: ContractReader, v: JsonValue, at: string): Tolerance |
   return t
 }
 
+const readIterate = (r: ContractReader, v: JsonValue, at: string): Iterate | null => {
+  if (!readObject(r, v, at, ["count", "names", "next", "slow"])) {
+    return null
+  }
+  const it = new Iterate()
+  it.count = readCount(r, v, "count", at, 1, 1000000000, true)
+  it.names = readStrings(r, v, "names", at, true) ?? []
+  const next = readArray(r, v, "next", at, true)
+  if (next !== null) {
+    for (let i = 0; i < next.length; i++) {
+      const e = readExpr(r, next[i], `${at}.next[${i}]`, false)
+      if (e !== null) {
+        it.next.push(e)
+      }
+    }
+  }
+  const slow = r.doc.get(v, "slow")
+  if (r.doc.kind(slow) !== JSON_VALUE_NONE) {
+    if (readIsKind(r, slow, JSON_VALUE_BOOLEAN)) {
+      it.slow = r.doc.boolean(slow)
+    } else {
+      readFail(r, `${at}.slow`, "a boolean")
+    }
+  }
+  return it
+}
+
 const readForall = (r: ContractReader, v: JsonValue, at: string): ForallVar | null => {
   if (!readIsKind(r, v, JSON_VALUE_OBJECT)) {
     readFail(r, at, "an object")
@@ -670,7 +698,7 @@ const readClause = (r: ContractReader, v: JsonValue, at: string): Clause | null 
   const isVector = kind === "vector"
   const c = new Clause(isVector ? ClauseKind.Vector : ClauseKind.Property)
   if (isVector) {
-    readObject(r, v, at, ["kind", "id", "title", "covers", "source", "section", "call", "args", "expect", "tolerance"])
+    readObject(r, v, at, ["kind", "id", "title", "covers", "source", "section", "call", "args", "expect", "tolerance", "iterate"])
   } else {
     readObject(r, v, at, ["kind", "id", "title", "covers", "forall", "where", "assert", "samples"])
   }
@@ -704,6 +732,10 @@ const readClause = (r: ContractReader, v: JsonValue, at: string): Clause | null 
     const tol = r.doc.get(v, "tolerance")
     if (r.doc.kind(tol) !== JSON_VALUE_NONE) {
       c.tolerance = readTolerance(r, tol, `${at}.tolerance`)
+    }
+    const it = r.doc.get(v, "iterate")
+    if (r.doc.kind(it) !== JSON_VALUE_NONE) {
+      c.iterate = readIterate(r, it, `${at}.iterate`)
     }
     return c
   }
