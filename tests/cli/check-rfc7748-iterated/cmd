@@ -1,0 +1,1 @@
+vector spec check tests/fixtures/rfc7748/contracts/rfc7748-iterated.json --module tests/fixtures/x25519/fixture/x25519.ts

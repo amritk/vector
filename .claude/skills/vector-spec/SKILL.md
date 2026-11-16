@@ -486,3 +486,12 @@ line. N is the total, boundaries included, and its ceiling is 256. A
 `command` source is only as good as the command. Timing, secret wiping and
 other non-functional MUSTs are excluded and must be checked elsewhere (nish's
 ct-asm/ct-timing and wipe tests).
+
+An iterated vector (a value printed after N calls, RFC 7748 §5.2) is a
+plain row plus an `Iterate: <id> <N> times, (k, u) <- (f(k, u), k)`
+paragraph after the vector table; see tests/fixtures/rfc7748. A vector
+marked `slow` (`Iterate: <id> 1,000,000 times, slow, …`) is skipped, and
+reported as skipped, never passed, unless `spec emit` / `spec run` get
+`--slow`; say so when a run reports a skip. A truncated result (RFC 4231
+test case 5, the first 128 bits of the HMAC) still cannot be compared:
+exclude it with `Untested:`.

@@ -1,0 +1,1 @@
+vector spec extract tests/fixtures/rfc7748/specs/rfc7748-iterated.xml -o tests/fixtures/rfc7748/contracts/rfc7748-iterated.json --check

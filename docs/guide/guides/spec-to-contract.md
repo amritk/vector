@@ -475,4 +475,53 @@ vector: spec check: VECTOR_Z3 is /nonexistent, which is not a file
 See [Exit codes and tool failures](exit-codes.md) for where vector looks for
 z3.
 
+## Worked example: an iterated vector
+
+RFC 7748 §5.2 prints k after 1, 1,000 and 1,000,000 calls of X25519 from
+k = u = 9, and nothing in between. The spec in
+`tests/fixtures/rfc7748/specs/rfc7748-iterated.md` states the 1,000- and
+1,000,000-iteration vectors as rows like the 1-iteration one: Call holds
+the starting arguments, Expected the final k. An `Iterate:` paragraph after
+the table says how often to call, and how each step's result feeds the next:
+
+```md
+| 5.2-ITER-1000 | `x25519(For X25519 = 0900…00, For X25519 = 0900…00)` | `After 1,000 iterations = 684cf59b…2c51` | R-ITER | {{Section 5.2 of RFC7748}} | RFC 7748 5.2: 1,000 iterations from k = u = 9 |
+
+Iterate: 5.2-ITER-1000 1,000 times, (k, u) <- (x25519(k, u), k)
+
+Iterate: 5.2-ITER-1M 1,000,000 times, slow, (k, u) <- (x25519(k, u), k)
+```
+
+(The row's hex is shortened here; the spec prints all 32 bytes.) `(k, u) <-
+(x25519(k, u), k)` is the RFC's sentence "set k to be the result of calling
+the function and u to be the old value of k", which the spec quotes as
+R-ITER. Extracting it gives the vector an
+[`iterate`](#an-iterated-vector), and the 1,000,000 one `"slow": true`:
+
+```json
+"iterate": {
+  "count": 1000,
+  "names": ["k", "u"],
+  "next": [{"call": "x25519", "args": [{"var": "k"}, {"var": "u"}]}, {"var": "k"}]
+}
+```
+
+Running it against a reference X25519 calls the function 1,001 times, once
+for 5.2-ITER-1 and 1,000 times for 5.2-ITER-1000, and skips the slow vector:
+
+```sh
+./dist/vector spec run tests/fixtures/rfc7748/contracts/rfc7748-iterated.json \
+  --package fixture=tests/fixtures/x25519/fixture --nish-root .nish
+```
+
+```text
+SATISFIED: rfc7748-iterated (exit 0)
+  pass  R-FUNC
+  pass  R-ITER
+  skip  5.2-ITER-1M (slow; pass --slow)
+```
+
+With `--slow` the 1,000,000-iteration vector runs too, which takes about two minutes
+rather than about three seconds.
+
 [schema]: https://github.com/amritk/vector/blob/main/schemas/rfc-contract.json

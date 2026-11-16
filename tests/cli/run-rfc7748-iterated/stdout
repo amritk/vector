@@ -1,0 +1,4 @@
+SATISFIED: rfc7748-iterated (exit 0)
+  pass  R-FUNC
+  pass  R-ITER
+  skip  5.2-ITER-1M (slow; pass --slow)

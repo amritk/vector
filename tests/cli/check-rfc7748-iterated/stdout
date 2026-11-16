@@ -1,0 +1,23 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ rfc7748-iterated · RFC 7748 (Elliptic Curves for Security: X25519's iterated vectors) · fixture/x25519
+ Status: CONTRACT_VALID
+
+ Requirements
+  ○ R-FUNC  §5 DEFINITION  "The functions take a scalar and a u-coordinate as inputs and pr…"
+      ○ 5.2-ITER-1
+  ○ R-ITER  §5.2 DEFINITION  "For each iteration, set k to be the result of calling the funct…"
+      ○ 5.2-ITER-1  ○ 5.2-ITER-1000  ○ 5.2-ITER-1M
+
+ Not tested, by decision
+  §5 "When receiving such an array, implementations of X25519…" — this fixture checks the iterated vectors only; nish's specs/rfc7748-x25519.md tests the mask
+  §5 "Implementations MUST accept non-canonical values and pr…" — this fixture checks the iterated vectors only; nish's specs/rfc7748-x25519.md tests non-canonical values
+  §5 "For X25519, the unused, most significant bit MUST be ze…" — this fixture checks the iterated vectors only; nish's specs/rfc7748-x25519.md tests the output's top bit
+  §5 "The cswap function SHOULD be implemented in constant ti…" — timing is not observable by a functional test
+  §A "The trace of Frobenius MUST NOT be in {0, 1} in order t…" — an obligation on choosing a curve, which Curve25519 already meets; nothing an implementation of X25519 does can satisfy or violate it
+  §A "MOV Degree [reducing]: the embedding degree MUST be gre…" — an obligation on choosing a curve, which Curve25519 already meets; nothing an implementation of X25519 does can satisfy or violate it
+  §A "CM Discriminant: discriminant D MUST be greater than 2^…" — an obligation on choosing a curve, which Curve25519 already meets; nothing an implementation of X25519 does can satisfy or violate it
+
+ Warnings
+  ! clauses: no property clauses: the contract checks only the RFC's own vectors
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run
