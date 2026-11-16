@@ -65,6 +65,12 @@ test, lints and smoke-runs the binary on every push.
 **Read a check's exit status, never its piped tail.** `npm run lint | tail`
 reports success when lint fails. Run it bare, or check `$?` / `PIPESTATUS`.
 
+**A new rule, refusal or flag lands with a test that fails without it.** A
+golden that only shows a flag is accepted, or a unit test that sets the
+option directly, does not count: drive it through `vectorRun` or the binary
+and assert its effect. For a parser or gate rule, test its neighbours too
+(table-driven), not just the case that motivated it.
+
 **Generated files are regenerated, never edited by hand.** That covers
 `docs/reference/**` and its routes in `scalar.config.json`, `tests/dogfood/**`, `contracts/*.json`
 (extracted from `specs/*.xml`) and `specs/*.xml` (built from `specs/*.md` by
