@@ -107,7 +107,7 @@
                 "or",
                 "implies"
               ],
-              "description": "Arithmetic (+ - * /), min/max (both operands numeric, same type), comparisons, and boolean logic. `/` requires Real operands and yields Real (use Real, not Int, for division). Prefer linear arithmetic: multiply variables by literal constants, not by other variables — nonlinear terms can make the solver return unknown."
+              "description": "Arithmetic (+ - * /), min/max (both operands numeric, same type), comparisons, and boolean logic. `/` requires Real operands and yields Real (use Real, not Int, for division). Every Int `+`, `-` and `*` the emitted code evaluates must provably stay within ±(2^53−1), where a float64 holds every integer exactly; one that may leave it is a range hazard. Prefer linear arithmetic: multiply variables by literal constants, not by other variables — nonlinear terms can make the solver return unknown."
             },
             "left": {
               "$ref": "#/$defs/expr"

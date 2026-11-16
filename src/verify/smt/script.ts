@@ -1,11 +1,21 @@
 /**
  * `verify/smt/script` — translates a typechecked vector-lang program into one
  * SMT-LIB2 script for z3: per function, a reachability query, a proof and a
- * triviality query per ensures clause, and a query per division and per
- * callee precondition the body evaluates. Reals stay exact rationals; calls
- * are inlined, which layering makes finite.
+ * triviality query per ensures clause, and a query per division, per callee
+ * precondition and per Int operation the emitted code evaluates. Reals stay
+ * exact rationals and Ints unbounded; calls are inlined, which layering makes
+ * finite.
+ *
+ * The Int queries close the gap between the proof and the code: an Int is a
+ * float64 when the emitted TypeScript runs, exact only within ±(2^53−1). Each
+ * `+`, `-` and `*` over Int is proven to stay inside that range on its path.
+ * Parameters are guarded to safe integers and the reader refuses a literal a
+ * float64 cannot hold, and float64 `+`, `-` and `*` round correctly, so when
+ * every exact result is a safe integer each operation is exact, and the code
+ * computes what z3 proved.
  */
 
+import { VOCAB_JSON_SAFE_MAX } from "../../spec/contract/vocab"
 import {
   EXPR_BINOP,
   EXPR_BOOL,
@@ -31,6 +41,8 @@ export const QUERY_TRIVIAL: i32 = 3
 export const QUERY_DIV: i32 = 4
 /** A callee's requires can fail at a call site: anything but `unsat` is a hazard. */
 export const QUERY_PRE: i32 = 5
+/** An Int value can leave ±(2^53−1) on its path: anything but `unsat` is a hazard. */
+export const QUERY_RANGE: i32 = 6
 
 /** One `(check-sat)` of the script, and what its answer means. */
 export class SmtQuery {
@@ -38,7 +50,7 @@ export class SmtQuery {
   kind: i32
   /** The index of the function it concerns. */
   fnIndex: i32
-  /** The axiom of an ensures or trivial query; `(reachable)`, `(division)` or `(calls F)` otherwise. */
+  /** The axiom of an ensures or trivial query; `(reachable)`, `(division)`, `(calls F)` or `(range)` otherwise. */
   axiomId: string
   /** The ensures clause's index for ensures and trivial queries; -1 otherwise. */
   clauseIndex: i32
@@ -86,11 +98,11 @@ export class SmtScript {
   }
 }
 
-/** A division or call-site precondition met while emitting a body. */
+/** A division, call-site precondition or Int operation met while emitting a body. */
 export class SmtHazard {
   /** The path conditions guarding it. */
   path: string[]
-  /** The denominator term, or the callee's requires under its arguments. */
+  /** The denominator term, the callee's requires under its arguments, or the Int term. */
   term: string
   /** The callee of a precondition; "" for a division. */
   callee: string
@@ -156,7 +168,9 @@ export class SmtScope {
 /**
  * Turns expressions into SMT terms, the one translation the verifier and the
  * differ share, so the two never disagree on semantics. While `record` is on
- * it collects every division and call-site precondition it emits.
+ * it collects every division, call-site precondition and Int operation it
+ * emits, each under the path the emitted code reaches it on: the branch of an
+ * ite, and the left side of a short-circuit `and`, `or` or `implies`.
  */
 export class SmtEmitter {
   /** The program whose functions calls inline. */
@@ -167,6 +181,8 @@ export class SmtEmitter {
   divs: SmtHazard[]
   /** The callee preconditions emitted while recording. */
   pres: SmtHazard[]
+  /** The Int `+`, `-` and `*` emitted while recording. */
+  ranges: SmtHazard[]
   /** Each expression it could not translate; empty for a typechecked program. */
   errors: string[]
 
@@ -181,6 +197,7 @@ export class SmtEmitter {
     this.record = record
     this.divs = []
     this.pres = []
+    this.ranges = []
     this.errors = []
   }
 
@@ -240,7 +257,7 @@ export class SmtEmitter {
     }
     if (e.kind === EXPR_BINOP) {
       const l = this.term(e.args[0], scope, path)
-      const r = this.term(e.args[1], scope, path)
+      const r = this.term(e.args[1], scope, smtRightPath(e.op, l, path))
       if (e.op === "/" && this.record) {
         this.divs.push(new SmtHazard(smtCopy(path), r, "", prettyMath(e)))
       }
@@ -250,7 +267,12 @@ export class SmtEmitter {
       if (e.op === "max") {
         return `(ite (>= ${l} ${r}) ${l} ${r})`
       }
-      return `(${smtOperator(e.op)} ${l} ${r})`
+      const t = `(${smtOperator(e.op)} ${l} ${r})`
+      // min, max, neg and abs of safe integers are safe; these three may not be.
+      if (this.record && e.ty === "Int" && (e.op === "+" || e.op === "-" || e.op === "*")) {
+        this.ranges.push(new SmtHazard(smtCopy(path), t, "", prettyMath(e)))
+      }
+      return t
     }
     if (e.kind === EXPR_ITE) {
       const c = this.term(e.args[0], scope, path)
@@ -272,13 +294,17 @@ export class SmtEmitter {
       for (let i = 0; i < toI32(callee.params.length) && i < toI32(e.args.length); i++) {
         inner.bind(callee.params[i].name, this.term(e.args[i], scope, path))
       }
+      // The callee's guards run in order, so each is reached only once the
+      // ones before it held.
+      const guarded = smtCopy(path)
       for (const rc of callee.requires) {
-        const t = this.term(rc.expr, inner, path)
+        const t = this.term(rc.expr, inner, guarded)
         if (this.record) {
           this.pres.push(new SmtHazard(smtCopy(path), t, callee.name, prettyMath(rc.expr)))
         }
+        guarded.push(t)
       }
-      return this.term(callee.body, inner, path)
+      return this.term(callee.body, inner, guarded)
     }
     return this.untranslatable(`unknown expression kind ${e.kind}`)
   }
@@ -294,6 +320,17 @@ const smtCopy = (xs: string[]): string[] => {
 
 const smtNoPath = (): string[] => {
   const out: string[] = []
+  return out
+}
+
+// The path the right operand of a binop is evaluated on: `&&` and `||` short-
+// circuit in the emitted code, and `a ⇒ b` is emitted as `!a || b`.
+const smtRightPath = (op: string, left: string, path: string[]): string[] => {
+  if (op !== "and" && op !== "or" && op !== "implies") {
+    return path
+  }
+  const out = smtCopy(path)
+  out.push(op === "or" ? `(not ${left})` : left)
   return out
 }
 
@@ -368,8 +405,12 @@ const smtHazardAsserts = (bindResult: string, h: SmtHazard, last: string): strin
 /**
  * Builds the verification script of a typechecked program. Each function sits
  * in its own `(push 1)` frame, so a contradictory requires cannot leak into
- * the next function's verdicts. Divisions and callee preconditions inside an
- * ensures clause are proof-only and are not queried.
+ * the next function's verdicts. An Int parameter is assumed a safe integer,
+ * as the emitted domain guard enforces. The emitted code checks its requires in
+ * order, so a hazard inside one is queried under the requires before it
+ * alone; a hazard in the body is queried under all of them. Divisions,
+ * callee preconditions and Int operations inside an ensures clause are
+ * proof-only and are not queried.
  *
  * @param program the typechecked program
  * @returns the script and its queries
@@ -387,15 +428,23 @@ export const buildVerificationScript = (program: Program): SmtScript => {
       scope.bind(p.name, v)
       vars.push(v)
       w.lines.push(`(declare-const ${v} ${p.ty})`)
+      // The emitted domain guard rejects an Int argument that is not a safe integer.
+      if (p.ty === "Int") {
+        w.lines.push(`(assert (<= (- ${VOCAB_JSON_SAFE_MAX}) ${v} ${VOCAB_JSON_SAFE_MAX}))`)
+      }
     }
     const res = smtVarName(idx, RESULT_NAME)
     vars.push(res)
     w.lines.push(`(declare-const ${res} ${fn.returnType})`)
     w.getVars = vars.join(" ")
-    const bindResult = `(assert (= ${res} ${em.term(fn.body, scope, smtNoPath())}))`
+    const requires: string[] = []
     for (const c of fn.requires) {
-      w.lines.push(`(assert ${em.term(c.expr, scope, smtNoPath())})`)
+      requires.push(em.term(c.expr, scope, smtCopy(requires)))
     }
+    const guardDivs = toI32(em.divs.length)
+    const guardPres = toI32(em.pres.length)
+    const guardRanges = toI32(em.ranges.length)
+    const bindResult = `(assert (= ${res} ${em.term(fn.body, scope, smtNoPath())}))`
     em.record = false
     const ensuresScope = new SmtScope()
     for (let i = 0; i < toI32(scope.names.length); i++) {
@@ -403,6 +452,12 @@ export const buildVerificationScript = (program: Program): SmtScript => {
     }
     ensuresScope.bind(RESULT_NAME, res)
 
+    // Before the requires are asserted: each guard hazard carries the
+    // requires before it in its own path.
+    smtHazardQueries(w, idx, em, bindResult, 0, guardDivs, 0, guardPres, 0, guardRanges)
+    for (const t of requires) {
+      w.lines.push(`(assert ${t})`)
+    }
     w.query(new SmtQuery(QUERY_REACHABLE, idx, "(reachable)", -1, "requires are satisfiable", ""), [bindResult], true)
     for (let ci = 0; ci < toI32(fn.ensures.length); ci++) {
       const clause = fn.ensures[ci]
@@ -415,21 +470,62 @@ export const buildVerificationScript = (program: Program): SmtScript => {
       )
       w.query(new SmtQuery(QUERY_TRIVIAL, idx, clause.axiomId, ci, pretty, ""), [`(assert (not ${t}))`], false)
     }
-    for (const d of em.divs) {
-      w.query(
-        new SmtQuery(QUERY_DIV, idx, "(division)", -1, d.pretty, ""),
-        smtHazardAsserts(bindResult, d, `(assert (= ${d.term} 0))`),
-        true,
-      )
-    }
-    for (const p of em.pres) {
-      w.query(
-        new SmtQuery(QUERY_PRE, idx, `(calls ${p.callee})`, -1, p.pretty, p.callee),
-        smtHazardAsserts(bindResult, p, `(assert (not ${p.term}))`),
-        true,
-      )
-    }
+    smtHazardQueries(
+      w,
+      idx,
+      em,
+      bindResult,
+      guardDivs,
+      toI32(em.divs.length),
+      guardPres,
+      toI32(em.pres.length),
+      guardRanges,
+      toI32(em.ranges.length),
+    )
     w.lines.push("(pop 1)")
   }
   return new SmtScript(`${smtPreamble()}${w.lines.join("\n")}\n`, w.queries)
+}
+
+// One query per recorded hazard in the given index ranges of the emitter's lists.
+const smtHazardQueries = (
+  w: SmtWriter,
+  idx: i32,
+  em: SmtEmitter,
+  bindResult: string,
+  divFrom: i32,
+  divTo: i32,
+  preFrom: i32,
+  preTo: i32,
+  rangeFrom: i32,
+  rangeTo: i32,
+): void => {
+  for (let i = divFrom; i < divTo; i++) {
+    const d = em.divs[i]
+    w.query(
+      new SmtQuery(QUERY_DIV, idx, "(division)", -1, d.pretty, ""),
+      smtHazardAsserts(bindResult, d, `(assert (= ${d.term} 0))`),
+      true,
+    )
+  }
+  for (let i = preFrom; i < preTo; i++) {
+    const p = em.pres[i]
+    w.query(
+      new SmtQuery(QUERY_PRE, idx, `(calls ${p.callee})`, -1, p.pretty, p.callee),
+      smtHazardAsserts(bindResult, p, `(assert (not ${p.term}))`),
+      true,
+    )
+  }
+  for (let i = rangeFrom; i < rangeTo; i++) {
+    const r = em.ranges[i]
+    w.query(
+      new SmtQuery(QUERY_RANGE, idx, "(range)", -1, r.pretty, ""),
+      smtHazardAsserts(
+        bindResult,
+        r,
+        `(assert (or (> ${r.term} ${VOCAB_JSON_SAFE_MAX}) (< ${r.term} (- ${VOCAB_JSON_SAFE_MAX}))))`,
+      ),
+      true,
+    )
+  }
 }

@@ -137,10 +137,11 @@ proof — surface them to the user instead of silently rewriting the spec.
   entire point of vector.
 - **Never edit the engine to make a proof pass.** If something can't be proven,
   the spec or the program is wrong, not the solver.
-- **Division and call hazards are checked conservatively.** Only an `ite`
-  narrows the path a hazard is checked on; `and`, `or` and `implies` do not,
-  even though the emitted code short-circuits. So `x != 0 and 1 / x > 0` is
-  reported as a division hazard: guard with an `ite` or a `requires` instead.
+- **Hazards are checked on the path the emitted code takes.** An `ite` branch,
+  the right side of a short-circuit `and`, `or` or `implies`, and every
+  `requires` after the first lean on what was checked before them, and nothing
+  else. So `x != 0 and 1 / x > 0` is safe, and `1 / x > 0 and x != 0` is a
+  division hazard.
 - **Never force a proof through by tightening `requires`.** Contradictory
   preconditions are caught as *vacuous*; a `PROVEN` over an empty input region
   proves nothing.

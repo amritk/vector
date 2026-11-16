@@ -175,6 +175,25 @@ const soundEmitProven = (t: Suite): void => {
   t.eqStr("PROVEN with --emit leaves no temporary", names.join(","), "out.ts")
 }
 
+// One Int function of x: a precondition region, a body and `result == want`.
+const soundIntCase = (name: string, requires: string[], body: string, want: string): BCase => {
+  const c = new BCase(name)
+  c.fn(name, 1, ["x:Int"], "Int", requires, [bBin("==", bVar("result"), want)], body)
+  return c
+}
+
+// Solves a case and checks how many Int range hazards it has.
+const soundRanges = (t: Suite, what: string, c: BCase, want: i32): void => {
+  const report = soundSolve(t, what, c)
+  if (report !== null) {
+    t.eqI32(what, report.rangeCount, want)
+    t.ok(`${what}: ok() agrees`, report.ok() === (want === 0))
+  }
+}
+
+// 0 <= x <= bound.
+const soundXLe = (bound: string): string[] => [bBin(">=", bVar("x"), bNum("0")), bBin("<=", bVar("x"), bNum(bound))]
+
 const soundNoNames = (): string[] => {
   const none: string[] = []
   return none
@@ -194,6 +213,115 @@ export const main = (): i32 => {
   if (guarded !== null) {
     t.eqI32("guarded 1/x has no division hazard", guarded.divCount, 0)
     t.ok("guarded 1/x is ok", guarded.ok())
+  }
+
+  // An Int is a float64 in the emitted code: a value past 2^53−1 rounds, so
+  // `low + high - high` returns high + 1 at low = 5e15 + 1, high = 5e15 + 2.
+  const big = new BCase("sumback")
+  big.fn(
+    "back",
+    1,
+    ["low:Int", "high:Int"],
+    "Int",
+    [
+      bBin("<=", bVar("low"), bVar("high")),
+      bBin(">=", bVar("low"), bNum("5000000000000001")),
+      bBin("<=", bVar("high"), bNum("5000000000000999")),
+    ],
+    [bBin("==", bVar("result"), bVar("low"))],
+    bBin("-", bBin("+", bVar("low"), bVar("high")), bVar("high")),
+  )
+  const bigReport = soundSolve(t, "solve low + high - high near 2^53", big)
+  if (bigReport !== null) {
+    t.ok("the ensures is proven over the integers", bigReport.unsatCount === 1)
+    t.eqI32("only low + high leaves the safe range", bigReport.rangeCount, 1)
+    t.eqStr("the hazard names low + high", bigReport.functions[0].ranges[0].pretty, "low + high")
+    t.ok("low + high gives range-hazard", soundHasIssue(collectFeedbackItems(bigReport), "back", "range-hazard"))
+  }
+  t.eqStr("an Int overflow never reaches PROVEN", bVerify(big).status, OUTCOME_REFUTED)
+
+  const triple = bBin("*", bNum("3"), bVar("x"))
+  soundRanges(
+    t,
+    "3 * x for x <= 3e15 stays safe",
+    soundIntCase("tripleSafe", soundXLe("3000000000000000"), triple, triple),
+    0,
+  )
+  soundRanges(
+    t,
+    "3 * x for x <= 4e15 overflows",
+    soundIntCase("tripleBig", soundXLe("4000000000000000"), triple, triple),
+    1,
+  )
+
+  // An Int parameter past 2^53−1 never reaches the body: its domain guard throws.
+  const below = bBin("-", bVar("x"), bNum("1"))
+  const nonNeg: string[] = [bBin(">=", bVar("x"), bNum("0"))]
+  soundRanges(t, "x - 1 for a safe x >= 0 is safe", soundIntCase("below", nonNeg, below, below), 0)
+  const above = bBin("+", bVar("x"), bNum("1"))
+  soundRanges(t, "x + 1 for a safe x >= 0 may overflow", soundIntCase("above", nonNeg, above, above), 1)
+
+  // 1e16 is a float64 exactly, but x − 1e16 is not for most x.
+  const offset = bBin("-", bVar("x"), bNum("10000000000000000"))
+  soundRanges(t, "x - 1e16 is a hazard", soundIntCase("offset", soundXLe("10"), offset, offset), 1)
+  const safeLit = bBin("-", bVar("x"), bNum("9007199254740991"))
+  soundRanges(t, "x - (2^53 - 1) is not", soundIntCase("safeLit", soundXLe("10"), safeLit, safeLit), 0)
+
+  // The emitted guards run in order, so a requires may lean only on those before it.
+  const doubled = bBin("<=", bBin("+", bVar("x"), bVar("x")), bNum("1500"))
+  const bounded = bBin("and", bBin(">=", bVar("x"), bNum("0")), bBin("<=", bVar("x"), bNum("1000")))
+  const first: string[] = [bounded, doubled]
+  soundRanges(t, "x + x after 0 <= x <= 1000 is safe", soundIntCase("guardAfter", first, bVar("x"), bVar("x")), 0)
+  const last: string[] = [doubled, bounded]
+  soundRanges(t, "x + x before 0 <= x <= 1000 may overflow", soundIntCase("guardBefore", last, bVar("x"), bVar("x")), 1)
+
+  // `&&` short-circuits, so its right side may lean on its left.
+  const both: string[] = [bBin("and", bounded, doubled)]
+  soundRanges(t, "bounds && x + x <= 1500 is safe", soundIntCase("shortAnd", both, bVar("x"), bVar("x")), 0)
+  const flipped: string[] = [bBin("and", doubled, bounded)]
+  soundRanges(t, "x + x <= 1500 && bounds may overflow", soundIntCase("flipAnd", flipped, bVar("x"), bVar("x")), 1)
+
+  // `||` evaluates its right side only where the left is false, and `a ⇒ b`
+  // is emitted as `!a || b`, so b only where a is true.
+  const outside = bBin("or", bBin("<", bVar("x"), bNum("0")), bBin(">", bVar("x"), bNum("1000")))
+  const orSafe: string[] = [bBin("or", outside, doubled)]
+  soundRanges(t, "outside || x + x <= 1500 is safe", soundIntCase("shortOr", orSafe, bVar("x"), bVar("x")), 0)
+  const orBig: string[] = [bBin("or", doubled, outside)]
+  soundRanges(t, "x + x <= 1500 || outside may overflow", soundIntCase("flipOr", orBig, bVar("x"), bVar("x")), 1)
+  const impSafe: string[] = [bBin("implies", bounded, doubled)]
+  soundRanges(t, "bounds ⇒ x + x <= 1500 is safe", soundIntCase("impSafe", impSafe, bVar("x"), bVar("x")), 0)
+  const impBig: string[] = [bBin("implies", outside, doubled)]
+  soundRanges(t, "outside ⇒ x + x <= 1500 may overflow", soundIntCase("impBig", impBig, bVar("x"), bVar("x")), 1)
+
+  // An inlined callee's guards run in order before its body, so at the call
+  // site its second requires and its body lean on its first.
+  const twice = bBin("+", bVar("y"), bVar("y"))
+  const callee = new BCase("calleeGuards")
+  callee.fn(
+    "twice",
+    1,
+    ["y:Int"],
+    "Int",
+    [
+      bBin("and", bBin(">=", bVar("y"), bNum("0")), bBin("<=", bVar("y"), bNum("1000"))),
+      bBin("<=", twice, bNum("1500")),
+    ],
+    [bBin("==", bVar("result"), twice)],
+    twice,
+  )
+  callee.fn(
+    "caller",
+    2,
+    ["x:Int"],
+    "Int",
+    bNone(),
+    [bBin("==", bVar("result"), bBin("+", bVar("x"), bVar("x")))],
+    bCall("twice", [bVar("x")]),
+  )
+  const calleeReport = soundSolve(t, "solve an unguarded call into twice", callee)
+  if (calleeReport !== null) {
+    t.eqI32("twice's y + y is guarded by its own first requires", calleeReport.rangeCount, 0)
+    t.ok("the unguarded call breaks twice's requires", calleeReport.preCount > 0)
   }
 
   // Contradictory requires prove everything, so they must refute.

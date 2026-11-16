@@ -1,0 +1,43 @@
+{
+  "programName": "span_sum",
+  "axioms": [
+    {
+      "id": "AX-ORDER",
+      "kind": "pre",
+      "statement": "low is at most high."
+    },
+    {
+      "id": "AX-LOW",
+      "kind": "pre",
+      "statement": "low is non-negative."
+    },
+    {
+      "id": "AX-WIDTH",
+      "kind": "post",
+      "statement": "Adding the width of the span back to low gives high."
+    }
+  ],
+  "units": [
+    {
+      "name": "spanEnd",
+      "layer": 1,
+      "purpose": "Recover the end of a span from its start and its width.",
+      "params": [
+        {
+          "name": "low",
+          "type": "Int"
+        },
+        {
+          "name": "high",
+          "type": "Int"
+        }
+      ],
+      "returnType": "Int",
+      "relevantAxiomIds": [
+        "AX-ORDER",
+        "AX-LOW",
+        "AX-WIDTH"
+      ]
+    }
+  ]
+}

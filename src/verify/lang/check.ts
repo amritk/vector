@@ -5,7 +5,8 @@
  * downward, so the call graph is a DAG and inlining terminates), agreement
  * with the spec plan's units, and axiom traceability. Every error is
  * collected. Checking also records each numeric literal's type in
- * `LangExpr.numTy`, which the SMT translation reads.
+ * `LangExpr.numTy` and every expression's type in `LangExpr.ty`, which the
+ * SMT translation reads.
  */
 
 import {
@@ -122,7 +123,15 @@ class Checker {
     return ty
   }
 
+  // Records every expression's type on it, which the SMT translation reads to
+  // find the Int arithmetic that float64 must carry exactly.
   infer(e: LangExpr, scope: CheckScope, expected: string): string {
+    const ty = this.inferKind(e, scope, expected)
+    e.ty = ty
+    return ty
+  }
+
+  inferKind(e: LangExpr, scope: CheckScope, expected: string): string {
     if (e.kind === EXPR_NUM) {
       if (expected === "Bool") {
         return this.fail(`numeric literal "${e.value}" where Bool expected`)

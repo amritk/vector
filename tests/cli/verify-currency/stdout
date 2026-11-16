@@ -39,9 +39,11 @@
 // Every postcondition below was proven by Z3 over exact rationals for ALL
 // finite inputs satisfying the preconditions, then cross-checked against
 // float64 execution (postconditions and callee guards) on sampled boundary +
-// random inputs — a sampling check, not a proof. Domain guards reject
-// NaN/Infinity, Int args that are not safe integers and non-boolean Bool
-// args; preconditions are enforced at runtime via throws.
+// random inputs — a sampling check, not a proof. Every Int +, - and * was
+// proven to stay within ±(2^53−1), so Int arithmetic is exact in float64.
+// Domain guards reject NaN/Infinity, Int args that are not safe integers
+// and non-boolean Bool args; preconditions are enforced at runtime via
+// throws.
 
 /**
  * Multiply an amount by a positive exchange rate.

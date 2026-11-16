@@ -34,6 +34,8 @@ export class LangExpr {
   args: LangExpr[]
   /** The type the checker gave a num literal, `Real` or `Int`; "" before checking. */
   numTy: string
+  /** The type the checker gave this expression, `Real`, `Int` or `Bool`; "" before checking. */
+  ty: string
 
   /**
    * Makes an expression.
@@ -51,6 +53,7 @@ export class LangExpr {
     this.name = name
     this.args = args
     this.numTy = ""
+    this.ty = ""
   }
 }
 

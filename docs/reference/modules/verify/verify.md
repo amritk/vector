@@ -131,7 +131,7 @@ what to do about it
 
 #### FeedbackItem.axiomId
 
-The axiom, or `(reachable)`, `(division)`, `(calls f)` or `(requires)`.
+The axiom, or `(reachable)`, `(division)`, `(calls f)`, `(range)` or `(requires)`.
 
 ```ts
 axiomId: string
@@ -171,7 +171,7 @@ hint: string
 
 #### FeedbackItem.issue
 
-`counterexample`, `unknown`, `division-hazard`, `precondition-hazard`, `vacuous`, `trivial` or `conformance`.
+`counterexample`, `unknown`, `division-hazard`, `precondition-hazard`, `range-hazard`, `vacuous`, `trivial` or `conformance`.
 
 ```ts
 issue: string

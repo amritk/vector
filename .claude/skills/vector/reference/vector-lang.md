@@ -40,6 +40,11 @@ clauses, or refuted with a concrete counterexample.
 
 **The language (JSON AST):**
 - Types: `Real` (exact rationals), `Int`, `Bool`. Nothing else.
+  - An `Int` is a float64 in the emitted code, exact only within ±(2^53−1).
+    The verifier proves every `Int` `+`, `-` and `*` (in the body and in each
+    `requires`) stays in that range; bound the parameters with `requires`, and
+    prefer forms whose intermediates never outgrow their operands
+    (`low + (high - low)`, not `(low + high) - low`).
 - Expr nodes: `num` (decimal **string** like `"0.91"` — never scientific
   notation, never a JSON number), `bool`, `var`, `unop`
   (`not`/`neg`/`abs`/`floor`/`ceil`), `binop`
@@ -91,6 +96,8 @@ string and a structured `items[]` array. Each item names the `function`, the
   body or tighten a `requires`.
 - `unknown` — solver undecided; restate in linear arithmetic.
 - `division-hazard` — denominator may be zero; add a `requires` or `ite` guard.
+- `range-hazard` — an `Int` value may leave ±(2^53−1), where float64 rounds;
+  bound the parameters with `requires` or rewrite so no intermediate grows.
 - `precondition-hazard` — a call violates the callee's `requires` for the args
   shown; strengthen this function's `requires` or guard the call with an `ite`.
 - `vacuous` — the `requires` are contradictory; **remove** the bad precondition,

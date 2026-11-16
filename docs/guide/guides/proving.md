@@ -41,6 +41,50 @@ A file that cannot be read exits 2:
 vector: verify: missing.json: cannot read file
 ```
 
+## Int arithmetic runs in float64
+
+The proof treats an `Int` as an unbounded integer, but the emitted TypeScript
+runs it as a float64, which holds every integer exactly only within
+±(2^53−1). So `verify` also proves that every `Int` `+`, `-` and `*` the
+emitted code evaluates, in the body or in a `requires`, stays inside that
+range. An `Int` parameter is a safe integer there, since its domain guard
+throws on any other. One that may leave the range is an `Int overflow`, with
+an input that reaches it, and the program is `REFUTED` even when every
+postcondition holds over the integers.
+
+[`tests/fixtures/overflow.json`](https://github.com/amritk/vector/blob/main/tests/fixtures/overflow.json)
+computes `high + high - high`, which equals `high`, but the sum rounds once
+`high` passes 2^52:
+
+<!-- exit 1 -->
+```sh
+./dist/vector verify tests/fixtures/overflow-spec.json tests/fixtures/overflow.json | grep -E "Int overflow|rounds \(e.g."
+```
+
+```text
+║   ✘ Int overflow: high + high may leave ±(2^53−1), where float64   ║
+║   rounds (e.g. low = 0, high = 4503599627370496)                   ║
+Function spanEnd: Int overflow — high + high can leave ±(2^53−1), where float64 rounds (e.g. low = 0, high = 4503599627370496) — rewrite it so no intermediate grows past its operands, or bound the parameters with requires clauses.
+```
+
+Write it so no intermediate grows past its operands, as
+[`tests/fixtures/overflow-fixed.json`](https://github.com/amritk/vector/blob/main/tests/fixtures/overflow-fixed.json)
+does with `low + (high - low)`: `low >= 0` and `low <= high` keep
+`high - low` between 0 and `high`, so it proves.
+
+```sh
+./dist/vector verify tests/fixtures/overflow-spec.json tests/fixtures/overflow-fixed.json | grep Status
+```
+
+```text
+║ Attempt: 1/1      Solver: Z3 4.16.0 (native)      Status: PROVEN   ║
+```
+
+A hazard is checked on the path the emitted code takes to it: under an `ite`
+branch's condition, under the left side of a short-circuit `and`, `or` or
+`implies`, and, in a `requires`, under the `requires` before it, which the
+emitted code has already checked. Division by zero is checked the same way.
+
 ## Write the proven program
 
 `--emit <file>` writes the verified program as TypeScript, but only when it is `PROVEN`. On any other verdict it writes nothing and leaves an existing file as it was. The write goes to a temporary file beside the target, renamed over it, so a failed write never leaves half a file. The report ends by naming the file:

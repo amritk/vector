@@ -192,6 +192,14 @@ The operator of a unop or binop; "" otherwise.
 op: string
 ```
 
+#### LangExpr.ty
+
+The type the checker gave this expression, `Real`, `Int` or `Bool`; "" before checking.
+
+```ts
+ty: string
+```
+
 #### LangExpr.value
 
 A num's decimal text, or a bool's `true`/`false`; "" otherwise.
