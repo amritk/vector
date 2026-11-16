@@ -27,7 +27,6 @@ Generated from [src/verify/smt/script.ts](https://github.com/amritk/vector/blob/
 - [`QUERY_DIV`](#query_div)
 - [`QUERY_PRE`](#query_pre)
 - [`QUERY_RANGE`](#query_range)
-- [`SMT_SAFE_INT_MAX`](#smt_safe_int_max)
 - [`SmtQuery`](#smtquery)
 - [`SmtScript`](#smtscript)
 - [`SmtHazard`](#smthazard)
@@ -97,16 +96,6 @@ An Int value can leave ±(2^53−1) on its path: anything but `unsat` is a hazar
 
 ```ts
 const QUERY_RANGE: i32 = 6
-```
-
-<a id="smt_safe_int_max"></a>
-
-### SMT_SAFE_INT_MAX
-
-The largest integer float64 holds exactly with every smaller one, 2^53−1.
-
-```ts
-const SMT_SAFE_INT_MAX: string = "9007199254740991"
 ```
 
 ### SmtQuery

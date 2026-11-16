@@ -15,6 +15,7 @@
  * computes what z3 proved.
  */
 
+import { VOCAB_JSON_SAFE_MAX } from "../../spec/contract/vocab"
 import {
   EXPR_BINOP,
   EXPR_BOOL,
@@ -42,9 +43,6 @@ export const QUERY_DIV: i32 = 4
 export const QUERY_PRE: i32 = 5
 /** An Int value can leave ±(2^53−1) on its path: anything but `unsat` is a hazard. */
 export const QUERY_RANGE: i32 = 6
-
-/** The largest integer float64 holds exactly with every smaller one, 2^53−1. */
-export const SMT_SAFE_INT_MAX: string = "9007199254740991"
 
 /** One `(check-sat)` of the script, and what its answer means. */
 export class SmtQuery {
@@ -432,7 +430,7 @@ export const buildVerificationScript = (program: Program): SmtScript => {
       w.lines.push(`(declare-const ${v} ${p.ty})`)
       // The emitted domain guard rejects an Int argument that is not a safe integer.
       if (p.ty === "Int") {
-        w.lines.push(`(assert (<= (- ${SMT_SAFE_INT_MAX}) ${v} ${SMT_SAFE_INT_MAX}))`)
+        w.lines.push(`(assert (<= (- ${VOCAB_JSON_SAFE_MAX}) ${v} ${VOCAB_JSON_SAFE_MAX}))`)
       }
     }
     const res = smtVarName(idx, RESULT_NAME)
@@ -525,7 +523,7 @@ const smtHazardQueries = (
       smtHazardAsserts(
         bindResult,
         r,
-        `(assert (or (> ${r.term} ${SMT_SAFE_INT_MAX}) (< ${r.term} (- ${SMT_SAFE_INT_MAX}))))`,
+        `(assert (or (> ${r.term} ${VOCAB_JSON_SAFE_MAX}) (< ${r.term} (- ${VOCAB_JSON_SAFE_MAX}))))`,
       ),
       true,
     )

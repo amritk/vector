@@ -281,6 +281,49 @@ export const main = (): i32 => {
   const flipped: string[] = [bBin("and", doubled, bounded)]
   soundRanges(t, "x + x <= 1500 && bounds may overflow", soundIntCase("flipAnd", flipped, bVar("x"), bVar("x")), 1)
 
+  // `||` evaluates its right side only where the left is false, and `a ⇒ b`
+  // is emitted as `!a || b`, so b only where a is true.
+  const outside = bBin("or", bBin("<", bVar("x"), bNum("0")), bBin(">", bVar("x"), bNum("1000")))
+  const orSafe: string[] = [bBin("or", outside, doubled)]
+  soundRanges(t, "outside || x + x <= 1500 is safe", soundIntCase("shortOr", orSafe, bVar("x"), bVar("x")), 0)
+  const orBig: string[] = [bBin("or", doubled, outside)]
+  soundRanges(t, "x + x <= 1500 || outside may overflow", soundIntCase("flipOr", orBig, bVar("x"), bVar("x")), 1)
+  const impSafe: string[] = [bBin("implies", bounded, doubled)]
+  soundRanges(t, "bounds ⇒ x + x <= 1500 is safe", soundIntCase("impSafe", impSafe, bVar("x"), bVar("x")), 0)
+  const impBig: string[] = [bBin("implies", outside, doubled)]
+  soundRanges(t, "outside ⇒ x + x <= 1500 may overflow", soundIntCase("impBig", impBig, bVar("x"), bVar("x")), 1)
+
+  // An inlined callee's guards run in order before its body, so at the call
+  // site its second requires and its body lean on its first.
+  const twice = bBin("+", bVar("y"), bVar("y"))
+  const callee = new BCase("calleeGuards")
+  callee.fn(
+    "twice",
+    1,
+    ["y:Int"],
+    "Int",
+    [
+      bBin("and", bBin(">=", bVar("y"), bNum("0")), bBin("<=", bVar("y"), bNum("1000"))),
+      bBin("<=", twice, bNum("1500")),
+    ],
+    [bBin("==", bVar("result"), twice)],
+    twice,
+  )
+  callee.fn(
+    "caller",
+    2,
+    ["x:Int"],
+    "Int",
+    bNone(),
+    [bBin("==", bVar("result"), bBin("+", bVar("x"), bVar("x")))],
+    bCall("twice", [bVar("x")]),
+  )
+  const calleeReport = soundSolve(t, "solve an unguarded call into twice", callee)
+  if (calleeReport !== null) {
+    t.eqI32("twice's y + y is guarded by its own first requires", calleeReport.rangeCount, 0)
+    t.ok("the unguarded call breaks twice's requires", calleeReport.preCount > 0)
+  }
+
   // Contradictory requires prove everything, so they must refute.
   const vac = new BCase("vacuous")
   vac.fn(
