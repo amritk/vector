@@ -158,13 +158,13 @@ export const main = (): i32 => {
       "the wrong section",
       PROFILE_DH_SOURCE,
       replaceAll(PROFILE_DH_SOURCE, '"6.1"', '"6.2"'),
-      '32-byte value is not printed in RFC §6.2 ("Curve448")',
+      'the 32-byte args[0] is not printed in RFC §6.2 ("Curve448")\n124: fidelity: the 32-byte expect is not printed in RFC §6.2 ("Curve448")',
     ],
     [
       "a base point the section does not print",
       PROFILE_DH_ALICE,
       `<tt>x25519(Alice's private key, a = ${PROFILE_DH_A}, ${base}])</tt>`,
-      '32-byte value is not printed in RFC §6.1 ("Curve25519")',
+      'the 32-byte args[1] is not printed in RFC §6.1 ("Curve25519")',
     ],
     [
       "Alice's public key under Bob's label",

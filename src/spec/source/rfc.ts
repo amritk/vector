@@ -70,6 +70,12 @@ export class HexValue {
   /** "Key" for "Key = 00:01:…", "IKM" for "IKM = 0x0b…"; null when nothing names it. */
   label: string | null
   /**
+   * The index, in its section's lines, of the line that names the value, or
+   * of its first line when nothing names it; -1 when it was not read from a
+   * section.
+   */
+  line: i32 = -1
+  /**
    * Makes a value.
    *
    * @param hex the value's lowercase hex
@@ -510,9 +516,18 @@ class RfcHexReader {
   colonOpen: boolean
   /** The names printed with no value below them, in order. */
   unvalued: string[]
+  /** The line each of `unvalued` is printed on. */
+  unvaluedLines: i32[]
+  /** The index of the line being read. */
+  at: i32 = 0
+  /** The line `pending` is printed on. */
+  pendingLine: i32 = -1
+  /** The line that names the current value, or its first line. */
+  labelLine: i32 = -1
   constructor() {
     this.values = []
     this.unvalued = []
+    this.unvaluedLines = []
     this.cur = ""
     this.bareOnly = true
     this.colonOpen = false
@@ -566,7 +581,9 @@ const rfcHexFlush = (r: RfcHexReader): void => {
   const label = r.label
   const decimal = r.bareOnly && rfcAllDigits(r.cur) && (label === null || rfcDecimalLabel(label))
   if (r.cur.length > 0 && !decimal) {
-    r.values.push(new HexValue(r.cur, label))
+    const v = new HexValue(r.cur, label)
+    v.line = r.labelLine
+    r.values.push(v)
   }
   r.cur = ""
   r.label = null
@@ -583,6 +600,7 @@ const rfcHexStart = (r: RfcHexReader, name: string | null, bare: boolean): void 
       rfcHexUnvalued(r)
     }
     r.label = named ? name : r.pending
+    r.labelLine = !named && r.pending !== null ? r.pendingLine : r.at
     r.bareOnly = bare
     r.pending = null
   } else if (!bare) {
@@ -881,19 +899,30 @@ export const rfcHexValues = (sec: RfcSection): HexValue[] => rfcHexRead(sec).val
  */
 export const rfcUnvaluedLabels = (sec: RfcSection): string[] => rfcHexRead(sec).unvalued
 
+/**
+ * The lines the names of rfcUnvaluedLabels are printed on, so a gate can tell
+ * which test case an empty value belongs to.
+ *
+ * @param sec the section
+ * @returns each name's index in the section's lines, in the same order
+ */
+export const rfcUnvaluedLines = (sec: RfcSection): i32[] => rfcHexRead(sec).unvaluedLines
+
 /** Records the pending name as printed with no value, when it is one. */
 const rfcHexUnvalued = (r: RfcHexReader): void => {
   const p = r.pending
   if (p !== null) {
     r.unvalued.push(p)
+    r.unvaluedLines.push(r.pendingLine)
   }
 }
 
 /** Reads a section's values and the names printed with none (rfcHexValues). */
 const rfcHexRead = (sec: RfcSection): RfcHexReader => {
   const r = new RfcHexReader()
-  for (const raw of sec.lines) {
-    const line = rfcDropAside(raw)
+  for (let i = 0; i < sec.lines.length; i++) {
+    r.at = i
+    const line = rfcDropAside(sec.lines[i])
     if (trim(line).length === 0) {
       continue
     }
@@ -921,6 +950,7 @@ const rfcHexRead = (sec: RfcSection): RfcHexReader => {
     rfcHexFlush(r)
     rfcHexUnvalued(r)
     r.pending = rfcLabelLine(line)
+    r.pendingLine = i
   }
   rfcHexFlush(r)
   rfcHexUnvalued(r)

@@ -3,8 +3,8 @@
  Status: INVALID
 
  Gate failures
-  ✘ fidelity A.3-POLY1305-2.args[0]: 32-byte value is not printed in rfc8439 §A.3, Test Vector #3 ("Poly1305 Message Authentication Code")
-  ✘ fidelity A.3-POLY1305-2.expect: 16-byte value is only part of a value printed in rfc8439 §A.3, Test Vector #3 ("Poly1305 Message Authentication Code") (under "One-time Poly1305 Key"): a vector uses whole printed values (concat them to join several)
+  ✘ fidelity A.3-POLY1305-2.args[0]: the 32-byte args[0] is not printed in rfc8439 §A.3, Test Vector #3 ("Poly1305 Message Authentication Code")
+  ✘ fidelity A.3-POLY1305-2.expect: the 16-byte expect is only part of a value printed in rfc8439 §A.3, Test Vector #3 ("Poly1305 Message Authentication Code") (under "One-time Poly1305 Key"): a vector uses whole printed values (concat them to join several)
 
  Requirements
   ○ R-BLOCK  rfc8439 §2.3 DEFINITION  "The output is 64 random-looking bytes."
