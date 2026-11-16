@@ -67,11 +67,22 @@ back in:
 - **slow** (`true`, or left out) marks a count too long to run on every test
   run.
 
-`spec check` binds the count to the cited section: the section prints it as
-a whole number (`1,000` and `1000` both count), and a number in the expected
-value's label is the count. A label that counts another number is refused
-(`the expected label "After 1,000 iterations" counts 1,000, but the vector
-iterates 2,000 times`).
+`spec check` binds the count to the cited section:
+
+- The section prints it as a whole number, outside a heading: `1,000` and
+  `1000` both count. A number is a whole token: one inside a word or a name
+  (`a1000`, `X25519`, `SHA-256`, `5.2`) is none, nor is a malformed group
+  (`1,00`, `10,00,000`), nor a heading's number (`5.2.  Test Vectors`). A
+  `-` after a number and a non-ASCII dash end it, so `1,000-iteration` and
+  `5,000–6,000` count.
+- The expected value's label counts the count. The number it counts is the
+  one before `iteration`, `iterations` or `times`, else the label's only
+  number; with two numbers and neither word, the label is not checked. A
+  label that counts another number is refused (`the expected label "After
+  1,000 iterations" counts 1,000, but the vector iterates 2,000 times`).
+- The count is the only number exempt from the variant rule: beside
+  `X25519 after 1,000 iterations`, a value printed under `X448 after 1,000
+  iterations` is still refused for a call to `x25519`.
 
 ## 1. Build the XML
 

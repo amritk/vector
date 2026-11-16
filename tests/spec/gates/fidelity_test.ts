@@ -151,7 +151,34 @@ const FIDELITY_TEST_ITER: string = `{
      "iterate": {"count": 448, "names": ["k", "u"], "next": [{"call": "x25519", "args": [{"var": "k"}, {"var": "u"}]}, {"var": "k"}]}},
     {"kind": "vector", "id": "I16", "title": "t", "covers": ["R1"], "source": {"cite": {"section": "3"}}, "call": "x25519",
      "args": [{"hex": "0909", "label": "For X25519"}, {"hex": "0909", "label": "For X25519"}], "expect": {"hex": "2222", "label": "Result"},
-     "iterate": {"count": 1000000, "names": ["k", "u"], "next": [{"call": "x25519", "args": [{"var": "k"}, {"var": "u"}]}, {"var": "k"}]}}
+     "iterate": {"count": 1000000, "names": ["k", "u"], "next": [{"call": "x25519", "args": [{"var": "k"}, {"var": "u"}]}, {"var": "k"}]}},
+    {"kind": "vector", "id": "I17", "title": "t", "covers": ["R1"], "source": {"cite": {"section": "7"}}, "call": "x25519",
+     "args": [{"hex": "0909", "label": "For X25519"}, {"hex": "0909", "label": "For X25519"}], "expect": {"hex": "5555", "label": "X448 after 1,000 iterations"},
+     "iterate": {"count": 1000, "names": ["k", "u"], "next": [{"call": "x25519", "args": [{"var": "k"}, {"var": "u"}]}, {"var": "k"}]}},
+    {"kind": "vector", "id": "I18", "title": "t", "covers": ["R1"], "source": {"cite": {"section": "7"}}, "call": "x25519",
+     "args": [{"hex": "0909", "label": "For X25519"}, {"hex": "0909", "label": "For X25519"}], "expect": {"hex": "2222", "label": "X25519 after 1,000 iterations"},
+     "iterate": {"count": 1000, "names": ["k", "u"], "next": [{"call": "x25519", "args": [{"var": "k"}, {"var": "u"}]}, {"var": "k"}]}},
+    {"kind": "vector", "id": "I19", "title": "t", "covers": ["R1"], "source": {"cite": {"section": "7"}}, "call": "x25519",
+     "args": [{"hex": "0909", "label": "For X25519"}, {"hex": "0909", "label": "For X25519"}], "expect": {"hex": "6666", "label": "X448 applied 1,000 times"},
+     "iterate": {"count": 1000, "names": ["k", "u"], "next": [{"call": "x25519", "args": [{"var": "k"}, {"var": "u"}]}, {"var": "k"}]}},
+    {"kind": "vector", "id": "I20", "title": "t", "covers": ["R1"], "source": {"cite": {"section": "7"}}, "call": "x25519",
+     "args": [{"hex": "0909", "label": "For X25519"}, {"hex": "0909", "label": "For X25519"}], "expect": {"hex": "2222", "label": "X25519 applied 1,000 times"},
+     "iterate": {"count": 5, "names": ["k", "u"], "next": [{"call": "x25519", "args": [{"var": "k"}, {"var": "u"}]}, {"var": "k"}]}},
+    {"kind": "vector", "id": "I21", "title": "t", "covers": ["R1"], "source": {"cite": {"section": "8"}}, "call": "x25519",
+     "args": [{"hex": "0909", "label": "For X25519"}, {"hex": "0909", "label": "For X25519"}], "expect": {"hex": "2222", "label": "Result"},
+     "iterate": {"count": 1000, "names": ["k", "u"], "next": [{"call": "x25519", "args": [{"var": "k"}, {"var": "u"}]}, {"var": "k"}]}},
+    {"kind": "vector", "id": "I22", "title": "t", "covers": ["R1"], "source": {"cite": {"section": "8"}}, "call": "x25519",
+     "args": [{"hex": "0909", "label": "For X25519"}, {"hex": "0909", "label": "For X25519"}], "expect": {"hex": "2222", "label": "Result"},
+     "iterate": {"count": 6000, "names": ["k", "u"], "next": [{"call": "x25519", "args": [{"var": "k"}, {"var": "u"}]}, {"var": "k"}]}},
+    {"kind": "vector", "id": "I23", "title": "t", "covers": ["R1"], "source": {"cite": {"section": "8"}}, "call": "x25519",
+     "args": [{"hex": "0909", "label": "For X25519"}, {"hex": "0909", "label": "For X25519"}], "expect": {"hex": "2222", "label": "Result"},
+     "iterate": {"count": 2, "names": ["k", "u"], "next": [{"call": "x25519", "args": [{"var": "k"}, {"var": "u"}]}, {"var": "k"}]}},
+    {"kind": "vector", "id": "I24", "title": "t", "covers": ["R1"], "source": {"cite": {"section": "8"}}, "call": "x25519",
+     "args": [{"hex": "0909", "label": "For X25519"}, {"hex": "0909", "label": "For X25519"}], "expect": {"hex": "7777", "label": "Round 7"},
+     "iterate": {"count": 9, "names": ["k", "u"], "next": [{"call": "x25519", "args": [{"var": "k"}, {"var": "u"}]}, {"var": "k"}]}},
+    {"kind": "vector", "id": "I25", "title": "t", "covers": ["R1"], "source": {"cite": {"section": "8"}}, "call": "x25519",
+     "args": [{"hex": "0909", "label": "For X25519"}, {"hex": "0909", "label": "For X25519"}], "expect": {"hex": "7979", "label": "7 of 9"},
+     "iterate": {"count": 9, "names": ["k", "u"], "next": [{"call": "x25519", "args": [{"var": "k"}, {"var": "u"}]}, {"var": "k"}]}}
   ]
 }`
 
@@ -193,6 +220,24 @@ const FIDELITY_TEST_ITER_RFC: string = `Request for Comments: 9998
 
    For X25519 = 0x0909
    For X448 = 0x0808
+
+7.  Rounds
+
+   For X25519 = 0x0909
+   X25519 after 1,000 iterations = 0x2222
+   X448 after 1,000 iterations = 0x5555
+   X25519 applied 1,000 times = 0x2222
+   X448 applied 1,000 times = 0x6666
+
+8.  Ranges
+
+2 rounds are run at the margin.
+   Run the 1,000-iteration test, then 5,000–6,000 rounds.
+
+   For X25519 = 0x0909
+   Result = 0x2222
+   Round 7 = 0x7777
+   7 of 9 = 0x7979
 `
 
 /** The iterated vectors' findings. */
@@ -261,7 +306,10 @@ export const main = (): i32 => {
   }
   const it = fidelityTestIter()
   t.ok("a count printed whole", !fidelityTestHas(it, "I1:", "") && !fidelityTestHas(it, "I1.", ""))
-  t.ok("a count printed grouped", !fidelityTestHas(it, "I2", "") && !fidelityTestHas(it, "I3", ""))
+  t.ok(
+    "a count printed grouped",
+    !fidelityTestHas(it, "I2:", "") && !fidelityTestHas(it, "I2.", "") && !fidelityTestHas(it, "I3:", ""),
+  )
   t.ok(
     "an expected label that counts other rounds",
     fidelityTestHas(
@@ -283,8 +331,23 @@ export const main = (): i32 => {
   t.ok("a count's rounds are not a variant", !fidelityTestHas(it, "I2.", "") && !fidelityTestHas(it, "I3.", ""))
   t.ok("a variant whose number is the count", fidelityTestHas(it, "I15.expect:", "x25519 names 25519"))
   t.ok("not a count: malformed groups", fidelityTestHas(it, "I16:", "the count 1,000,000 is not printed"))
-  t.ok("iterated findings", it.length === 14)
-  if (it.length !== 14) {
+  t.ok("another variant beside its rounds", fidelityTestHas(it, "I17.expect:", "x25519 names 25519"))
+  t.ok("its own variant beside its rounds", !fidelityTestHas(it, "I18", ""))
+  t.ok("another variant beside its times", fidelityTestHas(it, "I19.expect:", "x25519 names 25519"))
+  t.ok(
+    "a label that counts times",
+    fidelityTestHas(it, "I20.expect:", `"X25519 applied 1,000 times" counts 1,000, but the vector iterates 5 times`),
+  )
+  t.ok("a count before a hyphen", !fidelityTestHas(it, "I21", ""))
+  t.ok("a count after an en dash", !fidelityTestHas(it, "I22", ""))
+  t.ok("a number at the margin, not a heading", !fidelityTestHas(it, "I23", ""))
+  t.ok(
+    "a label's only number",
+    fidelityTestHas(it, "I24.expect:", `"Round 7" counts 7, but the vector iterates 9 times`),
+  )
+  t.ok("two numbers and no word: unchecked", !fidelityTestHas(it, "I25", ""))
+  t.ok("iterated findings", it.length === 19)
+  if (it.length !== 19) {
     console.log(it.join("\n"))
   }
   t.ok("a whole-word quote", gateQuoteWhole("It MUST NOT fail.", "MUST NOT fail."))
