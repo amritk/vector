@@ -19,6 +19,10 @@
  *   vector        a row of a table headed Id | Call | Expected | Covers | Source | Title
  *   tolerance     a `<t>` directly after the vector table (or another one)
  *                 reading `Tolerance: V1 ulps 1, <xref>: "quote"`, or `abs 1e-9`
+ *   iterate       a `<t>` among those tolerances reading
+ *                 `Iterate: V1 1,000 times, [slow, ](k, u) <- (f(k, u), k)`:
+ *                 the row's call runs that many times, each run's arguments
+ *                 the previous run's names, and its Expected is the last result
  *   out of scope  a `<t>` anywhere reading `Out of scope: <export>, <reason>`:
  *                 an export of the target the contract does not test
  *
@@ -49,7 +53,10 @@ import {
   Contract,
   ContractSource,
   Exclusion,
+  Expr,
+  ExprKind,
   FnSig,
+  Iterate,
   LitKind,
   Literal,
   OutOfScope,
@@ -78,7 +85,12 @@ const PROFILE_OUT_OF_SCOPE: string = "Out of scope: "
 const PROFILE_OUT_OF_SCOPE_FORM: string = "Out of scope: <export>, <the reason no clause tests it>"
 const PROFILE_ULPS_MAX: string = "9007199254740991"
 const PROFILE_STRAY_TOLERANCE: string =
-  "this Tolerance: paragraph follows no vector table; it must directly follow the vector table or another Tolerance: paragraph"
+  "this Tolerance: paragraph follows no vector table; it must directly follow the vector table or another Tolerance: or Iterate: paragraph"
+const PROFILE_ITERATE: string = "Iterate: "
+const PROFILE_ITERATE_FORM: string = "Iterate: V1 1,000 times, (k, u) <- (f(k, u), k)"
+const PROFILE_ITERATE_MAX: i64 = 1000000000
+const PROFILE_STRAY_ITERATE: string =
+  "this Iterate: paragraph follows no vector table; it must directly follow the vector table or a Tolerance: or Iterate: paragraph, like Iterate: V1 1,000 times, (k, u) <- (f(k, u), k)"
 const PROFILE_MAIN_KEY: string = "vector-main-"
 const PROFILE_ID_RULE: string = `is not letters, digits, ".", "_" and "-", starting with a letter or digit`
 
@@ -295,15 +307,17 @@ class ProfileSection {
   }
 }
 
-/** A table, the section it is in, and the Tolerance: paragraphs right after it. */
+/** A table, the section it is in, and the Tolerance: and Iterate: paragraphs right after it. */
 class ProfileTable {
   node: XmlNode
   section: string
   tolerances: XmlNode[]
+  iterates: XmlNode[]
   constructor(node: XmlNode, section: string) {
     this.node = node
     this.section = section
     this.tolerances = []
+    this.iterates = []
   }
 }
 
@@ -337,6 +351,9 @@ class ProfileContext {
   /** Each vector with a tolerance, and (alongside) its Tolerance: paragraph. */
   toleranceIds: string[]
   toleranceLocs: ProfileLoc[]
+  /** Each iterated vector, and (alongside) its Iterate: paragraph. */
+  iterateIds: string[]
+  iterateLocs: ProfileLoc[]
   properties: Clause[]
   propertyLocs: ProfileLoc[]
   /** Each export out of scope, and (alongside) its Out of scope: paragraph. */
@@ -369,6 +386,8 @@ class ProfileContext {
     this.vectorLocs = []
     this.toleranceIds = []
     this.toleranceLocs = []
+    this.iterateIds = []
+    this.iterateLocs = []
     this.properties = []
     this.propertyLocs = []
     this.outOfScope = []
@@ -1341,13 +1360,21 @@ const profileBlocks = (c: ProfileContext, parent: XmlNode, section: string): voi
   for (let i = 0; i < kids.length; i++) {
     const n = kids[i]
     if (n.name === "table") {
-      // The run of Tolerance: paragraphs right after it goes with it; a BCP 14
-      // keyword in one is quoted, not used.
+      // The run of Tolerance: and Iterate: paragraphs right after it, in any
+      // order, goes with it; a BCP 14 keyword in one is quoted, not used.
       const table = new ProfileTable(n, section)
-      for (let j = i + 1; j < kids.length && profileStartsWith(c, kids[j], PROFILE_TOLERANCE); j++) {
+      for (let j = i + 1; j < kids.length; j++) {
+        const iterate = profileStartsWith(c, kids[j], PROFILE_ITERATE)
+        if (!iterate && !profileStartsWith(c, kids[j], PROFILE_TOLERANCE)) {
+          break
+        }
         used.add(kids[j])
         profileHandle(c, kids[j])
-        table.tolerances.push(kids[j])
+        if (iterate) {
+          table.iterates.push(kids[j])
+        } else {
+          table.tolerances.push(kids[j])
+        }
       }
       c.tables.push(table)
       continue
@@ -1444,6 +1471,9 @@ const profileBlocks = (c: ProfileContext, parent: XmlNode, section: string): voi
     } else if (profileStartsWith(c, n, PROFILE_TOLERANCE)) {
       profileHandle(c, n)
       profileRefuse(c, n, PROFILE_STRAY_TOLERANCE)
+    } else if (profileStartsWith(c, n, PROFILE_ITERATE)) {
+      profileHandle(c, n)
+      profileRefuse(c, n, PROFILE_STRAY_ITERATE)
     }
   }
 }
@@ -1542,6 +1572,9 @@ const profileReadTable = (c: ProfileContext, t: ProfileTable): void => {
     for (const p of t.tolerances) {
       profileRefuse(c, p, PROFILE_STRAY_TOLERANCE)
     }
+    for (const p of t.iterates) {
+      profileRefuse(c, p, PROFILE_STRAY_ITERATE)
+    }
     return
   }
   if (header.join("|") !== want.join("|")) {
@@ -1575,6 +1608,9 @@ const profileReadTable = (c: ProfileContext, t: ProfileTable): void => {
   }
   for (const p of t.tolerances) {
     profileReadTolerance(c, p, section, rowIds, read)
+  }
+  for (const p of t.iterates) {
+    profileReadIterate(c, p, rowIds, read)
   }
 }
 
@@ -1744,6 +1780,210 @@ const profileReadTolerance = (
   v.tolerance = t
   c.toleranceIds.push(id)
   c.toleranceLocs.push(profileLocOf(p))
+}
+
+/**
+ * An Iterate: paragraph's count: decimal digits, grouped in threes by commas
+ * or not at all, from 1 to 1,000,000,000; -1 when it is none.
+ */
+const profileIterateCount = (s: string): i64 => {
+  const groups = split(s, ",")
+  for (let i = 0; i < groups.length; i++) {
+    const g = groups[i]
+    const ok = i === 0 ? g.length >= 1 && (groups.length === 1 || g.length <= 3) : g.length === 3
+    if (!ok || !profileAllDigits(g)) {
+      return -1
+    }
+  }
+  const digits = groups.join("")
+  if (digits.startsWith("0") || digits.length > 10) {
+    return -1
+  }
+  let n: i64 = 0
+  for (let i = 0; i < digits.length; i++) {
+    n = n * 10 + toI64(digits.charCodeAt(i) - 48)
+  }
+  return n > PROFILE_ITERATE_MAX ? -1 : n
+}
+
+/** `s` split at its commas outside parentheses, each part trimmed. */
+const profileIterateParts = (s: string): string[] => {
+  const out: string[] = []
+  let depth = 0
+  let from = 0
+  for (let i = 0; i < s.length; i++) {
+    const ch = s.charCodeAt(i)
+    if (ch === 0x28) {
+      depth++
+    } else if (ch === 0x29) {
+      depth--
+    } else if (ch === 0x2c && depth === 0) {
+      out.push(profileTrim(s.substring(from, i)))
+      from = i + 1
+    }
+  }
+  out.push(profileTrim(s.substring(from, s.length)))
+  return out
+}
+
+/** A tuple's elements: `(a, b)` is a and b; anything else is one element. */
+const profileIterateTuple = (s: string): string[] => {
+  if (s.startsWith("(") && s.endsWith(")")) {
+    return profileIterateParts(s.substring(1, s.length - 1))
+  }
+  return [s]
+}
+
+/**
+ * One element of an Iterate: paragraph's next tuple: a name, or a call on
+ * names; null, refused, when it is neither.
+ */
+const profileIterateNext = (c: ProfileContext, p: XmlNode, id: string, s: string): Expr | null => {
+  if (charsIsIdent(s)) {
+    return new Expr(ExprKind.Var, s)
+  }
+  const open = s.indexOf("(")
+  if (open > 0 && s.endsWith(")") && charsIsIdent(s.substring(0, open))) {
+    const e = new Expr(ExprKind.Call, s.substring(0, open))
+    const inner = profileTrim(s.substring(open + 1, s.length - 1))
+    const args: string[] = inner.length === 0 ? [] : profileIterateParts(inner)
+    if (args.every((a: string): boolean => charsIsIdent(a))) {
+      for (const a of args) {
+        e.args.push(new Expr(ExprKind.Var, a))
+      }
+      return e
+    }
+  }
+  profileRefuse(c, p, `${id}'s next "${s}" is neither a name nor a call on the names: ${PROFILE_ITERATE_FORM}`)
+  return null
+}
+
+/** Whether `e` is `call` on `names`, in order. */
+const profileIterateIsCall = (e: Expr, call: string, names: string[]): boolean =>
+  e.name === call &&
+  e.args.length === names.length &&
+  e.args.every((a: Expr, i: i32): boolean => a.kind === ExprKind.Var && a.name === names[i])
+
+/**
+ * An Iterate: paragraph, `Iterate: <id> <count> times, [slow, ]<names> <-
+ * <next>`, set on the vector it names. What the profile cannot see from the
+ * paragraph alone (a repeated name, one that shadows a function, no call in
+ * the next tuple) is the shape gate's.
+ */
+const profileReadIterate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, read: Map<string, Clause>): void => {
+  const text = profileTrim(profileAfter(c, p, PROFILE_ITERATE))
+  const words = split(text, " ")
+  const id = words[0]
+  if (words.length < 2 || words[1] === "times,") {
+    profileRefuse(c, p, `${id}'s Iterate: paragraph gives no count before "times,": ${PROFILE_ITERATE_FORM}`)
+    return
+  }
+  if (words.length < 3 || words[2] !== "times,") {
+    profileRefuse(c, p, `an Iterate: paragraph reads "<id> <count> times," first: ${PROFILE_ITERATE_FORM}`)
+    return
+  }
+  const count = profileIterateCount(words[1])
+  if (count < 0) {
+    profileRefuse(
+      c,
+      p,
+      `${id}'s count is a whole number from 1 to 1,000,000,000 in digits, grouped in threes by commas or not at all, not "${words[1]}": ${PROFILE_ITERATE_FORM}`,
+    )
+    return
+  }
+  const rest = profileTrim(text.substring(id.length + words[1].length + "times,".length + 2, text.length))
+  let arrow = rest.indexOf("<-")
+  let width = 2
+  if (arrow < 0) {
+    arrow = rest.indexOf("\u2190")
+    width = "\u2190".length
+  }
+  if (arrow < 0) {
+    profileRefuse(c, p, `${id}'s Iterate: paragraph has no "<-" between its names and its next: ${PROFILE_ITERATE_FORM}`)
+    return
+  }
+  let lhs = profileTrim(rest.substring(0, arrow))
+  const rhs = profileTrim(rest.substring(arrow + width, rest.length))
+  const it = new Iterate()
+  it.count = count
+  if (lhs.startsWith("slow,")) {
+    it.slow = true
+    lhs = profileTrim(lhs.substring("slow,".length, lhs.length))
+  }
+  // Only slow may stand between "times," and the names.
+  const open = lhs.indexOf("(")
+  const comma = lhs.indexOf(",")
+  const extra = open >= 0 ? lhs.substring(0, open) : comma >= 0 ? lhs.substring(0, comma + 1) : ""
+  if (profileTrim(extra).length > 0) {
+    profileRefuse(
+      c,
+      p,
+      `${id}'s Iterate: paragraph has "${profileTrim(extra)}" after "times,", where only "slow," may stand: ${PROFILE_ITERATE_FORM}`,
+    )
+    return
+  }
+  it.names = profileIterateTuple(lhs)
+  for (const n of it.names) {
+    if (!charsIsIdent(n)) {
+      profileRefuse(c, p, `${id}'s name "${n}" is not an identifier: ${PROFILE_ITERATE_FORM}`)
+      return
+    }
+  }
+  const nexts = profileIterateTuple(rhs)
+  for (const s of nexts) {
+    const e = profileIterateNext(c, p, id, s)
+    if (e === null) {
+      return
+    }
+    it.next.push(e)
+  }
+  if (!rowIds.has(id)) {
+    profileRefuse(c, p, `Iterate: names "${id}", which is no vector of the table: ${PROFILE_ITERATE_FORM}`)
+    return
+  }
+  const v = read.get(id)
+  if (v === undefined) {
+    return
+  }
+  if (v.iterate !== null) {
+    profileRefuse(c, p, `${id} is iterated already; a vector has at most one Iterate: paragraph`)
+    return
+  }
+  const fn = profileFn(c, v.call)
+  const arity = fn !== null ? fn.params.length : v.args.length
+  if (it.names.length !== arity) {
+    profileRefuse(
+      c,
+      p,
+      `${id} names ${it.names.length}, but ${v.call} takes ${arity}; one name per parameter: ${PROFILE_ITERATE_FORM}`,
+    )
+    return
+  }
+  if (it.next.length !== arity) {
+    profileRefuse(
+      c,
+      p,
+      `${id}'s next has ${it.next.length}, but ${v.call} takes ${arity}; one per parameter: ${PROFILE_ITERATE_FORM}`,
+    )
+    return
+  }
+  for (const e of it.next) {
+    if (e.kind === ExprKind.Var && !vocabHas(it.names, e.name)) {
+      profileRefuse(c, p, `${id}'s next names "${e.name}", which is not one of its names: ${PROFILE_ITERATE_FORM}`)
+      return
+    }
+    if (e.kind === ExprKind.Call && !profileIterateIsCall(e, v.call, it.names)) {
+      profileRefuse(
+        c,
+        p,
+        `${id}'s next calls ${e.name}(${e.args.map((a: Expr): string => a.name).join(", ")}); a call there is the row's ${v.call}(${it.names.join(", ")}): ${PROFILE_ITERATE_FORM}`,
+      )
+      return
+    }
+  }
+  v.iterate = it
+  c.iterateIds.push(id)
+  c.iterateLocs.push(profileLocOf(p))
 }
 
 const profileCodeCell = (c: ProfileContext, td: XmlNode): string | null => {
@@ -2136,7 +2376,9 @@ const profileShapeRefusals = (c: ProfileContext, out: Contract, clauseLocs: Prof
     } else if (e >= 0 && e < exLocs.length) {
       loc = exLocs[e]
     } else if (k >= 0 && k < clauseLocs.length) {
-      loc = clauseLocs[k]
+      // An iterate's issue is its Iterate: paragraph's, not the row's.
+      const at = c.iterateIds.indexOf(out.clauses[k].id)
+      loc = at >= 0 && issue.startsWith(`clauses[${k}].iterate`) ? c.iterateLocs[at] : clauseLocs[k]
     } else if (f >= 0 && f < c.fnLocs.length) {
       loc = c.fnLocs[f]
     } else if (o >= 0 && o < c.outOfScopeLocs.length) {
@@ -2278,6 +2520,9 @@ export const profileRead = (
   }
   for (let i = 0; i < c.toleranceIds.length; i++) {
     profilePut(c, l, `${c.toleranceIds[i]}.tolerance`, c.toleranceLocs[i])
+  }
+  for (let i = 0; i < c.iterateIds.length; i++) {
+    profilePut(c, l, `${c.iterateIds[i]}.iterate`, c.iterateLocs[i])
   }
   for (let i = 0; i < c.functions.length; i++) {
     profilePut(c, l, c.functions[i].name, c.fnLocs[i])
