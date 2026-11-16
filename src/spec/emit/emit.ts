@@ -25,6 +25,7 @@ import { emitHelperDeps, emitHelperNames, emitHelperText } from "./helpers"
 import { emitCommentText, emitF64IsFinite, emitF64Lit, emitIntLit, emitLiteralHex, emitQuote, emitToInt } from "./lit"
 
 const EMIT_NO_F64_FORALL: string = "the sampler has no f64 forall variable yet, so Nish has no samples to check"
+const EMIT_SLOW_SKIP: string = "slow: pass --slow to run"
 const EMIT_NO_SMALL_INT: string = "Nish has no i8 or i16: write the parameter as i32"
 
 /** How the emitted header describes the program. */
@@ -37,6 +38,8 @@ export class EmitOptions {
   localModules: string[]
   /** How the test imports each of `localModules`: a relative path, such as `../../src/core/hex`. */
   localImports: string[]
+  /** Whether a slow iterated vector runs; when false it is emitted skipped. */
+  slow: boolean = false
 
   /**
    * Makes options with no regenerate line and only nish/ modules.
@@ -631,8 +634,70 @@ const emitVector = (ctx: EmitContext, k: Clause): string => {
   for (let i = 0; i < k.args.length; i++) {
     args.push(emitLiteral(ctx, k.args[i], vocabValueType(sig.params[i].type)))
   }
-  const call = emitCall(ctx, sig, args)
   const name = emitQuote(emitTestName(k))
+  const it = k.iterate
+  if (it !== null) {
+    if (it.slow && !ctx.opts.slow) {
+      return `const ${emitClauseFn(k)} = (t: Suite): boolean => {\n  t.skip(${name}, "${EMIT_SLOW_SKIP}");\n  return true;\n};`
+    }
+    const lines = emitIterateSteps(ctx, k, sig, args, name)
+    lines.push(`  return ${emitVectorCheck(ctx, k, sig, expect, name, "it_r")};`)
+    return `const ${emitClauseFn(k)} = (t: Suite): boolean => {\n${lines.join("\n")}\n};`
+  }
+  return `const ${emitClauseFn(k)} = (t: Suite): boolean => ${emitVectorCheck(ctx, k, sig, expect, name, emitCall(ctx, sig, args))};`
+}
+
+/**
+ * An iterated vector's calls, up to the last result bound as `it_r`: the
+ * arguments start as the vector's and are rebound to its `next` after each
+ * call; a null result at any step fails the clause, naming the step.
+ */
+const emitIterateSteps = (ctx: EmitContext, k: Clause, sig: FnSig, args: string[], name: string): string[] => {
+  const it = k.iterate
+  if (it === null) {
+    return []
+  }
+  const lines: string[] = []
+  const vars: string[] = []
+  for (let i = 0; i < it.names.length; i++) {
+    vars.push(`it_${it.names[i]}`)
+    lines.push(`  let it_${it.names[i]}: ${emitNishType(vocabValueType(sig.params[i].type))} = ${args[i]};`)
+  }
+  const count = emitIntLit(`${it.count}`, "i64")
+  const optional = vocabIsOptional(vocabValueType(sig.returns))
+  lines.push(`  for (let it_i: i64 = 1; it_i < ${count}; it_i += 1) {`)
+  lines.push(`    const it_s = ${emitCall(ctx, sig, vars)};`)
+  if (optional) {
+    emitIterateNull(lines, "    ", name, "it_s", `\${it_i} of ${it.count}`, sig.name)
+  }
+  const next: string[] = []
+  for (let i = 0; i < it.next.length; i++) {
+    const e = it.next[i]
+    next.push(e.kind === ExprKind.Call ? "it_s" : `it_${e.name}`)
+  }
+  for (let i = 0; i < next.length; i++) {
+    lines.push(`    const it_n${i} = ${next[i]};`)
+  }
+  for (let i = 0; i < next.length; i++) {
+    lines.push(`    ${vars[i]} = it_n${i};`)
+  }
+  lines.push("  }")
+  lines.push(`  const it_r = ${emitCall(ctx, sig, vars)};`)
+  if (optional) {
+    emitIterateNull(lines, "  ", name, "it_r", `${it.count} of ${it.count}`, sig.name)
+  }
+  return lines
+}
+
+/** Fails the clause `name` when step `step`'s result `v` is null. */
+const emitIterateNull = (lines: string[], pad: string, name: string, v: string, step: string, fn: string): void => {
+  lines.push(`${pad}if (${v} === null) {`)
+  lines.push(`${pad}  return t.fail(${name}, \`step ${step}: ${fn} returned null\`);`)
+  lines.push(`${pad}}`)
+}
+
+/** A vector's check of `call`, a call or a bound result, against its expected value. */
+const emitVectorCheck = (ctx: EmitContext, k: Clause, sig: FnSig, expect: Literal, name: string, call: string): string => {
   const ret = vocabValueType(sig.returns)
   let body = ""
   if (ret === "bytes") {
@@ -658,7 +723,7 @@ const emitVector = (ctx: EmitContext, k: Clause): string => {
   } else {
     ctx.errors.push(`${k.id}: Nish cannot check a ${sig.returns} result`)
   }
-  return `const ${emitClauseFn(k)} = (t: Suite): boolean => ${body};`
+  return body
 }
 
 /**

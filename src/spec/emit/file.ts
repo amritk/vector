@@ -84,6 +84,7 @@ export const emitContractFile = (
   }
   const opts = new EmitOptions(sha256Hex(text))
   opts.regenerate = regenerate
+  opts.slow = target.slow
   const placed = emitResolveModules(packages, c, fromDir, opts, emitTargetExt(target.lang))
   if (placed.isErr()) {
     return Err([usageError(placed.error)])
@@ -163,6 +164,7 @@ export const emitReportAll = (ds: Diagnostic[]): i32 => {
  * @param packageFlags the `--package <name>=<dir>` flags' values
  * @param lang the `--lang` flag, or null for nish
  * @param harness the `--harness` flag, or null for the language's default
+ * @param slow the `--slow` flag: whether a slow iterated vector runs rather than skips
  * @returns the exit code
  */
 export const emitCommand = (
@@ -171,6 +173,7 @@ export const emitCommand = (
   packageFlags: string[],
   lang: string | null,
   harness: string | null,
+  slow: boolean,
 ): i32 => {
   if (out === null) {
     return report(usageError("spec emit: -o <file> is required"))
@@ -180,6 +183,7 @@ export const emitCommand = (
     return report(usageError(`spec emit: ${target.error}`))
   }
   const t = target.value
+  t.slow = slow
   const packages = emitParsePackages(packageFlags, t.lang)
   if (packages.isErr()) {
     return report(usageError(`spec emit: ${packages.error}`))

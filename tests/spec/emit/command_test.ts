@@ -94,14 +94,14 @@ export const main = (): i32 => {
   t.ok("no diagnostics is still a failure", emitReportAll(none) === EXIT_USAGE)
   t.ok("a write into a missing directory fails", emitWriteFile(`${dir}/no/such/x.ts`, "x").isErr())
 
-  t.ok("emit without -o is a usage error", emitCommand(CHECKED, null, [], null, null) === EXIT_USAGE)
+  t.ok("emit without -o is a usage error", emitCommand(CHECKED, null, [], null, null, false) === EXIT_USAGE)
   t.ok(
     "emit of a missing contract exits 2",
-    emitCommand("contracts/none.json", `${dir}/x.ts`, [], null, null) === EXIT_USAGE,
+    emitCommand("contracts/none.json", `${dir}/x.ts`, [], null, null, false) === EXIT_USAGE,
   )
-  t.ok("emit of a bad contract exits 1", emitCommand(bad, `${dir}/x.ts`, [], null, null) === EXIT_REFUSED)
+  t.ok("emit of a bad contract exits 1", emitCommand(bad, `${dir}/x.ts`, [], null, null, false) === EXIT_REFUSED)
   const out = `${dir}/main.ts`
-  t.ok("emit writes the test and exits 0", emitCommand(CHECKED, out, [], null, null) === 0)
+  t.ok("emit writes the test and exits 0", emitCommand(CHECKED, out, [], null, null, false) === 0)
   const sha = sha256Hex(readFileSyncOrNull(CHECKED) ?? "")
   t.contains(
     "the written test is the contract's",

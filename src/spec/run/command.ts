@@ -43,6 +43,8 @@ export class RunRequest {
   lang: string | null = null
   /** The `--harness` flag, or null for the language's default. */
   harness: string | null = null
+  /** The `--slow` flag: whether slow iterated vectors run. */
+  slow: boolean = false
 
   /**
    * Makes a request with every option at its default.
@@ -266,6 +268,7 @@ export const runCommand = (req: RunRequest): i32 => {
   if (target.isErr()) {
     return report(usageError(`spec run: ${target.error}`))
   }
+  target.value.slow = req.slow
   const out = req.out
   if (out !== null) {
     return runEmitAndRun(req, target.value, null, out)

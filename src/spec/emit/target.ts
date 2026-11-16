@@ -1,6 +1,6 @@
 /**
- * `spec/emit/target` — what a test is emitted for: a language, and the
- * harness that runs it in that language.
+ * `spec/emit/target` — what a test is emitted for: a language, the harness
+ * that runs it in that language, and whether its slow vectors run.
  *
  * Every emitted test is a standalone program that `vector spec run` executes
  * and judges by its transcript. A harness other than `standalone` adds the
@@ -11,12 +11,14 @@
 
 import { vocabLanguages } from "../contract/vocab"
 
-/** A test's language and harness. */
+/** A test's language and harness, and whether its slow vectors run. */
 export class EmitTarget {
   /** The language's vocabulary id: `nish` or one of `vocabLanguages`. */
   lang: string
   /** `standalone`, or the test framework the file also plugs into. */
   harness: string
+  /** Whether an iterated vector marked slow runs (`--slow`); when false it is emitted skipped. */
+  slow: boolean = false
 
   /**
    * Pairs a language with a harness.
@@ -88,16 +90,16 @@ export const emitTargetParse = (lang: string | null, harness: string | null): Re
 }
 
 /**
- * The `--lang` and `--harness` flags that rebuild a target, for a regenerate
- * command: only those that differ from their default.
+ * The `--lang`, `--harness` and `--slow` flags that rebuild a target, for a
+ * regenerate command: only those that differ from their default.
  *
  * @param t the target
- * @returns ` --lang <id>` and ` --harness <h>` as needed; empty for the defaults
+ * @returns ` --lang <id>`, ` --harness <h>` and ` --slow` as needed; empty for the defaults
  */
 export const emitTargetFlags = (t: EmitTarget): string => {
   const lang = t.lang === "nish" ? "" : ` --lang ${t.lang}`
   const harness = t.harness === emitTargetHarnesses(t.lang)[0] ? "" : ` --harness ${t.harness}`
-  return `${lang}${harness}`
+  return `${lang}${harness}${t.slow ? " --slow" : ""}`
 }
 
 /**
