@@ -243,6 +243,16 @@ export const main = (): i32 => {
   t.eqStr("a second group is no label", litTestParse("M (a) (b) = 72"), "not a literal @1")
   t.eqStr("an unclosed group is no label", litTestParse("M (length 1 byte = 72"), "not a literal @1")
   t.eqStr("an empty group is no label", litTestParse("M () = 72"), "not a literal @1")
+  t.eqStr(
+    "a group label in a call",
+    litTestCall("f(A (x) = 01, B = 02)"),
+    "f(labelled:01 label=A (x), labelled:02 label=B)",
+  )
+  t.eqStr(
+    "a group label in a concat",
+    litTestSettle("concat(M (x) = 01, [00])", "bytes"),
+    "{concat:{hex:01 label:M (x)},{hex:00}}",
+  )
   t.eqStr("a nested group is no label", litTestParse("M (a (b)) = 72"), "not a literal @1")
   t.eqStr(
     "a group with a comma-grouped count",

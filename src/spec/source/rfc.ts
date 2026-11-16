@@ -447,7 +447,12 @@ const rfcHexFlush = (r: RfcHexReader): void => {
 /** Starts a value, or goes on with the current one. */
 const rfcHexStart = (r: RfcHexReader, name: string | null, bare: boolean): void => {
   if (r.cur.length === 0) {
-    r.label = name !== null && name.length > 0 ? name : r.pending
+    const named = name !== null && name.length > 0
+    if (named) {
+      // A name on the value's own line: the name above it has no value.
+      rfcHexUnvalued(r)
+    }
+    r.label = named ? name : r.pending
     r.bareOnly = bare
     r.pending = null
   } else if (!bare) {

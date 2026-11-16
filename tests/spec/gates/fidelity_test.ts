@@ -424,6 +424,19 @@ const fidelityTestTable = (t: Suite): void => {
     ),
     `one of "X7 1,000" or "X9 1,000" in RFC §1 ("Rounds"), and nothing in the name x25519 says which variant it computes`,
   )
+  fidelityTestRowIs(
+    t,
+    "a count with no word, beside another count",
+    fidelityTestRowWarned(
+      "1",
+      "1.  Rounds",
+      "   Run it 1,000 times.\n   After 1,000 = 0x2222\n   After 5,000 = 0x5555",
+      "2222",
+      "After 1,000",
+      1000,
+    ),
+    `one of "After 1,000" or "After 5,000" in RFC §1 ("Rounds"), and nothing in the name x25519 says which variant it computes`,
+  )
   // A letter-led hyphen chain is one token, so its last number is no count.
   fidelityTestRowIs(
     t,
@@ -532,6 +545,8 @@ const FIDELITY_TEST_ED_RFC: string = `Request for Comments: 8032
    NOTE (length 2 bytes):
 
    NOTE (length 0 octets):
+
+   NOTE (length 0 byte):
 `
 
 /** TEST 1's secret key and signature, the arguments and result around an empty message. */
@@ -603,6 +618,7 @@ const fidelityTestEmpty = (t: Suite): void => {
     `the empty value is not printed in RFC §7.1 ("Test Vectors for Ed25519") under "MESSAGE (length 9 bytes)" with nothing below it`,
   )
   fidelityTestEdIs(t, "empty under a length in octets", `{"hex": "", "label": "NOTE (length 0 octets)"}`, "")
+  fidelityTestEdIs(t, "empty under the singular byte", `{"hex": "", "label": "NOTE (length 0 byte)"}`, "")
   fidelityTestEdIs(t, "an unlabelled empty value", `{"hex": ""}`, "the empty value is not printed")
 }
 

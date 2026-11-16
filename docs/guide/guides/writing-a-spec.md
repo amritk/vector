@@ -441,10 +441,11 @@ of matching bytes:
   below it, its length stated as 0 (`MESSAGE (length 0 bytes):`, or
   `octets`). Empty bytes bind only under such a label:
   `{"hex": "", "label": "MESSAGE (length 0 bytes)"}`, written
-  `MESSAGE (length 0 bytes) = (empty)` or `= []`. Empty bytes with no label,
-  under a label printed with a value (`MESSAGE (length 1 byte):` above `72`),
-  under a label printed nowhere with nothing below it, or under one that
-  states no length of 0 bytes, are refused.
+  `MESSAGE (length 0 bytes) = (empty)` or `= []`. Under a label printed with
+  a value (`MESSAGE (length 1 byte):` above `72`), under a label printed
+  nowhere with nothing below it, or under one that states no length of 0
+  bytes, empty bytes are refused. With no label, they bind only where the
+  section prints `""` or `(0 octets)`.
 - **One test case.** The expected value may not be bound to the same label
   as an argument (a key used as the expected MAC). Strings must share a
   printed line (`BASE64("f") = "Zg=="`). A label printed several times in
@@ -462,6 +463,10 @@ of matching bytes:
   which variant it computes. A length in bytes inside a label (`X25519 (32
   bytes)`, `MESSAGE (length 2 bytes)`) is not a variant's number, so labels
   that differ only there are one variant.
+- **Counts.** An iterated vector's count must be printed as a whole number
+  on a line that is not a heading. A number inside a letter-led hyphen chain
+  (`Vector-2-1000 iterations`) is part of a word, not a number, so that
+  count reads as not printed.
 
 <a id="when-a-section-states-null-true-or-false"></a>
 

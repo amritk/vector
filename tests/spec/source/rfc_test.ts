@@ -204,6 +204,21 @@ export const main = (): i32 => {
     "MESSAGE (length 1 byte)=72",
   )
   t.eqStr("a valued label is not unvalued", rfcTestUnvalued("MESSAGE (length 1 byte):\n   72"), "")
+  t.eqStr(
+    "a label before an inline labelled value is unvalued",
+    rfcTestUnvalued("MESSAGE (length 0 bytes):\n   SIGNATURE: e556"),
+    "MESSAGE (length 0 bytes)",
+  )
+  t.eqStr(
+    "and the inline value keeps its own label",
+    rfcTestBody("MESSAGE (length 0 bytes):\n   SIGNATURE: e556"),
+    "SIGNATURE=e556",
+  )
+  t.eqStr(
+    "a label before a prefixed value is unvalued",
+    rfcTestUnvalued("MESSAGE (length 0 bytes):\n   SIGNATURE = 0xe556"),
+    "MESSAGE (length 0 bytes)",
+  )
   t.eqStr("a letter-led inline label is", rfcTestBody("IV = 4041424344454647"), "IV=4041424344454647")
 
   // Reading refuses what is not an RFC, and what hides text.

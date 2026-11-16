@@ -70,9 +70,9 @@ class GateLits {
   where: string
   /** `RFC §2.2 ("Title")`. */
   inSection: string
+  /** The section, read again only for an empty labelled value (gateEmptyCheck). */
+  sec: RfcSection
   values: HexValue[]
-  /** The labels printed with no value below them (rfcUnvaluedLabels). */
-  unvalued: string[]
   text: string
   lines: string
   bounds: GateBound[]
@@ -88,7 +88,7 @@ class GateLits {
     this.where = where
     this.inSection = `${where} ("${sec.title}")`
     this.values = rfcHexValues(sec)
-    this.unvalued = rfcUnvaluedLabels(sec)
+    this.sec = sec
     if (byteLists) {
       for (const line of sec.lines) {
         for (const hex of gateByteLists(line)) {
@@ -307,7 +307,7 @@ const gateEmptyCheck = (l: GateLits, at: string, label: string): void => {
     )
     return
   }
-  const of = l.unvalued.filter((u: string): boolean => gateSameLabel(u, label)).length
+  const of = rfcUnvaluedLabels(l.sec).filter((u: string): boolean => gateSameLabel(u, label)).length
   if (of === 0) {
     gateLitFail(l, at, `the empty value is not printed in ${l.inSection} under "${label}" with nothing below it`)
     return
