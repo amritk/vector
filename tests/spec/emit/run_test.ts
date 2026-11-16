@@ -18,13 +18,13 @@ import {
   runIsStdPath,
   runJudge,
   runMakeScratch,
+  runNishArgv,
   runNonce,
   runOutcomeName,
   runParse,
   runRemove,
   runSeedOf,
   runTest,
-  runNishArgv,
   runTestFile,
   runTranscript,
 } from "../../../src/spec/run/run"
@@ -199,7 +199,11 @@ const runTestInPlace = (t: Suite, c: Contract): void => {
     t.eqStr("built optimized", splitLines(fast.value.stdout)[0], "run --profile")
   }
   t.eqStr("runNishArgv builds a plain run by default", runNishArgv("nish", "a.ts", false).join(" "), "nish run a.ts")
-  t.eqStr("and an optimized one with --slow", runNishArgv("nish", "a.ts", true).join(" "), "nish run --profile speed a.ts")
+  t.eqStr(
+    "and an optimized one with --slow",
+    runNishArgv("nish", "a.ts", true).join(" "),
+    "nish run --profile speed a.ts",
+  )
   t.ok("the test's directory is left alone", isDirectorySync(dir))
   t.ok("runRemove removes it", runRemove(dir).isOk() && !isDirectorySync(dir))
 }
@@ -293,7 +297,11 @@ const runTestSlow = (t: Suite, nonce: string): void => {
   t.eqStr("so it is an ERROR", runJudge(c, other, 0, []).status, "ERROR")
   const v = runJudge(c, clauses, 0, runTranscript(c, out, nonce, clauses))
   t.eqStr("a slow skip leaves the run SATISFIED over what ran", v.status, "SATISFIED")
-  t.eqStr("a requirement covered only by it is a skip", runOutcomeName(v.outcomes[v.requirements.indexOf("R-LOWER")]), "skip")
+  t.eqStr(
+    "a requirement covered only by it is a skip",
+    runOutcomeName(v.outcomes[v.requirements.indexOf("R-LOWER")]),
+    "skip",
+  )
   t.eqStr("the others pass", runOutcomeName(v.outcomes[v.requirements.indexOf("R-CHAIN")]), "pass")
   const r = new RunResult("sha256-chain", 0, out, "")
   r.verdict = v

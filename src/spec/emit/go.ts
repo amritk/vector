@@ -536,7 +536,7 @@ const emitGoVector = (ctx: EmitGoContext, k: Clause): string => {
   }
   const name = emitGoQuote(emitTestName(k))
   const it = k.iterate
-  if (it !== null && it.slow && !ctx.opts.slow) {
+  if ((it?.slow ?? false) && !ctx.opts.slow) {
     return `func ${emitClauseFn(k)}(t *Suite) bool {\n\treturn t.skip(${name}, "${EMIT_SLOW_SKIP}")\n}`
   }
   const args: string[] = []

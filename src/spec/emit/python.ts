@@ -451,7 +451,7 @@ const emitPyVector = (ctx: EmitPyContext, k: Clause): string => {
   }
   const name = emitQuote(emitTestName(k))
   const it = k.iterate
-  if (it !== null && it.slow && !ctx.opts.slow) {
+  if ((it?.slow ?? false) && !ctx.opts.slow) {
     return `def ${emitClauseFn(k)}(t):\n    return t.skip(${name}, "${EMIT_SLOW_SKIP}")`
   }
   const steps = emitPyIterate(k, sig, args, name)

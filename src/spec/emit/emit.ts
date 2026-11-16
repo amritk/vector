@@ -47,7 +47,7 @@ export class EmitOptions {
   /** How the test imports each of `localModules`: a relative path, such as `../../src/core/hex`. */
   localImports: string[]
   /** Whether a slow iterated vector runs; when false it is emitted skipped. */
-  slow: boolean = false
+  slow: boolean
 
   /**
    * Makes options with no regenerate line and only nish/ modules.
@@ -58,6 +58,7 @@ export class EmitOptions {
     this.contractSha256 = contractSha256
     this.localModules = []
     this.localImports = []
+    this.slow = false
   }
 }
 
@@ -706,7 +707,14 @@ const emitIterateNull = (lines: string[], pad: string, name: string, v: string, 
 }
 
 /** A vector's check of `call`, a call or a bound result, against its expected value. */
-const emitVectorCheck = (ctx: EmitContext, k: Clause, sig: FnSig, expect: Literal, name: string, call: string): string => {
+const emitVectorCheck = (
+  ctx: EmitContext,
+  k: Clause,
+  sig: FnSig,
+  expect: Literal,
+  name: string,
+  call: string,
+): string => {
   const ret = vocabValueType(sig.returns)
   let body = ""
   if (ret === "bytes") {

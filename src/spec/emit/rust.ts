@@ -592,7 +592,7 @@ const emitRsVector = (ctx: EmitRsContext, k: Clause): string => {
   }
   const name = emitRsQuote(emitTestName(k))
   const it = k.iterate
-  if (it !== null && it.slow && !ctx.opts.slow) {
+  if ((it?.slow ?? false) && !ctx.opts.slow) {
     return `fn ${emitClauseFn(k)}(t: &mut Suite) -> bool {\n    t.skip(${name}, "${EMIT_SLOW_SKIP}")\n}`
   }
   const args: string[] = []
@@ -668,7 +668,10 @@ const emitRsIterate = (k: Clause, sig: FnSig, name: string): string[] => {
     const t = emitRsVt(sig.params[i].type)
     types.push(t)
     const lit = k.args[i]
-    const init = vocabIsOptional(t) && lit.kind !== LitKind.Null ? `Some(${emitRsLiteral(lit, vocabBaseOf(t))})` : emitRsLiteral(lit, t)
+    const init =
+      vocabIsOptional(t) && lit.kind !== LitKind.Null
+        ? `Some(${emitRsLiteral(lit, vocabBaseOf(t))})`
+        : emitRsLiteral(lit, t)
     lines.push(`    let mut it_a${i}: ${emitRsOwnedType(t)} = ${init};`)
     vars.push(emitRsVarArg(`it_a${i}`, t))
   }
@@ -1154,7 +1157,7 @@ const emitRsCargoTest = (table: SampleTable, k: Clause, runSlow: boolean): strin
   const it = k.iterate
   if (k.kind !== ClauseKind.Vector && (checkSamplesOf(table, k.id).length === 0 || k.assert === null)) {
     lines.push(`#[ignore = "no samples"]`)
-  } else if (it !== null && it.slow && !runSlow) {
+  } else if ((it?.slow ?? false) && !runSlow) {
     lines.push(`#[ignore = "${EMIT_SLOW_SKIP}"]`)
   }
   lines.push(`fn test_${fn.substring(7, fn.length)}() {`)

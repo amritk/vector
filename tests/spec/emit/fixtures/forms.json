@@ -1013,10 +1013,7 @@
       },
       "iterate": {
         "count": 3,
-        "names": [
-          "a",
-          "b"
-        ],
+        "names": ["a", "b"],
         "next": [
           {
             "call": "xorB",
@@ -1059,10 +1056,7 @@
       },
       "iterate": {
         "count": 100,
-        "names": [
-          "a",
-          "b"
-        ],
+        "names": ["a", "b"],
         "next": [
           {
             "call": "addI64",
@@ -1102,9 +1096,7 @@
       },
       "iterate": {
         "count": 5,
-        "names": [
-          "s"
-        ],
+        "names": ["s"],
         "next": [
           {
             "call": "nonEmpty",
@@ -1138,9 +1130,7 @@
       },
       "iterate": {
         "count": 2,
-        "names": [
-          "a"
-        ],
+        "names": ["a"],
         "next": [
           {
             "call": "nonEmptyB",
@@ -1177,10 +1167,7 @@
       },
       "iterate": {
         "count": 4,
-        "names": [
-          "k",
-          "u"
-        ],
+        "names": ["k", "u"],
         "next": [
           {
             "call": "keep",
@@ -1220,9 +1207,7 @@
       },
       "iterate": {
         "count": 3,
-        "names": [
-          "x"
-        ],
+        "names": ["x"],
         "next": [
           {
             "call": "idI32",

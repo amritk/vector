@@ -162,14 +162,22 @@ const goLive = (t: Suite, c: Contract): void => {
 const goIterate = (t: Suite, c: Contract): void => {
   const opts = new EmitOptions("ab")
   const p = emitGoProgram(c, goSamples(), opts, "gotest").expect("emit")
-  t.contains('a loop runs steps 1 to count − 1', p, 'for it_i := 1; it_i < 3; it_i++ {\n\t\tit_s := _m0.XorB(it_a0, it_a1)\n\t\tit_n0 := it_s\n\t\tit_n1 := it_a0\n\t\tit_a0 = it_n0\n\t\tit_a1 = it_n1\n\t}')
-  t.contains('a null mid-loop names its step', p, 'fmt.Sprintf("step %d of 5: nonEmpty returned null", it_i))')
-  t.contains('and a null last step', p, '"step 5 of 5: nonEmpty returned null")')
-  t.contains('an optional step is dereferenced', p, 'it_n0 := *it_s\n')
-  t.contains('a slow vector is skipped', p, 'return t.skip("[IT-SLOW] IT-SLOW: idI32 iterated 3 times (R-ALL)", "slow: pass --slow to run")')
+  t.contains(
+    "a loop runs steps 1 to count − 1",
+    p,
+    "for it_i := 1; it_i < 3; it_i++ {\n\t\tit_s := _m0.XorB(it_a0, it_a1)\n\t\tit_n0 := it_s\n\t\tit_n1 := it_a0\n\t\tit_a0 = it_n0\n\t\tit_a1 = it_n1\n\t}",
+  )
+  t.contains("a null mid-loop names its step", p, 'fmt.Sprintf("step %d of 5: nonEmpty returned null", it_i))')
+  t.contains("and a null last step", p, '"step 5 of 5: nonEmpty returned null")')
+  t.contains("an optional step is dereferenced", p, "it_n0 := *it_s\n")
+  t.contains(
+    "a slow vector is skipped",
+    p,
+    'return t.skip("[IT-SLOW] IT-SLOW: idI32 iterated 3 times (R-ALL)", "slow: pass --slow to run")',
+  )
   opts.slow = true
   const slow = emitGoProgram(c, goSamples(), opts, "gotest").expect("emit with --slow")
-  t.contains("with --slow the slow vector runs", slow, 'it_r := _m0.IDI32(it_a0)')
+  t.contains("with --slow the slow vector runs", slow, "it_r := _m0.IDI32(it_a0)")
   t.ok("and nothing is skipped as slow", slow.indexOf("slow: pass --slow to run") < 0)
 }
 

@@ -195,8 +195,7 @@ export const runParse = (c: Contract, stdout: string): RunClause[] => {
     r.line = lines[i]
     r.detail = ""
     const it = c.clauses[at].iterate
-    r.slow =
-      m.outcome === RunOutcome.Skip && it !== null && it.slow && lines[i].endsWith(` (${EMIT_SLOW_SKIP})`)
+    r.slow = m.outcome === RunOutcome.Skip && (it?.slow ?? false) && lines[i].endsWith(` (${EMIT_SLOW_SKIP})`)
     if (m.outcome === RunOutcome.Fail && i + 1 < lines.length && lines[i + 1].startsWith("      ")) {
       r.detail = lines[i + 1].substring(6, lines[i + 1].length)
     }

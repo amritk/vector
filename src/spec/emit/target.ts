@@ -18,7 +18,7 @@ export class EmitTarget {
   /** `standalone`, or the test framework the file also plugs into. */
   harness: string
   /** Whether an iterated vector marked slow runs (`--slow`); when false it is emitted skipped. */
-  slow: boolean = false
+  slow: boolean
 
   /**
    * Pairs a language with a harness.
@@ -29,6 +29,7 @@ export class EmitTarget {
   constructor(lang: string, harness: string) {
     this.lang = lang
     this.harness = harness
+    this.slow = false
   }
 }
 

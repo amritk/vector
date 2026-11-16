@@ -44,7 +44,7 @@ export class RunRequest {
   /** The `--harness` flag, or null for the language's default. */
   harness: string | null = null
   /** The `--slow` flag: whether slow iterated vectors run. */
-  slow: boolean = false
+  slow: boolean
 
   /**
    * Makes a request with every option at its default.
@@ -55,6 +55,7 @@ export class RunRequest {
     this.contractPath = contractPath
     this.format = "text"
     this.packages = []
+    this.slow = false
   }
 }
 

@@ -521,7 +521,7 @@ const emitTsVector = (ctx: EmitTsContext, k: Clause): string => {
   }
   const name = emitQuote(emitTestName(k))
   const it = k.iterate
-  if (it !== null && it.slow && !ctx.opts.slow) {
+  if ((it?.slow ?? false) && !ctx.opts.slow) {
     return `function ${emitClauseFn(k)}(t: Suite): boolean {\n  return t.skip(${name}, "${EMIT_SLOW_SKIP}")\n}`
   }
   const steps = emitTsIterate(k, sig, args, name)
@@ -1066,7 +1066,7 @@ const emitTsNodeTest = (table: SampleTable, k: Clause, runSlow: boolean): string
   const name = emitQuote(emitTestName(k))
   const empty = k.kind !== ClauseKind.Vector && (checkSamplesOf(table, k.id).length === 0 || k.assert === null)
   const it = k.iterate
-  const slow = it !== null && it.slow && !runSlow
+  const slow = (it?.slow ?? false) && !runSlow
   const opts = empty ? `{ skip: "no samples" }, ` : slow ? `{ skip: "${EMIT_SLOW_SKIP}" }, ` : ""
   return `  test(${name}, ${opts}(c) => _node(${emitClauseFn(k)}, ${name}, c))`
 }
