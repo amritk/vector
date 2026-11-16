@@ -46,7 +46,7 @@ covers each step and what to do when one fails.
 
 <!-- x-release-please-start-version -->
 ```text
-vector 0.3.0  Prove small programs correct, and hold implementations to their specs
+vector 0.3.1  Prove small programs correct, and hold implementations to their specs
 
 usage: vector <command> [flags]
 
