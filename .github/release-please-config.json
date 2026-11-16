@@ -10,7 +10,12 @@
       "include-component-in-tag": false,
       "include-v-in-tag": true,
       "bump-minor-pre-major": true,
-      "extra-files": ["src/index.ts", "tests/package/index_test.ts"],
+      "extra-files": [
+        "src/index.ts",
+        "tests/package/index_test.ts",
+        "README.md",
+        "docs/guide/getting-started/installation.md"
+      ],
       "changelog-sections": [
         { "type": "feat", "section": "Features" },
         { "type": "fix", "section": "Bug Fixes" },

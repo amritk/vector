@@ -44,8 +44,9 @@ covers each step and what to do when one fails.
 ./dist/vector --help
 ```
 
+<!-- x-release-please-start-version -->
 ```text
-vector 0.1.0  Prove small programs correct, and hold implementations to their specs
+vector 0.2.0  Prove small programs correct, and hold implementations to their specs
 
 usage: vector <command> [flags]
 
@@ -58,6 +59,7 @@ Flags
   -h, --help     show help
   -v, --version  show the version
 ```
+<!-- x-release-please-end -->
 
 Prove a function meets its spec plan:
 

@@ -8,7 +8,9 @@
 // A golden case is a directory holding `cmd` (one line: `vector <args>`,
 // split on whitespace, with '…' or "…" quoting), `stdout`, an optional
 // `stderr` (no file means stderr must be empty), and `exit` (the expected
-// status). Each case runs from the repository root.
+// status). Each case runs from the repository root. `{{version}}` in
+// `stdout` or `stderr` stands for package.json's version, so a release, which
+// bumps that version, never has to touch a golden.
 //
 // A unit test passes only when it exits 0 and its last line is nish/testing's
 // `N passed, M failed, K skipped` with N > 0 and M = 0, so a test that asserts
@@ -37,6 +39,9 @@ const filter = process.argv[2] ?? "";
 const nish = process.env.NISH ?? join(root, ".nish/bin/nish");
 const vector = join(root, "dist/vector");
 const TIMEOUT_MS = 120_000;
+const VERSION = JSON.parse(
+  readFileSync(join(root, "package.json"), "utf8"),
+).version;
 const repoZ3 = join(root, ".z3/z3");
 const unitEnv =
   process.env.VECTOR_Z3 || !existsSync(repoZ3)
@@ -158,11 +163,15 @@ for (const dir of cases) {
     problems.push("exit file is missing or not a number");
   else if (r.status !== wantExit)
     problems.push(`exit ${r.status ?? r.signal}, want ${wantExit}`);
-  const wantOut = read(dir, "stdout");
+  const wantOut =
+    read(dir, "stdout")?.replaceAll("{{version}}", VERSION) ?? null;
   if (wantOut === null) problems.push("stdout file is missing");
   else if (r.stdout !== wantOut)
     problems.push(`stdout differs:\n--- want\n${wantOut}--- got\n${r.stdout}`);
-  const wantErr = read(dir, "stderr") ?? "";
+  const wantErr = (read(dir, "stderr") ?? "").replaceAll(
+    "{{version}}",
+    VERSION,
+  );
   if (r.stderr !== wantErr)
     problems.push(`stderr differs:\n--- want\n${wantErr}--- got\n${r.stderr}`);
   if (problems.length === 0) {

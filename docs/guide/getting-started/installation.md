@@ -48,9 +48,11 @@ Then check the binary. `--version` prints its version:
 ./dist/vector --version
 ```
 
+<!-- x-release-please-start-version -->
 ```text
-vector 0.1.0
+vector 0.2.0
 ```
+<!-- x-release-please-end -->
 
 and `--help` lists the commands:
 
@@ -58,8 +60,9 @@ and `--help` lists the commands:
 ./dist/vector --help
 ```
 
+<!-- x-release-please-start-version -->
 ```text
-vector 0.1.0  Prove small programs correct, and hold implementations to their specs
+vector 0.2.0  Prove small programs correct, and hold implementations to their specs
 
 usage: vector <command> [flags]
 
@@ -72,6 +75,7 @@ Flags
   -h, --help     show help
   -v, --version  show the version
 ```
+<!-- x-release-please-end -->
 
 `--help` after any command shows that command's flags and arguments; the [command-line reference](../../reference/command-line.md) lists them all.
 

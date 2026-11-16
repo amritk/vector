@@ -1,4 +1,4 @@
-vector 0.1.0  Prove small programs correct, and hold implementations to their specs
+vector {{version}}  Prove small programs correct, and hold implementations to their specs
 
 usage: vector <command> [flags]
 
