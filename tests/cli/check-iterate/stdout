@@ -1,0 +1,13 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ x25519-iterate · RFC 7748 (Elliptic Curves for Security) · nish/crypto/x25519
+ Status: CONTRACT_VALID
+
+ Requirements
+  ○ R-ITERATE  §5.2 DEFINITION  "For each iteration, set k to be the result of calling the funct…"
+      ○ 5.2-ITER-1000
+
+ Warnings
+  ! clauses: no property clauses: the contract checks only the RFC's own vectors
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

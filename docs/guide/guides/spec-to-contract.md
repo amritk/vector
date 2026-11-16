@@ -34,6 +34,63 @@ A contract ([`schemas/rfc-contract.json`][schema], described in
   comes from) and **properties** (`forall` a typed domain, `where` restricts
   it, `assert` must hold).
 
+### An iterated vector
+
+A vector may carry `iterate`, for a value its section prints after calling
+the function many times over (RFC 7748 §5.2: X25519 1,000 and 1,000,000
+times). The vector's `args` start it, and each step feeds the step before
+back in:
+
+```json
+"call": "x25519",
+"args": [{"hex": "0900…"}, {"hex": "0900…"}],
+"expect": {"hex": "684c…", "label": "After 1,000 iterations"},
+"iterate": {
+  "count": 1000,
+  "names": ["k", "u"],
+  "next": [{"call": "x25519", "args": [{"var": "k"}, {"var": "u"}]}, {"var": "k"}]
+}
+```
+
+- **count** is how many times the function is called, 1 to 1,000,000,000.
+  The vector passes when the last call returns `expect`, exactly: an iterated
+  vector takes no `tolerance`, and its `expect` is never `null` or a bool.
+- **names** gives each parameter a name, in order, for one step's arguments.
+  A name is an identifier, appears once, and is no function's name.
+- **next** gives each parameter its argument for the following step: one of
+  the names (that step's argument, carried over) or the call on the names in
+  order (that step's result). At least one element is the call, or nothing
+  feeds the result back. Each element must be its parameter's type: the call
+  feeds a parameter of the return type (a nullable result its base type, and
+  `bytes` and `secret-bytes` interchange), a name a parameter of its own
+  parameter's type.
+- **slow** (`true`, or left out) marks a count too long to run on every test
+  run.
+
+`spec check` binds the count to the cited section:
+
+- The section prints it as a whole number, outside a heading: `1,000` and
+  `1000` both count. A number is a whole token: one inside a word or a name
+  (`a1000`, `X25519`, `SHA-256-128`, `5.2`) is none, nor is a malformed
+  group (`1,00`, `10,00,000`), nor a heading's number, read as the RFC's
+  sections are (`5.2.  Test Vectors`, `A.2.  Test Case 2`, `Appendix A.`). A
+  `-` after a number and any non-ASCII character end it, so `1,000-iteration`
+  and `5,000–6,000` count.
+- The expected value's label counts the count. The number it counts is the
+  one before `iteration`, `iterations` or `times`, else the label's only
+  number; with two or more numbers and neither word, the label is not
+  checked. A label that counts another number is refused (`the expected
+  label "After 1,000 iterations" counts 1,000, but the vector iterates 2,000
+  times`).
+- The count is the only number exempt from the variant rule, and only when a
+  word names it: every copy of the number before `iteration`, `iterations` or
+  `times` is left out when the label is compared with the labels beside it,
+  and a label with no such word (`X448 1,000`, `X448 after 1,000 rounds`) is
+  compared whole, its only number included. So beside `X25519 after 1,000
+  iterations`, a value printed under `X448 after 1,000 iterations` is still
+  refused for a call to `x25519`, while `After 1,000,000 iterations` is not
+  a variant of `After 1,000 iterations`.
+
 ## 1. Build the XML
 
 `scripts/build-spec.sh` runs only with kramdown-rfc 1.7.43 and xml2rfc 3.35.0,
@@ -339,12 +396,12 @@ No model is involved in any of them.
 
 | Gate | Refuses |
 |---|---|
-| shape | a contract that is not well formed, including free text (titles, quotes, reasons) with a line break or another control character |
-| fidelity | a quote not in its cited section; a vector's value not printed in its section as a whole value, under the label it is printed under (see [What a printed value is](writing-a-spec.md#what-a-printed-value-is)); values from two test cases; a source whose bytes no longer match its pinned SHA-256 |
+| shape | a contract that is not well formed, including free text (titles, quotes, reasons) with a line break or another control character; an `iterate` whose names or next do not match the parameters (see [An iterated vector](#an-iterated-vector)) |
+| fidelity | a quote not in its cited section; a vector's value not printed in its section as a whole value, under the label it is printed under (see [What a printed value is](writing-a-spec.md#what-a-printed-value-is)); values from two test cases; an iterated vector's count not printed in its section, or a label that counts another number; a source whose bytes no longer match its pinned SHA-256 |
 | completeness | any MUST, MUST NOT, SHALL, SHALL NOT or REQUIRED sentence of the main source that is neither inside a requirement's quote nor an exclusion's |
 | provenance | a `spec` source whose section never states the expected `null` or bool (see [When a section states null, true or false](writing-a-spec.md#when-a-section-states-null-true-or-false)); a `command` source that failed under `--run-sources` |
 | coverage | a binding requirement no clause checks; a clause citing a requirement the contract does not state; a property or vector that calls no function under test |
-| typing | an ill-typed call or expression (`bytes?` and `string?` must be `unwrap`ped; `where` may not call the implementation; a `let` may not shadow a name or bind a bare `null`) |
+| typing | an ill-typed call or expression (`bytes?` and `string?` must be `unwrap`ped; `where` may not call the implementation; a `let` may not shadow a name or bind a bare `null`); an `iterate.next` element of the wrong type for its parameter |
 | signatures | a declared signature that is not the module's export (with `--nish-root` or `--module`) |
 | domain | a property whose domain is empty (Z3 says `unsat`: it would pass vacuously) |
 

@@ -430,10 +430,40 @@ const literalsWordEnd = (r: LiteralsReader, j: i32): i32 => {
 }
 
 /**
+ * The end of a comma-grouped number at `j` (`1,000`, `1,000,000`: one to
+ * three digits, then groups of exactly three), or -1 when there is none.
+ */
+const literalsGroupedEnd = (r: LiteralsReader, j: i32): i32 => {
+  let k = j
+  while (k - j < 3 && literalsIsDigit(literalsByte(r, k))) {
+    k++
+  }
+  if (k === j) {
+    return -1
+  }
+  let groups = 0
+  while (
+    literalsByte(r, k) === 0x2c &&
+    literalsIsDigit(literalsByte(r, k + 1)) &&
+    literalsIsDigit(literalsByte(r, k + 2)) &&
+    literalsIsDigit(literalsByte(r, k + 3))
+  ) {
+    k += 4
+    groups++
+  }
+  if (groups === 0 || literalsIsLabelChar(literalsByte(r, k)) || literalsByte(r, k) === 0x2c) {
+    return -1
+  }
+  return k
+}
+
+/**
  * The end of a label at `j` (before its ` = `), or -1. A label is words of
  * letters, digits, `_` and `-`, one space apart; the first word starts with a
  * letter, or with digits then a letter (`32-bit fixed-common part`, as RFC
- * 8439 prints it), so `22 x 0b` and `42` stay a run and an int.
+ * 8439 prints it), so `22 x 0b` and `42` stay a run and an int. A later word
+ * may be a comma-grouped number (`After 1,000 iterations`, as RFC 7748
+ * prints it).
  */
 const literalsLabelEnd = (r: LiteralsReader, j: i32): i32 => {
   let k = j
@@ -457,6 +487,10 @@ const literalsLabelEnd = (r: LiteralsReader, j: i32): i32 => {
       return -1
     }
     k++
+    const grouped = literalsGroupedEnd(r, k)
+    if (grouped >= 0) {
+      k = grouped
+    }
     while (literalsIsLabelChar(literalsByte(r, k))) {
       k++
     }

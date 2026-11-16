@@ -26,6 +26,34 @@ const TYPING_TEST_BAD: string = `{
   ]
 }`
 
+/** A contract whose iterated vectors feed each parameter a wrong type, and one that feeds them right. */
+const TYPING_TEST_ITERATE: string = `{
+  "contract": "c2",
+  "source": {"title": "T", "rfc": 7748},
+  "target": {"module": "nish/x"},
+  "requirements": [{"id": "R1", "section": "5.2", "level": "MUST", "quote": "Q"}],
+  "functions": [
+    {"name": "hash", "params": [{"name": "b", "type": "bytes"}], "returns": "string"},
+    {"name": "mix", "params": [{"name": "a", "type": "bytes"}, {"name": "n", "type": "u8"}], "returns": "bytes?"},
+    {"name": "ladder", "params": [{"name": "k", "type": "secret-bytes"}, {"name": "u", "type": "bytes"}], "returns": "bytes"},
+    {"name": "opt", "params": [{"name": "b", "type": "bytes?"}], "returns": "bytes"}
+  ],
+  "clauses": [
+    {"kind": "vector", "id": "I1", "title": "t", "covers": ["R1"],
+     "source": {"cite": {"section": "5.2"}}, "call": "hash", "args": [{"hex": "00"}], "expect": {"str": "x"},
+     "iterate": {"count": 2, "names": ["b"], "next": [{"call": "hash", "args": [{"var": "b"}]}]}},
+    {"kind": "vector", "id": "I2", "title": "t", "covers": ["R1"],
+     "source": {"cite": {"section": "5.2"}}, "call": "mix", "args": [{"hex": "00"}, {"int": 1}], "expect": {"hex": "00"},
+     "iterate": {"count": 2, "names": ["a", "n"], "next": [{"call": "mix", "args": [{"var": "a"}, {"var": "n"}]}, {"var": "a"}]}},
+    {"kind": "vector", "id": "I3", "title": "t", "covers": ["R1"],
+     "source": {"cite": {"section": "5.2"}}, "call": "ladder", "args": [{"hex": "09"}, {"hex": "09"}], "expect": {"hex": "00"},
+     "iterate": {"count": 2, "names": ["k", "u"], "next": [{"call": "ladder", "args": [{"var": "k"}, {"var": "u"}]}, {"var": "k"}]}},
+    {"kind": "vector", "id": "I4", "title": "t", "covers": ["R1"],
+     "source": {"cite": {"section": "5.2"}}, "call": "opt", "args": [{"hex": "09"}], "expect": {"hex": "00"},
+     "iterate": {"count": 2, "names": ["b"], "next": [{"call": "opt", "args": [{"var": "b"}]}]}}
+  ]
+}`
+
 /** The typing gate. */
 export const main = (): i32 => {
   const t = new Suite("spec/gates/typing")
@@ -48,6 +76,19 @@ export const main = (): i32 => {
     "misfit names a non-int's type",
     gateMisfit(contractParse(TYPING_TEST_BAD, "b").expect("p").clauses[1].args[0], "bytes"),
     "string",
+  )
+
+  // An iterated vector: what each next element feeds must be its parameter's type.
+  const ictx = new CheckContext("contracts/c2.json", ".")
+  ictx.contract = contractParse(TYPING_TEST_ITERATE, "iterate").expect("parse")
+  const ifound = gateTyping(ictx)
+  t.eqStr(
+    "an iterated vector feeds each parameter its own type, a nullable one its base",
+    ifound.join("\n"),
+    [
+      "I1: iterate.next[0]: hash returns string, and hash(b) wants bytes",
+      "I2: iterate.next[1]: a is mix(a), a bytes, and mix(n) wants u8",
+    ].join("\n"),
   )
   return t.done()
 }

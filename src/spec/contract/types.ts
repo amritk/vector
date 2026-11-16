@@ -325,6 +325,25 @@ export class Tolerance {
   }
 }
 
+/** A vector that feeds its call its own result: the call runs `count` times, and the last result is the expect. */
+export class Iterate {
+  /** How many times the call runs, 1..1000000000. */
+  count: i64
+  /** One name per parameter of the call, each the previous call's argument there. */
+  names: string[]
+  /** One expression per parameter: a name, or the call on the names (the previous call's result). */
+  next: Expr[]
+  /** Whether a test runs the vector only when asked. */
+  slow: boolean
+  /** Starts with no count, names or next. */
+  constructor() {
+    this.count = -1
+    this.names = []
+    this.next = []
+    this.slow = false
+  }
+}
+
 /** A variable a property quantifies over, and its domain. */
 export class ForallVar {
   /** The variable's name. */
@@ -389,6 +408,8 @@ export class Clause {
   expect: Literal | null = null
   /** How far an f64 result may be from expect; null when exact. */
   tolerance: Tolerance | null = null
+  /** A vector's iteration; null when the call runs once. */
+  iterate: Iterate | null = null
   /** The variables a property quantifies over. */
   forall: ForallVar[]
   /** A property's restriction of its domain; null when none. */
