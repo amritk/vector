@@ -1,0 +1,8 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ tests/fixtures/iterate-contract/contracts/x25519-iterate-zero.json · not a contract the schema accepts
+ Status: INVALID
+
+ Gate failures
+  ✘ shape: clauses[0].iterate.count: an integer in 1..1000000000
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

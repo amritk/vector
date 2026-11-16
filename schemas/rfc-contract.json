@@ -770,6 +770,9 @@
         },
         "tolerance": {
           "$ref": "#/$defs/tolerance"
+        },
+        "iterate": {
+          "$ref": "#/$defs/iterate"
         }
       },
       "required": [
@@ -998,6 +1001,70 @@
       "minLength": 1,
       "pattern": "[A-Za-z]",
       "description": "The name the spec prints right before the value (`Key = 00:01:…`, `L = 42`); fidelity checks the pair."
+    },
+    "iterate": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Feed the call its own result `count` times: the first call takes `args`; each later call takes `next`, where a name is that parameter's previous argument and the element `{call, args: names}` is the previous call's result. The vector passes when the last result equals `expect`. `names` and `next` are one per parameter of `call`; each element's type must equal its parameter's (`bytes` and `secret-bytes` interchange, and a nullable result feeds its base type); at least one element is the call. The count must be printed in the cited section (commas ignored), and when the expect's label holds a number it must be the count. Not with `tolerance`, nor on a null or bool expect. `slow` marks a vector a test runs only when asked; it is written only when true.",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        "names": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/ident"
+          }
+        },
+        "next": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "var": {
+                    "$ref": "#/$defs/ident"
+                  }
+                },
+                "required": ["var"]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "call": {
+                    "type": "string"
+                  },
+                  "args": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "var": {
+                          "$ref": "#/$defs/ident"
+                        }
+                      },
+                      "required": ["var"]
+                    }
+                  }
+                },
+                "required": ["call", "args"]
+              }
+            ]
+          }
+        },
+        "slow": {
+          "type": "boolean"
+        }
+      },
+      "required": ["count", "names", "next"]
     },
     "tolerance": {
       "description": "How far an f64 result may be from `expect`: `abs`, an absolute difference as decimal text, or `ulps`, a count of binary64 units in the last place. It must come from the spec: `quote` is the sentence that states it, in `section` (of `source`, default the main one), checked like a requirement's quote. Without a tolerance an f64 expect is compared bit for bit (IEEE 754-2019 §3.4 encodings), so NaN equals a NaN of the same bits. Only an f64 result takes a tolerance, and an expected NaN or infinity is compared bit for bit even with one. `abs` must be finite: decimal text past binary64's largest finite value is refused (IEEE 754-2019 §7.4). `ulps` is at most 2^53−1, so it is exact as a JSON number (RFC 7493 §2.2).",
