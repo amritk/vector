@@ -27,6 +27,7 @@ becomes in the XML.
 | a property | a `~~~ ts-property` block (see [Properties](#properties)) | `<sourcecode type="ts-property">` |
 | the vectors | one table, header exactly `Id \| Call \| Expected \| Covers \| Source \| Title` | `<table>` |
 | a vector's `tolerance` | a paragraph `Tolerance: V1 ulps 1, {{Section N of RFCx}}: "quote"` (or `abs 1e-9`) right after the vector table or another `Tolerance:` paragraph (see [Tolerances](#tolerances)) | the next sibling `<t>Tolerance: …</t>` |
+| an `outOfScope` export | a paragraph `Out of scope: <export>, <the reason no clause tests it>`, anywhere in the body | `<t>Out of scope: …</t>` |
 | a requirement's or vector's `section` | the enclosing numbered section (`--- back` gives appendices A, B, …) | the section number `xml2rfc` gives |
 
 ### Signatures
@@ -153,9 +154,11 @@ vector table, is refused.
 - Each property calls a function under test.
 - A function's name may not collide with a name the generated test uses
   itself, or with a ts-property operation.
-- A spec cannot yet declare `outOfScope` exports. The profile has no
-  construct for them, so [`spec exports`](pr-gates.md#exports) fails on any
-  changed export no clause tests.
+- An `Out of scope:` paragraph names an export of the module and gives a
+  reason after a comma. The name is an identifier, not a function under test
+  or one a property calls, and appears in one such paragraph; the reason is
+  not empty. [`spec exports`](pr-gates.md#exports) then reports a change to
+  that export as a note instead of failing on it.
 
 ## Literals
 

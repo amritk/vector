@@ -51,8 +51,8 @@ import {
   Exclusion,
   FnSig,
   LitKind,
-  OutOfScope,
   Literal,
+  OutOfScope,
   Requirement,
   SourceDecl,
   Target,
@@ -1301,7 +1301,10 @@ const profileReadOutOfScope = (c: ProfileContext, n: XmlNode): void => {
   c.outOfScopeLocs.push(profileLocOf(n))
 }
 
-/** An export out of scope is neither a function under test nor one a clause calls. */
+/**
+ * An export out of scope is neither a function under test nor a reference
+ * function a property calls (a vector calls only functions under test).
+ */
 const profileCheckOutOfScope = (c: ProfileContext): void => {
   for (let i = 0; i < c.outOfScope.length; i++) {
     const name = c.outOfScope[i].name
@@ -1309,11 +1312,6 @@ const profileCheckOutOfScope = (c: ProfileContext): void => {
     if (c.functions.some((f: FnSig): boolean => f.module === null && f.name === name)) {
       profileRefuseAt(c, loc, `${name} is a function under test, so it cannot be out of scope`, 0)
       continue
-    }
-    for (const k of c.vectors) {
-      if (k.call === name) {
-        profileRefuseAt(c, loc, `${name} is called by vector ${k.id}, so it cannot be out of scope`, 0)
-      }
     }
     for (const k of c.properties) {
       const a = k.assert
@@ -1351,7 +1349,6 @@ const profileBlocks = (c: ProfileContext, parent: XmlNode, section: string): voi
       continue
     }
     if (profileStartsWith(c, n, PROFILE_OUT_OF_SCOPE)) {
-      used.add(n)
       profileHandle(c, n)
       profileReadOutOfScope(c, n)
       continue
