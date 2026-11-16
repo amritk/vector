@@ -30,7 +30,6 @@ This fixture adds nothing; it exists to be read.
 export function fmathHalf(x: f64): f64
 ~~~
 
-
 # Halving {#halving}
 
 fmathHalf MUST return half its argument.

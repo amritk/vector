@@ -1,0 +1,1 @@
+vector spec extract tests/fixtures/profile/profile-outofscope-undeclared.xml -o tests/fixtures/profile/profile-outofscope-undeclared.json --check

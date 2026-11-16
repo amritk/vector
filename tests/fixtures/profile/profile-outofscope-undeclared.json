@@ -4,7 +4,7 @@
   "source": {
     "title": "Profile fixture: an export left undeclared",
     "main": "profile-outofscope-undeclared",
-    "sha256": "bbf7b49ecf48e7a2dd413b01da6c70921294ad7f1ad2cc2b246fca0363759f07"
+    "sha256": "595ee6bad235a64160811ddbf0246c89ed53f324fdb763c74969520b623e6c93"
   },
   "sources": [
     {
