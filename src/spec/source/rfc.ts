@@ -378,8 +378,11 @@ class RfcHexReader {
   pending: string | null = null
   /** The previous line ended inside a colon run, which this line may continue. */
   colonOpen: boolean
+  /** The names printed with no value below them, in order. */
+  unvalued: string[]
   constructor() {
     this.values = []
+    this.unvalued = []
     this.cur = ""
     this.bareOnly = true
     this.colonOpen = false
@@ -730,7 +733,29 @@ const rfcDropAside = (line: string): string => {
  * @param sec the section
  * @returns its values, in order
  */
-export const rfcHexValues = (sec: RfcSection): HexValue[] => {
+export const rfcHexValues = (sec: RfcSection): HexValue[] => rfcHexRead(sec).values
+
+/**
+ * The names a section prints with no value below them: a line naming what
+ * comes below it (`MESSAGE (length 0 bytes):`, as RFC 8032 prints an empty
+ * message) followed by another such line, or by nothing, with no value read
+ * between (rfcHexValues).
+ *
+ * @param sec the section
+ * @returns the names, in order, whitespace collapsed
+ */
+export const rfcUnvaluedLabels = (sec: RfcSection): string[] => rfcHexRead(sec).unvalued
+
+/** Records the pending name as printed with no value, when it is one. */
+const rfcHexUnvalued = (r: RfcHexReader): void => {
+  const p = r.pending
+  if (p !== null) {
+    r.unvalued.push(p)
+  }
+}
+
+/** Reads a section's values and the names printed with none (rfcHexValues). */
+const rfcHexRead = (sec: RfcSection): RfcHexReader => {
   const r = new RfcHexReader()
   for (const raw of sec.lines) {
     const line = rfcDropAside(raw)
@@ -759,10 +784,12 @@ export const rfcHexValues = (sec: RfcSection): HexValue[] => {
       continue
     }
     rfcHexFlush(r)
+    rfcHexUnvalued(r)
     r.pending = rfcLabelLine(line)
   }
   rfcHexFlush(r)
-  return r.values
+  rfcHexUnvalued(r)
+  return r
 }
 
 /**

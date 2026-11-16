@@ -24,7 +24,7 @@ import { CheckContext, CheckNote } from "../check"
 import { contractF64Bits, contractF64IsNaN, contractF64Parse } from "../contract/f64"
 import { Clause, ClauseKind, Iterate, LitKind, Literal, VectorSourceKind } from "../contract/types"
 import { SourceSet, sourceFind } from "../source/load"
-import { HexValue, RfcSection, rfcHexValues, rfcNormalize, rfcParse, rfcSectionText } from "../source/rfc"
+import { HexValue, RfcSection, rfcHexValues, rfcNormalize, rfcParse, rfcSectionText, rfcUnvaluedLabels } from "../source/rfc"
 import { gateArgsAt, gateCitedSection, gatePlace, gateQuoteMissing, gateSources } from "./cite"
 import { gateIssue, gateWarn } from "./note"
 import { gateResultWord, gateStatesResult } from "./result"
@@ -63,6 +63,8 @@ class GateLits {
   /** `RFC §2.2 ("Title")`. */
   inSection: string
   values: HexValue[]
+  /** The labels printed with no value below them (rfcUnvaluedLabels). */
+  unvalued: string[]
   text: string
   lines: string
   bounds: GateBound[]
@@ -78,6 +80,7 @@ class GateLits {
     this.where = where
     this.inSection = `${where} ("${sec.title}")`
     this.values = rfcHexValues(sec)
+    this.unvalued = rfcUnvaluedLabels(sec)
     if (byteLists) {
       for (const line of sec.lines) {
         for (const hex of gateByteLists(line)) {
@@ -268,6 +271,55 @@ const gateF64Has = (lit: Literal, printed: string[]): i32[] => {
   return has
 }
 
+/** Whether a label states a length of zero: `0` before `byte`, `bytes`, `octet` or `octets` (`MESSAGE (length 0 bytes)`). */
+const gateZeroLength = (label: string): boolean => {
+  const ts = gateFidTokens(asciiLower(label))
+  for (let i = 0; i + 1 < ts.length; i++) {
+    const w = ts[i + 1]
+    if (ts[i] === "0" && (w === "byte" || w === "bytes" || w === "octet" || w === "octets")) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * An empty value under a label: the label is printed with nothing below it
+ * (`MESSAGE (length 0 bytes):`), and states a length of zero.
+ */
+const gateEmptyCheck = (l: GateLits, at: string, label: string): void => {
+  const under = l.values.filter((v: HexValue): boolean => {
+    const vl = v.label
+    return vl !== null && gateSameLabel(vl, label)
+  })
+  if (under.length > 0) {
+    gateLitFail(
+      l,
+      at,
+      `"${label}" is printed with a ${under[0].hex.length / 2}-byte value in ${l.inSection}, so the value is not empty`,
+    )
+    return
+  }
+  const of = l.unvalued.filter((u: string): boolean => gateSameLabel(u, label)).length
+  if (of === 0) {
+    gateLitFail(l, at, `the empty value is not printed in ${l.inSection} under "${label}" with nothing below it`)
+    return
+  }
+  if (!gateZeroLength(label)) {
+    gateLitFail(
+      l,
+      at,
+      `"${label}" is printed with nothing below it in ${l.inSection}, but does not state a length of 0 bytes, so nothing says the value is empty`,
+    )
+    return
+  }
+  const has: i32[] = []
+  for (let i = 0; i < of; i++) {
+    has.push(i)
+  }
+  gateRounds(l, new GateBound(at, label), toI32(of), has)
+}
+
 /** Checks one literal (and a concat's parts) against the section, adding its bounds. */
 const gateLitCheck = (l: GateLits, lit: Literal, at: string): void => {
   if (lit.kind === LitKind.Concat) {
@@ -282,6 +334,11 @@ const gateLitCheck = (l: GateLits, lit: Literal, at: string): void => {
     return
   }
   const bytes = lit.kind === LitKind.Hex || lit.kind === LitKind.Ascii
+  const named = lit.label
+  if (bytes && lit.text.length === 0 && named !== null) {
+    gateEmptyCheck(l, at, named)
+    return
+  }
   if ((bytes || lit.kind === LitKind.Str) && lit.text.length === 0) {
     // "" is in every text and no bytes in every value, so an empty value is
     // found only where the section prints one.
