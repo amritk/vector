@@ -32,6 +32,7 @@ Generated from [src/spec/source/rfc.ts](https://github.com/amritk/vector/blob/ma
 - [`rfcQuoteIn`](#rfcquotein)
 - [`rfcOwnSpans`](#rfcownspans)
 - [`rfcHexValues`](#rfchexvalues)
+- [`rfcUnvaluedLabels`](#rfcunvaluedlabels)
 - [`rfcHexPrinted`](#rfchexprinted)
 - [`rfcQuoteProblem`](#rfcquoteproblem)
 
@@ -386,6 +387,29 @@ the section
 <scalar-field name="returns" type="HexValue[]">
 
 its values, in order
+
+</scalar-field>
+
+### rfcUnvaluedLabels
+
+The names a section prints with no value below them: a line naming what
+comes below it (`MESSAGE (length 0 bytes):`, as RFC 8032 prints an empty
+message) followed by another such line, or by nothing, with no value read
+between (rfcHexValues).
+
+```ts
+function rfcUnvaluedLabels(sec: RfcSection): string[]
+```
+
+<scalar-field name="sec" type="RfcSection" required>
+
+the section
+
+</scalar-field>
+
+<scalar-field name="returns" type="string[]">
+
+the names, in order, whitespace collapsed
 
 </scalar-field>
 

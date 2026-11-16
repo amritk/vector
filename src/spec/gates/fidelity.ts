@@ -24,7 +24,15 @@ import { CheckContext, CheckNote } from "../check"
 import { contractF64Bits, contractF64IsNaN, contractF64Parse } from "../contract/f64"
 import { Clause, ClauseKind, Iterate, LitKind, Literal, VectorSourceKind } from "../contract/types"
 import { SourceSet, sourceFind } from "../source/load"
-import { HexValue, RfcSection, rfcHexValues, rfcNormalize, rfcParse, rfcSectionText, rfcUnvaluedLabels } from "../source/rfc"
+import {
+  HexValue,
+  RfcSection,
+  rfcHexValues,
+  rfcNormalize,
+  rfcParse,
+  rfcSectionText,
+  rfcUnvaluedLabels,
+} from "../source/rfc"
 import { gateArgsAt, gateCitedSection, gatePlace, gateQuoteMissing, gateSources } from "./cite"
 import { gateIssue, gateWarn } from "./note"
 import { gateResultWord, gateStatesResult } from "./result"

@@ -193,7 +193,11 @@ export const main = (): i32 => {
   const ed = "SECRET KEY:\n   9d61\n\n   MESSAGE (length 0 bytes):\n\n   SIGNATURE:\n   e556"
   t.eqStr("a label with nothing below it is unvalued", rfcTestUnvalued(ed), "MESSAGE (length 0 bytes)")
   t.eqStr("and holds no value", rfcTestBody(ed), "SECRET KEY=9d61 SIGNATURE=e556")
-  t.eqStr("a last label with nothing below it", rfcTestUnvalued("K:\n   9d61\n\n   MESSAGE (length 0 bytes):"), "MESSAGE (length 0 bytes)")
+  t.eqStr(
+    "a last label with nothing below it",
+    rfcTestUnvalued("K:\n   9d61\n\n   MESSAGE (length 0 bytes):"),
+    "MESSAGE (length 0 bytes)",
+  )
   t.eqStr(
     "a group label keeps its one-byte value",
     rfcTestBody("MESSAGE (length 1 byte):\n   72"),

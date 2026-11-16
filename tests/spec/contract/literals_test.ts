@@ -244,11 +244,31 @@ export const main = (): i32 => {
   t.eqStr("an unclosed group is no label", litTestParse("M (length 1 byte = 72"), "not a literal @1")
   t.eqStr("an empty group is no label", litTestParse("M () = 72"), "not a literal @1")
   t.eqStr("a nested group is no label", litTestParse("M (a (b)) = 72"), "not a literal @1")
-  t.eqStr("a group with a comma-grouped count", litTestParse("M (after 1,000 runs) = 72"), "labelled-int:72 label=M (after 1,000 runs) hex=72")
-  t.eqStr("a labelled empty value", litTestParse("MESSAGE (length 0 bytes) = (empty)"), "labelled: label=MESSAGE (length 0 bytes)")
-  t.eqStr("a labelled empty value as []", litTestParse("MESSAGE (length 0 bytes) = []"), "labelled: label=MESSAGE (length 0 bytes)")
-  t.eqStr("settled empty bytes", litTestSettle("MESSAGE (length 0 bytes) = (empty)", "bytes"), "{hex: label:MESSAGE (length 0 bytes)}")
-  t.eqStr("72 settled where bytes go", litTestSettle("MESSAGE (length 1 byte) = 72", "bytes"), "{hex:72 label:MESSAGE (length 1 byte)}")
+  t.eqStr(
+    "a group with a comma-grouped count",
+    litTestParse("M (after 1,000 runs) = 72"),
+    "labelled-int:72 label=M (after 1,000 runs) hex=72",
+  )
+  t.eqStr(
+    "a labelled empty value",
+    litTestParse("MESSAGE (length 0 bytes) = (empty)"),
+    "labelled: label=MESSAGE (length 0 bytes)",
+  )
+  t.eqStr(
+    "a labelled empty value as []",
+    litTestParse("MESSAGE (length 0 bytes) = []"),
+    "labelled: label=MESSAGE (length 0 bytes)",
+  )
+  t.eqStr(
+    "settled empty bytes",
+    litTestSettle("MESSAGE (length 0 bytes) = (empty)", "bytes"),
+    "{hex: label:MESSAGE (length 0 bytes)}",
+  )
+  t.eqStr(
+    "72 settled where bytes go",
+    litTestSettle("MESSAGE (length 1 byte) = 72", "bytes"),
+    "{hex:72 label:MESSAGE (length 1 byte)}",
+  )
   t.eqStr(
     "an empty value in a call",
     litTestCall("f(K = 9d, MESSAGE (length 0 bytes) = [])"),

@@ -313,14 +313,8 @@ ${body}
 }
 
 /** The findings for one iterated vector of x25519 (see `fidelityTestRowCtx`). */
-const fidelityTestRow = (
-  id: string,
-  heading: string,
-  body: string,
-  hex: string,
-  label: string,
-  count: i32,
-): string[] => gateFidelity(fidelityTestRowCtx(id, heading, body, hex, label, count))
+const fidelityTestRow = (id: string, heading: string, body: string, hex: string, label: string, count: i32): string[] =>
+  gateFidelity(fidelityTestRowCtx(id, heading, body, hex, label, count))
 
 /** The warnings, not the findings, for one iterated vector of x25519 (see `fidelityTestRowCtx`). */
 const fidelityTestRowWarned = (
@@ -420,14 +414,28 @@ const fidelityTestTable = (t: Suite): void => {
   fidelityTestRowIs(
     t,
     "a count with no word, beside a variant the name does not say",
-    fidelityTestRowWarned("1", "1.  Rounds", "   Run it 1,000 times.\n   X7 1,000 = 0x2222\n   X9 1,000 = 0x5555", "2222", "X7 1,000", 1000),
+    fidelityTestRowWarned(
+      "1",
+      "1.  Rounds",
+      "   Run it 1,000 times.\n   X7 1,000 = 0x2222\n   X9 1,000 = 0x5555",
+      "2222",
+      "X7 1,000",
+      1000,
+    ),
     `one of "X7 1,000" or "X9 1,000" in RFC §1 ("Rounds"), and nothing in the name x25519 says which variant it computes`,
   )
   // A letter-led hyphen chain is one token, so its last number is no count.
   fidelityTestRowIs(
     t,
     "not a count: a letter-led hyphen chain",
-    fidelityTestRow("1", "1.  Rounds", "   Vector-2-1000 iterations = 0x2222", "2222", "Vector-2-1000 iterations", 1000),
+    fidelityTestRow(
+      "1",
+      "1.  Rounds",
+      "   Vector-2-1000 iterations = 0x2222",
+      "2222",
+      "Vector-2-1000 iterations",
+      1000,
+    ),
     "the count 1,000 is not printed in RFC §1",
   )
   fidelityTestRowIs(
