@@ -35,17 +35,17 @@
     {
       "section": "5",
       "quote": "When receiving such an array, implementations of X25519 (but not X448) MUST mask the most significant bit in the final byte.",
-      "reason": "this fixture checks the iterated vectors only; nish's specs/rfc7748-x25519.md tests the mask"
+      "reason": "this fixture checks the iterated vectors only; amritk/nish's specs/rfc7748-x25519.md tests the mask"
     },
     {
       "section": "5",
       "quote": "Implementations MUST accept non-canonical values and process them as if they had been reduced modulo the field prime.",
-      "reason": "this fixture checks the iterated vectors only; nish's specs/rfc7748-x25519.md tests non-canonical values"
+      "reason": "this fixture checks the iterated vectors only; amritk/nish's specs/rfc7748-x25519.md tests non-canonical values"
     },
     {
       "section": "5",
       "quote": "For X25519, the unused, most significant bit MUST be zero.",
-      "reason": "this fixture checks the iterated vectors only; nish's specs/rfc7748-x25519.md tests the output's top bit"
+      "reason": "this fixture checks the iterated vectors only; amritk/nish's specs/rfc7748-x25519.md tests the output's top bit"
     },
     {
       "section": "5",

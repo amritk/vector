@@ -521,7 +521,12 @@ SATISFIED: rfc7748-iterated (exit 0)
   skip  5.2-ITER-1M (slow; pass --slow)
 ```
 
-With `--slow` the 1,000,000-iteration vector runs too, which takes about two minutes
-rather than about three seconds.
+R-ITER passes because both 5.2-ITER-1 and 5.2-ITER-1000 return the printed
+k. With `--slow` the 1,000,000-iteration vector runs too, which takes about
+two minutes rather than about three seconds.
+
+A vector is compared with its expected value whole, so a result the RFC
+prints truncated (RFC 4231 test case 5, the first 128 bits of the HMAC)
+still cannot be compared: exclude it with `Untested:`.
 
 [schema]: https://github.com/amritk/vector/blob/main/schemas/rfc-contract.json

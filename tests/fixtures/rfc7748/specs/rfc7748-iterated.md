@@ -53,19 +53,19 @@ export const x25519 = (scalar: Secret<u8[]>, u: u8[]): Secret<u8[]> | null
 > {{Section 5 of RFC7748}}
 {: gi="blockquote"}
 
-Untested: this fixture checks the iterated vectors only; nish's specs/rfc7748-x25519.md tests the mask
+Untested: this fixture checks the iterated vectors only; amritk/nish's specs/rfc7748-x25519.md tests the mask
 
 > Implementations MUST accept non-canonical values and process them as if they had been reduced modulo the field prime.
 > {{Section 5 of RFC7748}}
 {: gi="blockquote"}
 
-Untested: this fixture checks the iterated vectors only; nish's specs/rfc7748-x25519.md tests non-canonical values
+Untested: this fixture checks the iterated vectors only; amritk/nish's specs/rfc7748-x25519.md tests non-canonical values
 
 > For X25519, the unused, most significant bit MUST be zero.
 > {{Section 5 of RFC7748}}
 {: gi="blockquote"}
 
-Untested: this fixture checks the iterated vectors only; nish's specs/rfc7748-x25519.md tests the output's top bit
+Untested: this fixture checks the iterated vectors only; amritk/nish's specs/rfc7748-x25519.md tests the output's top bit
 
 > The cswap function SHOULD be implemented in constant time (i.e., independent of the swap argument).
 > {{Section 5 of RFC7748}}
