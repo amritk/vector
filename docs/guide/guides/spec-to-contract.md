@@ -71,18 +71,25 @@ back in:
 
 - The section prints it as a whole number, outside a heading: `1,000` and
   `1000` both count. A number is a whole token: one inside a word or a name
-  (`a1000`, `X25519`, `SHA-256`, `5.2`) is none, nor is a malformed group
-  (`1,00`, `10,00,000`), nor a heading's number (`5.2.  Test Vectors`). A
-  `-` after a number and a non-ASCII dash end it, so `1,000-iteration` and
-  `5,000–6,000` count.
+  (`a1000`, `X25519`, `SHA-256-128`, `5.2`) is none, nor is a malformed
+  group (`1,00`, `10,00,000`), nor a heading's number, read as the RFC's
+  sections are (`5.2.  Test Vectors`, `A.2.  Test Case 2`, `Appendix A.`). A
+  `-` after a number and any non-ASCII character end it, so `1,000-iteration`
+  and `5,000–6,000` count.
 - The expected value's label counts the count. The number it counts is the
   one before `iteration`, `iterations` or `times`, else the label's only
-  number; with two numbers and neither word, the label is not checked. A
-  label that counts another number is refused (`the expected label "After
-  1,000 iterations" counts 1,000, but the vector iterates 2,000 times`).
-- The count is the only number exempt from the variant rule: beside
-  `X25519 after 1,000 iterations`, a value printed under `X448 after 1,000
-  iterations` is still refused for a call to `x25519`.
+  number; with two or more numbers and neither word, the label is not
+  checked. A label that counts another number is refused (`the expected
+  label "After 1,000 iterations" counts 1,000, but the vector iterates 2,000
+  times`).
+- The count is the only number exempt from the variant rule, and only when a
+  word names it: every copy of the number before `iteration`, `iterations` or
+  `times` is left out when the label is compared with the labels beside it,
+  and a label with no such word (`X448 1,000`, `X448 after 1,000 rounds`) is
+  compared whole, its only number included. So beside `X25519 after 1,000
+  iterations`, a value printed under `X448 after 1,000 iterations` is still
+  refused for a call to `x25519`, while `After 1,000,000 iterations` is not
+  a variant of `After 1,000 iterations`.
 
 ## 1. Build the XML
 

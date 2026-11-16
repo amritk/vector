@@ -18,13 +18,13 @@
  */
 
 import { jsonStringifyString } from "nish/json"
-import { asciiLower, trim } from "nish/text"
+import { asciiLower } from "nish/text"
 import { toHex, utf8Bytes } from "../../core/hex"
 import { CheckContext, CheckNote } from "../check"
 import { contractF64Bits, contractF64IsNaN, contractF64Parse } from "../contract/f64"
 import { Clause, ClauseKind, Iterate, LitKind, Literal, VectorSourceKind } from "../contract/types"
 import { SourceSet, sourceFind } from "../source/load"
-import { HexValue, RfcSection, rfcHexValues, rfcNormalize, rfcSectionText } from "../source/rfc"
+import { HexValue, RfcSection, rfcHexValues, rfcNormalize, rfcParse, rfcSectionText } from "../source/rfc"
 import { gateArgsAt, gateCitedSection, gatePlace, gateQuoteMissing, gateSources } from "./cite"
 import { gateIssue, gateWarn } from "./note"
 import { gateResultWord, gateStatesResult } from "./result"
@@ -519,21 +519,23 @@ const gateFidDigit = (c: i32): boolean => c >= 48 && c <= 57
 const gateFidLetter = (c: i32): boolean => (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95
 
 /**
- * Whether the byte at `i` of `s` belongs to a token: a letter, digit, `_`,
- * `.` or `,`, or a `-` that joins a name to what follows it (`SHA-256`). A
- * `-` after a digit, a non-ASCII byte (an en dash) and anything else bound a
- * token, so `1,000-iteration` and `1,000–2,000` hold whole numbers while
- * `5.2`, `X25519` and `SHA-256` hold none.
+ * Whether the byte at `i` of `s` belongs to the token that starts at
+ * `start`: a letter, digit, `_`, `.` or `,`, or a `-` inside a token that
+ * starts with a letter, joining it to the letter or digit after it
+ * (`SHA-256`, `SHA-256-128`, `AES-128-GCM-96`). A `-` in a token that starts
+ * with a digit, any non-ASCII character (an en dash) and anything else bound
+ * a token, so `1,000-iteration` and `1,000–2,000` hold whole numbers while
+ * `5.2`, `X25519` and `SHA-256-128` hold none.
  */
-const gateFidTokenAt = (s: string, i: i32): boolean => {
+const gateFidTokenAt = (s: string, start: i32, i: i32): boolean => {
   const c = s.charCodeAt(i)
   if (gateFidDigit(c) || gateFidLetter(c) || c === 46 || c === 44) {
     return true
   }
   return (
     c === 45 &&
-    i > 0 &&
-    gateFidLetter(s.charCodeAt(i - 1)) &&
+    i > start &&
+    gateFidLetter(s.charCodeAt(start)) &&
     i + 1 < s.length &&
     (gateFidLetter(s.charCodeAt(i + 1)) || gateFidDigit(s.charCodeAt(i + 1)))
   )
@@ -547,12 +549,12 @@ const gateFidSpans = (s: string): i32[] => {
   const out: i32[] = []
   let i = 0
   while (i < s.length) {
-    if (!gateFidTokenAt(s, i)) {
+    if (!gateFidTokenAt(s, i, i)) {
       i = i + 1
       continue
     }
     let j = i
-    while (j < s.length && gateFidTokenAt(s, j)) {
+    while (j < s.length && gateFidTokenAt(s, i, j)) {
       j = j + 1
     }
     let e = j
@@ -607,31 +609,11 @@ const gateFidNumber = (t: string): string => {
 }
 
 /**
- * Whether `line` is a numbered section heading, as an RFC prints one: a
- * number at the margin (`\d+(\.\d+)*`), a ".", whitespace and a title
- * ("5.2.  Test Vectors"). A heading's number is not a count printed in the
- * section.
+ * Whether `line` is a section heading, exactly as `rfcParse` reads one
+ * ("5.2.  Test Vectors", "A.2.  Test Case 2", "Appendix A.  Examples"): a
+ * heading's numbers are not a count printed in the section.
  */
-const gateFidHeading = (line: string): boolean => {
-  let i = 0
-  while (true) {
-    const start = i
-    while (i < line.length && gateFidDigit(line.charCodeAt(i))) {
-      i = i + 1
-    }
-    if (i === start || i >= line.length || line.charCodeAt(i) !== 46) {
-      return false
-    }
-    i = i + 1
-    if (i >= line.length || !gateFidDigit(line.charCodeAt(i))) {
-      break
-    }
-  }
-  if (i >= line.length || (line.charCodeAt(i) !== 32 && line.charCodeAt(i) !== 9)) {
-    return false
-  }
-  return trim(line.substring(i, line.length)).length > 0
-}
+const gateFidHeading = (line: string): boolean => rfcParse(line).sections.length > 0
 
 /** The whole numbers in `s`, each a whole token and with its commas dropped ("1,000" is "1000"). */
 const gateWholeNumbers = (s: string): string[] => {
@@ -657,51 +639,63 @@ const gateGrouped = (d: string): string => {
   return out
 }
 
+/** Whether `w` is a word that counts rounds: "iteration", "iterations" or "times". */
+const gateFidRoundsWord = (w: string): boolean => {
+  const l = asciiLower(w)
+  return l === "iteration" || l === "iterations" || l === "times"
+}
+
 /**
- * Where the number that counts rounds is in a label, as a token index into
- * `gateFidSpans`: the one before "iteration", "iterations" or "times"
- * (`After 1,000 iterations` counts 1000), else, with `only`, the label's only
- * number; else -1.
+ * The number a label counts rounds with, its commas dropped: the one before
+ * "iteration", "iterations" or "times" (`After 1,000 iterations` counts
+ * 1000), or "" when no number is.
  */
-const gateLabelCountAt = (label: string, only: boolean): i32 => {
+const gateLabelRounds = (label: string): string => {
   const ts = gateFidTokens(label)
   for (let i = 0; i + 1 < ts.length; i++) {
-    const w = asciiLower(ts[i + 1])
-    if (gateFidNumber(ts[i]).length > 0 && (w === "iteration" || w === "iterations" || w === "times")) {
-      return i
+    const n = gateFidNumber(ts[i])
+    if (n.length > 0 && gateFidRoundsWord(ts[i + 1])) {
+      return n
     }
   }
-  let at = -1
-  let n = 0
-  for (let i = 0; i < ts.length; i++) {
-    if (gateFidNumber(ts[i]).length > 0) {
-      at = i
-      n = n + 1
-    }
-  }
-  return only && n === 1 ? at : -1
+  return ""
 }
 
 /**
- * The number a label counts rounds with (`gateLabelCountAt`), else null:
- * with two numbers and no word to say which counts, it is not checked.
+ * The number a label counts rounds with (`gateLabelRounds`), else its only
+ * number, else null: with two or more numbers and no word to say which
+ * counts, it is not checked.
  */
 const gateLabelCount = (label: string): string | null => {
-  const at = gateLabelCountAt(label, true)
-  return at < 0 ? null : gateFidNumber(gateFidTokens(label)[at])
+  const n = gateLabelRounds(label)
+  if (n.length > 0) {
+    return n
+  }
+  const ns = gateWholeNumbers(label)
+  return ns.length === 1 ? ns[0] : null
 }
 
 /**
- * A label with the number that counts rounds (`gateLabelCountAt`) cut out,
- * so the rest of it can still be compared with its variants.
+ * A label with its rounds cut out, so the rest of it can still be compared
+ * with its variants: every copy of the number it counts rounds with
+ * (`gateLabelRounds`), and the label whole when it counts none. The one rule
+ * cuts an expected label and every label beside it.
  */
-const gateLabelUncounted = (label: string, only: boolean): string => {
-  const at = gateLabelCountAt(label, only)
-  if (at < 0) {
+const gateLabelUncounted = (label: string): string => {
+  const n = gateLabelRounds(label)
+  if (n.length === 0) {
     return label
   }
   const spans = gateFidSpans(label)
-  return `${label.substring(0, spans[2 * at])} ${label.substring(spans[2 * at + 1], label.length)}`
+  let out = ""
+  let from = 0
+  for (let i = 0; i + 1 < spans.length; i = i + 2) {
+    if (gateFidNumber(label.substring(spans[i], spans[i + 1])) === n) {
+      out = `${out}${label.substring(from, spans[i])} `
+      from = spans[i + 1]
+    }
+  }
+  return `${out}${label.substring(from, label.length)}`
 }
 
 /** Whether an iterated vector's expected label counts its rounds: `After 1,000 iterations` for 1000. */
@@ -775,13 +769,13 @@ const gateOwnVariant = (l: GateLits, k: Clause, sec: RfcSection): void => {
     // its count, and the round number of every label beside it, are cut out,
     // and the rest of the label is still its own variant's.
     const rounds = b.at === "expect" && gateLabelIsCount(k, shown)
-    const label = rounds ? gateLabelUncounted(shown, true) : shown
+    const label = rounds ? gateLabelUncounted(shown) : shown
     const mine = gateDigitRuns(label)
     const shape = gateSkeleton(label)
     const siblings: string[] = []
     const shownAll = [shown]
     for (const p of printed) {
-      const q = rounds ? gateLabelUncounted(p, false) : p
+      const q = rounds ? gateLabelUncounted(p) : p
       if (gateSkeleton(q) === shape && !gateSameLabel(p, shown)) {
         siblings.push(q)
         shownAll.push(p)
