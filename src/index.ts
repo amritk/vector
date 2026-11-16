@@ -25,7 +25,7 @@ import { diffOutcomeJson, diffPrograms } from "./verify/equiv/diff"
 import { verifyOutcomeJson, verifySpecAndProgram } from "./verify/verify"
 
 /** The version `vector --version` prints; kept equal to package.json's. */
-export const VECTOR_VERSION: string = "0.2.1" // x-release-please-version
+export const VECTOR_VERSION: string = "0.3.0" // x-release-please-version
 
 /**
  * Runs vector's command line over `args`, as `vector <args>` would: it
