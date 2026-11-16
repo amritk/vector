@@ -15,6 +15,8 @@ const PROFILE_OOS_REASON: string = "internal to fmathHalf; the spec specifies th
 const PROFILE_OOS_P: string =
   "<t>Out of scope: fmathHalfBits, internal to fmathHalf; the spec specifies the result, not its bit layout</t>"
 const PROFILE_OOS_FORM: string = "Out of scope: <export>, <the reason no clause tests it>"
+const PROFILE_OOS_MUST: string =
+  'fmathHalfBits\'s out-of-scope reason uses a BCP 14 keyword, but a reason makes no requirement: reword it, or quote the keyword ("MUST")'
 const PROFILE_OOS_IFACE: string = "export function fmathHalf(x: f64): f64\n"
 const PROFILE_OOS_MODULE: string = `export function fmathHalf(x: f64): f64 {
   return x / 2
@@ -39,6 +41,23 @@ const profileOosTestRead = (xml: string): string => {
     return r.error.map((f: ProfileRefusal): string => `${f.line} ${f.message}`).join("\n")
   }
   return "ok"
+}
+
+/** The reason `xml`'s contract gives for fmathHalfBits, or the refusals when it does not read. */
+const profileOosTestReason = (xml: string): string => {
+  const doc = xmlDocParse(xml)
+  if (doc.isErr()) {
+    return `xml ${doc.error.line} ${doc.error.message}`
+  }
+  const r = profileRead(doc.value, "specs/profile-outofscope.xml", null, new ProfileRfcs())
+  if (r.isErr()) {
+    return r.error.map((f: ProfileRefusal): string => `${f.line} ${f.message}`).join("\n")
+  }
+  const list = r.value.contract.outOfScope
+  if (list === null || list.length !== 1) {
+    return "no single outOfScope entry"
+  }
+  return list[0].reason
 }
 
 /** The exports report for a module that adds fmathHalf and fmathHalfBits, judged against `c`. */
@@ -86,13 +105,25 @@ export const main = (): number => {
     }
   }
 
-  t.eqStr(
-    "a BCP 14 keyword in the reason is quoted, not used",
-    profileOosTestRead(
-      profileOosTestWith(xml, "<t>Out of scope: fmathHalfBits, no caller <bcp14>MUST</bcp14> read its bits</t>"),
-    ),
-    "ok",
+  const usesMust = profileOosTestWith(
+    xml,
+    "<t>Out of scope: fmathHalfBits, no caller <bcp14>MUST</bcp14> read its bits</t>",
   )
+  t.eqStr("a BCP 14 keyword used in the reason", profileOosTestRead(usesMust), `48 ${PROFILE_OOS_MUST}`)
+  // In a spec whose main source is an RFC the reason is refused the same way.
+  const main = replaceAll(
+    usesMust,
+    "</front>\n  <middle>",
+    "<keyword>vector-main-RFC4648</keyword></front>\n  <middle>",
+  )
+  t.ok("main mode: the keyword is in", main !== usesMust)
+  t.ok("main mode: a BCP 14 keyword in the reason", profileOosTestRead(main).indexOf(`48 ${PROFILE_OOS_MUST}`) >= 0)
+  const quoted = profileOosTestWith(
+    xml,
+    '<t>Out of scope: fmathHalfBits, no caller "<bcp14>MUST</bcp14>" read its bits</t>',
+  )
+  t.eqStr("a quoted keyword in the reason reads", profileOosTestRead(quoted), "ok")
+  t.eqStr("a quoted keyword's reason is kept whole", profileOosTestReason(quoted), 'no caller "MUST" read its bits')
   t.eqStr(
     "no comma",
     profileOosTestRead(profileOosTestWith(xml, "<t>Out of scope: fmathHalfBits</t>")),

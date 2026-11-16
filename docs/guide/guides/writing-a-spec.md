@@ -157,7 +157,9 @@ vector table, is refused.
 - An `Out of scope:` paragraph names an export of the module and gives a
   reason after a comma. The name is an identifier, not a function under test
   or one a property calls, and appears in one such paragraph; the reason is
-  not empty. [`spec exports`](pr-gates.md#exports) then reports a change to
+  not empty and uses no BCP 14 keyword (quote one, `"MUST"`, to name it).
+  The name is not checked against the module, so a misspelt one excuses
+  nothing. [`spec exports`](pr-gates.md#exports) then reports a change to
   that export as a note instead of failing on it.
 
 ## Literals

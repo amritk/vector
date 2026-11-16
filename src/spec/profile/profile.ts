@@ -1287,6 +1287,17 @@ const profileReadOutOfScope = (c: ProfileContext, n: XmlNode): void => {
     profileRefuse(c, n, `${name} is out of scope with no reason: ${PROFILE_OUT_OF_SCOPE_FORM}`)
     return
   }
+  // A reason says why no clause tests the export; it makes no requirement of
+  // its own, in a spec of its own or one whose main source is an RFC. A quoted
+  // keyword ("MUST") is named, not used, and makes no entry.
+  if (profileEntriesUnder(c, n).length > 0) {
+    profileRefuse(
+      c,
+      n,
+      `${name}'s out-of-scope reason uses a BCP 14 keyword, but a reason makes no requirement: reword it, or quote the keyword ("MUST")`,
+    )
+    return
+  }
   profileCheckText(c, profileLocOf(n), `${name}'s out-of-scope reason`, reason)
   for (const o of c.outOfScope) {
     if (o.name === name) {
