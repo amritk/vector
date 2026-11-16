@@ -47,6 +47,9 @@ const shapeExpect = (t: Suite, from: string, to: string, want: string): void => 
   }
 }
 
+/** BASE's expect followed by an `iterate` of `body`. */
+const shapeIter = (body: string): string => `"expect": {"str": "00"}, "iterate": ${body}`
+
 /** The values the shape check refuses, each with its message. */
 export const main = (): i32 => {
   const t = new Suite("spec/contract shape")
@@ -197,6 +200,76 @@ export const main = (): i32 => {
     `"expect": {"str": "00"}`,
     `"expect": {"int": 1}, "tolerance": {"abs": "1e999", "section": "2", "quote": "q"}`,
     `clauses[0].tolerance.abs: "1e999" is past binary64's largest finite value and rounds to an infinity (IEEE 754-2019 §7.4); write Infinity or -Infinity if that is meant`,
+  )
+
+  // An iterated vector: enc(b) takes one parameter, so one name and one next element.
+  const exp = `"expect": {"str": "00"}`
+  const ok = `{"count": 2, "names": ["b"], "next": [{"call": "enc", "args": [{"var": "b"}]}]}`
+  t.eqStr("an iterated vector passes", shapeErrorsOf(exp, shapeIter(ok)).join("\n"), "")
+  t.eqStr(
+    "an iterated vector that says it is slow passes",
+    shapeErrorsOf(exp, shapeIter(replaceAll(ok, "}]}]}", '}]}], "slow": true}'))).join("\n"),
+    "",
+  )
+  shapeExpect(
+    t,
+    exp,
+    shapeIter(replaceAll(ok, `"count": 2`, `"count": 0`)),
+    "read: clauses[0].iterate.count: an integer in 1..1000000000",
+  )
+  shapeExpect(
+    t,
+    exp,
+    shapeIter(replaceAll(ok, `["b"]`, `["b", "c"]`)),
+    "clauses[0].iterate.names: one name per parameter of enc: 1, got 2",
+  )
+  shapeExpect(
+    t,
+    exp,
+    shapeIter(replaceAll(replaceAll(ok, `["b"]`, `["enc"]`), `"var": "b"`, `"var": "enc"`)),
+    `clauses[0].iterate.names[0]: "enc" shadows a function`,
+  )
+  shapeExpect(
+    t,
+    exp,
+    shapeIter(replaceAll(ok, `"var": "b"`, `"var": "c"`)),
+    "clauses[0].iterate.next[0]: a call is enc on the names, in order",
+  )
+  shapeExpect(
+    t,
+    exp,
+    shapeIter(replaceAll(ok, `{"call": "enc", "args": [{"var": "b"}]}`, `{"var": "c"}`)),
+    `clauses[0].iterate.next[0]: "c" is not one of the names`,
+  )
+  shapeExpect(
+    t,
+    exp,
+    shapeIter(replaceAll(ok, `{"call": "enc", "args": [{"var": "b"}]}`, `{"var": "b"}`)),
+    "clauses[0].iterate.next: no element is enc on the names, so nothing feeds the result back",
+  )
+  shapeExpect(
+    t,
+    exp,
+    shapeIter(replaceAll(ok, `{"call": "enc", "args": [{"var": "b"}]}`, `{"call": "dec", "args": [{"var": "b"}]}`)),
+    "clauses[0].iterate.next[0]: a call is enc on the names, in order",
+  )
+  shapeExpect(
+    t,
+    exp,
+    shapeIter(replaceAll(ok, "]}]}", `]}, {"var": "b"}]}`)),
+    "clauses[0].iterate.next: one element per parameter of enc: 1, got 2",
+  )
+  shapeExpect(
+    t,
+    exp,
+    `"expect": {"bool": true}, "iterate": ${ok}`,
+    "clauses[0].iterate: an iterated vector's expect is a value its call returns, not null or a bool",
+  )
+  shapeExpect(
+    t,
+    exp,
+    `"expect": {"int": 1}, "tolerance": {"abs": "1", "section": "2", "quote": "q"}, "iterate": ${ok}`,
+    "clauses[0].iterate: an iterated vector compares its last result exactly; drop the tolerance",
   )
 
   // Literals.

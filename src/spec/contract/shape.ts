@@ -26,7 +26,9 @@ import {
   Contract,
   Expr,
   ExprKind,
+  FnSig,
   ForallVar,
+  Iterate,
   LitKind,
   Literal,
   NameOverride,
@@ -570,6 +572,83 @@ const shapeTolerance = (s: ShapeContext, t: Tolerance, at: string): void => {
   shapeText(s, t.quote, `${at}.quote`)
 }
 
+/** The declared function named `name`; null when none is. */
+const shapeFn = (s: ShapeContext, name: string): FnSig | null => {
+  for (const f of s.c.functions) {
+    if (f.name === name) {
+      return f
+    }
+  }
+  return null
+}
+
+/** Whether `e` is the vector's call on exactly its iterate names, in order. */
+const shapeIsIterateCall = (e: Expr, call: string, names: string[]): boolean => {
+  if (e.kind !== ExprKind.Call || e.name !== call || e.args.length !== names.length) {
+    return false
+  }
+  for (let i = 0; i < names.length; i++) {
+    if (e.args[i].kind !== ExprKind.Var || e.args[i].name !== names[i]) {
+      return false
+    }
+  }
+  return true
+}
+
+/** A vector's `iterate`: a count in range, one name and one next element per parameter, at least one the call. */
+const shapeIterate = (s: ShapeContext, k: Clause, it: Iterate, at: string): void => {
+  if (it.count < 1 || it.count > 1000000000) {
+    shapeFail(s, `${at}.count`, "an integer in 1..1000000000")
+  }
+  if (k.tolerance !== null) {
+    shapeFail(s, at, "an iterated vector compares its last result exactly; drop the tolerance")
+  }
+  const expect = k.expect
+  if (expect !== null && (expect.kind === LitKind.Null || expect.kind === LitKind.Bool)) {
+    shapeFail(s, at, "an iterated vector's expect is a value its call returns, not null or a bool")
+  }
+  const sig = shapeFn(s, k.call)
+  const arity = sig === null ? -1 : sig.params.length
+  if (arity >= 0 && it.names.length !== arity) {
+    shapeFail(s, `${at}.names`, `one name per parameter of ${k.call}: ${arity}, got ${it.names.length}`)
+  }
+  for (let i = 0; i < it.names.length; i++) {
+    const n = it.names[i]
+    if (!charsIsIdent(n)) {
+      shapeFail(s, `${at}.names[${i}]`, "an identifier")
+    } else if (shapeFn(s, n) !== null) {
+      shapeFail(s, `${at}.names[${i}]`, `"${n}" shadows a function`)
+    }
+    for (let j = 0; j < i; j++) {
+      if (it.names[j] === n) {
+        shapeFail(s, `${at}.names[${i}]`, `"${n}" repeats names[${j}]`)
+      }
+    }
+  }
+  if (arity >= 0 && it.next.length !== arity) {
+    shapeFail(s, `${at}.next`, `one element per parameter of ${k.call}: ${arity}, got ${it.next.length}`)
+  }
+  let calls = 0
+  for (let i = 0; i < it.next.length; i++) {
+    const e = it.next[i]
+    if (e.kind === ExprKind.Var) {
+      if (!vocabHas(it.names, e.name)) {
+        shapeFail(s, `${at}.next[${i}]`, `"${e.name}" is not one of the names`)
+      }
+    } else if (e.kind === ExprKind.Call) {
+      if (!shapeIsIterateCall(e, k.call, it.names)) {
+        shapeFail(s, `${at}.next[${i}]`, `a call is ${k.call} on the names, in order`)
+      }
+      calls++
+    } else {
+      shapeFail(s, `${at}.next[${i}]`, `a name or ${k.call} on the names`)
+    }
+  }
+  if (calls === 0 && it.next.length > 0) {
+    shapeFail(s, `${at}.next`, `no element is ${k.call} on the names, so nothing feeds the result back`)
+  }
+}
+
 const shapeNeedSection = (s: ShapeContext, k: Clause, at: string): void => {
   const sec = k.section
   if (sec === null || !charsIsSection(sec)) {
@@ -688,6 +767,10 @@ const shapeClauses = (s: ShapeContext): void => {
         shapeTolerance(s, tol, `${at}.tolerance`)
       }
       shapeVectorSource(s, k, at)
+      const it = k.iterate
+      if (it !== null) {
+        shapeIterate(s, k, it, `${at}.iterate`)
+      }
       if (!charsIsIdent(k.call)) {
         shapeFail(s, `${at}.call`, "a function name")
       }

@@ -22,7 +22,7 @@ import { asciiLower } from "nish/text"
 import { toHex, utf8Bytes } from "../../core/hex"
 import { CheckContext, CheckNote } from "../check"
 import { contractF64Bits, contractF64IsNaN, contractF64Parse } from "../contract/f64"
-import { Clause, ClauseKind, LitKind, Literal, VectorSourceKind } from "../contract/types"
+import { Clause, ClauseKind, Iterate, LitKind, Literal, VectorSourceKind } from "../contract/types"
 import { SourceSet, sourceFind } from "../source/load"
 import { HexValue, RfcSection, rfcHexValues, rfcNormalize, rfcSectionText } from "../source/rfc"
 import { gateArgsAt, gateCitedSection, gatePlace, gateQuoteMissing, gateSources } from "./cite"
@@ -512,6 +512,105 @@ const gateCounts = (labels: string[], i: i32): boolean => {
   return hi - lo + 1 === toF64(ns.length)
 }
 
+/** Whether `c` is a digit. */
+const gateFidDigit = (c: i32): boolean => c >= 48 && c <= 57
+
+/** Whether `c` is a letter, digit or `_`: what may not touch a whole number. */
+const gateFidWordChar = (c: i32): boolean =>
+  gateFidDigit(c) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95
+
+/**
+ * The whole numbers in `s`, each with its commas dropped ("1,000" is
+ * "1000"): runs of digits, optionally comma-grouped in threes, that no
+ * letter, digit or `_` touches.
+ */
+const gateWholeNumbers = (s: string): string[] => {
+  const out: string[] = []
+  let i = 0
+  while (i < s.length) {
+    if (!gateFidDigit(s.charCodeAt(i)) || (i > 0 && gateFidWordChar(s.charCodeAt(i - 1)))) {
+      i = i + 1
+      continue
+    }
+    let j = i
+    while (j < s.length && gateFidDigit(s.charCodeAt(j))) {
+      j = j + 1
+    }
+    const parts = [s.substring(i, j)]
+    while (
+      j + 3 < s.length &&
+      s.charCodeAt(j) === 44 &&
+      gateFidDigit(s.charCodeAt(j + 1)) &&
+      gateFidDigit(s.charCodeAt(j + 2)) &&
+      gateFidDigit(s.charCodeAt(j + 3)) &&
+      (j + 4 >= s.length || !gateFidDigit(s.charCodeAt(j + 4)))
+    ) {
+      parts.push(s.substring(j + 1, j + 4))
+      j = j + 4
+    }
+    if (j >= s.length || !gateFidWordChar(s.charCodeAt(j))) {
+      out.push(parts.join(""))
+    }
+    i = j
+  }
+  return out
+}
+
+/** A whole number's digits as English prints them, grouped by commas in threes: "1000" is "1,000". */
+const gateGrouped = (d: string): string => {
+  let out = ""
+  for (let i = 0; i < d.length; i++) {
+    if (i > 0 && (d.length - i) % 3 === 0) {
+      out = `${out},`
+    }
+    out = `${out}${d.substring(i, i + 1)}`
+  }
+  return out
+}
+
+/** Whether an iterated vector's expected label holds its count: `After 1,000 iterations` for 1000. */
+const gateLabelIsCount = (k: Clause, label: string): boolean => {
+  const it = k.iterate
+  return it !== null && gateWholeNumbers(label).indexOf(`${it.count}`) >= 0
+}
+
+/**
+ * An iterated vector's count against its section: the count is printed
+ * there as a whole number (commas ignored), and a number in the expected
+ * label is the count.
+ */
+const gateIterateCount = (
+  ctx: CheckContext,
+  out: string[],
+  k: Clause,
+  it: Iterate,
+  sec: RfcSection,
+  where: string,
+): void => {
+  const want = `${it.count}`
+  let printed = false
+  for (let i = 0; i < sec.lines.length && !printed; i++) {
+    printed = gateWholeNumbers(sec.lines[i]).indexOf(want) >= 0
+  }
+  if (!printed) {
+    gateIssue(ctx, out, GATE_FIDELITY, k.id, `the count ${gateGrouped(want)} is not printed in ${where}`)
+  }
+  const expect = k.expect
+  const label: string | null = expect === null ? null : expect.label
+  if (label !== null) {
+    const ns = gateWholeNumbers(label)
+    if (ns.length > 0 && ns.indexOf(want) < 0) {
+      gateIssue(
+        ctx,
+        out,
+        GATE_FIDELITY,
+        `${k.id}.expect`,
+        `the expected label "${label}" counts ${gateGrouped(ns[0])}, but the vector iterates ${gateGrouped(want)} times`,
+      )
+    }
+  }
+}
+
 /**
  * A value printed under one of several labels that differ only in a number
  * ("HMAC-SHA-256", "HMAC-SHA-512") must be the variant the called function
@@ -532,7 +631,8 @@ const gateOwnVariant = (l: GateLits, k: Clause, sec: RfcSection): void => {
   const inSection = `${l.where} ("${sec.title}")`
   for (const b of l.bounds) {
     const label = b.label
-    if (label === null) {
+    // An iterated vector's rounds (After 1,000 iterations) are not variants.
+    if (label === null || (b.at === "expect" && gateLabelIsCount(k, label))) {
       continue
     }
     const mine = gateDigitRuns(label)
@@ -647,6 +747,10 @@ const gateFidelityVector = (ctx: CheckContext, out: string[], set: SourceSet, k:
   }
   gateOneTestCase(l, args, sec)
   gateOwnVariant(l, k, sec)
+  const it = k.iterate
+  if (it !== null) {
+    gateIterateCount(ctx, out, k, it, sec, where)
+  }
   for (const n of l.notes) {
     if (n.warning) {
       gateWarn(ctx, g, n.at, n.message)

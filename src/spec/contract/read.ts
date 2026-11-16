@@ -30,6 +30,7 @@ import {
   ExprKind,
   FnSig,
   ForallVar,
+  Iterate,
   LetBinding,
   LitKind,
   Literal,
@@ -38,7 +39,6 @@ import {
   Param,
   Requirement,
   SourceDecl,
-  Iterate,
   Tolerance,
   VectorSource,
   VectorSourceKind,
@@ -698,7 +698,19 @@ const readClause = (r: ContractReader, v: JsonValue, at: string): Clause | null 
   const isVector = kind === "vector"
   const c = new Clause(isVector ? ClauseKind.Vector : ClauseKind.Property)
   if (isVector) {
-    readObject(r, v, at, ["kind", "id", "title", "covers", "source", "section", "call", "args", "expect", "tolerance", "iterate"])
+    readObject(r, v, at, [
+      "kind",
+      "id",
+      "title",
+      "covers",
+      "source",
+      "section",
+      "call",
+      "args",
+      "expect",
+      "tolerance",
+      "iterate",
+    ])
   } else {
     readObject(r, v, at, ["kind", "id", "title", "covers", "forall", "where", "assert", "samples"])
   }
