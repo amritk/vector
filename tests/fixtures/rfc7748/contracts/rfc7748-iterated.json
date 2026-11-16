@@ -1,0 +1,208 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "rfc7748-iterated",
+  "source": {
+    "rfc": 7748,
+    "title": "Elliptic Curves for Security: X25519's iterated vectors",
+    "sha256": "279ca0ecc5e92e2962e27b846986aeb74729d9dd34bd4a04a362f80dcb596ad3"
+  },
+  "sources": [
+    {
+      "id": "rfc7748",
+      "rfc": 7748,
+      "file": "rfcs/rfc7748.txt",
+      "sha256": "279ca0ecc5e92e2962e27b846986aeb74729d9dd34bd4a04a362f80dcb596ad3"
+    }
+  ],
+  "target": {
+    "module": "fixture/x25519"
+  },
+  "requirements": [
+    {
+      "id": "R-FUNC",
+      "section": "5",
+      "level": "DEFINITION",
+      "quote": "The functions take a scalar and a u-coordinate as inputs and produce a u-coordinate as output."
+    },
+    {
+      "id": "R-ITER",
+      "section": "5.2",
+      "level": "DEFINITION",
+      "quote": "For each iteration, set k to be the result of calling the function and u to be the old value of k."
+    }
+  ],
+  "exclusions": [
+    {
+      "section": "5",
+      "quote": "When receiving such an array, implementations of X25519 (but not X448) MUST mask the most significant bit in the final byte.",
+      "reason": "this fixture checks the iterated vectors only; nish's specs/rfc7748-x25519.md tests the mask"
+    },
+    {
+      "section": "5",
+      "quote": "Implementations MUST accept non-canonical values and process them as if they had been reduced modulo the field prime.",
+      "reason": "this fixture checks the iterated vectors only; nish's specs/rfc7748-x25519.md tests non-canonical values"
+    },
+    {
+      "section": "5",
+      "quote": "For X25519, the unused, most significant bit MUST be zero.",
+      "reason": "this fixture checks the iterated vectors only; nish's specs/rfc7748-x25519.md tests the output's top bit"
+    },
+    {
+      "section": "5",
+      "quote": "The cswap function SHOULD be implemented in constant time (i.e., independent of the swap argument).",
+      "reason": "timing is not observable by a functional test"
+    },
+    {
+      "section": "A",
+      "quote": "The trace of Frobenius MUST NOT be in {0, 1} in order to rule out the attacks described in [smart], [satoh], and [semaev], as in [brainpool] and [safecurves].",
+      "reason": "an obligation on choosing a curve, which Curve25519 already meets; nothing an implementation of X25519 does can satisfy or violate it"
+    },
+    {
+      "section": "A",
+      "quote": "MOV Degree [reducing]: the embedding degree MUST be greater than (order - 1) / 100, as in [brainpool] and [safecurves].",
+      "reason": "an obligation on choosing a curve, which Curve25519 already meets; nothing an implementation of X25519 does can satisfy or violate it"
+    },
+    {
+      "section": "A",
+      "quote": "CM Discriminant: discriminant D MUST be greater than 2^100, as in [safecurves].",
+      "reason": "an obligation on choosing a curve, which Curve25519 already meets; nothing an implementation of X25519 does can satisfy or violate it"
+    }
+  ],
+  "functions": [
+    {
+      "name": "x25519",
+      "params": [
+        {
+          "name": "scalar",
+          "type": "secret-bytes"
+        },
+        {
+          "name": "u",
+          "type": "bytes"
+        }
+      ],
+      "returns": "secret-bytes?"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "5.2-ITER-1",
+      "title": "RFC 7748 5.2: one iteration from k = u = 9",
+      "covers": ["R-FUNC", "R-ITER"],
+      "source": {
+        "cite": {
+          "section": "5.2"
+        }
+      },
+      "call": "x25519",
+      "args": [
+        {
+          "hex": "0900000000000000000000000000000000000000000000000000000000000000",
+          "label": "For X25519"
+        },
+        {
+          "hex": "0900000000000000000000000000000000000000000000000000000000000000",
+          "label": "For X25519"
+        }
+      ],
+      "expect": {
+        "hex": "422c8e7a6227d7bca1350b3e2bb7279f7897b87bb6854b783c60e80311ae3079",
+        "label": "After one iteration"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "5.2-ITER-1000",
+      "title": "RFC 7748 5.2: 1,000 iterations from k = u = 9",
+      "covers": ["R-ITER"],
+      "source": {
+        "cite": {
+          "section": "5.2"
+        }
+      },
+      "call": "x25519",
+      "args": [
+        {
+          "hex": "0900000000000000000000000000000000000000000000000000000000000000",
+          "label": "For X25519"
+        },
+        {
+          "hex": "0900000000000000000000000000000000000000000000000000000000000000",
+          "label": "For X25519"
+        }
+      ],
+      "expect": {
+        "hex": "684cf59ba83309552800ef566f2f4d3c1c3887c49360e3875f2eb94d99532c51",
+        "label": "After 1,000 iterations"
+      },
+      "iterate": {
+        "count": 1000,
+        "names": ["k", "u"],
+        "next": [
+          {
+            "call": "x25519",
+            "args": [
+              {
+                "var": "k"
+              },
+              {
+                "var": "u"
+              }
+            ]
+          },
+          {
+            "var": "k"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "5.2-ITER-1M",
+      "title": "RFC 7748 5.2: 1,000,000 iterations from k = u = 9",
+      "covers": ["R-ITER"],
+      "source": {
+        "cite": {
+          "section": "5.2"
+        }
+      },
+      "call": "x25519",
+      "args": [
+        {
+          "hex": "0900000000000000000000000000000000000000000000000000000000000000",
+          "label": "For X25519"
+        },
+        {
+          "hex": "0900000000000000000000000000000000000000000000000000000000000000",
+          "label": "For X25519"
+        }
+      ],
+      "expect": {
+        "hex": "7c3911e0ab2586fd864497297e575e6f3bc601c0883c30df5f4dd2d24f665424",
+        "label": "After 1,000,000 iterations"
+      },
+      "iterate": {
+        "count": 1000000,
+        "names": ["k", "u"],
+        "next": [
+          {
+            "call": "x25519",
+            "args": [
+              {
+                "var": "k"
+              },
+              {
+                "var": "u"
+              }
+            ]
+          },
+          {
+            "var": "k"
+          }
+        ],
+        "slow": true
+      }
+    }
+  ]
+}
