@@ -1112,7 +1112,7 @@ kind: ClauseKind
 
 #### Clause.samples
 
-A property's random samples; -1 when absent.
+A property's total samples, boundaries included, 1..256; -1 when absent (the sampler's default).
 
 ```ts
 samples: i32

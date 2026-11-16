@@ -272,6 +272,7 @@ title: string | null
 ### frontParseProperty
 
 Reads a ts-property block: a `// P-ID covers R-ID — title` first line,
+optionally a `// samples: N` second line (the property's total, 1..256),
 then `forall (x: T, …) => body` with a bounds comment after each type,
 optionally `where cond`. The
 body is an expression or a `{ const …; return … }` block; it is typed as it

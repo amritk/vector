@@ -472,7 +472,7 @@ For all inputs in the domain (and `where`), `assert` holds. Z3 picks boundary sa
 | `forall` | [object[]](#def-propertyclause-forall-variant-1) | yes |  |
 | `where` | [`expr`](#def-expr) | no | Pure (no calls): restricts the domain. |
 | `assert` | [`expr`](#def-expr) | yes |  |
-| `samples` | `integer` | no | at least 0; at most 256. |
+| `samples` | `integer` | no | The property's total samples, Z3's boundaries first (at most this many) then seeded random draws until it has this many. Absent: every boundary plus 24 random, at most 96 in all. at least 1; at most 256. |
 
 No other property is allowed.
 

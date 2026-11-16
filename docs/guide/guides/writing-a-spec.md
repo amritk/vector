@@ -285,6 +285,15 @@ forall (b: u8[] /* 0..64 */) => {
 
 - **Line 1** is `// P-ID covers R-ID, R-ID — title`. The title is required,
   and the separator before it is exactly ` — ` (space, em dash, space).
+- **Line 2** may be `// samples: N`, the number of samples the property's
+  test runs. N is a decimal integer from 1 to 256, and it is the total:
+  Z3's boundary samples come first (at most N of them), then seeded random
+  ones until there are N. Without the line, a property gets every boundary
+  sample plus 24 random, at most 96 in all. When the domain holds fewer
+  than N inputs, the property gets every one and `spec check` notes
+  `asked for N samples; the domain gave M`. Extract refuses 0, anything
+  past 256, anything but plain digits (`12.5`, `-1`, `096`), and a
+  `// samples` line anywhere but line 2.
 - **`forall (var, …) => body`**, optionally followed by `where expr`. Each
   variable has a bound in a comment:
   - `b: u8[] /* lo..hi */`: a length, with 0 ≤ lo ≤ hi ≤ 4096.
