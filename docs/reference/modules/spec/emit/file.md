@@ -178,6 +178,7 @@ function emitCommand(
   packageFlags: string[],
   lang: string | null,
   harness: string | null,
+  slow: boolean,
 ): i32
 ```
 
@@ -208,6 +209,12 @@ the `--lang` flag, or null for nish
 <scalar-field name="harness" type="string | null" required>
 
 the `--harness` flag, or null for the language's default
+
+</scalar-field>
+
+<scalar-field name="slow" type="boolean" required>
+
+the `--slow` flag: whether a slow iterated vector runs rather than skips
 
 </scalar-field>
 

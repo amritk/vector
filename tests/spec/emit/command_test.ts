@@ -4,11 +4,13 @@ import { Diagnostic, EXIT_REFUSED, EXIT_USAGE, refusal, usageError } from "../..
 import { makeTempDir } from "../../../src/core/fs"
 import { sha256Hex } from "../../../src/core/hex"
 import { runProcess } from "../../../src/core/process"
+import { vectorRun } from "../../../src/index"
 import { Sample, SampleTable, checkAddSample } from "../../../src/spec/check"
 import { contractLoadFile } from "../../../src/spec/contract/contract"
 import { LitKind, Literal } from "../../../src/spec/contract/types"
 import { EmitOptions, emitProgram } from "../../../src/spec/emit/emit"
 import { EmitFile, emitCommand, emitContractFile, emitReportAll, emitWriteFile } from "../../../src/spec/emit/file"
+import { EMIT_SLOW_SKIP } from "../../../src/spec/emit/lit"
 import { EmitPackages } from "../../../src/spec/emit/packages"
 import { EmitTarget } from "../../../src/spec/emit/target"
 import { RunRequest, runCommand, runFindRoot, runFormat } from "../../../src/spec/run/command"
@@ -94,14 +96,14 @@ export const main = (): i32 => {
   t.ok("no diagnostics is still a failure", emitReportAll(none) === EXIT_USAGE)
   t.ok("a write into a missing directory fails", emitWriteFile(`${dir}/no/such/x.ts`, "x").isErr())
 
-  t.ok("emit without -o is a usage error", emitCommand(CHECKED, null, [], null, null) === EXIT_USAGE)
+  t.ok("emit without -o is a usage error", emitCommand(CHECKED, null, [], null, null, false) === EXIT_USAGE)
   t.ok(
     "emit of a missing contract exits 2",
-    emitCommand("contracts/none.json", `${dir}/x.ts`, [], null, null) === EXIT_USAGE,
+    emitCommand("contracts/none.json", `${dir}/x.ts`, [], null, null, false) === EXIT_USAGE,
   )
-  t.ok("emit of a bad contract exits 1", emitCommand(bad, `${dir}/x.ts`, [], null, null) === EXIT_REFUSED)
+  t.ok("emit of a bad contract exits 1", emitCommand(bad, `${dir}/x.ts`, [], null, null, false) === EXIT_REFUSED)
   const out = `${dir}/main.ts`
-  t.ok("emit writes the test and exits 0", emitCommand(CHECKED, out, [], null, null) === 0)
+  t.ok("emit writes the test and exits 0", emitCommand(CHECKED, out, [], null, null, false) === 0)
   const sha = sha256Hex(readFileSyncOrNull(CHECKED) ?? "")
   t.contains(
     "the written test is the contract's",
@@ -109,6 +111,43 @@ export const main = (): i32 => {
     `\n// vector-contract-sha256: ${sha}\n`,
   )
   t.contains("and says how it was made", readFileSyncOrNull(out) ?? "", `//   vector spec emit ${CHECKED} -o ${out}.\n`)
+
+  const chain = "tests/fixtures/iterate-emit/contracts/sha256-chain.json"
+  const quick = `${dir}/chain_quick.ts`
+  const slow = `${dir}/chain_slow.ts`
+  t.ok("emit without --slow exits 0", emitCommand(chain, quick, ["vector=src"], null, null, false) === 0)
+  t.ok("emit with --slow exits 0", emitCommand(chain, slow, ["vector=src"], null, null, true) === 0)
+  const quickText = readFileSyncOrNull(quick) ?? ""
+  const slowText = readFileSyncOrNull(slow) ?? ""
+  t.contains("without --slow the slow vector is skipped", quickText, `"${EMIT_SLOW_SKIP}"`)
+  t.ok("with --slow it is not", slowText.indexOf(EMIT_SLOW_SKIP) < 0)
+  t.contains("with --slow it runs the chain", slowText, "it_i < toI64(100000)")
+  t.contains(
+    "the regenerate line carries --slow",
+    slowText,
+    `//   vector spec emit ${chain} --slow --package vector=src -o ${slow}.\n`,
+  )
+  t.contains(
+    "and leaves it out without",
+    quickText,
+    `//   vector spec emit ${chain} --package vector=src -o ${quick}.\n`,
+  )
+
+  const cliSlow = `${dir}/chain_cli_slow.ts`
+  const cliQuick = `${dir}/chain_cli_quick.ts`
+  t.ok(
+    "vector spec emit --slow exits 0",
+    vectorRun(["spec", "emit", chain, "--slow", "--package", "vector=src", "-o", cliSlow]) === 0,
+  )
+  t.ok("and without it", vectorRun(["spec", "emit", chain, "--package", "vector=src", "-o", cliQuick]) === 0)
+  const cliSlowText = readFileSyncOrNull(cliSlow) ?? ""
+  t.ok("the --slow flag reaches the emitter", cliSlowText.indexOf(EMIT_SLOW_SKIP) < 0)
+  t.contains(
+    "and the regenerate line",
+    cliSlowText,
+    `//   vector spec emit ${chain} --slow --package vector=src -o ${cliSlow}.\n`,
+  )
+  t.contains("without it the vector is skipped", readFileSyncOrNull(cliQuick) ?? "", `"${EMIT_SLOW_SKIP}"`)
 
   t.ok("a missing nish root is an error", runFindRoot("tests/no-such-dir").isErr())
   t.ok("a given nish root is used", runFindRoot("tests").isOk())

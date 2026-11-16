@@ -25,7 +25,7 @@ import { Clause, Contract, Expr, FnSig, Literal } from "../contract/types"
 import { TypeEnv, typeCallsIn, typeEnvBind, typeIntBase, typeOf, typeOfInt } from "../contract/typing"
 import { vocabFitsInt, vocabIsIntType, vocabIsOptional, vocabValueType } from "../contract/vocab"
 import { EmitOptions, emitClauseFn, emitClauseLines, emitHeaderLines, emitSortedUnique, emitTestName } from "./emit"
-import { emitF64IsFinite, emitLiteralHex } from "./lit"
+import { EMIT_SLOW_SKIP, emitF64IsFinite, emitLiteralHex } from "./lit"
 
 /** What emitting one Go test has gathered so far. */
 class EmitGoContext {
@@ -534,12 +534,17 @@ const emitGoVector = (ctx: EmitGoContext, k: Clause): string => {
     ctx.errors.push(`${k.id}: no function ${k.call} or no expected value`)
     return ""
   }
+  const name = emitGoQuote(emitTestName(k))
+  const it = k.iterate
+  if ((it?.slow ?? false) && !ctx.opts.slow) {
+    return `func ${emitClauseFn(k)}(t *Suite) bool {\n\treturn t.skip(${name}, "${EMIT_SLOW_SKIP}")\n}`
+  }
   const args: string[] = []
   for (let i = 0; i < k.args.length; i++) {
     args.push(emitGoLitArg(k.args[i], sig.params[i].type))
   }
-  const call = emitGoCall(ctx, sig, args)
-  const name = emitGoQuote(emitTestName(k))
+  const steps: string[] = it === null ? [] : emitGoIterate(ctx, k, sig, args, name)
+  const call = it === null ? emitGoCall(ctx, sig, args) : "it_r"
   const ret = emitGoVt(sig.returns)
   let body = ""
   if (ret === "bytes") {
@@ -561,7 +566,56 @@ const emitGoVector = (ctx: EmitGoContext, k: Clause): string => {
   } else {
     ctx.errors.push(`${k.id}: Go cannot check a ${sig.returns} result`)
   }
-  return `func ${emitClauseFn(k)}(t *Suite) bool {\n\treturn ${body}\n}`
+  return `func ${emitClauseFn(k)}(t *Suite) bool {\n${steps.join("\n")}${steps.length > 0 ? "\n" : ""}\treturn ${body}\n}`
+}
+
+/**
+ * An iterated vector's calls, up to the last result bound as `it_r`: the
+ * arguments (`it_a<i>`, by position) start as the vector's and are rebound
+ * to its `next` after each call; a nil result at any step fails the clause,
+ * naming the step.
+ */
+const emitGoIterate = (ctx: EmitGoContext, k: Clause, sig: FnSig, args: string[], name: string): string[] => {
+  const it = k.iterate
+  if (it === null) {
+    return []
+  }
+  const lines: string[] = []
+  const types: string[] = []
+  const vars: string[] = []
+  for (let i = 0; i < it.names.length; i++) {
+    const t = emitGoVt(sig.params[i].type)
+    types.push(t)
+    vars.push(`it_a${i}`)
+    lines.push(`\tvar it_a${i} ${emitGoType(t) ?? ""} = ${args[i]}`)
+  }
+  const optional = vocabIsOptional(emitGoVt(sig.returns))
+  lines.push(`\tfor it_i := 1; it_i < ${it.count}; it_i++ {`)
+  lines.push(`\t\tit_s := ${emitGoCall(ctx, sig, vars)}`)
+  if (optional) {
+    lines.push("\t\tif it_s == nil {")
+    lines.push(`\t\t\treturn t.fail(${name}, fmt.Sprintf("step %d of ${it.count}: ${sig.name} returned null", it_i))`)
+    lines.push("\t\t}")
+  }
+  for (let i = 0; i < it.next.length; i++) {
+    const e = it.next[i]
+    let v = `it_a${toI32(it.names.indexOf(e.name))}`
+    if (e.kind === ExprKind.Call) {
+      v = optional && !vocabIsOptional(types[i]) ? "*it_s" : "it_s"
+    }
+    lines.push(`\t\tit_n${i} := ${v}`)
+  }
+  for (let i = 0; i < it.next.length; i++) {
+    lines.push(`\t\tit_a${i} = it_n${i}`)
+  }
+  lines.push("\t}")
+  lines.push(`\tit_r := ${emitGoCall(ctx, sig, vars)}`)
+  if (optional) {
+    lines.push("\tif it_r == nil {")
+    lines.push(`\t\treturn t.fail(${name}, "step ${it.count} of ${it.count}: ${sig.name} returned null")`)
+    lines.push("\t}")
+  }
+  return lines
 }
 
 /**

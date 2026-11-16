@@ -88,6 +88,14 @@ How to regenerate the file, shown in the header; null to leave it out.
 regenerate: string | null
 ```
 
+#### EmitOptions.slow
+
+Whether a slow iterated vector runs; when false it is emitted skipped.
+
+```ts
+slow: boolean
+```
+
 ### emitSortedUnique
 
 Strings in byte order, duplicates dropped.

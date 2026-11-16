@@ -10,6 +10,7 @@ that someone else wrote.
 | Z3 4.16.0 | fetched into `.z3/`, run as a separate process | MIT |
 | RFC 4648, RFC 5869, RFC 8439, RFC 8707 | `rfcs/`, excerpts in `contracts/` and `tests/` | IETF Trust Legal Provisions |
 | nish v0.34.0 excerpts | `tests/fixtures/mutate/` | MIT |
+| RFC 7748 excerpt, nish v0.39.0 `std/crypto/x25519.ts` | `tests/fixtures/x25519/` | IETF Trust Legal Provisions; MIT |
 
 ---
 
@@ -236,6 +237,17 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+### RFC 7748 and nish's X25519 (`tests/fixtures/x25519/`)
+
+`tests/fixtures/x25519/rfcs/rfc7748.txt` is an excerpt of RFC 7748, "Elliptic
+Curves for Security" (IRTF, © 2016 IETF Trust and the persons identified as
+the document authors), from <https://www.rfc-editor.org/rfc/rfc7748.txt>: its
+first-page header and title, the opening of Section 5, and the lines of
+Section 5.2 that give the iterated test vectors, excerpted unchanged and
+redistributed under the IETF Trust Legal Provisions. `tests/fixtures/x25519/fixture/x25519.ts` is a copy of nish
+v0.39.0's `std/crypto/x25519.ts`, unchanged below an opening comment that says
+so, under nish's MIT license (the text is in the section above).
 
 The rest of `tests/fixtures/` (including `nish-hex/`) and `specs/` was written
 for vector and is under vector's own license.

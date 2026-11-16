@@ -1,0 +1,813 @@
+// A copy of nish v0.39.0's `std/crypto/x25519.ts` (https://github.com/amritk/nish,
+// MIT, © 2026 Nish contributors; see THIRD_PARTY_NOTICES.md), unchanged below
+// this comment. It is the reference X25519 that tests/fixtures/x25519's
+// contract checks, under its own module root (`--package fixture=...`), so the
+// RFC 7748 iteration test does not depend on whichever nish is installed.
+
+/**
+ * `nish/crypto/x25519` — the X25519 Diffie-Hellman function of RFC 7748.
+ *
+ *     import { X25519_SIZE, x25519, x25519Base } from "nish/crypto/x25519";
+ *     import { timingSafeEqual } from "nish/crypto/ct";
+ *     import { Secret, expose, secret, wipe } from "nish:secret";
+ *
+ *     const isZero = (s: u8[]): boolean => timingSafeEqual(s, new Array<u8>(X25519_SIZE))
+ *
+ *     const raw: u8[] = new Array<u8>(X25519_SIZE)
+ *     crypto.getRandomValues(raw)                              // any 32 bytes are a private key
+ *     const mine: Secret<u8[]> = secret(raw)
+ *     const myPublic: u8[] | null = x25519Base(mine)           // 32 bytes, sent to the peer
+ *     const peerPublic: u8[] = new Array<u8>(X25519_SIZE)      // the peer's 32 bytes, received
+ *     const shared: Secret<u8[]> | null = x25519(mine, peerPublic)
+ *     wipe(mine)
+ *     if (shared !== null) {
+ *       if (!expose(shared, isZero)) {                         // a low-order peer key gives zero
+ *         // derive keys from `shared` inside `expose`
+ *       }
+ *       wipe(shared)
+ *     }
+ *
+ * Written from the specification (RFC 7748 §4.1, §5 and §6.1), in this
+ * module's own structure: nothing here is ported from another implementation.
+ * The radix-2^25.5 limbs and the shape of the inversion chain are the ideas
+ * D. J. Bernstein's "Curve25519: new Diffie-Hellman speed records" (PKC 2006)
+ * describes; the code is this module's.
+ *
+ * **The field.** An element of GF(p), p = 2^255 - 19, is ten signed limbs in
+ * `i64`, alternately 26 and 25 bits wide, so limb `i` sits at bit
+ * `ceil(25.5 * i)` (0, 26, 51, 77, …, 230) and the ten of them span exactly
+ * 255 bits. Two things make that layout pay:
+ *
+ * - The product of the limbs at `i` and `j` lands exactly on the limb at
+ *   `i + j`, except when both are odd, where it lands one bit above and is
+ *   doubled to make up for it. A product that runs past limb 9 wraps to limb
+ *   `i + j - 10` times 19, because 2^255 = 19 (mod p). So a multiplication is
+ *   a hundred `i64` products and no wide arithmetic.
+ * - The limbs are signed, and `>>` on an `i64` is an arithmetic shift, so a
+ *   subtraction needs no bias and a carry is a floor division that works the
+ *   same on a negative limb.
+ *
+ * Signed `i64` overflow is undefined behaviour in this language (only
+ * `wrappingAdd`, `wrappingSub` and `wrappingMul` from `nish:unsafe` define a
+ * wrap, at the site that calls one), so the limb bounds below are not a nicety: each function states what it accepts and what it answers, and
+ * `f25519Mul` says why its sums fit.
+ *
+ * **Constant time, by construction, and in part by disassembly.** Nothing
+ * branches on, or indexes by, a secret: the ladder swaps with a mask and runs
+ * all 255 steps whatever the scalar, and the final reduction subtracts p by
+ * adding a carry bit times 19 rather than by comparing. Every `if` and every
+ * loop bound here is on a public quantity — a limb number, a bit position or
+ * an input length.
+ *
+ * WP34 N6's disassembly check (`tests/ct-asm.js`) verifies the part a secret
+ * flows through: `tests/cases/ct_asm_x25519` holds copies of the field
+ * arithmetic, `f25519Swap`, the encodings and both halves of the ladder, and
+ * the check reads each one's `clang -O2` machine code for x86-64 and aarch64
+ * and finds no branch on a secret and no load or store at an address the
+ * scalar bit or a limb reaches. The rolled loops (the ladder's 255 steps, the
+ * inversion's square chains, the encodings) are read whole, back edge included.
+ *
+ * They are copies because a case compiles to one module. `tests/run.js` holds
+ * each to this module's text, with the early `return`s dropped (each guards a
+ * public length, but is a branch) and every index unchecked, so a change here
+ * that the copies miss fails that check. What stays outside the check is
+ * the allocation and wiping around the work in `x25519Ladder`, `f25519Decode`
+ * and `f25519Encode`, whose branches are all on public positions. Weekly,
+ * `tests/ct-timing.js` times the fixture's functions on real x86-64 and
+ * aarch64 hardware as well.
+ *
+ * **Loop bounds are literals.** A field element is always ten limbs and an
+ * encoding always 32 bytes, and each function that indexes one opens with an
+ * early `return` for a shorter array. That cannot happen — every element is
+ * made here, and `x25519` checks its arguments' lengths before anything else
+ * — but it is what lets the compiler prove the loops after it, which count to
+ * the literal `10` or `32`, in range and drop their bounds checks. (A named
+ * constant as the bound, or a `panic` as the guard, does not prove them.)
+ *
+ * **Keys are `Secret`s** (`nish:secret`, docs/LANGUAGE.md "Secrets"). `x25519`
+ * takes the scalar as a `Secret<u8[]>` and answers the shared secret as one;
+ * `x25519Base` answers the public key as plain bytes. The ladder runs inside
+ * `exposeWith`, and the clamped copy and every ladder element are wiped before
+ * it returns (ECC-2, docs/security/crypto-ecc.md).
+ *
+ * **The field is shared with Ed25519.** `nish/crypto/ed25519` works over the
+ * same GF(p), so the `f25519` functions are exported for it to import rather
+ * than written twice; they are the module's internals, with the bounds each
+ * one states, not an API for programs. Ed25519's square root needs
+ * `z^(2^252 - 3)`, which shares its first 250 bits with the inversion's
+ * exponent, so that part of the chain is `f25519Pow250`, which both call.
+ *
+ * Names carry the `f25519` / `x25519` prefix because a `std/` module's
+ * private functions share the importing program's flat symbol namespace
+ * (`docs/wp26-stdlib.md` §3e).
+ */
+
+import { Secret, exposeWith, secret, wipe } from "nish:secret"
+
+/** The length in bytes of a scalar, a u-coordinate and an X25519 output. */
+export const X25519_SIZE: i32 = 32
+
+/** (A - 2) / 4 for curve25519's A = 486662 (RFC 7748 §5). */
+const X25519_A24: i64 = 121665
+
+/**
+ * `a + b` on limbs: the `u64` sum, read back as `i64`; `f25519Sub64` and
+ * `f25519Mul64` are its difference and product. Every bound this module states
+ * keeps the true result inside `i64`, so the answer is the signed one bit for
+ * bit; the arithmetic is unsigned because signed arithmetic is checked for an
+ * overflow, and a check is a branch on a secret limb. Each is one
+ * instruction once LLVM inlines it.
+ *
+ * @param a The first limb.
+ * @param b The second limb.
+ * @returns The sum, which the caller's bounds keep inside `i64`.
+ *
+ * @internal Imported by `nish/crypto/ed25519`, which works over the same field.
+ */
+export const f25519Add64 = (a: i64, b: i64): i64 => toI64(toU64(a) + toU64(b))
+/**
+ * `a - b` on limbs, unsigned and read back as `i64`, as `f25519Add64` explains.
+ *
+ * @param a The limb subtracted from.
+ * @param b The limb subtracted.
+ * @returns The difference, which the caller's bounds keep inside `i64`.
+ *
+ * @internal Imported by `nish/crypto/ed25519`, which works over the same field.
+ */
+export const f25519Sub64 = (a: i64, b: i64): i64 => toI64(toU64(a) - toU64(b))
+/**
+ * `a * b` on limbs, unsigned and read back as `i64`, as `f25519Add64` explains.
+ *
+ * @param a The first limb.
+ * @param b The second limb.
+ * @returns The product, which the caller's bounds keep inside `i64`.
+ *
+ * @internal Imported by `nish/crypto/ed25519`, which works over the same field.
+ */
+export const f25519Mul64 = (a: i64, b: i64): i64 => toI64(toU64(a) * toU64(b))
+
+/** The width of limb `i`: 26 bits for an even limb, 25 for an odd one. */
+const f25519Width = (i: i32): i64 => {
+  const odd: i64 = toI64(i & 1)
+  return 26 - odd
+}
+
+/** The mask of limb `i`'s bits, `2^width - 1`. */
+const f25519LimbMask = (i: i32): i64 => f25519Sub64(toI64(1) << f25519Width(i), toI64(1))
+
+/**
+ * A fresh field element, zero.
+ *
+ * @returns A new ten-limb element, every limb zero.
+ *
+ * @internal Imported by `nish/crypto/ed25519`, which works over the same field.
+ */
+export const f25519Zero = (): i64[] => {
+  const f: i64[] = new Array<i64>(10)
+  return f
+}
+
+/**
+ * A fresh field element holding the small constant `n`.
+ *
+ * @param n The constant, held in limb 0.
+ * @returns A new element whose value is `n`.
+ *
+ * @internal Imported by `nish/crypto/ed25519`, which works over the same field.
+ */
+export const f25519Small = (n: i64): i64[] => {
+  const f: i64[] = f25519Zero()
+  f[0] = n
+  return f
+}
+
+/**
+ * `out = f`, limb by limb.
+ *
+ * @param out Where the limbs go.
+ * @param f The element copied.
+ *
+ * @internal Imported by `nish/crypto/ed25519`, which works over the same field.
+ */
+export const f25519Copy = (out: i64[], f: i64[]): void => {
+  if (toI32(out.length) < 10 || toI32(f.length) < 10) {
+    return
+  }
+  for (let i: i32 = 0; i < 10; i++) {
+    out[i] = f[i]
+  }
+}
+
+/**
+ * Carries limbs 0 to 8 each into the next, leaving limb 9 as it is: the part
+ * of a carry that `f25519Carry` and `f25519Encode` share, and the two differ
+ * only in what they do with limb 9's overflow.
+ */
+const f25519CarryChain = (h: i64[]): void => {
+  if (toI32(h.length) < 10) {
+    return
+  }
+  for (let i: i32 = 0; i < 9; i++) {
+    const c: i64 = h[i] >> f25519Width(i)
+    h[i] = h[i] & f25519LimbMask(i)
+    h[i + 1] = f25519Add64(h[i + 1], c)
+  }
+}
+
+/**
+ * Carries every limb into the next, folding the carry out of limb 9 back into
+ * limb 0 times 19, and then carries limb 0 once more.
+ *
+ * Accepts limbs of magnitude below 2^63 minus the carries they receive — in
+ * practice below 2^62.6, which is what `f25519Mul` produces. The carry out of
+ * a limb that large is below 2^37.6, the fold is below 2^42, so no sum along
+ * the chain overflows. Answers a **reduced** element: limbs 0 and 2–9 in
+ * `[0, 2^width)`, and limb 1 in that range plus the final carry out of limb 0,
+ * which is at most 2^17 either way. So every limb of a reduced element has
+ * magnitude below 2^26.
+ *
+ * Each carry is `h >> width` (arithmetic, so a floor) and each remainder is
+ * `h & (2^width - 1)`, which is the matching non-negative remainder for a
+ * negative limb too, without shifting a negative number left.
+ *
+ * @param h The element, carried in place.
+ *
+ * @internal Imported by `nish/crypto/ed25519`, which works over the same field.
+ */
+export const f25519Carry = (h: i64[]): void => {
+  if (toI32(h.length) < 10) {
+    return
+  }
+  f25519CarryChain(h)
+  const top: i64 = h[9] >> toI64(25)
+  h[9] = h[9] & f25519LimbMask(9)
+  h[0] = f25519Add64(h[0], f25519Mul64(top, toI64(19)))
+  const c0: i64 = h[0] >> toI64(26)
+  h[0] = h[0] & f25519LimbMask(0)
+  h[1] = f25519Add64(h[1], c0)
+}
+
+/**
+ * `out = f + g`, not carried. With both reduced (limbs below 2^26 in
+ * magnitude) the sum's limbs are below 2^27, which `f25519Mul` accepts.
+ *
+ * @param out Where the sum goes; it may be `f` or `g`.
+ * @param f The first addend, reduced.
+ * @param g The second addend, reduced.
+ *
+ * @internal Imported by `nish/crypto/ed25519`, which works over the same field.
+ */
+export const f25519Add = (out: i64[], f: i64[], g: i64[]): void => {
+  if (toI32(out.length) < 10 || toI32(f.length) < 10 || toI32(g.length) < 10) {
+    return
+  }
+  for (let i: i32 = 0; i < 10; i++) {
+    out[i] = f25519Add64(f[i], g[i])
+  }
+}
+
+/**
+ * `out = f - g`, not carried. Signed limbs need no bias to stay positive; with
+ * both reduced the difference's limbs are below 2^27 in magnitude, which
+ * `f25519Mul` accepts.
+ *
+ * @param out Where the difference goes; it may be `f` or `g`.
+ * @param f The element subtracted from, reduced.
+ * @param g The element subtracted, reduced.
+ *
+ * @internal Imported by `nish/crypto/ed25519`, which works over the same field.
+ */
+export const f25519Sub = (out: i64[], f: i64[], g: i64[]): void => {
+  if (toI32(out.length) < 10 || toI32(f.length) < 10 || toI32(g.length) < 10) {
+    return
+  }
+  for (let i: i32 = 0; i < 10; i++) {
+    out[i] = f25519Sub64(f[i], g[i])
+  }
+}
+
+/**
+ * Row `i` of `f25519Mul`'s product: `f[i]` (doubled where both limbs are odd)
+ * times each limb of `g`, added into `wide[i + j]`. The ten rows are written
+ * out rather than looped: `clang -O2` then keeps `wide` in registers and
+ * stack slots it can name, where a rolled row loop indexes it by a counter,
+ * and an indexed store into the frame is one tests/ct-asm.js cannot place
+ * (`docs/security/ct-verification.md`).
+ */
+const f25519MulRow = (wide: i64[], f: i64[], doubled: i64[], g: i64[], i: i32): void => {
+  for (let j: i32 = 0; j < 10; j++) {
+    const k: i32 = i + j
+    const fi: i64 = (i & j & 1) === 1 ? doubled[i] : f[i]
+    if (k >= 0 && k < 19) {
+      wide[k] = f25519Add64(wide[k], f25519Mul64(fi, g[j]))
+    }
+  }
+}
+
+/**
+ * `out = f * g`, reduced. `out` may be `f` or `g`: the product is built in
+ * scratch arrays and only copied out at the end.
+ *
+ * **Why the sums fit in `i64`.** Accepts limbs below 2^27 in magnitude — a
+ * reduced element, or the sum or difference of two reduced elements. Output
+ * limb `k` collects exactly ten products `f[i] * g[j]` with
+ * `i + j = k (mod 10)`, each scaled by at most 2 (both indices odd) times 19
+ * (the product wrapped past limb 9). So each term is below 38 * 2^54 and each
+ * sum below 380 * 2^54 < 2^62.6, under 2^63 with room for the carries
+ * `f25519Carry` adds on top; the partial sums in `wide` are parts of those
+ * same sums, and `wide[k + 10] * 19` is below 18 * 19 * 2^54 < 2^58.5 on its
+ * own, so no intermediate is larger. Giving `f25519Mul` anything wider — two unreduced
+ * sums added again, say — breaks this bound, which is why every caller carries
+ * or multiplies before it adds a second time.
+ *
+ * @param out Where the product goes; it may be `f` or `g`.
+ * @param f The first factor.
+ * @param g The second factor.
+ *
+ * @internal Imported by `nish/crypto/ed25519`, which works over the same field.
+ */
+export const f25519Mul = (out: i64[], f: i64[], g: i64[]): void => {
+  if (toI32(f.length) < 10 || toI32(g.length) < 10) {
+    return
+  }
+  // Two odd limbs meet one bit above their target limb, so an odd-by-odd
+  // product takes `f`'s limb doubled.
+  const doubled: i64[] = new Array<i64>(10)
+  for (let i: i32 = 0; i < 10; i++) {
+    doubled[i] = f25519Mul64(f[i], toI64((i & 1) + 1))
+  }
+  // The plain product, limb `i + j` of nineteen, a row of `f` at a time.
+  const wide: i64[] = new Array<i64>(19)
+  f25519MulRow(wide, f, doubled, g, 0)
+  f25519MulRow(wide, f, doubled, g, 1)
+  f25519MulRow(wide, f, doubled, g, 2)
+  f25519MulRow(wide, f, doubled, g, 3)
+  f25519MulRow(wide, f, doubled, g, 4)
+  f25519MulRow(wide, f, doubled, g, 5)
+  f25519MulRow(wide, f, doubled, g, 6)
+  f25519MulRow(wide, f, doubled, g, 7)
+  f25519MulRow(wide, f, doubled, g, 8)
+  f25519MulRow(wide, f, doubled, g, 9)
+  // Limbs 10 to 18 are past bit 255, and 2^255 = 19 (mod p): fold them down.
+  const h: i64[] = new Array<i64>(10)
+  for (let k: i32 = 0; k < 9; k++) {
+    h[k] = f25519Add64(wide[k], f25519Mul64(wide[k + 10], toI64(19)))
+  }
+  h[9] = wide[9]
+  f25519Carry(h)
+  f25519Copy(out, h)
+}
+
+/**
+ * `out = f * f`, reduced; the same bounds as `f25519Mul`.
+ *
+ * @param out Where the square goes; it may be `f`.
+ * @param f The element squared.
+ *
+ * @internal Imported by `nish/crypto/ed25519`, which works over the same field.
+ */
+export const f25519Square = (out: i64[], f: i64[]): void => {
+  f25519Mul(out, f, f)
+}
+
+/**
+ * `out = f` squared `n` times in a row (`n` at least 1), reduced.
+ *
+ * @param out Where the result goes; it may be `f`.
+ * @param f The element squared.
+ * @param n How many squarings.
+ *
+ * @internal Imported by `nish/crypto/ed25519`, which works over the same field.
+ */
+export const f25519SquareTimes = (out: i64[], f: i64[], n: i32): void => {
+  f25519Square(out, f)
+  for (let i: i32 = 1; i < n; i++) {
+    f25519Square(out, out)
+  }
+}
+
+/**
+ * `out = f * a24`, reduced. Accepts limbs below 2^27 in magnitude; times
+ * 121665 (under 2^17) each is below 2^44, far inside what `f25519Carry`
+ * accepts.
+ */
+const f25519MulA24 = (out: i64[], f: i64[]): void => {
+  if (toI32(out.length) < 10 || toI32(f.length) < 10) {
+    return
+  }
+  for (let i: i32 = 0; i < 10; i++) {
+    out[i] = f25519Mul64(f[i], X25519_A24)
+  }
+  f25519Carry(out)
+}
+
+/**
+ * `out = z^(2^250 - 1)` and `z11 = z^11`: the part of the exponent chain that
+ * `f25519Invert` and Ed25519's square root (`ed25519Pow22523`,
+ * `nish/crypto/ed25519`) share. The chain builds `z^(2^n - 1)` for n = 2, 4,
+ * 5, 10, 20, 40, 50, 100, 200 and 250 from the rule
+ * `z^(2^(a+b) - 1) = (z^(2^a - 1))^(2^b) * z^(2^b - 1)`: 251 squarings and 11
+ * multiplications, the same for every `z`. `out` and `z11` may not be `z`.
+ *
+ * @param out Where `z^(2^250 - 1)` goes.
+ * @param z11 Where `z^11` goes.
+ * @param z The base, reduced.
+ *
+ * @internal Imported by `nish/crypto/ed25519`, which works over the same field.
+ */
+export const f25519Pow250 = (out: i64[], z11: i64[], z: i64[]): void => {
+  const z2: i64[] = f25519Zero()
+  const e2: i64[] = f25519Zero()
+  const e5: i64[] = f25519Zero()
+  const e10: i64[] = f25519Zero()
+  const e50: i64[] = f25519Zero()
+  const t: i64[] = f25519Zero()
+
+  f25519Square(z2, z)
+  f25519Mul(e2, z2, z) // z^3 = z^(2^2 - 1)
+  f25519SquareTimes(t, z2, 2) // z^8
+  f25519Mul(z11, t, e2)
+
+  f25519SquareTimes(t, e2, 2)
+  f25519Mul(t, t, e2) // 2^4 - 1
+  f25519Square(t, t)
+  f25519Mul(e5, t, z) // 2^5 - 1
+  f25519SquareTimes(t, e5, 5)
+  f25519Mul(e10, t, e5) // 2^10 - 1
+  f25519SquareTimes(t, e10, 10)
+  f25519Mul(out, t, e10) // 2^20 - 1
+  f25519SquareTimes(t, out, 20)
+  f25519Mul(out, t, out) // 2^40 - 1
+  f25519SquareTimes(t, out, 10)
+  f25519Mul(e50, t, e10) // 2^50 - 1
+  f25519SquareTimes(t, e50, 50)
+  f25519Mul(out, t, e50) // 2^100 - 1
+  f25519SquareTimes(t, out, 100)
+  f25519Mul(out, t, out) // 2^200 - 1
+  f25519SquareTimes(t, out, 50)
+  f25519Mul(out, t, e50) // 2^250 - 1
+}
+
+/**
+ * `out = z^(p - 2)`, which is `1 / z` by Fermat's little theorem, and zero for
+ * a zero `z` — what RFC 7748 §5 asks of the ladder's last step.
+ *
+ * p - 2 = 2^255 - 21 = (2^250 - 1) * 2^5 + 11, so the exponent is 250 ones
+ * followed by `01011`: `f25519Pow250`, then five squarings and a
+ * multiplication by `z^11` — 256 squarings and 12 multiplications, the same
+ * for every `z`.
+ *
+ * @param out Where the inverse goes.
+ * @param z The element inverted, reduced.
+ *
+ * @internal Imported by `nish/crypto/ed25519`, which works over the same field.
+ */
+export const f25519Invert = (out: i64[], z: i64[]): void => {
+  const z11: i64[] = f25519Zero()
+  const acc: i64[] = f25519Zero()
+  const t: i64[] = f25519Zero()
+  f25519Pow250(acc, z11, z)
+  f25519SquareTimes(t, acc, 5)
+  f25519Mul(out, t, z11) // 2^255 - 21
+}
+
+/**
+ * Swaps `f` and `g` when `bit` is 1 and leaves them when it is 0, with the
+ * same instructions either way: the mask is all ones or all zeros, and the
+ * swap is the masked xor of the two.
+ *
+ * @param f The first element, swapped in place.
+ * @param g The second element, swapped in place.
+ * @param bit 1 to swap, 0 to leave; a secret, so no branch reads it.
+ *
+ * @internal Imported by `nish/crypto/ed25519`, which works over the same field.
+ */
+export const f25519Swap = (f: i64[], g: i64[], bit: i64): void => {
+  if (toI32(f.length) < 10 || toI32(g.length) < 10) {
+    return
+  }
+  const mask: i64 = f25519Sub64(toI64(0), bit)
+  for (let i: i32 = 0; i < 10; i++) {
+    const t: i64 = mask & (f[i] ^ g[i])
+    f[i] = f[i] ^ t
+    g[i] = g[i] ^ t
+  }
+}
+
+/**
+ * The field element that 32 little-endian bytes encode, with the top bit of
+ * the last byte masked off as RFC 7748 §5 requires of a u-coordinate. The
+ * bytes stream into an accumulator and each limb is taken off its low end once
+ * it holds enough bits (one byte never completes two limbs), so every limb
+ * lands in `[0, 2^width)` and the element is reduced. A value in
+ * `[p, 2^255)` is neither refused nor adjusted: §5 has it processed as its
+ * residue, and the arithmetic does that by itself.
+ *
+ * @param bytes The 32-byte little-endian encoding.
+ * @returns A new reduced element, or zero for fewer than 32 bytes.
+ *
+ * @internal Imported by `nish/crypto/ed25519`, which works over the same field.
+ */
+export const f25519Decode = (bytes: u8[]): i64[] => {
+  const f: i64[] = new Array<i64>(10)
+  if (toI32(bytes.length) < 32) {
+    return f
+  }
+  f25519DecodeInto(f, bytes)
+  return f
+}
+
+/**
+ * `f25519Decode`'s loop, into `f`: the 32 bytes of `bytes` streamed into ten
+ * limbs. Apart so that tests/cases/ct_asm_x25519 can read this loop in the
+ * assembly as the module has it (`docs/security/ct-verification.md`).
+ */
+const f25519DecodeInto = (f: i64[], bytes: u8[]): void => {
+  let acc: i64 = 0
+  let bits: i64 = 0
+  let limb: i32 = 0
+  for (let i: i32 = 0; i < 32; i++) {
+    let b: i64 = toI64(bytes[i])
+    if (i === 31) {
+      b = b & toI64(0x7f)
+    }
+    acc = acc | (b << bits)
+    bits = bits + toI64(8)
+    if (limb >= 0 && limb < 10) {
+      const width: i64 = f25519Width(limb)
+      if (bits >= width) {
+        f[limb] = acc & f25519LimbMask(limb)
+        acc = acc >> width
+        bits = bits - width
+        limb = limb + 1
+      }
+    }
+  }
+}
+
+/**
+ * The canonical 32-byte encoding of `f`, fully reduced into `[0, p)`.
+ *
+ * Accepts a reduced element. Two more `f25519Carry` passes bring every limb
+ * into `[0, 2^width)`. The first leaves every limb in range except limb 1,
+ * which may be one over or one under. The second carries that through, and its
+ * fold is ±19 at most on a value that is then within 2^26 of 0 or of 2^255, so
+ * its last carry out of limb 0 is at most one and leaves limb 1 in range. The
+ * value is then in `[0, 2^255)`, which is `[0, p)` or `[p, p + 19)`. Adding 19 and reading the
+ * carry out of bit 255 tells the two apart without a branch — it is 1 exactly
+ * when the value is at least p — so the element adds `19 * q` and drops bit
+ * 255, which is subtracting `p * q`.
+ *
+ * @param f The element, reduced.
+ * @returns Its 32 canonical little-endian bytes.
+ *
+ * @internal Imported by `nish/crypto/ed25519`, which works over the same field.
+ */
+export const f25519Encode = (f: i64[]): u8[] => {
+  const out: u8[] = new Array<u8>(32)
+  f25519EncodeInto(out, f)
+  return out
+}
+
+/**
+ * `f25519Encode`'s reduction and packing, into `out`, 32 bytes. Apart for the
+ * same reason as `f25519DecodeInto`.
+ */
+const f25519EncodeInto = (out: u8[], f: i64[]): void => {
+  const h: i64[] = new Array<i64>(10)
+  f25519Copy(h, f)
+  f25519Carry(h)
+  f25519Carry(h)
+
+  let q: i64 = f25519Add64(h[0], toI64(19)) >> toI64(26)
+  for (let i: i32 = 1; i < 10; i++) {
+    q = f25519Add64(h[i], q) >> f25519Width(i)
+  }
+  h[0] = f25519Add64(h[0], f25519Mul64(q, toI64(19)))
+  f25519CarryChain(h)
+  h[9] = h[9] & f25519LimbMask(9)
+
+  let acc: i64 = 0
+  let bits: i64 = 0
+  let at: i32 = 0
+  for (let i: i32 = 0; i < 10; i++) {
+    acc = acc | (h[i] << bits)
+    bits = bits + f25519Width(i)
+    while (bits >= toI64(8) && at >= 0 && at < 32) {
+      out[at] = toU8(acc & toI64(0xff))
+      acc = acc >> toI64(8)
+      bits = bits - toI64(8)
+      at = at + 1
+    }
+  }
+  // 255 bits leave seven over: the last byte, with its top bit clear.
+  if (at >= 0 && at < 32) {
+    out[at] = toU8(acc & toI64(0xff))
+  }
+}
+
+/**
+ * One step of the ladder, from its two swaps on: `swap` is the bit the loop
+ * has just folded into its swap state, a secret that only feeds the swaps'
+ * masks. `a` to `t` are scratch, passed in so that `x25519Ladder` can wipe
+ * them (ECC-2).
+ */
+const x25519LadderStep = (
+  x2: i64[],
+  z2: i64[],
+  x3: i64[],
+  z3: i64[],
+  u: i64[],
+  swap: i64,
+  a: i64[],
+  aa: i64[],
+  b: i64[],
+  bb: i64[],
+  e: i64[],
+  c: i64[],
+  d: i64[],
+  da: i64[],
+  cb: i64[],
+  t: i64[]
+): void => {
+  f25519Swap(x2, x3, swap)
+  f25519Swap(z2, z3, swap)
+  f25519Add(a, x2, z2)
+  f25519Square(aa, a)
+  f25519Sub(b, x2, z2)
+  f25519Square(bb, b)
+  f25519Sub(e, aa, bb)
+  f25519Add(c, x3, z3)
+  f25519Sub(d, x3, z3)
+  f25519Mul(da, d, a)
+  f25519Mul(cb, c, b)
+  f25519Add(t, da, cb)
+  f25519Square(x3, t)
+  f25519Sub(t, da, cb)
+  f25519Square(t, t)
+  f25519Mul(z3, u, t)
+  f25519Mul(x2, aa, bb)
+  f25519MulA24(t, e)
+  f25519Add(t, aa, t)
+  f25519Mul(z2, e, t)
+}
+
+/**
+ * The ladder's 255 steps on a clamped `k`, and the two swaps after them. The
+ * scratch is `x25519LadderStep`'s. Apart from `x25519Ladder` so that
+ * tests/cases/ct_asm_x25519 can read this loop in the assembly as the module
+ * has it (`docs/security/ct-verification.md`).
+ */
+const x25519LadderLoop = (
+  x2: i64[],
+  z2: i64[],
+  x3: i64[],
+  z3: i64[],
+  u: i64[],
+  k: u8[],
+  a: i64[],
+  aa: i64[],
+  b: i64[],
+  bb: i64[],
+  e: i64[],
+  c: i64[],
+  d: i64[],
+  da: i64[],
+  cb: i64[],
+  t: i64[]
+): void => {
+  let swap: i64 = 0
+  // Bit 254 down to bit 0: the position is public and picks the byte and the
+  // shift; the bit itself is secret and only ever feeds a mask.
+  for (let byte: i32 = 31; byte >= 0; byte--) {
+    for (let shift: i32 = 7; shift >= 0; shift--) {
+      if (byte === 31 && shift === 7) {
+        continue
+      }
+      const bit: i64 = toI64(k[byte] >> toU8(shift)) & toI64(1)
+      swap = swap ^ bit
+      x25519LadderStep(x2, z2, x3, z3, u, swap, a, aa, b, bb, e, c, d, da, cb, t)
+      swap = bit
+    }
+  }
+  f25519Swap(x2, x3, swap)
+  f25519Swap(z2, z3, swap)
+}
+
+/**
+ * The Montgomery ladder of RFC 7748 §5 on a clamped scalar `k` and a decoded
+ * `u`, answering the encoded u-coordinate of `k * u`.
+ *
+ * The step formulas are the RFC's, in its order. Every multiplication is given
+ * a reduced element or one sum or difference of two, which is what
+ * `f25519Mul` accepts: `A`, `B`, `C`, `D`, `E`, `DA + CB`, `DA - CB` and
+ * `AA + a24 * E` are each one addition away from reduced values.
+ */
+const x25519Ladder = (k: u8[], u: i64[]): u8[] => {
+  if (toI32(k.length) < 32) {
+    return new Array<u8>(32)
+  }
+  const x2: i64[] = f25519Small(toI64(1))
+  const z2: i64[] = f25519Zero()
+  const x3: i64[] = f25519Zero()
+  const z3: i64[] = f25519Small(toI64(1))
+  f25519Copy(x3, u)
+
+  const a: i64[] = f25519Zero()
+  const aa: i64[] = f25519Zero()
+  const b: i64[] = f25519Zero()
+  const bb: i64[] = f25519Zero()
+  const e: i64[] = f25519Zero()
+  const c: i64[] = f25519Zero()
+  const d: i64[] = f25519Zero()
+  const da: i64[] = f25519Zero()
+  const cb: i64[] = f25519Zero()
+  const t: i64[] = f25519Zero()
+
+  x25519LadderLoop(x2, z2, x3, z3, u, k, a, aa, b, bb, e, c, d, da, cb, t)
+
+  f25519Invert(t, z2)
+  f25519Mul(x2, x2, t)
+  const out: u8[] = f25519Encode(x2)
+  // ECC-2: every element the scalar's bits reached is zeroed before the
+  // ladder returns, with the store `nish:secret` keeps from the optimiser.
+  wipe(x2)
+  wipe(z2)
+  wipe(x3)
+  wipe(z3)
+  wipe(a)
+  wipe(aa)
+  wipe(b)
+  wipe(bb)
+  wipe(e)
+  wipe(c)
+  wipe(d)
+  wipe(da)
+  wipe(cb)
+  wipe(t)
+  return out
+}
+
+/**
+ * X25519 on the plain scalar `scalar`, for `exposeWith` to run: the clamped
+ * copy is wiped once the ladder has used it, and the answer is the shared
+ * secret's plain bytes, which `x25519` wraps again at once.
+ */
+const x25519Exposed = (scalar: u8[], u: u8[]): u8[] | null => {
+  if (toI32(scalar.length) !== 32 || toI32(u.length) !== 32) {
+    return null
+  }
+  const k: u8[] = new Array<u8>(32)
+  for (let i: i32 = 0; i < 32; i++) {
+    k[i] = scalar[i]
+  }
+  k[0] = k[0] & toU8(248)
+  k[31] = (k[31] & toU8(127)) | toU8(64)
+  const out: u8[] = x25519Ladder(k, f25519Decode(u))
+  wipe(k)
+  return out
+}
+
+/**
+ * X25519 (RFC 7748 §5): the u-coordinate of `scalar * u` on curve25519, as 32
+ * little-endian bytes, held as the `Secret` it is.
+ *
+ * `scalar` is clamped as §5 says — bits 0, 1, 2 and 255 cleared, bit 254 set —
+ * on a copy, which is wiped, so the caller's key is not changed. The top bit of
+ * `u` is ignored, and a `u` of p or more is taken modulo p. The answer is
+ * always canonical (below p).
+ *
+ * Answers `null` unless both arguments are exactly `X25519_SIZE` bytes. An
+ * all-zero answer is **returned, not refused**: it is what a low-order `u`
+ * gives, and RFC 7748 §6.1 leaves checking for it to the protocol.
+ * `nish/net/tls` makes that check on both sides of its handshake; any other
+ * caller doing a key exchange must refuse an all-zero answer itself — inside
+ * `expose`, with `timingSafeEqual` against 32 zero bytes, as the module's
+ * example does.
+ *
+ * @param scalar The private key, 32 bytes, clamped on a copy.
+ * @param u The peer's u-coordinate (its public key), 32 bytes.
+ * @returns The shared secret, 32 bytes and possibly all zero, or `null` for an
+ *   argument of the wrong length.
+ */
+export const x25519 = (scalar: Secret<u8[]>, u: u8[]): Secret<u8[]> | null => {
+  const shared: u8[] | null = exposeWith(scalar, u, x25519Exposed)
+  if (shared === null) {
+    return null
+  }
+  return secret(shared)
+}
+
+/**
+ * `x25519(scalar, 9)`: the public key for the private key `scalar`, since 9 is
+ * curve25519's base point (RFC 7748 §4.1, §6.1), and public, so plain bytes.
+ * Answers `null` unless `scalar` is `X25519_SIZE` bytes.
+ *
+ * @param scalar The private key, 32 bytes.
+ * @returns The public key, 32 bytes, or `null` for a key of the wrong length.
+ */
+export const x25519Base = (scalar: Secret<u8[]>): u8[] | null => {
+  const base: u8[] = new Array<u8>(32)
+  base[0] = toU8(9)
+  return exposeWith(scalar, base, x25519Exposed)
+}

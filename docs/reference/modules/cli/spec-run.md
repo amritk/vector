@@ -119,6 +119,14 @@ The repeatable `--package <name>=<dir>` flag.
 packageFlag: i32
 ```
 
+#### SpecRunCommand.slowFlag
+
+The `--slow` flag.
+
+```ts
+slowFlag: i32
+```
+
 #### SpecRunCommand.specFlag
 
 The `--spec <file>` flag.

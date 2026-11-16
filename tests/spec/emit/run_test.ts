@@ -18,6 +18,7 @@ import {
   runIsStdPath,
   runJudge,
   runMakeScratch,
+  runNishArgv,
   runNonce,
   runOutcomeName,
   runParse,
@@ -136,6 +137,7 @@ export const main = (): i32 => {
   runTestInPlace(t, c)
   runTestLinks(t)
   runTestMarkdown(t)
+  runTestSlow(t, nonce)
 
   const program = emitProgram(c, hexSamples(), new EmitOptions("ab"))
   t.ok("example-hex emits with every property sampled", program.isOk())
@@ -183,7 +185,7 @@ const runTestInPlace = (t: Suite, c: Contract): void => {
   const fake = `${dir}/nish`
   runTestSh(`printf '#!/bin/sh\\necho "$1 $2"\\necho "$3"\\n' > ${fake} && chmod 755 ${fake}`)
   const file = `${dir}/sub/main_test.ts`
-  const ran = runTestFile(c, file, fake, 10000)
+  const ran = runTestFile(c, file, fake, 10000, false)
   t.ok("a test in place runs", ran.isOk())
   if (ran.isOk()) {
     const lines = splitLines(ran.value.stdout)
@@ -191,6 +193,17 @@ const runTestInPlace = (t: Suite, c: Contract): void => {
     t.eqStr("with a nonce of 32 hex digits", `${lines[1].length}`, "32")
     t.ok("and judged: it never printed the nonce back as its end", ran.value.verdict.status !== "SATISFIED")
   }
+  const fast = runTestFile(c, file, fake, 10000, true)
+  t.ok("a slow run runs", fast.isOk())
+  if (fast.isOk()) {
+    t.eqStr("built optimized", splitLines(fast.value.stdout)[0], "run --profile")
+  }
+  t.eqStr("runNishArgv builds a plain run by default", runNishArgv("nish", "a.ts", false).join(" "), "nish run a.ts")
+  t.eqStr(
+    "and an optimized one with --slow",
+    runNishArgv("nish", "a.ts", true).join(" "),
+    "nish run --profile speed a.ts",
+  )
   t.ok("the test's directory is left alone", isDirectorySync(dir))
   t.ok("runRemove removes it", runRemove(dir).isOk() && !isDirectorySync(dir))
 }
@@ -267,4 +280,71 @@ const runTestMarkdown = (t: Suite): void => {
   const md = runFormatMarkdown(r)
   t.contains("an integrity message is a code span", md, "- `a line [x](https://e.example) <b>|# 'q'`\n")
   t.contains("so is a failure's detail", md, "- `FAIL [P-X] <i>`: `[y](https://e.example) | 'z'`\n")
+}
+
+/** A transcript of contract sha256-chain: CHAIN-1, CHAIN-1000, then the slow CHAIN-100000 as `last`. */
+const runSlowTranscript = (nonce: string, last: string): string =>
+  `PASS  [CHAIN-1] once\nPASS  [CHAIN-1000] 1,000 times\n${last}\nsha256-chain: 2 passed, 0 failed, 1 skipped\nvector-done ${nonce} 111\n`
+
+/** A slow vector skipped for want of `--slow` is listed, never passed, and its requirement is a skip. */
+const runTestSlow = (t: Suite, nonce: string): void => {
+  const c = contractLoadFile("tests/fixtures/iterate-emit/contracts/sha256-chain.json").expect("load")
+  const out = runSlowTranscript(nonce, "SKIP  [CHAIN-100000] 100,000 times (slow: pass --slow to run)")
+  const clauses = runParse(c, out)
+  t.ok("a slow vector skipped as slow is marked slow", clauses[2].slow && !clauses[0].slow)
+  const other = runParse(c, runSlowTranscript(nonce, "SKIP  [CHAIN-100000] 100,000 times (no reason)"))
+  t.ok("a skip with another reason is not", !other[2].slow)
+  t.eqStr("so it is an ERROR", runJudge(c, other, 0, []).status, "ERROR")
+  const v = runJudge(c, clauses, 0, runTranscript(c, out, nonce, clauses))
+  t.eqStr("a slow skip leaves the run SATISFIED over what ran", v.status, "SATISFIED")
+  t.eqStr(
+    "a requirement covered only by it is a skip",
+    runOutcomeName(v.outcomes[v.requirements.indexOf("R-LOWER")]),
+    "skip",
+  )
+  t.eqStr("the others pass", runOutcomeName(v.outcomes[v.requirements.indexOf("R-CHAIN")]), "pass")
+  const r = new RunResult("sha256-chain", 0, out, "")
+  r.verdict = v
+  for (const k of clauses) {
+    r.clauses.push(k)
+  }
+  const text = runFormatText(r).join("\n")
+  t.contains("the text lists the slow vector", text, "\n  skip  CHAIN-100000 (slow; pass --slow)")
+  t.ok("and passes nothing it did not run", text.indexOf("pass  CHAIN-100000") < 0 && text.indexOf("pass  R-LOWER") < 0)
+  t.contains("the markdown lists it", runFormatMarkdown(r), "Skipped as slow (pass `--slow` to run): `CHAIN-100000`")
+  const allSlow: RunClause[] = []
+  for (const id of ["CHAIN-1", "CHAIN-1000", "CHAIN-100000"]) {
+    const k = new RunClause(id)
+    k.outcome = RunOutcome.Skip
+    k.slow = true
+    allSlow.push(k)
+  }
+  t.ok("the json marks the slow skip", runFormatJson(r).indexOf(`"detail": "", "slow": true}`) > 0)
+  const json = runFormatJson(r)
+  t.ok("and only it", json.indexOf(`"slow": true`, json.indexOf(`"slow": true`) + 1) < 0)
+  t.ok("a run with passes states no all-slow reason", text.indexOf("every vector was skipped as slow") < 0)
+  const all = new RunResult("sha256-chain", 0, "", "")
+  all.verdict = runJudge(c, allSlow, 0, [])
+  t.eqStr("a run whose every clause was a slow skip is an ERROR", all.verdict.status, "ERROR")
+  for (const k of allSlow) {
+    all.clauses.push(k)
+  }
+  t.contains(
+    "and the text says why",
+    runFormatText(all).join("\n"),
+    "\nevery vector was skipped as slow, so nothing ran: pass --slow",
+  )
+  t.contains("and so does the markdown", runFormatMarkdown(all), "\n\nevery vector was skipped as slow")
+  const mixed = new RunResult("sha256-chain", 0, "", "")
+  for (const k of allSlow) {
+    mixed.clauses.push(k)
+  }
+  mixed.clauses[0] = new RunClause("CHAIN-1")
+  mixed.verdict = runJudge(c, mixed.clauses, 0, [])
+  t.eqStr("a slow skip beside a clause that did not run is an ERROR", mixed.verdict.status, "ERROR")
+  t.ok(
+    "but not one with nothing but slow skips",
+    runFormatText(mixed).join("\n").indexOf("every vector was skipped as slow") < 0 &&
+      runFormatMarkdown(mixed).indexOf("every vector was skipped as slow") < 0,
+  )
 }

@@ -1,0 +1,4 @@
+SATISFIED: sha256-chain (exit 0)
+  pass  R-CHAIN
+  skip  R-LOWER
+  skip  CHAIN-100000 (slow; pass --slow)

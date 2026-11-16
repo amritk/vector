@@ -119,6 +119,14 @@ The repeatable `--package <name>=<dir>` flag.
 packageFlag: i32
 ```
 
+#### SpecEmitCommand.slowFlag
+
+The `--slow` flag.
+
+```ts
+slowFlag: i32
+```
+
 #### SpecEmitCommand.specFlag
 
 The `--spec <file>` flag.

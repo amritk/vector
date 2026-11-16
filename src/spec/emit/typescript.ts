@@ -26,7 +26,7 @@ import { Clause, Contract, Expr, FnSig, Literal } from "../contract/types"
 import { TypeEnv, typeCallsIn, typeEnvBind, typeIntBase, typeOf, typeOfInt } from "../contract/typing"
 import { vocabFitsInt, vocabIsIntType, vocabIsOptional, vocabValueType } from "../contract/vocab"
 import { EmitOptions, emitClauseFn, emitClauseLines, emitHeaderLines, emitSortedUnique, emitTestName } from "./emit"
-import { emitF64IsFinite, emitLiteralHex, emitQuote } from "./lit"
+import { EMIT_SLOW_SKIP, emitF64IsFinite, emitLiteralHex, emitQuote } from "./lit"
 
 /** What emitting one TypeScript test has gathered so far. */
 class EmitTsContext {
@@ -519,8 +519,13 @@ const emitTsVector = (ctx: EmitTsContext, k: Clause): string => {
   for (let i = 0; i < k.args.length; i++) {
     args.push(emitTsLitArg(k.args[i], sig.params[i].type))
   }
-  const call = emitTsCall(sig, args)
   const name = emitQuote(emitTestName(k))
+  const it = k.iterate
+  if ((it?.slow ?? false) && !ctx.opts.slow) {
+    return `function ${emitClauseFn(k)}(t: Suite): boolean {\n  return t.skip(${name}, "${EMIT_SLOW_SKIP}")\n}`
+  }
+  const steps = emitTsIterate(k, sig, args, name)
+  const call = it === null ? emitTsCall(sig, args) : "it_r"
   const ret = emitTsVt(sig.returns)
   let body = ""
   if (ret === "bytes") {
@@ -542,7 +547,53 @@ const emitTsVector = (ctx: EmitTsContext, k: Clause): string => {
   } else {
     ctx.errors.push(`${k.id}: TypeScript cannot check a ${sig.returns} result`)
   }
-  return `function ${emitClauseFn(k)}(t: Suite): boolean {\n  return ${body}\n}`
+  const lines = steps.length > 0 ? `${steps.join("\n")}\n` : ""
+  return `function ${emitClauseFn(k)}(t: Suite): boolean {\n${lines}  return ${body}\n}`
+}
+
+/**
+ * An iterated vector's calls, up to the last result bound as `it_r`: the
+ * arguments (`it_a<i>`, by position) start as the vector's and are rebound to
+ * its `next` after each call; a null result at any step fails the clause,
+ * naming the step. Empty for a vector that is not iterated.
+ */
+const emitTsIterate = (k: Clause, sig: FnSig, args: string[], name: string): string[] => {
+  const it = k.iterate
+  if (it === null) {
+    return []
+  }
+  const lines: string[] = []
+  const vars: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    vars.push(`it_a${i}`)
+    lines.push(`  let it_a${i} = ${args[i]}`)
+  }
+  const optional = vocabIsOptional(emitTsVt(sig.returns))
+  lines.push(`  for (let it_i = 1; it_i < ${it.count}; it_i += 1) {`)
+  lines.push(`    const it_s = ${emitTsCall(sig, vars)}`)
+  if (optional) {
+    emitTsIterateNull(lines, "    ", name, "it_s", `" + it_i + " of ${it.count}`, sig.name)
+  }
+  for (let i = 0; i < it.next.length; i++) {
+    const e = it.next[i]
+    lines.push(`    const it_n${i} = ${e.kind === ExprKind.Call ? "it_s" : `it_a${toI32(it.names.indexOf(e.name))}`}`)
+  }
+  for (let i = 0; i < it.next.length; i++) {
+    lines.push(`    it_a${i} = it_n${i}`)
+  }
+  lines.push("  }")
+  lines.push(`  const it_r = ${emitTsCall(sig, vars)}`)
+  if (optional) {
+    emitTsIterateNull(lines, "  ", name, "it_r", `${it.count} of ${it.count}`, sig.name)
+  }
+  return lines
+}
+
+/** Fails the clause `name` when step `step`'s result `v` is null or undefined. */
+const emitTsIterateNull = (lines: string[], pad: string, name: string, v: string, step: string, fn: string): void => {
+  lines.push(`${pad}if (${v} === null || ${v} === undefined) {`)
+  lines.push(`${pad}  return t.fail(${name}, "step ${step}: ${fn} returned null")`)
+  lines.push(`${pad}}`)
 }
 
 /**
@@ -1010,22 +1061,24 @@ const emitTsMain = (c: Contract): string => {
   return lines.join("\n")
 }
 
-/** A clause's node:test test; a property with no samples is skipped, as its check would skip. */
-const emitTsNodeTest = (table: SampleTable, k: Clause): string => {
+/** A clause's node:test test; a property with no samples, or a slow vector without `--slow`, is skipped, as its check would skip. */
+const emitTsNodeTest = (table: SampleTable, k: Clause, runSlow: boolean): string => {
   const name = emitQuote(emitTestName(k))
   const empty = k.kind !== ClauseKind.Vector && (checkSamplesOf(table, k.id).length === 0 || k.assert === null)
-  const opts = empty ? `{ skip: "no samples" }, ` : ""
+  const it = k.iterate
+  const slow = (it?.slow ?? false) && !runSlow
+  const opts = empty ? `{ skip: "no samples" }, ` : slow ? `{ skip: "${EMIT_SLOW_SKIP}" }, ` : ""
   return `  test(${name}, ${opts}(c) => _node(${emitClauseFn(k)}, ${name}, c))`
 }
 
 /** The test's last lines: under `node --test` (node harness) one test per clause, else `main`. */
-const emitTsEnd = (c: Contract, table: SampleTable, harness: string): string => {
+const emitTsEnd = (c: Contract, table: SampleTable, harness: string, runSlow: boolean): string => {
   if (harness !== "node") {
     return "process.exitCode = main()"
   }
   const lines: string[] = [`if (process.env.NODE_TEST_CONTEXT !== undefined || process.execArgv.includes("--test")) {`]
   for (const k of c.clauses) {
-    lines.push(emitTsNodeTest(table, k))
+    lines.push(emitTsNodeTest(table, k, runSlow))
   }
   lines.push("} else {")
   lines.push("  process.exitCode = main()")
@@ -1100,6 +1153,6 @@ export const emitTsProgram = (
   if (harness === "node") {
     parts.push(EMIT_TS_NODE)
   }
-  parts.push(emitTsEnd(c, table, harness))
+  parts.push(emitTsEnd(c, table, harness, opts.slow))
   return Ok(`${parts.join("\n\n")}\n`)
 }

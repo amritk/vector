@@ -1,0 +1,1 @@
+vector spec emit tests/fixtures/iterate-emit/contracts/sha256-chain.json --slow --package vector=src -o dist/emit-slow-golden.ts
