@@ -9,9 +9,39 @@ jobs:
   check:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v7
+      - name: Every action is pinned to a commit SHA
+        run: |
+          shopt -s nullglob
+          files=(.github/workflows/*.yml .github/workflows/*.yaml)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::no workflow files found under .github/workflows"
+            exit 1
+          fi
+          bad=0
+          for f in "${files[@]}"; do
+            rc=0
+            hits=$(grep -nE '^[[:space:]-]*uses[:]' "$f") || rc=$?
+            if [ "$rc" -gt 1 ]; then
+              echo "::error file=$f::grep failed with exit $rc"
+              exit 1
+            fi
+            while IFS= read -r hit; do
+              [ -n "$hit" ] || continue
+              n=${hit%%:*}
+              ref=$(printf '%s' "${hit#*:}" \
+                | sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]-]*uses[:][[:space:]]*//; s/[[:space:]]+$//' \
+                | tr -d "\"'")
+              if ! [[ $ref =~ @[0-9a-f]{40}$ ]]; then
+                echo "::error file=$f,line=$n::\"$ref\" is not pinned to a 40-hex commit SHA (local ./ and docker:// refs are refused too)"
+                bad=1
+              fi
+            done <<< "$hits"
+          done
+          exit "$bad"
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           cache: npm
@@ -34,7 +64,7 @@ jobs:
         run: npm run tested-exports
 
       - name: Cache the pinned nish and z3
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             .nish
