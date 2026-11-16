@@ -208,9 +208,13 @@ problems:
   ✗ export hkdfTwice is added, but the contract neither tests it nor lists it in outOfScope with a reason
 ```
 
-Test it in the spec, or drop it. A changed export that a clause tests passes
-and is listed as `changed <name> (tested)`. Without `--nish-root` it exits 2
-(`VECTOR_NISH_ROOT` is not read here):
+Test it in the spec, drop it, or declare it out of scope with a paragraph
+`Out of scope: hkdfTwice, <the reason no clause tests it>` in the spec (see
+[Writing a spec](writing-a-spec.md#the-whole-spec)). The contract extracted
+from it lists the export in `outOfScope`, and the gate passes with a note:
+`export hkdfTwice is added, out of scope: <the reason>`. A changed export
+that a clause tests passes and is listed as `changed <name> (tested)`.
+Without `--nish-root` it exits 2 (`VECTOR_NISH_ROOT` is not read here):
 
 <!-- exit 2 -->
 ```sh

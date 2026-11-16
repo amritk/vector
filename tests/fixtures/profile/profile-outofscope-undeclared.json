@@ -1,0 +1,63 @@
+{
+  "$schema": "../../../schemas/rfc-contract.json",
+  "contract": "profile-outofscope-undeclared",
+  "source": {
+    "title": "Profile fixture: an export left undeclared",
+    "main": "profile-outofscope-undeclared",
+    "sha256": "595ee6bad235a64160811ddbf0246c89ed53f324fdb763c74969520b623e6c93"
+  },
+  "sources": [
+    {
+      "id": "profile-outofscope-undeclared",
+      "path": "profile-outofscope-undeclared.xml"
+    }
+  ],
+  "target": {
+    "module": "nish/fmath"
+  },
+  "requirements": [
+    {
+      "id": "R-HALF",
+      "section": "3",
+      "level": "MUST",
+      "quote": "fmathHalf MUST return half its argument."
+    }
+  ],
+  "exclusions": [],
+  "functions": [
+    {
+      "name": "fmathHalf",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "returns": "f64"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "V1",
+      "title": "half of one",
+      "covers": ["R-HALF"],
+      "source": {
+        "cite": {
+          "section": "4"
+        }
+      },
+      "call": "fmathHalf",
+      "args": [
+        {
+          "f64": "1",
+          "bits": "3ff0000000000000"
+        }
+      ],
+      "expect": {
+        "f64": "0.5",
+        "bits": "3fe0000000000000"
+      }
+    }
+  ]
+}

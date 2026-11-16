@@ -1,0 +1,7 @@
+spec exports of std/fmath.ts against HEAD: FAILED
+
+  added fmathHalf (tested)
+  added fmathHalfBits
+
+problems:
+  ✗ export fmathHalfBits is added, but the contract neither tests it nor lists it in outOfScope with a reason

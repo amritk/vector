@@ -1,0 +1,1 @@
+vector: tests/fixtures/profile/profile-outofscope-noreason.md:18 (tests/fixtures/profile/profile-outofscope-noreason.xml:48): fmathHalfBits is out of scope with no reason: Out of scope: <export>, <the reason no clause tests it>

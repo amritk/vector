@@ -1,0 +1,69 @@
+{
+  "$schema": "../../../schemas/rfc-contract.json",
+  "contract": "profile-outofscope",
+  "source": {
+    "title": "Profile fixture: an export out of scope",
+    "main": "profile-outofscope",
+    "sha256": "42f9df7cb475b6dacb14ed64c43edfc44d753298dd7abed304187b636f58f0b7"
+  },
+  "sources": [
+    {
+      "id": "profile-outofscope",
+      "path": "profile-outofscope.xml"
+    }
+  ],
+  "target": {
+    "module": "nish/fmath"
+  },
+  "requirements": [
+    {
+      "id": "R-HALF",
+      "section": "3",
+      "level": "MUST",
+      "quote": "fmathHalf MUST return half its argument."
+    }
+  ],
+  "exclusions": [],
+  "functions": [
+    {
+      "name": "fmathHalf",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "returns": "f64"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "V1",
+      "title": "half of one",
+      "covers": ["R-HALF"],
+      "source": {
+        "cite": {
+          "section": "4"
+        }
+      },
+      "call": "fmathHalf",
+      "args": [
+        {
+          "f64": "1",
+          "bits": "3ff0000000000000"
+        }
+      ],
+      "expect": {
+        "f64": "0.5",
+        "bits": "3fe0000000000000"
+      }
+    }
+  ],
+  "outOfScope": [
+    {
+      "name": "fmathHalfBits",
+      "reason": "internal to fmathHalf; the spec specifies the result, not its bit layout"
+    }
+  ]
+}

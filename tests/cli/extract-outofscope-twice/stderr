@@ -1,0 +1,1 @@
+vector: tests/fixtures/profile/profile-outofscope-twice.md:18 (tests/fixtures/profile/profile-outofscope-twice.xml:49): fmathHalfBits is already out of scope; give each export one Out of scope: paragraph

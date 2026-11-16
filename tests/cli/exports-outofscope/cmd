@@ -1,0 +1,1 @@
+vector spec exports --base HEAD --nish-root tests/cli/exports-outofscope/nish tests/fixtures/profile/profile-outofscope.json

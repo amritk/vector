@@ -22,6 +22,8 @@ clock, the same contract or the same refusals for the same input.
   vector        a row of a table headed Id | Call | Expected | Covers | Source | Title
   tolerance     a `<t>` directly after the vector table (or another one)
                 reading `Tolerance: V1 ulps 1, <xref>: "quote"`, or `abs 1e-9`
+  out of scope  a `<t>` anywhere reading `Out of scope: <export>, <reason>`:
+                an export of the target the contract does not test
 
 Every BCP 14 sentence must be a requirement or an exclusion, every xref to
 an RFC must have a `<reference>`, and every section cited must exist in

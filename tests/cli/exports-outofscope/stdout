@@ -1,0 +1,7 @@
+spec exports of std/fmath.ts against HEAD: OK
+
+  added fmathHalf (tested)
+  added fmathHalfBits
+
+notes:
+  - export fmathHalfBits is added, out of scope: internal to fmathHalf; the spec specifies the result, not its bit layout
