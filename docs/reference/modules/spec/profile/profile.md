@@ -22,6 +22,10 @@ clock, the same contract or the same refusals for the same input.
   vector        a row of a table headed Id | Call | Expected | Covers | Source | Title
   tolerance     a `<t>` directly after the vector table (or another one)
                 reading `Tolerance: V1 ulps 1, <xref>: "quote"`, or `abs 1e-9`
+  iterate       a `<t>` among those tolerances reading
+                `Iterate: V1 1,000 times, [slow, ](k, u) <- (f(k, u), k)`:
+                the row's call runs that many times, each run's arguments
+                the previous run's names, and its Expected is the last result
   out of scope  a `<t>` anywhere reading `Out of scope: <export>, <reason>`:
                 an export of the target the contract does not test
 

@@ -27,6 +27,7 @@ becomes in the XML.
 | a property | a `~~~ ts-property` block (see [Properties](#properties)) | `<sourcecode type="ts-property">` |
 | the vectors | one table, header exactly `Id \| Call \| Expected \| Covers \| Source \| Title` | `<table>` |
 | a vector's `tolerance` | a paragraph `Tolerance: V1 ulps 1, {{Section N of RFCx}}: "quote"` (or `abs 1e-9`) right after the vector table or another `Tolerance:` paragraph (see [Tolerances](#tolerances)) | the next sibling `<t>Tolerance: …</t>` |
+| a vector's `iterate` | a paragraph `Iterate: V1 1,000 times, (k, u) <- (f(k, u), k)` in the run after the vector table, among its `Tolerance:` paragraphs (see [Iterations](#iterations)) | the next sibling `<t>Iterate: … &lt;- …</t>` |
 | an `outOfScope` export | a paragraph `Out of scope: <export>, <the reason no clause tests it>`, anywhere in the body | `<t>Out of scope: …</t>` |
 | a requirement's or vector's `section` | the enclosing numbered section (`--- back` gives appendices A, B, …) | the section number `xml2rfc` gives |
 
@@ -145,6 +146,40 @@ Tolerance: V2 abs 1e-9, {{accuracy}}: "within 1e-9 of half its argument"
   function that returns `f64`.
 
 A `Tolerance:` paragraph anywhere else, or after a table that is not the
+vector table, is refused.
+
+### Iterations
+
+Some RFCs print a vector that runs the function over and over, feeding each
+result back in: RFC 7748 Section 5.2 gives X25519 after 1 and 1,000 and
+1,000,000 rounds. Give such a row its own paragraph, in the run directly
+after the vector table, mixed freely with its `Tolerance:` paragraphs:
+
+```md
+Iterate: 5.2-ITER-1000 1,000 times, (k, u) <- (x25519(k, u), k)
+
+Iterate: 5.2-ITER-1M 1000000 times, slow, (k, u) ← (x25519(k, u), k)
+```
+
+- The row's Call holds the arguments of the first round, and its Expected
+  holds the value after the last.
+- The words before the tuple are the vector's id, the count and `times,`.
+  The count is a whole number from 1 to 1,000,000,000 in digits, grouped in
+  threes by commas (`1,000`) or not at all (`1000`): `1,00`, `01000`, `0`,
+  `-1` and `1e3` are refused.
+- `slow,` may follow `times,`, and nothing else may.
+- The names come first, one per parameter of the row's function, then `<-`
+  (or `←`), then the next round's arguments, one per name. Each is a name,
+  or the row's call on the names in their order. With one parameter, the
+  parentheses may be dropped: `x <- f(x)`.
+- The vector must be in the table and iterated once at most, and an
+  iterated vector has no tolerance.
+- Extract's fidelity gate refuses the row when its section does not print
+  the count, when the Expected value is not printed there, or when the
+  Expected label counts other rounds (`After 1,000 iterations` on a vector
+  iterated 2,000 times).
+
+An `Iterate:` paragraph anywhere else, or after a table that is not the
 vector table, is refused.
 
 ### The whole spec

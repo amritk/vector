@@ -24,7 +24,7 @@ const PROFILE_TOL_V2: string =
 const PROFILE_TOL_FORM: string =
   'Tolerance: <vector id> ulps <n>, {{Section N of RFCx}}: "<the sentence that allows it>" (or abs <decimal>, or {{anchor}})'
 const PROFILE_TOL_STRAY: string =
-  "this Tolerance: paragraph follows no vector table; it must directly follow the vector table or another Tolerance: paragraph"
+  "this Tolerance: paragraph follows no vector table; it must directly follow the vector table or another Tolerance: or Iterate: paragraph"
 const PROFILE_TOL_REF: string = `<name>Normative References</name>
 <reference anchor="RFC4648"><front><title>B</title></front><seriesInfo name="RFC" value="4648"/></reference>`
 
