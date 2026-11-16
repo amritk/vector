@@ -34,7 +34,7 @@ jobs:
         run: npm run tested-exports
 
       - name: Cache the pinned nish and z3
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             .nish

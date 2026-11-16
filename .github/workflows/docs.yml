@@ -17,7 +17,7 @@ jobs:
           cache: npm
 
       - name: Cache the pinned nish
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .nish
           key: nish-${{ runner.os }}-${{ hashFiles('scripts/fetch-nish.sh') }}
