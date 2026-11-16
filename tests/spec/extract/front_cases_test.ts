@@ -80,9 +80,65 @@ const frontCasesTestLiterals = (t: Suite): void => {
   }
 }
 
+/** What parsing `text` as a property gives: its refusal, or the samples it sets. */
+const frontCasesTestSamplesOf = (text: string): string => {
+  const fns: FnSig[] = []
+  const r = frontParseProperty(text, fns)
+  return r.isErr() ? frontCasesTestRefusal(r.error) : `samples ${r.value.clause.samples}`
+}
+
+/** The optional `// samples: N` line 2: its spelling, range and place. */
+const frontCasesTestSamples = (t: Suite): void => {
+  const head = "// P-X covers R-X — a title\n"
+  const body = "forall (x: i32 /* 0..9 */) => x === x"
+  const decimal = "samples takes a decimal integer, 1..256, as `// samples: N`"
+  const cases: string[][] = [
+    ["absent", `${head}${body}`, "samples -1"],
+    ["96", `${head}// samples: 96\n${body}`, "samples 96"],
+    ["1, the floor", `${head}// samples: 1\n${body}`, "samples 1"],
+    ["256, the ceiling", `${head}// samples: 256\n${body}`, "samples 256"],
+    ["spaces around it", `${head}//   samples:   48  \n${body}`, "samples 48"],
+    ["0", `${head}// samples: 0\n${body}`, "samples must be 1..256, not 0 @2:1"],
+    ["257", `${head}// samples: 257\n${body}`, "samples must be 1..256, not 257 @2:1"],
+    [
+      "far past the ceiling",
+      `${head}// samples: 99999999999999999999\n${body}`,
+      "samples must be 1..256, not 99999999999999999999 @2:1",
+    ],
+    ["a fraction", `${head}// samples: 12.5\n${body}`, `${decimal} @2:1`],
+    ["a sign", `${head}// samples: -1\n${body}`, `${decimal} @2:1`],
+    ["a plus sign", `${head}// samples: +1\n${body}`, `${decimal} @2:1`],
+    ["a leading zero", `${head}// samples: 096\n${body}`, `${decimal} @2:1`],
+    ["an exponent", `${head}// samples: 1e2\n${body}`, `${decimal} @2:1`],
+    ["a word", `${head}// samples: x\n${body}`, `${decimal} @2:1`],
+    ["no value", `${head}// samples:\n${body}`, `${decimal} @2:1`],
+    ["no colon", `${head}// samples 96\n${body}`, `${decimal} @2:1`],
+    [
+      "on line 3",
+      `${head}// other\n// samples: 96\n${body}`,
+      "the samples line goes on line 2, after the covers line @3:1",
+    ],
+    [
+      "inside the body",
+      `${head}forall (x: i32 /* 0..9 */) =>\n  // samples: 96\n  x === x`,
+      "the samples line goes on line 2, after the covers line @3:3",
+    ],
+    [
+      "a second one",
+      `${head}// samples: 4\n// samples: 8\n${body}`,
+      "the samples line goes on line 2, after the covers line @3:1",
+    ],
+    ["another comment on line 2", `${head}// a note\n${body}`, "samples -1"],
+  ]
+  for (const k of cases) {
+    t.eqStr(`samples line: ${k[0]}`, frontCasesTestSamplesOf(k[1]), k[2])
+  }
+}
+
 export const main = (): i32 => {
   const t = new Suite("front cases")
   frontCasesTestModules(t)
   frontCasesTestLiterals(t)
+  frontCasesTestSamples(t)
   return t.done()
 }

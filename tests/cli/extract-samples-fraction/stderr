@@ -1,0 +1,1 @@
+vector: tests/fixtures/extract-samples/specs/extract-samples-fraction.md:21 (tests/fixtures/extract-samples/specs/extract-samples-fraction.xml:75:1): samples takes a decimal integer, 1..256, as `// samples: N`

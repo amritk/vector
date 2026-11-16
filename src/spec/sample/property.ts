@@ -349,7 +349,11 @@ const sampleRun = (run: SampleRun, whereTerm: string | null, queries: SampleQuer
   if (n < 0) {
     const unsat = sampleBoundaries(run, whereTerm, queries, SAMPLE_NO_CAP).orReturn()
     const want = SAMPLE_DEFAULT_RANDOM
-    for (let tries = 0; run.out.stat.random < want && tries < want * 20 && run.out.samples.length < SAMPLE_MAX; tries++) {
+    for (
+      let tries = 0;
+      run.out.stat.random < want && tries < want * 20 && run.out.samples.length < SAMPLE_MAX;
+      tries++
+    ) {
       if (sampleAdd(run, sampleFill(run, new Map<string, i64>()), "random").orReturn()) {
         run.out.stat.random = run.out.stat.random + 1
       }

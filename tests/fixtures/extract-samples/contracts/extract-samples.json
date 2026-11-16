@@ -1,0 +1,982 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "extract-samples",
+  "source": {
+    "title": "Extract fixture: a property that sets its samples",
+    "main": "extract-samples",
+    "sha256": "bda9f9d7fb0eaee8407ff79af7997e3683d2cd21379a378854095abbccb65230"
+  },
+  "sources": [
+    {
+      "id": "extract-samples",
+      "path": "../specs/extract-samples.xml"
+    },
+    {
+      "id": "rfc4648",
+      "rfc": 4648,
+      "file": "rfcs/rfc4648.txt",
+      "sha256": "84e14418f795d503be5f34bf23ce4ebaa119e9ec7c9f667d8caeb111385b178f"
+    }
+  ],
+  "target": {
+    "module": "nish/hex"
+  },
+  "requirements": [
+    {
+      "id": "R-ENC-LEN",
+      "section": "3.1",
+      "level": "MUST",
+      "quote": "hexEncode MUST return exactly two characters per input byte."
+    },
+    {
+      "id": "R-ENC-DIGITS",
+      "section": "3.2",
+      "level": "MUST",
+      "quote": "Each byte MUST be written high nibble first, using the digits 0-9 and a-f."
+    },
+    {
+      "id": "R-ENC-ONLY",
+      "section": "3.2",
+      "level": "MUST NOT",
+      "quote": "hexEncode MUST NOT emit uppercase digits, separators or a prefix."
+    },
+    {
+      "id": "R-DEC-ACCEPT",
+      "section": "4.1",
+      "level": "MUST",
+      "quote": "hexDecode MUST accept the digits 0-9, a-f and A-F, in any mix of case."
+    },
+    {
+      "id": "R-DEC-REJECT",
+      "section": "4.2",
+      "level": "MUST",
+      "quote": "hexDecode MUST return null when the text has an odd length or contains any other character, including whitespace and a \"0x\" prefix."
+    },
+    {
+      "id": "R-DEC-EMPTY",
+      "section": "4.3",
+      "level": "MUST",
+      "quote": "hexDecode of the empty string MUST return an empty array, not null."
+    },
+    {
+      "id": "R-ROUND-TRIP",
+      "section": "4.4",
+      "level": "MUST",
+      "quote": "For all bytes b, hexDecode(hexEncode(b)) MUST equal b."
+    }
+  ],
+  "exclusions": [
+    {
+      "section": "5",
+      "quote": "hexDecode MUST NOT index a table by the value of a digit, so that its running time depends only on the length of its input.",
+      "reason": "A constraint on how hexDecode is written and on its timing, not on what it returns: no functional test observes a table lookup or a data-dependent running time. Review the implementation for it."
+    }
+  ],
+  "functions": [
+    {
+      "name": "hexEncode",
+      "params": [
+        {
+          "name": "bytes",
+          "type": "bytes"
+        }
+      ],
+      "returns": "string"
+    },
+    {
+      "name": "hexDecode",
+      "params": [
+        {
+          "name": "text",
+          "type": "string"
+        }
+      ],
+      "returns": "bytes?"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "V1",
+      "title": "RFC 4648 §10: BASE16(\"\") = \"\" decodes to the empty array",
+      "covers": ["R-DEC-EMPTY"],
+      "source": {
+        "cite": {
+          "source": "rfc4648",
+          "section": "10"
+        }
+      },
+      "call": "hexDecode",
+      "args": [
+        {
+          "str": ""
+        }
+      ],
+      "expect": {
+        "ascii": ""
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V2",
+      "title": "RFC 4648 §10: BASE16(\"f\") = \"66\" decodes back",
+      "covers": ["R-DEC-ACCEPT", "R-ROUND-TRIP"],
+      "source": {
+        "cite": {
+          "source": "rfc4648",
+          "section": "10"
+        }
+      },
+      "call": "hexDecode",
+      "args": [
+        {
+          "str": "66"
+        }
+      ],
+      "expect": {
+        "ascii": "f"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V3",
+      "title": "RFC 4648 §10: uppercase \"666F6F\" decodes to \"foo\"",
+      "covers": ["R-DEC-ACCEPT"],
+      "source": {
+        "cite": {
+          "source": "rfc4648",
+          "section": "10"
+        }
+      },
+      "call": "hexDecode",
+      "args": [
+        {
+          "str": "666F6F"
+        }
+      ],
+      "expect": {
+        "ascii": "foo"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V4",
+      "title": "RFC 4648 §10: uppercase \"666F6F626172\" decodes to \"foobar\"",
+      "covers": ["R-DEC-ACCEPT"],
+      "source": {
+        "cite": {
+          "source": "rfc4648",
+          "section": "10"
+        }
+      },
+      "call": "hexDecode",
+      "args": [
+        {
+          "str": "666F6F626172"
+        }
+      ],
+      "expect": {
+        "ascii": "foobar"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V6",
+      "title": "mixed case decodes",
+      "covers": ["R-DEC-ACCEPT"],
+      "source": {
+        "command": "python3 -c 'print(bytes.fromhex(\"aBcD\").hex())'"
+      },
+      "section": "6",
+      "call": "hexDecode",
+      "args": [
+        {
+          "str": "aBcD"
+        }
+      ],
+      "expect": {
+        "hex": "abcd"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V7",
+      "title": "an odd length is refused with null",
+      "covers": ["R-DEC-REJECT"],
+      "source": {
+        "spec": "4.2"
+      },
+      "section": "6",
+      "call": "hexDecode",
+      "args": [
+        {
+          "str": "abc"
+        }
+      ],
+      "expect": {
+        "null": true
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V8",
+      "title": "a \"0x\" prefix is refused with null",
+      "covers": ["R-DEC-REJECT"],
+      "source": {
+        "spec": "4.2"
+      },
+      "section": "6",
+      "call": "hexDecode",
+      "args": [
+        {
+          "str": "0x00"
+        }
+      ],
+      "expect": {
+        "null": true
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V9",
+      "title": "whitespace is refused with null",
+      "covers": ["R-DEC-REJECT"],
+      "source": {
+        "spec": "4.2"
+      },
+      "section": "6",
+      "call": "hexDecode",
+      "args": [
+        {
+          "str": "ab cd"
+        }
+      ],
+      "expect": {
+        "null": true
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-ENC-LEN",
+      "title": "two characters per byte",
+      "covers": ["R-ENC-LEN"],
+      "forall": [
+        {
+          "name": "b",
+          "type": "bytes",
+          "minLen": 0,
+          "maxLen": 64
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "op": "strLen",
+            "args": [
+              {
+                "call": "hexEncode",
+                "args": [
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "*",
+            "args": [
+              {
+                "int": 2
+              },
+              {
+                "op": "len",
+                "args": [
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-ENC-LOWER",
+      "title": "the encoding has no uppercase digit",
+      "covers": ["R-ENC-ONLY"],
+      "forall": [
+        {
+          "name": "b",
+          "type": "bytes",
+          "minLen": 0,
+          "maxLen": 64
+        }
+      ],
+      "assert": {
+        "let": [
+          {
+            "name": "e",
+            "value": {
+              "call": "hexEncode",
+              "args": [
+                {
+                  "var": "b"
+                }
+              ]
+            }
+          }
+        ],
+        "in": {
+          "op": "==",
+          "args": [
+            {
+              "var": "e"
+            },
+            {
+              "op": "lower",
+              "args": [
+                {
+                  "var": "e"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-ROUND-TRIP",
+      "title": "hexDecode(hexEncode(b)) is b",
+      "covers": ["R-ROUND-TRIP", "R-ENC-ONLY"],
+      "forall": [
+        {
+          "name": "b",
+          "type": "bytes",
+          "minLen": 0,
+          "maxLen": 64
+        }
+      ],
+      "assert": {
+        "let": [
+          {
+            "name": "d",
+            "value": {
+              "call": "hexDecode",
+              "args": [
+                {
+                  "call": "hexEncode",
+                  "args": [
+                    {
+                      "var": "b"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "in": {
+          "op": "and",
+          "args": [
+            {
+              "op": "notNull",
+              "args": [
+                {
+                  "var": "d"
+                }
+              ]
+            },
+            {
+              "op": "==",
+              "args": [
+                {
+                  "op": "unwrap",
+                  "args": [
+                    {
+                      "var": "d"
+                    }
+                  ]
+                },
+                {
+                  "var": "b"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "samples": 96
+    },
+    {
+      "kind": "property",
+      "id": "P-CANONICAL",
+      "title": "lowercase hex re-encodes to itself, high nibble first",
+      "covers": ["R-ENC-DIGITS", "R-DEC-ACCEPT"],
+      "forall": [
+        {
+          "name": "t",
+          "type": "string",
+          "minLen": 0,
+          "maxLen": 32,
+          "alphabet": ["hexdigit"]
+        }
+      ],
+      "where": {
+        "op": "==",
+        "args": [
+          {
+            "op": "%",
+            "args": [
+              {
+                "op": "strLen",
+                "args": [
+                  {
+                    "var": "t"
+                  }
+                ]
+              },
+              {
+                "int": 2
+              }
+            ]
+          },
+          {
+            "int": 0
+          }
+        ]
+      },
+      "assert": {
+        "let": [
+          {
+            "name": "d",
+            "value": {
+              "call": "hexDecode",
+              "args": [
+                {
+                  "var": "t"
+                }
+              ]
+            }
+          }
+        ],
+        "in": {
+          "op": "and",
+          "args": [
+            {
+              "op": "notNull",
+              "args": [
+                {
+                  "var": "d"
+                }
+              ]
+            },
+            {
+              "op": "==",
+              "args": [
+                {
+                  "call": "hexEncode",
+                  "args": [
+                    {
+                      "op": "unwrap",
+                      "args": [
+                        {
+                          "var": "d"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "var": "t"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-ANY-CASE",
+      "title": "any mix of case decodes as its lowercase",
+      "covers": ["R-DEC-ACCEPT"],
+      "forall": [
+        {
+          "name": "t",
+          "type": "string",
+          "minLen": 0,
+          "maxLen": 32,
+          "alphabet": ["hexdigit", "HEXDIGIT"]
+        }
+      ],
+      "where": {
+        "op": "==",
+        "args": [
+          {
+            "op": "%",
+            "args": [
+              {
+                "op": "strLen",
+                "args": [
+                  {
+                    "var": "t"
+                  }
+                ]
+              },
+              {
+                "int": 2
+              }
+            ]
+          },
+          {
+            "int": 0
+          }
+        ]
+      },
+      "assert": {
+        "let": [
+          {
+            "name": "d",
+            "value": {
+              "call": "hexDecode",
+              "args": [
+                {
+                  "var": "t"
+                }
+              ]
+            }
+          }
+        ],
+        "in": {
+          "op": "and",
+          "args": [
+            {
+              "op": "notNull",
+              "args": [
+                {
+                  "var": "d"
+                }
+              ]
+            },
+            {
+              "op": "==",
+              "args": [
+                {
+                  "call": "hexEncode",
+                  "args": [
+                    {
+                      "op": "unwrap",
+                      "args": [
+                        {
+                          "var": "d"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "op": "lower",
+                  "args": [
+                    {
+                      "var": "t"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-ODD",
+      "title": "an odd length is refused",
+      "covers": ["R-DEC-REJECT"],
+      "forall": [
+        {
+          "name": "t",
+          "type": "string",
+          "minLen": 1,
+          "maxLen": 33,
+          "alphabet": ["hexdigit", "HEXDIGIT"]
+        }
+      ],
+      "where": {
+        "op": "==",
+        "args": [
+          {
+            "op": "%",
+            "args": [
+              {
+                "op": "strLen",
+                "args": [
+                  {
+                    "var": "t"
+                  }
+                ]
+              },
+              {
+                "int": 2
+              }
+            ]
+          },
+          {
+            "int": 1
+          }
+        ]
+      },
+      "assert": {
+        "op": "isNull",
+        "args": [
+          {
+            "call": "hexDecode",
+            "args": [
+              {
+                "var": "t"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-OTHER",
+      "title": "any other character, anywhere in an even-length text, is refused",
+      "covers": ["R-DEC-REJECT"],
+      "forall": [
+        {
+          "name": "a",
+          "type": "string",
+          "minLen": 0,
+          "maxLen": 16,
+          "alphabet": ["hexdigit", "HEXDIGIT"]
+        },
+        {
+          "name": "x",
+          "type": "string",
+          "minLen": 1,
+          "maxLen": 1,
+          "alphabet": [
+            " ",
+            "\t",
+            "\n",
+            "\r",
+            "!",
+            "\"",
+            "#",
+            "$",
+            "%",
+            "&",
+            "'",
+            "(",
+            ")",
+            "*",
+            "+",
+            ",",
+            "-",
+            ".",
+            "/",
+            ":",
+            ";",
+            "<",
+            "=",
+            ">",
+            "?",
+            "@",
+            "G",
+            "H",
+            "I",
+            "J",
+            "K",
+            "L",
+            "M",
+            "N",
+            "O",
+            "P",
+            "Q",
+            "R",
+            "S",
+            "T",
+            "U",
+            "V",
+            "W",
+            "X",
+            "Y",
+            "Z",
+            "[",
+            "\\",
+            "]",
+            "^",
+            "_",
+            "`",
+            "g",
+            "h",
+            "i",
+            "j",
+            "k",
+            "l",
+            "m",
+            "n",
+            "o",
+            "p",
+            "q",
+            "r",
+            "s",
+            "t",
+            "u",
+            "v",
+            "w",
+            "x",
+            "y",
+            "z",
+            "{",
+            "|",
+            "}",
+            "~"
+          ]
+        },
+        {
+          "name": "z",
+          "type": "string",
+          "minLen": 0,
+          "maxLen": 16,
+          "alphabet": ["hexdigit", "HEXDIGIT"]
+        }
+      ],
+      "where": {
+        "op": "==",
+        "args": [
+          {
+            "op": "%",
+            "args": [
+              {
+                "op": "strLen",
+                "args": [
+                  {
+                    "op": "strConcat",
+                    "args": [
+                      {
+                        "var": "a"
+                      },
+                      {
+                        "op": "strConcat",
+                        "args": [
+                          {
+                            "var": "x"
+                          },
+                          {
+                            "var": "z"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "int": 2
+              }
+            ]
+          },
+          {
+            "int": 0
+          }
+        ]
+      },
+      "assert": {
+        "op": "isNull",
+        "args": [
+          {
+            "call": "hexDecode",
+            "args": [
+              {
+                "op": "strConcat",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "op": "strConcat",
+                    "args": [
+                      {
+                        "var": "x"
+                      },
+                      {
+                        "var": "z"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-OTHER-EDGE",
+      "title": "the characters next to each digit range are refused",
+      "covers": ["R-DEC-REJECT"],
+      "forall": [
+        {
+          "name": "a",
+          "type": "string",
+          "minLen": 0,
+          "maxLen": 16,
+          "alphabet": ["hexdigit", "HEXDIGIT"]
+        },
+        {
+          "name": "x",
+          "type": "string",
+          "minLen": 1,
+          "maxLen": 1,
+          "alphabet": ["/", ":", "@", "G", "`", "g"]
+        },
+        {
+          "name": "z",
+          "type": "string",
+          "minLen": 0,
+          "maxLen": 16,
+          "alphabet": ["hexdigit", "HEXDIGIT"]
+        }
+      ],
+      "where": {
+        "op": "==",
+        "args": [
+          {
+            "op": "%",
+            "args": [
+              {
+                "op": "strLen",
+                "args": [
+                  {
+                    "op": "strConcat",
+                    "args": [
+                      {
+                        "var": "a"
+                      },
+                      {
+                        "op": "strConcat",
+                        "args": [
+                          {
+                            "var": "x"
+                          },
+                          {
+                            "var": "z"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "int": 2
+              }
+            ]
+          },
+          {
+            "int": 0
+          }
+        ]
+      },
+      "assert": {
+        "op": "isNull",
+        "args": [
+          {
+            "call": "hexDecode",
+            "args": [
+              {
+                "op": "strConcat",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "op": "strConcat",
+                    "args": [
+                      {
+                        "var": "x"
+                      },
+                      {
+                        "var": "z"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-PREFIX",
+      "title": "a \"0x\" prefix is refused",
+      "covers": ["R-DEC-REJECT"],
+      "forall": [
+        {
+          "name": "t",
+          "type": "string",
+          "minLen": 0,
+          "maxLen": 32,
+          "alphabet": ["hexdigit", "HEXDIGIT"]
+        }
+      ],
+      "where": {
+        "op": "==",
+        "args": [
+          {
+            "op": "%",
+            "args": [
+              {
+                "op": "strLen",
+                "args": [
+                  {
+                    "var": "t"
+                  }
+                ]
+              },
+              {
+                "int": 2
+              }
+            ]
+          },
+          {
+            "int": 0
+          }
+        ]
+      },
+      "assert": {
+        "op": "isNull",
+        "args": [
+          {
+            "call": "hexDecode",
+            "args": [
+              {
+                "op": "strConcat",
+                "args": [
+                  {
+                    "str": "0x"
+                  },
+                  {
+                    "var": "t"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -39,15 +39,15 @@ const BITVEC_TEST_C: string = `{
   "requirements": [{"id": "R1", "section": "2", "level": "MUST", "quote": "Q"}],
   "functions": [{"name": "f", "params": [{"name": "a", "type": "bytes"}], "returns": "bytes"}],
   "clauses": [
-    {"kind": "property", "id": "P-I8", "title": "t", "covers": ["R1"], "samples": 0,
+    {"kind": "property", "id": "P-I8", "title": "t", "covers": ["R1"], "samples": 4,
      "forall": [{"name": "x", "type": "i8", "min": -128, "max": 127}],
      "where": {"op": "<", "args": [{"op": "+", "args": [{"var": "x"}, {"int": 1}]}, {"var": "x"}]},
      "assert": {"op": "==", "args": [{"var": "x"}, {"var": "x"}]}},
-    {"kind": "property", "id": "P-I64", "title": "t", "covers": ["R1"], "samples": 0,
+    {"kind": "property", "id": "P-I64", "title": "t", "covers": ["R1"], "samples": 4,
      "forall": [{"name": "x", "type": "i64", "min": "-9223372036854775808", "max": "9223372036854775807"}],
      "where": {"op": "==", "args": [{"op": "*", "args": [{"var": "x"}, {"int": 3}]}, {"int": 7}]},
      "assert": {"op": "==", "args": [{"var": "x"}, {"var": "x"}]}},
-    {"kind": "property", "id": "P-U64", "title": "t", "covers": ["R1"], "samples": 0,
+    {"kind": "property", "id": "P-U64", "title": "t", "covers": ["R1"], "samples": 4,
      "forall": [{"name": "x", "type": "u64", "min": 0, "max": "18446744073709551615"}],
      "where": {"op": "<", "args": [{"op": "+", "args": [{"var": "x"}, {"int": 2}]}, {"var": "x"}]},
      "assert": {"op": "==", "args": [{"var": "x"}, {"var": "x"}]}},
@@ -56,7 +56,7 @@ const BITVEC_TEST_C: string = `{
      "where": {"op": "and", "args": [{"op": "==", "args": [{"var": "y"}, {"int": 0}]},
                                       {"op": "==", "args": [{"op": "%", "args": [{"var": "x"}, {"var": "y"}]}, {"int": 5}]}]},
      "assert": {"op": "==", "args": [{"var": "x"}, {"var": "x"}]}},
-    {"kind": "property", "id": "P-REM-ZERO", "title": "t", "covers": ["R1"], "samples": 0,
+    {"kind": "property", "id": "P-REM-ZERO", "title": "t", "covers": ["R1"], "samples": 4,
      "forall": [{"name": "x", "type": "u8", "min": 0, "max": 255}, {"name": "y", "type": "u8", "min": 0, "max": 255}],
      "where": {"op": "and", "args": [{"op": "==", "args": [{"var": "y"}, {"int": 0}]},
                                       {"op": "==", "args": [{"op": "%", "args": [{"var": "x"}, {"var": "y"}]}, {"int": 0}]}]},
@@ -205,6 +205,10 @@ export const main = (): i32 => {
     "only at the i8 maximum",
     v8.every((x: i64): boolean => x === toI64(127)),
   )
+  t.ok(
+    "a domain smaller than its samples is noted, not refused",
+    o8.samples.length === 1 && o8.stat.notes.indexOf("asked for 4 samples; the domain gave 1") >= 0,
+  )
   const o64 = bitvecTestSample(1)
   const v64 = bitvecTestValues(o64)
   t.ok("i64 x * 3 == 7 samples at Z3's boundaries", o64.issue === null && o64.stat.boundary > 0 && v64.length > 0)
@@ -227,6 +231,25 @@ export const main = (): i32 => {
   t.ok("% by zero is never 5", (ei ?? "").startsWith("the domain is empty (Z3: unsat)"))
   const oz = bitvecTestSample(4)
   t.ok("% by zero is 0, so it samples at Z3's boundaries", oz.issue === null && oz.stat.boundary > 0)
+  t.ok("an explicit samples is the total", oz.samples.length === 4 && oz.stat.boundary + oz.stat.random === 4)
+  const kd = bitvecTestClause(4)
+  kd.samples = -1
+  const od = sampleProperty("c1", kd).expect("sample")
+  const k2 = bitvecTestClause(4)
+  k2.samples = 2
+  const o2 = sampleProperty("c1", k2).expect("sample")
+  t.ok(
+    "an explicit samples keeps the first boundaries, in Z3's order",
+    od.stat.boundary > 2 &&
+      o2.stat.boundary === 2 &&
+      o2.stat.random === 0 &&
+      o2.samples.length === 2 &&
+      o2.samples[0].why === od.samples[0].why &&
+      o2.samples[1].why === od.samples[1].why &&
+      bitvecTestValues(o2)[0] === bitvecTestValues(od)[0] &&
+      bitvecTestValues(o2)[1] === bitvecTestValues(od)[1] &&
+      o2.stat.notes.every((n: string): boolean => !n.startsWith("asked for")),
+  )
   const kz = bitvecTestClause(4)
   const wz = sampleBoolTerm(bitvecTestWhere(kz), kz.forall)
   t.ok("% by a variable is guarded in the where", (wz ?? "").indexOf("(ite (= v_y (_ bv0 8)) (_ bv0 8) (bvurem") >= 0)
