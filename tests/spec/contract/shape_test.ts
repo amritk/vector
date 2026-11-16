@@ -276,6 +276,20 @@ export const main = (): i32 => {
     "clauses[1].forall[0]: u8 needs min <= max, both in 0..255",
   )
   shapeExpect(t, `"name": "x", "type": "u8"`, `"name": "x y", "type": "u8"`, "clauses[1].forall[0].name: an identifier")
+  // A property's samples is its total, 1..256: 0 would be a test of nothing.
+  const prop = `"assert": {"op": "<=", "args": [{"var": "x"}, {"int": 255}]}`
+  t.eqStr(
+    "samples 0 does not read",
+    shapeErrorsOf(prop, `${prop}, "samples": 0`).join("\n"),
+    "read: clauses[1].samples: an integer in 1..256",
+  )
+  t.eqStr(
+    "samples 257 does not read",
+    shapeErrorsOf(prop, `${prop}, "samples": 257`).join("\n"),
+    "read: clauses[1].samples: an integer in 1..256",
+  )
+  t.eqStr("samples 1 reads", shapeErrorsOf(prop, `${prop}, "samples": 1`).join("\n"), "")
+  t.eqStr("samples 256 reads", shapeErrorsOf(prop, `${prop}, "samples": 256`).join("\n"), "")
   const f64Var = `"name": "x", "type": "f64"`
   shapeExpect(
     t,

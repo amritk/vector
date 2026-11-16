@@ -479,7 +479,10 @@ steps:
 ## Limits — say them
 
 A passing contract is evidence, not proof. Properties are sampled (Z3
-boundaries plus seeded random), not quantified. A `command` source is only as
-good as the command. Timing, secret wiping and other non-functional MUSTs are
-excluded and must be checked elsewhere (nish's ct-asm/ct-timing and wipe
-tests).
+boundaries plus seeded random), not quantified. By default a property gets
+every boundary sample plus 24 random, at most 96; raise it with
+`// samples: N` as line 2 of the ts-property block, right after the covers
+line. N is the total, boundaries included, and its ceiling is 256. A
+`command` source is only as good as the command. Timing, secret wiping and
+other non-functional MUSTs are excluded and must be checked elsewhere (nish's
+ct-asm/ct-timing and wipe tests).

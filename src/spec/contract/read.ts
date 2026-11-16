@@ -726,7 +726,7 @@ const readClause = (r: ContractReader, v: JsonValue, at: string): Clause | null 
   } else {
     c.assert = readExpr(r, assert, `${at}.assert`, true)
   }
-  c.samples = toI32(readCount(r, v, "samples", at, 0, 256, false))
+  c.samples = toI32(readCount(r, v, "samples", at, 1, 256, false))
   return c
 }
 

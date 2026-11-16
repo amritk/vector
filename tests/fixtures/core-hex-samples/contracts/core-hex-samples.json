@@ -1,0 +1,401 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "core-hex-samples",
+  "source": {
+    "title": "Run fixture: vector/core/hex with property sample counts",
+    "main": "core-hex-samples",
+    "sha256": "839e8bd21c1f182fc0b1daf101319410031de654e6a0155f522fcb13fbe3611b"
+  },
+  "sources": [
+    {
+      "id": "core-hex-samples",
+      "path": "../specs/core-hex-samples.xml"
+    }
+  ],
+  "target": {
+    "module": "vector/core/hex"
+  },
+  "requirements": [
+    {
+      "id": "R-HEX-LEN",
+      "section": "3.1",
+      "level": "MUST",
+      "quote": "toHex MUST return exactly two characters per input byte."
+    },
+    {
+      "id": "R-HEX-DIGITS",
+      "section": "3.2",
+      "level": "MUST",
+      "quote": "toHex MUST write each byte high nibble first, using only the digits 0-9 and a-f."
+    },
+    {
+      "id": "R-SHA256",
+      "section": "4",
+      "level": "MUST",
+      "quote": "sha256Hex MUST return the SHA-256 digest of the UTF-8 encoding of its text, as FIPS 180-4 defines SHA-256, written as toHex writes bytes."
+    }
+  ],
+  "exclusions": [],
+  "functions": [
+    {
+      "name": "toHex",
+      "params": [
+        {
+          "name": "bytes",
+          "type": "bytes"
+        }
+      ],
+      "returns": "string"
+    },
+    {
+      "name": "sha256Hex",
+      "params": [
+        {
+          "name": "text",
+          "type": "string"
+        }
+      ],
+      "returns": "string"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "V1",
+      "title": "no bytes, no digits",
+      "covers": ["R-HEX-LEN"],
+      "source": {
+        "command": "python3 -c 'print(bytes([]).hex())'"
+      },
+      "section": "6",
+      "call": "toHex",
+      "args": [
+        {
+          "hex": ""
+        }
+      ],
+      "expect": {
+        "str": ""
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V2",
+      "title": "every nibble boundary, high nibble first, lowercase",
+      "covers": ["R-HEX-LEN", "R-HEX-DIGITS"],
+      "source": {
+        "command": "python3 -c 'print(bytes([0,15,16,255]).hex())'"
+      },
+      "section": "6",
+      "call": "toHex",
+      "args": [
+        {
+          "hex": "000f10ff"
+        }
+      ],
+      "expect": {
+        "str": "000f10ff"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V3",
+      "title": "RFC 4648's BASE16(\"foobar\"), in lowercase",
+      "covers": ["R-HEX-DIGITS"],
+      "source": {
+        "command": "python3 -c 'print(b\"foobar\".hex())'"
+      },
+      "section": "6",
+      "call": "toHex",
+      "args": [
+        {
+          "ascii": "foobar"
+        }
+      ],
+      "expect": {
+        "str": "666f6f626172"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V4",
+      "title": "FIPS 180-4's one-block message \"abc\"",
+      "covers": ["R-SHA256"],
+      "source": {
+        "command": "python3 -c 'import hashlib; print(hashlib.sha256(b\"abc\").hexdigest())'"
+      },
+      "section": "6",
+      "call": "sha256Hex",
+      "args": [
+        {
+          "str": "abc"
+        }
+      ],
+      "expect": {
+        "str": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V5",
+      "title": "the empty message",
+      "covers": ["R-SHA256"],
+      "source": {
+        "command": "python3 -c 'import hashlib; print(hashlib.sha256(b\"\").hexdigest())'"
+      },
+      "section": "6",
+      "call": "sha256Hex",
+      "args": [
+        {
+          "str": ""
+        }
+      ],
+      "expect": {
+        "str": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V6",
+      "title": "FIPS 180-4's two-block message: padding crosses a block",
+      "covers": ["R-SHA256"],
+      "source": {
+        "command": "python3 -c 'import hashlib; print(hashlib.sha256(b\"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq\").hexdigest())'"
+      },
+      "section": "6",
+      "call": "sha256Hex",
+      "args": [
+        {
+          "str": "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"
+        }
+      ],
+      "expect": {
+        "str": "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-HEX-LEN",
+      "title": "two characters per byte",
+      "covers": ["R-HEX-LEN"],
+      "forall": [
+        {
+          "name": "b",
+          "type": "bytes",
+          "minLen": 0,
+          "maxLen": 64
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "op": "strLen",
+            "args": [
+              {
+                "call": "toHex",
+                "args": [
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "*",
+            "args": [
+              {
+                "int": 2
+              },
+              {
+                "op": "len",
+                "args": [
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "samples": 96
+    },
+    {
+      "kind": "property",
+      "id": "P-HEX-LOWER",
+      "title": "the encoding has no uppercase digit",
+      "covers": ["R-HEX-DIGITS"],
+      "forall": [
+        {
+          "name": "b",
+          "type": "bytes",
+          "minLen": 0,
+          "maxLen": 64
+        }
+      ],
+      "assert": {
+        "let": [
+          {
+            "name": "e",
+            "value": {
+              "call": "toHex",
+              "args": [
+                {
+                  "var": "b"
+                }
+              ]
+            }
+          }
+        ],
+        "in": {
+          "op": "==",
+          "args": [
+            {
+              "var": "e"
+            },
+            {
+              "op": "lower",
+              "args": [
+                {
+                  "var": "e"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-HEX-CONCAT",
+      "title": "each byte is written on its own, in order",
+      "covers": ["R-HEX-LEN", "R-HEX-DIGITS"],
+      "forall": [
+        {
+          "name": "a",
+          "type": "bytes",
+          "minLen": 0,
+          "maxLen": 32
+        },
+        {
+          "name": "b",
+          "type": "bytes",
+          "minLen": 0,
+          "maxLen": 32
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "toHex",
+            "args": [
+              {
+                "op": "concat",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "strConcat",
+            "args": [
+              {
+                "call": "toHex",
+                "args": [
+                  {
+                    "var": "a"
+                  }
+                ]
+              },
+              {
+                "call": "toHex",
+                "args": [
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "samples": 200
+    },
+    {
+      "kind": "property",
+      "id": "P-SHA256-LEN",
+      "title": "a digest is 64 lowercase hex digits",
+      "covers": ["R-SHA256"],
+      "forall": [
+        {
+          "name": "t",
+          "type": "string",
+          "minLen": 0,
+          "maxLen": 80,
+          "alphabet": ["ascii-printable"]
+        }
+      ],
+      "assert": {
+        "let": [
+          {
+            "name": "d",
+            "value": {
+              "call": "sha256Hex",
+              "args": [
+                {
+                  "var": "t"
+                }
+              ]
+            }
+          }
+        ],
+        "in": {
+          "op": "and",
+          "args": [
+            {
+              "op": "==",
+              "args": [
+                {
+                  "op": "strLen",
+                  "args": [
+                    {
+                      "var": "d"
+                    }
+                  ]
+                },
+                {
+                  "int": 64
+                }
+              ]
+            },
+            {
+              "op": "==",
+              "args": [
+                {
+                  "var": "d"
+                },
+                {
+                  "op": "lower",
+                  "args": [
+                    {
+                      "var": "d"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

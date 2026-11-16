@@ -1,0 +1,4 @@
+SATISFIED: core-hex-samples (exit 0)
+  pass  R-HEX-LEN
+  pass  R-HEX-DIGITS
+  pass  R-SHA256

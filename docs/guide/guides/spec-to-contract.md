@@ -354,6 +354,17 @@ solves for inputs on the edge and one either side (`n <= 255*32` gives
 random ones. The samples are baked into the generated test, so a failure
 reproduces byte for byte.
 
+A property gets every boundary sample plus 24 random, at most 96 in all,
+unless its block's line 2 says `// samples: N`. Then N, from 1 to 256, is
+the total: the boundaries first, at most N of them, then random draws until
+there are N, within N × 20 tries. A domain with fewer than N inputs, or a
+`where` that refuses most draws, gives what it found, and `spec check`
+notes `asked for N samples; found M`. Extract refuses
+a count outside 1..256 (`samples must be 1..256, not 0`), one that is not
+plain digits, and a samples line anywhere but line 2, each at its line.
+Any comment in a ts-property block whose first word is `samples` counts as
+a samples line, prose included, so word such a comment another way.
+
 ## Sources
 
 A contract cites one or more documents. A source is RFC XML v3 (`.xml`) or an

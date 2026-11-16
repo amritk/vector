@@ -44,6 +44,7 @@ hexEncode MUST return exactly two characters per input byte.
 
 ~~~ ts-property
 // P-ENC-LEN covers R-ENC-LEN, R-ENC-DIGITS — two characters per byte
+// samples: 48
 forall (b: u8[] /* 0..64 */) => hexEncode(b).length === 2 * b.length
 ~~~
 

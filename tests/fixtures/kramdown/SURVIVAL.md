@@ -53,6 +53,7 @@ Things the profile stage must know that the plan did not say:
 | forall bounds | `(b: u8[] /* 0..64 */)`, `(n: i32 /* 0..31 */)`, `(t: string /* 0..32 hexdigit HEXDIGIT */)`, `(t: string /* 1..1 " \t\n\r!" */)` | unchanged inside CDATA; the JSON escapes stay two characters each | yes |
 | clause titles (vectors) | `\| Id \| Call \| Expected \| Covers \| Source \| Title \|` | `<thead><tr><th align="left">Id</th><th align="left">Call</th>…<th align="left">Title</th></tr></thead>`; Title cells are plain text: `<td align="left">one byte</td>` | yes |
 | clause titles (properties) | `// P-ENC-LEN covers R-ENC-LEN, R-ENC-DIGITS — two characters per byte` | unchanged inside CDATA, em-dash as the UTF-8 character | yes |
+| sample count | `// samples: 48` as line 2 of P-ENC-LEN's `~~~ ts-property`, right after its covers line | unchanged inside CDATA, still line 2: `// P-ENC-LEN covers …⏎// samples: 48⏎forall (b: u8[] …` | yes |
 | `allowSurvivors` | — | — | not applicable: a sidecar JSON file, never in the spec |
 | exclusion | `Untested: timing is not observable from a unit test. Checked by: code review.` right after `{: #R-DEC-TIMING}` | `<t anchor="R-DEC-TIMING">hexDecode <bcp14>MUST NOT</bcp14> …</t>` followed by the sibling `<t>Untested: … Checked by: code review.</t>` | yes |
 | vector cells | Call and Expected each one code span | `<td align="left">⏎ <tt>hexDecode("66")</tt></td>`, `<td align="left">⏎ <tt>"f"</tt></td>` | yes |

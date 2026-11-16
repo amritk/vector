@@ -395,7 +395,7 @@ export class Clause {
   where: Expr | null = null
   /** The expression a property asserts. */
   assert: Expr | null = null
-  /** A property's random samples; -1 when absent. */
+  /** A property's total samples, boundaries included, 1..256; -1 when absent (the sampler's default). */
   samples: i32 = -1
   /**
    * Starts a clause of one kind, with the rest empty.
