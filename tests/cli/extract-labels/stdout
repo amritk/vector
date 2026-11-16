@@ -1,0 +1,110 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "labels-ed25519",
+  "source": {
+    "rfc": 8032,
+    "title": "Labels fixture: Ed25519 TEST 1 and TEST 2, with an empty and a one-byte message",
+    "sha256": "ed63657ff389301282b169b0abde9b5dd2c7e4d524fdfa5da6ff3094fc93c4c3"
+  },
+  "sources": [
+    {
+      "id": "rfc8032",
+      "rfc": 8032,
+      "file": "rfcs/rfc8032.txt",
+      "sha256": "ed63657ff389301282b169b0abde9b5dd2c7e4d524fdfa5da6ff3094fc93c4c3"
+    }
+  ],
+  "target": {
+    "module": "nish/crypto/ed25519"
+  },
+  "requirements": [
+    {
+      "id": "R-SIGN",
+      "section": "5.1.6",
+      "level": "DEFINITION",
+      "quote": "The inputs to the signing procedure is the private key, a 32-octet string, and a message M of arbitrary size."
+    }
+  ],
+  "exclusions": [
+    {
+      "section": "5.1",
+      "quote": "The context (if present at all) MUST be empty.",
+      "reason": "ed25519Sign takes no context, so there is none to be empty."
+    },
+    {
+      "section": "8.7",
+      "quote": "In particular, unless the underlying protocol does not require it, the receiver MUST buffer the entire message (or enough information to reconstruct it, e.g., compressed or encrypted version) to be verified.",
+      "reason": "a receiver's buffering is not ed25519Sign's."
+    }
+  ],
+  "functions": [
+    {
+      "name": "ed25519Sign",
+      "params": [
+        {
+          "name": "secretKey",
+          "type": "bytes"
+        },
+        {
+          "name": "message",
+          "type": "bytes"
+        }
+      ],
+      "returns": "bytes"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "V1",
+      "title": "7.1 TEST 1, an empty message",
+      "covers": ["R-SIGN"],
+      "source": {
+        "cite": {
+          "section": "7.1"
+        }
+      },
+      "call": "ed25519Sign",
+      "args": [
+        {
+          "hex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+          "label": "SECRET KEY"
+        },
+        {
+          "hex": "",
+          "label": "MESSAGE (length 0 bytes)"
+        }
+      ],
+      "expect": {
+        "hex": "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b",
+        "label": "SIGNATURE"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V2",
+      "title": "7.1 TEST 2, a one-byte message",
+      "covers": ["R-SIGN"],
+      "source": {
+        "cite": {
+          "section": "7.1"
+        }
+      },
+      "call": "ed25519Sign",
+      "args": [
+        {
+          "hex": "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
+          "label": "SECRET KEY"
+        },
+        {
+          "hex": "72",
+          "label": "MESSAGE (length 1 byte)"
+        }
+      ],
+      "expect": {
+        "hex": "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00",
+        "label": "SIGNATURE"
+      }
+    }
+  ]
+}

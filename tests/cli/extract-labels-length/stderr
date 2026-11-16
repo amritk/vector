@@ -1,0 +1,1 @@
+vector: tests/fixtures/labels/specs/labels-ed25519-length.xml:25: fidelity: "MESSAGE (length 1 byte)" is printed with a 1-byte value in RFC §7.1 ("Test Vectors for Ed25519"), so the value is not empty
