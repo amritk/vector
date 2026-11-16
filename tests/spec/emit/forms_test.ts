@@ -61,6 +61,29 @@ const formsEmit = (c: Contract): string => {
   return p.isOk() ? p.value : ""
 }
 
+/** The iterate loop: positional steps, a null that names its step, a slow vector skipped unless opts.slow. */
+const formsIterate = (t: Suite, c: Contract, p: string): void => {
+  t.contains(
+    "a loop runs steps 1 to count − 1",
+    p,
+    "for (let it_i: i64 = 1; it_i < toI64(3); it_i += 1) {\n    const it_s = xorB(it_a0, it_a1);\n    const it_n0 = it_s;\n    const it_n1 = it_a0;\n    it_a0 = it_n0;\n    it_a1 = it_n1;\n  }\n  const it_r = xorB(it_a0, it_a1);",
+  )
+  t.contains("an i64 beyond 2^53 is split", p, "(toI64(302395254) * 4294967296 + 2425370821)")
+  t.contains("a null mid-loop names its step", p, "`step ${it_i} of 5: nonEmpty returned null`")
+  t.contains("and a null last step", p, "`step 5 of 5: nonEmpty returned null`")
+  t.contains("a secret step goes through its wrapper", p, "const it_s = plain_keep(it_a0, it_a1);")
+  t.contains(
+    "a slow vector is skipped",
+    p,
+    't.skip("[IT-SLOW] IT-SLOW: idI32 iterated 3 times (R-ALL)", "slow: pass --slow to run");',
+  )
+  const opts = new EmitOptions(FORMS_SHA)
+  opts.slow = true
+  const slow = emitProgram(c, formsSamples(), opts).expect("emit with --slow")
+  t.contains("with --slow the slow vector runs", slow, "const it_r = idI32(it_a0);")
+  t.ok("and nothing is skipped as slow", slow.indexOf('"slow: pass --slow to run"') < 0)
+}
+
 /**
  * Checks the text emitted for every form a contract can use — integer
  * remainders, wrapping i32 and i64, le64, bitwise bytes, let and unwrap, nulls,
@@ -156,6 +179,7 @@ export const main = (): i32 => {
   t.contains("and is wiped only when there is one", p, "if (s_k !== null) {\n    wipe(s_k);")
   t.contains("a secret vector goes through its wrapper", p, 'hexOrNull(plain_keep(unhex("a546"), unhex("e6db")))')
 
+  formsIterate(t, c, p)
   formsWithout(t, c)
   formsSpecs(t)
   formsLive(t, c, p)

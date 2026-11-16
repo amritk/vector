@@ -988,6 +988,253 @@
       "expect": {
         "null": true
       }
+    },
+    {
+      "kind": "vector",
+      "id": "IT-XOR",
+      "title": "IT-XOR: xorB iterated 3 times",
+      "covers": ["R-ALL"],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "xorB",
+      "args": [
+        {
+          "hex": "0f"
+        },
+        {
+          "hex": "f0"
+        }
+      ],
+      "expect": {
+        "hex": "0f"
+      },
+      "iterate": {
+        "count": 3,
+        "names": [
+          "a",
+          "b"
+        ],
+        "next": [
+          {
+            "call": "xorB",
+            "args": [
+              {
+                "var": "a"
+              },
+              {
+                "var": "b"
+              }
+            ]
+          },
+          {
+            "var": "a"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "IT-FIB",
+      "title": "IT-FIB: addI64 iterated 100 times",
+      "covers": ["R-ALL"],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "addI64",
+      "args": [
+        {
+          "int": 1
+        },
+        {
+          "int": 0
+        }
+      ],
+      "expect": {
+        "int": "1298777728820984005"
+      },
+      "iterate": {
+        "count": 100,
+        "names": [
+          "a",
+          "b"
+        ],
+        "next": [
+          {
+            "call": "addI64",
+            "args": [
+              {
+                "var": "a"
+              },
+              {
+                "var": "b"
+              }
+            ]
+          },
+          {
+            "var": "a"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "IT-STR",
+      "title": "IT-STR: nonEmpty iterated 5 times",
+      "covers": ["R-ALL"],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "nonEmpty",
+      "args": [
+        {
+          "str": "q"
+        }
+      ],
+      "expect": {
+        "str": "q"
+      },
+      "iterate": {
+        "count": 5,
+        "names": [
+          "s"
+        ],
+        "next": [
+          {
+            "call": "nonEmpty",
+            "args": [
+              {
+                "var": "s"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "IT-B",
+      "title": "IT-B: nonEmptyB iterated 2 times",
+      "covers": ["R-ALL"],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "nonEmptyB",
+      "args": [
+        {
+          "hex": "00ff"
+        }
+      ],
+      "expect": {
+        "hex": "00ff"
+      },
+      "iterate": {
+        "count": 2,
+        "names": [
+          "a"
+        ],
+        "next": [
+          {
+            "call": "nonEmptyB",
+            "args": [
+              {
+                "var": "a"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "IT-SECRET",
+      "title": "IT-SECRET: keep iterated 4 times",
+      "covers": ["R-ALL"],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "keep",
+      "args": [
+        {
+          "hex": "a546"
+        },
+        {
+          "hex": "e6db"
+        }
+      ],
+      "expect": {
+        "hex": "a546"
+      },
+      "iterate": {
+        "count": 4,
+        "names": [
+          "k",
+          "u"
+        ],
+        "next": [
+          {
+            "call": "keep",
+            "args": [
+              {
+                "var": "k"
+              },
+              {
+                "var": "u"
+              }
+            ]
+          },
+          {
+            "var": "u"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "IT-SLOW",
+      "title": "IT-SLOW: idI32 iterated 3 times",
+      "covers": ["R-ALL"],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "idI32",
+      "args": [
+        {
+          "int": 7
+        }
+      ],
+      "expect": {
+        "int": 7
+      },
+      "iterate": {
+        "count": 3,
+        "names": [
+          "x"
+        ],
+        "next": [
+          {
+            "call": "idI32",
+            "args": [
+              {
+                "var": "x"
+              }
+            ]
+          }
+        ],
+        "slow": true
+      }
     }
   ]
 }

@@ -77,9 +77,9 @@ export const runFindRoot = (flag: string | null): Result<string, string> => {
  * The test at `file` run in a scratch install of `root`, removed afterwards.
  * A scratch that cannot be removed is warned about, and the verdict stands.
  */
-const runInScratch = (c: Contract, file: string, root: string): Result<RunResult, string> => {
+const runInScratch = (c: Contract, file: string, root: string, slow: boolean): Result<RunResult, string> => {
   const s = runMakeScratch(root, [], []).orReturn()
-  const ran = runTestFile(c, file, s.nish, RUN_TIMEOUT_MS)
+  const ran = runTestFile(c, file, s.nish, RUN_TIMEOUT_MS, slow)
   const gone = runDisposeScratch(s)
   if (gone.isErr()) {
     console.error(`vector: warning: spec run: ${gone.error}`)
@@ -181,10 +181,10 @@ const runWith = (req: RunRequest, target: EmitTarget, c: Contract, file: string)
   }
   const nish = req.nish
   if (nish !== null) {
-    return runTestFile(c, file, nish, RUN_TIMEOUT_MS)
+    return runTestFile(c, file, nish, RUN_TIMEOUT_MS, req.slow)
   }
   const root = runFindRoot(req.nishRoot).orReturn()
-  return runInScratch(c, file, root)
+  return runInScratch(c, file, root, req.slow)
 }
 
 /** Removes the temporary directory a test ran from, warning when it cannot. */

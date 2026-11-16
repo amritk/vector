@@ -1,0 +1,1 @@
+vector spec run tests/fixtures/x25519/contracts/x25519.json --package fixture=tests/fixtures/x25519/fixture --nish-root .nish

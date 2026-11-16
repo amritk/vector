@@ -516,10 +516,11 @@ const emitPyIterate = (k: Clause, sig: FnSig, args: string[], name: string): str
   return lines
 }
 
-/** Fails the clause `name` when step `step`'s result `v` is None. */
+/** Fails the clause `name` when step `step`'s result `v` is None; `f` is "f" when `step` holds a placeholder. */
 const emitPyIterateNull = (lines: string[], pad: string, name: string, v: string, step: string, fn: string): void => {
+  const f = step.indexOf("{") >= 0 ? "f" : ""
   lines.push(`${pad}if ${v} is None:`)
-  lines.push(`${pad}    return t.fail(${name}, f"step ${step}: ${fn} returned null")`)
+  lines.push(`${pad}    return t.fail(${name}, ${f}"step ${step}: ${fn} returned null")`)
 }
 
 /**

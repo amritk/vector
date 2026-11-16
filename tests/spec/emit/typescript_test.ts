@@ -151,12 +151,29 @@ const tsLive = (t: Suite, c: Contract): void => {
   const passed = runProcess([runNode(), "--test", joinPath(dir, "forms_node.test.ts")], "", 60000)
   t.ok("every node:test test passes under --test", passed.isOk() && passed.value.status === 0)
   if (passed.isOk()) {
-    t.contains("one test per clause", passed.value.stdout, `# pass ${c.clauses.length}\n`)
+    // IT-SLOW is the one slow vector: node:test skips it without --slow.
+    t.contains("one test per clause", passed.value.stdout, `# pass ${c.clauses.length - 1}\n`)
+    t.contains("the slow vector is skipped", passed.value.stdout, "# skipped 1\n")
     if (passed.value.status !== 0) {
       tsShow(passed.value.stdout, passed.value.stderr)
     }
   }
   t.ok("the temp directory is removed", runProcess(["rm", "-rf", dir], "", 10000).isOk())
+}
+
+/** The iterate loop: positional steps, a null that names its step, a slow vector skipped unless opts.slow. */
+const tsIterate = (t: Suite, c: Contract): void => {
+  const opts = new EmitOptions("ab")
+  const p = emitTsProgram(c, tsSamples(), opts, "node").expect("emit")
+  t.contains('a loop runs steps 1 to count − 1', p, 'for (let it_i = 1; it_i < 3; it_i += 1) {\n    const it_s = _b(xorB(it_a0, it_a1))\n    const it_n0 = it_s\n    const it_n1 = it_a0\n    it_a0 = it_n0\n    it_a1 = it_n1\n  }')
+  t.contains('a null mid-loop names its step', p, '"step " + it_i + " of 5: nonEmpty returned null")')
+  t.contains('and a null last step', p, '"step 5 of 5: nonEmpty returned null")')
+  t.contains('a slow vector is skipped', p, 'return t.skip("[IT-SLOW] IT-SLOW: idI32 iterated 3 times (R-ALL)", "slow: pass --slow to run")')
+  t.contains('and node:test skips it', p, '{ skip: "slow: pass --slow to run" }')
+  opts.slow = true
+  const slow = emitTsProgram(c, tsSamples(), opts, "node").expect("emit with --slow")
+  t.contains("with --slow the slow vector runs", slow, 'const it_r = idI32(it_a0)')
+  t.ok("and nothing is skipped as slow", slow.indexOf("slow: pass --slow to run") < 0)
 }
 
 /**
@@ -173,6 +190,7 @@ export const main = (): i32 => {
   const p = tsEmitForms(c, "tests/spec/emit", "node")
   t.ok("the forms contract emits", p !== "")
   tsForms(t, p)
+  tsIterate(t, c)
   t.contains("node's test", p, '  test("[P-MOD] ')
   t.contains("node:test is imported", p, 'import { test } from "node:test"\n')
   t.ok("standalone has no node test", tsEmitForms(c, "tests/spec/emit", "standalone").indexOf("node:test") < 0)

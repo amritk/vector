@@ -625,7 +625,7 @@ export const runTest = (c: Contract, source: string, nishBin: string, timeoutMs:
   const file = joinPath(dir, "main.ts")
   const n = writeFileSyncMode(file, source, 0o600)
   const ran: Result<RunResult, string> =
-    n < 0 ? Err(`cannot write ${file} (errno ${-n})`) : runTestFile(c, file, nishBin, timeoutMs)
+    n < 0 ? Err(`cannot write ${file} (errno ${-n})`) : runTestFile(c, file, nishBin, timeoutMs, false)
   const gone = runRemove(dir)
   if (gone.isErr()) {
     console.error(`vector: warning: spec run: ${gone.error}`)
@@ -634,18 +634,38 @@ export const runTest = (c: Contract, source: string, nishBin: string, timeoutMs:
 }
 
 /**
+ * The command that builds and runs a Nish test: `nish run <file>`, or, when
+ * slow vectors run, `nish run --profile speed <file>`. An optimized build
+ * costs about a second more to compile, and runs a long iterated vector some
+ * ten times faster, so only a run with `--slow` pays for it.
+ *
+ * @param nishBin the compiler
+ * @param file the test
+ * @param slow whether the test runs its slow vectors
+ * @returns the command, without the nonce
+ */
+export const runNishArgv = (nishBin: string, file: string, slow: boolean): string[] =>
+  slow ? [nishBin, "run", "--profile", "speed", file] : [nishBin, "run", file]
+
+/**
  * Compiles and runs an emitted test already written to `file`, where its
- * relative imports resolve, with `nish run <file> <nonce>`, and judges what
+ * relative imports resolve, with `runNishArgv` and a nonce, and judges what
  * it printed. The file is left where it is.
  *
  * @param c the contract the test was emitted from
  * @param file the test
  * @param nishBin the compiler
  * @param timeoutMs the most milliseconds the build and run may take
+ * @param slow whether the test runs its slow vectors, built optimized
  * @returns the result, or `Err` when the compiler could not be started
  */
-export const runTestFile = (c: Contract, file: string, nishBin: string, timeoutMs: i32): Result<RunResult, string> =>
-  runTestCommand(c, [nishBin, "run", file], timeoutMs)
+export const runTestFile = (
+  c: Contract,
+  file: string,
+  nishBin: string,
+  timeoutMs: i32,
+  slow: boolean,
+): Result<RunResult, string> => runTestCommand(c, runNishArgv(nishBin, file, slow), timeoutMs)
 
 /**
  * Runs an emitted test with the command that runs it in its language, a fresh
