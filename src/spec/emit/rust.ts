@@ -25,9 +25,9 @@ import { contractF64Bits, contractF64Parse } from "../contract/f64"
 import { ClauseKind, ExprKind, LitKind } from "../contract/types"
 import { Clause, Contract, Expr, FnSig, Literal } from "../contract/types"
 import { TypeEnv, typeCallsIn, typeEnvBind, typeIntBase, typeOf, typeOfInt } from "../contract/typing"
-import { vocabFitsInt, vocabIsIntType, vocabIsOptional, vocabValueType } from "../contract/vocab"
+import { vocabBaseOf, vocabFitsInt, vocabIsIntType, vocabIsOptional, vocabValueType } from "../contract/vocab"
 import { EmitOptions, emitClauseFn, emitClauseLines, emitHeaderLines, emitSortedUnique, emitTestName } from "./emit"
-import { emitF64IsFinite, emitLiteralHex } from "./lit"
+import { EMIT_SLOW_SKIP, emitF64IsFinite, emitLiteralHex } from "./lit"
 
 /** What emitting one Rust test has gathered so far. */
 class EmitRsContext {
@@ -590,12 +590,17 @@ const emitRsVector = (ctx: EmitRsContext, k: Clause): string => {
     ctx.errors.push(`${k.id}: no function ${k.call} or no expected value`)
     return ""
   }
+  const name = emitRsQuote(emitTestName(k))
+  const it = k.iterate
+  if (it !== null && it.slow && !ctx.opts.slow) {
+    return `fn ${emitClauseFn(k)}(t: &mut Suite) -> bool {\n    t.skip(${name}, "${EMIT_SLOW_SKIP}")\n}`
+  }
   const args: string[] = []
   for (let i = 0; i < k.args.length; i++) {
     args.push(emitRsLitArg(k.args[i], sig.params[i].type))
   }
-  const call = emitRsCall(sig, args)
-  const name = emitRsQuote(emitTestName(k))
+  const steps: string[] = it === null ? [] : emitRsIterate(k, sig, name)
+  const call = it === null ? emitRsCall(sig, args) : "it_r"
   const ret = emitRsVt(sig.returns)
   let body = ""
   if (ret === "bytes") {
@@ -617,7 +622,86 @@ const emitRsVector = (ctx: EmitRsContext, k: Clause): string => {
   } else {
     ctx.errors.push(`${k.id}: Rust cannot check a ${sig.returns} result`)
   }
-  return `fn ${emitClauseFn(k)}(t: &mut Suite) -> bool {\n    ${body}\n}`
+  return `fn ${emitClauseFn(k)}(t: &mut Suite) -> bool {\n${steps.join("\n")}${steps.length > 0 ? "\n" : ""}    ${body}\n}`
+}
+
+/** A parameter's owned Rust type: what an iterated vector's argument variable holds. */
+const emitRsOwnedType = (t: string): string => {
+  if (t === "bytes") {
+    return "Vec<u8>"
+  }
+  if (t === "string") {
+    return "String"
+  }
+  if (t === "bytes?") {
+    return "Option<Vec<u8>>"
+  }
+  return t === "string?" ? "Option<String>" : t
+}
+
+/** Whether a value of type `t` is moved rather than copied, so a second use clones it. */
+const emitRsIsOwned = (t: string): boolean => t === "bytes" || t === "string" || t === "bytes?" || t === "string?"
+
+/** An owned variable passed to a parameter of type `t`: borrowed, as a borrowed option, or by value. */
+const emitRsVarArg = (v: string, t: string): string => {
+  if (t === "bytes" || t === "string") {
+    return `&${v}`
+  }
+  return t === "bytes?" || t === "string?" ? `${v}.as_deref()` : v
+}
+
+/**
+ * An iterated vector's calls, up to the last result bound as `it_r`: owned
+ * arguments (`it_a<i>`, by position) start as the vector's and are rebound
+ * to its `next` after each call; a None result at any step fails the clause,
+ * naming the step.
+ */
+const emitRsIterate = (k: Clause, sig: FnSig, name: string): string[] => {
+  const it = k.iterate
+  if (it === null) {
+    return []
+  }
+  const lines: string[] = []
+  const types: string[] = []
+  const vars: string[] = []
+  for (let i = 0; i < it.names.length; i++) {
+    const t = emitRsVt(sig.params[i].type)
+    types.push(t)
+    const lit = k.args[i]
+    const init = vocabIsOptional(t) && lit.kind !== LitKind.Null ? `Some(${emitRsLiteral(lit, vocabBaseOf(t))})` : emitRsLiteral(lit, t)
+    lines.push(`    let mut it_a${i}: ${emitRsOwnedType(t)} = ${init};`)
+    vars.push(emitRsVarArg(`it_a${i}`, t))
+  }
+  const optional = vocabIsOptional(emitRsVt(sig.returns))
+  lines.push(`    for ${optional ? "it_i" : "_"} in 1..${it.count} {`)
+  if (optional) {
+    lines.push(`        let it_s = match ${emitRsCall(sig, vars)} {`)
+    lines.push("            Some(v) => v,")
+    lines.push(
+      `            None => return t.fail(${name}, &format!("step {} of ${it.count}: ${sig.name} returned null", it_i)),`,
+    )
+    lines.push("        };")
+  } else {
+    lines.push(`        let it_s = ${emitRsCall(sig, vars)};`)
+  }
+  for (let i = 0; i < it.next.length; i++) {
+    const e = it.next[i]
+    const from = e.kind === ExprKind.Call ? "it_s" : `it_a${toI32(it.names.indexOf(e.name))}`
+    const v = emitRsIsOwned(types[i]) ? `${from}.clone()` : from
+    const wrap = e.kind === ExprKind.Call && vocabIsOptional(types[i]) ? `Some(${v})` : v
+    lines.push(`        let it_n${i} = ${wrap};`)
+  }
+  for (let i = 0; i < it.next.length; i++) {
+    lines.push(`        it_a${i} = it_n${i};`)
+  }
+  lines.push("    }")
+  lines.push(`    let it_r = ${emitRsCall(sig, vars)};`)
+  if (optional) {
+    lines.push("    if it_r.is_none() {")
+    lines.push(`        return t.fail(${name}, "step ${it.count} of ${it.count}: ${sig.name} returned null");`)
+    lines.push("    }")
+  }
+  return lines
 }
 
 /**
@@ -1063,12 +1147,15 @@ const emitRsMain = (c: Contract): string => {
   return lines.join("\n")
 }
 
-/** A clause's cargo test; a property with no samples is ignored, as its check would skip. */
-const emitRsCargoTest = (table: SampleTable, k: Clause): string => {
+/** A clause's cargo test; a property with no samples, or a slow vector unless `runSlow`, is ignored, as its check would skip. */
+const emitRsCargoTest = (table: SampleTable, k: Clause, runSlow: boolean): string => {
   const fn = emitClauseFn(k)
   const lines: string[] = ["#[test]"]
+  const it = k.iterate
   if (k.kind !== ClauseKind.Vector && (checkSamplesOf(table, k.id).length === 0 || k.assert === null)) {
     lines.push(`#[ignore = "no samples"]`)
+  } else if (it !== null && it.slow && !runSlow) {
+    lines.push(`#[ignore = "${EMIT_SLOW_SKIP}"]`)
   }
   lines.push(`fn test_${fn.substring(7, fn.length)}() {`)
   lines.push(`    _cargo(${fn}, ${emitRsQuote(emitTestName(k))});`)
@@ -1135,7 +1222,7 @@ export const emitRsProgram = (
   if (harness === "cargo") {
     parts.push(EMIT_RS_CARGO)
     for (const k of c.clauses) {
-      parts.push(emitRsCargoTest(table, k))
+      parts.push(emitRsCargoTest(table, k, opts.slow))
     }
   }
   return Ok(`${parts.join("\n\n")}\n`)

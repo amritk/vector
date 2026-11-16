@@ -657,8 +657,9 @@ const emitVector = (ctx: EmitContext, k: Clause): string => {
 
 /**
  * An iterated vector's calls, up to the last result bound as `it_r`: the
- * arguments start as the vector's and are rebound to its `next` after each
- * call; a null result at any step fails the clause, naming the step.
+ * arguments (`it_a<i>`, by position, whatever the contract names them) start
+ * as the vector's and are rebound to its `next` after each call; a null
+ * result at any step fails the clause, naming the step.
  */
 const emitIterateSteps = (ctx: EmitContext, k: Clause, sig: FnSig, args: string[], name: string): string[] => {
   const it = k.iterate
@@ -668,8 +669,8 @@ const emitIterateSteps = (ctx: EmitContext, k: Clause, sig: FnSig, args: string[
   const lines: string[] = []
   const vars: string[] = []
   for (let i = 0; i < it.names.length; i++) {
-    vars.push(`it_${it.names[i]}`)
-    lines.push(`  let it_${it.names[i]}: ${emitNishType(vocabValueType(sig.params[i].type))} = ${args[i]};`)
+    vars.push(`it_a${i}`)
+    lines.push(`  let it_a${i}: ${emitNishType(vocabValueType(sig.params[i].type))} = ${args[i]};`)
   }
   const count = emitIntLit(`${it.count}`, "i64")
   const optional = vocabIsOptional(vocabValueType(sig.returns))
@@ -681,7 +682,7 @@ const emitIterateSteps = (ctx: EmitContext, k: Clause, sig: FnSig, args: string[
   const next: string[] = []
   for (let i = 0; i < it.next.length; i++) {
     const e = it.next[i]
-    next.push(e.kind === ExprKind.Call ? "it_s" : `it_${e.name}`)
+    next.push(e.kind === ExprKind.Call ? "it_s" : `it_a${toI32(it.names.indexOf(e.name))}`)
   }
   for (let i = 0; i < next.length; i++) {
     lines.push(`    const it_n${i} = ${next[i]};`)
