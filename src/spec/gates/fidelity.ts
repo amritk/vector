@@ -515,43 +515,97 @@ const gateCounts = (labels: string[], i: i32): boolean => {
 /** Whether `c` is a digit. */
 const gateFidDigit = (c: i32): boolean => c >= 48 && c <= 57
 
-/** Whether `c` is a letter, digit or `_`: what may not touch a whole number. */
-const gateFidWordChar = (c: i32): boolean =>
-  gateFidDigit(c) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95
-
 /**
- * The whole numbers in `s`, each with its commas dropped ("1,000" is
- * "1000"): runs of digits, optionally comma-grouped in threes, that no
- * letter, digit or `_` touches.
+ * Whether `c` belongs to a token: a letter, digit, `_`, `.`, `,`, `-` or a
+ * non-ASCII byte. A number is read only from a whole token, so `5.2`,
+ * `X25519` and `SHA-256` hold none.
  */
-const gateWholeNumbers = (s: string): string[] => {
+const gateFidTokenChar = (c: i32): boolean =>
+  gateFidDigit(c) ||
+  (c >= 65 && c <= 90) ||
+  (c >= 97 && c <= 122) ||
+  c === 95 ||
+  c === 46 ||
+  c === 44 ||
+  c === 45 ||
+  c >= 128
+
+/** The tokens of `s`, each without the `.` and `,` that end a sentence or a list item. */
+const gateFidTokens = (s: string): string[] => {
   const out: string[] = []
   let i = 0
   while (i < s.length) {
-    if (!gateFidDigit(s.charCodeAt(i)) || (i > 0 && gateFidWordChar(s.charCodeAt(i - 1)))) {
+    if (!gateFidTokenChar(s.charCodeAt(i))) {
       i = i + 1
       continue
     }
     let j = i
-    while (j < s.length && gateFidDigit(s.charCodeAt(j))) {
+    while (j < s.length && gateFidTokenChar(s.charCodeAt(j))) {
       j = j + 1
     }
-    const parts = [s.substring(i, j)]
-    while (
-      j + 3 < s.length &&
-      s.charCodeAt(j) === 44 &&
-      gateFidDigit(s.charCodeAt(j + 1)) &&
-      gateFidDigit(s.charCodeAt(j + 2)) &&
-      gateFidDigit(s.charCodeAt(j + 3)) &&
-      (j + 4 >= s.length || !gateFidDigit(s.charCodeAt(j + 4)))
-    ) {
-      parts.push(s.substring(j + 1, j + 4))
-      j = j + 4
+    let e = j
+    while (e > i && (s.charCodeAt(e - 1) === 46 || s.charCodeAt(e - 1) === 44)) {
+      e = e - 1
     }
-    if (j >= s.length || !gateFidWordChar(s.charCodeAt(j))) {
-      out.push(parts.join(""))
+    if (e > i) {
+      out.push(s.substring(i, e))
     }
     i = j
+  }
+  return out
+}
+
+/**
+ * The whole number a token is, its commas dropped, or "" when it is none: a
+ * run of digits, or one to three digits then groups of a comma and three
+ * digits ("1,000,000"). A malformed group ("1,00", "10,00,000") is no number.
+ */
+const gateFidNumber = (t: string): string => {
+  let digits = ""
+  let group = -1
+  for (let i = 0; i < t.length; i++) {
+    const c = t.charCodeAt(i)
+    if (gateFidDigit(c)) {
+      digits = `${digits}${t.substring(i, i + 1)}`
+      group = group < 0 ? group : group + 1
+      if (group > 3) {
+        return ""
+      }
+    } else if (c === 44) {
+      if ((group < 0 && (digits.length === 0 || digits.length > 3)) || (group >= 0 && group !== 3)) {
+        return ""
+      }
+      group = 0
+    } else {
+      return ""
+    }
+  }
+  return digits.length === 0 || (group >= 0 && group !== 3) ? "" : digits
+}
+
+/**
+ * Whether `line` is a section heading, its number at the margin ("5.2.  Test
+ * Vectors"): a heading's number is not a count printed in the section.
+ */
+const gateFidHeading = (line: string): boolean => {
+  if (line.length === 0 || !gateFidDigit(line.charCodeAt(0))) {
+    return false
+  }
+  let i = 0
+  while (i < line.length && (gateFidDigit(line.charCodeAt(i)) || line.charCodeAt(i) === 46)) {
+    i = i + 1
+  }
+  return i >= line.length || !gateFidTokenChar(line.charCodeAt(i))
+}
+
+/** The whole numbers in `s`, each a whole token and with its commas dropped ("1,000" is "1000"). */
+const gateWholeNumbers = (s: string): string[] => {
+  const out: string[] = []
+  for (const t of gateFidTokens(s)) {
+    const n = gateFidNumber(t)
+    if (n.length > 0) {
+      out.push(n)
+    }
   }
   return out
 }
@@ -568,16 +622,38 @@ const gateGrouped = (d: string): string => {
   return out
 }
 
-/** Whether an iterated vector's expected label holds its count: `After 1,000 iterations` for 1000. */
+/**
+ * The number a label counts rounds with: the one before "iteration",
+ * "iterations" or "times" (`After 1,000 iterations` counts 1000), else the
+ * label's only number, else null.
+ */
+const gateLabelCount = (label: string): string | null => {
+  const ts = gateFidTokens(label)
+  for (let i = 0; i + 1 < ts.length; i++) {
+    const n = gateFidNumber(ts[i])
+    const w = asciiLower(ts[i + 1])
+    if (n.length > 0 && (w === "iteration" || w === "iterations" || w === "times")) {
+      return n
+    }
+  }
+  const ns = gateWholeNumbers(label)
+  if (ns.length === 1) {
+    return ns[0]
+  }
+  return null
+}
+
+/** Whether an iterated vector's expected label counts its rounds: `After 1,000 iterations` for 1000. */
 const gateLabelIsCount = (k: Clause, label: string): boolean => {
   const it = k.iterate
-  return it !== null && gateWholeNumbers(label).indexOf(`${it.count}`) >= 0
+  const n = gateLabelCount(label)
+  return it !== null && n !== null && n === `${it.count}`
 }
 
 /**
  * An iterated vector's count against its section: the count is printed
- * there as a whole number (commas ignored), and a number in the expected
- * label is the count.
+ * there as a whole number (commas ignored), outside a heading, and the number the expected
+ * label counts rounds with (`gateLabelCount`) is the count.
  */
 const gateIterateCount = (
   ctx: CheckContext,
@@ -590,7 +666,7 @@ const gateIterateCount = (
   const want = `${it.count}`
   let printed = false
   for (let i = 0; i < sec.lines.length && !printed; i++) {
-    printed = gateWholeNumbers(sec.lines[i]).indexOf(want) >= 0
+    printed = !gateFidHeading(sec.lines[i]) && gateWholeNumbers(sec.lines[i]).indexOf(want) >= 0
   }
   if (!printed) {
     gateIssue(ctx, out, GATE_FIDELITY, k.id, `the count ${gateGrouped(want)} is not printed in ${where}`)
@@ -598,14 +674,14 @@ const gateIterateCount = (
   const expect = k.expect
   const label: string | null = expect === null ? null : expect.label
   if (label !== null) {
-    const ns = gateWholeNumbers(label)
-    if (ns.length > 0 && ns.indexOf(want) < 0) {
+    const n = gateLabelCount(label)
+    if (n !== null && n !== want) {
       gateIssue(
         ctx,
         out,
         GATE_FIDELITY,
         `${k.id}.expect`,
-        `the expected label "${label}" counts ${gateGrouped(ns[0])}, but the vector iterates ${gateGrouped(want)} times`,
+        `the expected label "${label}" counts ${gateGrouped(n)}, but the vector iterates ${gateGrouped(want)} times`,
       )
     }
   }

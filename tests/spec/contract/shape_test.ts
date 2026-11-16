@@ -262,6 +262,30 @@ export const main = (): i32 => {
   shapeExpect(
     t,
     exp,
+    shapeIter(replaceAll(ok, `"count": 2`, `"count": 1000000001`)),
+    "read: clauses[0].iterate.count: an integer in 1..1000000000",
+  )
+  t.eqStr(
+    "the largest count passes",
+    shapeErrorsOf(exp, shapeIter(replaceAll(ok, `"count": 2`, `"count": 1000000000`))).join("\n"),
+    "",
+  )
+  shapeExpect(
+    t,
+    exp,
+    shapeIter(replaceAll(ok, `["b"]`, `["b", "b"]`)),
+    `clauses[0].iterate.names[1]: "b" repeats names[0]`,
+  )
+  shapeExpect(t, exp, shapeIter(replaceAll(ok, `["b"]`, `["2b"]`)), "clauses[0].iterate.names[0]: an identifier")
+  shapeExpect(
+    t,
+    exp,
+    `"expect": {"null": true}, "iterate": ${ok}`,
+    "clauses[0].iterate: an iterated vector's expect is a value its call returns, not null or a bool",
+  )
+  shapeExpect(
+    t,
+    exp,
     `"expect": {"bool": true}, "iterate": ${ok}`,
     "clauses[0].iterate: an iterated vector's expect is a value its call returns, not null or a bool",
   )

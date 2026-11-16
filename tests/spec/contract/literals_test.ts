@@ -224,6 +224,7 @@ export const main = (): i32 => {
     "labelled:7c39 label=After 1,000,000 iterations",
   )
   t.eqStr("a badly grouped number is no label word", litTestParse("After 1,00 iterations = 7c39"), "not a literal @1")
+  t.eqStr("a bare number is no label", litTestParse("1,000 = 7c39"), "unexpected text after the value @2")
   t.eqStr("an int where an i32 goes", litTestSettle("L = 42", "i32"), "{int:42 label:L}")
   t.eqStr("an int where a u32 goes", litTestSettle("L = 42", "u32?"), "{int:42 label:L}")
   t.eqStr("hex where bytes go", litTestSettle("L = 42", "bytes"), "{hex:42 label:L}")

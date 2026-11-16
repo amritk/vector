@@ -35,7 +35,8 @@ const TYPING_TEST_ITERATE: string = `{
   "functions": [
     {"name": "hash", "params": [{"name": "b", "type": "bytes"}], "returns": "string"},
     {"name": "mix", "params": [{"name": "a", "type": "bytes"}, {"name": "n", "type": "u8"}], "returns": "bytes?"},
-    {"name": "ladder", "params": [{"name": "k", "type": "secret-bytes"}, {"name": "u", "type": "bytes"}], "returns": "bytes"}
+    {"name": "ladder", "params": [{"name": "k", "type": "secret-bytes"}, {"name": "u", "type": "bytes"}], "returns": "bytes"},
+    {"name": "opt", "params": [{"name": "b", "type": "bytes?"}], "returns": "bytes"}
   ],
   "clauses": [
     {"kind": "vector", "id": "I1", "title": "t", "covers": ["R1"],
@@ -46,7 +47,10 @@ const TYPING_TEST_ITERATE: string = `{
      "iterate": {"count": 2, "names": ["a", "n"], "next": [{"call": "mix", "args": [{"var": "a"}, {"var": "n"}]}, {"var": "a"}]}},
     {"kind": "vector", "id": "I3", "title": "t", "covers": ["R1"],
      "source": {"cite": {"section": "5.2"}}, "call": "ladder", "args": [{"hex": "09"}, {"hex": "09"}], "expect": {"hex": "00"},
-     "iterate": {"count": 2, "names": ["k", "u"], "next": [{"call": "ladder", "args": [{"var": "k"}, {"var": "u"}]}, {"var": "k"}]}}
+     "iterate": {"count": 2, "names": ["k", "u"], "next": [{"call": "ladder", "args": [{"var": "k"}, {"var": "u"}]}, {"var": "k"}]}},
+    {"kind": "vector", "id": "I4", "title": "t", "covers": ["R1"],
+     "source": {"cite": {"section": "5.2"}}, "call": "opt", "args": [{"hex": "09"}], "expect": {"hex": "00"},
+     "iterate": {"count": 2, "names": ["b"], "next": [{"call": "opt", "args": [{"var": "b"}]}]}}
   ]
 }`
 
@@ -79,7 +83,7 @@ export const main = (): i32 => {
   ictx.contract = contractParse(TYPING_TEST_ITERATE, "iterate").expect("parse")
   const ifound = gateTyping(ictx)
   t.eqStr(
-    "an iterated vector feeds each parameter its own type",
+    "an iterated vector feeds each parameter its own type, a nullable one its base",
     ifound.join("\n"),
     [
       "I1: iterate.next[0]: hash returns string, and hash(b) wants bytes",
