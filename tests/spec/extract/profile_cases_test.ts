@@ -532,17 +532,24 @@ const profileCasesTestLevels = (t: Suite, all: ProfileCasesTestRfcs): void => {
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
-/** The kramdown fixture is refused for its quote, its `.repeat` and a return type, exactly. */
+/**
+ * The kramdown fixture is refused for its quote, its `.repeat` and a return
+ * type, exactly, and its `// samples: 48` line reaches the XML as it was written.
+ */
 const profileCasesTestKramdown = (t: Suite, all: ProfileCasesTestRfcs): void => {
   const path = "tests/fixtures/kramdown/profile.xml"
   t.eqStr(
     "the kramdown fixture's refusals",
     profileCasesTestReadAt(all, readFileSyncOrNull(path) ?? "", path),
     [
-      `76 R-RFC-VECTORS is not in Section 10 of RFC4648: "The base 16 encoding of "f" is "66"."`,
-      "87:98 `.repeat` is not in the ts-property subset",
-      "188 Expected: hexEncode returns string, not bytes",
+      `77 R-RFC-VECTORS is not in Section 10 of RFC4648: "The base 16 encoding of "f" is "66"."`,
+      "88:98 `.repeat` is not in the ts-property subset",
+      "189 Expected: hexEncode returns string, not bytes",
     ].join("\n"),
+  )
+  t.ok(
+    "a samples line survives as line 2 of its ts-property block",
+    (readFileSyncOrNull(path) ?? "").indexOf("two characters per byte\n// samples: 48\nforall (b: u8[]") > 0,
   )
 }
 
