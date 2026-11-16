@@ -1,0 +1,1 @@
+vector: tests/fixtures/profile/profile-iterate-nocount.md:30 (tests/fixtures/profile/profile-iterate-nocount.xml:95): 5.2-ITER-1000's Iterate: paragraph gives no count before "times,": Iterate: V1 1,000 times, (k, u) <- (f(k, u), k)

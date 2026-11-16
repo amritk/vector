@@ -1899,7 +1899,11 @@ const profileReadIterate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, 
     width = "\u2190".length
   }
   if (arrow < 0) {
-    profileRefuse(c, p, `${id}'s Iterate: paragraph has no "<-" between its names and its next: ${PROFILE_ITERATE_FORM}`)
+    profileRefuse(
+      c,
+      p,
+      `${id}'s Iterate: paragraph has no "<-" between its names and its next: ${PROFILE_ITERATE_FORM}`,
+    )
     return
   }
   let lhs = profileTrim(rest.substring(0, arrow))
