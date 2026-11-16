@@ -139,9 +139,19 @@ const profileIterTestReads = (t: Suite, xml: string): void => {
 /** Each malformed Iterate: paragraph, refused at its line with its own message. */
 const profileIterTestRefusals = (t: Suite, xml: string): void => {
   const call = "(k, u) &lt;- (x25519(k, u), k)"
-  const noCount = `95 5.2-ITER-1000's Iterate: paragraph gives no count before "times,": ${PROFILE_ITER_FORM}`
-  t.eqStr("no count", profileIterTestP1(xml, `5.2-ITER-1000 times, ${call}`), noCount)
-  t.eqStr("no count and nothing else", profileIterTestP1(xml, "5.2-ITER-1000"), noCount)
+  // The hint echoes the author's paragraph, and shows it with a count.
+  const noCount = `95 5.2-ITER-1000's Iterate: paragraph gives no count before "times,": it reads `
+  const said = "Iterate: 5.2-ITER-1000 times, (k, u) <- (x25519(k, u), k)"
+  t.eqStr(
+    "no count",
+    profileIterTestP1(xml, `5.2-ITER-1000 times, ${call}`),
+    `${noCount}"${said}"; put the count there, like Iterate: 5.2-ITER-1000 1,000 times, (k, u) <- (x25519(k, u), k)`,
+  )
+  t.eqStr(
+    "no count and nothing else",
+    profileIterTestP1(xml, "5.2-ITER-1000"),
+    `${noCount}"Iterate: 5.2-ITER-1000"; put the count there, like Iterate: 5.2-ITER-1000 1,000 ${PROFILE_ITER_FORM.substring(PROFILE_ITER_FORM.indexOf("times,"), PROFILE_ITER_FORM.length)}`,
+  )
   t.eqStr(
     "no times,",
     profileIterTestP1(xml, `5.2-ITER-1000 1,000 rounds, ${call}`),
