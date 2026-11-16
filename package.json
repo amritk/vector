@@ -1,6 +1,6 @@
 {
   "name": "@amritk/vector",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "vector — a deterministic judge: prove a spec plan and program with Z3, and check implementations against spec and RFC contracts. Written in Nish; it never calls a model.",
   "license": "MIT",
   "private": true,

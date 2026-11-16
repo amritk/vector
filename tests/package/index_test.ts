@@ -5,7 +5,7 @@ const indexRead = (path: string): string => readFileSyncOrNull(path) ?? ""
 
 export const main = (): i32 => {
   const t = new Suite("package/index")
-  t.eqStr("version", VECTOR_VERSION, "0.2.0") // x-release-please-version
+  t.eqStr("version", VECTOR_VERSION, "0.2.1") // x-release-please-version
 
   const spec = indexRead("tests/fixtures/currency-spec.json")
   const program = indexRead("tests/fixtures/currency.json")
