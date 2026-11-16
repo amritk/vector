@@ -40,10 +40,16 @@ import {
  */
 const sampleIsModelRefusal = (line: string): boolean => line.endsWith(': model is not available")')
 
-/** Random samples a property gets when it does not say. */
+/** Random samples a property gets when it does not say how many. */
 const SAMPLE_DEFAULT_RANDOM: i32 = 24
-/** The most samples one property gets. */
+/**
+ * The most samples a property gets when it does not say how many. A
+ * property's own `samples` is its exact total instead, up to the contract's
+ * ceiling of 256.
+ */
 const SAMPLE_MAX: i32 = 96
+/** No cap on the boundaries: the default path keeps every one Z3 gives. */
+const SAMPLE_NO_CAP: i32 = 2147483647
 
 /** What sampling one property found. */
 export class SampleOutcome {
@@ -220,11 +226,15 @@ const sampleQueries = (run: SampleRun): SampleQuery[] => {
   return queries
 }
 
-/** Adds the boundary samples Z3's models give; Ok with whether the domain is unsat. */
+/**
+ * Adds the boundary samples Z3's models give, in Z3's order, until the
+ * property has `cap`; Ok with whether the domain is unsat.
+ */
 const sampleBoundaries = (
   run: SampleRun,
   whereTerm: string | null,
   queries: SampleQuery[],
+  cap: i32,
 ): Result<boolean, string> => {
   const z3 = runZ3(sampleScript(run.vars, run.ranges, whereTerm, queries), queries.length).orReturn()
   for (const line of z3.errors) {
@@ -232,7 +242,7 @@ const sampleBoundaries = (
       return Err(`z3 rejected the sampling script: ${line}`)
     }
   }
-  for (let i = 0; i < z3.answers.length && i < queries.length; i++) {
+  for (let i = 0; i < z3.answers.length && i < queries.length && run.out.samples.length < cap; i++) {
     const ans = z3.answers[i]
     if (ans.result !== "sat") {
       continue
@@ -326,15 +336,34 @@ export const sampleProperty = (contract: string, k: Clause): Result<SampleOutcom
   return Ok(run.out)
 }
 
-/** The boundaries, then the random draws; Err "where: ..." when `where` cannot be evaluated. */
+/**
+ * The boundaries, then the random draws; Err "where: ..." when `where`
+ * cannot be evaluated. Without its own `samples` a property gets every
+ * boundary and up to SAMPLE_DEFAULT_RANDOM draws, at most SAMPLE_MAX in all;
+ * with `samples` N it gets at most N boundaries, then draws until it has N,
+ * and a note when the domain gave fewer.
+ */
 const sampleRun = (run: SampleRun, whereTerm: string | null, queries: SampleQuery[]): Result<boolean, string> => {
   sampleInDomain(run, sampleFill(new SampleRun(run.k, run.ranges, "probe"), new Map<string, i64>())).orReturn()
-  const unsat = sampleBoundaries(run, whereTerm, queries).orReturn()
-  const want = run.k.samples >= 0 ? run.k.samples : SAMPLE_DEFAULT_RANDOM
-  for (let tries = 0; run.out.stat.random < want && tries < want * 20 && run.out.samples.length < SAMPLE_MAX; tries++) {
+  const n = run.k.samples
+  if (n < 0) {
+    const unsat = sampleBoundaries(run, whereTerm, queries, SAMPLE_NO_CAP).orReturn()
+    const want = SAMPLE_DEFAULT_RANDOM
+    for (let tries = 0; run.out.stat.random < want && tries < want * 20 && run.out.samples.length < SAMPLE_MAX; tries++) {
+      if (sampleAdd(run, sampleFill(run, new Map<string, i64>()), "random").orReturn()) {
+        run.out.stat.random = run.out.stat.random + 1
+      }
+    }
+    return Ok(unsat)
+  }
+  const unsat = sampleBoundaries(run, whereTerm, queries, n).orReturn()
+  for (let tries = 0; run.out.samples.length < n && tries < n * 20; tries++) {
     if (sampleAdd(run, sampleFill(run, new Map<string, i64>()), "random").orReturn()) {
       run.out.stat.random = run.out.stat.random + 1
     }
+  }
+  if (run.out.samples.length < n) {
+    run.out.stat.notes.push(`asked for ${n} samples; the domain gave ${run.out.samples.length}`)
   }
   return Ok(unsat)
 }

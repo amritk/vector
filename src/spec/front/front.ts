@@ -1407,6 +1407,59 @@ const frontCoversLine = (p: FrontProp): Result<FrontCovers, FrontRefusal> => {
   return Ok(new FrontCovers(m[0], title, covers))
 }
 
+/** The most samples a property may ask for, the contract's own ceiling. */
+const FRONT_SAMPLES_MAX: i32 = 256
+
+const FRONT_SAMPLES_HINT: string = "samples takes a decimal integer, 1..256, as `// samples: N`"
+
+/** Whether a token is a line comment whose text, trimmed, starts with `samples`. */
+const frontIsSamplesLine = (t: FrontTok): boolean =>
+  t.kind === FrontKind.Comment && t.lineComment && trim(t.value).startsWith("samples")
+
+/**
+ * The count of a `// samples: N` line: N in decimal, with no sign, leading
+ * zero, fraction or exponent, and within 1..256.
+ */
+const frontSamplesOf = (t: FrontTok): Result<i32, FrontRefusal> => {
+  const s = trim(t.value)
+  const pos = frontAt(t)
+  if (!frontHas(s, 7, ":")) {
+    return Err(frontRefuse(FRONT_SAMPLES_HINT, pos))
+  }
+  const n = trim(s.substring(8, s.length))
+  let digits = n.length !== 0 && (n === "0" || n.charCodeAt(0) !== 0x30)
+  for (let k = 0; k < n.length; k++) {
+    digits = digits && frontIsDigit(n.charCodeAt(k))
+  }
+  if (!digits) {
+    return Err(frontRefuse(FRONT_SAMPLES_HINT, pos))
+  }
+  if (vocabCompareDecimal(n, "1") < 0 || vocabCompareDecimal(n, `${FRONT_SAMPLES_MAX}`) > 0) {
+    return Err(frontRefuse(`samples must be 1..${FRONT_SAMPLES_MAX}, not ${n}`, pos))
+  }
+  return Ok(toI32(parseInt(n)))
+}
+
+/**
+ * The optional `// samples: N` line 2 of a property, or -1 when it has none.
+ * A samples line anywhere else is refused, so a misplaced one is never
+ * silently ignored.
+ */
+const frontSamplesLine = (c: FrontCursor): Result<i32, FrontRefusal> => {
+  let samples = -1
+  const raw = frontRaw(c)
+  if (frontIsSamplesLine(raw) && raw.line === 2) {
+    samples = frontSamplesOf(raw).orReturn()
+    frontSkipRaw(c)
+  }
+  for (let k = c.i; k < c.toks.length; k++) {
+    if (frontIsSamplesLine(c.toks[k])) {
+      return Err(frontRefuse("the samples line goes on line 2, after the covers line", frontAt(c.toks[k])))
+    }
+  }
+  return Ok(samples)
+}
+
 /** Refuses a name already bound or naming an interface function. */
 const frontBind = (p: FrontProp, name: FrontTok): Result<boolean, FrontRefusal> => {
   if (frontVar(p, name.text) !== null) {
@@ -1822,12 +1875,14 @@ function frontCall(p: FrontProp, sig: FnSig, pos: FrontPos): Result<FrontV, Fron
 const frontPropertyIn = (p: FrontProp): Result<FrontProperty, FrontRefusal> => {
   const c = p.c
   const head = frontCoversLine(p).orReturn()
+  const samples = frontSamplesLine(c).orReturn()
   frontExpect(c, "forall").orReturn()
   frontExpect(c, "(").orReturn()
   const clause = new Clause(ClauseKind.Property)
   clause.id = head.id
   clause.title = head.title
   clause.covers = head.covers
+  clause.samples = samples
   while (!frontIs(c, ")")) {
     clause.forall.push(frontForallVar(p).orReturn())
     if (!frontEat(c, ",")) {
@@ -1857,6 +1912,7 @@ const frontPropertyIn = (p: FrontProp): Result<FrontProperty, FrontRefusal> => {
 
 /**
  * Reads a ts-property block: a `// P-ID covers R-ID — title` first line,
+ * optionally a `// samples: N` second line (the property's total, 1..256),
  * then `forall (x: T, …) => body` with a bounds comment after each type,
  * optionally `where cond`. The
  * body is an expression or a `{ const …; return … }` block; it is typed as it

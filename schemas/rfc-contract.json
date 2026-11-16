@@ -910,8 +910,9 @@
         },
         "samples": {
           "type": "integer",
-          "minimum": 0,
-          "maximum": 256
+          "minimum": 1,
+          "maximum": 256,
+          "description": "The property's total samples, Z3's boundaries first (at most this many) then seeded random draws until it has this many. Absent: every boundary plus 24 random, at most 96 in all."
         }
       },
       "required": ["kind", "id", "title", "covers", "forall", "assert"]
