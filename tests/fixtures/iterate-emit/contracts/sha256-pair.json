@@ -1,0 +1,186 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "sha256-pair",
+  "source": {
+    "title": "Paired SHA-256: Test Vectors",
+    "main": "pair",
+    "sha256": "41a784297026ce520e3c4eaac3eb7c29971a8bfad28fdd61a1165cb95eddec7b"
+  },
+  "sources": [
+    {
+      "id": "pair",
+      "path": "../rfcs/pair.txt",
+      "sha256": "41a784297026ce520e3c4eaac3eb7c29971a8bfad28fdd61a1165cb95eddec7b"
+    }
+  ],
+  "target": {
+    "module": "vector/core/hex"
+  },
+  "requirements": [
+    {
+      "id": "R-PAIR",
+      "section": "1",
+      "level": "DEFINITION",
+      "quote": "For each iteration, set a to sha256Pair(a, b) and b to the old a, both at once."
+    }
+  ],
+  "functions": [
+    {
+      "name": "sha256Pair",
+      "params": [
+        {
+          "name": "a",
+          "type": "string"
+        },
+        {
+          "name": "b",
+          "type": "string"
+        }
+      ],
+      "returns": "string"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "PAIR-1",
+      "title": "sha256Pair from (\"abc\", \"xyz\") once: the swap cannot show yet",
+      "covers": [
+        "R-PAIR"
+      ],
+      "source": {
+        "command": "python3 -c 'import hashlib\nh = lambda s: hashlib.sha256(s.encode()).hexdigest()\na, b = \"abc\", \"xyz\"\nfor _ in range(1): a, b = h(a + b), a\nprint(a)'"
+      },
+      "section": "1",
+      "call": "sha256Pair",
+      "args": [
+        {
+          "str": "abc"
+        },
+        {
+          "str": "xyz"
+        }
+      ],
+      "expect": {
+        "str": "f312795e322c87461a6f3c49e09897c59ca0d5a36245d2a00f08cbc66eee976d"
+      },
+      "iterate": {
+        "count": 1,
+        "names": [
+          "a",
+          "b"
+        ],
+        "next": [
+          {
+            "call": "sha256Pair",
+            "args": [
+              {
+                "var": "a"
+              },
+              {
+                "var": "b"
+              }
+            ]
+          },
+          {
+            "var": "a"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "PAIR-2",
+      "title": "sha256Pair from (\"abc\", \"xyz\") twice: b is the first round's a, not its result",
+      "covers": [
+        "R-PAIR"
+      ],
+      "source": {
+        "command": "python3 -c 'import hashlib\nh = lambda s: hashlib.sha256(s.encode()).hexdigest()\na, b = \"abc\", \"xyz\"\nfor _ in range(2): a, b = h(a + b), a\nprint(a)'"
+      },
+      "section": "1",
+      "call": "sha256Pair",
+      "args": [
+        {
+          "str": "abc"
+        },
+        {
+          "str": "xyz"
+        }
+      ],
+      "expect": {
+        "str": "ca81378cff53f01512302202aa9c8672731d60b197282c5435e1fe12e4752d2e"
+      },
+      "iterate": {
+        "count": 2,
+        "names": [
+          "a",
+          "b"
+        ],
+        "next": [
+          {
+            "call": "sha256Pair",
+            "args": [
+              {
+                "var": "a"
+              },
+              {
+                "var": "b"
+              }
+            ]
+          },
+          {
+            "var": "a"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "PAIR-1000",
+      "title": "sha256Pair from (\"abc\", \"xyz\") 1,000 times, a and b updated together",
+      "covers": [
+        "R-PAIR"
+      ],
+      "source": {
+        "command": "python3 -c 'import hashlib\nh = lambda s: hashlib.sha256(s.encode()).hexdigest()\na, b = \"abc\", \"xyz\"\nfor _ in range(1000): a, b = h(a + b), a\nprint(a)'"
+      },
+      "section": "1",
+      "call": "sha256Pair",
+      "args": [
+        {
+          "str": "abc"
+        },
+        {
+          "str": "xyz"
+        }
+      ],
+      "expect": {
+        "str": "86fcbc25eee909f2f3aefe22b3287f77f559aa5e8ae8a6922fd72eaaa8efdfa2"
+      },
+      "iterate": {
+        "count": 1000,
+        "names": [
+          "a",
+          "b"
+        ],
+        "next": [
+          {
+            "call": "sha256Pair",
+            "args": [
+              {
+                "var": "a"
+              },
+              {
+                "var": "b"
+              }
+            ]
+          },
+          {
+            "var": "a"
+          }
+        ]
+      }
+    }
+  ]
+}

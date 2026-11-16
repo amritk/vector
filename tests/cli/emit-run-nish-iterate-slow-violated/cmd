@@ -1,0 +1,1 @@
+vector spec run tests/fixtures/iterate-emit/contracts/sha256-chain.json --package vector=tests/fixtures/iterate-emit/broken-slow/nish/vector --nish-root .nish --slow

@@ -16,3 +16,8 @@ export function toHex(data: Uint8Array): string {
 export function sha256Hex(text: string): string {
   return toHex(sha256(new TextEncoder().encode(text)))
 }
+
+/** The SHA-256 of `a` followed by `b`, as lowercase hex: a two-argument function, so an iterated vector can swap its arguments. */
+export function sha256Pair(a: string, b: string): string {
+  return sha256Hex(a + b)
+}
