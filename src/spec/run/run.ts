@@ -10,7 +10,7 @@ import { basename, joinPath, makeTempDir, mkdirAll } from "../../core/fs"
 import { toHex } from "../../core/hex"
 import { runProcess } from "../../core/process"
 import { Contract } from "../contract/types"
-import { emitQuote } from "../emit/lit"
+import { EMIT_SLOW_SKIP, emitQuote } from "../emit/lit"
 
 /** A clause's outcome, ordered from best to worst: a requirement takes its clauses' worst. */
 export enum RunOutcome {
@@ -53,6 +53,8 @@ export class RunClause {
   line: string
   /** Why it failed: the indented line after a `FAIL`, or "". */
   detail: string
+  /** Whether it is a slow iterated vector the test skipped because `--slow` was not passed. */
+  slow: boolean
 
   /**
    * Makes a clause that no line has reported yet.
@@ -64,6 +66,7 @@ export class RunClause {
     this.outcome = RunOutcome.NotRun
     this.line = ""
     this.detail = ""
+    this.slow = false
   }
 }
 
@@ -165,7 +168,8 @@ const runClauseIndex = (c: Contract, id: string): i32 => {
  * Reads a test's output: each clause's outcome from the line that reports
  * it (`PASS  [id] …`, `FAIL  [id] …` with its reason indented on the next
  * line, `SKIP  [id] …`). A line naming no clause of the contract is ignored;
- * a clause no line names is not-run.
+ * a clause no line names is not-run. A skip of a vector the contract marks
+ * slow, with the slow reason, is marked slow: left out on purpose.
  *
  * @param c the contract
  * @param stdout the test's standard output
@@ -190,6 +194,9 @@ export const runParse = (c: Contract, stdout: string): RunClause[] => {
     r.outcome = m.outcome
     r.line = lines[i]
     r.detail = ""
+    const it = c.clauses[at].iterate
+    r.slow =
+      m.outcome === RunOutcome.Skip && it !== null && it.slow && lines[i].endsWith(` (${EMIT_SLOW_SKIP})`)
     if (m.outcome === RunOutcome.Fail && i + 1 < lines.length && lines[i + 1].startsWith("      ")) {
       r.detail = lines[i + 1].substring(6, lines[i + 1].length)
     }
@@ -334,9 +341,11 @@ const runRank = (o: RunOutcome): i32 => {
 
 /**
  * Judges a run. Each requirement takes the worst outcome of the clauses that
- * cover it (not-run when none does). The run is an ERROR when its transcript
- * cannot be trusted; else VIOLATED when a clause failed; else an ERROR when a
- * clause did not pass or the test exited nonzero; else SATISFIED.
+ * cover it (not-run when none does), leaving out a slow vector skipped for
+ * want of `--slow`: one covered only by those is a skip. The run is an ERROR
+ * when its transcript cannot be trusted; else VIOLATED when a clause failed;
+ * else an ERROR when a clause other than a slow skip did not pass, every
+ * clause was a slow skip, or the test exited nonzero; else SATISFIED, over what ran.
  *
  * @param c the contract
  * @param clauses the clauses as runParse read them
@@ -349,8 +358,13 @@ export const runJudge = (c: Contract, clauses: RunClause[], exitCode: i32, integ
   for (const r of c.requirements) {
     let worst = RunOutcome.Pass
     let any = false
+    let slow = false
     for (let i = 0; i < c.clauses.length; i++) {
       if (c.clauses[i].covers.indexOf(r.id) < 0) {
+        continue
+      }
+      if (i < clauses.length && clauses[i].slow) {
+        slow = true
         continue
       }
       any = true
@@ -360,14 +374,20 @@ export const runJudge = (c: Contract, clauses: RunClause[], exitCode: i32, integ
       }
     }
     v.requirements.push(r.id)
-    v.outcomes.push(any ? worst : RunOutcome.NotRun)
+    v.outcomes.push(any ? worst : slow ? RunOutcome.Skip : RunOutcome.NotRun)
   }
   let failed = false
   let unpassed = false
+  let passed = false
+  let skippedSlow = false
   for (const k of clauses) {
     if (k.outcome === RunOutcome.Fail) {
       failed = true
-    } else if (k.outcome !== RunOutcome.Pass) {
+    } else if (k.outcome === RunOutcome.Pass) {
+      passed = true
+    } else if (k.slow) {
+      skippedSlow = true
+    } else {
       unpassed = true
     }
   }
@@ -375,7 +395,7 @@ export const runJudge = (c: Contract, clauses: RunClause[], exitCode: i32, integ
     v.status = "ERROR"
   } else if (failed) {
     v.status = "VIOLATED"
-  } else if (unpassed || exitCode !== 0 || clauses.length !== c.clauses.length) {
+  } else if (unpassed || (skippedSlow && !passed) || exitCode !== 0 || clauses.length !== c.clauses.length) {
     v.status = "ERROR"
   } else {
     v.status = "SATISFIED"
@@ -714,8 +734,9 @@ const runTail = (text: string, n: i32): string[] => {
 }
 
 /**
- * A run's result as text: the verdict, each requirement's outcome, each
- * failed clause with its reason, and why the transcript cannot be trusted.
+ * A run's result as text: the verdict, each requirement's outcome, each slow
+ * vector skipped, each failed clause with its reason, and why the transcript
+ * cannot be trusted.
  * An ERROR with no clause run shows the end of the compiler's output.
  *
  * @param r the result
@@ -725,6 +746,11 @@ export const runFormatText = (r: RunResult): string[] => {
   const out: string[] = [`${r.verdict.status}: ${r.contract} (exit ${r.exitCode})`]
   for (let i = 0; i < r.verdict.requirements.length; i++) {
     out.push(`  ${runOutcomeName(r.verdict.outcomes[i])}  ${r.verdict.requirements[i]}`)
+  }
+  for (const k of r.clauses) {
+    if (k.slow) {
+      out.push(`  skip  ${k.id} (slow; pass --slow)`)
+    }
   }
   for (const k of r.clauses) {
     if (k.outcome === RunOutcome.Fail) {
@@ -750,7 +776,8 @@ export const runFormatText = (r: RunResult): string[] => {
 
 /**
  * A run's result as a markdown section for a PR comment: the verdict, then a
- * table of the requirements and their outcomes, then each failure. What the
+ * table of the requirements and their outcomes, then each slow vector
+ * skipped, then each failure. What the
  * module printed goes only inside code spans, escaped by runEscape (which
  * leaves no backtick), so it cannot add links, HTML or table cells.
  *
@@ -761,6 +788,16 @@ export const runFormatMarkdown = (r: RunResult): string => {
   const out: string[] = [`### \`${r.contract}\`: ${r.verdict.status}`, "", "| requirement | outcome |", "| --- | --- |"]
   for (let i = 0; i < r.verdict.requirements.length; i++) {
     out.push(`| ${r.verdict.requirements[i]} | ${runOutcomeName(r.verdict.outcomes[i])} |`)
+  }
+  const slow: string[] = []
+  for (const k of r.clauses) {
+    if (k.slow) {
+      slow.push(`\`${k.id}\``)
+    }
+  }
+  if (slow.length > 0) {
+    out.push("")
+    out.push(`Skipped as slow (pass \`--slow\` to run): ${slow.join(", ")}`)
   }
   for (const k of r.clauses) {
     if (k.outcome === RunOutcome.Fail) {

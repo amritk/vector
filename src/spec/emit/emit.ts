@@ -22,10 +22,18 @@ import { Clause, Contract, Expr, FnSig, Literal } from "../contract/types"
 import { TypeEnv, typeCallsIn, typeEnvBind, typeIntBase, typeOf } from "../contract/typing"
 import { vocabBaseOf, vocabIsIntType, vocabIsOptional, vocabValueType } from "../contract/vocab"
 import { emitHelperDeps, emitHelperNames, emitHelperText } from "./helpers"
-import { emitCommentText, emitF64IsFinite, emitF64Lit, emitIntLit, emitLiteralHex, emitQuote, emitToInt } from "./lit"
+import {
+  EMIT_SLOW_SKIP,
+  emitCommentText,
+  emitF64IsFinite,
+  emitF64Lit,
+  emitIntLit,
+  emitLiteralHex,
+  emitQuote,
+  emitToInt,
+} from "./lit"
 
 const EMIT_NO_F64_FORALL: string = "the sampler has no f64 forall variable yet, so Nish has no samples to check"
-const EMIT_SLOW_SKIP: string = "slow: pass --slow to run"
 const EMIT_NO_SMALL_INT: string = "Nish has no i8 or i16: write the parameter as i32"
 
 /** How the emitted header describes the program. */
