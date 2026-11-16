@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1](https://github.com/amritk/vector/compare/v0.3.0...v0.3.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* **release:** name the repository in package.json, which npm provenance checks ([4e5ca9b](https://github.com/amritk/vector/commit/4e5ca9bf3eff7e6cd3df38db8ab57731bdbf65e1))
+* **release:** name the repository in package.json, which npm provenance checks ([a6c9c32](https://github.com/amritk/vector/commit/a6c9c3278c9a08f9be569f1eaa7d30ddf257d732))
+
 ## [0.3.0](https://github.com/amritk/vector/compare/v0.2.1...v0.3.0) (2026-11-16)
 
 
