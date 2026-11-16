@@ -1398,9 +1398,22 @@ const renderSignatures = (name, sigs, ctx) =>
     ...signatureFields(sig, ctx),
   ]);
 
+// release-please bumps a line marked `x-release-please-version` in the source,
+// but never this generated page, so printing that value would make the
+// reference stale on every release commit.
+const releaseBumped = (r) => {
+  const at = r.sources?.[0];
+  if (!at?.fullFileName || !at.line) return false;
+  const line =
+    fs.readFileSync(at.fullFileName, "utf8").split("\n")[at.line - 1] ?? "";
+  return line.includes("x-release-please-version");
+};
+
 const valueText = (r) => {
   const decl = `${r.flags?.isConst ? "const" : "let"} ${r.name}: ${typeText(r.type)}`;
-  return r.defaultValue !== undefined && String(r.defaultValue).length <= 60
+  return r.defaultValue !== undefined &&
+    String(r.defaultValue).length <= 60 &&
+    !releaseBumped(r)
     ? `${decl} = ${r.defaultValue}`
     : decl;
 };

@@ -41,6 +41,12 @@
   },
   "overrides": [
     {
+      "include": ["package.json", ".github/.release-please-manifest.json"],
+      "formatter": {
+        "enabled": false
+      }
+    },
+    {
       "include": ["src/**/*.ts", "tests/**/*.ts"],
       "formatter": {
         "lineWidth": 120
