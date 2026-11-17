@@ -78,7 +78,7 @@ const deriveTestCtx = (json: string): CheckContext => {
   return ctx
 }
 
-/** The clause of a contract with an id; the test fails loudly when there is none. */
+/** The clause of a contract with an id, or its first clause when none has it. */
 const deriveTestClause = (c: Contract, id: string): Clause => {
   for (const k of c.clauses) {
     if (k.id === id) {

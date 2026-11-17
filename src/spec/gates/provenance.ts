@@ -30,6 +30,9 @@ const gateSourceRun = (ctx: CheckContext, id: string): CheckSourceRun | null => 
 /**
  * Whether a vector cites its inputs to one section of the main RFC and its
  * result to another, so its result may be derived (`spec/gates/derive`).
+ * An RFC-profile spec gets a `spec` source only from the `; result` form (a
+ * bare section anchor is refused there), so this shape is that form's alone;
+ * a module spec's `spec` rows have a main source and never match.
  */
 const gateCitesResultApart = (ctx: CheckContext, k: Clause, section: string): boolean => {
   const inputs = k.section
