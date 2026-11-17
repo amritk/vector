@@ -21,6 +21,16 @@ const DERIVE_TEST_SIGN: string = `{"op": "unwrap", "args": [{"call": "sign", "ar
 /** The message variable. */
 const DERIVE_TEST_MSG: string = `{"var": "msg"}`
 
+/** A signature variable of 1 byte, to quantify (from ", "). */
+const DERIVE_TEST_SIG_VAR: string = `, {"name": "sig", "type": "bytes", "minLen": 1, "maxLen": 1}`
+
+/** The signature variable. */
+const DERIVE_TEST_SIG: string = `{"var": "sig"}`
+
+/** What the derived rule says of a property P that passes a literal argument. */
+const DERIVE_TEST_LIT: string =
+  "P passes a literal argument, which restates the vector instead of deriving its result: bind it through a quantified variable or a cited vector"
+
 /** A call of verify. */
 const deriveTestCall = (pk: string, msg: string, sig: string): string =>
   `{"call": "verify", "args": [${pk}, ${msg}, ${sig}]}`
@@ -79,7 +89,8 @@ const deriveTestBase = (props: string, vectors: string): string => `{
       {"name": "sig", "type": "bytes"}], "returns": "bool"},
     {"name": "look", "params": [{"name": "key", "type": "bytes"}], "returns": "bytes?"},
     {"name": "use", "params": [{"name": "v", "type": "bytes?"}], "returns": "bool"},
-    {"name": "gate", "params": [{"name": "key", "type": "bytes"}, {"name": "b", "type": "bool"}], "returns": "bool"}
+    {"name": "gate", "params": [{"name": "key", "type": "bytes"}, {"name": "b", "type": "bool"}], "returns": "bool"},
+    {"name": "zero", "params": [], "returns": "bytes"}
   ],
   "clauses": [
     ${props},
@@ -228,16 +239,16 @@ const deriveTestForms = (): DeriveTestCase[] => {
       "",
     ),
     new DeriveTestCase(
-      "a literal null matches, the key left unbound",
+      "a literal null",
       deriveTestOne(deriveTestEq(deriveTestUse(`{"null": true}`), yes)),
       vUse,
-      "P leaves key unbound",
+      DERIVE_TEST_LIT,
     ),
     new DeriveTestCase(
       "a literal that is not null",
       deriveTestOne(deriveTestEq(deriveTestUse(`{"hex": ""}`), yes)),
       vUse,
-      "P passes a literal that is not the vector's value",
+      DERIVE_TEST_LIT,
     ),
     new DeriveTestCase(
       "a plain call where no sibling expects null",
@@ -265,7 +276,10 @@ const deriveTestForms = (): DeriveTestCase[] => {
     ),
     new DeriveTestCase(
       "a failed sibling leaves no binding",
-      deriveTestOne(deriveTestEq(deriveTestCall(`{"hex": "aa"}`, `{"hex": "02"}`, twice), yes)),
+      `{"kind": "property", "id": "P", "title": "t", "covers": ["R5"],
+        "forall": [{"name": "pk", "type": "bytes", "minLen": 1, "maxLen": 1}, {"name": "msg", "type": "bytes", "minLen": 1, "maxLen": 1},
+          {"name": "key", "type": "bytes", "minLen": 1, "maxLen": 1}],
+        "assert": ${deriveTestEq(deriveTestCall(`{"var": "pk"}`, DERIVE_TEST_MSG, twice), yes)}}`,
       `${sx}, ${sy}, ${deriveTestRow("aa", `{"hex": "02"}`, "b9", "true", "")}`,
       "",
     ),
@@ -492,6 +506,7 @@ const deriveTestShapes = (): DeriveTestCase[] => {
   const rt = deriveTestCall(DERIVE_TEST_PK, DERIVE_TEST_MSG, DERIVE_TEST_SIGN)
   const bb = `{"hex": "bb"}`
   const lit = deriveTestCall(DERIVE_TEST_PK, DERIVE_TEST_MSG, bb)
+  const bySig = deriveTestEq(deriveTestCall(DERIVE_TEST_PK, DERIVE_TEST_MSG, DERIVE_TEST_SIG), yes)
   const pk2 = `{"op": "unwrap", "args": [{"call": "pk", "args": [${DERIVE_TEST_PK}]}]}`
   const pk3 = `{"op": "unwrap", "args": [{"call": "pk", "args": [${pk2}]}]}`
   const single = "P does not assert a single equality"
@@ -533,12 +548,17 @@ const deriveTestShapes = (): DeriveTestCase[] => {
       row,
       "P does not assert that verify is a literal",
     ),
-    new DeriveTestCase("a literal argument that is the vector's", deriveTestProp("", deriveTestEq(lit, yes)), row, ""),
+    new DeriveTestCase(
+      "a literal argument that is the vector's",
+      deriveTestProp("", deriveTestEq(lit, yes)),
+      row,
+      DERIVE_TEST_LIT,
+    ),
     new DeriveTestCase(
       "a literal argument that is not",
       deriveTestProp("", deriveTestEq(deriveTestCall(DERIVE_TEST_PK, DERIVE_TEST_MSG, `{"hex": "bc"}`), yes)),
       row,
-      "P passes a literal that is not the vector's value",
+      DERIVE_TEST_LIT,
     ),
     new DeriveTestCase(
       "a computed argument",
@@ -576,7 +596,7 @@ const deriveTestShapes = (): DeriveTestCase[] => {
     ),
     new DeriveTestCase(
       "two calls deep",
-      deriveTestProp("", deriveTestEq(deriveTestCall(pk2, DERIVE_TEST_MSG, bb), yes)),
+      deriveTestProp(DERIVE_TEST_SIG_VAR, deriveTestEq(deriveTestCall(pk2, DERIVE_TEST_MSG, DERIVE_TEST_SIG), yes)),
       deriveTestRow("a2", `{"hex": "02"}`, "bb", "true", ""),
       "",
     ),
@@ -600,7 +620,7 @@ const deriveTestShapes = (): DeriveTestCase[] => {
     ),
     new DeriveTestCase(
       "a variable left unbound",
-      deriveTestProp(`, {"name": "z", "type": "bytes", "minLen": 0, "maxLen": 1}`, deriveTestEq(lit, yes)),
+      deriveTestProp(`, {"name": "z", "type": "bytes", "minLen": 0, "maxLen": 1}`, deriveTestEq(rt, yes)),
       row,
       "P leaves z unbound",
     ),
@@ -612,7 +632,7 @@ const deriveTestShapes = (): DeriveTestCase[] => {
     ),
     new DeriveTestCase(
       "a number for a bytes variable",
-      deriveTestProp("", deriveTestEq(lit, yes)),
+      deriveTestProp(DERIVE_TEST_SIG_VAR, bySig),
       deriveTestRow("aa", `{"int": 2}`, "bb", "true", ""),
       "P binds msg, a bytes variable, to a value that is not bytes",
     ),
@@ -626,7 +646,7 @@ const deriveTestShapes = (): DeriveTestCase[] => {
     ),
     new DeriveTestCase(
       "a key shorter than its domain",
-      deriveTestProp("", deriveTestEq(lit, yes)),
+      deriveTestProp(DERIVE_TEST_SIG_VAR, bySig),
       `${deriveTestCited("K0", "pk", `{"hex": ""}`, "a0")}, ${deriveTestRow("a0", `{"hex": "02"}`, "bb", "true", "")}`,
       "P binds seed to a 0-byte value, outside its domain 1..1",
     ),
@@ -654,6 +674,133 @@ const deriveTestWheres = (): DeriveTestCase[] => {
       `${deriveTestRt(`"where": ${deriveTestEq(`{"call": "pk", "args": [{"var": "seed"}]}`, `{"hex": "aa"}`)},`)}, ${flip}`,
       row,
       "P-RT's where cannot be evaluated: calls pk, and a call is not evaluated here; P-FLIP asserts another result than the vector's",
+    ),
+  ]
+}
+
+/** The round trip P over a seed of 1 byte and a message whose domain is `msg` (its length fields). */
+const deriveTestPinned = (msg: string): string =>
+  `{"kind": "property", "id": "P", "title": "t", "covers": ["R5"],
+    "forall": [{"name": "seed", "type": "bytes", "minLen": 1, "maxLen": 1}, {"name": "msg", "type": "bytes", ${msg}}],
+    "assert": ${deriveTestEq(deriveTestCall(DERIVE_TEST_PK, DERIVE_TEST_MSG, DERIVE_TEST_SIGN), `{"bool": true}`)}}`
+
+/**
+ * The ways a property may restate the row instead of deriving it: a literal
+ * in each argument position, under unwrap or inside a nested sibling call,
+ * an argument no variable reaches, and a variable its domain or where pins
+ * to the row's value; each beside the derivation it neighbours.
+ */
+const deriveTestRestates = (): DeriveTestCase[] => {
+  const row = deriveTestRow("aa", `{"hex": "02"}`, "bb", "true", "")
+  const yes = `{"bool": true}`
+  const flip = deriveTestFlip(DERIVE_TEST_FLIP)
+  const f1 = deriveTestCited("F1", "flip", `{"hex": "bb"}, {"int": 3}`, "ee")
+  const s0 = deriveTestCited("S0", "sign", `{"hex": "01"}, {"hex": ""}`, "b0")
+  const empty = deriveTestRow("aa", `{"hex": ""}`, "b0", "true", "")
+  const flipOther = "P-RT asserts another result than the vector's"
+  const restatesMsg =
+    "admits only the vector's value for msg (its domain and where allow no other), so it restates the vector instead of deriving its result"
+  return [
+    new DeriveTestCase("no literal derives", "", row, ""),
+    new DeriveTestCase(
+      "a literal key",
+      deriveTestProp("", deriveTestEq(deriveTestCall(`{"hex": "aa"}`, DERIVE_TEST_MSG, DERIVE_TEST_SIGN), yes)),
+      row,
+      DERIVE_TEST_LIT,
+    ),
+    new DeriveTestCase(
+      "a literal message",
+      deriveTestProp("", deriveTestEq(deriveTestCall(DERIVE_TEST_PK, `{"hex": "02"}`, DERIVE_TEST_SIGN), yes)),
+      row,
+      DERIVE_TEST_LIT,
+    ),
+    new DeriveTestCase(
+      "a literal signature",
+      deriveTestProp("", deriveTestEq(deriveTestCall(DERIVE_TEST_PK, DERIVE_TEST_MSG, `{"hex": "bb"}`), yes)),
+      row,
+      DERIVE_TEST_LIT,
+    ),
+    new DeriveTestCase(
+      "a literal under unwrap",
+      deriveTestProp(
+        "",
+        deriveTestEq(
+          deriveTestCall(
+            `{"op": "unwrap", "args": [{"call": "pk", "args": [{"hex": "01"}]}]}`,
+            DERIVE_TEST_MSG,
+            DERIVE_TEST_SIGN,
+          ),
+          yes,
+        ),
+      ),
+      row,
+      DERIVE_TEST_LIT,
+    ),
+    new DeriveTestCase(
+      "a tamper bit quantified over",
+      "",
+      `${f1}, ${deriveTestRow("aa", `{"hex": "02"}`, "ee", "false", "")}`,
+      "",
+    ),
+    new DeriveTestCase(
+      "a literal inside a nested sibling call",
+      `{"kind": "property", "id": "P", "title": "t", "covers": ["R5"],
+        "forall": [{"name": "seed", "type": "bytes", "minLen": 1, "maxLen": 1}, {"name": "msg", "type": "bytes", "minLen": 0, "maxLen": 1}],
+        "assert": ${deriveTestEq(
+          deriveTestCall(
+            DERIVE_TEST_PK,
+            DERIVE_TEST_MSG,
+            `{"call": "flip", "args": [${DERIVE_TEST_SIGN}, {"int": 3}]}`,
+          ),
+          `{"bool": false}`,
+        )}}`,
+      `${f1}, ${deriveTestRow("aa", `{"hex": "02"}`, "ee", "false", "")}`,
+      DERIVE_TEST_LIT,
+    ),
+    new DeriveTestCase(
+      "an argument no variable reaches",
+      deriveTestProp(
+        "",
+        deriveTestEq(deriveTestCall(DERIVE_TEST_PK, DERIVE_TEST_MSG, `{"call": "zero", "args": []}`), yes),
+      ),
+      `${deriveTestCited("Z1", "zero", "", "bb")}, ${row}`,
+      "P passes argument 3 through no variable it quantifies over, so it restates the vector instead of deriving its result",
+    ),
+    new DeriveTestCase(
+      "an empty message in a wider domain",
+      deriveTestPinned(`"minLen": 0, "maxLen": 1`),
+      `${s0}, ${empty}`,
+      "",
+    ),
+    new DeriveTestCase(
+      "a domain of the empty message alone",
+      deriveTestPinned(`"minLen": 0, "maxLen": 0`),
+      `${s0}, ${empty}`,
+      `P ${restatesMsg}`,
+    ),
+    new DeriveTestCase(
+      "a tamper bit of one value",
+      `${deriveTestRt("")}, ${deriveTestFlip(`"type": "i32", "min": 3, "max": 3`)}`,
+      `${f1}, ${deriveTestRow("aa", `{"hex": "02"}`, "ee", "false", "")}`,
+      `${flipOther}; P-FLIP admits only the vector's value for bit (its domain and where allow no other), so it restates the vector instead of deriving its result`,
+    ),
+    new DeriveTestCase(
+      "a tamper bit of two values",
+      `${deriveTestRt("")}, ${deriveTestFlip(`"type": "i32", "min": 3, "max": 4`)}`,
+      `${f1}, ${deriveTestRow("aa", `{"hex": "02"}`, "ee", "false", "")}`,
+      "",
+    ),
+    new DeriveTestCase(
+      "a where that pins the message",
+      `${deriveTestRt(`"where": ${deriveTestEq(DERIVE_TEST_MSG, `{"hex": "02"}`)},`)}, ${flip}`,
+      row,
+      `P-RT ${restatesMsg}; P-FLIP asserts another result than the vector's`,
+    ),
+    new DeriveTestCase(
+      "a where that pins the length to the empty message",
+      `${deriveTestRt(deriveTestLen("0"))}, ${flip}`,
+      `${s0}, ${empty}`,
+      `P-RT ${restatesMsg}; P-FLIP asserts another result than the vector's`,
     ),
   ]
 }
@@ -693,6 +840,9 @@ export const main = (): i32 => {
   }
   t.eqStr("a let as an argument", deriveTestLetArg(), "P computes an argument (a let) that is not matched here")
   for (const c of deriveTestWheres()) {
+    t.eqStr(c.name, deriveTestWhy(c.props, c.vectors, ["R5"]), c.want)
+  }
+  for (const c of deriveTestRestates()) {
     t.eqStr(c.name, deriveTestWhy(c.props, c.vectors, ["R5"]), c.want)
   }
   for (const c of deriveTestForms()) {
