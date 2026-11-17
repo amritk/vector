@@ -41,10 +41,10 @@ into a class:
 
 - **spec**: `specs/`, `contracts/` and `rfcs/`;
 - **generated**: a test in `test/spec/` whose one `// vector-contract-sha256:`
-  line names a contract in `contracts/` or one given on the command line, as
-  that contract is in the work tree. It counts on the spec side, so it lands
-  with its contract, not with the implementation. A test with no such line,
-  with two, or naming no contract is implementation;
+  line names a contract in `contracts/` (not a symbolic link) or one given on
+  the command line, as that contract is in the work tree. It counts on the
+  spec side, so it lands with its contract, not with the implementation. A
+  test with no such line, with two, or naming no contract is implementation;
 - **neutral**: `docs/` and the top-level `*.md` files;
 - **implementation**: everything else.
 

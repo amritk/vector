@@ -295,13 +295,37 @@ const frozenTestTwoRepo = (t: Suite): Result<boolean, string> => {
     shas.size === 2 && shas.has(sha256Hex(a0)) && shas.has(sha256Hex(b0)) && !shas.has(sha256Hex(sidecar)),
   )
   t.ok("and a given contract outside contracts/", frozenContractShas(top, [`${top}/rfcs/rfc4648.txt`]).size === 3)
+  runProcess(["ln", "-s", "../src/x.ts", `${dir}/contracts/l.json`], "", 10000).orReturn()
+  t.ok(
+    "but not a symbolic link in contracts/",
+    !frozenContractShas(top, [`${top}/contracts/a.json`]).has(sha256Hex("x\n")),
+  )
+  prTestWrite(dir, "test/spec/n.ts", frozenTestGenerated(["x\n"], "n")).orReturn()
+  prTestWrite(dir, "specs/s.md", "s\n").orReturn()
+  const linked = frozenCheck(dir, "main", ["contracts/a.json"])
+  t.eqStr(
+    "so a test naming a linked file is implementation",
+    linked.isOk() ? linked.value.problems.join(" | ") : linked.error,
+    frozenTestBoth("contracts/l.json, specs/s.md", "test/spec/n.ts"),
+  )
+  frozenTestReset(dir).orReturn()
 
   const onlyA = ["contracts/a.json"]
+  const both = [
+    "contracts/a.json",
+    a1,
+    "contracts/b.json",
+    b1,
+    "test/spec/a.ts",
+    frozenTestGenerated([a1], "a"),
+    "test/spec/b.ts",
+    frozenTestGenerated([b1], "b"),
+  ]
   const bad = frozenTestContract(sha256Hex("not the RFC"), "b")
   const rows: FrozenTestRow[] = [
     new FrozenTestRow(
       "both contracts and both tests change, a given",
-      ["contracts/a.json", a1, "contracts/b.json", b1, "test/spec/a.ts", frozenTestGenerated([a1], "a"), "test/spec/b.ts", frozenTestGenerated([b1], "b")],
+      both,
       onlyA,
       "OK",
       ["✓ contract contracts/a.json", "generated test/spec/a.ts", "generated test/spec/b.ts"],
@@ -309,7 +333,7 @@ const frozenTestTwoRepo = (t: Suite): Result<boolean, string> => {
     ),
     new FrozenTestRow(
       "both contracts and both tests change, none given",
-      ["contracts/a.json", a1, "contracts/b.json", b1, "test/spec/a.ts", frozenTestGenerated([a1], "a"), "test/spec/b.ts", frozenTestGenerated([b1], "b")],
+      both,
       [],
       "OK",
       ["✓ contract contracts/a.json", "✓ contract contracts/b.json", "generated test/spec/b.ts"],

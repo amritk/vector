@@ -162,13 +162,12 @@ const read = (dir, name) => {
 };
 
 /** The environment a `repo` case runs in: no git variables that redirect it. */
-const repoEnv = () => {
-  const env = { ...process.env };
-  delete env.GIT_DIR;
-  delete env.GIT_WORK_TREE;
-  delete env.GIT_INDEX_FILE;
-  return env;
-};
+const repoEnv = () =>
+  Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([k]) => !["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"].includes(k),
+    ),
+  );
 
 /** Runs git in `dir` with a fixed identity and no user config; throws on failure. */
 const repoGit = (dir, args) => {

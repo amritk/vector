@@ -214,8 +214,8 @@ their paths
 
 The SHA-256 of every contract a generated test may name to be spec side:
 the contracts checked and every contracts/*.json at the repository's top
-(frozenDefaultContracts), each as its bytes are in the work tree. A
-contract that is only classified this way is never checked.
+(frozenDefaultContracts) but a symbolic link, each as its bytes are in the
+work tree. A contract that is only classified this way is never checked.
 
 ```ts
 function frozenContractShas(top: string, checked: string[]): Set<string>
@@ -229,7 +229,7 @@ the repository's top
 
 <scalar-field name="checked" type="string[]" required>
 
-the contracts the gate checks, absolute
+the contracts the gate checks, absolute (frozenResolve)
 
 </scalar-field>
 

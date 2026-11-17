@@ -206,26 +206,28 @@ export const frozenDefaultContracts = (top: string): string[] => {
 /**
  * The SHA-256 of every contract a generated test may name to be spec side:
  * the contracts checked and every contracts/*.json at the repository's top
- * (frozenDefaultContracts), each as its bytes are in the work tree. A
- * contract that is only classified this way is never checked.
+ * (frozenDefaultContracts) but a symbolic link, each as its bytes are in the
+ * work tree. A contract that is only classified this way is never checked.
  *
  * @param top the repository's top
- * @param checked the contracts the gate checks, absolute
+ * @param checked the contracts the gate checks, absolute (frozenResolve)
  * @returns the hex SHA-256 of each one that can be read
  */
 export const frozenContractShas = (top: string, checked: string[]): Set<string> => {
+  const files: string[] = []
+  for (const f of checked) {
+    files.push(f)
+  }
+  for (const f of frozenDefaultContracts(top)) {
+    if (frozenUnlinked(top, f).isOk()) {
+      files.push(f)
+    }
+  }
   const shas = new Set<string>()
-  const paths = new Set<string>()
-  for (const list of [checked, frozenDefaultContracts(top)]) {
-    for (const f of list) {
-      if (paths.has(f)) {
-        continue
-      }
-      paths.add(f)
-      const text = readFileSyncOrNull(f)
-      if (text !== null) {
-        shas.add(sha256Hex(text))
-      }
+  for (const f of files) {
+    const text = readFileSyncOrNull(f)
+    if (text !== null) {
+      shas.add(sha256Hex(text))
     }
   }
   return shas
