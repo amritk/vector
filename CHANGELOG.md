@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.5.0](https://github.com/amritk/vector/compare/v0.4.0...v0.5.0) (2026-11-17)
+
+
+### Features
+
+* **ci:** cap the size of agent-facing docs ([#143](https://github.com/amritk/vector/issues/143)) ([472f030](https://github.com/amritk/vector/commit/472f030150a5a823cb8b4f96424f75fa58c2c15f))
+* **cli:** name docs/AI.md from an Agents section in --help ([#145](https://github.com/amritk/vector/issues/145)) ([e232b05](https://github.com/amritk/vector/commit/e232b05a46d586da4471c5522b1c8e3f9dc5b8f7))
+* **spec:** close the iterated-vectors follow-ups from [#117](https://github.com/amritk/vector/issues/117) ([#134](https://github.com/amritk/vector/issues/134)) ([247629d](https://github.com/amritk/vector/commit/247629d40f67ec86ecec30943ffd811d6f1f11d6))
+* **verify:** replay every counterexample exactly and report MISMATCH ([#146](https://github.com/amritk/vector/issues/146)) ([045dca3](https://github.com/amritk/vector/commit/045dca3e91a546cd45e6de2d292e633724a7b6d9))
+
+
+### Bug Fixes
+
+* **spec:** refuse a property that restates the row it derives ([#144](https://github.com/amritk/vector/issues/144)) ([d23aa05](https://github.com/amritk/vector/commit/d23aa054a908da73e61141d4796c19e6538b9e4f))
+* **spec:** report a refusal's own markdown line, or none ([#148](https://github.com/amritk/vector/issues/148)) ([6f68c42](https://github.com/amritk/vector/commit/6f68c427fdaeedc390c41a06afa0a1df1726d6b5))
+
 ## [0.4.0](https://github.com/amritk/vector/compare/v0.3.1...v0.4.0) (2026-11-17)
 
 

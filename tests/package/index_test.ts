@@ -94,7 +94,7 @@ const indexAgentsDocBinary = (t: Suite): void => {
 
 export const main = (): i32 => {
   const t = new Suite("package/index")
-  t.eqStr("version", VECTOR_VERSION, "0.4.0") // x-release-please-version
+  t.eqStr("version", VECTOR_VERSION, "0.5.0") // x-release-please-version
 
   const spec = indexRead("tests/fixtures/currency-spec.json")
   const program = indexRead("tests/fixtures/currency.json")
