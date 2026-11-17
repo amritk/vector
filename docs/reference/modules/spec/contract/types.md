@@ -1003,6 +1003,20 @@ The unit the length is written in: "bits" (bytes × 8) or "bytes".
 unit: string
 ```
 
+#### Truncate.count
+
+The length in the unit the spec wrote: 128 for 128 bits, 16 for 16 bytes.
+
+```ts
+count(): i64
+```
+
+<scalar-field name="returns" type="i64">
+
+the count of bits or bytes, as `unit` says
+
+</scalar-field>
+
 #### Truncate.label
 
 The truncation as a report names it, in the unit the spec wrote:

@@ -371,7 +371,16 @@ export class Truncate {
    * @returns the words, without brackets
    */
   label(): string {
-    return this.unit === "bytes" ? `first ${this.bytes} bytes` : `first ${this.bytes * 8} bits`
+    return `first ${this.count()} ${this.unit}`
+  }
+
+  /**
+   * The length in the unit the spec wrote: 128 for 128 bits, 16 for 16 bytes.
+   *
+   * @returns the count of bits or bytes, as `unit` says
+   */
+  count(): i64 {
+    return this.unit === "bytes" ? this.bytes : this.bytes * 8
   }
 }
 

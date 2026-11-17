@@ -123,8 +123,8 @@ to 12 of the 16 printed bytes is refused as only part of a value.
 
 The report names the truncation beside the vector: the text report lists it
 as `○ 4.6-256 (first 128 bits)`, the markdown report's Clause cell the same,
-and the JSON report has `"truncations": {"4.6-256": {"bytes": 16, "unit":
-"bits"}}`, which is `{}` when no vector is truncated.
+and the JSON report has `"truncations": {"4.6-256": {"bits": 128}}`, each
+length as the contract writes it, which is `{}` when no vector is truncated.
 
 ## 1. Build the XML
 

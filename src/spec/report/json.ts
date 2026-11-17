@@ -18,7 +18,7 @@ const reportStrings = (xs: string[]): string => `[${xs.map(reportQ).join(",")}]`
  * The report as JSON on one line: the status, every finding and warning with
  * its gate and place, which clauses cover each requirement, each property's
  * sampling, each source command's run, and each vector held to its result's
- * first bytes (`{bytes, unit}`, the unit the spec wrote).
+ * first bytes (`{"bits": 128}` or `{"bytes": 16}`, as the contract writes it).
  *
  * @param ctx the check's context, after the gates ran
  * @param report what the gates found
@@ -48,7 +48,7 @@ export const reportJson = (ctx: CheckContext, report: CheckReport): string => {
   for (const k of ctx.contract.clauses) {
     const tr = k.truncate
     if (tr !== null) {
-      truncations.push(`${reportQ(k.id)}:{"bytes":${tr.bytes},"unit":${reportQ(tr.unit)}}`)
+      truncations.push(`${reportQ(k.id)}:{${reportQ(tr.unit)}:${tr.count()}}`)
     }
   }
   return `{"status":${reportQ(reportStatus(report))},"contract":${reportQ(ctx.contract.contract)},"issues":[${issues.join(",")}],"warnings":[${warnings.join(",")}],"coverage":{${coverage.join(",")}},"samples":{${samples.join(",")}},"sources":{${sources.join(",")}},"truncations":{${truncations.join(",")}}}`

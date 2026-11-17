@@ -848,7 +848,7 @@ the markdown
 A run's result as JSON: `{contract, status, exit, requirements: {id:
 outcome}, clauses: [{id, outcome, detail}], integrity: [...]}`. A slow
 vector skipped for want of `--slow` also has `"slow": true`, and a vector
-held to its result's first bytes has `"truncate": {bytes, unit}`.
+held to its result's first bytes has `"truncate"` as the contract writes it (`{"bits": 128}`).
 
 ```ts
 function runFormatJson(r: RunResult): string

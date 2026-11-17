@@ -502,8 +502,8 @@ not pass by matching the start.
 
 `spec run` names the truncation on each line it prints about the vector, as
 `  skip  4.6-256 (first 128 bits) (slow; pass --slow)` or after a failure's
-line, and in the JSON report the clause has `"truncate": {"bytes": 16,
-"unit": "bits"}`.
+line, and in the JSON report the clause has `"truncate": {"bits": 128}`, as
+the contract writes it.
 
 ## A planted bug
 

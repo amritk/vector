@@ -206,8 +206,11 @@ const truncEmitLiveRuns = (t: Suite): void => {
       argv.push("json")
       const ran = runProcess(argv, "", 240000).expect("run")
       t.contains(`${lang}: ${truncEmitWhy()[i]}`, ran.stdout, `"status": "${truncEmitWant()[i]}"`)
+      t.contains(`${lang}: the json names the truncation`, ran.stdout, `"truncate": {"bits": 128}`)
       if (i === 2) {
         t.contains(`${lang}: the wrong byte is shown`, ran.stdout, `got \\"a3b6167473100ee06e0c796c2955552c\\"`)
+        const text = runProcess(argv.slice(0, argv.length - 2), "", 240000).expect("run")
+        t.contains(`${lang}: the text failure names the truncation`, text.stdout, " (first 128 bits)")
       }
       if (i === 3) {
         t.contains(`${lang}: the short result is named`, ran.stdout, "a 15-byte result, shorter than the 16 bytes")

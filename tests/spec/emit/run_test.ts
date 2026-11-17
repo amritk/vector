@@ -373,7 +373,7 @@ const runTestTruncate = (t: Suite): void => {
     "- `FAIL  [4.6-256] HMAC-SHA-256, test case 5` (first 128 bits): `got 00, want a3`",
   )
   const json = runFormatJson(r)
-  t.contains("the json records it", json, `"detail": "got 00, want a3", "truncate": {"bytes": 16, "unit": "bits"}}`)
+  t.contains("the json records it", json, `"detail": "got 00, want a3", "truncate": {"bits": 128}}`)
   t.ok("and only on that vector", json.substring(json.indexOf(`"truncate"`) + 1, json.length).indexOf(`"truncate"`) < 0)
   const kept = new RunClause("V")
   kept.outcome = RunOutcome.Skip

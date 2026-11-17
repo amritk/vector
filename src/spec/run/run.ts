@@ -872,7 +872,7 @@ export const runFormatMarkdown = (r: RunResult): string => {
  * A run's result as JSON: `{contract, status, exit, requirements: {id:
  * outcome}, clauses: [{id, outcome, detail}], integrity: [...]}`. A slow
  * vector skipped for want of `--slow` also has `"slow": true`, and a vector
- * held to its result's first bytes has `"truncate": {bytes, unit}`.
+ * held to its result's first bytes has `"truncate"` as the contract writes it (`{"bits": 128}`).
  *
  * @param r the result
  * @returns the JSON text, without a trailing newline
@@ -886,7 +886,7 @@ export const runFormatJson = (r: RunResult): string => {
   for (const k of r.clauses) {
     const slow = k.slow ? `, "slow": true` : ""
     const tr = k.truncate
-    const cut = tr === null ? "" : `, "truncate": {"bytes": ${tr.bytes}, "unit": ${emitQuote(tr.unit)}}`
+    const cut = tr === null ? "" : `, "truncate": {${emitQuote(tr.unit)}: ${tr.count()}}`
     clauses.push(
       `{"id": ${emitQuote(k.id)}, "outcome": ${emitQuote(runOutcomeName(k.outcome))}, "detail": ${emitQuote(k.detail)}${slow}${cut}}`,
     )

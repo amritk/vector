@@ -19,7 +19,7 @@ Generated from [src/spec/report/json.ts](https://github.com/amritk/vector/blob/m
 The report as JSON on one line: the status, every finding and warning with
 its gate and place, which clauses cover each requirement, each property's
 sampling, each source command's run, and each vector held to its result's
-first bytes (`{bytes, unit}`, the unit the spec wrote).
+first bytes (`{"bits": 128}` or `{"bytes": 16}`, as the contract writes it).
 
 ```ts
 function reportJson(ctx: CheckContext, report: CheckReport): string
