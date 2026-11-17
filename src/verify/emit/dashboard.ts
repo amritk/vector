@@ -6,6 +6,7 @@
  */
 
 import { codePointLength, split } from "nish/text"
+import { REPLAY_MISMATCH } from "../solve/replay"
 import { ClauseVerdict, Counterexample, FnReport, VerifyReport } from "../solve/report"
 
 /** Every postcondition is proven, meaningfully, with no hazard. */
@@ -14,17 +15,23 @@ export const STATUS_PROVEN: string = "PROVEN"
 export const STATUS_REFUTED: string = "REFUTED"
 /** Some clause is undecided and nothing is refuted. */
 export const STATUS_UNKNOWN: string = "UNKNOWN"
+/** A counterexample z3 gave did not replay: a bug in vector. */
+export const STATUS_MISMATCH: string = "MISMATCH"
 
 const DASH_WIDTH: i32 = 68
 
 /**
- * The report's verdict. Every failure except a bare solver `unknown` is a
- * concrete defect, so it refutes.
+ * The report's verdict. A counterexample that did not replay comes first:
+ * then the fault is vector's, not the program's. Every other failure except
+ * a bare solver `unknown` is a concrete defect, so it refutes.
  *
- * @param report the report
- * @returns `STATUS_PROVEN`, `STATUS_REFUTED` or `STATUS_UNKNOWN`
+ * @param report the report, after the replay filled in its `mismatchCount`
+ * @returns `STATUS_MISMATCH`, `STATUS_PROVEN`, `STATUS_REFUTED` or `STATUS_UNKNOWN`
  */
 export const verdictStatus = (report: VerifyReport): string => {
+  if (report.mismatchCount > 0) {
+    return STATUS_MISMATCH
+  }
   if (report.ok()) {
     return STATUS_PROVEN
   }
@@ -138,6 +145,13 @@ const dashClause = (v: ClauseVerdict): string => {
   return `? ensures ${v.axiomId}  undecided (unknown)`
 }
 
+// Under a counterexample that did not replay, what differed.
+const dashReplay = (lines: string[], replay: string, detail: string): void => {
+  if (replay === REPLAY_MISMATCH) {
+    dashPush(lines, `✘ DOES NOT REPLAY (a bug in vector): ${detail}`, "      ")
+  }
+}
+
 const dashFunction = (lines: string[], fn: FnReport): void => {
   lines.push(dashRow(`LAYER ${fn.layer} · ${fn.signature}`))
   const pre = fn.requiresPretty.length > 0 ? fn.requiresPretty.join("  ∧  ") : "true"
@@ -154,19 +168,23 @@ const dashFunction = (lines: string[], fn: FnReport): void => {
     lines.push(dashRow(`  ${dashClause(v)}`))
     if (v.hasCex) {
       dashPush(lines, `counterexample: ${dashInputs(v.cex)} → result = ${v.cex.result}`, "      ")
+      dashReplay(lines, v.replay, v.replayDetail)
     }
   }
   for (const h of fn.divs) {
     const eg = h.hasCex && h.cex.names.length > 0 ? ` (e.g. ${dashInputs(h.cex)})` : ""
     dashPush(lines, `✘ division hazard in ${h.pretty}${eg}`, "  ")
+    dashReplay(lines, h.replay, h.replayDetail)
   }
   for (const h of fn.pres) {
     const eg = h.hasCex && h.cex.names.length > 0 ? ` (e.g. ${dashInputs(h.cex)})` : ""
     dashPush(lines, `✘ call to ${h.callee} may violate its precondition ${h.pretty}${eg}`, "  ")
+    dashReplay(lines, h.replay, h.replayDetail)
   }
   for (const h of fn.ranges) {
     const eg = h.hasCex && h.cex.names.length > 0 ? ` (e.g. ${dashInputs(h.cex)})` : ""
     dashPush(lines, `✘ Int overflow: ${h.pretty} may leave ±(2^53−1), where float64 rounds${eg}`, "  ")
+    dashReplay(lines, h.replay, h.replayDetail)
   }
   if (fn.requiresPretty.length > 0) {
     dashPush(
@@ -180,6 +198,9 @@ const dashFunction = (lines: string[], fn: FnReport): void => {
 const dashVerdictLine = (status: string, report: VerifyReport): string => {
   if (status === STATUS_PROVEN) {
     return "ALL POSTCONDITIONS PROVEN FOR ALL INPUTS"
+  }
+  if (status === STATUS_MISMATCH) {
+    return `${report.mismatchCount} COUNTEREXAMPLE(S) DID NOT REPLAY — A BUG IN VECTOR`
   }
   if (status === STATUS_REFUTED) {
     return `${dashViolations(report)} CONTRACT VIOLATION(S) FOUND — SEE ABOVE`

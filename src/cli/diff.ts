@@ -10,7 +10,14 @@ import { Cli, ParseResult } from "nish/cli-args"
 import { EXIT_PASS, EXIT_REFUSED, EXIT_USAGE, report, usageError } from "../core/diag"
 import { newJsonDocument, readJsonFile } from "../core/json"
 import { outJsonRender } from "../verify/emit/outjson"
-import { DIFF_EQUIVALENT, DIFF_ERROR, DIFF_INVALID, diffOutcomeJson, diffPrograms } from "../verify/equiv/diff"
+import {
+  DIFF_EQUIVALENT,
+  DIFF_ERROR,
+  DIFF_INVALID,
+  DIFF_MISMATCH,
+  diffOutcomeJson,
+  diffPrograms,
+} from "../verify/equiv/diff"
 
 /** The id `vector diff` is parsed to. */
 export const DIFF_ID: i32 = 2
@@ -76,7 +83,8 @@ export class DiffCommand {
 /**
  * The exit code for a diff status: 0 for EQUIVALENT, 1 for DIFFERENT and
  * UNDECIDED, 2 for INVALID and ERROR (the inputs or the solver failed, so
- * nothing was compared).
+ * nothing was compared) and for MISMATCH (a witness z3 gave did not replay,
+ * so the fault is vector's).
  *
  * @param status one of the `DIFF_*` statuses
  * @returns the exit code
@@ -85,7 +93,7 @@ export const diffExitCode = (status: string): i32 => {
   if (status === DIFF_EQUIVALENT) {
     return EXIT_PASS
   }
-  if (status === DIFF_INVALID || status === DIFF_ERROR) {
+  if (status === DIFF_INVALID || status === DIFF_ERROR || status === DIFF_MISMATCH) {
     return EXIT_USAGE
   }
   return EXIT_REFUSED

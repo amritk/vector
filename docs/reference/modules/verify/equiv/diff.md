@@ -29,6 +29,7 @@ Generated from [src/verify/equiv/diff.ts](https://github.com/amritk/vector/blob/
 - [`DIFF_UNDECIDED`](#diff_undecided)
 - [`DIFF_INVALID`](#diff_invalid)
 - [`DIFF_ERROR`](#diff_error)
+- [`DIFF_MISMATCH`](#diff_mismatch)
 - [`CHECK_NONE`](#check_none)
 - [`CHECK_WITNESS`](#check_witness)
 - [`CHECK_UNKNOWN`](#check_unknown)
@@ -42,11 +43,13 @@ Generated from [src/verify/equiv/diff.ts](https://github.com/amritk/vector/blob/
 - [`DiffCheck`](#diffcheck)
 - [`ParamRename`](#paramrename)
 - [`MatchedFunctionDiff`](#matchedfunctiondiff)
+- [`diffReplayWitnesses`](#diffreplaywitnesses)
 - [`assembleDiffs`](#assemblediffs)
 - [`Float64Diff`](#float64diff)
 - [`ProgramDiffReport`](#programdiffreport)
 - [`DiffOutcome`](#diffoutcome)
 - [`diffPrograms`](#diffprograms)
+- [`diffDecide`](#diffdecide)
 - [`renderDiffSummary`](#renderdiffsummary)
 - [`diffPairStatus`](#diffpairstatus)
 - [`diffReportJson`](#diffreportjson)
@@ -102,6 +105,16 @@ z3 could not run, or rejected the script.
 
 ```ts
 const DIFF_ERROR: string = "ERROR"
+```
+
+<a id="diff_mismatch"></a>
+
+### DIFF_MISMATCH
+
+A witness z3 gave does not do what z3 said when replayed exactly: a bug in vector.
+
+```ts
+const DIFF_MISMATCH: string = "MISMATCH"
 ```
 
 <a id="check_none"></a>
@@ -548,6 +561,22 @@ The old version's result at the witness.
 oldResult: string
 ```
 
+#### DiffCheck.replay
+
+What replaying the witness found (`confirmed`, `not-replayed`, `mismatch`); "" before it ran.
+
+```ts
+replay: string
+```
+
+#### DiffCheck.replayDetail
+
+Why the replay found it.
+
+```ts
+replayDetail: string
+```
+
 #### DiffCheck.status
 
 `CHECK_NONE`, `CHECK_WITNESS` or `CHECK_UNKNOWN`.
@@ -765,6 +794,64 @@ the status to look for
 <scalar-field name="returns" type="boolean">
 
 true when one has it
+
+</scalar-field>
+
+#### MatchedFunctionDiff.mismatched
+
+Whether replaying any of the three checks' witnesses was a mismatch.
+
+```ts
+mismatched(): boolean
+```
+
+<scalar-field name="returns" type="boolean">
+
+true when one was
+
+</scalar-field>
+
+### diffReplayWitnesses
+
+Replays every witness z3 gave through both versions, exactly and without
+z3, filling in each check's `replay` and `replayDetail`.
+
+```ts
+function diffReplayWitnesses(
+  oldProgram: Program,
+  newProgram: Program,
+  pairs: FunctionPair[],
+  matched: MatchedFunctionDiff[],
+): i32
+```
+
+<scalar-field name="oldProgram" type="Program" required>
+
+the old program
+
+</scalar-field>
+
+<scalar-field name="newProgram" type="Program" required>
+
+the new program
+
+</scalar-field>
+
+<scalar-field name="pairs" type="FunctionPair[]" required>
+
+the compared pairs
+
+</scalar-field>
+
+<scalar-field name="matched" type="MatchedFunctionDiff[]" required>
+
+a verdict per pair, as `assembleDiffs` made them
+
+</scalar-field>
+
+<scalar-field name="returns" type="i32">
+
+how many replays were a mismatch
 
 </scalar-field>
 
@@ -993,7 +1080,7 @@ message: string
 
 #### DiffOutcome.report
 
-The findings, for EQUIVALENT, DIFFERENT and UNDECIDED.
+The findings, for EQUIVALENT, DIFFERENT, UNDECIDED and MISMATCH.
 
 ```ts
 report: ProgramDiffReport
@@ -1059,6 +1146,51 @@ the outcome
 
 </scalar-field>
 
+### diffDecide
+
+Decides an outcome from z3's verdicts on the comparable pairs: every
+witness is replayed first, and one that does not replay makes it MISMATCH;
+then the pairs equal over the reals are run in float64.
+
+```ts
+function diffDecide(
+  oldProgram: Program,
+  newProgram: Program,
+  pairing: FunctionPairing,
+  report: ProgramDiffReport,
+): DiffOutcome
+```
+
+<scalar-field name="oldProgram" type="Program" required>
+
+the old program, typechecked
+
+</scalar-field>
+
+<scalar-field name="newProgram" type="Program" required>
+
+the new program, typechecked
+
+</scalar-field>
+
+<scalar-field name="pairing" type="FunctionPairing" required>
+
+how the two versions' functions pair up
+
+</scalar-field>
+
+<scalar-field name="report" type="ProgramDiffReport" required>
+
+the findings so far: `matched` and `solver` filled in
+
+</scalar-field>
+
+<scalar-field name="returns" type="DiffOutcome">
+
+the outcome
+
+</scalar-field>
+
 ### renderDiffSummary
 
 Renders the findings as `vector diff` prints them.
@@ -1087,8 +1219,8 @@ the text, without a final newline
 
 ### diffPairStatus
 
-One matched pair's own verdict, with float64 folded in: DIFFERENT for a
-witness or a float64 delta, UNDECIDED for an unknown check or an unsampled
+One matched pair's own verdict, with float64 folded in: MISMATCH for a
+witness that did not replay, DIFFERENT for a witness or a float64 delta, UNDECIDED for an unknown check or an unsampled
 shared domain, otherwise EQUIVALENT.
 
 ```ts
@@ -1112,7 +1244,7 @@ the pair
 
 <scalar-field name="returns" type="string">
 
-`DIFF_EQUIVALENT`, `DIFF_DIFFERENT` or `DIFF_UNDECIDED`
+`DIFF_MISMATCH`, `DIFF_EQUIVALENT`, `DIFF_DIFFERENT` or `DIFF_UNDECIDED`
 
 </scalar-field>
 
