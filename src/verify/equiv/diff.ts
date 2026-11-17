@@ -28,6 +28,7 @@ import { typecheckProgram } from "../lang/check"
 import { prettyMath } from "../lang/pretty"
 import { readProgram } from "../lang/read"
 import { SmtEmitter, SmtScope, smtPreamble } from "../smt/script"
+import { REPLAY_MISMATCH, REPLAY_NARROWED, REPLAY_VALUE, REPLAY_WIDENED, replayWitness } from "../solve/replay"
 import { Counterexample, signatureOf, solveIsModelRefusal, solverLabel } from "../solve/report"
 
 /** Every shared function provably behaves identically. */
@@ -40,6 +41,8 @@ export const DIFF_UNDECIDED: string = "UNDECIDED"
 export const DIFF_INVALID: string = "INVALID"
 /** z3 could not run, or rejected the script. */
 export const DIFF_ERROR: string = "ERROR"
+/** A witness z3 gave does not do what z3 said when replayed exactly: a bug in vector. */
+export const DIFF_MISMATCH: string = "MISMATCH"
 
 /** A check z3 proved impossible (unsat). */
 export const CHECK_NONE: string = "none"
@@ -335,6 +338,10 @@ export class DiffCheck {
   oldResult: string
   /** The new version's result at the witness. */
   newResult: string
+  /** What replaying the witness found (`confirmed`, `not-replayed`, `mismatch`); "" before it ran. */
+  replay: string
+  /** Why the replay found it. */
+  replayDetail: string
 
   /**
    * Makes a check with no witness.
@@ -347,6 +354,8 @@ export class DiffCheck {
     this.hasResults = false
     this.oldResult = ""
     this.newResult = ""
+    this.replay = ""
+    this.replayDetail = ""
   }
 }
 
@@ -454,6 +463,63 @@ export class MatchedFunctionDiff {
       this.domainNarrowed.status === status || this.domainWidened.status === status || this.valueDiff.status === status
     )
   }
+
+  /**
+   * Whether replaying any of the three checks' witnesses was a mismatch.
+   *
+   * @returns true when one was
+   */
+  mismatched(): boolean {
+    return (
+      this.domainNarrowed.replay === REPLAY_MISMATCH ||
+      this.domainWidened.replay === REPLAY_MISMATCH ||
+      this.valueDiff.replay === REPLAY_MISMATCH
+    )
+  }
+}
+
+const diffReplayCheck = (
+  oldProgram: Program,
+  pair: FunctionPair,
+  newProgram: Program,
+  kind: i32,
+  c: DiffCheck,
+): void => {
+  if (c.status !== CHECK_WITNESS) {
+    return
+  }
+  const r = replayWitness(oldProgram, pair.oldFn, newProgram, pair.newFn, kind, c.inputs, c.oldResult, c.newResult)
+  c.replay = r.outcome
+  c.replayDetail = r.detail
+}
+
+/**
+ * Replays every witness z3 gave through both versions, exactly and without
+ * z3, filling in each check's `replay` and `replayDetail`.
+ *
+ * @param oldProgram the old program
+ * @param newProgram the new program
+ * @param pairs the compared pairs
+ * @param matched a verdict per pair, as `assembleDiffs` made them
+ * @returns how many replays were a mismatch
+ */
+export const diffReplayWitnesses = (
+  oldProgram: Program,
+  newProgram: Program,
+  pairs: FunctionPair[],
+  matched: MatchedFunctionDiff[],
+): i32 => {
+  let mismatches = 0
+  for (let i = 0; i < toI32(matched.length) && i < toI32(pairs.length); i++) {
+    const m = matched[i]
+    diffReplayCheck(oldProgram, pairs[i], newProgram, REPLAY_NARROWED, m.domainNarrowed)
+    diffReplayCheck(oldProgram, pairs[i], newProgram, REPLAY_WIDENED, m.domainWidened)
+    diffReplayCheck(oldProgram, pairs[i], newProgram, REPLAY_VALUE, m.valueDiff)
+    for (const c of [m.domainNarrowed, m.domainWidened, m.valueDiff]) {
+      mismatches = mismatches + (c.replay === REPLAY_MISMATCH ? 1 : 0)
+    }
+  }
+  return mismatches
 }
 
 // The clauses of `a` whose math rendering `b` lacks, each once.
@@ -602,7 +668,7 @@ export class DiffOutcome {
   errors: string[]
   /** What went wrong, for ERROR. */
   message: string
-  /** The findings, for EQUIVALENT, DIFFERENT and UNDECIDED. */
+  /** The findings, for EQUIVALENT, DIFFERENT, UNDECIDED and MISMATCH. */
   report: ProgramDiffReport
   /** The findings as text. */
   summary: string
@@ -694,6 +760,27 @@ export const diffPrograms = (
     report.matched = matched.value
     report.solver = solverLabel()
   }
+  return diffDecide(oldProgram, newProgram, pairing, report)
+}
+
+/**
+ * Decides an outcome from z3's verdicts on the comparable pairs: every
+ * witness is replayed first, and one that does not replay makes it MISMATCH;
+ * then the pairs equal over the reals are run in float64.
+ *
+ * @param oldProgram the old program, typechecked
+ * @param newProgram the new program, typechecked
+ * @param pairing how the two versions' functions pair up
+ * @param report the findings so far: `matched` and `solver` filled in
+ * @returns the outcome
+ */
+export const diffDecide = (
+  oldProgram: Program,
+  newProgram: Program,
+  pairing: FunctionPairing,
+  report: ProgramDiffReport,
+): DiffOutcome => {
+  const mismatches = diffReplayWitnesses(oldProgram, newProgram, pairing.comparable, report.matched)
   // Equal over the rationals is not equal in the emitted code: run every
   // rational-equivalent pair in float64.
   for (let i = 0; i < toI32(report.matched.length); i++) {
@@ -732,7 +819,9 @@ export const diffPrograms = (
   }
   unknown = unknown || report.float64Unsampled.length > 0
   let status = DIFF_EQUIVALENT
-  if (different) {
+  if (mismatches > 0) {
+    status = DIFF_MISMATCH
+  } else if (different) {
     status = DIFF_DIFFERENT
   } else if (unknown) {
     status = DIFF_UNDECIDED
@@ -796,6 +885,13 @@ const diffMatchedLines = (lines: string[], report: ProgramDiffReport, m: Matched
   }
   diffDomainLines(lines, m.domainNarrowed, "accepted", "REJECTED", "narrowing")
   diffDomainLines(lines, m.domainWidened, "rejected", "ACCEPTED", "widening")
+  for (const c of [v, m.domainNarrowed, m.domainWidened]) {
+    if (c.replay === REPLAY_MISMATCH) {
+      lines.push(
+        `     MISMATCH  z3's witness ${diffInputs(c.inputs)} does not do what z3 said when replayed (${c.replayDetail}): this is a bug in vector, not in your program — please report it`,
+      )
+    }
+  }
   for (const r of m.paramRenames) {
     lines.push(`     note:   param renamed ${r.oldName} → ${r.newName}`)
   }
@@ -848,7 +944,10 @@ export const renderDiffSummary = (status: string, report: ProgramDiffReport): st
     solverUnknown = solverUnknown || m.any(CHECK_UNKNOWN)
     vacuous = vacuous || diffVacuous(m)
   }
-  if (status === DIFF_EQUIVALENT) {
+  if (status === DIFF_MISMATCH) {
+    lines.push(" A witness z3 gave does not replay exactly, so this diff cannot be")
+    lines.push(" trusted: this is a bug in vector, not in your programs.")
+  } else if (status === DIFF_EQUIVALENT) {
     lines.push(" Every shared function is proven equal over the reals and agreed")
     lines.push(" on every sampled float64 input; nothing to review.")
   } else if (status === DIFF_DIFFERENT) {
@@ -888,21 +987,27 @@ const diffCheckJson = (c: DiffCheck): OutJson => {
     if (c.hasResults) {
       w.put("oldResult", outJsonString(c.oldResult)).put("newResult", outJsonString(c.newResult))
     }
+    if (c.replay !== "") {
+      w.put("replay", outJsonString(c.replay))
+    }
     out.put("witness", w)
   }
   return out
 }
 
 /**
- * One matched pair's own verdict, with float64 folded in: DIFFERENT for a
- * witness or a float64 delta, UNDECIDED for an unknown check or an unsampled
+ * One matched pair's own verdict, with float64 folded in: MISMATCH for a
+ * witness that did not replay, DIFFERENT for a witness or a float64 delta, UNDECIDED for an unknown check or an unsampled
  * shared domain, otherwise EQUIVALENT.
  *
  * @param report the findings the pair belongs to
  * @param m the pair
- * @returns `DIFF_EQUIVALENT`, `DIFF_DIFFERENT` or `DIFF_UNDECIDED`
+ * @returns `DIFF_MISMATCH`, `DIFF_EQUIVALENT`, `DIFF_DIFFERENT` or `DIFF_UNDECIDED`
  */
 export const diffPairStatus = (report: ProgramDiffReport, m: MatchedFunctionDiff): string => {
+  if (m.mismatched()) {
+    return DIFF_MISMATCH
+  }
   if (m.any(CHECK_WITNESS) || diffFloat64Of(report, m.name) >= 0) {
     return DIFF_DIFFERENT
   }

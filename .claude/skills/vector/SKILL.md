@@ -14,6 +14,8 @@ description: >-
 
 # vector — formally verified functions from a prompt
 
+Before running vector, read [`docs/AI.md`](../../../docs/AI.md): its rules, traps first.
+
 Vector never treats generated code as a black box. **You** propose a formal
 spec and a program; **Z3 holds the veto.** Unproven code is never presented.
 The determinism (schema validation, typecheck, axiom traceability, the SMT

@@ -13,13 +13,14 @@
  */
 
 import { Cli, ParseResult } from "nish/cli-args"
-import { EXIT_PASS, EXIT_REFUSED, report, usageError } from "../core/diag"
+import { EXIT_PASS, EXIT_REFUSED, EXIT_USAGE, report, usageError } from "../core/diag"
 import { toHex } from "../core/hex"
 import { newJsonDocument, readJsonFile } from "../core/json"
 import { outJsonRender } from "../verify/emit/outjson"
 import {
   OUTCOME_ERROR,
   OUTCOME_INVALID,
+  OUTCOME_MISMATCH,
   OUTCOME_PROVEN,
   VerifyOutcome,
   verifyOutcomeJson,
@@ -100,14 +101,16 @@ export class VerifyCommand {
 }
 
 /**
- * The exit code for a verify outcome: 0 for PROVEN, 1 for everything else.
- * ERROR is 1, not 2: z3 failing proved nothing, so the program is refused,
- * the same as an UNKNOWN.
+ * The exit code for a verify outcome: 0 for PROVEN, 2 for MISMATCH, 1 for
+ * everything else. ERROR is 1, not 2: z3 failing proved nothing, so the
+ * program is refused, the same as an UNKNOWN. MISMATCH is 2 because the fault
+ * is vector's: a counterexample z3 gave did not replay.
  *
  * @param status the outcome's status
- * @returns `EXIT_PASS` or `EXIT_REFUSED`
+ * @returns `EXIT_PASS`, `EXIT_USAGE` or `EXIT_REFUSED`
  */
-export const verifyExitCode = (status: string): i32 => (status === OUTCOME_PROVEN ? EXIT_PASS : EXIT_REFUSED)
+export const verifyExitCode = (status: string): i32 =>
+  status === OUTCOME_PROVEN ? EXIT_PASS : status === OUTCOME_MISMATCH ? EXIT_USAGE : EXIT_REFUSED
 
 const verifyPrintStyle = (outcome: VerifyOutcome): void => {
   if (outcome.styleWarnings.length === 0) {

@@ -352,7 +352,7 @@ git checkout -q contracts
 
 | Flag | What it does |
 |---|---|
-| `--spec <file>` | the main source's file, read directly (a spec's XML, or an RFC's `.txt` or `.xml`) |
+| `--spec <file>` | the main source's file, read directly (a spec's XML, or an RFC's `.txt` or `.xml`); for a contract whose main source is an RFC (`vector-main-RFC<N>`), that is the RFC, not the spec |
 | `--run-sources` | run each vector's `command` source and compare what it prints (see below) |
 | `--module <file>` | the module source the signatures are checked against |
 | `--nish-root <dir>` | a nish checkout or install, whose `std/` holds the module under test |

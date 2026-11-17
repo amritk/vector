@@ -105,7 +105,8 @@ the exit code
 
 The exit code for a diff status: 0 for EQUIVALENT, 1 for DIFFERENT and
 UNDECIDED, 2 for INVALID and ERROR (the inputs or the solver failed, so
-nothing was compared).
+nothing was compared) and for MISMATCH (a witness z3 gave did not replay,
+so the fault is vector's).
 
 ```ts
 function diffExitCode(status: string): i32

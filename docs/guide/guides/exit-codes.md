@@ -17,8 +17,8 @@ output: `vector spec check … | tail` exits with `tail`'s status, 0.
 
 | Command | 0 | 1 | 2 |
 | --- | --- | --- | --- |
-| `verify` | `PROVEN` | `REFUTED`, `UNKNOWN`, `INVALID`, `ERROR` (z3 failed) | bad usage, an unreadable file, an `--emit` file that cannot be written |
-| `diff` | `EQUIVALENT` | `DIFFERENT`, `UNDECIDED` | bad usage, an unreadable file, `INVALID`, `ERROR` (z3 failed) |
+| `verify` | `PROVEN` | `REFUTED`, `UNKNOWN`, `INVALID`, `ERROR` (z3 failed) | bad usage, an unreadable file, an `--emit` file that cannot be written, `MISMATCH` (a counterexample that does not replay: a bug in vector) |
+| `diff` | `EQUIVALENT` | `DIFFERENT`, `UNDECIDED` | bad usage, an unreadable file, `INVALID`, `ERROR` (z3 failed), `MISMATCH` (a witness that does not replay: a bug in vector) |
 | `spec extract` | written, or up to date with `--check` | refusals, or a difference with `--check` | bad usage, an unreadable file, a missing RFC, a z3 failure |
 | `spec check` | `CONTRACT_VALID` | `INVALID` | bad usage, an unreadable file, a missing RFC, a z3 failure |
 | `spec emit` | written | the contract does not check | bad usage, an unwritable `-o`, a z3 failure |

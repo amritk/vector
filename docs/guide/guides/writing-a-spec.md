@@ -102,11 +102,18 @@ source. The contract then takes the RFC form: `source.rfc` is N,
   has both. `specs/rfc5869-hkdf-sha256.md` and
   `specs/rfc8439-chacha20-poly1305.md` are the committed profiles.
 
-`spec check --spec specs/<name>.xml` checks a contract against the profile
-itself. The RFC is still read from its recorded file, and the contract is
-valid only if it is exactly what the profile extracts to; a profile whose
-`docName` names another contract is refused. `--spec rfcs/rfc<N>.txt`, or no
-`--spec`, checks against the RFC alone.
+Such a contract records the RFC, not the spec, so `spec check
+contracts/<name>.json` reads the RFC from its recorded file, and `--spec
+rfcs/rfc<N>.txt` names that same file. `--spec` names the main source, so
+`--spec specs/<name>.xml` is refused, and `check` exits 1:
+
+```text
+  ✘ fidelity sources: --spec specs/<name>.xml is not rfcs/rfc<N>.txt, the main source the contract records
+```
+
+To check that the contract is exactly what the profile extracts to, run
+`spec extract specs/<name>.xml -o contracts/<name>.json --check` (see
+[`spec extract --check`](spec-to-contract.md)).
 
 ### Vectors
 
