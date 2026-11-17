@@ -1,0 +1,50 @@
+Network Working Group                                         M. Nystrom
+Request for Comments: 4231                                  RSA Security
+Category: Standards Track                                  December 2005
+
+
+     Identifiers and Test Vectors for HMAC-SHA-224, HMAC-SHA-256,
+                     HMAC-SHA-384, and HMAC-SHA-512
+
+   An excerpt for a vector fixture: only Sections 4.2 and 4.6's test
+   vectors are kept, in the RFC's layout.
+
+4.  Test Vectors
+
+4.2.  Test Case 1
+
+   Key =          0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b
+                  0b0b0b0b                          (20 bytes)
+   Data =         4869205468657265                  ("Hi There")
+
+   HMAC-SHA-224 = 896fb1128abbdf196832107cd49df33f
+                  47b4b1169912ba4f53684b22
+   HMAC-SHA-256 = b0344c61d8db38535ca8afceaf0bf12b
+                  881dc200c9833da726e9376c2e32cff7
+   HMAC-SHA-384 = afd03944d84895626b0825f4ab46907f
+                  15f9dadbe4101ec682aa034c7cebc59c
+                  faea9ea9076ede7f4af152e8b2fa9cb6
+   HMAC-SHA-512 = 87aa7cdea5ef619d4ff0b4241a1d6cb0
+                  2379f4e2ce4ec2787ad0b30545e17cde
+                  daa833b7d6b8a702038b274eaea3f4e4
+                  be9d914eeb61f1702e696c203a126854
+
+4.6.  Test Case 5
+
+   Test with a truncation of output to 128 bits.
+
+   Key =          0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c
+                  0c0c0c0c                          (20 bytes)
+   Data =         546573742057697468205472756e6361  ("Test With Trunca")
+                  74696f6e                          ("tion")
+
+   HMAC-SHA-224 = 0e2aea68a90c8d37c988bcdb9fca6fa8
+   HMAC-SHA-256 = a3b6167473100ee06e0c796c2955552b
+   HMAC-SHA-384 = 3abf34c3503b2a23a46efc619baef897
+   HMAC-SHA-512 = 415fad6271580a531d4179bc891d87a6
+
+
+
+
+Nystrom                     Standards Track                     [Page 1]
+

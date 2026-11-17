@@ -9,7 +9,7 @@ import { splitLines } from "nish/text"
 import { basename, joinPath, makeTempDir, mkdirAll } from "../../core/fs"
 import { toHex } from "../../core/hex"
 import { runProcess } from "../../core/process"
-import { Contract } from "../contract/types"
+import { Contract, Truncate } from "../contract/types"
 import { EMIT_SLOW_SKIP, emitQuote } from "../emit/lit"
 
 /** A clause's outcome, ordered from best to worst: a requirement takes its clauses' worst. */
@@ -55,6 +55,8 @@ export class RunClause {
   detail: string
   /** Whether it is a slow iterated vector the test skipped because `--slow` was not passed. */
   slow: boolean
+  /** The truncation its vector is held to, or null when it compares the whole result. */
+  truncate: Truncate | null
 
   /**
    * Makes a clause that no line has reported yet.
@@ -67,6 +69,7 @@ export class RunClause {
     this.line = ""
     this.detail = ""
     this.slow = false
+    this.truncate = null
   }
 }
 
@@ -178,7 +181,9 @@ const runClauseIndex = (c: Contract, id: string): i32 => {
 export const runParse = (c: Contract, stdout: string): RunClause[] => {
   const out: RunClause[] = []
   for (const k of c.clauses) {
-    out.push(new RunClause(k.id))
+    const r = new RunClause(k.id)
+    r.truncate = k.truncate
+    out.push(r)
   }
   const lines = splitLines(stdout)
   for (let i = 0; i < lines.length; i++) {
@@ -765,6 +770,12 @@ const runSlowOnly = (clauses: RunClause[]): boolean => {
   return clauses.length > 0
 }
 
+/** A truncated vector's note after its id, ` (first 128 bits)`; "" for one that compares the whole result. */
+const runTruncation = (k: RunClause): string => {
+  const tr = k.truncate
+  return tr === null ? "" : ` (${tr.label()})`
+}
+
 /**
  * A run's result as text: the verdict, each requirement's outcome, each slow
  * vector skipped, each failed clause with its reason, and why the transcript
@@ -781,12 +792,13 @@ export const runFormatText = (r: RunResult): string[] => {
   }
   for (const k of r.clauses) {
     if (k.slow) {
-      out.push(`  skip  ${k.id} (slow; pass --slow)`)
+      out.push(`  skip  ${k.id}${runTruncation(k)} (slow; pass --slow)`)
     }
   }
   for (const k of r.clauses) {
     if (k.outcome === RunOutcome.Fail) {
-      out.push(k.detail.length > 0 ? `${runEscape(k.line)}\n      ${runEscape(k.detail)}` : runEscape(k.line))
+      const line = `${runEscape(k.line)}${runTruncation(k)}`
+      out.push(k.detail.length > 0 ? `${line}\n      ${runEscape(k.detail)}` : line)
     }
   }
   for (const m of r.integrity) {
@@ -827,7 +839,7 @@ export const runFormatMarkdown = (r: RunResult): string => {
   const slow: string[] = []
   for (const k of r.clauses) {
     if (k.slow) {
-      slow.push(`\`${k.id}\``)
+      slow.push(`\`${k.id}\`${runTruncation(k)}`)
     }
   }
   if (slow.length > 0) {
@@ -841,7 +853,9 @@ export const runFormatMarkdown = (r: RunResult): string => {
   for (const k of r.clauses) {
     if (k.outcome === RunOutcome.Fail) {
       out.push("")
-      out.push(`- \`${runEscape(k.line)}\`${k.detail.length > 0 ? `: \`${runEscape(k.detail)}\`` : ""}`)
+      out.push(
+        `- \`${runEscape(k.line)}\`${runTruncation(k)}${k.detail.length > 0 ? `: \`${runEscape(k.detail)}\`` : ""}`,
+      )
     }
   }
   if (r.integrity.length > 0) {
@@ -857,7 +871,8 @@ export const runFormatMarkdown = (r: RunResult): string => {
 /**
  * A run's result as JSON: `{contract, status, exit, requirements: {id:
  * outcome}, clauses: [{id, outcome, detail}], integrity: [...]}`. A slow
- * vector skipped for want of `--slow` also has `"slow": true`.
+ * vector skipped for want of `--slow` also has `"slow": true`, and a vector
+ * held to its result's first bytes has `"truncate"` as the contract writes it (`{"bits": 128}`).
  *
  * @param r the result
  * @returns the JSON text, without a trailing newline
@@ -870,8 +885,10 @@ export const runFormatJson = (r: RunResult): string => {
   const clauses: string[] = []
   for (const k of r.clauses) {
     const slow = k.slow ? `, "slow": true` : ""
+    const tr = k.truncate
+    const cut = tr === null ? "" : `, "truncate": {${emitQuote(tr.unit)}: ${tr.count()}}`
     clauses.push(
-      `{"id": ${emitQuote(k.id)}, "outcome": ${emitQuote(runOutcomeName(k.outcome))}, "detail": ${emitQuote(k.detail)}${slow}}`,
+      `{"id": ${emitQuote(k.id)}, "outcome": ${emitQuote(runOutcomeName(k.outcome))}, "detail": ${emitQuote(k.detail)}${slow}${cut}}`,
     )
   }
   const integrity: string[] = []

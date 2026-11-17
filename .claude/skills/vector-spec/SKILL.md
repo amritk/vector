@@ -507,6 +507,9 @@ paragraph after the vector table; see tests/fixtures/rfc7748. A vector
 marked `slow` (`Iterate: <id> 1,000,000 times, slow, …`) is skipped, and
 reported as skipped, never passed, unless `spec emit` / `spec run` get
 `--slow`; say so when a run reports a skip. A truncated result (RFC 4231
-test case 5, the first 128 bits of the HMAC) still cannot be compared:
-leave that vector out of the table and put an `Untested:` paragraph after the
-requirement it would have tested, saying why.
+test case 5, the first 128 bits of the HMAC) is a plain row whose Expected
+is the printed, truncated value, plus a `Truncate: <id> to 128 bits` (or
+`to 16 bytes`) paragraph after the vector table; see
+tests/fixtures/profile/profile-truncate.md. The cited section must print the
+length with that unit, the Expected must be exactly that long, and the
+function must return bytes; a result shorter than the length fails.

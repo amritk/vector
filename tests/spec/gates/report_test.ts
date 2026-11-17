@@ -249,7 +249,7 @@ export const main = (): i32 => {
   t.eqStr(
     "the json report",
     reportJson(ctx, found),
-    '{"status":"INVALID","contract":"c1","issues":[{"gate":"fidelity","at":"R1","message":"quote not found"},{"gate":"coverage","at":"R2","message":"no clause covers it"},{"gate":"ids","at":"","message":"duplicate id X"}],"warnings":[{"gate":"signatures","at":"f","message":"not checked"}],"coverage":{"R1":["V-CMD","V-CITE"],"R2":[]},"samples":{"P1":{"count":2,"boundary":2,"random":0,"inhabited":false,"notes":[]}},"sources":{"V-CMD":{"command":"printf \'a|b\'","outcome":"fail","detail":"printed \\"a|b\\""}}}',
+    '{"status":"INVALID","contract":"c1","issues":[{"gate":"fidelity","at":"R1","message":"quote not found"},{"gate":"coverage","at":"R2","message":"no clause covers it"},{"gate":"ids","at":"","message":"duplicate id X"}],"warnings":[{"gate":"signatures","at":"f","message":"not checked"}],"coverage":{"R1":["V-CMD","V-CITE"],"R2":[]},"samples":{"P1":{"count":2,"boundary":2,"random":0,"inhabited":false,"notes":[]}},"sources":{"V-CMD":{"command":"printf \'a|b\'","outcome":"fail","detail":"printed \\"a|b\\""}},"truncations":{}}',
   )
 
   // A shape failure hides the requirements, whose fields cannot be trusted.

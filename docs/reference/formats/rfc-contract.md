@@ -494,6 +494,7 @@ A known answer: call(args) == expect. The args are printed in the cited section 
 | `expect` | [`literal`](#def-literal) | yes |  |
 | `tolerance` | [`tolerance`](#def-tolerance) | no |  |
 | `iterate` | [`iterate`](#def-iterate) | no |  |
+| `truncate` | [`truncate`](#def-truncate) | no |  |
 
 No other property is allowed.
 
@@ -692,6 +693,19 @@ No other property is allowed.
 | Property | Type | Required | Description |
 | --- | --- | --- | --- |
 | `var` | [`ident`](#def-ident) | yes |  |
+
+No other property is allowed.
+
+<a id="def-truncate"></a>
+
+### `truncate`
+
+Hold only the first bytes of the call's result to `expect`, as a spec does when it prints a result truncated (RFC 4231 §4.6: "Truncate to 128 bits"). Exactly one of `bits`, a multiple of 8, or `bytes` gives the length, written in the unit the spec prints. The call returns bytes, `expect` is bytes of exactly that length, and a result shorter than the length fails the check rather than being compared as it is. The length must be printed in the cited section with its unit (commas ignored). Not with `tolerance` or `iterate`.
+
+| Property | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bits` | `integer` | no | at least 8; at most 524288. |
+| `bytes` | `integer` | no | at least 1; at most 65536. |
 
 No other property is allowed.
 

@@ -80,9 +80,10 @@ export const reportText = (ctx: CheckContext, report: CheckReport): string => {
       const ev: string[] = []
       for (const k of reportCovering(c, req.id)) {
         const stat = reportStat(ctx, k.id)
+        const tr = k.truncate
         ev.push(
           stat === null
-            ? `○ ${k.id}`
+            ? `○ ${k.id}${tr === null ? "" : ` (${tr.label()})`}`
             : `○ ${k.id} (${reportSampleCount(ctx, k.id)} samples: ${stat.boundary} boundary)`,
         )
       }

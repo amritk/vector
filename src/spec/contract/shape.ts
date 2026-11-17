@@ -22,6 +22,7 @@ import {
   charsTestVector,
 } from "./chars"
 import { contractF64Bits, contractF64FromBits, contractF64IsNaN, contractF64Overflows, contractF64Parse } from "./f64"
+import { literalsByteLength } from "./literals"
 import {
   Clause,
   ClauseKind,
@@ -35,10 +36,12 @@ import {
   Literal,
   NameOverride,
   Tolerance,
+  Truncate,
   VectorSourceKind,
   typesIsWords,
   typesWordsKey,
 } from "./types"
+import { typeOfLiteral } from "./typing"
 import {
   vocabCompareDecimal,
   vocabFitsInt,
@@ -606,6 +609,36 @@ const shapeIsIterateCall = (e: Expr, call: string, names: string[]): boolean => 
   return true
 }
 
+/** A vector's `truncate`: a bytes result held to its first `bytes`, which are the whole expect. */
+const shapeTruncate = (s: ShapeContext, k: Clause, t: Truncate, at: string): void => {
+  if (t.bytes < 1 || t.bytes > 65536) {
+    shapeFail(s, at, "a length of 1..65536 bytes")
+  }
+  if (t.unit !== "bits" && t.unit !== "bytes") {
+    shapeFail(s, at, "a length in bits or bytes")
+  }
+  if (k.tolerance !== null) {
+    shapeFail(s, at, "a truncated vector compares bytes exactly; drop the tolerance")
+  }
+  if (k.iterate !== null) {
+    shapeFail(s, at, "a vector is truncated or iterated, not both")
+  }
+  const expect = k.expect
+  if (expect === null) {
+    return
+  }
+  const n = literalsByteLength(expect)
+  if (n < 0) {
+    shapeFail(s, at, `a truncated vector's expect is bytes, not ${typeOfLiteral(expect)}`)
+  } else if (n !== t.bytes) {
+    shapeFail(
+      s,
+      at,
+      `the expect is ${n} bytes, so the truncation is ${n} bytes (${n * 8} bits), not ${t.bytes} bytes (${t.bytes * 8} bits)`,
+    )
+  }
+}
+
 /** A vector's `iterate`: a count in range, one name and one next element per parameter, at least one the call. */
 const shapeIterate = (s: ShapeContext, k: Clause, it: Iterate, at: string): void => {
   if (it.count < 1 || it.count > 1000000000) {
@@ -789,6 +822,10 @@ const shapeClauses = (s: ShapeContext): void => {
       const it = k.iterate
       if (it !== null) {
         shapeIterate(s, k, it, `${at}.iterate`)
+      }
+      const tr = k.truncate
+      if (tr !== null) {
+        shapeTruncate(s, k, tr, `${at}.truncate`)
       }
       if (!charsIsIdent(k.call)) {
         shapeFail(s, `${at}.call`, "a function name")

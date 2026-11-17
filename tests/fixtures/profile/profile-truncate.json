@@ -1,0 +1,101 @@
+{
+  "$schema": "../../../schemas/rfc-contract.json",
+  "contract": "profile-truncate",
+  "source": {
+    "rfc": 4231,
+    "title": "Profile fixture: a vector held to its truncated result",
+    "sha256": "0d3d9ffa5bd3f4055b5fc4c60208efa86baa28d4302738cb43626cd570b37633"
+  },
+  "sources": [
+    {
+      "id": "rfc4231",
+      "rfc": 4231,
+      "file": "profile/rfc4231.txt",
+      "sha256": "0d3d9ffa5bd3f4055b5fc4c60208efa86baa28d4302738cb43626cd570b37633"
+    }
+  ],
+  "target": {
+    "module": "nish/crypto/hmac"
+  },
+  "requirements": [
+    {
+      "id": "R-TRUNC",
+      "section": "4.6",
+      "level": "DEFINITION",
+      "quote": "Test with a truncation of output to 128 bits."
+    }
+  ],
+  "functions": [
+    {
+      "name": "hmacSha256",
+      "params": [
+        {
+          "name": "key",
+          "type": "bytes"
+        },
+        {
+          "name": "data",
+          "type": "bytes"
+        }
+      ],
+      "returns": "bytes"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "4.2-256",
+      "title": "RFC 4231 4.2: Test Case 1, HMAC-SHA-256",
+      "covers": ["R-TRUNC"],
+      "source": {
+        "cite": {
+          "section": "4.2"
+        }
+      },
+      "call": "hmacSha256",
+      "args": [
+        {
+          "hex": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+          "label": "Key"
+        },
+        {
+          "hex": "4869205468657265",
+          "label": "Data"
+        }
+      ],
+      "expect": {
+        "hex": "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7",
+        "label": "HMAC-SHA-256"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "4.6-256",
+      "title": "RFC 4231 4.6: Test Case 5, HMAC-SHA-256 truncated to 128 bits",
+      "covers": ["R-TRUNC"],
+      "source": {
+        "cite": {
+          "section": "4.6"
+        }
+      },
+      "call": "hmacSha256",
+      "args": [
+        {
+          "hex": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
+          "label": "Key"
+        },
+        {
+          "hex": "546573742057697468205472756e636174696f6e",
+          "label": "Data"
+        }
+      ],
+      "expect": {
+        "hex": "a3b6167473100ee06e0c796c2955552b",
+        "label": "HMAC-SHA-256"
+      },
+      "truncate": {
+        "bits": 128
+      }
+    }
+  ]
+}
