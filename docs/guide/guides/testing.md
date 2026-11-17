@@ -500,6 +500,11 @@ like `a 15-byte result, shorter than the 16 bytes it is truncated to`; it is
 never compared as it is, so an implementation that returns too little does
 not pass by matching the start.
 
+`spec run` names the truncation on each line it prints about the vector, as
+`  skip  4.6-256 (first 128 bits) (slow; pass --slow)` or after a failure's
+line, and in the JSON report the clause has `"truncate": {"bytes": 16,
+"unit": "bits"}`.
+
 ## A planted bug
 
 Copy the install, then let HKDF-Expand accept one octet more than RFC 5869

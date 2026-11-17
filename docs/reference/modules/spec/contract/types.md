@@ -1003,6 +1003,21 @@ The unit the length is written in: "bits" (bytes × 8) or "bytes".
 unit: string
 ```
 
+#### Truncate.label
+
+The truncation as a report names it, in the unit the spec wrote:
+`first 128 bits`, or `first 16 bytes`.
+
+```ts
+label(): string
+```
+
+<scalar-field name="returns" type="string">
+
+the words, without brackets
+
+</scalar-field>
+
 ### ForallVar
 
 A variable a property quantifies over, and its domain.

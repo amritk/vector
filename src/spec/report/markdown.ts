@@ -140,8 +140,9 @@ export const reportMarkdown = (ctx: CheckContext, report: CheckReport): string =
       out.push("")
       const rows: string[] = []
       for (const k of reportCovering(c, req.id)) {
+        const tr = k.truncate
         rows.push(
-          `| ${reportCodeCell(k.id)} | ${reportCell(k.title)} | ⭕ not run | ${reportCell(reportEvidence(ctx, k))} |   |`,
+          `| ${reportCodeCell(k.id)}${tr === null ? "" : ` (${tr.label()})`} | ${reportCell(k.title)} | ⭕ not run | ${reportCell(reportEvidence(ctx, k))} |   |`,
         )
       }
       if (rows.length > 0) {

@@ -11,7 +11,7 @@ import { emitParsePackages, emitResolveModules } from "../../../src/spec/emit/pa
 import { emitPyProgram } from "../../../src/spec/emit/python"
 import { emitRsProgram } from "../../../src/spec/emit/rust"
 import { emitTsProgram } from "../../../src/spec/emit/typescript"
-import { runPython } from "../../../src/spec/run/command"
+import { runGo, runNode, runPython, runRustc } from "../../../src/spec/run/command"
 import { runDisposeScratch, runMakeScratch, runOutcomeName, runTest, runTestCommand } from "../../../src/spec/run/run"
 
 // A truncated vector, emitted in each language and run: it holds the result's
@@ -77,7 +77,7 @@ const truncEmitShortDetail = (have: i32): string =>
 const truncEmitText = (t: Suite, c: Contract): void => {
   const opts = new EmitOptions("ab")
   const nish = emitProgram(c, new SampleTable(), opts).expect("nish")
-  t.contains("nish: the clause says what it holds", nish, "Holds the result's first 16 bytes (128 bits)")
+  t.contains("nish: the clause says what it holds, in the spec's unit", nish, "Holds the result's first 128 bits to")
   t.contains("nish: the call through hexPrefix", nish, "hexPrefix(hmacSha256(")
   t.contains("nish: to 16 bytes", nish, `, 16), "a3b6167473100ee06e0c796c2955552b")`)
   t.ok(
@@ -163,6 +163,60 @@ const truncEmitPyRuns = (t: Suite, c: Contract): void => {
   }
 }
 
+/** Go's fake hmac, returning `t5` for §4.6 and the true §4.2 result for its 8-byte data. */
+const truncEmitGoHmac = (t5: string): string =>
+  `package hmac\n\nimport "encoding/hex"\n\nfunc HmacSha256(key, data []byte) []byte {\n\th := "${t5}"\n\tif len(data) == 8 {\n\t\th = "${TRUNC_EMIT_FULL}"\n\t}\n\tb, _ := hex.DecodeString(h)\n\treturn b\n}\n`
+
+/** Rust's fake hmac, as Go's. */
+const truncEmitRsHmac = (t5: string): string =>
+  `pub fn hmac_sha256(_key: &[u8], data: &[u8]) -> Vec<u8> {\n    let h = if data.len() == 8 { "${TRUNC_EMIT_FULL}" } else { "${t5}" };\n    (0..h.len() / 2).map(|i| u8::from_str_radix(&h[2 * i..2 * i + 2], 16).unwrap()).collect()\n}\n`
+
+/** TypeScript's fake hmac, as Go's. */
+const truncEmitTsHmac = (t5: string): string =>
+  `export function hmacSha256(_key: Uint8Array, data: Uint8Array): Uint8Array {\n  const h = data.length === 8 ? "${TRUNC_EMIT_FULL}" : "${t5}"\n  return Uint8Array.from(h.match(/../g) ?? [], (x) => Number.parseInt(x, 16))\n}\n`
+
+/**
+ * The Go, Rust and TypeScript tests, run by the binary against a fake hmac:
+ * the whole result passes, a wrong 16th byte fails, and a 15-byte result
+ * fails as short. A language whose toolchain is absent is skipped.
+ */
+const truncEmitLiveRuns = (t: Suite): void => {
+  if (!isExecutableSync("dist/vector")) {
+    t.skip("the truncated vector runs in Go, Rust and TypeScript", "no dist/vector: run npm run build")
+    return
+  }
+  const langs = ["go", "rust", "typescript"]
+  const tools = [runGo(), runRustc(), runNode()]
+  const exts = [".go", ".rs", ".ts"]
+  for (let l = 0; l < langs.length; l++) {
+    const lang = langs[l]
+    const has = runProcess([tools[l], lang === "go" ? "version" : "--version"], "", 10000)
+    if (has.isErr() || has.value.status !== 0) {
+      t.skip(`the truncated vector runs in ${lang}`, `no ${tools[l]}`)
+      continue
+    }
+    for (const i of [0, 2, 3]) {
+      const t5 = truncEmitResults()[i]
+      const dir = makeTempDir("vector-trunc-live-").expect("temp")
+      mkdirSync(joinPath(dir, "crypto"))
+      const fake = lang === "go" ? truncEmitGoHmac(t5) : lang === "rust" ? truncEmitRsHmac(t5) : truncEmitTsHmac(t5)
+      writeFileSyncMode(joinPath(dir, `crypto/hmac${exts[l]}`), fake, 0o600)
+      const argv = ["dist/vector", "spec", "run", TRUNC_EMIT_CONTRACT, "--lang", lang, "--package", `nish=${dir}`]
+      argv.push("--format")
+      argv.push("json")
+      const ran = runProcess(argv, "", 240000).expect("run")
+      t.contains(`${lang}: ${truncEmitWhy()[i]}`, ran.stdout, `"status": "${truncEmitWant()[i]}"`)
+      if (i === 2) {
+        t.contains(`${lang}: the wrong byte is shown`, ran.stdout, `got \\"a3b6167473100ee06e0c796c2955552c\\"`)
+      }
+      if (i === 3) {
+        t.contains(`${lang}: the short result is named`, ran.stdout, "a 15-byte result, shorter than the 16 bytes")
+      }
+      runProcess(["rm", "-rf", dir], "", 10000).expect("rm")
+    }
+  }
+}
+
 /** A truncated vector, emitted and run. */
 export const main = (): i32 => {
   const t = new Suite("spec/emit truncate")
@@ -170,5 +224,6 @@ export const main = (): i32 => {
   truncEmitText(t, c)
   truncEmitNishRuns(t, c)
   truncEmitPyRuns(t, c)
+  truncEmitLiveRuns(t)
   return t.done()
 }

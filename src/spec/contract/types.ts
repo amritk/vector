@@ -363,6 +363,16 @@ export class Truncate {
     this.bytes = bytes
     this.unit = unit
   }
+
+  /**
+   * The truncation as a report names it, in the unit the spec wrote:
+   * `first 128 bits`, or `first 16 bytes`.
+   *
+   * @returns the words, without brackets
+   */
+  label(): string {
+    return this.unit === "bytes" ? `first ${this.bytes} bytes` : `first ${this.bytes * 8} bits`
+  }
 }
 
 /** A variable a property quantifies over, and its domain. */

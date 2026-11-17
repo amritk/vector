@@ -4,7 +4,7 @@ import { makeTempDir } from "../../../src/core/fs"
 import { runProcess } from "../../../src/core/process"
 import { Sample, SampleTable, checkAddSample } from "../../../src/spec/check"
 import { contractLoadFile } from "../../../src/spec/contract/contract"
-import { Contract, LitKind, Literal } from "../../../src/spec/contract/types"
+import { Contract, LitKind, Literal, Truncate } from "../../../src/spec/contract/types"
 import { EmitOptions, emitProgram } from "../../../src/spec/emit/emit"
 import {
   RunClause,
@@ -138,6 +138,7 @@ export const main = (): i32 => {
   runTestLinks(t)
   runTestMarkdown(t)
   runTestSlow(t, nonce)
+  runTestTruncate(t)
 
   const program = emitProgram(c, hexSamples(), new EmitOptions("ab"))
   t.ok("example-hex emits with every property sampled", program.isOk())
@@ -347,4 +348,44 @@ const runTestSlow = (t: Suite, nonce: string): void => {
     runFormatText(mixed).join("\n").indexOf("every vector was skipped as slow") < 0 &&
       runFormatMarkdown(mixed).indexOf("every vector was skipped as slow") < 0,
   )
+}
+
+/** A truncated vector is named with its truncation, in the spec's unit, wherever a run lists it. */
+const runTestTruncate = (t: Suite): void => {
+  const c = contractLoadFile("tests/fixtures/profile/profile-truncate.json").expect("load")
+  const out =
+    "PASS  [4.2-256] HMAC-SHA-256, test case 2\nFAIL  [4.6-256] HMAC-SHA-256, test case 5\n      got 00, want a3\n"
+  const clauses = runParse(c, out)
+  t.ok("the truncated vector carries its truncation", clauses[1].truncate !== null && clauses[0].truncate === null)
+  const r = new RunResult("profile-truncate", 1, out, "")
+  r.verdict = runJudge(c, clauses, 1, [])
+  for (const k of clauses) {
+    r.clauses.push(k)
+  }
+  t.contains(
+    "the text names it on the failure",
+    runFormatText(r).join("\n"),
+    "FAIL  [4.6-256] HMAC-SHA-256, test case 5 (first 128 bits)\n      got 00, want a3",
+  )
+  t.contains(
+    "so does the markdown",
+    runFormatMarkdown(r),
+    "- `FAIL  [4.6-256] HMAC-SHA-256, test case 5` (first 128 bits): `got 00, want a3`",
+  )
+  const json = runFormatJson(r)
+  t.contains("the json records it", json, `"detail": "got 00, want a3", "truncate": {"bytes": 16, "unit": "bits"}}`)
+  t.ok("and only on that vector", json.substring(json.indexOf(`"truncate"`) + 1, json.length).indexOf(`"truncate"`) < 0)
+  const kept = new RunClause("V")
+  kept.outcome = RunOutcome.Skip
+  kept.slow = true
+  kept.truncate = new Truncate(12, "bytes")
+  const slow = new RunResult("c", 0, "", "")
+  slow.verdict = r.verdict
+  slow.clauses.push(kept)
+  t.contains(
+    "a slow skip names it in bytes when the spec did",
+    runFormatText(slow).join("\n"),
+    "  skip  V (first 12 bytes) (slow",
+  )
+  t.contains("and in markdown", runFormatMarkdown(slow), "`V` (first 12 bytes)")
 }

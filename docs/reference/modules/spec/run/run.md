@@ -151,6 +151,14 @@ Whether it is a slow iterated vector the test skipped because `--slow` was not p
 slow: boolean
 ```
 
+#### RunClause.truncate
+
+The truncation its vector is held to, or null when it compares the whole result.
+
+```ts
+truncate: Truncate | null
+```
+
 ### RunVerdict
 
 A run's verdict: the status and each requirement's outcome.
@@ -839,7 +847,8 @@ the markdown
 
 A run's result as JSON: `{contract, status, exit, requirements: {id:
 outcome}, clauses: [{id, outcome, detail}], integrity: [...]}`. A slow
-vector skipped for want of `--slow` also has `"slow": true`.
+vector skipped for want of `--slow` also has `"slow": true`, and a vector
+held to its result's first bytes has `"truncate": {bytes, unit}`.
 
 ```ts
 function runFormatJson(r: RunResult): string

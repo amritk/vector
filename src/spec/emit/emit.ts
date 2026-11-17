@@ -607,9 +607,7 @@ export const emitClauseLines = (c: Contract, k: Clause): string[] => {
   const lines: string[] = [emitCommentText(k.title)]
   const tr = k.truncate
   if (tr !== null) {
-    lines.push(
-      emitCommentText(`Holds the result's first ${tr.bytes} bytes (${tr.bytes * 8} bits) to the expected value.`),
-    )
+    lines.push(emitCommentText(`Holds the result's ${tr.label()} to the expected value.`))
   }
   for (const id of k.covers) {
     for (const r of c.requirements) {
