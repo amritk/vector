@@ -36,10 +36,22 @@ const repo = (t, files, caps) => {
 };
 
 const git = (dir, ...args) =>
-  execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], {
-    cwd: dir,
-    stdio: "ignore",
-  });
+  execFileSync(
+    "git",
+    [
+      "-c",
+      "user.name=t",
+      "-c",
+      "user.email=t@t",
+      "-c",
+      "commit.gpgsign=false",
+      ...args,
+    ],
+    {
+      cwd: dir,
+      stdio: "ignore",
+    },
+  );
 
 /** Commit the dir as it stands and return the commit's SHA. */
 const commit = (dir) => {
@@ -64,6 +76,13 @@ const x = (n) => "x".repeat(n);
 const CASES = [
   ["under its cap", { "a.md": x(9) }, { "a.md": 10 }, 0, []],
   ["exactly at its cap", { "a.md": x(10) }, { "a.md": 10 }, 0, []],
+  [
+    "bytes, not characters",
+    { "a.md": "é".repeat(6) },
+    { "a.md": 10 },
+    1,
+    ["a.md: 12 bytes, over its cap of 10"],
+  ],
   [
     "over its cap",
     { "a.md": x(11), "b.md": x(1) },
@@ -201,6 +220,7 @@ test("--base: outside a git repo the base is unreadable, exit 2", (t) => {
 const USAGE_CASES = [
   ["--base without a ref", ["--base"]],
   ["an unknown flag", ["--frobnicate"]],
+  ["a ref that starts with -", ["--base", "--output=x"]],
 ];
 
 for (const [name, args] of USAGE_CASES) {

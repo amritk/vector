@@ -9,7 +9,8 @@
 // Caps only ratchet down: adding an entry or lowering a cap is fine. A REF
 // without the file has no previous caps, so anything passes against it. Exit
 // 2 on a malformed caps file (here or at REF), a REF that names no commit, or
-// bad usage. Paths are relative to the current directory, the repo's root.
+// bad usage, which includes a REF that starts with "-". Paths are relative to
+// the current directory, the repo's root.
 
 import { execFileSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
@@ -68,7 +69,12 @@ const capsAt = (ref) => {
 
 const args = process.argv.slice(2);
 let base = null;
-if (args.length === 2 && args[0] === "--base" && args[1] !== "") {
+if (
+  args.length === 2 &&
+  args[0] === "--base" &&
+  args[1] !== "" &&
+  !args[1].startsWith("-")
+) {
   base = args[1];
 } else if (args.length !== 0) {
   fail(2, "usage: node scripts/doc-caps.mjs [--base REF]");
