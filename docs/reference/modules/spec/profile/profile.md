@@ -31,8 +31,9 @@ clock, the same contract or the same refusals for the same input.
 
 Every BCP 14 sentence must be a requirement or an exclusion, every xref to
 an RFC must have a `<reference>`, and every section cited must exist in
-the RFC handed over. Where a refusal is placed is profileWhere's rule: a
-markdown line only where the XML vouches for it, never one extrapolated.
+the RFC handed over. Where a refusal is placed is profileWhere's rule: the
+markdown line holding the refused text, found once below its `<?line?>`
+mark, beside the XML line; or the XML line alone, never one extrapolated.
 
 Generated from [src/spec/profile/profile.ts](https://github.com/amritk/vector/blob/main/src/spec/profile/profile.ts).
 
@@ -109,7 +110,7 @@ col: i32
 
 #### ProfileRefusal.exactFile
 
-The XML file when `line` is only the last `<?line?>` mark's markdown line; "" otherwise.
+The XML file when `line` is a markdown line found below a `<?line?>` mark; "" otherwise.
 
 ```ts
 exactFile: string
@@ -149,7 +150,7 @@ message: string
 
 ### ProfileWhere
 
-A file and a line in it, and the XML line when that line is only near.
+A file and a line in it, and the XML line when that line is a markdown line found by its text.
 
 ```ts
 class ProfileWhere
@@ -177,7 +178,7 @@ the line
 
 #### ProfileWhere.exactFile
 
-The XML file when `line` is only the last `<?line?>` mark's markdown line; "" when `line` is exact.
+The XML file when `line` is a markdown line found below a `<?line?>` mark; "" when `line` is the file's own.
 
 ```ts
 exactFile: string
@@ -261,7 +262,7 @@ path: string
 
 #### ProfileMd.text
 
-Its lines, when it was read; a paragraph the XML marks no line for is found here.
+Its lines, when it was read; a place below a `<?line?>` mark is found here by its text.
 
 ```ts
 text: string[]
@@ -407,11 +408,14 @@ locator: ProfileLocator
 
 Where a place is printed. The markdown file at its markdown line when the
 place stands on a `<?line N?>` mark's own XML line, the one line whose
-markdown line the XML vouches for. Below a mark, the markdown file at the
-mark's line together with the XML file at the place's line, since
-kramdown-rfc's XML does not follow the markdown line for line. The XML file
-at its XML line when there is no markdown file, no mark before the place,
-or the mark names a line past the markdown's end.
+markdown line the XML vouches for. Below a mark, kramdown-rfc's XML does
+not follow the markdown line for line, so the place's text is looked for
+instead: the markdown file at the one line between the mark's and the
+next part's `--- ` line that holds it, together with the XML file at the
+place's line. The XML file at its XML line alone when no line or more than
+one holds the text, when there is no markdown file, no mark before the
+place, or the mark names a line past the markdown's end: never the mark's
+own line, which is not the place's.
 
 ```ts
 function profileWhere(
@@ -420,6 +424,7 @@ function profileWhere(
   markLine: i32,
   xmlPath: string,
   md: ProfileMd | null,
+  text: string,
 ): ProfileWhere
 ```
 
@@ -453,9 +458,15 @@ the markdown file, or null
 
 </scalar-field>
 
+<scalar-field name="text" type="string" required>
+
+the text the place is about, as the markdown writes it (white space collapsed); "" when it cannot be told
+
+</scalar-field>
+
 <scalar-field name="returns" type="ProfileWhere">
 
-the file and line, and the XML line when the markdown line is only near
+the file and line, and the XML line when the line is a markdown one found by its text
 
 </scalar-field>
 

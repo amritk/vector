@@ -1,0 +1,1 @@
+vector spec extract tests/fixtures/profile/profile-iterate-twice.xml -o tests/fixtures/profile/profile-iterate-twice.json

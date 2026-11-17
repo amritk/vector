@@ -1,1 +1,1 @@
-vector: tests/fixtures/profile/profile-truncate-unprinted.md:28 (tests/fixtures/profile/profile-truncate-unprinted.xml:95): fidelity: the truncation to 16 bytes is not printed in RFC §4.6 ("Test Case 5")
+vector: tests/fixtures/profile/profile-truncate-unprinted.md:56 (tests/fixtures/profile/profile-truncate-unprinted.xml:95): fidelity: the truncation to 16 bytes is not printed in RFC §4.6 ("Test Case 5")

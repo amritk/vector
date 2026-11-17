@@ -36,7 +36,8 @@ carries the last such mark before it: its N (`mdLine`) and the XML line it
 stands on (`markLine`). The markdown line is known exactly only on the
 mark's own line; below it, kramdown-rfc's XML no longer follows the
 markdown line for line (a table, a list or a heading takes a different
-number of lines in each), so nothing is extrapolated. A signed
+number of lines in each), so nothing is extrapolated; a profile refusal
+finds its markdown line by its text instead (profileWhere). A signed
 `<?line -N?>` or `<?line +N?>` is, as in kramdown-rfc, a correction to
 every later unsigned N; it moves no line by itself. N has at most 9 digits.
 

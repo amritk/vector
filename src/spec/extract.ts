@@ -372,11 +372,11 @@ export const extractContract = (
   const parsed = xmlDocParse(text)
   if (parsed.isErr()) {
     const e = parsed.error
-    const w = profileWhere(e.line, e.mdLine, e.markLine, xmlPath, md)
+    const w = profileWhere(e.line, e.mdLine, e.markLine, xmlPath, md, "")
     const see = e.see
     const message =
       see !== null
-        ? `${e.message} ${profileWhereText(profileWhere(see.line, see.mdLine, see.markLine, xmlPath, md))}`
+        ? `${e.message} ${profileWhereText(profileWhere(see.line, see.mdLine, see.markLine, xmlPath, md, ""))}`
         : e.message
     out.refusals.push(profileRefusalAt(w, e.col, message))
     return out
@@ -444,7 +444,22 @@ const extractGateRowAdd = (
   // it cannot place falls to the root, so its `at` stays in the text and two
   // root notes with one message stay two.
   const text = at.length > 0 && !extractPlaced(locator, at) ? `${gate}: ${at}: ${message}` : `${gate}: ${message}`
-  rows.push(new ExtractGateRow(profileRefusalAt(profileLocate(locator, at), 0, text), false))
+  rows.push(
+    new ExtractGateRow(profileRefusalAt(profileLocate(locator, extractGateKey(locator, at, message)), 0, text), false),
+  )
+}
+
+/** How fidelity's refusal of an iterated vector's unprinted count begins. */
+const EXTRACT_ITERATE_COUNT: string = "the count "
+
+/**
+ * The part a gate note is placed at: its `at`, except that fidelity's refusal
+ * of an unprinted count names the vector (`V1`) while the count is its
+ * Iterate: paragraph's text, so that paragraph (`V1.iterate`) places it.
+ */
+const extractGateKey = (locator: ProfileLocator, at: string, message: string): string => {
+  const iterate = `${at}.iterate`
+  return message.startsWith(EXTRACT_ITERATE_COUNT) && locator.at.has(iterate) ? iterate : at
 }
 
 /** Whether the locator holds `at` or a dotted prefix of it, as profileLocate looks it up. */

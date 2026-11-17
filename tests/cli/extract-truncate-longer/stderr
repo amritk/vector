@@ -1,1 +1,1 @@
-vector: tests/fixtures/profile/profile-truncate-longer.md:28 (tests/fixtures/profile/profile-truncate-longer.xml:95): 4.6-256's Expected is 16 bytes (128 bits), but Truncate: keeps 12 bytes (96 bits); the Expected is the whole truncated result
+vector: tests/fixtures/profile/profile-truncate-longer.md:56 (tests/fixtures/profile/profile-truncate-longer.xml:95): 4.6-256's Expected is 16 bytes (128 bits), but Truncate: keeps 12 bytes (96 bits); the Expected is the whole truncated result
