@@ -91,7 +91,11 @@ source. The contract then takes the RFC form: `source.rfc` is N,
 - Everything a requirement holds must be RFC text. A `Definition:`
   paragraph, an anchored BCP 14 paragraph, an excluded paragraph, a vector
   Source naming a section of the spec, and any BCP 14 sentence of the spec's
-  own are refused.
+  own are refused. The one vector Source that names a section through
+  `spec` is the result citation, `{{Section N of RFCx}}; result {{Section M
+  of RFCx}}` with both sections of RFC N, which extracts to `"source":
+  {"spec": "M"}, "section": "N"` (see [When a section states `null`, `true`
+  or `false`](#when-a-section-states-null-true-or-false)).
 - A spec has one such key. A misspelt key, an RFC not under `normative:`,
   and an RFC nothing cites are refused.
 - The RFC may be `.xml` or `.txt`; [`tests/fixtures/rfc-main/`][rfc-main]
@@ -617,6 +621,22 @@ a rewording of the requirement's quote, while a false pass would break the
 gate. There is no way around it: a `cite` source is held to the same rule,
 and a `command` source cannot expect `null` or a `bool`.
 
+A vector may cite its inputs and its result to two sections of the main RFC,
+`{{Section 7.1 of RFC8032}}; result {{Section 5.1.7 of RFC8032}}`. The steps
+below then run over the result's section (5.1.7), not the inputs' (7.1), and
+when they refuse, [a property may derive the
+result](#when-a-property-derives-the-result) instead. A refusal names both
+sections: `RFC §5.1.7 ("Verify"), the result citation of 7.1-T1-VER (inputs
+§7.1), does not state the expected result: …; and no property derives it:
+…`.
+
+A sentence that defines the check, such as Section 5.1.7's "Check the group
+equation `[8][S]B = [8]R + [8][k]A'`.", does not state a result on its own: it
+states a check, not that check's outcome on the cited bytes. A section that
+printed a tampered signature, which fails the check, would read the same, so
+accepting the sentence as `true` would pass a wrong vector. Such a vector is
+accepted only when a property derives the result.
+
 1. The vector `covers` a requirement cited to that very section (same source,
    same section). Otherwise: "covers no requirement cited to it".
 2. That requirement's quote is in the section's prose, not only in a code
@@ -681,36 +701,72 @@ A section that defines a check (RFC 8032's Section 5.1.7, "Verify") rarely
 says in words that a vector's check returns `true`. A vector whose inputs and
 result are cited to two sections of the main RFC is still accepted when a
 property of the contract derives its result. Every step fails closed, and the
-refusal names the property and the step:
+refusal names the property (or the vector) and the step. Each step's
+refusals, in the order they are tried:
 
-1. The expected value is `null`, `true` or `false`. Otherwise: "expects
+1. The vector's result is its call's, exactly: it has no truncation, no
+   iteration and no tolerance. Otherwise: "V compares only the first N bytes
+   of its result, so its expected value is not its call's", "V iterates its
+   call N times, so …" or "V allows a tolerance, so …".
+2. The expected value is `null`, `true` or `false`. Otherwise: "V expects
    neither null, true nor false".
-2. The property covers a requirement cited to the result's section that the
+3. A property covers a requirement cited to the result's section that the
    vector covers too. Otherwise: "no property covers a requirement of the
-   result's section that … covers".
-3. The property asserts one equality, `f(…) === literal`, where `f` is the
+   result's section that V covers". Every such property is tried, and when
+   none derives the result the refusal lists each one's reason, joined by
+   `; `.
+4. The property asserts one equality, `f(…) === literal`, where `f` is the
    vector's call and the literal is the vector's expected value. Otherwise:
-   "asserts another result than the vector's".
-4. Each argument of that call is the vector's, in order: a quantified
-   variable binds to it (the same variable always to the same value), or a
-   call of another function (optionally under `unwrap`, at most two calls
-   deep) yields it, because another vector of the contract, whose expected
-   value is cited to a section of an RFC, calls that function with matching
-   arguments and expects that value. Otherwise: "calls g for a value no cited
-   vector of g expects with matching arguments".
-5. Every quantified variable is bound inside its domain: a byte string's
+   "P does not assert a single equality" (also for `!=` or `&&`), "P does not
+   assert that f is a literal" (a call of another function, or no literal
+   side), or "P asserts another result than the vector's".
+5. Each argument of that call is the vector's, in order. Otherwise: "V has
+   an argument that is not evaluated here" or "P passes N arguments where M
+   are given". An argument may be:
+   - a quantified variable, which binds to the vector's value, the same
+     variable always to the same value. Otherwise: "P uses x, which it does
+     not quantify over" or "P uses x for two different values";
+   - a literal equal to the vector's value. Otherwise: "P passes a literal
+     that is not the vector's value";
+   - a call of another function, optionally under `unwrap`, at most two calls
+     deep, that yields the value: another vector of the contract, whose
+     expected value is cited to a section of an RFC, calls that function with
+     matching arguments, expects that value, and has no truncation, iteration
+     or tolerance. Otherwise: "P reaches g more than 2 calls deep" or "P
+     calls g for a value no cited vector of g expects with matching
+     arguments". When a vector of g matched but was not exact, the message
+     names it: "(unused: K compares only the first 2 bytes of its result, so
+     its expected value is not its call's)".
+   Anything else (`concat`, a `let` block) is refused: "P computes
+   an argument (concat) that is not matched here".
+6. Every quantified variable is bound inside its domain: a byte string's
    length within its `/* a..b */`, an integer within its bounds. Otherwise:
-   "binds msg to a N-byte value, outside its domain a..b".
-6. The property's `where`, if any, holds for the bound values. Otherwise:
-   "'s where does not hold for the vector's inputs".
+   "P leaves z unbound", "P binds msg to a N-byte value, outside its domain
+   a..b", "P binds n to N, outside its domain a..b", "P binds msg, a bytes
+   variable, to a value that is not bytes", "P bounds n by a value that is
+   not an integer", or, for a type with no bounds here (a string), "P binds
+   s, of type string, which is not bound here".
+7. The property's `where`, if any, holds for the bound values. Otherwise:
+   "P's where does not hold for the vector's inputs", or "P's where cannot be
+   evaluated: …" when it holds a call or anything else the sampler does not
+   evaluate.
 
 So the property `forall (key: u8[] /* 1..1 */, msg: u8[] /* 0..1 */) =>
 check(key, msg, tag(key, msg)) === true` derives `check(KEY = 01, MESSAGE =
 02, TAG = 0a0b)` = `true` when another vector cites `tag(KEY = 01, MESSAGE =
 02)` = `TAG = 0a0b` to the RFC: the property holds for every key and message
 in its domain, and the vector's are among them. When neither rule holds, the
-refusal gives both reasons: "does not state the expected result: …; and no
-property derives it: …".
+refusal names both sections and gives both reasons: "RFC §5.1.7 ("Verify"),
+the result citation of V (inputs §7.1), does not state the expected result:
+…; and no property derives it: …".
+
+[`tests/fixtures/result-ed25519/`][result-ed25519] does this over the
+unmodified RFC 8032: `P-ROUNDTRIP`, `ed25519Verify(unwrap(ed25519PublicKey(seed)),
+msg, unwrap(ed25519Sign(seed, msg))) === true` with `msg` in `0..130`, derives
+TEST 1, 2, 3 and SHA(abc) of Section 7.1 from their public-key and signature
+vectors. TEST 1024 is refused: "P-ROUNDTRIP binds msg to a 1023-byte value,
+outside its domain 0..130". Widen the domain to `0..1023` and it is derived
+too.
 
 ## Authoring notes
 
@@ -726,5 +782,6 @@ property derives it: …".
 [profile-hex]: https://github.com/amritk/vector/blob/main/tests/fixtures/profile/profile-hex.md
 [survival]: https://github.com/amritk/vector/blob/main/tests/fixtures/kramdown/SURVIVAL.md
 [rfc-main]: https://github.com/amritk/vector/tree/main/tests/fixtures/rfc-main
+[result-ed25519]: https://github.com/amritk/vector/tree/main/tests/fixtures/result-ed25519
 [schema]: https://github.com/amritk/vector/blob/main/schemas/rfc-contract.json
 [vocab]: https://github.com/amritk/vector/blob/main/src/spec/contract/vocab.ts

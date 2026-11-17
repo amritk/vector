@@ -9,8 +9,10 @@ still supports it when a property of the contract asserts it: the property
 covers a requirement of that section the vector covers, asserts that the
 vector's call is the vector's expected literal, and its call's arguments
 are the vector's, each one either a quantified variable bound inside its
-domain or another cited vector's call whose expected value it is. Every
-step is checked here; any that fails refuses.
+domain or another cited vector's call whose expected value it is. Only a
+vector compared whole and called once is used, the row or a sibling: a
+truncated, iterated or toleranced vector's expected value is not its
+call's. Every step is checked here; any that fails refuses.
 
 Generated from [src/spec/gates/derive.ts](https://github.com/amritk/vector/blob/main/src/spec/gates/derive.ts).
 

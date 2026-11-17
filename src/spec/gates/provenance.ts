@@ -9,8 +9,9 @@
 
 import { CheckContext, CheckSourceRun } from "../check"
 import { Citation, Clause, ClauseKind, VectorSourceKind } from "../contract/types"
-import { sourceMainId } from "../source/load"
-import { gateCitedSection, gatePlace, gateSources } from "./cite"
+import { SourceSet, sourceFind, sourceMainId } from "../source/load"
+import { RfcSection, rfcSection } from "../source/rfc"
+import { gateCiteLabel, gateCitedSection, gatePlace, gateSources } from "./cite"
 import { gateDerivedResult } from "./derive"
 import { gateIssue, gateWarn } from "./note"
 import { gateResultWord, gateStatesResult } from "./result"
@@ -30,9 +31,11 @@ const gateSourceRun = (ctx: CheckContext, id: string): CheckSourceRun | null => 
 /**
  * Whether a vector cites its inputs to one section of the main RFC and its
  * result to another, so its result may be derived (`spec/gates/derive`).
- * An RFC-profile spec gets a `spec` source only from the `; result` form (a
- * bare section anchor is refused there), so this shape is that form's alone;
- * a module spec's `spec` rows have a main source and never match.
+ * An RFC-profile spec extracts a `spec` source only from the `; result` form
+ * (a bare section anchor is refused there); a contract written by hand with
+ * an RFC as its main source, a `{"spec": B}` source and a `"section": A`
+ * takes the same rule. A module spec's `spec` rows have a main source and
+ * never match.
  */
 const gateCitesResultApart = (ctx: CheckContext, k: Clause, section: string): boolean => {
   const inputs = k.section
@@ -40,13 +43,21 @@ const gateCitesResultApart = (ctx: CheckContext, k: Clause, section: string): bo
   return c.source.main === null && c.source.rfc >= 1 && inputs !== null && inputs !== section
 }
 
-/** The ids of the main source's requirements quoted from a section. */
-const gateSectionReqs = (ctx: CheckContext, section: string): string[] => {
+/**
+ * The ids of the main source's requirements quoted from a section, each
+ * requirement's section resolved in the RFC as `gateStatesResult` resolves it.
+ */
+const gateSectionReqs = (ctx: CheckContext, set: SourceSet, sec: RfcSection): string[] => {
   const main = sourceMainId(ctx.contract)
+  const loaded = sourceFind(set, null)
   const out: string[] = []
+  if (loaded === null) {
+    return out
+  }
   for (const r of ctx.contract.requirements) {
     const own = r.source
-    if ((own === null || own === main) && r.section === section) {
+    const rsec = rfcSection(loaded.doc, r.section)
+    if ((own === null || own === main) && rsec !== null && rsec.id === sec.id) {
       out.push(r.id)
     }
   }
@@ -72,18 +83,20 @@ const gateSpecSource = (ctx: CheckContext, out: string[], k: Clause, section: st
     return
   }
   const place = gatePlace(set, null, section)
-  if (!gateCitesResultApart(ctx, k, section)) {
+  const inputs = k.section
+  if (inputs === null || !gateCitesResultApart(ctx, k, section)) {
     gateIssue(ctx, out, g, at, `${place} ("${sec.title}") does not state the expected result: ${why}`)
     return
   }
-  const derived = gateDerivedResult(ctx.contract.clauses, gateSectionReqs(ctx, section), k)
+  const derived = gateDerivedResult(ctx.contract.clauses, gateSectionReqs(ctx, set, sec), k)
   if (derived !== null) {
+    const apart = `the result citation of ${k.id} (inputs ${gateCiteLabel(set, null, inputs)})`
     gateIssue(
       ctx,
       out,
       g,
       at,
-      `${place} ("${sec.title}") does not state the expected result: ${why}; and no property derives it: ${derived}`,
+      `${place} ("${sec.title}"), ${apart}, does not state the expected result: ${why}; and no property derives it: ${derived}`,
     )
   }
 }

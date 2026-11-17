@@ -6,8 +6,10 @@
  * covers a requirement of that section the vector covers, asserts that the
  * vector's call is the vector's expected literal, and its call's arguments
  * are the vector's, each one either a quantified variable bound inside its
- * domain or another cited vector's call whose expected value it is. Every
- * step is checked here; any that fails refuses.
+ * domain or another cited vector's call whose expected value it is. Only a
+ * vector compared whole and called once is used, the row or a sibling: a
+ * truncated, iterated or toleranced vector's expected value is not its
+ * call's. Every step is checked here; any that fails refuses.
  */
 
 import { Clause, ClauseKind, Expr, ExprKind, ForallVar, Literal, VectorSourceKind } from "../contract/types"
@@ -95,6 +97,22 @@ const deriveVar = (p: Clause, name: string): ForallVar | null => {
 /** A value as the variable holds it: an integer takes the variable's type. */
 const deriveAs = (v: ForallVar, x: SampleValue): SampleValue => (x.kind === SampleKind.Int ? sampleInt(x.n, v.type) : x)
 
+/** Why a vector's expected value is not its call's (truncated, iterated or toleranced), or null when it is. */
+const deriveInexact = (k: Clause): string | null => {
+  const tr = k.truncate
+  if (tr !== null) {
+    return `${k.id} compares only the first ${tr.bytes} bytes of its result`
+  }
+  const it = k.iterate
+  if (it !== null) {
+    return `${k.id} iterates its call ${it.count} times`
+  }
+  if (k.tolerance !== null) {
+    return `${k.id} allows a tolerance`
+  }
+  return null
+}
+
 /** The vectors other than `row` whose expected value a cited section prints. */
 const deriveSiblings = (clauses: Clause[], row: Clause): Clause[] =>
   clauses.filter((c: Clause): boolean => {
@@ -119,9 +137,19 @@ const deriveCall = (p: Clause, sibs: Clause[], e: Expr, x: SampleValue, m: Deriv
     m.why = `${p.id} reaches ${e.name} more than ${DERIVE_DEPTH} calls deep`
     return
   }
+  const inexact: string[] = []
+  let tried: string | null = null
   for (const s of sibs) {
+    if (s.call !== e.name) {
+      continue
+    }
+    const loose = deriveInexact(s)
+    if (loose !== null) {
+      inexact.push(loose)
+      continue
+    }
     const want = deriveValue(s.expect)
-    if (s.call !== e.name || want === null || !deriveSame(want, x)) {
+    if (want === null || !deriveSame(want, x)) {
       continue
     }
     const vals: SampleValue[] = []
@@ -140,8 +168,16 @@ const deriveCall = (p: Clause, sibs: Clause[], e: Expr, x: SampleValue, m: Deriv
       m.env = tryM.env
       return
     }
+    if (tried === null) {
+      tried = tryM.why
+    }
   }
-  m.why = `${p.id} calls ${e.name} for a value no cited vector of ${e.name} expects with matching arguments`
+  if (tried !== null) {
+    m.why = tried
+    return
+  }
+  const unused = inexact.length > 0 ? ` (unused: ${inexact.join(", ")}, so its expected value is not its call's)` : ""
+  m.why = `${p.id} calls ${e.name} for a value no cited vector of ${e.name} expects with matching arguments${unused}`
 }
 
 /** Unifies one expression of the property with a value of the vector. */
@@ -266,6 +302,10 @@ const deriveFrom = (clauses: Clause[], k: Clause, want: SampleValue, p: Clause):
  * @returns why not, or null
  */
 export const gateDerivedResult = (clauses: Clause[], reqs: string[], k: Clause): string | null => {
+  const loose = deriveInexact(k)
+  if (loose !== null) {
+    return `${loose}, so its expected value is not its call's`
+  }
   const want = deriveValue(k.expect)
   if (want === null || (want.kind !== SampleKind.Bool && want.kind !== SampleKind.Null)) {
     return `${k.id} expects neither null, true nor false`

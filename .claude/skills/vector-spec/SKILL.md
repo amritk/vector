@@ -245,7 +245,10 @@ extracts to.
     quantified variable or another cited vector's expected value. Use it
     for a verify vector whose section defines the check but never says
     "MUST return true" (see the guide's "When a property derives the
-    result"). Widen the property's domain to hold the vector's inputs.
+    result"). Widen the property's domain to hold the vector's inputs. A
+    "Check …" sentence alone never states the result, and a truncated,
+    iterated or toleranced vector, or a sibling vector that is, cannot be
+    derived; `tests/fixtures/result-ed25519/` is the worked example.
   - `{{anchor}}`: a numbered section of this spec. For a `null` or `bool`
     expected value it is a `spec` source (the covered requirement states it);
     for any other value it is a `cite` of that section, which must print the
