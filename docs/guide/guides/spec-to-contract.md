@@ -238,16 +238,22 @@ It refuses everything it cannot read, all at once, each refusal at
 `file:line`, or `file:line:col` when it knows the column (a malformed literal
 in a test vector's cell, a parse error in the `ts-interface` block, malformed
 XML). A refusal names the markdown the XML was built from, `specs/<name>.md`
-beside it, only at a line the XML vouches for. kramdown-rfc marks the XML with
+beside it, only at a line it can find there. kramdown-rfc marks the XML with
 `<?line N?>` only where a part starts (the abstract, the middle, the back),
 not at every paragraph, and tables and other multi-line constructs move the
-lines after a mark apart. So a refusal on the line of a mark names
-the markdown line alone; any other names the markdown line of the last mark
-before it, with the XML line it is exactly on beside it:
+lines after a mark apart. So a refusal on the line of a mark names the
+markdown line alone. Any other refusal is looked up by its own text (the
+sentence, a table row's first cell, or the start of the paragraph) in the
+markdown between its mark and the next `--- ` line. If the text is on exactly
+one line there, the refusal names that markdown line, with the XML line it is
+exactly on beside it:
 
 ```text
-specs/<name>.md:<last mark's line> (specs/<name>.xml:<line>[:col])
+specs/<name>.md:<line holding the text> (specs/<name>.xml:<line>[:col])
 ```
+
+If the text is on no line there, or on more than one, the refusal names the
+XML line alone rather than a markdown line that might be the wrong one.
 
 The column, when there is one, counts along the XML line, so it is printed
 with an XML line and never with a markdown line alone. A refusal before any
@@ -255,17 +261,18 @@ mark, past the end of the markdown, or with no markdown beside the XML names
 the XML alone, so a refusal never names a file that is not there or a line
 that is not in it. A refusal that cites a second place, such as an anchor used
 twice or a closing tag that does not match, prints it the same way. Here a
-BCP 14 sentence is added to the XML with no anchor and no `Untested:`
-paragraph:
+BCP 14 sentence with no anchor and no `Untested:` paragraph is added to both
+the markdown and the XML built from it:
 
 <!-- exit 1 -->
 ```sh
 sed -i 's|return an empty array, not null.</t>|&\n<t>hexDecode <bcp14>MUST</bcp14> be fast.</t>|' specs/example-hex.xml
+sed -i 's|^{: #R-DEC-EMPTY}$|&\n\nhexDecode MUST be fast.|' specs/example-hex.md
 ./dist/vector spec extract specs/example-hex.xml -o contracts/example-hex.json
 ```
 
 ```text
-vector: specs/example-hex.md:21 (specs/example-hex.xml:140): BCP 14 sentence has no anchor and no Untested: paragraph after it: "hexDecode MUST be fast."
+vector: specs/example-hex.md:142 (specs/example-hex.xml:140): BCP 14 sentence has no anchor and no Untested: paragraph after it: "hexDecode MUST be fast."
 ```
 
 ```sh
