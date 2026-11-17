@@ -161,7 +161,9 @@ const words = (line) => {
 
 /** A golden's text with `{{version}}` and `{{root}}` filled in. */
 const fill = (text) =>
-  text.replaceAll("{{version}}", VERSION).replaceAll("{{root}}", realRoot);
+  text
+    .replaceAll("{{version}}", () => VERSION)
+    .replaceAll("{{root}}", () => realRoot);
 
 const read = (dir, name) => {
   const path = join(dir, name);

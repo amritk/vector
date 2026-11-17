@@ -51,19 +51,19 @@ vector does two things, and no model is involved in either:
    So `x != 0 and 1 / x > 0` is safe, and `1 / x > 0 and x != 0` is a
    division hazard.
 9. **`--emit` writes only on `PROVEN`.** On any other verdict it writes
-    nothing, and it leaves an existing file as it was.
+   nothing, and it leaves an existing file as it was.
 10. **`spec run` `SATISFIED` is evidence, not proof.** The implementation
-    returned the printed vectors and held the properties at their samples.
-    Run `spec mutate` to find the bugs the contract cannot tell apart from
-    the real code. See [What a pass means](guide/guides/testing.md#what-a-pass-means).
+   returned the printed vectors and held the properties at their samples.
+   Run `spec mutate` to find the bugs the contract cannot tell apart from
+   the real code. See [What a pass means](guide/guides/testing.md#what-a-pass-means).
 11. **Never hand-edit a generated file.** `spec extract` writes
-    `contracts/*.json`, `scripts/build-spec.sh` builds `specs/*.xml` from
-    `specs/*.md`, and `spec emit` writes the test. Change the source, and
-    run the generator again.
+   `contracts/*.json`, `scripts/build-spec.sh` builds `specs/*.xml` from
+   `specs/*.md`, and `spec emit` writes the test. Change the source, and
+   run the generator again.
 12. **`spec frozen` refuses a change that touches both sides.** The spec side
-    is `specs/`, `contracts/`, `rfcs/` and generated tests. The other side is
-    the implementation. Land the spec first, then the implementation. See
-    [frozen](guide/guides/pr-gates.md#frozen).
+   is `specs/`, `contracts/`, `rfcs/` and generated tests. The other side is
+   the implementation. Land the spec first, then the implementation. See
+   [frozen](guide/guides/pr-gates.md#frozen).
 
 ## Rules
 

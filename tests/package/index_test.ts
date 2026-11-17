@@ -45,24 +45,51 @@ const indexAgentsDocCases = (t: Suite): void => {
   t.ok("agents doc: clean up", removed.isOk() && removed.value.status === 0)
 }
 
-/** Checks that the built binary's --help names this checkout's docs/AI.md, and that it exists. */
+/**
+ * Checks, through the built binary, that `--help` and `help` name a root's
+ * docs/AI.md when it is a file there, and the URL when the root has none:
+ * this checkout's dist/vector, and a copy of it under a root with a src/ but
+ * no docs/.
+ */
 const indexAgentsDocBinary = (t: Suite): void => {
   const root = realpathSync(".")
-  if (root === null) {
-    t.fail("agents doc: --help", "cannot resolve the checkout")
+  const made = makeTempDir("vector-agents-bin-")
+  if (root === null || made.isErr()) {
+    t.fail("agents doc: binary", "cannot resolve the checkout or make a temp dir")
     return
   }
+  const bare = realpathSync(made.value) ?? made.value
+  t.ok(
+    "agents doc: a bare root: make it",
+    mkdirAll(joinPath(bare, "src"), 0o755).isOk() && mkdirAll(joinPath(bare, "dist"), 0o755).isOk(),
+  )
+  const copied = runProcess(["cp", "dist/vector", joinPath(bare, "dist/vector")], "", 10000)
+  t.ok("agents doc: a bare root: copy the binary", copied.isOk() && copied.value.status === 0)
   t.eqStr("agents doc: this checkout", vectorAgentsDoc(root), joinPath(root, "docs/AI.md"))
-  const r = runProcess(["dist/vector", "--help"], "", 10000)
-  if (r.isErr()) {
-    t.fail("agents doc: --help", r.error)
-    return
+  // name, the binary, its arguments, and the last line it must print
+  const cases: string[][] = [
+    ["this checkout: --help", "dist/vector", "--help", joinPath(root, "docs/AI.md")],
+    ["this checkout: help", "dist/vector", "help", joinPath(root, "docs/AI.md")],
+    ["a root with no docs/: --help", joinPath(bare, "dist/vector"), "--help", INDEX_AI_DOC_URL],
+    ["a root with no docs/: help", joinPath(bare, "dist/vector"), "help", INDEX_AI_DOC_URL],
+  ]
+  for (let i = 0; i < cases.length; i++) {
+    const c = cases[i]
+    const r = runProcess([c[1], c[2]], "", 10000)
+    if (r.isErr()) {
+      t.fail(`agents doc: ${c[0]}`, r.error)
+      continue
+    }
+    t.eqI32(`agents doc: ${c[0]} exits 0`, r.value.status, 0)
+    const lines = splitLines(trimEnd(r.value.stdout))
+    const last = lines.length > 0 ? trim(lines[lines.length - 1]) : ""
+    t.eqStr(`agents doc: ${c[0]} names it`, last, c[3])
+    if (c[3].startsWith("/")) {
+      t.ok(`agents doc: ${c[0]}: the file it names exists`, readFileSyncOrNull(last) !== null)
+    }
   }
-  t.eqI32("agents doc: --help exits 0", r.value.status, 0)
-  const lines = splitLines(trimEnd(r.value.stdout))
-  const last = lines.length > 0 ? trim(lines[lines.length - 1]) : ""
-  t.eqStr("agents doc: --help names this checkout's docs/AI.md", last, joinPath(root, "docs/AI.md"))
-  t.ok("agents doc: the file --help names exists", last.startsWith("/") && readFileSyncOrNull(last) !== null)
+  const removed = runProcess(["rm", "-rf", bare], "", 10000)
+  t.ok("agents doc: binary: clean up", removed.isOk() && removed.value.status === 0)
 }
 
 export const main = (): i32 => {
