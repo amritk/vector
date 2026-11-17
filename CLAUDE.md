@@ -100,8 +100,9 @@ text passes even with the rule removed.
 `CHANGELOG.md` and every version bump are release-please's: never edit the
 version or the changelog by hand.
 
-**A change a user sees updates its guide page in the same PR**: a command, a
-flag, an exit code, an install step, or a message a guide page shows.
+**A change a user sees updates its guide page and `docs/AI.md` in the same PR**:
+a command, a flag, an exit code, an install step, or a message a guide page
+shows.
 
 **Moving where a fact lives moves every pointer to it in the same PR.** Grep
 the docs, `.claude/`, `CLAUDE.md` and source comments for the old location.
