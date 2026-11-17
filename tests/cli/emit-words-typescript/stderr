@@ -1,0 +1,1 @@
+vector: tests/fixtures/chacha20/contracts/rfc8439-quarter-round.json: chacha20QuarterRound: word arrays (words32) are not emitted for TypeScript yet; emit the Nish test

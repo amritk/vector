@@ -24,7 +24,7 @@ import { asciiLower } from "nish/text"
 import { toHex, utf8Bytes } from "../../core/hex"
 import { CheckContext, CheckNote } from "../check"
 import { contractF64Bits, contractF64IsNaN, contractF64Parse } from "../contract/f64"
-import { Clause, ClauseKind, Iterate, LitKind, Literal, typesIsWords, VectorSourceKind } from "../contract/types"
+import { Clause, ClauseKind, Iterate, LitKind, Literal, VectorSourceKind, typesIsWords } from "../contract/types"
 import { SourceSet, sourceFind } from "../source/load"
 import {
   HexValue,

@@ -20,7 +20,7 @@ The 3 JSON Schemas in `schemas/`.
 
 <scalar-card title="Modules" icon="phosphor/regular/books" href="#modules">
 
-The 114 source files of `src/`, from their doc comments.
+The 115 source files of `src/`, from their doc comments.
 
 </scalar-card>
 
@@ -110,6 +110,7 @@ The 114 source files of `src/`, from their doc comments.
 | [`spec/gates/signatures`](modules/spec/gates/signatures.md) | the functions a contract declares for the module under test are what that module exports. |
 | [`spec/gates/text`](modules/spec/gates/text.md) | how the fidelity and completeness gates read a section's text, without lookaround (nish/regex has none): word lists matched at word edges, the binding BCP 14 keywords, a labelled integer or f64, and the lines a value is printed on as a whole value. |
 | [`spec/gates/typing`](modules/spec/gates/typing.md) | the typing gate: every vector calls a declared function with arguments and an expected value of its parameter and return types, and every property's `where` and `assert` are well-typed booleans over its variables (`where` may call nothing: a domain must be decidable without the implementation). |
+| [`spec/gates/words`](modules/spec/gates/words.md) | the blocks of words a section prints, which a u16[], u32[] or u64[] vector value binds to. |
 | [`spec/pr/cli`](modules/spec/pr/cli.md) | what the PR gates' commands share: reading `--format` and `--base`, and printing a report with the exit code it earns. |
 | [`spec/pr/exports`](modules/spec/pr/exports.md) | every export a PR adds to or changes in a contract's target module is tested by the contract (one of its `functions`) or listed in its `outOfScope` with a reason, so no new surface lands untested. |
 | [`spec/pr/frozen`](modules/spec/pr/frozen.md) | a PR changes the spec side (specs/, contracts/, rfcs/) or the implementation, never both, so a test cannot be loosened to match the code it tests. |

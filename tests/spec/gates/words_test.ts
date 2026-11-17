@@ -164,7 +164,10 @@ const wordsTestBlocks = (t: Suite): void => {
   t.ok("a 16-bit word", wordsTestLabel(blocks[6]) === "h" && blocks[6].digits === 4)
   t.ok("a sentence's words are not a block", blocks[8].words[0] === "0badf00d")
   t.ok("a heading is not a label", blocks[8].label === null)
-  t.ok("a word in a label line keeps it from labelling", gateWordBlocks(["  a 0001", "", "  00000001"])[0].label === null)
+  t.ok(
+    "a word in a label line keeps it from labelling",
+    gateWordBlocks(["  a 0001", "", "  00000001"])[0].label === null,
+  )
   t.ok("a sentence above is not a label", gateWordBlocks(["  It is:", "", "  00000001"])[0].label === null)
   t.ok("mixed widths are not a block", gateWordBlocks(["  00000001 0001"]).length === 0)
   t.ok("mixed 0x spelling is not a block", gateWordBlocks(["  00000001 0x00000002"]).length === 0)
@@ -199,7 +202,7 @@ const wordsTestTable = (t: Suite): void => {
     `"11111111", "01020304", "9b8d6f43", "01234567"`,
     "",
     WORDS_TEST_OUT,
-    "the 4 words are printed in RFC §2 (\"Vectors\") with 0x: write each word as printed",
+    'the 4 words are printed in RFC §2 ("Vectors") with 0x: write each word as printed',
   )
   wordsTest32(
     t,
@@ -288,8 +291,22 @@ const wordsTestTable = (t: Suite): void => {
     ),
     `the value is printed in RFC §3 ("Elsewhere"), but not under the label "Out"`,
   )
-  wordsTest32(t, "another block's label", WORDS_TEST_STATE, "After the round", WORDS_TEST_AFTER, `under "Sample State", not under "After the round"`)
-  wordsTest32(t, "a per-word name is not a block label", WORDS_TEST_IN, "a", WORDS_TEST_OUT, `but not under the label "a"`)
+  wordsTest32(
+    t,
+    "another block's label",
+    WORDS_TEST_STATE,
+    "After the round",
+    WORDS_TEST_AFTER,
+    `under "Sample State", not under "After the round"`,
+  )
+  wordsTest32(
+    t,
+    "a per-word name is not a block label",
+    WORDS_TEST_IN,
+    "a",
+    WORDS_TEST_OUT,
+    `but not under the label "a"`,
+  )
   wordsTest32(
     t,
     "the expected value is the argument's block",

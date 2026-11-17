@@ -7,7 +7,7 @@
 
 import { fromHex, toHex, utf8Bytes } from "../../core/hex"
 import { SHAPE_MAX_LEN } from "../contract/shape"
-import { Expr, ExprKind, LitKind, Literal } from "../contract/types"
+import { Expr, ExprKind, LitKind, Literal, typesIsWords } from "../contract/types"
 import { sampleIntLess, sampleIntWrap, sampleParseInt } from "./ints"
 
 /** The error an `unwrap(null)` evaluates to. */
@@ -150,6 +150,9 @@ export const sampleLiteral = (lit: Literal): Result<SampleValue, string> => {
       }
     }
     return Ok(sampleBytes(out))
+  }
+  if (typesIsWords(lit.kind)) {
+    return Err("word arrays are not evaluated")
   }
   return Err("f64 values are not evaluated")
 }

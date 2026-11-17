@@ -211,6 +211,7 @@ These are what Call and Expected cells may hold:
 | `Key = 0b0b0b` | labelled bytes: lowercase hex pairs, no spaces. The label is the name the cited section prints the value under. A label may be several words, and its first word may start with digits joined to a letter (`32-bit fixed-common part = 07000000`); a bare number is not a label. A later word may be a comma-grouped number (`After 1,000 iterations`), and one later word may be a parenthesised group of such words (`MESSAGE (length 1 byte) = 72`, as RFC 8032 prints it). A group may not come first, hold a bare comma or a paren, be empty, be left open, or be followed by a second group |
 | `L = 42` | a labelled decimal integer, checked against the cited section's "L = 42". Where the parameter (or return) type is an integer type it is the int; anywhere else digits that are also hex pairs (`42`) are labelled bytes, and digits with a leading zero are never an int: `L = 00` is bytes, and `L = 042` (not whole hex pairs) is refused |
 | `22 × 0b`, `22 x 0b`, `IKM = 22 × 0b` | a run of bytes written that many times (`{hex, repeat}`), as RFCs print runs; optionally labelled. `22×0b` also reads. The count is at least 1, the run lowercase hex pairs, and the expansion at most 65536 bytes |
+| `[0x11111111 0x01020304]`, `State = [879531e0 c5ecf37d]` | a word array, where the signature takes or returns `u16[]`, `u32[]` or `u64[]`: words of the type's width (4, 8 or 16 lowercase hex digits), spaces apart, with `0x` on every word or on none, as the cited section prints them; optionally labelled. Unlabelled `[879531e0 c5ecf37d]` is bytes where the type is `u8[]`. See [What a printed value is](#what-a-printed-value-is) |
 | `concat([00], Key = ff)` | the parts joined, all bytes; one level (`concat` does not nest), at least one part. `‖` is refused |
 
 A bare decimal integer (`42`, `-9223372036854775808`) is an int, and an f64
@@ -235,6 +236,7 @@ is marked *not yet*.
 | `secret-bytes` | `Secret<u8[]>` | bytes whose value is secret; a language may wrap them, but in the contract they are bytes |
 | `i8` … `i64`, `u8` … `u64` | `i8` … `i64`, `u8` … `u64` | fixed-width integers, as C11 §7.20.1.1 `intN_t`/`uintN_t`; `+ - *` wrap modulo 2^N |
 | `f64` | `f64` | an IEEE 754-2019 binary64 value |
+| `words16`, `words32`, `words64` | `u16[]`, `u32[]`, `u64[]` | an array of 16-, 32- or 64-bit words, written as JSON strings of 4, 8 or 16 lowercase hex digits (`{"words32": ["0x11111111", "0x01020304"]}`), each as the source prints it, `0x` and all |
 | `B?` | `B \| null` | see below; any type may take it |
 
 The profile reads every spelling in the table, and `| null` on each. `B?`
@@ -273,7 +275,10 @@ The profile spells a tolerance as a [`Tolerance:` paragraph](#tolerances).
 
 A `forall` over `f64` is *not yet* sampled: the schema records such a
 domain (`{"type": "f64", "min": "-1.5", "max": "Infinity"}`) and vector
-refuses the property. A
+refuses the property. Word arrays are *not yet* checked in a property
+either: a `forall` over `u16[]`, `u32[]` or `u64[]` is refused, as is a
+property whose `where` or assertion holds a word-array literal or calls a function that
+takes or returns one, so give word-array cases as vectors. A
 `forall` integer may be any of `i8` … `u64`, with the same wide-integer
 strings for bounds. The sampler takes each type's minimum and maximum, and Z3
 solves over bit-vectors of its width, so `+ - * %` wrap as the evaluator's
@@ -282,8 +287,8 @@ do.
 ### What the Nish test can hold
 
 Nish has `i32`, `i64`, `u8`, `u16`, `u32`, `u64` and `f64` but no `i8` or
-`i16`, and `| null` only on reference types (`u8[]`, `string`,
-`Secret<u8[]>`). So the emitter refuses a signature or `forall` using what
+`i16`, and `| null` only on reference types (`u8[]`, `u16[]`, `u32[]`, `u64[]`,
+`string`, `Secret<u8[]>`). So the emitter refuses a signature or `forall` using what
 Nish lacks, and a module outside `nish/` unless `--package` says where it
 lives ([Test your own modules](testing.md#test-your-own-modules)).
 
@@ -291,6 +296,11 @@ lives ([Test your own modules](testing.md#test-your-own-modules)).
   Nish has no import aliasing, so a function under test cannot share one of
   their names; `spec extract` names the clash.
 - A 64-bit int is written as `hi·2^32 + lo`, so no literal passes 2^53.
+- A word is a typed literal (`toU32(0) + 0x01020304`); a `u64` word past 32
+  bits is its two halves, shifted and joined. A word-array result is
+  compared as its words in hex, so a failure prints both arrays. Only the
+  Nish test holds word arrays: `--lang rust`, `go`, `python` and
+  `typescript` refuse a function that takes or returns one.
 - An f64 is its shortest round-tripping decimal, or, for `-0`, `NaN` and the
   infinities, its bits.
 - `i32` and `i64` `+ - *` are emitted as `wrappingAdd`, `wrappingSub` and
@@ -468,6 +478,16 @@ of matching bytes:
   values. A `str` must be printed whole: in quotes, in a markdown code span,
   on a line of its own, or ending a line after `=` or `:` (`"Zg"` is not
   printed by `"Zg=="`).
+- **Words.** A `words16`, `words32` or `words64` value must equal one whole
+  block of words the cited section prints, word for word and spelled as
+  printed: `0x` on every word or on none, as there. A block is a run of
+  non-blank lines, each a row of words of one width (one word may be marked
+  with a leading `*`, not part of it) or one `name = word` line. A value that
+  is only part of a block, a block written with `0x` where the section has
+  none (or the reverse), or a word that differs, is refused. A block printed
+  under a short line (`Sample ChaCha State`) or as a one-line `name = …`
+  takes that line as its label, and a labelled value must name it. The
+  expected value may not be the block an argument is bound to.
 - **Labels.** A value printed under a name (`Key =`, `Input scalar:`, a short
   line such as `Plaintext:` above a dump) must give that name:
   `{"hex": "0b0b…", "label": "Key"}`. A label the section does not print the

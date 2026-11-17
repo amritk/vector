@@ -26,6 +26,7 @@ import { TypeEnv, typeCallsIn, typeEnvBind, typeIntBase, typeOf, typeOfInt } fro
 import { vocabFitsInt, vocabIsIntType, vocabIsOptional, vocabValueType } from "../contract/vocab"
 import { EmitOptions, emitClauseFn, emitClauseLines, emitHeaderLines, emitSortedUnique, emitTestName } from "./emit"
 import { EMIT_SLOW_SKIP, emitF64IsFinite, emitLiteralHex } from "./lit"
+import { emitTargetWordsRefusal } from "./target"
 
 /** What emitting one Go test has gathered so far. */
 class EmitGoContext {
@@ -101,6 +102,10 @@ export const emitGoRefusals = (c: Contract): string[] => {
   const out: string[] = []
   const names: string[] = []
   for (const f of c.functions) {
+    const words = emitTargetWordsRefusal(f, "Go")
+    if (words !== null) {
+      out.push(words)
+    }
     const n = emitGoName(f)
     if (!emitGoIsExported(n)) {
       out.push(

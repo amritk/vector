@@ -7,9 +7,16 @@
  */
 
 import { CheckContext } from "../check"
-import { Clause, ClauseKind, ExprKind, FnSig, Iterate, LitKind, Literal } from "../contract/types"
-import { TypeEnv, typeEnvBind, typeLiteralFits, typeOf, typeOfLiteral } from "../contract/typing"
-import { vocabBaseOf, vocabIntMax, vocabIntMin, vocabIsIntType, vocabValueType } from "../contract/vocab"
+import { Clause, ClauseKind, Expr, ExprKind, FnSig, Iterate, LitKind, Literal, typesIsWords } from "../contract/types"
+import { TypeEnv, typeCallsIn, typeEnvBind, typeLiteralFits, typeOf, typeOfLiteral } from "../contract/typing"
+import {
+  vocabBaseOf,
+  vocabIntMax,
+  vocabIntMin,
+  vocabIsIntType,
+  vocabIsWordType,
+  vocabValueType,
+} from "../contract/vocab"
 import { gateIssue } from "./note"
 
 /**
@@ -99,6 +106,49 @@ const gateTypingIterate = (k: Clause, it: Iterate, sig: FnSig, errors: string[])
   }
 }
 
+/** Whether an expression holds a word-array literal. */
+const gateTypingHasWords = (e: Expr): boolean => {
+  const lit = e.lit
+  if (lit !== null && typesIsWords(lit.kind)) {
+    return true
+  }
+  for (const b of e.binds) {
+    if (gateTypingHasWords(b.value)) {
+      return true
+    }
+  }
+  const body = e.body
+  if (body !== null && gateTypingHasWords(body)) {
+    return true
+  }
+  return e.args.some((a: Expr): boolean => gateTypingHasWords(a))
+}
+
+/** Whether a function takes or returns a word array. */
+const gateTypingFnHasWords = (f: FnSig): boolean =>
+  vocabIsWordType(vocabBaseOf(f.returns)) || f.params.some((p): boolean => vocabIsWordType(vocabBaseOf(p.type)))
+
+/**
+ * Why a property's `where` or assertion (`at`) cannot be checked yet because
+ * it holds word arrays: a word literal, or a call of a function over them. A
+ * property is sampled and evaluated, and neither the sampler nor the emitted
+ * checks carry word arrays yet; a vector does.
+ */
+const gateTypingPropertyWords = (a: Expr, at: string, fns: FnSig[], errors: string[]): void => {
+  if (gateTypingHasWords(a)) {
+    errors.push(`${at}: word arrays in a property are not checked yet; give word-array cases as vectors`)
+    return
+  }
+  for (const name of typeCallsIn(a)) {
+    const f = gateTypingFn(fns, name)
+    if (f !== null && gateTypingFnHasWords(f)) {
+      errors.push(
+        `${at}: ${name} takes or returns a word array, and word arrays in a property are not checked yet; give word-array cases as vectors`,
+      )
+    }
+  }
+}
+
 /** The typing errors of one property. */
 const gateTypingProperty = (k: Clause, fns: FnSig[], errors: string[]): void => {
   const where = new TypeEnv(fns, false)
@@ -118,6 +168,7 @@ const gateTypingProperty = (k: Clause, fns: FnSig[], errors: string[]): void => 
     if (t !== null && t !== "bool") {
       errors.push(`where: must be bool, got ${t}`)
     }
+    gateTypingPropertyWords(w, "where", fns, errors)
   }
   const a = k.assert
   if (a !== null) {
@@ -125,6 +176,7 @@ const gateTypingProperty = (k: Clause, fns: FnSig[], errors: string[]): void => 
     if (t !== null && t !== "bool") {
       errors.push(`assert: must be bool, got ${t}`)
     }
+    gateTypingPropertyWords(a, "assert", fns, errors)
   }
 }
 

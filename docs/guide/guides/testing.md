@@ -153,6 +153,9 @@ A function is called by its name in the language, from the contract's
 language table: a contract's `toHex` is Python's `to_hex`, unless the contract
 names it for Python itself. A name the language cannot use, such as a
 keyword, or two functions that would share one name, is refused (exit 1).
+Word arrays (`u16[]`, `u32[]`, `u64[]`) are emitted for Nish only: another
+language refuses a function that takes or returns one, naming it and the
+word type (exit 1), so emit the Nish test for it.
 
 `--package <name>=<dir>` places modules the same way, with the language's
 extension: `vector/core/hex` is `<dir>/core/hex.py`, loaded by its path

@@ -21,6 +21,7 @@ Generated from [src/spec/emit/target.ts](https://github.com/amritk/vector/blob/m
 - [`emitTargetParse`](#emittargetparse)
 - [`emitTargetFlags`](#emittargetflags)
 - [`emitTargetExt`](#emittargetext)
+- [`emitTargetWordsRefusal`](#emittargetwordsrefusal)
 
 ## Declarations
 
@@ -179,5 +180,32 @@ a language id
 <scalar-field name="returns" type="string">
 
 `.ts` for nish and typescript, `.py` for python, `.rs` for rust, `.go` for go
+
+</scalar-field>
+
+### emitTargetWordsRefusal
+
+Why a function cannot be tested in a language whose emitter has no word
+arrays yet: it takes or returns one. Only the Nish emitter holds them.
+
+```ts
+function emitTargetWordsRefusal(f: FnSig, language: string): string | null
+```
+
+<scalar-field name="f" type="FnSig" required>
+
+the function
+
+</scalar-field>
+
+<scalar-field name="language" type="string" required>
+
+the language's name, as a message spells it (`Rust`)
+
+</scalar-field>
+
+<scalar-field name="returns" type="string | null">
+
+the refusal, or null when no parameter or result is a word array
 
 </scalar-field>

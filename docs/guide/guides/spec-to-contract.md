@@ -399,11 +399,11 @@ No model is involved in any of them.
 | Gate | Refuses |
 |---|---|
 | shape | a contract that is not well formed, including free text (titles, quotes, reasons) with a line break or another control character; an `iterate` whose names or next do not match the parameters (see [An iterated vector](#an-iterated-vector)) |
-| fidelity | a quote not in its cited section; a vector's value not printed in its section as a whole value, under the label it is printed under (see [What a printed value is](writing-a-spec.md#what-a-printed-value-is)); values from two test cases; an iterated vector's count not printed in its section, or a label that counts another number; a source whose bytes no longer match its pinned SHA-256 |
+| fidelity | a quote not in its cited section; a vector's value not printed in its section as a whole value (a word array as a whole block of words, spelled as printed), under the label it is printed under (see [What a printed value is](writing-a-spec.md#what-a-printed-value-is)); values from two test cases; an iterated vector's count not printed in its section, or a label that counts another number; a source whose bytes no longer match its pinned SHA-256 |
 | completeness | any MUST, MUST NOT, SHALL, SHALL NOT or REQUIRED sentence of the main source that is neither inside a requirement's quote nor an exclusion's |
 | provenance | a `spec` source whose section never states the expected `null` or bool (see [When a section states null, true or false](writing-a-spec.md#when-a-section-states-null-true-or-false)); a `command` source that failed under `--run-sources` |
 | coverage | a binding requirement no clause checks; a clause citing a requirement the contract does not state; a property or vector that calls no function under test |
-| typing | an ill-typed call or expression (`bytes?` and `string?` must be `unwrap`ped; `where` may not call the implementation; a `let` may not shadow a name or bind a bare `null`); an `iterate.next` element of the wrong type for its parameter |
+| typing | an ill-typed call or expression (`bytes?` and `string?` must be `unwrap`ped; `where` may not call the implementation; a `let` may not shadow a name or bind a bare `null`); a property that holds or calls word arrays (*not yet* checked; give them as vectors); an `iterate.next` element of the wrong type for its parameter |
 | signatures | a declared signature that is not the module's export (with `--nish-root` or `--module`) |
 | domain | a property whose domain is empty (Z3 says `unsat`: it would pass vacuously) |
 

@@ -105,9 +105,12 @@ export function hexDecode(text: string): u8[] | null
 The types are those of the table in [Writing a
 spec](../../../docs/guide/guides/writing-a-spec.md#types): `u8[]`, `string`,
 `boolean`, `Secret<u8[]>`, the fixed-width integers `i8` … `i64` and
-`u8` … `u64`, and `f64`. A Nish test can hold all but `i8` and `i16`, which
-Nish lacks, so the emitter refuses them. Add `| null` to `u8[]` or `string`,
-and to `Secret<u8[]>` as a result only.
+`u8` … `u64`, `f64`, and the word arrays `u16[]`, `u32[]` and `u64[]`. A
+Nish test can hold all but `i8` and `i16`, which Nish lacks, so the emitter
+refuses them; only the Nish test holds word arrays. Add `| null` to `u8[]`,
+a word array or `string`, and to `Secret<u8[]>` as a result only. Give
+word-array cases as vectors: a property over or calling word arrays is
+refused.
 
 A property may compare the module with another nish module (HKDF with
 HMAC). Declare that module's functions after a second `// module:` line,
@@ -225,6 +228,9 @@ extracts to.
     the value under, several words if it does; the first word may start with
     digits joined to a letter (`32-bit fixed-common part = 07000000`).
   - `concat(a, b, …)`: one level, all parts bytes. Never `‖`.
+  - `[0x11111111 0x01020304]` or `State = [879531e0 c5ecf37d]`: a word
+    array, for `u16[]`, `u32[]` or `u64[]`. Each word has the type's width
+    and is spelled as the section prints it, `0x` and all.
 - **Source** says where the expected value comes from:
   - `{{Section N of RFCx}}`: the value is printed there. Prefer this.
   - `{{anchor}}`: a numbered section of this spec. For a `null` or `bool`
@@ -234,7 +240,8 @@ extracts to.
   - A code span holding a command: the value is its trimmed stdout, so the
     Expected cell must be bytes or a string.
 - **Values from an RFC:**
-  - Each one is a *whole* printed value, never a prefix or a tail.
+  - Each one is a *whole* printed value, never a prefix or a tail. A word
+    array is a whole printed block of words, word for word.
   - Take the arguments and the expected value from one test case.
   - Where a case is printed for several variants, use the row whose number
     is in the function's name.

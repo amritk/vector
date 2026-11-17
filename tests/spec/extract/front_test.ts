@@ -473,6 +473,22 @@ const frontTestRefusals = (t: Suite, fns: FnSig[]): void => {
       "properties over f64 are not sampled yet; give f64 cases as vectors",
       "f64",
     ],
+    [
+      `${h}forall (w: u16[] /* 0..1 */) => true`,
+      "properties over u16[] are not sampled yet; give word-array cases as vectors",
+      "u16[]",
+    ],
+    [
+      `${h}forall (w: u32[] /* 0..1 */) => true`,
+      "properties over u32[] are not sampled yet; give word-array cases as vectors",
+      "u32[]",
+    ],
+    [
+      `${h}forall (w: u64[] /* 0..1 */) => true`,
+      "properties over u64[] are not sampled yet; give word-array cases as vectors",
+      "u64[]",
+    ],
+    [`${h}forall (w: i32[] /* 0..1 */) => true`, `\`i32[]\` ${FRONT_TEST_FORALL}`, "i32[]"],
     [`${h}forall (b: u8[]) => true`, "`b` needs a bounds comment, like /* 0..64 */", ")"],
     [`${h}forall (b: u8[] // 0..1\n) => true`, "`b` needs a bounds comment, like /* 0..64 */", "// 0"],
     [`${h}forall (b: u8[] /* 64 */) => true`, "the bounds of `b` (u8[]) must read `lo..hi`, like /* 0..64 */", "/*"],

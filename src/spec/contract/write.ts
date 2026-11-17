@@ -20,13 +20,13 @@ import {
   ForallVar,
   Iterate,
   LitKind,
-  typesIsWords,
-  typesWordsKey,
   Literal,
   NameOverride,
   Tolerance,
   VectorSource,
   VectorSourceKind,
+  typesIsWords,
+  typesWordsKey,
 } from "./types"
 import { vocabLanguages } from "./vocab"
 

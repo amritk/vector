@@ -28,6 +28,7 @@ import { TypeEnv, typeCallsIn, typeEnvBind, typeIntBase, typeOf, typeOfInt } fro
 import { vocabBaseOf, vocabFitsInt, vocabIsIntType, vocabIsOptional, vocabValueType } from "../contract/vocab"
 import { EmitOptions, emitClauseFn, emitClauseLines, emitHeaderLines, emitSortedUnique, emitTestName } from "./emit"
 import { EMIT_SLOW_SKIP, emitF64IsFinite, emitLiteralHex } from "./lit"
+import { emitTargetWordsRefusal } from "./target"
 
 /** What emitting one Rust test has gathered so far. */
 class EmitRsContext {
@@ -179,6 +180,10 @@ export const emitRsRefusals = (c: Contract): string[] => {
   const out: string[] = []
   const names: string[] = []
   for (const f of c.functions) {
+    const words = emitTargetWordsRefusal(f, "Rust")
+    if (words !== null) {
+      out.push(words)
+    }
     const why = emitRsNameRefusal(f)
     if (why !== null) {
       out.push(why)

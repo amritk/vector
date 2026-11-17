@@ -1,0 +1,1 @@
+vector spec run tests/fixtures/chacha20/contracts/rfc8439-quarter-round.json --package fixture=tests/fixtures/chacha20/fixture --nish-root .nish

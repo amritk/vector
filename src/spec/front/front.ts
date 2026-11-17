@@ -35,10 +35,10 @@ import {
   vocabIntMax,
   vocabIntMin,
   vocabIntTypes,
-  vocabWordTypes,
   vocabIsIntType,
   vocabIsJsonSafe,
   vocabValueType,
+  vocabWordTypes,
 } from "../contract/vocab"
 
 // ── Refusals ───────────────────────────────────────────────────────────────
@@ -1504,9 +1504,7 @@ const frontForallVar = (p: FrontProp): Result<ForallVar, FrontRefusal> => {
     return Err(frontRefuse("properties over f64 are not sampled yet; give f64 cases as vectors", ty.pos))
   }
   if (ty.name === "u16[]" || ty.name === "u32[]" || ty.name === "u64[]") {
-    return Err(
-      frontRefuse(`properties over ${ty.name} are not sampled yet; give word-array cases as vectors`, ty.pos),
-    )
+    return Err(frontRefuse(`properties over ${ty.name} are not sampled yet; give word-array cases as vectors`, ty.pos))
   }
   let type = ""
   if (ty.name === "u8[]") {

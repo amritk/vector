@@ -1084,7 +1084,10 @@ export const literalsSettle = (raw: RawLiteral, ty: string | null): Result<Liter
     )
   }
   // `[879531e0 c5ecf37d]` is bytes and words both; a word-array type reads its words.
-  if (k === RawKind.Words || (k === RawKind.Bytes && raw.words.length > 0 && ty !== null && vocabIsWordType(vocabBaseOf(ty)))) {
+  if (
+    k === RawKind.Words ||
+    (k === RawKind.Bytes && raw.words.length > 0 && ty !== null && vocabIsWordType(vocabBaseOf(ty)))
+  ) {
     const first = raw.words[0]
     const lit = new Literal(typesWordsKind(first.startsWith("0x") ? first.length - 2 : first.length), "")
     lit.words = raw.words

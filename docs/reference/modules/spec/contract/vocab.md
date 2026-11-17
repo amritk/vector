@@ -16,6 +16,9 @@ Generated from [src/spec/contract/vocab.ts](https://github.com/amritk/vector/blo
 ## Exports
 
 - [`vocabIntTypes`](#vocabinttypes)
+- [`vocabWordTypes`](#vocabwordtypes)
+- [`vocabIsWordType`](#vocabiswordtype)
+- [`vocabWordDigits`](#vocabworddigits)
 - [`vocabBaseTypes`](#vocabbasetypes)
 - [`vocabSigTypes`](#vocabsigtypes)
 - [`vocabLiteralKinds`](#vocabliteralkinds)
@@ -54,6 +57,60 @@ i8 i16 i32 i64 u8 u16 u32 u64
 
 </scalar-field>
 
+### vocabWordTypes
+
+The word-array types, by word width: arrays of u16, u32 and u64.
+
+```ts
+function vocabWordTypes(): string[]
+```
+
+<scalar-field name="returns" type="string[]">
+
+words16 words32 words64
+
+</scalar-field>
+
+### vocabIsWordType
+
+Whether a type is one of the word-array types.
+
+```ts
+function vocabIsWordType(t: string): boolean
+```
+
+<scalar-field name="t" type="string" required>
+
+a type
+
+</scalar-field>
+
+<scalar-field name="returns" type="boolean">
+
+true for words16, words32 and words64
+
+</scalar-field>
+
+### vocabWordDigits
+
+How many hex digits one word of a word-array type is printed with.
+
+```ts
+function vocabWordDigits(t: string): i32
+```
+
+<scalar-field name="t" type="string" required>
+
+a word-array type
+
+</scalar-field>
+
+<scalar-field name="returns" type="i32">
+
+4 for words16, 8 for words32, 16 for words64, 0 otherwise
+
+</scalar-field>
+
 ### vocabBaseTypes
 
 The value types a parameter or return can have, before the optional `?`.
@@ -64,7 +121,8 @@ function vocabBaseTypes(): string[]
 
 <scalar-field name="returns" type="string[]">
 
-bytes, string, bool, f64, secret-bytes, then each integer type
+bytes, string, bool, f64, secret-bytes, each integer type, then
+each word-array type
 
 </scalar-field>
 
@@ -92,7 +150,7 @@ function vocabLiteralKinds(): string[]
 
 <scalar-field name="returns" type="string[]">
 
-hex ascii str int f64 bool null concat
+hex ascii str int f64 bool null concat words16 words32 words64
 
 </scalar-field>
 

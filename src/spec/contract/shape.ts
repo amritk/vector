@@ -15,10 +15,10 @@ import {
   charsIsId,
   charsIsIdent,
   charsIsLowerHex,
-  charsIsWordList,
   charsIsModule,
   charsIsSection,
   charsIsStringText,
+  charsIsWordList,
 } from "./chars"
 import { contractF64Bits, contractF64FromBits, contractF64IsNaN, contractF64Overflows, contractF64Parse } from "./f64"
 import {
@@ -31,12 +31,12 @@ import {
   ForallVar,
   Iterate,
   LitKind,
-  typesIsWords,
-  typesWordsKey,
   Literal,
   NameOverride,
   Tolerance,
   VectorSourceKind,
+  typesIsWords,
+  typesWordsKey,
 } from "./types"
 import {
   vocabCompareDecimal,
