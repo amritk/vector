@@ -248,6 +248,27 @@ const profileTruncTestRefusals = (t: Suite, xml: string): void => {
   )
 }
 
+/**
+ * Truncate: beside a Tolerance: on the same row, in either order: the hash's
+ * bytes are no f64, so the tolerance is refused and the truncate is not.
+ */
+const profileTruncTestBesideTolerance = (t: Suite, xml: string): void => {
+  const tol =
+    '<t>Tolerance: 4.6-256 ulps 1, <xref section="4.6" sectionFormat="of" target="HMAC"/>: "Test with a truncation of output to 128 bits."</t>'
+  const line = profileTruncTestLine(xml, PROFILE_TRUNC_P)
+  const refusal = "4.6-256's hmacSha256 returns bytes, and only an f64 result is compared within a tolerance"
+  t.eqStr(
+    "Truncate: then Tolerance:",
+    profileTruncTestRead(replaceAll(xml, PROFILE_TRUNC_P, `${PROFILE_TRUNC_P}\n${tol}`)),
+    `${line + 1} ${refusal}`,
+  )
+  t.eqStr(
+    "Tolerance: then Truncate:",
+    profileTruncTestRead(replaceAll(xml, PROFILE_TRUNC_P, `${tol}\n${PROFILE_TRUNC_P}`)),
+    `${line} ${refusal}`,
+  )
+}
+
 /** The profile's Truncate: spelling, read and refused. */
 export const main = (): i32 => {
   const t = new Suite("spec/extract profile truncate")
@@ -257,5 +278,6 @@ export const main = (): i32 => {
   t.eqStr("the fixture reads", profileTruncTestRead(xml), "ok")
   profileTruncTestReads(t, xml)
   profileTruncTestRefusals(t, xml)
+  profileTruncTestBesideTolerance(t, xml)
   return t.done()
 }
