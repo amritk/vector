@@ -72,6 +72,17 @@ export const main = (): i32 => {
   for (let i = 0; i < foreign.length; i++) {
     roundtripByValue(t, foreign[i])
   }
+  // A cite's case is written back only when it is set.
+  const caseDir = "tests/fixtures/test-vector-scope"
+  roundtripByValue(t, `${caseDir}/contracts/scope-poly1305.json`)
+  const scoped = contractWrite(
+    contractParse(readFileSyncOrNull(`${caseDir}/contracts/scope-poly1305.json`) ?? "", "scoped").expect("parse"),
+  )
+  t.ok("a scoped cite writes its case", scoped.indexOf(`"case": "Test Vector #2"`) >= 0)
+  const plain = contractWrite(
+    contractParse(readFileSyncOrNull(`${caseDir}/contracts/scope-plain.json`) ?? "", "plain").expect("parse"),
+  )
+  t.ok("a plain cite writes no case", plain.indexOf(`"case"`) < 0)
   // An iterated vector keeps its iterate, and writes slow only when it is true.
   const iterDir = "tests/fixtures/iterate-contract/contracts"
   roundtripByValue(t, `${iterDir}/x25519-iterate.json`)

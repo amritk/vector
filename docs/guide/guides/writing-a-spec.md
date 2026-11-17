@@ -112,6 +112,7 @@ where the expected value comes from:
 | Source cell | Contract source |
 |---|---|
 | `{{Section N of RFCx}}` | `cite`, section N of that RFC |
+| `{{Section N of RFCx}}, Test Vector #K` | `cite`, section N of that RFC, `case` `Test Vector #K`: the values must all be printed in that one test case (K from 1, no leading zero; any other text after the section is refused) |
 | `{{anchor}}`, a numbered section of this spec | `spec` for a `null` or `bool` expected value; otherwise `cite`, that section, which must print the value |
 | a single code span, `` `python3 -c '…'` `` | `command`, with the table's section for the args; the expected value must be bytes or a string |
 
@@ -447,7 +448,7 @@ Every vector says where its expected value comes from (`source`):
 
 | `source` | The expected value is | Checked by |
 |---|---|---|
-| `{"cite": {"section": "A.1"}}` (`"source"` optional) | printed in that section, with the args, as one test case (see [What a printed value is](#what-a-printed-value-is)) | fidelity |
+| `{"cite": {"section": "A.1"}}` (`"source"` optional; `"case": "Test Vector #2"` optional) | printed in that section, with the args, as one test case; with `case`, in that test case of the section (see [What a printed value is](#what-a-printed-value-is)) | fidelity |
 | `{"command": "…"}`, with `"section"` for the args | the command's trimmed stdout (lowercase hex for bytes) | `spec check --run-sources` only; otherwise reported as not run, never as passed. A timeout, a nonzero exit or other output fails. See [Running the source commands](spec-to-contract.md#running-the-source-commands) |
 | `{"spec": "4.2"}`, with `"section"` for the args | `null` or a `bool` that section states | provenance: a requirement the vector covers, cited to that section, must state `null`, `true` or `false` as the result, by [the rule below](#when-a-section-states-null-true-or-false) |
 
@@ -495,6 +496,17 @@ of matching bytes:
   the cited section is read in rounds (the k-th `Key` goes with the k-th
   `Data` and the k-th `HMAC-SHA-256`), so citing a parent section cannot mix
   values from two test cases.
+- **Named test cases.** Where a section prints several test cases under
+  headings (`Test Vector #2:`, a line of its own or followed by text), and a
+  label is printed a different number of times than another, the rounds do
+  not say which values belong together, so a plain cite is refused. Cite
+  the case instead: `{{Section A.3 of RFC8439}}, Test Vector #2` (in the
+  contract, `"case": "Test Vector #2"`). The case runs from its heading to
+  the next one or the section's end, across page breaks; every rule above
+  applies within it. A value printed only in another case is refused, and
+  so is a case the section has no heading for, a heading printed twice, or
+  a section with subsections. `spec check` applies the case again, and the
+  report shows the source as `§A.3, Test Vector #2`.
 - **Decimals.** In an RFC, an unnamed run of digit-only lines, or one under a
   name that calls it a number (`Input scalar as a number (base 10):`), is a
   decimal number, not bytes, and is not a value.

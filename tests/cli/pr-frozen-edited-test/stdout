@@ -1,0 +1,8 @@
+spec frozen against main: FAILED
+
+  ✓ contract contracts/a.json
+  implementation src/x.ts
+  generated test/spec/b.ts
+
+problems:
+  ✗ the change touches the spec side (test/spec/b.ts) and the implementation (src/x.ts): change them in separate PRs

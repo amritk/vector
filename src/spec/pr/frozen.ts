@@ -3,9 +3,11 @@
  * or the implementation, never both, so a test cannot be loosened to match
  * the code it tests. A path's side is decided by the path, with one
  * exception: a generated test under `test/spec/` is spec side while its one
- * `// vector-contract-sha256:` line names a contract the gate checks. Every
- * contract checked must load, read every source it declares (each must still
- * be the file and SHA-256 it records), and pin its main source. Fails closed:
+ * `// vector-contract-sha256:` line names a contract under contracts/ or one
+ * given, as its bytes are in the work tree. Only the given contracts (every
+ * contracts/*.json when none are given) are checked: each must load, read
+ * every source it declares (each must still be the file and SHA-256 it
+ * records), and pin its main source. Fails closed:
  * a git error, an unreadable contract or a missing source is a failure.
  */
 
@@ -20,7 +22,7 @@ import { staleShaLines } from "./stale"
 
 /** A path on the spec side: a spec, a contract, or a document a contract quotes. */
 export const FROZEN_SPEC: i32 = 0
-/** A generated test naming a contract the gate checks: spec side. */
+/** A generated test whose one sha line names a contract in contracts/ or a given one: spec side. */
 export const FROZEN_GENERATED: i32 = 1
 /** A path on neither side: docs/ and top-level markdown. */
 export const FROZEN_NEUTRAL: i32 = 2
@@ -202,6 +204,36 @@ export const frozenDefaultContracts = (top: string): string[] => {
 }
 
 /**
+ * The SHA-256 of every contract a generated test may name to be spec side:
+ * the contracts checked and every contracts/*.json at the repository's top
+ * (frozenDefaultContracts) but a symbolic link, each as its bytes are in the
+ * work tree. A contract that is only classified this way is never checked.
+ *
+ * @param top the repository's top
+ * @param checked the contracts the gate checks, absolute (frozenResolve)
+ * @returns the hex SHA-256 of each one that can be read
+ */
+export const frozenContractShas = (top: string, checked: string[]): Set<string> => {
+  const files: string[] = []
+  for (const f of checked) {
+    files.push(f)
+  }
+  for (const f of frozenDefaultContracts(top)) {
+    if (frozenUnlinked(top, f).isOk()) {
+      files.push(f)
+    }
+  }
+  const shas = new Set<string>()
+  for (const f of files) {
+    const text = readFileSyncOrNull(f)
+    if (text !== null) {
+      shas.add(sha256Hex(text))
+    }
+  }
+  return shas
+}
+
+/**
  * Checks the work tree of `repo` against its fork point from `base`.
  *
  * @param repo the repository, or a directory inside it
@@ -229,12 +261,8 @@ export const frozenCheck = (repo: string, base: string, contracts: string[]): Re
   if (files.length === 0 && contractProblems.length === 0) {
     contractProblems.push("no contracts to check: give them, or keep them in contracts/")
   }
-  const shas = new Set<string>()
+  const shas = frozenContractShas(top, files)
   for (const f of files) {
-    const text = readFileSyncOrNull(f)
-    if (text !== null) {
-      shas.add(sha256Hex(text))
-    }
     const problems = frozenContractProblems(f, top)
     r.items.push(`${problems.length === 0 ? "✓" : "✗"} contract ${frozenShown(f, top)}`)
     for (const p of problems) {

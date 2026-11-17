@@ -1,0 +1,1 @@
+vector spec extract tests/fixtures/test-vector-scope/specs/scope-refused.xml -o tests/fixtures/test-vector-scope/contracts/scope-refused.json

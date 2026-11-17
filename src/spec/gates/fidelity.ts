@@ -21,12 +21,15 @@ import { jsonStringifyString } from "nish/json"
 import { asciiLower } from "nish/text"
 import { toHex, utf8Bytes } from "../../core/hex"
 import { CheckContext, CheckNote } from "../check"
+import { charsTestVector } from "../contract/chars"
 import { contractF64Bits, contractF64IsNaN, contractF64Parse } from "../contract/f64"
 import { Clause, ClauseKind, Iterate, LitKind, Literal, VectorSourceKind } from "../contract/types"
 import { SourceSet, sourceFind } from "../source/load"
 import {
   HexValue,
   RfcSection,
+  rfcCaseSection,
+  rfcHasCases,
   rfcHexValues,
   rfcNormalize,
   rfcParse,
@@ -76,6 +79,8 @@ class GateLits {
   text: string
   lines: string
   bounds: GateBound[]
+  /** Appended to a refusal that asks for one test case: how to name one of the section's, or "". */
+  hint: string
   /**
    * @param id the vector's id
    * @param where the section, for messages
@@ -99,6 +104,7 @@ class GateLits {
     this.text = rfcSectionText(sec)
     this.lines = gateLines(sec.lines)
     this.bounds = []
+    this.hint = ""
   }
 }
 
@@ -459,7 +465,7 @@ const gateOneTestCase = (l: GateLits, args: i32, sec: RfcSection): void => {
     gateNote(
       l,
       id,
-      `${counts.join(", ")} in ${inSection}, so which printings belong to one test case is unclear: cite the subsection that holds one test case`,
+      `${counts.join(", ")} in ${inSection}, so which printings belong to one test case is unclear: cite the subsection that holds one test case${l.hint}`,
       false,
     )
   } else if (repeated.length > 1) {
@@ -959,14 +965,29 @@ const gateFidelityVector = (ctx: CheckContext, out: string[], set: SourceSet, k:
   if (at.section.length === 0) {
     return
   }
-  const sec = gateCitedSection(ctx, out, g, at.source, at.section, k.id)
-  if (sec === null) {
+  const whole = gateCitedSection(ctx, out, g, at.source, at.section, k.id)
+  if (whole === null) {
     return
   }
-  const where = gatePlace(set, at.source, at.section)
+  let sec = whole
+  let where = gatePlace(set, at.source, at.section)
   const loaded = sourceFind(set, at.source)
   const xml = loaded === null ? false : loaded.file.endsWith(".xml")
+  // Named, one test case narrows the section to its own lines.
+  const tc = at.testCase
+  if (tc !== null) {
+    const one = rfcCaseSection(whole, charsTestVector(tc))
+    if (one.isErr()) {
+      gateIssue(ctx, out, g, k.id, `${where} ("${whole.title}") ${one.error}`)
+      return
+    }
+    sec = one.value
+    where = `${where}, ${tc}`
+  }
   const l = new GateLits(k.id, where, sec, xml)
+  if (tc === null && loaded !== null && loaded.doc.number >= 1 && rfcHasCases(whole)) {
+    l.hint = `, or name one: {{Section ${at.section} of RFC${loaded.doc.number}}}, Test Vector #N`
+  }
   for (let i = 0; i < k.args.length; i++) {
     gateLitCheck(l, k.args[i], `args[${i}]`)
   }

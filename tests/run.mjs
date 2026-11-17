@@ -12,6 +12,15 @@
 // `stdout` or `stderr` stands for package.json's version, so a release, which
 // bumps that version, never has to touch a golden.
 //
+// A case may also hold `repo`: one line naming a fixture directory, from the
+// repository root, that holds `base/` and `head/` trees. The runner copies
+// `base/` into a fresh temp directory, commits it on `main`, then commits
+// `head/` in its place (a file absent from `head/` is deleted) on `work`, and
+// runs the case from there: `{{repo}}` in `cmd` stands for that directory,
+// and `<repo>` stands for it in `stdout` and `stderr`. git's GIT_DIR,
+// GIT_WORK_TREE and GIT_INDEX_FILE are unset for the run. A `repo` naming a
+// missing fixture fails the case.
+//
 // A unit test passes only when it exits 0 and its last line is nish/testing's
 // `N passed, M failed, K skipped` with N > 0 and M = 0, so a test that asserts
 // nothing fails. A test that vector emitted from a contract (tests/dogfood/) ends
@@ -29,7 +38,17 @@
 
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  statSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -142,10 +161,79 @@ const read = (dir, name) => {
   return existsSync(path) ? readFileSync(path, "utf8") : null;
 };
 
+/** The environment a `repo` case runs in: no git variables that redirect it. */
+const repoEnv = () =>
+  Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([k]) => !["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"].includes(k),
+    ),
+  );
+
+/** Runs git in `dir` with a fixed identity and no user config; throws on failure. */
+const repoGit = (dir, args) => {
+  const r = spawnSync("git", ["-C", dir, ...args], {
+    encoding: "utf8",
+    env: {
+      ...repoEnv(),
+      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_AUTHOR_NAME: "t",
+      GIT_AUTHOR_EMAIL: "t@example.invalid",
+      GIT_COMMITTER_NAME: "t",
+      GIT_COMMITTER_EMAIL: "t@example.invalid",
+    },
+  });
+  if (r.status !== 0)
+    throw new Error(`git ${args.join(" ")}: ${r.stderr ?? r.error}`);
+};
+
+/**
+ * A temp repository holding `fixture`'s base/ committed on main and its
+ * head/ committed on work, checked out; throws when it cannot be made.
+ */
+const repoMake = (fixture) => {
+  const from = join(root, fixture);
+  for (const tree of ["base", "head"])
+    if (!statSync(join(from, tree), { throwIfNoEntry: false })?.isDirectory())
+      throw new Error(`repo ${fixture}: no ${tree}/ directory`);
+  // git names the real directory, so a linked temp dir (macOS) is resolved.
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "vector-golden-")));
+  try {
+    cpSync(join(from, "base"), dir, { recursive: true });
+    repoGit(dir, ["init", "-q", "-b", "main"]);
+    repoGit(dir, ["add", "-A"]);
+    repoGit(dir, ["commit", "-q", "--no-gpg-sign", "-m", "base"]);
+    repoGit(dir, ["checkout", "-q", "-b", "work"]);
+    for (const name of readdirSync(dir))
+      if (name !== ".git") rmSync(join(dir, name), { recursive: true });
+    cpSync(join(from, "head"), dir, { recursive: true });
+    repoGit(dir, ["add", "-A"]);
+    repoGit(dir, ["commit", "-q", "--no-gpg-sign", "-m", "head"]);
+  } catch (e) {
+    rmSync(dir, { recursive: true, force: true });
+    throw e;
+  }
+  return dir;
+};
+
 for (const dir of cases) {
   const name = relative(root, dir);
-  const argv = words(read(dir, "cmd").trim());
+  const fixture = read(dir, "repo")?.trim() ?? null;
+  let repo = null;
+  if (fixture !== null) {
+    try {
+      repo = repoMake(fixture);
+    } catch (e) {
+      failed.push(name);
+      console.log(`FAIL  ${name}: ${e.message}`);
+      continue;
+    }
+  }
+  const argv = words(read(dir, "cmd").trim()).map((w) =>
+    repo === null ? w : w.replaceAll("{{repo}}", repo),
+  );
   if (argv[0] !== "vector") {
+    if (repo !== null) rmSync(repo, { recursive: true, force: true });
     failed.push(name);
     console.log(
       `FAIL  ${name}: cmd must start with "vector", not ${JSON.stringify(argv[0])}`,
@@ -154,9 +242,15 @@ for (const dir of cases) {
   }
   const r = spawnSync(vector, argv.slice(1), {
     cwd: root,
+    env: repo === null ? process.env : repoEnv(),
     encoding: "utf8",
     timeout: TIMEOUT_MS,
   });
+  if (repo !== null) {
+    rmSync(repo, { recursive: true, force: true });
+    r.stdout = (r.stdout ?? "").replaceAll(repo, "<repo>");
+    r.stderr = (r.stderr ?? "").replaceAll(repo, "<repo>");
+  }
   const problems = [];
   const wantExit = Number.parseInt(read(dir, "exit") ?? "", 10);
   if (Number.isNaN(wantExit))

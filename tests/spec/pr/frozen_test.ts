@@ -1,5 +1,6 @@
 import { Suite } from "nish/testing"
 import { replaceAll } from "nish/text"
+import { makeTempDir } from "../../../src/core/fs"
 import { sha256Hex } from "../../../src/core/hex"
 import { runProcess } from "../../../src/core/process"
 import {
@@ -9,6 +10,7 @@ import {
   FROZEN_SPEC,
   frozenCheck,
   frozenContractProblems,
+  frozenContractShas,
   frozenDefaultContracts,
   frozenKindName,
   frozenPathKind,
@@ -21,9 +23,9 @@ import { prTestCommit, prTestGit, prTestRemove, prTestRepo, prTestWrite } from "
 /** The plain text of a one-section RFC 4648. */
 const FROZEN_TEST_RFC: string = "Request for Comments: 4648\n\f\n1.  Introduction\n\n   It MUST work.\n"
 
-/** A valid contract on RFC 4648 whose main source pins `sha`. */
-const frozenTestContract = (sha: string): string => `{
-  "contract": "c1",
+/** A valid contract `id` on RFC 4648 whose main source pins `sha`. */
+const frozenTestContract = (sha: string, id: string): string => `{
+  "contract": "${id}",
   "source": {"title": "T", "rfc": 4648${sha.length > 0 ? `, "sha256": "${sha}"` : ""}},
   "target": {"module": "nish/hex"},
   "requirements": [{"id": "R1", "section": "1", "level": "MUST", "quote": "It MUST work."}],
@@ -53,7 +55,7 @@ const frozenTestReset = (dir: string): Result<boolean, string> => {
 
 /** A repository whose main branch holds a pinned contract, changed in each way the gate judges. */
 const frozenTestRepo = (t: Suite, dir: string): Result<boolean, string> => {
-  const contract = frozenTestContract(sha256Hex(FROZEN_TEST_RFC))
+  const contract = frozenTestContract(sha256Hex(FROZEN_TEST_RFC), "c1")
   prTestWrite(dir, "rfcs/rfc4648.txt", FROZEN_TEST_RFC).orReturn()
   prTestWrite(dir, "contracts/c.json", contract).orReturn()
   prTestWrite(dir, "contracts/c.survivors.json", "{}\n").orReturn()
@@ -109,7 +111,7 @@ const frozenTestRepo = (t: Suite, dir: string): Result<boolean, string> => {
   t.contains("naming the change", moved, "the source changed")
   frozenTestReset(dir).orReturn()
 
-  prTestWrite(dir, "contracts/c.json", frozenTestContract("")).orReturn()
+  prTestWrite(dir, "contracts/c.json", frozenTestContract("", "c1")).orReturn()
   t.eqStr(
     "an unpinned contract fails",
     frozenContractProblems(path, top).join(" | "),
@@ -224,6 +226,232 @@ const frozenTestXmlRepo = (t: Suite): Result<boolean, string> => {
   return Ok(true)
 }
 
+/** One change to the two-contract repository, and what the gate must say of it. */
+class FrozenTestRow {
+  /** What the row checks. */
+  name: string
+  /** The files the change writes, as path, text, path, text, ... */
+  writes: string[]
+  /** The contracts given on the command line. */
+  given: string[]
+  /** The verdict: "OK", or the problems joined with " | ". */
+  verdict: string
+  /** Items the report must list. */
+  listed: string[]
+  /** Items the report must not list. */
+  unlisted: string[]
+
+  constructor(name: string, writes: string[], given: string[], verdict: string, listed: string[], unlisted: string[]) {
+    this.name = name
+    this.writes = writes
+    this.given = given
+    this.verdict = verdict
+    this.listed = listed
+    this.unlisted = unlisted
+  }
+}
+
+/** The refusal for a change touching both sides. */
+const frozenTestBoth = (spec: string, impl: string): string =>
+  `the change touches the spec side (${spec}) and the implementation (${impl}): change them in separate PRs`
+
+/** A generated test whose sha lines name each of `contracts`, with `body` after them. */
+const frozenTestGenerated = (contracts: string[], body: string): string => {
+  let out = ""
+  for (const c of contracts) {
+    out = `${out}${STALE_PREFIX}${sha256Hex(c)}\n`
+  }
+  return `${out}${body}\n`
+}
+
+/**
+ * A repository holding contracts a and b (and a's sidecar), with a generated
+ * test for each, changed one row at a time: a test is generated when its one
+ * sha line names any contract in contracts/ or one given, and only the given
+ * contracts are checked and listed.
+ */
+const frozenTestTwoRepo = (t: Suite): Result<boolean, string> => {
+  const dir = prTestRepo("vector-frozen-two-").orReturn()
+  const pin = sha256Hex(FROZEN_TEST_RFC)
+  const a0 = frozenTestContract(pin, "a")
+  const b0 = frozenTestContract(pin, "b")
+  const a1 = frozenTestContract(pin, "a2")
+  const b1 = frozenTestContract(pin, "b2")
+  const sidecar = "{}\n"
+  const extra = frozenTestContract(pin, "extra")
+  prTestWrite(dir, "rfcs/rfc4648.txt", FROZEN_TEST_RFC).orReturn()
+  prTestWrite(dir, "contracts/a.json", a0).orReturn()
+  prTestWrite(dir, "contracts/b.json", b0).orReturn()
+  prTestWrite(dir, "contracts/a.survivors.json", sidecar).orReturn()
+  prTestWrite(dir, "test/spec/a.ts", frozenTestGenerated([a0], "a")).orReturn()
+  prTestWrite(dir, "test/spec/b.ts", frozenTestGenerated([b0], "b")).orReturn()
+  prTestWrite(dir, "src/x.ts", "x\n").orReturn()
+  prTestCommit(dir, "base").orReturn()
+  prTestGit(dir, ["checkout", "-q", "-b", "work"]).orReturn()
+  const top = gitdiffTop(dir).orReturn()
+
+  const shas = frozenContractShas(top, [`${top}/contracts/a.json`])
+  t.ok("the classifying set holds contract a", shas.has(sha256Hex(a0)))
+  t.ok("and contract b in contracts/, not given", shas.has(sha256Hex(b0)))
+  t.ok("but no sidecar", !shas.has(sha256Hex(sidecar)))
+  t.ok("and each contract once", shas.size === 2)
+  t.ok(
+    "a given contract that cannot be read adds nothing",
+    frozenContractShas(top, [`${top}/contracts/a.json`, `${top}/contracts/gone.json`]).size === 2,
+  )
+  const bare = makeTempDir("vector-frozen-bare-").orReturn()
+  t.ok("a repository with no contracts/ holds only the given contracts", frozenContractShas(bare, []).size === 0)
+  writeFileSync(`${bare}/c.json`, a0)
+  t.ok("and those it is given", frozenContractShas(bare, [`${bare}/c.json`]).size === 1)
+  prTestRemove(bare)
+  t.ok("and a given contract outside contracts/", frozenContractShas(top, [`${top}/rfcs/rfc4648.txt`]).size === 3)
+  runProcess(["ln", "-s", "../src/x.ts", `${dir}/contracts/l.json`], "", 10000).orReturn()
+  t.ok(
+    "but not a symbolic link in contracts/",
+    !frozenContractShas(top, [`${top}/contracts/a.json`]).has(sha256Hex("x\n")),
+  )
+  prTestWrite(dir, "test/spec/n.ts", frozenTestGenerated(["x\n"], "n")).orReturn()
+  prTestWrite(dir, "specs/s.md", "s\n").orReturn()
+  const linked = frozenCheck(dir, "main", ["contracts/a.json"])
+  t.eqStr(
+    "so a test naming a linked file is implementation",
+    linked.isOk() ? linked.value.problems.join(" | ") : linked.error,
+    frozenTestBoth("contracts/l.json, specs/s.md", "test/spec/n.ts"),
+  )
+  frozenTestReset(dir).orReturn()
+
+  const onlyA = ["contracts/a.json"]
+  const both = [
+    "contracts/a.json",
+    a1,
+    "contracts/b.json",
+    b1,
+    "test/spec/a.ts",
+    frozenTestGenerated([a1], "a"),
+    "test/spec/b.ts",
+    frozenTestGenerated([b1], "b"),
+  ]
+  const bad = frozenTestContract(sha256Hex("not the RFC"), "b")
+  const rows: FrozenTestRow[] = [
+    new FrozenTestRow(
+      "both contracts and both tests change, a given",
+      both,
+      onlyA,
+      "OK",
+      ["✓ contract contracts/a.json", "generated test/spec/a.ts", "generated test/spec/b.ts"],
+      ["✓ contract contracts/b.json"],
+    ),
+    new FrozenTestRow(
+      "both contracts and both tests change, none given",
+      both,
+      [],
+      "OK",
+      ["✓ contract contracts/a.json", "✓ contract contracts/b.json", "generated test/spec/b.ts"],
+      [],
+    ),
+    new FrozenTestRow(
+      "a test regenerated against an unchanged contract not given",
+      ["test/spec/b.ts", frozenTestGenerated([b0], "b regenerated")],
+      onlyA,
+      "OK",
+      ["generated test/spec/b.ts"],
+      [],
+    ),
+    new FrozenTestRow(
+      "an edited generated test of a contract not given, with the code",
+      ["test/spec/b.ts", frozenTestGenerated([b0], "b loosened"), "src/x.ts", "y\n"],
+      onlyA,
+      frozenTestBoth("test/spec/b.ts", "src/x.ts"),
+      ["generated test/spec/b.ts", "implementation src/x.ts"],
+      [],
+    ),
+    new FrozenTestRow(
+      "a contract not given, its test and the code",
+      ["contracts/b.json", b1, "test/spec/b.ts", frozenTestGenerated([b1], "b"), "src/x.ts", "y\n"],
+      onlyA,
+      frozenTestBoth("contracts/b.json, test/spec/b.ts", "src/x.ts"),
+      ["generated test/spec/b.ts"],
+      [],
+    ),
+    new FrozenTestRow(
+      "a test with no sha line is implementation",
+      ["contracts/b.json", b1, "test/spec/n.ts", "n\n"],
+      onlyA,
+      frozenTestBoth("contracts/b.json", "test/spec/n.ts"),
+      ["implementation test/spec/n.ts"],
+      [],
+    ),
+    new FrozenTestRow(
+      "a test with two sha lines is implementation",
+      ["specs/s.md", "s\n", "test/spec/n.ts", frozenTestGenerated([a0, b0], "n")],
+      onlyA,
+      frozenTestBoth("specs/s.md", "test/spec/n.ts"),
+      ["implementation test/spec/n.ts"],
+      [],
+    ),
+    new FrozenTestRow(
+      "a test whose sha names no contract is implementation",
+      ["specs/s.md", "s\n", "test/spec/n.ts", frozenTestGenerated(["no contract"], "n")],
+      onlyA,
+      frozenTestBoth("specs/s.md", "test/spec/n.ts"),
+      ["implementation test/spec/n.ts"],
+      [],
+    ),
+    new FrozenTestRow(
+      "a test whose sha names a sidecar is implementation",
+      ["specs/s.md", "s\n", "test/spec/n.ts", frozenTestGenerated([sidecar], "n")],
+      onlyA,
+      frozenTestBoth("specs/s.md", "test/spec/n.ts"),
+      ["implementation test/spec/n.ts"],
+      [],
+    ),
+    new FrozenTestRow(
+      "a test naming a given contract outside contracts/ is generated",
+      ["specs/extra.json", extra, "test/spec/n.ts", frozenTestGenerated([extra], "n")],
+      ["contracts/a.json", "specs/extra.json"],
+      "OK",
+      ["✓ contract specs/extra.json", "generated test/spec/n.ts"],
+      [],
+    ),
+    new FrozenTestRow(
+      "a broken contract not given is not reported",
+      ["contracts/b.json", bad],
+      onlyA,
+      "OK",
+      ["✓ contract contracts/a.json", "spec contracts/b.json"],
+      ["✓ contract contracts/b.json", "✗ contract contracts/b.json"],
+    ),
+    new FrozenTestRow(
+      "a broken contract is reported when none are given",
+      ["contracts/b.json", bad],
+      [],
+      `contracts/b.json: source rfc4648 (rfcs/rfc4648.txt) has SHA-256 ${pin}, but the contract pins ${sha256Hex("not the RFC")}: the source changed`,
+      ["✗ contract contracts/b.json"],
+      [],
+    ),
+  ]
+  for (const row of rows) {
+    for (let i = 0; i + 1 < row.writes.length; i += 2) {
+      prTestWrite(dir, row.writes[i], row.writes[i + 1]).orReturn()
+    }
+    const r = frozenCheck(dir, "main", row.given)
+    if (r.isErr()) {
+      t.fail(row.name, r.error)
+    } else {
+      t.eqStr(row.name, r.value.problems.length === 0 ? "OK" : r.value.problems.join(" | "), row.verdict)
+      for (const item of row.listed) {
+        t.ok(`${row.name}: lists ${item}`, r.value.items.indexOf(item) >= 0)
+      }
+      for (const item of row.unlisted) {
+        t.ok(`${row.name}: does not list ${item}`, r.value.items.indexOf(item) < 0)
+      }
+    }
+    frozenTestReset(dir).orReturn()
+  }
+  prTestRemove(dir)
+  return Ok(true)
+}
+
 /** A path resolved against the top "/r", or "ERR". */
 const frozenTestInTop = (given: string): string => {
   const r = frozenResolve("/r", given)
@@ -276,6 +504,10 @@ export const main = (): i32 => {
   const xml = frozenTestXmlRepo(t)
   if (xml.isErr()) {
     t.fail("the .xml repository steps", xml.error)
+  }
+  const two = frozenTestTwoRepo(t)
+  if (two.isErr()) {
+    t.fail("the two-contract repository steps", two.error)
   }
   return t.done()
 }

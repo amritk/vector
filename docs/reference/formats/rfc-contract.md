@@ -556,6 +556,7 @@ No other property is allowed.
 | --- | --- | --- | --- |
 | `source` | [`id`](#def-id) | no | The id of the cited source (default: the main one). |
 | `section` | [`section`](#def-section) | yes |  |
+| `case` | `string` | no | One test case of the section, as `Test Vector #N`: the vector's labelled values are read from that case alone, from its `Test Vector #N:` heading to the next. Absent for the whole section. matches `^Test Vector #[1-9][0-9]{0,5}$`. |
 
 No other property is allowed.
 

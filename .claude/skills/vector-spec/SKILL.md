@@ -227,6 +227,10 @@ extracts to.
   - `concat(a, b, …)`: one level, all parts bytes. Never `‖`.
 - **Source** says where the expected value comes from:
   - `{{Section N of RFCx}}`: the value is printed there. Prefer this.
+  - `{{Section N of RFCx}}, Test Vector #K`: the values are all printed in
+    that one case of the section, under its `Test Vector #K:` heading. Use
+    it when a section prints several cases and a plain cite is refused as
+    unclear.
   - `{{anchor}}`: a numbered section of this spec. For a `null` or `bool`
     expected value it is a `spec` source (the covered requirement states it);
     for any other value it is a `cite` of that section, which must print the
@@ -346,8 +350,11 @@ Run it last, after step 4's `emit` and `stale`, so it sees the whole PR.
   - no contract was found.
 
 Its positional arguments are the contracts to check, from the repository's
-top; with none, it checks every `contracts/*.json`. `--repo <dir>` names the
-repository (default: the current directory).
+top; with none, it checks every `contracts/*.json`. Either way, a generated
+test whose one sha line names a contract in `contracts/` (not a sidecar or a
+symbolic link) or one given counts on the spec side, so a PR changing two
+contracts may name only one of them. `--repo <dir>` names the repository
+(default: the current directory).
 
 From here, the spec and contract change only in a PR of their own.
 

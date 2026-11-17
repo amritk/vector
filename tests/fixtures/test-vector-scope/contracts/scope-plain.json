@@ -1,0 +1,136 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "scope-plain",
+  "source": {
+    "title": "Test Vector scope: a plain cite of a section with one case per subsection",
+    "main": "scope-plain",
+    "sha256": "8b85a6c25e33c5736151b18372d08fdad12817d4e374def85bab3b0526b21f54"
+  },
+  "sources": [
+    {
+      "id": "scope-plain",
+      "path": "../specs/scope-plain.xml"
+    },
+    {
+      "id": "rfc8439",
+      "rfc": 8439,
+      "path": "../rfcs/rfc8439.txt",
+      "file": "rfcs/rfc8439.txt",
+      "sha256": "25bef70fbf7a07ff45c2fe4cb7c6ce954eac687413d8610603268b4e4415324c"
+    }
+  ],
+  "target": {
+    "module": "nish/crypto/chacha20poly1305"
+  },
+  "requirements": [
+    {
+      "id": "R-BLOCK",
+      "source": "rfc8439",
+      "section": "2.3",
+      "level": "DEFINITION",
+      "quote": "The output is 64 random-looking bytes."
+    },
+    {
+      "id": "R-POLY",
+      "source": "rfc8439",
+      "section": "2.5",
+      "level": "DEFINITION",
+      "quote": "Poly1305 takes a 32-byte one-time key and a message and produces a 16-byte tag."
+    }
+  ],
+  "exclusions": [],
+  "functions": [
+    {
+      "name": "chacha20Block",
+      "params": [
+        {
+          "name": "key",
+          "type": "bytes"
+        },
+        {
+          "name": "counter",
+          "type": "u32"
+        },
+        {
+          "name": "nonce",
+          "type": "bytes"
+        }
+      ],
+      "returns": "bytes?"
+    },
+    {
+      "name": "poly1305",
+      "params": [
+        {
+          "name": "key",
+          "type": "bytes"
+        },
+        {
+          "name": "msg",
+          "type": "bytes"
+        }
+      ],
+      "returns": "bytes?"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "A.1-BLOCK-1",
+      "title": "RFC 8439 A.1 Test Vector #1: the ChaCha20 block function",
+      "covers": ["R-BLOCK"],
+      "source": {
+        "cite": {
+          "source": "rfc8439",
+          "section": "A.1"
+        }
+      },
+      "call": "chacha20Block",
+      "args": [
+        {
+          "hex": "0000000000000000000000000000000000000000000000000000000000000000",
+          "label": "Key"
+        },
+        {
+          "int": 0,
+          "label": "Block Counter"
+        },
+        {
+          "hex": "000000000000000000000000",
+          "label": "Nonce"
+        }
+      ],
+      "expect": {
+        "hex": "76b8e0ada0f13d90405d6ae55386bd28bdd219b8a08ded1aa836efcc8b770dc7da41597c5157488d7724e03fb8d84a376a43b8f41518a11cc387b669b2ee6586",
+        "label": "Keystream"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "2.5.2-POLY1305",
+      "title": "RFC 8439 2.5.2: Poly1305 tags the message",
+      "covers": ["R-POLY"],
+      "source": {
+        "cite": {
+          "source": "rfc8439",
+          "section": "2.5.2"
+        }
+      },
+      "call": "poly1305",
+      "args": [
+        {
+          "hex": "85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b",
+          "label": "Key Material"
+        },
+        {
+          "hex": "43727970746f6772617068696320466f72756d2052657365617263682047726f7570",
+          "label": "Message to be Authenticated"
+        }
+      ],
+      "expect": {
+        "hex": "a8061dc1305136c6c22b8baf0c0127a9",
+        "label": "Tag"
+      }
+    }
+  ]
+}
