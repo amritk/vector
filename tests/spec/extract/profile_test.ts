@@ -54,31 +54,107 @@ const profileWhereOfRefusal = (f: ProfileRefusal): ProfileWhere => {
   return w
 }
 
+/** One place: its XML line, the mark's markdown and XML lines, its text, and where it is printed. */
+class ProfileTestPlace {
+  name: string
+  line: i32
+  mdLine: i32
+  markLine: i32
+  text: string
+  want: string
+  constructor(name: string, line: i32, mdLine: i32, markLine: i32, text: string, want: string) {
+    this.name = name
+    this.line = line
+    this.mdLine = mdLine
+    this.markLine = markLine
+    this.text = text
+    this.want = want
+  }
+}
+
 /**
  * A refusal's place is the markdown line alone only on a mark's own XML line;
- * below a mark it is the mark's markdown line with the XML line; it is the
- * XML line when there is no markdown, no mark, or a mark past the .md's end.
+ * below a mark it is the one markdown line, after the mark and before the
+ * next part, that holds the place's text, with the XML line; it is the XML
+ * line alone when no line or several hold the text, or there is no markdown,
+ * no mark, or a mark past the .md's end.
  */
 const profileTestWhere = (t: Suite): void => {
-  const md = new ProfileMd("a.md", 50)
-  t.eqStr("on the mark's own line", profileWhereText(profileWhere(15, 40, 15, "a.xml", md)), "a.md:40")
-  t.eqStr("below the mark", profileWhereText(profileWhere(20, 40, 15, "a.xml", md)), "a.md:40 (a.xml:20)")
-  t.eqStr("no mark before it", profileWhereText(profileWhere(15, -1, 0, "a.xml", md)), "a.xml:15")
-  t.eqStr("no markdown file", profileWhereText(profileWhere(15, 40, 15, "a.xml", null)), "a.xml:15")
-  t.eqStr("the last markdown line", profileWhereText(profileWhere(15, 50, 15, "a.xml", md)), "a.md:50")
-  t.eqStr("past the markdown's end", profileWhereText(profileWhere(15, 51, 15, "a.xml", md)), "a.xml:15")
-  const r = profileRefusalAt(profileWhere(20, 40, 15, "a.xml", md), 7, "why")
+  const md = new ProfileMd("a.md", 12)
+  md.text = [
+    "--- middle",
+    "",
+    "The decoder MUST NOT allocate twice.",
+    "| TAG-1 | 00 | ff |",
+    "> Iterate: X-1 1,000 times, (k, u) <- (f(k, u), k)",
+    "This paragraph wraps after the sixteen",
+    "characters it needs to be found.",
+    "| TAG-2 | 01 |",
+    "| TAG-2 | 02 |",
+    "--- back",
+    "The decoder MUST NOT allocate twice.",
+    "",
+  ]
+  const cases: ProfileTestPlace[] = [
+    new ProfileTestPlace("on the mark's own line", 15, 1, 15, "anything", "a.md:1"),
+    new ProfileTestPlace(
+      "a sentence below the mark",
+      20,
+      1,
+      15,
+      "The decoder MUST NOT allocate twice.",
+      "a.md:3 (a.xml:20)",
+    ),
+    new ProfileTestPlace("a table row by its first cell", 21, 1, 15, "| TAG-1 |", "a.md:4 (a.xml:21)"),
+    new ProfileTestPlace("a blockquote's paragraph", 22, 1, 15, "Iterate: X-1 1,000 times,", "a.md:5 (a.xml:22)"),
+    new ProfileTestPlace(
+      "a paragraph that wraps",
+      23,
+      1,
+      15,
+      "This paragraph wraps after the sixteen characters it needs to be found.",
+      "a.md:6 (a.xml:23)",
+    ),
+    new ProfileTestPlace("the same text twice", 24, 1, 15, "| TAG-2 |", "a.xml:24"),
+    new ProfileTestPlace("text the markdown does not hold", 25, 1, 15, "Nowhere in it.", "a.xml:25"),
+    new ProfileTestPlace("no text", 26, 1, 15, "", "a.xml:26"),
+    new ProfileTestPlace("a short wrapped start is not enough", 27, 1, 15, "found. And more", "a.xml:27"),
+    new ProfileTestPlace(
+      "a later part's line is not this part's",
+      40,
+      10,
+      38,
+      "The decoder MUST NOT allocate twice.",
+      "a.md:11 (a.xml:40)",
+    ),
+    new ProfileTestPlace("no mark before it", 15, -1, 0, "The decoder MUST NOT allocate twice.", "a.xml:15"),
+    new ProfileTestPlace("the last markdown line", 15, 12, 15, "", "a.md:12"),
+    new ProfileTestPlace("past the markdown's end", 15, 13, 15, "", "a.xml:15"),
+  ]
+  for (const k of cases) {
+    t.eqStr(k.name, profileWhereText(profileWhere(k.line, k.mdLine, k.markLine, "a.xml", md, k.text)), k.want)
+  }
+  t.eqStr(
+    "no markdown file",
+    profileWhereText(profileWhere(15, 1, 15, "a.xml", null, "The decoder MUST NOT allocate twice.")),
+    "a.xml:15",
+  )
+  const r = profileRefusalAt(profileWhere(20, 1, 15, "a.xml", md, "The decoder MUST NOT allocate twice."), 7, "why")
   t.eqStr(
     "a refusal keeps both places and the column",
     `${r.file}:${r.line} ${r.exactFile}:${r.exactLine}:${r.col} ${r.message}`,
-    "a.md:40 a.xml:20:7 why",
+    "a.md:3 a.xml:20:7 why",
   )
   t.eqI32(
     "an XML column does not go on a markdown line alone",
-    profileRefusalAt(profileWhere(15, 40, 15, "a.xml", md), 7, "why").col,
+    profileRefusalAt(profileWhere(15, 1, 15, "a.xml", md, ""), 7, "why").col,
     0,
   )
-  t.eqI32("it goes on the XML line", profileRefusalAt(profileWhere(15, 40, 15, "a.xml", null), 7, "why").col, 7)
+  t.eqI32(
+    "it goes on the XML line alone",
+    profileRefusalAt(profileWhere(25, 1, 15, "a.xml", md, "Nowhere in it."), 7, "why").col,
+    7,
+  )
 }
 
 /** A markdown file's record counts its lines, with or without a final newline. */
@@ -149,9 +225,9 @@ const profileTestRefusals = (t: Suite): void => {
     new ProfileRfcs(),
   )
   t.contains(
-    "a refusal at its markdown line",
+    "a refusal below a mark with no text to find it by, at its XML line",
     kramdown,
-    "tests/fixtures/xmlv3/kramdown.md:17 (tests/fixtures/xmlv3/kramdown.xml:57) a <texttable> is v2 XML; write a v3 <table> (xml2rfc --v2v3 converts one)",
+    "tests/fixtures/xmlv3/kramdown.xml:57 a <texttable> is v2 XML; write a v3 <table> (xml2rfc --v2v3 converts one)",
   )
   t.contains(
     "a refusal with no markdown line is at its XML line",

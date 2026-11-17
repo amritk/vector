@@ -28,8 +28,9 @@
  *
  * Every BCP 14 sentence must be a requirement or an exclusion, every xref to
  * an RFC must have a `<reference>`, and every section cited must exist in
- * the RFC handed over. Where a refusal is placed is profileWhere's rule: a
- * markdown line only where the XML vouches for it, never one extrapolated.
+ * the RFC handed over. Where a refusal is placed is profileWhere's rule: the
+ * markdown line holding the refused text, found once below its `<?line?>`
+ * mark, beside the XML line; or the XML line alone, never one extrapolated.
  */
 
 import { split } from "nish/text"
@@ -125,7 +126,7 @@ export class ProfileRefusal {
   col: i32
   /** Why the profile was refused. */
   message: string
-  /** The XML file when `line` is only the last `<?line?>` mark's markdown line; "" otherwise. */
+  /** The XML file when `line` is a markdown line found below a `<?line?>` mark; "" otherwise. */
   exactFile: string
   /** The XML line the refusal is on, when `exactFile` is set; 0 otherwise. */
   exactLine: i32 = 0
@@ -146,13 +147,13 @@ export class ProfileRefusal {
   }
 }
 
-/** A file and a line in it, and the XML line when that line is only near. */
+/** A file and a line in it, and the XML line when that line is a markdown line found by its text. */
 export class ProfileWhere {
   /** The file the line is in. */
   file: string
   /** The 1-based line. */
   line: i32
-  /** The XML file when `line` is only the last `<?line?>` mark's markdown line; "" when `line` is exact. */
+  /** The XML file when `line` is a markdown line found below a `<?line?>` mark; "" when `line` is the file's own. */
   exactFile: string
   /** The XML line the place is on, when `exactFile` is set; 0 otherwise. */
   exactLine: i32 = 0
@@ -178,7 +179,7 @@ export class ProfileMd {
   path: string
   /** Its number of lines; no place past the last is printed. */
   lines: i32
-  /** Its lines, when it was read; a paragraph the XML marks no line for is found here. */
+  /** Its lines, when it was read; a place below a `<?line?>` mark is found here by its text. */
   text: string[]
   /**
    * Makes a markdown file's record.
@@ -214,28 +215,6 @@ export const profileMdRead = (path: string | null): ProfileMd | null => {
   const md = new ProfileMd(path, text.endsWith("\n") ? all.length - 1 : all.length)
   md.text = all
   return md
-}
-
-/**
- * Where a paragraph is: its own markdown line when exactly one line of the
- * markdown starts with `head` (kramdown-rfc marks no line for a paragraph),
- * else the XML node's place.
- */
-const profileParaLoc = (c: ProfileContext, p: XmlNode, head: string): ProfileLoc => {
-  const md = c.md
-  if (md === null) {
-    return profileLocOf(p)
-  }
-  let found = -1
-  for (let i = 0; i < md.lines; i++) {
-    if (profileTrim(md.text[i]).startsWith(head)) {
-      if (found >= 0) {
-        return profileLocOf(p)
-      }
-      found = i + 1
-    }
-  }
-  return found < 0 ? profileLocOf(p) : new ProfileLoc(p.line, found, p.line)
 }
 
 /** The RFCs a spec may cite, read beforehand, and the ones it needed but were not there. */
@@ -295,10 +274,13 @@ class ProfileLoc {
   line: i32
   mdLine: i32
   markLine: i32
-  constructor(line: i32, mdLine: i32, markLine: i32) {
+  /** The text the place is about, as the markdown writes it; "" when it cannot be told. */
+  text: string
+  constructor(line: i32, mdLine: i32, markLine: i32, text: string) {
     this.line = line
     this.mdLine = mdLine
     this.markLine = markLine
+    this.text = text
   }
 }
 
@@ -447,26 +429,175 @@ class ProfileContext {
 
 // ── Places ─────────────────────────────────────────────────────────────────
 
-const profileLocOf = (n: XmlNode): ProfileLoc => new ProfileLoc(n.line, n.mdLine, n.markLine)
+/** `s` with each run of ASCII white space made one space, and trimmed. */
+const profileCollapse = (s: string): string => {
+  const out: string[] = []
+  let run = -1
+  for (let i = 0; i <= s.length; i++) {
+    const ch = i < s.length ? s.charCodeAt(i) : 0x20
+    const blank = ch === 0x20 || ch === 0x09 || ch === 0x0a || ch === 0x0d
+    if (!blank && run < 0) {
+      run = i
+    } else if (blank && run >= 0) {
+      out.push(s.substring(run, i))
+      run = -1
+    }
+  }
+  return out.join(" ")
+}
 
-/** `loc` moved `n` lines down the XML; the mark stays, so the markdown line is no longer exact. */
-const profileBelow = (loc: ProfileLoc, n: i32): ProfileLoc => new ProfileLoc(loc.line + n, loc.mdLine, loc.markLine)
+/** The character data directly in `n`, or null when `n` holds an element. */
+const profileFlatText = (n: XmlNode): string | null => {
+  const out: string[] = []
+  let k = n.first
+  while (k !== null) {
+    if (k.name.length > 0) {
+      return null
+    }
+    out.push(k.text)
+    k = k.next
+  }
+  return out.join("")
+}
+
+/**
+ * How a block's text starts in the markdown: its character data, a
+ * `<bcp14>`'s keyword and a `<tt>`'s code in backticks, up to the first
+ * other markup (a reference, emphasis), whose markdown spelling the XML does
+ * not keep. A block opening with a `<t>` starts as that `<t>` does.
+ */
+const profileHead = (n: XmlNode): string => {
+  const out: string[] = []
+  let k = n.first
+  while (k !== null) {
+    if (k.name.length === 0) {
+      out.push(k.text)
+    } else {
+      const flat = profileFlatText(k)
+      if (k.name === "bcp14" && flat !== null) {
+        out.push(flat)
+      } else if (k.name === "tt" && flat !== null) {
+        out.push(`\`${flat}\``)
+      } else if (k.name === "t" && profileCollapse(out.join("")).length === 0) {
+        return profileHead(k)
+      } else {
+        break
+      }
+    }
+    k = k.next
+  }
+  return profileCollapse(out.join(""))
+}
+
+/** A table row's first cell between pipes (`| Id |`), or how it starts (`| Id`) when it holds markup; "" when it starts with markup. */
+const profileRowText = (row: XmlNode): string => {
+  let k = row.first
+  while (k !== null) {
+    if (k.name === "td" || k.name === "th") {
+      const head = profileHead(k)
+      return head.length === 0 ? "" : profileFlatText(k) !== null ? `| ${head} |` : `| ${head}`
+    }
+    k = k.next
+  }
+  return ""
+}
+
+/**
+ * The text a node's place is about, as its markdown line holds it: for
+ * anything in a table row, the row's first cell (profileRowText); for a
+ * paragraph, a blockquote or a list item, how its text starts; for anything
+ * else (a reference, a heading, a whole table), "", which no line holds.
+ */
+const profileNodeText = (n: XmlNode): string => {
+  let a: XmlNode | null = n
+  while (a !== null) {
+    if (a.name === "tr") {
+      return profileRowText(a)
+    }
+    a = a.parent
+  }
+  const block = n.name === "t" || n.name === "blockquote" || n.name === "li" || n.name === "dd" || n.name === "dt"
+  return block ? profileHead(n) : ""
+}
+
+const profileLocOf = (n: XmlNode): ProfileLoc => new ProfileLoc(n.line, n.mdLine, n.markLine, profileNodeText(n))
+
+/** `loc` moved `n` lines down the XML, onto a line whose text is `text`. */
+const profileBelow = (loc: ProfileLoc, n: i32, text: string): ProfileLoc =>
+  new ProfileLoc(loc.line + n, loc.mdLine, loc.markLine, profileCollapse(text))
+
+/** A markdown line as compared: blockquote markers dropped, white space collapsed. */
+const profileMdLine = (s: string): string => {
+  let m = profileCollapse(s)
+  while (m.startsWith(">")) {
+    m = profileCollapse(m.substring(1, m.length))
+  }
+  return m
+}
+
+/** How long a wrapped line's part must be to stand for the start of a text. */
+const PROFILE_WRAP_MIN: i32 = 16
+
+/**
+ * Whether a markdown line holds `text`: the whole of it, or (where the text
+ * wraps onto the next line) its first PROFILE_WRAP_MIN characters or more
+ * ending the line from a word's start.
+ */
+const profileMdHolds = (m: string, text: string): boolean => {
+  if (m.indexOf(text) >= 0) {
+    return true
+  }
+  for (let p = 0; m.length - p >= PROFILE_WRAP_MIN; p++) {
+    if ((p === 0 || m.charCodeAt(p - 1) === 0x20) && text.startsWith(m.substring(p, m.length))) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * The one markdown line after the `<?line?>` mark at markdown line `from`,
+ * and before the next part's `--- ` line, that holds `text`; -1 when no line
+ * or more than one does.
+ */
+const profileMdFind = (md: ProfileMd, from: i32, text: string): i32 => {
+  if (text.length === 0) {
+    return -1
+  }
+  let found = -1
+  for (let i = from; i < md.lines && i < md.text.length; i++) {
+    if (md.text[i].startsWith("--- ")) {
+      break
+    }
+    if (profileMdHolds(profileMdLine(md.text[i]), text)) {
+      if (found >= 0) {
+        return -1
+      }
+      found = i + 1
+    }
+  }
+  return found
+}
 
 /**
  * Where a place is printed. The markdown file at its markdown line when the
  * place stands on a `<?line N?>` mark's own XML line, the one line whose
- * markdown line the XML vouches for. Below a mark, the markdown file at the
- * mark's line together with the XML file at the place's line, since
- * kramdown-rfc's XML does not follow the markdown line for line. The XML file
- * at its XML line when there is no markdown file, no mark before the place,
- * or the mark names a line past the markdown's end.
+ * markdown line the XML vouches for. Below a mark, kramdown-rfc's XML does
+ * not follow the markdown line for line, so the place's text is looked for
+ * instead: the markdown file at the one line between the mark's and the
+ * next part's `--- ` line that holds it, together with the XML file at the
+ * place's line. The XML file at its XML line alone when no line or more than
+ * one holds the text, when there is no markdown file, no mark before the
+ * place, or the mark names a line past the markdown's end: never the mark's
+ * own line, which is not the place's.
  *
  * @param line the XML line
  * @param mdLine the last mark's markdown line, or -1
  * @param markLine the XML line that mark stands on
  * @param xmlPath the XML file
  * @param md the markdown file, or null
- * @returns the file and line, and the XML line when the markdown line is only near
+ * @param text the text the place is about, as the markdown writes it (white space collapsed); "" when it cannot be told
+ * @returns the file and line, and the XML line when the line is a markdown one found by its text
  */
 export const profileWhere = (
   line: i32,
@@ -474,17 +605,23 @@ export const profileWhere = (
   markLine: i32,
   xmlPath: string,
   md: ProfileMd | null,
+  text: string,
 ): ProfileWhere => {
   if (md === null || mdLine < 1 || mdLine > md.lines) {
     return new ProfileWhere(xmlPath, line)
   }
-  const w = new ProfileWhere(md.path, mdLine)
-  if (line !== markLine) {
-    w.exactFile = xmlPath
-    w.exactLine = line
-  } else {
+  if (line === markLine) {
+    const w = new ProfileWhere(md.path, mdLine)
     w.mdOnly = true
+    return w
   }
+  const found = profileMdFind(md, mdLine, text)
+  if (found < 0) {
+    return new ProfileWhere(xmlPath, line)
+  }
+  const w = new ProfileWhere(md.path, found)
+  w.exactFile = xmlPath
+  w.exactLine = line
   return w
 }
 
@@ -514,7 +651,7 @@ export const profileRefusalAt = (w: ProfileWhere, col: i32, message: string): Pr
 }
 
 const profileWhereOf = (c: ProfileContext, loc: ProfileLoc): ProfileWhere =>
-  profileWhere(loc.line, loc.mdLine, loc.markLine, c.xmlPath, c.md)
+  profileWhere(loc.line, loc.mdLine, loc.markLine, c.xmlPath, c.md, loc.text)
 
 const profileRefuseAt = (c: ProfileContext, loc: ProfileLoc, message: string, col: i32): void => {
   c.refusals.push(profileRefusalAt(profileWhereOf(c, loc), col, message))
@@ -1071,7 +1208,7 @@ const profileXmlCol = (t: XmlNode, i: i32, line: string, col: i32): i32 => {
 /** Refuses a code block at each front end's place, with the column where the XML holds the code as is. */
 const profileFrontRefuse = (c: ProfileContext, node: XmlNode, rs: FrontRefusal[]): void => {
   const code = xmlCodeOf(node)
-  const at = new ProfileLoc(code.line, code.mdLine, code.markLine)
+  const at = new ProfileLoc(code.line, code.mdLine, code.markLine, "")
   const t = node.first
   const only: XmlNode | null = t !== null && t.next === null && t.name.length === 0 ? t : null
   const lines = split(code.text, "\n")
@@ -1080,7 +1217,12 @@ const profileFrontRefuse = (c: ProfileContext, node: XmlNode, rs: FrontRefusal[]
     if (only !== null && r.line >= 1 && r.line <= lines.length) {
       col = profileXmlCol(only, code.line + r.line - 1 - only.line, lines[r.line - 1], r.col)
     }
-    profileRefuseAt(c, profileBelow(at, r.line - 1), r.message, col)
+    profileRefuseAt(
+      c,
+      profileBelow(at, r.line - 1, r.line >= 1 && r.line <= lines.length ? lines[r.line - 1] : ""),
+      r.message,
+      col,
+    )
   }
 }
 
@@ -1108,9 +1250,10 @@ const profileReadInterface = (c: ProfileContext, code: XmlNode[]): void => {
   const got = r.value
   c.functions = got.functions
   c.module = got.module
-  const at = new ProfileLoc(code0.line, code0.mdLine, code0.markLine)
+  const at = new ProfileLoc(code0.line, code0.mdLine, code0.markLine, "")
+  const ifaceLines = split(code0.text, "\n")
   for (const l of got.lines) {
-    c.fnLocs.push(profileBelow(at, l - 1))
+    c.fnLocs.push(profileBelow(at, l - 1, l >= 1 && l <= ifaceLines.length ? ifaceLines[l - 1] : ""))
   }
   profileCheckText(c, profileLocOf(iface), "the ts-interface block's module", c.module)
   const names = shapeTestNames()
@@ -1551,7 +1694,11 @@ const profileUnhandled = (c: ProfileContext): void => {
     } else {
       message = `${profileOwnText(c, "this BCP 14 sentence")}: "${e.sentence}"`
     }
-    profileRefuse(c, e.node, message)
+    profileRefuseLoc(
+      c,
+      new ProfileLoc(e.node.line, e.node.mdLine, e.node.markLine, profileCollapse(e.sentence)),
+      message,
+    )
   }
 }
 
@@ -2021,7 +2168,7 @@ const profileReadIterate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, 
   const text = profileTrim(profileAfter(c, p, PROFILE_ITERATE))
   const words = split(text, " ")
   const id = words[0]
-  const loc = profileParaLoc(c, p, `${PROFILE_ITERATE}${id} `)
+  const loc = profileLocOf(p)
   if (words.length < 2 || words[1] === "times,") {
     // Echo the author's own paragraph, with the count put where it goes.
     const rest = profileTrim(text.substring(id.length, text.length))
@@ -2513,7 +2660,7 @@ const profileReadProperties = (c: ProfileContext, code: XmlNode[]): void => {
       continue
     }
     const p = r.value
-    const at = new ProfileLoc(block.line, block.mdLine, block.markLine)
+    const at = new ProfileLoc(block.line, block.mdLine, block.markLine, profileCollapse(split(block.text, "\n")[0]))
     const title = p.title ?? ""
     profileCheckId(c, p.id, at)
     profileCheckCovers(c, p.covers, at)

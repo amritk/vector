@@ -61,9 +61,9 @@ const extractTestRefusals = (t: Suite, readers: SourceReaders): void => {
   const k = extractContract("tests/fixtures/xmlv3/kramdown.xml", "x.json", ".", readers)
   t.ok("a refused spec has no text", k.text === "" && k.errors.length === 0)
   t.contains(
-    "a refusal at the markdown line",
+    "a refusal below a mark with no text to find it by, at the XML line alone",
     extractTestOutcome(k),
-    "tests/fixtures/xmlv3/kramdown.md:17 (tests/fixtures/xmlv3/kramdown.xml:57) a <texttable> is v2 XML; write a v3 <table> (xml2rfc --v2v3 converts one)",
+    "tests/fixtures/xmlv3/kramdown.xml:57 a <texttable> is v2 XML; write a v3 <table> (xml2rfc --v2v3 converts one)",
   )
   t.eqStr(
     "a spec that is not there",
@@ -130,11 +130,11 @@ const extractTestTree = (t: Suite, readers: SourceReaders): void => {
   )
   const md = joinPath(tmp, "specs/mini-frame.md")
   writeFileSync(md, extractTestLines(10))
-  writeFileSync(spec, "<rfc>\n<?line 5?>\n<a>\n</rfc>")
+  writeFileSync(spec, "<rfc>\n<?line 5?><a>\n</rfc>")
   t.eqStr(
-    "with its markdown beside it, both places in the markdown's numbering",
+    "with its markdown beside it, the mark's line in the markdown, a line below it in the XML",
     extractTestOutcome(extractContract(spec, out, tmp, readers)),
-    `${md}:5 (${spec}:4) malformed XML: </rfc> closes <a>, opened at ${md}:5 (${spec}:3)`,
+    `${spec}:3 malformed XML: </rfc> closes <a>, opened at ${md}:5`,
   )
 }
 

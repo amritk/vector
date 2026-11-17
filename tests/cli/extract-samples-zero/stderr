@@ -1,1 +1,1 @@
-vector: tests/fixtures/extract-samples/specs/extract-samples-zero.md:21 (tests/fixtures/extract-samples/specs/extract-samples-zero.xml:75:1): samples must be 1..256, not 0
+vector: tests/fixtures/extract-samples/specs/extract-samples-zero.md:68 (tests/fixtures/extract-samples/specs/extract-samples-zero.xml:75:1): samples must be 1..256, not 0

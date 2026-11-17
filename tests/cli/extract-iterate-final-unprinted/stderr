@@ -1,1 +1,1 @@
-vector: tests/fixtures/profile/profile-iterate-final-unprinted.md:30 (tests/fixtures/profile/profile-iterate-final-unprinted.xml:71): fidelity: the 32-byte expect is not printed in RFC §5.2 ("Test Vectors")
+vector: tests/fixtures/profile/profile-iterate-final-unprinted.md:55 (tests/fixtures/profile/profile-iterate-final-unprinted.xml:71): fidelity: the 32-byte expect is not printed in RFC §5.2 ("Test Vectors")

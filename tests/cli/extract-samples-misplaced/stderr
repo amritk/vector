@@ -1,1 +1,1 @@
-vector: tests/fixtures/extract-samples/specs/extract-samples-misplaced.md:21 (tests/fixtures/extract-samples/specs/extract-samples-misplaced.xml:77:3): the samples line goes on line 2, after the covers line
+vector: tests/fixtures/extract-samples/specs/extract-samples-misplaced.md:70 (tests/fixtures/extract-samples/specs/extract-samples-misplaced.xml:77:3): the samples line goes on line 2, after the covers line

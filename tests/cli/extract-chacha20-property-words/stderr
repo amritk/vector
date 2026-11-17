@@ -1,1 +1,1 @@
-vector: tests/fixtures/chacha20/property/rfc8439-quarter-round.md:25 (tests/fixtures/chacha20/property/rfc8439-quarter-round.xml:68:12): properties over u32[] are not sampled yet; give word-array cases as vectors
+vector: tests/fixtures/chacha20/property/rfc8439-quarter-round.md:56 (tests/fixtures/chacha20/property/rfc8439-quarter-round.xml:68:12): properties over u32[] are not sampled yet; give word-array cases as vectors
