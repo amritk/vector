@@ -735,8 +735,6 @@ refusals, in the order they are tried:
    - a quantified variable, which binds to the vector's value, the same
      variable always to the same value. Otherwise: "P uses x, which it does
      not quantify over" or "P uses x for two different values";
-   - a literal equal to the vector's value. Otherwise: "P passes a literal
-     that is not the vector's value";
    - a call of another function, optionally under `unwrap`, at most two calls
      deep, that yields the value: another vector of the contract, whose
      expected value is cited to a section of an RFC, calls that function with
@@ -749,8 +747,12 @@ refusals, in the order they are tried:
      null (unwrap of null fails the sample), so it does not match a null
      value: "P unwraps g where the vector has null, a value unwrap never
      gives". A plain `g(…)` may yield null.
-   Anything else (`concat`, a `let` block) is refused: "P computes
-   an argument (concat) that is not matched here".
+   A literal is refused at any depth, whether it is the call's argument, the
+   argument of a sibling call, or under `unwrap`, even when it equals the
+   vector's value: "P passes a literal argument, which restates the vector
+   instead of deriving its result: bind it through a quantified variable or
+   a cited vector". Anything else (`concat`, a `let` block) is refused: "P
+   computes an argument (concat) that is not matched here".
 6. Every quantified variable is bound inside its domain: a byte string's
    length within its `/* a..b */`, an integer within its bounds. Otherwise:
    "P leaves z unbound", "P binds msg to a N-byte value, outside its domain
@@ -764,6 +766,29 @@ refusals, in the order they are tried:
    "P's where does not hold for the vector's inputs", or "P's where cannot be
    evaluated: …" when it holds a call or anything else the sampler does not
    evaluate.
+8. Every argument of the call reads a quantified variable, directly or
+   through a sibling call. An argument that reads none, such as a call of a
+   function with no parameters, holds one value whatever is sampled.
+   Otherwise: "P passes argument N through no variable it quantifies over,
+   so it restates the vector instead of deriving its result".
+9. Every quantified variable admits a value other than the vector's: a
+   neighbour of it (a byte with its low bit flipped, a byte appended or
+   dropped, or an integer one above or below) lies in its domain and
+   satisfies the `where`. A domain of one value (`u8[] /* 0..0 */`, an
+   integer with `min` equal to `max`) or a `where` that pins the variable
+   (`msg == x"02"`, `len(msg) == 0` against an empty message) does not
+   quantify over anything. Otherwise: "P admits only the vector's value for
+   msg (its domain and where allow no other), so it restates the vector
+   instead of deriving its result". The check is conservative: it tries only
+   those neighbours, so a `where` that relates two variables (`a == b`) can
+   be refused though it admits other values. Widen the domain or drop the
+   `where`.
+
+Steps 5, 8 and 9 keep a property from restating the vector. Without them,
+`forall (msg: u8[] /* 0..0 */) => ed25519Verify(PK, msg, SIG) === true`, with
+the vector's public key and signature written in as literals, would derive
+`true` for any row that passes fidelity, though it checks nothing the vector
+does not already say.
 
 So the property `forall (key: u8[] /* 1..1 */, msg: u8[] /* 0..1 */) =>
 check(key, msg, tag(key, msg)) === true` derives `check(KEY = 01, MESSAGE =
