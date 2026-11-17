@@ -115,7 +115,13 @@ const profileTruncTestRefusals = (t: Suite, xml: string): void => {
     "4.6-256 to 128 bits, please",
   ]
   for (const f of forms) {
-    t.eqStr(`the form "${f}"`, profileTruncTestP(xml, f), f === "4.6-256 to 128 bits." ? `${line} 4.6-256's length is in "bits" or "bytes", not "bits.": ${PROFILE_TRUNC_FORM}` : form)
+    t.eqStr(
+      `the form "${f}"`,
+      profileTruncTestP(xml, f),
+      f === "4.6-256 to 128 bits."
+        ? `${line} 4.6-256's length is in "bits" or "bytes", not "bits.": ${PROFILE_TRUNC_FORM}`
+        : form,
+    )
   }
   const lens: string[] = ["0", "0128", "-128", "1e3", "12.8", "1,024", "12345678", "x"]
   for (const n of lens) {
@@ -152,12 +158,32 @@ const profileTruncTestRefusals = (t: Suite, xml: string): void => {
     `${line} 4.6-256 is truncated to 524296 bits, more than 65536 bytes`,
   )
   // The largest lengths pass the length rules and reach the Expected's.
-  t.eqStr("65536 bytes", profileTruncTestP(xml, "4.6-256 to 65536 bytes"), profileTruncTestMismatch(line, "65536", "524288"))
-  t.eqStr("524288 bits", profileTruncTestP(xml, "4.6-256 to 524288 bits"), profileTruncTestMismatch(line, "65536", "524288"))
+  t.eqStr(
+    "65536 bytes",
+    profileTruncTestP(xml, "4.6-256 to 65536 bytes"),
+    profileTruncTestMismatch(line, "65536", "524288"),
+  )
+  t.eqStr(
+    "524288 bits",
+    profileTruncTestP(xml, "4.6-256 to 524288 bits"),
+    profileTruncTestMismatch(line, "65536", "524288"),
+  )
   // The printed Expected is longer, or shorter, than the truncation.
-  t.eqStr("an Expected longer than 96 bits", profileTruncTestP(xml, "4.6-256 to 96 bits"), profileTruncTestMismatch(line, "12", "96"))
-  t.eqStr("an Expected longer than 15 bytes", profileTruncTestP(xml, "4.6-256 to 15 bytes"), profileTruncTestMismatch(line, "15", "120"))
-  t.eqStr("an Expected shorter than 136 bits", profileTruncTestP(xml, "4.6-256 to 136 bits"), profileTruncTestMismatch(line, "17", "136"))
+  t.eqStr(
+    "an Expected longer than 96 bits",
+    profileTruncTestP(xml, "4.6-256 to 96 bits"),
+    profileTruncTestMismatch(line, "12", "96"),
+  )
+  t.eqStr(
+    "an Expected longer than 15 bytes",
+    profileTruncTestP(xml, "4.6-256 to 15 bytes"),
+    profileTruncTestMismatch(line, "15", "120"),
+  )
+  t.eqStr(
+    "an Expected shorter than 136 bits",
+    profileTruncTestP(xml, "4.6-256 to 136 bits"),
+    profileTruncTestMismatch(line, "17", "136"),
+  )
   t.eqStr(
     "the whole result's row truncated to 128 bits",
     profileTruncTestP(xml, "4.2-256 to 128 bits"),
@@ -181,14 +207,22 @@ const profileTruncTestRefusals = (t: Suite, xml: string): void => {
   )
   t.eqStr(
     "an i64 result",
-    profileTruncTestRead(replaceAll(int, "HMAC-SHA-256 = b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7", "HMAC-SHA-256 = 7")),
+    profileTruncTestRead(
+      replaceAll(
+        int,
+        "HMAC-SHA-256 = b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7",
+        "HMAC-SHA-256 = 7",
+      ),
+    ),
     `${line} 4.6-256's hmacSha256 returns i64, and only a bytes result is truncated`,
   )
   // A bare "Truncate:" is no Truncate: paragraph but prose, and is not refused.
   t.eqStr("a bare Truncate:", profileTruncTestP(xml, ""), "ok")
   t.eqStr(
     "a stray one in another section",
-    profileTruncTestRead(replaceAll(xml, '<blockquote anchor="R-TRUNC"', `${PROFILE_TRUNC_P}<blockquote anchor="R-TRUNC"`)),
+    profileTruncTestRead(
+      replaceAll(xml, '<blockquote anchor="R-TRUNC"', `${PROFILE_TRUNC_P}<blockquote anchor="R-TRUNC"`),
+    ),
     `${profileTruncTestLine(xml, '<blockquote anchor="R-TRUNC"')} ${PROFILE_TRUNC_STRAY}`,
   )
   t.eqStr(
@@ -204,7 +238,11 @@ const profileTruncTestRefusals = (t: Suite, xml: string): void => {
   t.eqStr(
     "beside an Iterate: on the same vector",
     profileTruncTestRead(
-      replaceAll(xml, PROFILE_TRUNC_P, `<t>Iterate: 4.6-256 2 times, (k, d) &lt;- (hmacSha256(k, d), d)</t>\n${PROFILE_TRUNC_P}`),
+      replaceAll(
+        xml,
+        PROFILE_TRUNC_P,
+        `<t>Iterate: 4.6-256 2 times, (k, d) &lt;- (hmacSha256(k, d), d)</t>\n${PROFILE_TRUNC_P}`,
+      ),
     ),
     `${line + 1} the contract read here is not valid: clauses[1].truncate: a vector is truncated or iterated, not both`,
   )

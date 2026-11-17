@@ -77,7 +77,7 @@ const truncTestReadWrite = (t: Suite): void => {
   t.eqStr("128 bits reads", truncTestShape(e, `{"bits": 128}`), "")
   t.eqStr("16 bytes reads", truncTestShape(e, `{"bytes": 16}`), "")
   const bad: string[] = [
-    `{}`,
+    "{}",
     `{"bits": 128, "bytes": 16}`,
     `{"bits": 0}`,
     `{"bits": 127}`,
@@ -86,7 +86,7 @@ const truncTestReadWrite = (t: Suite): void => {
     `{"bytes": 65537}`,
     `{"bits": "128"}`,
     `{"bits": 128, "unit": "bits"}`,
-    `128`,
+    "128",
   ]
   const want: string[] = [
     "read: clauses[0].truncate: exactly one of bits or bytes",
@@ -97,7 +97,7 @@ const truncTestReadWrite = (t: Suite): void => {
     "read: clauses[0].truncate.bytes: an integer in 1..65536",
     "read: clauses[0].truncate.bytes: an integer in 1..65536",
     "read: clauses[0].truncate.bits: an integer in 8..524288",
-    "read: clauses[0].truncate: unknown field \"unit\"",
+    'read: clauses[0].truncate: unknown field "unit"',
     "read: clauses[0].truncate: an object",
   ]
   for (let i = 0; i < bad.length; i++) {
@@ -110,7 +110,9 @@ const truncTestReadWrite = (t: Suite): void => {
     t.ok(`${tr} is written as it reads`, w.indexOf(unit) >= 0)
     t.eqStr(`${tr} round-trips`, contractWrite(truncTestContract(w)), w)
   }
-  const none = contractWrite(truncTestContract(replaceAll(truncTestText("4.6", "hmacSha256", e, "X"), `, "truncate": X`, "")))
+  const none = contractWrite(
+    truncTestContract(replaceAll(truncTestText("4.6", "hmacSha256", e, "X"), `, "truncate": X`, "")),
+  )
   t.ok("an untruncated vector writes no truncate", none.indexOf("truncate") < 0)
 }
 
@@ -146,7 +148,11 @@ const truncTestShapes = (t: Suite): void => {
     `${at}: a truncated vector compares bytes exactly; drop the tolerance`,
   )
   const iter = `{"bits": 128}, "iterate": {"count": 2, "names": ["key", "data"], "next": [{"var": "key"}, {"call": "hmacSha256", "args": [{"var": "key"}, {"var": "data"}]}]}`
-  t.eqStr("beside an iterate", truncTestShape(truncTestExpect(32), iter), `${at}: a vector is truncated or iterated, not both`)
+  t.eqStr(
+    "beside an iterate",
+    truncTestShape(truncTestExpect(32), iter),
+    `${at}: a vector is truncated or iterated, not both`,
+  )
 }
 
 /** The byte length of the §4.6 vector's expect when it is `expect`. */
@@ -179,7 +185,9 @@ const truncTestTyping = (t: Suite): void => {
   t.eqStr("a bytes result", truncTestTypingOf("hmacSha256"), "")
   t.ok(
     "a string result",
-    truncTestTypingOf("hmacHex").indexOf("T1: truncate: hmacHex returns string, and only a bytes result is truncated") >= 0,
+    truncTestTypingOf("hmacHex").indexOf(
+      "T1: truncate: hmacHex returns string, and only a bytes result is truncated",
+    ) >= 0,
   )
 }
 
@@ -197,7 +205,11 @@ const truncTestFidelityCases = (t: Suite): void => {
     `T1.truncate: the truncation to 128 bits is not printed in ${t1}\nT1.args[0]: 20-byte value is not printed in ${t1}\nT1.args[1]: 20-byte value is not printed in ${t1}\nT1.expect: 16-byte value is not printed in ${t1}`,
   ]
   for (let i = 0; i < want.length; i++) {
-    t.eqStr(`fidelity: §${sections[i]} truncated by ${truncs[i]}`, truncTestFidelity(sections[i], expects[i], truncs[i]), want[i])
+    t.eqStr(
+      `fidelity: §${sections[i]} truncated by ${truncs[i]}`,
+      truncTestFidelity(sections[i], expects[i], truncs[i]),
+      want[i],
+    )
   }
 }
 

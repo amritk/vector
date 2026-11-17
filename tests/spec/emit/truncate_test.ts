@@ -78,22 +78,26 @@ const truncEmitText = (t: Suite, c: Contract): void => {
   const opts = new EmitOptions("ab")
   const nish = emitProgram(c, new SampleTable(), opts).expect("nish")
   t.contains("nish: the clause says what it holds", nish, "Holds the result's first 16 bytes (128 bits)")
-  t.contains("nish: the call through hexPrefix", nish, `hexPrefix(hmacSha256(`)
+  t.contains("nish: the call through hexPrefix", nish, "hexPrefix(hmacSha256(")
   t.contains("nish: to 16 bytes", nish, `, 16), "a3b6167473100ee06e0c796c2955552b")`)
-  t.ok("nish: the helper is defined once", nish.indexOf("const hexPrefix = ") >= 0 && nish.indexOf("const hexPrefix = ", nish.indexOf("const hexPrefix = ") + 1) < 0)
+  t.ok(
+    "nish: the helper is defined once",
+    nish.indexOf("const hexPrefix = ") >= 0 &&
+      nish.indexOf("const hexPrefix = ", nish.indexOf("const hexPrefix = ") + 1) < 0,
+  )
   t.ok("nish: hexOf, which it needs, is defined", nish.indexOf("const hexOf = ") >= 0)
   t.ok("nish: §4.2 is held whole", nish.indexOf(`"${TRUNC_EMIT_FULL}"`) >= 0)
   const go = emitGoProgram(c, new SampleTable(), opts, "standalone").expect("go")
-  t.contains("go: the call", go, `_hexPrefix(`)
+  t.contains("go: the call", go, "_hexPrefix(")
   t.ok("go: the helper", go.indexOf("func _hexPrefix(b []byte, n int) string {") >= 0)
   const py = emitPyProgram(c, new SampleTable(), opts, "standalone").expect("python")
   t.contains("python: the call", py, `, 16), "a3b6167473100ee06e0c796c2955552b")`)
   t.ok("python: the helper", py.indexOf("def _hex_prefix(b, n):") >= 0)
   const rs = emitRsProgram(c, new SampleTable(), opts, "standalone").expect("rust")
-  t.contains("rust: the call", rs, `&_hex_prefix(&`)
+  t.contains("rust: the call", rs, "&_hex_prefix(&")
   t.ok("rust: the helper", rs.indexOf("fn _hex_prefix(b: &[u8], n: usize) -> String {") >= 0)
   const ts = emitTsProgram(c, new SampleTable(), opts, "standalone").expect("typescript")
-  t.contains("typescript: the call", ts, `_hex_prefix(`)
+  t.contains("typescript: the call", ts, "_hex_prefix(")
   t.ok("typescript: the helper", ts.indexOf("function _hex_prefix(b: unknown, n: number): string {") >= 0)
   for (const lang of ["nish", "go", "python", "rust", "typescript"]) {
     const text = lang === "nish" ? nish : lang === "go" ? go : lang === "python" ? py : lang === "rust" ? rs : ts
@@ -117,7 +121,11 @@ const truncEmitNishRuns = (t: Suite, c: Contract): void => {
     t.eqStr(`nish: ${truncEmitWhy()[i]}`, ran.verdict.status, truncEmitWant()[i])
     t.eqStr(`nish: ${truncEmitWhy()[i]}: §4.2 passes`, runOutcomeName(ran.clauses[0].outcome), "pass")
     if (i >= 3) {
-      t.eqStr(`nish: ${truncEmitWhy()[i]}: the detail`, ran.clauses[1].detail, truncEmitShortDetail(toI32(results[i].length / 2)))
+      t.eqStr(
+        `nish: ${truncEmitWhy()[i]}: the detail`,
+        ran.clauses[1].detail,
+        truncEmitShortDetail(toI32(results[i].length / 2)),
+      )
     }
     runDisposeScratch(made).expect("dispose")
   }
@@ -145,7 +153,11 @@ const truncEmitPyRuns = (t: Suite, c: Contract): void => {
     const ran = runTestCommand(c, [runPython(), "-B", file], 60000).expect("run")
     t.eqStr(`python: ${truncEmitWhy()[i]}`, ran.verdict.status, truncEmitWant()[i])
     if (i >= 3) {
-      t.contains(`python: ${truncEmitWhy()[i]}: the detail`, ran.clauses[1].detail, `a ${results[i].length / 2}-byte result, shorter than the 16 bytes`)
+      t.contains(
+        `python: ${truncEmitWhy()[i]}: the detail`,
+        ran.clauses[1].detail,
+        `a ${results[i].length / 2}-byte result, shorter than the 16 bytes`,
+      )
     }
     runProcess(["rm", "-rf", dir], "", 10000).expect("rm")
   }

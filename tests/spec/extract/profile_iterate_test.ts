@@ -15,7 +15,7 @@ const PROFILE_ITER_P1: string = "<t>Iterate: 5.2-ITER-1000 1,000 times, (k, u) &
 const PROFILE_ITER_P2: string = "<t>Iterate: 5.2-ITER-1M 1000000 times, slow, (k, u) ← (x25519(k, u), k)</t>"
 const PROFILE_ITER_FORM: string = "Iterate: V1 1,000 times, (k, u) <- (f(k, u), k)"
 const PROFILE_ITER_STRAY: string =
-  "this Iterate: paragraph follows no vector table; it must directly follow the vector table or a Tolerance: or Iterate: paragraph, like Iterate: V1 1,000 times, (k, u) <- (f(k, u), k)"
+  "this Iterate: paragraph follows no vector table; it must directly follow the vector table or a Tolerance:, Iterate: or Truncate: paragraph, like Iterate: V1 1,000 times, (k, u) <- (f(k, u), k)"
 const PROFILE_ITER_F64: string = "tests/fixtures/profile/profile-tolerance.xml"
 const PROFILE_ITER_TOL_V1: string =
   '<t>Tolerance: V1 ulps 1, <xref target="accuracy"/>: "within one unit in the last place of the exact square root"</t>'
