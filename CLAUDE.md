@@ -84,6 +84,12 @@ toleranced value, or `unwrap` of a `null`, is not `g(args)`. Every condition
 such a rule adds lands with a test shown to fail when that condition is
 deleted.
 
+**A gate rule that reads an RFC's layout (a block, a grid, a dump) is tested
+on text that goes through `rfcParse` with real `[Page N]` footers and `\f`
+headers.** The tests cover a value on each side of a page break, and two
+separate blocks split only by one. A boundary rule tested without that page
+text passes even with the rule removed.
+
 **Generated files are regenerated, never edited by hand.** That covers
 `docs/reference/**` and its routes in `scalar.config.json`, `tests/dogfood/**`, `contracts/*.json`
 (extracted from `specs/*.xml`) and `specs/*.xml` (built from `specs/*.md` by
