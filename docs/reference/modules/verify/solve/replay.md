@@ -434,7 +434,8 @@ the outcome, with the first check that differed or why it was not replayed
 
 Replays a hazard: confirmed when the input reaches it and its condition
 holds there, a divisor of 0, a callee's requires false, or an Int outside
-±(2^53−1).
+±(2^53−1). z3's result is compared with the body only when the body is
+known there.
 
 ```ts
 function replayHazard(

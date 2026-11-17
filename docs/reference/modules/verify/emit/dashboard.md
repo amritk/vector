@@ -14,6 +14,7 @@ Generated from [src/verify/emit/dashboard.ts](https://github.com/amritk/vector/b
 - [`STATUS_PROVEN`](#status_proven)
 - [`STATUS_REFUTED`](#status_refuted)
 - [`STATUS_UNKNOWN`](#status_unknown)
+- [`STATUS_MISMATCH`](#status_mismatch)
 - [`verdictStatus`](#verdictstatus)
 - [`dashWrap`](#dashwrap)
 - [`dashInputs`](#dashinputs)
@@ -51,10 +52,21 @@ Some clause is undecided and nothing is refuted.
 const STATUS_UNKNOWN: string = "UNKNOWN"
 ```
 
+<a id="status_mismatch"></a>
+
+### STATUS_MISMATCH
+
+A counterexample z3 gave did not replay: a bug in vector.
+
+```ts
+const STATUS_MISMATCH: string = "MISMATCH"
+```
+
 ### verdictStatus
 
-The report's verdict. Every failure except a bare solver `unknown` is a
-concrete defect, so it refutes.
+The report's verdict. A counterexample that did not replay comes first:
+then the fault is vector's, not the program's. Every other failure except
+a bare solver `unknown` is a concrete defect, so it refutes.
 
 ```ts
 function verdictStatus(report: VerifyReport): string
@@ -62,13 +74,13 @@ function verdictStatus(report: VerifyReport): string
 
 <scalar-field name="report" type="VerifyReport" required>
 
-the report
+the report, after the replay filled in its `mismatchCount`
 
 </scalar-field>
 
 <scalar-field name="returns" type="string">
 
-`STATUS_PROVEN`, `STATUS_REFUTED` or `STATUS_UNKNOWN`
+`STATUS_MISMATCH`, `STATUS_PROVEN`, `STATUS_REFUTED` or `STATUS_UNKNOWN`
 
 </scalar-field>
 

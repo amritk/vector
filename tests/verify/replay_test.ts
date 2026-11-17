@@ -12,7 +12,7 @@ import {
   pairFunctions,
 } from "../../src/verify/equiv/diff"
 import { FnUnit, Program } from "../../src/verify/lang/ast"
-import { QUERY_DIV, QUERY_RANGE } from "../../src/verify/smt/script"
+import { QUERY_DIV, QUERY_PRE, QUERY_RANGE } from "../../src/verify/smt/script"
 import {
   REPLAY_CONFIRMED,
   REPLAY_MISMATCH,
@@ -30,7 +30,7 @@ import {
 } from "../../src/verify/solve/replay"
 import { Counterexample, solveProgram } from "../../src/verify/solve/report"
 import { OUTCOME_MISMATCH, verifyMismatchLines, verifyReportOutcome } from "../../src/verify/verify"
-import { BCase, bBin, bNum, bProgram, bVar } from "./build"
+import { BCase, bBin, bCall, bIte, bNum, bProgram, bUn, bVar } from "./build"
 
 const replayNone = (): string[] => {
   const none: string[] = []
@@ -98,6 +98,17 @@ const replayParseCases = (t: Suite): void => {
     new ParseCase("", ""),
     new ParseCase("(/ 1 0)", ""),
     new ParseCase("99999999999999999999", ""),
+    new ParseCase("9223372036854775807", "9223372036854775807"),
+    new ParseCase("(- 9223372036854775807)", "-9223372036854775807"),
+    new ParseCase("9223372036854775808", ""),
+    new ParseCase("(* 9223372036854775807 2)", ""),
+    new ParseCase("(/ 1 9223372036854775807)", "1/9223372036854775807"),
+    new ParseCase("1/3", "1/3"),
+    new ParseCase("-1/3", "-1/3"),
+    new ParseCase("1/-3", "-1/3"),
+    new ParseCase("1/3/4", ""),
+    new ParseCase("--1", ""),
+    new ParseCase("1/0", ""),
   ]
   for (const c of cases) {
     const v = replayParseValue(c.text)
@@ -257,9 +268,159 @@ const replayHazardCases = (t: Suite): void => {
     t.eqStr("an Int well inside: mismatch", replayHazard(grown, gf, QUERY_RANGE, 0, small).outcome, REPLAY_MISMATCH)
   }
 
+  // A hazard is its condition: z3's result for a body that divides by zero
+  // is unspecified, so it is not compared.
+  t.eqStr(
+    "division by 0 with a result: confirmed",
+    replayHazard(program, fn, QUERY_DIV, 0, replayCex(["a", "b"], ["1", "0"], "5")).outcome,
+    REPLAY_CONFIRMED,
+  )
+
   const run = replayEvaluate(program, fn, ["a", "b"], ["(/ 1 3)", "(- 2)"])
   t.eqStr("evaluate: the body", replayValueText(run.body), "-1/6")
   t.eqStr("evaluate: bound", run.unbound, "")
+}
+
+// half(x) requires x >= 0; use(y) = half(y) with no requires: a
+// precondition hazard at y < 0. script.ts inlines half's body past its
+// failed requires, so the body is known there and z3's result is checked.
+const replayPreCases = (t: Suite): void => {
+  const c = new BCase("calls")
+  c.fn(
+    "half",
+    1,
+    ["x:Real"],
+    "Real",
+    [bBin(">=", bVar("x"), bNum("0"))],
+    [bBin("==", bVar("result"), bVar("result"))],
+    bBin("/", bVar("x"), bNum("2")),
+  )
+  c.fn(
+    "use",
+    2,
+    ["y:Real"],
+    "Real",
+    replayNone(),
+    [bBin("==", bVar("result"), bVar("result"))],
+    bCall("half", [bVar("y")]),
+  )
+  const program = replayProgram(t, c)
+  if (program.functions.length < 2) {
+    return
+  }
+  const fn = program.functions[1]
+  const rows: string[][] = [
+    ["a failed requires at y = -1", "0", "(- 1)", "?", REPLAY_CONFIRMED],
+    ["a failed requires, z3's result", "0", "(- 1)", "(- 0.5)", REPLAY_CONFIRMED],
+    ["a failed requires, a wrong result", "0", "(- 1)", "3", REPLAY_MISMATCH],
+    ["a met requires at y = 1", "0", "1", "?", REPLAY_MISMATCH],
+    ["a second call site", "1", "(- 1)", "?", REPLAY_MISMATCH],
+  ]
+  for (const row of rows) {
+    const index = row[1] === "0" ? 0 : 1
+    const r = replayHazard(program, fn, QUERY_PRE, index, replayCex(["y"], [row[2]], row[3]))
+    t.eqStr(`${row[0]}: outcome`, r.outcome, row[4])
+  }
+}
+
+// Hazards are numbered in the order script.ts asserts them, guard before
+// body and function by function: whatever z3 reports must replay there.
+const replayOrderCases = (t: Suite): void => {
+  const c = new BCase("order")
+  const a = bVar("a")
+  const b = bVar("b")
+  c.fn(
+    "pick",
+    1,
+    ["a:Real", "b:Real"],
+    "Real",
+    [bBin(">", bBin("/", a, b), bNum("-100"))],
+    [bBin("==", bVar("result"), bVar("result"))],
+    bIte(bBin(">", a, bNum("0")), bBin("/", b, bBin("-", a, bNum("1"))), bBin("/", a, bBin("+", b, bNum("3")))),
+  )
+  c.fn(
+    "tail",
+    1,
+    ["n:Real"],
+    "Real",
+    replayNone(),
+    [bBin("==", bVar("result"), bVar("result"))],
+    bBin("/", bNum("1"), bBin("-", bVar("n"), bNum("7"))),
+  )
+  const program = replayProgram(t, c)
+  const solved = solveProgram(program)
+  t.ok("order solves", solved.isOk())
+  if (solved.isErr()) {
+    return
+  }
+  const report = solved.value
+  t.eqI32("every hazard replays clean", replayReport(program, report), 0)
+  let seen = 0
+  for (const f of report.functions) {
+    for (const h of f.divs) {
+      if (h.hasCex) {
+        seen = seen + 1
+        t.eqStr(`${f.name} ${h.pretty}: confirmed`, h.replay, REPLAY_CONFIRMED)
+      }
+    }
+  }
+  t.eqI32("four division hazards, each with a counterexample", seen, 4)
+}
+
+// The unary operators and min/max, exactly: one function per operator.
+const replayOperatorCases = (t: Suite): void => {
+  const c = new BCase("ops")
+  const x = bVar("x")
+  const ops: string[] = ["floor", "ceil", "abs"]
+  for (const op of ops) {
+    c.fn(op, 1, ["x:Real"], "Real", replayNone(), [bBin("==", bVar("result"), bVar("result"))], bUn(op, x))
+  }
+  c.fn(
+    "lo",
+    1,
+    ["x:Real"],
+    "Real",
+    replayNone(),
+    [bBin("==", bVar("result"), bVar("result"))],
+    bBin("min", x, bNum("1")),
+  )
+  c.fn(
+    "hi",
+    1,
+    ["x:Real"],
+    "Real",
+    replayNone(),
+    [bBin("==", bVar("result"), bVar("result"))],
+    bBin("max", x, bNum("1")),
+  )
+  const program = replayProgram(t, c)
+  if (program.functions.length < 5) {
+    return
+  }
+  const cases: string[][] = [
+    ["floor", "(- 1.5)", "-2"],
+    ["floor", "1.5", "1"],
+    ["floor", "2", "2"],
+    ["floor", "(- 2)", "-2"],
+    ["ceil", "(/ 1 3)", "1"],
+    ["ceil", "(- 1.5)", "-1"],
+    ["ceil", "(- 2)", "-2"],
+    ["abs", "(- 2)", "2"],
+    ["abs", "(/ 1 3)", "1/3"],
+    ["abs", "0", "0"],
+    ["lo", "(- 5)", "-5"],
+    ["lo", "5", "1"],
+    ["hi", "(- 5)", "1"],
+    ["hi", "5", "5"],
+  ]
+  for (const row of cases) {
+    for (const fn of program.functions) {
+      if (fn.name === row[0]) {
+        const run = replayEvaluate(program, fn, ["x"], [row[1]])
+        t.eqStr(`${fn.name}(${row[1]})`, replayValueText(run.body), row[2])
+      }
+    }
+  }
 }
 
 /** One diff witness replay. */
@@ -370,8 +531,13 @@ const replayVerifyMismatch = (t: Suite): void => {
     lines.length > 0 ? lines[0] : "",
     "MISMATCH  z3's counterexample does not refute scale scale_E0 (result > x) when replayed: this is a bug in vector, not in your program — please report it",
   )
+  t.contains("the mismatch line ends with the input", lines.length > 0 ? lines[0] : "", "please report it (x = (- 5): ")
   t.contains("the feedback leads with it", out.feedback, "MISMATCH  z3's counterexample")
   t.eqStr("nothing is emitted on MISMATCH", out.emittedCode, "")
+  t.contains("the dashboard's status", out.dashboard, "Status: MISMATCH")
+  t.contains("the dashboard's verdict", out.dashboard, "1 COUNTEREXAMPLE(S) DID NOT REPLAY — A BUG IN VECTOR")
+  t.contains("the dashboard marks the counterexample", out.dashboard, "✘ DOES NOT REPLAY (a bug in vector)")
+  t.ok("the dashboard does not blame the program", out.dashboard.indexOf("CONTRACT VIOLATION") < 0)
 
   verdict.cex = replayCex(["x"], ["(root-obj x 1)"], "?")
   const unread = verifyReportOutcome(program, report, "test", [])
@@ -414,6 +580,9 @@ export const main = (): i32 => {
   replayParseCases(t)
   replayClauseCases(t)
   replayHazardCases(t)
+  replayPreCases(t)
+  replayOrderCases(t)
+  replayOperatorCases(t)
   replayWitnessCases(t)
   replayVerifyMismatch(t)
   replayDiffMismatch(t)

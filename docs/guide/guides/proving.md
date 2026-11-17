@@ -19,13 +19,21 @@ Only `PROVEN` exits 0: none of the others proved anything, so each refuses the p
 
 ## Every counterexample is replayed
 
-vector does not take z3's word for a counterexample. Before it reports one, it evaluates the function at that input itself, exactly and without z3: an `Int` as an integer, a `Real` as a rational with a 64-bit numerator and denominator, and a call as the verification script models it. A refuted clause is confirmed when every requires holds there, the body returns z3's result and the clause is false; a hazard, when the input reaches it and its condition holds. One that does not replay is `MISMATCH`, printed as a line of its own:
+vector does not take z3's word for a counterexample. Before it reports one, it evaluates the function at that input itself, exactly and without z3: an `Int` as an integer, a `Real` as a rational with a 64-bit numerator and denominator, and a call as the verification script models it, with the callee's body inlined.
+
+- A refuted clause is confirmed when every requires holds at the input, the body returns z3's result there, and the clause is false.
+- A hazard (a division by zero, a callee's requires that fails, or an `Int` outside ±(2^53−1)) is confirmed when the input reaches it and its condition holds. The body is compared with z3's result only when the replay knows the body there: a division by zero leaves it unspecified, and that does not undo the hazard.
+
+A counterexample that does not replay is `MISMATCH`, and the fault is vector's, not your program's. Each one is a line of the FEEDBACK block, on stdout with the rest of the report, ending with the inputs and the first check that differed:
 
 ```text
-MISMATCH  z3's counterexample does not refute <clause> when replayed: this is a bug in vector, not in your program — please report it
+MISMATCH  z3's counterexample does not refute <fn> <axiom> (<clause>) when replayed: this is a bug in vector, not in your program — please report it (<inputs>: <detail>)
+MISMATCH  z3's counterexample does not reach the hazard <fn> <hazard> when replayed: this is a bug in vector, not in your program — please report it (<inputs>: <detail>)
 ```
 
-`MISMATCH` exits 2 and `--emit` writes nothing. With `--json`, each counterexample carries `"replay"`: `confirmed`, `mismatch`, or `not-replayed`. `not-replayed` means vector could not evaluate the input exactly, because z3 gave a value it cannot read (such as an irrational root) or a step overflowed 64 bits; the counterexample is not checked, and the verdict stays what z3 said.
+The dashboard's status is `MISMATCH`, its verdict counts the counterexamples that did not replay, and each is marked `✘ DOES NOT REPLAY (a bug in vector)`. `MISMATCH` exits 2 and `--emit` writes nothing.
+
+With `--json`, each counterexample carries `"replay"`: `confirmed`, `mismatch`, or `not-replayed`. `not-replayed` means vector could not evaluate the input exactly: z3 gave a value it cannot read (such as an irrational root), a step overflowed 64 bits, or a value depends on a division by zero, which z3 leaves unspecified. The counterexample is not checked, and the verdict stays what z3 said.
 
 Files that are not a spec plan and a program are `INVALID`:
 

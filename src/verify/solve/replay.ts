@@ -326,7 +326,12 @@ const replayRendered = (text: string, whole: string): ReplayValue => {
   if (slash < 0) {
     return replayDecimal(text, whole)
   }
-  const d = replayRendered(text.slice(slash + 1), whole)
+  const under = text.slice(slash + 1)
+  // One fraction bar: `1/3/4` is not a rendered value.
+  if (under.indexOf("/") >= 0) {
+    return replayUnreadable(whole)
+  }
+  const d = replayRendered(under, whole)
   if (d.known && d.num === toI64(0)) {
     return replayUnreadable(whole)
   }
@@ -788,7 +793,8 @@ export const replayClause = (program: Program, fn: FnUnit, clause: LangClause, c
 /**
  * Replays a hazard: confirmed when the input reaches it and its condition
  * holds there, a divisor of 0, a callee's requires false, or an Int outside
- * ±(2^53−1).
+ * ±(2^53−1). z3's result is compared with the body only when the body is
+ * known there.
  *
  * @param program the program
  * @param fn the function the hazard is in
@@ -826,7 +832,10 @@ export const replayHazard = (
   const hit = hits[index]
   checks.expect(hit.path, "the input does not reach it")
   checks.expect(hit.cond, hit.detail)
-  if (cex.result !== "?" && cex.result !== "") {
+  // A hazard is confirmed by its condition. The body is compared only when
+  // the replay knows it: a division by zero leaves it unspecified, and that
+  // does not undo the hazard.
+  if (run.body.known && cex.result !== "?" && cex.result !== "") {
     const given = replayParseValue(cex.result)
     checks.expect(
       replayEq(run.body, given),
