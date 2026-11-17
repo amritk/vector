@@ -63,6 +63,26 @@ jobs:
       - name: Every exported function is called in tests
         run: npm run tested-exports
 
+      - name: The agent-facing docs fit their caps
+        run: npm run doc-caps
+
+      - name: The doc-caps check tests itself
+        run: node --test scripts/doc-caps.test.mjs
+
+      # A pull request is also checked against its base: a cap may be lowered
+      # or added, never raised or dropped.
+      - name: Fetch the pull request's base
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: git fetch --no-tags --depth=1 origin "$BASE_SHA"
+
+      - name: No doc cap was raised or dropped since the base
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: npm run doc-caps -- --base "$BASE_SHA"
+
       - name: Cache the pinned nish and z3
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
