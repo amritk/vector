@@ -535,6 +535,24 @@ const profileMdLine = (s: string): string => {
   return m
 }
 
+/**
+ * A markdown line as compared, with its `*` and `_` emphasis markers dropped
+ * too, which the XML writes as markup and not as text; "" when it has none.
+ */
+const profileMdPlain = (m: string): string => {
+  if (m.indexOf("*") < 0 && m.indexOf("_") < 0) {
+    return ""
+  }
+  const out: string[] = []
+  for (let i = 0; i < m.length; i++) {
+    const ch = m.charCodeAt(i)
+    if (ch !== 0x2a && ch !== 0x5f) {
+      out.push(m.substring(i, i + 1))
+    }
+  }
+  return profileCollapse(out.join(""))
+}
+
 /** How long a wrapped line's part must be to stand for the start of a text. */
 const PROFILE_WRAP_MIN: i32 = 16
 
@@ -575,8 +593,8 @@ const profileMdHolds = (m: string, text: string): boolean => {
 
 /**
  * The one markdown line after the `<?line?>` mark at markdown line `from`,
- * and before the next part's `--- ` line, that holds `text`; -1 when no line
- * or more than one does.
+ * and before the next part's `--- ` line, that holds `text` as it is written
+ * or with its emphasis markers dropped; -1 when no line or more than one does.
  */
 const profileMdFind = (md: ProfileMd, from: i32, text: string): i32 => {
   if (text.length === 0) {
@@ -587,7 +605,9 @@ const profileMdFind = (md: ProfileMd, from: i32, text: string): i32 => {
     if (md.text[i].startsWith("--- ")) {
       break
     }
-    if (profileMdHolds(profileMdLine(md.text[i]), text)) {
+    const m = profileMdLine(md.text[i])
+    const plain = profileMdPlain(m)
+    if (profileMdHolds(m, text) || (plain.length > 0 && profileMdHolds(plain, text))) {
       if (found >= 0) {
         return -1
       }

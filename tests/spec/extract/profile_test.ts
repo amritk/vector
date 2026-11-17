@@ -80,7 +80,7 @@ class ProfileTestPlace {
  * no mark, or a mark past the .md's end.
  */
 const profileTestWhere = (t: Suite): void => {
-  const md = new ProfileMd("a.md", 13)
+  const md = new ProfileMd("a.md", 16)
   md.text = [
     "--- middle",
     "",
@@ -94,12 +94,15 @@ const profileTestWhere = (t: Suite): void => {
     "| TAG-0 | TAG-3 |",
     "--- back",
     "The decoder MUST NOT allocate twice.",
+    "The encoder *MUST NOT* drop a byte.",
+    "It quotes: The encoder MUST NOT drop a byte.",
+    "The _framer_ **MUST** pad.",
     "",
   ]
   const cases: ProfileTestPlace[] = [
     new ProfileTestPlace("on the mark's own line", 15, 1, 15, "anything", "a.md:1"),
     new ProfileTestPlace(
-      "a sentence below the mark",
+      "a sentence below the mark, its copy in a later part not counted",
       20,
       1,
       15,
@@ -129,16 +132,32 @@ const profileTestWhere = (t: Suite): void => {
     new ProfileTestPlace("no text", 26, 1, 15, "", "a.xml:26"),
     new ProfileTestPlace("a short wrapped start is not enough", 27, 1, 15, "found. And more", "a.xml:27"),
     new ProfileTestPlace(
-      "a later part's line is not this part's",
+      "a later part's mark, the line in its own part",
       40,
       11,
       38,
       "The decoder MUST NOT allocate twice.",
       "a.md:12 (a.xml:40)",
     ),
+    new ProfileTestPlace(
+      "an emphasised sentence quoted plainly too, on two lines",
+      41,
+      11,
+      38,
+      "The encoder MUST NOT drop a byte.",
+      "a.xml:41",
+    ),
+    new ProfileTestPlace(
+      "an emphasised sentence, by its text",
+      42,
+      11,
+      38,
+      "The framer MUST pad.",
+      "a.md:15 (a.xml:42)",
+    ),
     new ProfileTestPlace("no mark before it", 15, -1, 0, "The decoder MUST NOT allocate twice.", "a.xml:15"),
-    new ProfileTestPlace("the last markdown line", 15, 13, 15, "", "a.md:13"),
-    new ProfileTestPlace("past the markdown's end", 15, 14, 15, "", "a.xml:15"),
+    new ProfileTestPlace("the last markdown line", 15, 16, 15, "", "a.md:16"),
+    new ProfileTestPlace("past the markdown's end", 15, 17, 15, "", "a.xml:15"),
   ]
   for (const k of cases) {
     t.eqStr(k.name, profileWhereText(profileWhere(k.line, k.mdLine, k.markLine, "a.xml", md, k.text)), k.want)
