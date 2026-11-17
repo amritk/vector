@@ -1,9 +1,9 @@
 import { Suite } from "nish/testing"
 import { CheckContext } from "../../../src/spec/check"
 import { contractParse } from "../../../src/spec/contract/read"
-import { Clause, Contract } from "../../../src/spec/contract/types"
+import { Clause, Contract, Requirement } from "../../../src/spec/contract/types"
 import { gateDerivedResult } from "../../../src/spec/gates/derive"
-import { gateProvenance } from "../../../src/spec/gates/provenance"
+import { gateProvenance, gateResultApart } from "../../../src/spec/gates/provenance"
 import { LoadedSource, SourceSet } from "../../../src/spec/source/load"
 import { rfcParse } from "../../../src/spec/source/rfc"
 
@@ -76,7 +76,10 @@ const deriveTestBase = (props: string, vectors: string): string => `{
     {"name": "sign", "params": [{"name": "seed", "type": "bytes"}, {"name": "msg", "type": "bytes"}], "returns": "bytes?"},
     {"name": "flip", "params": [{"name": "sig", "type": "bytes"}, {"name": "bit", "type": "i32"}], "returns": "bytes"},
     {"name": "verify", "params": [{"name": "pk", "type": "bytes"}, {"name": "msg", "type": "bytes"},
-      {"name": "sig", "type": "bytes"}], "returns": "bool"}
+      {"name": "sig", "type": "bytes"}], "returns": "bool"},
+    {"name": "look", "params": [{"name": "key", "type": "bytes"}], "returns": "bytes?"},
+    {"name": "use", "params": [{"name": "v", "type": "bytes?"}], "returns": "bool"},
+    {"name": "gate", "params": [{"name": "key", "type": "bytes"}, {"name": "b", "type": "bool"}], "returns": "bool"}
   ],
   "clauses": [
     ${props},
@@ -174,6 +177,172 @@ const deriveTestLoose = (id: string, want: string, extra: string): string =>
   `{"kind": "vector", "id": "${id}", "title": "t", "covers": ["R7"], "source": {"cite": {"source": "rfc9999", "section": "7"}},
     "call": "sign", "args": [{"hex": "01"}, {"hex": "02"}], "expect": {"hex": "${want}"}${extra}}`
 
+/** A property P covering R5, over one key of 1 byte. */
+const deriveTestOne = (assert: string): string =>
+  `{"kind": "property", "id": "P", "title": "t", "covers": ["R5"],
+    "forall": [{"name": "key", "type": "bytes", "minLen": 1, "maxLen": 1}], "assert": ${assert}}`
+
+/** A vector V cited to section 7, its result to section 5, calling `call` on `args` and expecting `want`. */
+const deriveTestV = (call: string, args: string, want: string): string =>
+  `{"kind": "vector", "id": "V", "title": "t", "covers": ["R5"], "source": {"spec": "5"}, "section": "7",
+    "call": "${call}", "args": [${args}], "expect": ${want}}`
+
+/** L1, look(01) = null, cited to section 7. */
+const DERIVE_TEST_L1: string = `{"kind": "vector", "id": "L1", "title": "t", "covers": ["R7"],
+  "source": {"cite": {"source": "rfc9999", "section": "7"}}, "call": "look", "args": [{"hex": "01"}], "expect": {"null": true}}`
+
+/** A sibling K9, pk(01) = c1, with `source` as its source's JSON. */
+const deriveTestK9 = (source: string): string =>
+  `{"kind": "vector", "id": "K9", "title": "t", "covers": ["R7"], "source": ${source},
+    "call": "pk", "args": [{"hex": "01"}], "expect": {"hex": "c1"}}`
+
+/** A call of use. */
+const deriveTestUse = (arg: string): string => `{"call": "use", "args": [${arg}]}`
+
+/** The expression forms an argument may take, each against the sampler's meaning of it. */
+const deriveTestForms = (): DeriveTestCase[] => {
+  const key = `{"var": "key"}`
+  const look = `{"call": "look", "args": [${key}]}`
+  const vUse = deriveTestV("use", `{"null": true}`, `{"bool": true}`)
+  const yes = `{"bool": true}`
+  const sx = deriveTestCited("SX", "sign", `{"hex": "03"}, {"hex": "04"}`, "b9")
+  const sy = deriveTestCited("SY", "sign", `{"hex": "01"}, {"hex": "01"}`, "b9")
+  const twice = `{"op": "unwrap", "args": [{"call": "sign", "args": [${key}, ${key}]}]}`
+  return [
+    new DeriveTestCase(
+      "unwrap of a sibling expecting null",
+      deriveTestOne(deriveTestEq(deriveTestUse(`{"op": "unwrap", "args": [${look}]}`), yes)),
+      `${DERIVE_TEST_L1}, ${vUse}`,
+      "P unwraps look where the vector has null, a value unwrap never gives",
+    ),
+    new DeriveTestCase(
+      "unwrap where no sibling expects null",
+      deriveTestOne(deriveTestEq(deriveTestUse(`{"op": "unwrap", "args": [${look}]}`), yes)),
+      vUse,
+      "P unwraps look where the vector has null, a value unwrap never gives",
+    ),
+    new DeriveTestCase(
+      "a plain call of a sibling expecting null",
+      deriveTestOne(deriveTestEq(deriveTestUse(look), yes)),
+      `${DERIVE_TEST_L1}, ${vUse}`,
+      "",
+    ),
+    new DeriveTestCase(
+      "a literal null matches, the key left unbound",
+      deriveTestOne(deriveTestEq(deriveTestUse(`{"null": true}`), yes)),
+      vUse,
+      "P leaves key unbound",
+    ),
+    new DeriveTestCase(
+      "a literal that is not null",
+      deriveTestOne(deriveTestEq(deriveTestUse(`{"hex": ""}`), yes)),
+      vUse,
+      "P passes a literal that is not the vector's value",
+    ),
+    new DeriveTestCase(
+      "a plain call where no sibling expects null",
+      deriveTestOne(deriveTestEq(deriveTestUse(look), yes)),
+      vUse,
+      "P calls look for a value no cited vector of look expects with matching arguments",
+    ),
+    new DeriveTestCase(
+      "derives null",
+      deriveTestOne(deriveTestEq(look, `{"null": true}`)),
+      deriveTestV("look", `{"hex": "02"}`, `{"null": true}`),
+      "",
+    ),
+    new DeriveTestCase(
+      "a null asserted for a true vector",
+      deriveTestOne(deriveTestEq(deriveTestUse(look), `{"null": true}`)),
+      `${DERIVE_TEST_L1}, ${vUse}`,
+      "P asserts another result than the vector's",
+    ),
+    new DeriveTestCase(
+      "a true asserted for a null vector",
+      deriveTestOne(deriveTestEq(look, yes)),
+      deriveTestV("look", `{"hex": "02"}`, `{"null": true}`),
+      "P asserts another result than the vector's",
+    ),
+    new DeriveTestCase(
+      "a failed sibling leaves no binding",
+      deriveTestOne(deriveTestEq(deriveTestCall(`{"hex": "aa"}`, `{"hex": "02"}`, twice), yes)),
+      `${sx}, ${sy}, ${deriveTestRow("aa", `{"hex": "02"}`, "b9", "true", "")}`,
+      "",
+    ),
+    new DeriveTestCase(
+      "a sibling of the wrong arity",
+      deriveTestOne(
+        deriveTestEq(
+          deriveTestCall(
+            `{"op": "unwrap", "args": [{"call": "pk", "args": [${key}]}]}`,
+            `{"hex": "02"}`,
+            `{"hex": "bb"}`,
+          ),
+          yes,
+        ),
+      ),
+      `${deriveTestCited("K8", "pk", `{"hex": "01"}, {"hex": "02"}`, "c8")}, ${deriveTestRow("c8", `{"hex": "02"}`, "bb", "true", "")}`,
+      "P passes 1 arguments where 2 are given",
+    ),
+    new DeriveTestCase(
+      "a sibling with an argument not evaluated",
+      deriveTestOne(
+        deriveTestEq(
+          deriveTestCall(
+            `{"op": "unwrap", "args": [{"call": "pk", "args": [${key}]}]}`,
+            `{"hex": "02"}`,
+            `{"hex": "bb"}`,
+          ),
+          yes,
+        ),
+      ),
+      `${deriveTestCited("K8", "pk", `{"f64": "1.5"}`, "c8")}, ${deriveTestRow("c8", `{"hex": "02"}`, "bb", "true", "")}`,
+      "P calls pk for a value no cited vector of pk expects with matching arguments",
+    ),
+  ]
+}
+
+/** The siblings a value may come from: only another vector, cited to a section. */
+const deriveTestSiblings = (): DeriveTestCase[] => {
+  const row = deriveTestRow("c1", `{"hex": "02"}`, "bb", "true", "")
+  const none =
+    "P-RT calls pk for a value no cited vector of pk expects with matching arguments; P-FLIP asserts another result than the vector's"
+  return [
+    new DeriveTestCase(
+      "a cited sibling",
+      "",
+      `${deriveTestK9(`{"cite": {"source": "rfc9999", "section": "7"}}`)}, ${row}`,
+      "",
+    ),
+    new DeriveTestCase("a spec-sourced sibling", "", `${deriveTestK9(`{"spec": "7"}`)}, ${row}`, none),
+    new DeriveTestCase("a command-sourced sibling", "", `${deriveTestK9(`{"command": "echo c1"}`)}, ${row}`, none),
+  ]
+}
+
+/**
+ * The context whose properties cover R6 in place of R5, and V covers R5 and
+ * R6, R6 quoted from `section` of `source` (null for the main source): the
+ * derivation holds only when R6 is a requirement of V's result's section.
+ */
+const deriveTestShared = (section: string, source: string | null): CheckContext => {
+  const ctx = deriveTestCtx(deriveTestContract("", deriveTestRow("aa", `{"hex": "02"}`, "bb", "true", "")))
+  const r6 = new Requirement()
+  r6.id = "R6"
+  r6.source = source
+  r6.section = section
+  r6.level = "MUST"
+  r6.quote = "It MUST check the signature."
+  ctx.contract.requirements.push(r6)
+  deriveTestClause(ctx.contract, "P-RT").covers = ["R6"]
+  deriveTestClause(ctx.contract, "P-FLIP").covers = ["R6"]
+  deriveTestClause(ctx.contract, "V").covers.push("R6")
+  const set = ctx.sources
+  if (source !== null && set !== null) {
+    set.sources.push(new LoadedSource(source, "o.txt", "o.txt", rfcParse(DERIVE_TEST_RFC)))
+  }
+  return ctx
+}
+
 /** The derived rule over P-RT and P-FLIP, case by case. */
 const deriveTestCases = (): DeriveTestCase[] => {
   const m02 = `{"hex": "02"}`
@@ -181,6 +350,8 @@ const deriveTestCases = (): DeriveTestCase[] => {
   const flipOther = "P-RT asserts another result than the vector's"
   const f1 = deriveTestCited("F1", "flip", `{"hex": "bb"}, {"int": 3}`, "ee")
   const f2 = deriveTestCited("F2", "flip", `{"hex": "bb"}, {"int": 9}`, "ef")
+  const f3 = deriveTestCited("F3", "flip", `{"hex": "bb"}, {"int": -1}`, "e1")
+  const f4 = deriveTestCited("F4", "flip", `{"hex": "bb"}, {"hex": "03"}`, "e2")
   const tol = `, "tolerance": {"ulps": 1, "section": "7", "quote": "It MUST print the vectors."}`
   return [
     new DeriveTestCase("derives true", "", deriveTestRow("aa", m02, "bb", "true", ""), ""),
@@ -214,6 +385,18 @@ const deriveTestCases = (): DeriveTestCase[] => {
       "",
       deriveTestRow("aa", `{"hex": "03"}`, "bb", "true", ""),
       `P-RT uses msg for two different values; ${rtOther}`,
+    ),
+    new DeriveTestCase(
+      "a tamper bit below its domain",
+      "",
+      `${f3}, ${deriveTestRow("aa", m02, "e1", "false", "")}`,
+      `${flipOther}; P-FLIP binds bit to -1, outside its domain 0..7`,
+    ),
+    new DeriveTestCase(
+      "bytes for an integer variable",
+      "",
+      `${f4}, ${deriveTestRow("aa", m02, "e2", "false", "")}`,
+      `${flipOther}; P-FLIP binds bit, of type i32, which is not bound here`,
     ),
     new DeriveTestCase(
       "a tamper bit outside its domain",
@@ -418,6 +601,14 @@ const deriveTestShapes = (): DeriveTestCase[] => {
       "P binds msg, a bytes variable, to a value that is not bytes",
     ),
     new DeriveTestCase(
+      "a message domain as wide as it goes",
+      `{"kind": "property", "id": "P", "title": "t", "covers": ["R5"],
+        "forall": [{"name": "seed", "type": "bytes", "minLen": 1, "maxLen": 1}, {"name": "msg", "type": "bytes", "minLen": 0, "maxLen": 4096}],
+        "assert": ${deriveTestEq(rt, yes)}}`,
+      deriveTestRow("aa", `{"hex": "0203"}`, "dd", "true", ""),
+      "",
+    ),
+    new DeriveTestCase(
       "a key shorter than its domain",
       deriveTestProp("", deriveTestEq(lit, yes)),
       `${deriveTestCited("K0", "pk", `{"hex": ""}`, "a0")}, ${deriveTestRow("a0", `{"hex": "02"}`, "bb", "true", "")}`,
@@ -463,6 +654,43 @@ export const main = (): i32 => {
   for (const c of deriveTestWheres()) {
     t.eqStr(c.name, deriveTestWhy(c.props, c.vectors, ["R5"]), c.want)
   }
+  for (const c of deriveTestForms()) {
+    t.eqStr(c.name, deriveTestWhy(c.props, c.vectors, ["R5"]), c.want)
+  }
+  for (const c of deriveTestSiblings()) {
+    t.eqStr(c.name, deriveTestWhy(c.props, c.vectors, ["R5"]), c.want)
+  }
+  const unsourced = contractParse(
+    deriveTestContract(
+      "",
+      `${deriveTestK9(`{"cite": {"source": "rfc9999", "section": "7"}}`)}, ${deriveTestRow("c1", `{"hex": "02"}`, "bb", "true", "")}`,
+    ),
+    "c1",
+  ).expect("parse unsourced")
+  deriveTestClause(unsourced, "K9").source = null
+  const unsourcedWhy = gateDerivedResult(unsourced.clauses, ["R5"], deriveTestClause(unsourced, "V"))
+  t.eqStr(
+    "a sibling without a source",
+    unsourcedWhy === null ? "" : unsourcedWhy,
+    "P-RT calls pk for a value no cited vector of pk expects with matching arguments; P-FLIP asserts another result than the vector's",
+  )
+  const selfJson = deriveTestBase(
+    deriveTestOne(
+      deriveTestEq(
+        `{"call": "gate", "args": [{"var": "key"}, {"call": "gate", "args": [{"var": "key"}, {"bool": true}]}]}`,
+        `{"bool": true}`,
+      ),
+    ),
+    `{"kind": "vector", "id": "V", "title": "t", "covers": ["R5"], "source": {"cite": {"source": "rfc9999", "section": "7"}},
+      "call": "gate", "args": [{"hex": "01"}, {"bool": true}], "expect": {"bool": true}}`,
+  )
+  const selfC = contractParse(selfJson, "c1").expect("parse self")
+  const selfWhy = gateDerivedResult(selfC.clauses, ["R5"], deriveTestClause(selfC, "V"))
+  t.eqStr(
+    "the row is not its own sibling",
+    selfWhy === null ? "" : selfWhy,
+    "P calls gate for a value no cited vector of gate expects with matching arguments",
+  )
   const row = deriveTestRow("aa", `{"hex": "02"}`, "bb", "true", "")
   t.eqStr(
     "only the result's section's requirements",
@@ -485,6 +713,28 @@ export const main = (): i32 => {
   if (bad.length !== 1) {
     console.log(bad.join("\n"))
   }
+  const none = "; and no property derives it: no property covers a requirement of the result's section that V covers"
+  t.eqStr("the gate derives through a requirement of B", gateProvenance(deriveTestShared("5", null)).join("\n"), "")
+  const other = gateProvenance(deriveTestShared("7", null))
+  t.ok(
+    "the gate does not derive through a requirement of another section",
+    other.length === 1 && other[0].indexOf(none) > 0,
+  )
+  if (other.length !== 1) {
+    console.log(other.join("\n"))
+  }
+  const elsewhere = gateProvenance(deriveTestShared("5", "rfc8888"))
+  t.ok(
+    "the gate does not derive through a requirement of another source",
+    elsewhere.length === 1 && elsewhere[0].indexOf(none) > 0,
+  )
+  if (elsewhere.length !== 1) {
+    console.log(elsewhere.join("\n"))
+  }
+  const apartC = deriveTestCtx(deriveTestContract("", row)).contract
+  t.ok("V cites its result apart", gateResultApart(apartC, deriveTestClause(apartC, "V")))
+  t.ok("a cited sibling does not", !gateResultApart(apartC, deriveTestClause(apartC, "K1")))
+  t.ok("a property does not", !gateResultApart(apartC, deriveTestClause(apartC, "P-RT")))
   const truncated = gateProvenance(
     deriveTestCtx(
       deriveTestContract("", deriveTestRow("aa", `{"hex": "02"}`, "bb", "true", `, "truncate": {"bytes": 1}`)),

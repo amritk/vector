@@ -736,7 +736,10 @@ refusals, in the order they are tried:
      calls g for a value no cited vector of g expects with matching
      arguments". When a vector of g matched but was not exact, the message
      names it: "(unused: K compares only the first 2 bytes of its result, so
-     its expected value is not its call's)".
+     its expected value is not its call's)". `unwrap(g(…))` never yields
+     null (unwrap of null fails the sample), so it does not match a null
+     value: "P unwraps g where the vector has null, a value unwrap never
+     gives". A plain `g(…)` may yield null.
    Anything else (`concat`, a `let` block) is refused: "P computes
    an argument (concat) that is not matched here".
 6. Every quantified variable is bound inside its domain: a byte string's

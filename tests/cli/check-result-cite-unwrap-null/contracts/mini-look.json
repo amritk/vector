@@ -1,0 +1,52 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "mini-look",
+  "source": { "rfc": 9993, "title": "Mini Lookups profile", "sha256": "fdc294f8ff31965a2311cc535f7c72344fb4129a207093196f9663312f1186f1" },
+  "sources": [{ "id": "rfc9993", "rfc": 9993, "file": "rfcs/rfc9993.txt", "sha256": "fdc294f8ff31965a2311cc535f7c72344fb4129a207093196f9663312f1186f1" }],
+  "target": { "module": "nish/mini/look" },
+  "requirements": [
+    { "id": "R-USE", "section": "2", "level": "MUST", "quote": "A receiver MUST use each value a lookup finds." },
+    { "id": "R-LOOK", "section": "3", "level": "MUST", "quote": "A lookup of KEY MUST return null." }
+  ],
+  "functions": [
+    { "name": "look", "params": [{ "name": "key", "type": "bytes" }], "returns": "bytes?" },
+    { "name": "use", "params": [{ "name": "v", "type": "bytes?" }], "returns": "bool" }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "3-LOOK",
+      "title": "the lookup of the vector's key",
+      "covers": ["R-LOOK"],
+      "source": { "cite": { "section": "3" } },
+      "call": "look",
+      "args": [{ "hex": "01", "label": "KEY" }],
+      "expect": { "null": true }
+    },
+    {
+      "kind": "vector",
+      "id": "3-USE",
+      "title": "the lookup's value is used",
+      "covers": ["R-USE"],
+      "source": { "spec": "2" },
+      "section": "3",
+      "call": "use",
+      "args": [{ "null": true }],
+      "expect": { "bool": true }
+    },
+    {
+      "kind": "property",
+      "id": "P-CHECK",
+      "title": "a found value is used",
+      "covers": ["R-USE"],
+      "forall": [{ "name": "key", "type": "bytes", "minLen": 1, "maxLen": 1 }],
+      "assert": {
+        "op": "==",
+        "args": [
+          { "call": "use", "args": [{ "op": "unwrap", "args": [{ "call": "look", "args": [{ "var": "key" }] }] }] },
+          { "bool": true }
+        ]
+      }
+    }
+  ]
+}

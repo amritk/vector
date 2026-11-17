@@ -242,7 +242,8 @@ extracts to.
     result is supported by section M of the main RFC: a covered requirement
     of M states it, or a property covering a requirement of M asserts the
     call equals it for inputs inside its domains, each input either a
-    quantified variable or another cited vector's expected value. Use it
+    quantified variable or another cited vector's expected value (under
+    `unwrap` only a non-null one). Use it
     for a verify vector whose section defines the check but never says
     "MUST return true" (see the guide's "When a property derives the
     result"). Widen the property's domain to hold the vector's inputs. A

@@ -8,7 +8,7 @@
  */
 
 import { CheckContext, CheckSourceRun } from "../check"
-import { Citation, Clause, ClauseKind, VectorSourceKind } from "../contract/types"
+import { Citation, Clause, ClauseKind, Contract, VectorSourceKind } from "../contract/types"
 import { SourceSet, sourceFind, sourceMainId } from "../source/load"
 import { RfcSection, rfcSection } from "../source/rfc"
 import { gateCiteLabel, gateCitedSection, gatePlace, gateSources } from "./cite"
@@ -35,12 +35,24 @@ const gateSourceRun = (ctx: CheckContext, id: string): CheckSourceRun | null => 
  * (a bare section anchor is refused there); a contract written by hand with
  * an RFC as its main source, a `{"spec": B}` source and a `"section": A`
  * takes the same rule. A module spec's `spec` rows have a main source and
- * never match.
+ * never match. The report reads it too, to show both citations.
+ *
+ * @param c the contract
+ * @param k the clause
+ * @returns whether k is a vector whose `spec` result is cited apart from its inputs
  */
-const gateCitesResultApart = (ctx: CheckContext, k: Clause, section: string): boolean => {
+export const gateResultApart = (c: Contract, k: Clause): boolean => {
+  const s = k.source
   const inputs = k.section
-  const c = ctx.contract
-  return c.source.main === null && c.source.rfc >= 1 && inputs !== null && inputs !== section
+  return (
+    k.kind === ClauseKind.Vector &&
+    s !== null &&
+    s.kind === VectorSourceKind.Spec &&
+    inputs !== null &&
+    inputs !== s.text &&
+    c.source.main === null &&
+    c.source.rfc >= 1
+  )
 }
 
 /**
@@ -84,7 +96,7 @@ const gateSpecSource = (ctx: CheckContext, out: string[], k: Clause, section: st
   }
   const place = gatePlace(set, null, section)
   const inputs = k.section
-  if (inputs === null || !gateCitesResultApart(ctx, k, section)) {
+  if (inputs === null || !gateResultApart(ctx.contract, k)) {
     gateIssue(ctx, out, g, at, `${place} ("${sec.title}") does not state the expected result: ${why}`)
     return
   }

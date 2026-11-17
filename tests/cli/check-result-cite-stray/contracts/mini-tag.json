@@ -92,7 +92,7 @@
       "title": "the tag checks",
       "covers": ["R-CHECK"],
       "source": {
-        "spec": "7.1"
+        "spec": "1"
       },
       "section": "3",
       "call": "check",

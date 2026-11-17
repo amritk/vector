@@ -3,7 +3,7 @@
  Status: INVALID
 
  Gate failures
-  ✘ provenance 3-CHECK.source: RFC 9992 has no section 7.1
+  ✘ provenance 3-CHECK.source: RFC §1 ("Introduction"), the result citation of 3-CHECK (inputs §3), does not state the expected result: 3-CHECK covers no requirement cited to it, so nothing there requires the result "true"; and no property derives it: no property covers a requirement of the result's section that 3-CHECK covers
 
  Requirements
   ○ R-CHECK  §2 MUST  "A receiver MUST check each tag against its key and message."

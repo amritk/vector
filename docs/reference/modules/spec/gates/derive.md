@@ -9,7 +9,9 @@ still supports it when a property of the contract asserts it: the property
 covers a requirement of that section the vector covers, asserts that the
 vector's call is the vector's expected literal, and its call's arguments
 are the vector's, each one either a quantified variable bound inside its
-domain or another cited vector's call whose expected value it is. Only a
+domain, a literal equal to it, or another cited vector's call whose
+expected value it is, read through `unwrap` only when that value is not
+null (unwrap of null fails the sample, so it never denotes null). Only a
 vector compared whole and called once is used, the row or a sibling: a
 truncated, iterated or toleranced vector's expected value is not its
 call's. Every step is checked here; any that fails refuses.

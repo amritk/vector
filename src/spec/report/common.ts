@@ -7,6 +7,7 @@
 import { splitWhitespace } from "nish/text"
 import { CheckContext, CheckNote, CheckReport, CheckSampleStat, CheckSourceRun, checkSamplesOf } from "../check"
 import { Clause, ClauseKind, Contract, VectorSourceKind } from "../contract/types"
+import { gateResultApart } from "../gates/provenance"
 import { gateRunCommands } from "../gates/run"
 import { sourceDecls, sourceMainId } from "../source/load"
 
@@ -257,13 +258,7 @@ export const reportEvidence = (ctx: CheckContext, k: Clause): string => {
     }
     const inputs = k.section
     const c = ctx.contract
-    if (
-      s.kind === VectorSourceKind.Spec &&
-      inputs !== null &&
-      inputs !== s.text &&
-      c.source.main === null &&
-      c.source.rfc >= 1
-    ) {
+    if (inputs !== null && gateResultApart(c, k)) {
       return `vector, ${reportCite(c, null, inputs)}, result ${reportCite(c, null, s.text)}`
     }
     if (s.kind === VectorSourceKind.Spec) {

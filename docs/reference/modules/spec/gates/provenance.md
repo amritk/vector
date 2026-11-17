@@ -13,9 +13,42 @@ Generated from [src/spec/gates/provenance.ts](https://github.com/amritk/vector/b
 
 ## Exports
 
+- [`gateResultApart`](#gateresultapart)
 - [`gateProvenance`](#gateprovenance)
 
 ## Declarations
+
+### gateResultApart
+
+Whether a vector cites its inputs to one section of the main RFC and its
+result to another, so its result may be derived (`spec/gates/derive`).
+An RFC-profile spec extracts a `spec` source only from the `; result` form
+(a bare section anchor is refused there); a contract written by hand with
+an RFC as its main source, a `{"spec": B}` source and a `"section": A`
+takes the same rule. A module spec's `spec` rows have a main source and
+never match. The report reads it too, to show both citations.
+
+```ts
+function gateResultApart(c: Contract, k: Clause): boolean
+```
+
+<scalar-field name="c" type="Contract" required>
+
+the contract
+
+</scalar-field>
+
+<scalar-field name="k" type="Clause" required>
+
+the clause
+
+</scalar-field>
+
+<scalar-field name="returns" type="boolean">
+
+whether k is a vector whose `spec` result is cited apart from its inputs
+
+</scalar-field>
 
 ### gateProvenance
 
