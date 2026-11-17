@@ -490,7 +490,7 @@ const literalsLabelEnd = (r: LiteralsReader, j: i32): i32 => {
       return k
     }
     if (literalsHas(r, k, ", ")) {
-      return literalsAliasEnd(r, j, k)
+      return literalsAliasEnd(r, j, k, grouped)
     }
     if (literalsByte(r, k) !== 0x20) {
       return -1
@@ -516,14 +516,18 @@ const literalsLabelEnd = (r: LiteralsReader, j: i32): i32 => {
  * one alias, a label word (`a`) or a word joined to a parenthesised group
  * that may hold `, ` (`X25519(a, 9)`), when ` = ` follows it; -1 otherwise.
  * Words that are themselves an f64 (`NaN`, `Infinity`) take no alias, so
- * `f(NaN, a = 00)` is still two arguments.
+ * `f(NaN, a = 00)` is still two arguments. A label holds at most one group,
+ * so when its words already hold one (`grouped`) the alias may not.
  */
-const literalsAliasEnd = (r: LiteralsReader, j: i32, k: i32): i32 => {
+const literalsAliasEnd = (r: LiteralsReader, j: i32, k: i32, grouped: boolean): i32 => {
   if (literalsF64End(r, j) === k) {
     return -1
   }
   let m = literalsLabelWordEnd(r, k + 2)
   if (m >= 0 && literalsByte(r, m) === 0x28) {
+    if (grouped) {
+      return -1
+    }
     m = literalsGroupEnd(r, m + 1, true)
   }
   return m >= 0 && literalsHas(r, m, " = ") ? m : -1

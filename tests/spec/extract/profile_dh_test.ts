@@ -21,6 +21,7 @@ const PROFILE_DH_B: string = "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c
 const PROFILE_DH_ALICE: string =
   "<tt>x25519Base(Alice's private key, a = 77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a)</tt>"
 const PROFILE_DH_ALICE_PUB: string = "<tt>Alice's public key, X25519(a, 9) = "
+const PROFILE_DH_ALICE_PUB_HEX: string = "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a"
 const PROFILE_DH_SOURCE: string =
   '<xref section="6.1" sectionFormat="of" target="RFC7748"/></td>\n            <td align="left">Alice'
 
@@ -165,6 +166,12 @@ export const main = (): i32 => {
       `<tt>x25519(Alice's private key, a = ${PROFILE_DH_A}, ${base}])</tt>`,
       '32-byte value is not printed in RFC §6.1 ("Curve25519")',
     ],
+    [
+      "Alice's public key under Bob's label",
+      "Bob's public key, X25519(b, 9) = de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f",
+      `Bob's public key, X25519(b, 9) = ${PROFILE_DH_ALICE_PUB_HEX}`,
+      `the value is printed in RFC §6.1 ("Curve25519") under "Alice's public key, X25519(a, 9)", not under "Bob's public key, X25519(b, 9)"`,
+    ],
   ]
   const made = makeTempDir("vector-profile-dh-")
   if (made.isErr()) {
@@ -179,7 +186,9 @@ export const main = (): i32 => {
   t.eqStr("the fixture extracts with no refusal", profileDhTestExtract(d, xml), "")
   for (const row of nearMiss) {
     const bad = profileDhTestWith(t, xml, row[1], row[2])
-    t.eqStr(row[0], profileDhTestExtract(d, bad), `124: fidelity: ${row[3]}`)
+    // The line is the fixture's last mark, so only the refusal is pinned.
+    const got = profileDhTestExtract(d, bad)
+    t.eqStr(row[0], got.substring(got.indexOf(": ") + 2), `fidelity: ${row[3]}`)
     t.eqI32(
       `${row[0]}: vector spec extract exits 1`,
       vectorRun([

@@ -298,6 +298,12 @@ export const main = (): i32 => {
     ["key, X25519 (a, 9) = 0b0b", "not a literal @1"],
     ["key, X25519(a, 9)b = 0b0b", "not a literal @1"],
     ["M (a, 9) = 0b0b", "not a literal @1"],
+    // At most one group: one in the words leaves none for the alias.
+    ["M (x), f(a) = 0b0b", "not a literal @1"],
+    ["M (a b), X25519(a, 9) = 0b0b", "not a literal @1"],
+    ["M (x), a = 0b0b", "labelled:0b0b label=M (x), a"],
+    ["Alice's'b private key = 0b0b", "labelled:0b0b label=Alice's'b private key"],
+    ["key, a'b = 0b0b", "labelled:0b0b label=key, a'b"],
     ["key, f(1,000, b) = 0b0b", "not a literal @1"],
   ]
   for (let i = 0; i < labelRows.length; i++) {
@@ -308,6 +314,9 @@ export const main = (): i32 => {
     ["f(Key = 00, b = 11)", "f(labelled:00 label=Key, labelled-int:11 label=b hex=11)"],
     ["f(NaN, a = 00)", "f(f64:NaN, labelled:00 label=a)"],
     ["f(Infinity, a = 00)", "f(f64:Infinity, labelled:00 label=a)"],
+    ["f(-Infinity, a = 00)", "f(f64:-Infinity, labelled:00 label=a)"],
+    ["f(1e5, a = 00)", "f(f64:1e5, labelled:00 label=a)"],
+    ["f(1E5, a = 00)", "f(f64:1E5, labelled:00 label=a)"],
     ["f(true, a = 00)", "f(bool: true, labelled:00 label=a)"],
     ["f(null, a = 00)", "f(null:, labelled:00 label=a)"],
     ["f(1, a = 00)", "f(int:1, labelled:00 label=a)"],
