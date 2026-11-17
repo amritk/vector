@@ -243,8 +243,9 @@ beside it, only at a line it can find there. kramdown-rfc marks the XML with
 not at every paragraph, and tables and other multi-line constructs move the
 lines after a mark apart. So a refusal on the line of a mark names the
 markdown line alone. Any other refusal is looked up by its own text (the
-sentence, a table row's first cell, or the start of the paragraph) in the
-markdown between its mark and the next `--- ` line. If the text is on exactly
+sentence, a table row's first cell, the start of the paragraph, or the code
+line it is about, such as a front end, an interface line or a property's
+first line) in the markdown between its mark and the next `--- ` line. If the text is on exactly
 one line there, the refusal names that markdown line, with the XML line it is
 exactly on beside it:
 
@@ -253,7 +254,9 @@ specs/<name>.md:<line holding the text> (specs/<name>.xml:<line>[:col])
 ```
 
 If the text is on no line there, or on more than one, the refusal names the
-XML line alone rather than a markdown line that might be the wrong one.
+XML line alone rather than a markdown line that might be the wrong one. Text
+the markdown spells differently from the XML, such as an escape, an xref or
+emphasis, is not found verbatim, so it too names the XML line alone.
 
 The column, when there is one, counts along the XML line, so it is printed
 with an XML line and never with a markdown line alone. A refusal before any

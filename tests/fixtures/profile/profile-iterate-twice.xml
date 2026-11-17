@@ -39,6 +39,8 @@ appear in all capitals, as shown here.</t>
       <?line -18?>
 
 <t>This fixture adds nothing; it exists to be read.</t>
+      <t>Its vector's paragraph, Iterate: 5.2-ITER-1000 times, (k, u) &lt;- (x25519(k, u), k), is quoted
+here, so the markdown holds that text twice.</t>
     </section>
     <section anchor="interface">
       <name>Interface</name>
@@ -144,32 +146,33 @@ export function x25519(k: u8[], u: u8[]): u8[]
     </references>
   </back>
   <!-- ##markdown-source:
-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
+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
 
 -->
 
