@@ -29,6 +29,12 @@ export class RfcSection {
   /** Only the section's own lines, up to its first subsection. */
   ownLines: string[]
   /**
+   * Where page furniture (a footer, a form feed, a header) was removed: each is
+   * the index in `lines` of the line that followed it, so a value printed
+   * across a page break can be read as one.
+   */
+  pageBreaks: i32[]
+  /**
    * Makes a section.
    *
    * @param id the section number
@@ -41,6 +47,7 @@ export class RfcSection {
     this.title = title
     this.lines = lines
     this.ownLines = ownLines
+    this.pageBreaks = []
   }
 }
 
@@ -229,12 +236,21 @@ const rfcHeading = (line: string): string[] | null => {
 export const rfcParse = (text: string): RfcDocument => {
   const doc = new RfcDocument()
   const lines: string[] = []
+  const breaks: i32[] = []
   for (const raw of splitLines(text)) {
     let l = raw.endsWith("\r") ? raw.substring(0, raw.length - 1) : raw
-    if (l.indexOf("\f") >= 0) {
+    const fed = l.indexOf("\f") >= 0
+    if (fed) {
       l = replaceAll(l, "\f", "")
     }
-    if (!rfcIsFooter(l) && !rfcIsHeader(l)) {
+    if (rfcIsFooter(l) || rfcIsHeader(l)) {
+      if (breaks.length === 0 || breaks[breaks.length - 1] !== lines.length) {
+        breaks.push(lines.length)
+      }
+    } else {
+      if (fed && (breaks.length === 0 || breaks[breaks.length - 1] !== lines.length)) {
+        breaks.push(lines.length)
+      }
       lines.push(l)
     }
   }
@@ -278,7 +294,13 @@ export const rfcParse = (text: string): RfcDocument => {
       }
     }
     const ownEnd = k + 1 < ids.length ? ats[k + 1] : lines.length
-    doc.sections.push(new RfcSection(ids[k], titles[k], lines.slice(ats[k], end), lines.slice(ats[k], ownEnd)))
+    const sec = new RfcSection(ids[k], titles[k], lines.slice(ats[k], end), lines.slice(ats[k], ownEnd))
+    for (const b of breaks) {
+      if (b > ats[k] && b < end) {
+        sec.pageBreaks.push(b - ats[k])
+      }
+    }
+    doc.sections.push(sec)
   }
   return doc
 }

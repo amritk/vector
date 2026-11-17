@@ -47,6 +47,12 @@ export const langTableSwift = (): LangTable => {
   t.literal("bool", langSpell("true", ""))
   t.literal("null", langSpell("nil", ""))
   t.literal("concat", langSpell("a + b", ""))
+  t.type("words16", langSpell("[UInt16]", ""))
+  t.type("words32", langSpell("[UInt32]", ""))
+  t.type("words64", langSpell("[UInt64]", ""))
+  t.literal("words16", langSpell("[0x6170, 0x7865] as [UInt16]", ""))
+  t.literal("words32", langSpell("[0x61707865, 0x3320646e] as [UInt32]", ""))
+  t.literal("words64", langSpell("[0x3320646e61707865, 0x6b20657479622d32] as [UInt64]", ""))
   t.moduleForm = "module"
   t.moduleNote =
     "Swift modules do not nest, so one module named by the segments in UpperCamelCase, joined: nish/crypto/hkdf → NishCryptoHkdf"

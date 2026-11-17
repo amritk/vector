@@ -379,7 +379,7 @@ No other property is allowed.
 
 | Property | Type | Required | Description |
 | --- | --- | --- | --- |
-| `words16` | `string`[] | yes | at least 1 items; each item matches `^(?:0x)?[0-9a-f]{4}$`. |
+| `words16` | `string`[] \| `string`[] | yes |  |
 | `label` | [`label`](#def-label) | no |  |
 | `unchecked` | `string` | no |  |
 
@@ -391,7 +391,7 @@ No other property is allowed.
 
 | Property | Type | Required | Description |
 | --- | --- | --- | --- |
-| `words32` | `string`[] | yes | at least 1 items; each item matches `^(?:0x)?[0-9a-f]{8}$`. |
+| `words32` | `string`[] \| `string`[] | yes |  |
 | `label` | [`label`](#def-label) | no |  |
 | `unchecked` | `string` | no |  |
 
@@ -403,7 +403,7 @@ No other property is allowed.
 
 | Property | Type | Required | Description |
 | --- | --- | --- | --- |
-| `words64` | `string`[] | yes | at least 1 items; each item matches `^(?:0x)?[0-9a-f]{16}$`. |
+| `words64` | `string`[] \| `string`[] | yes |  |
 | `label` | [`label`](#def-label) | no |  |
 | `unchecked` | `string` | no |  |
 

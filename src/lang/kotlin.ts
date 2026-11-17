@@ -71,6 +71,39 @@ export const langTableKotlin = (): LangTable => {
   t.literal("bool", langSpell("true", ""))
   t.literal("null", langSpell("null", ""))
   t.literal("concat", langSpell("a + b", "ByteArray.plus"))
+  t.type(
+    "words16",
+    langSpell("ShortArray", "the unsigned arrays are still experimental; elements read unsigned with toUShort()"),
+  )
+  t.type(
+    "words32",
+    langSpell("IntArray", "the unsigned arrays are still experimental; elements read unsigned with toUInt()"),
+  )
+  t.type(
+    "words64",
+    langSpell("LongArray", "the unsigned arrays are still experimental; elements read unsigned with toULong()"),
+  )
+  t.literal(
+    "words16",
+    langSpell(
+      "shortArrayOf(0x6170, 0x7865)",
+      "a word above the signed maximum as its unsigned literal converted (0xffffffffu.toInt())",
+    ),
+  )
+  t.literal(
+    "words32",
+    langSpell(
+      "intArrayOf(0x61707865, 0x3320646e)",
+      "a word above the signed maximum as its unsigned literal converted (0xffffffffu.toInt())",
+    ),
+  )
+  t.literal(
+    "words64",
+    langSpell(
+      "longArrayOf(0x3320646e61707865, 0x6b20657479622d32)",
+      "a word above the signed maximum as its unsigned literal converted (0xffffffffu.toInt())",
+    ),
+  )
   t.moduleForm = "class"
   t.moduleNote =
     "an object named for the last segment, in a package of the others (Coding Conventions, Names for packages and classes): nish/crypto/hkdf → object Hkdf in package nish.crypto"

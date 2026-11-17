@@ -1,7 +1,9 @@
 /**
  * `spec/gates/words` — the blocks of words a section prints, which a
  * u16[], u32[] or u64[] vector value binds to. A block is a maximal run of
- * non-blank lines, each either a grid row (words of one width, one of which
+ * non-blank lines (a page break does not end one: the blank lines around
+ * removed page furniture are skipped when a row continues the block below
+ * them, while any other blank line ends it), each either a grid row (words of one width, one of which
  * may be marked with a leading `*` that is not part of it) or one
  * `name = word` assignment, all its words of one width (4, 8 or 16
  * lowercase hex digits) and one spelling (`0x` on all or none). A run with
@@ -10,8 +12,8 @@
  * A block's label is the name of a one-line assignment, or else the short
  * line printed above it (blank lines between), when that line is not a
  * sentence (it does not end in `.`, `:` or `,`), not a heading (it does not
- * open with a section number) and holds no words of its own. The names of a block of several assignments (`a = …`, `b = …`) name
- * its words, not the block, so such a block has no label.
+ * open with a section number) and holds no words of its own. The names of
+ * a block of several assignments (`a = …`, `b = …`) name its words, not the block, so such a block has no label.
  */
 
 import { splitWhitespace } from "nish/text"
@@ -147,13 +149,35 @@ const gateWordsLabelAbove = (lines: string[], start: i32): string | null => {
 }
 
 /**
+ * The first line after the blank run at `at`, when a page break lies in that
+ * run and the line is a row of words, so the block above goes on below it;
+ * else -1.
+ */
+const gateWordsAcrossBreak = (lines: string[], pageBreaks: i32[], at: i32): i32 => {
+  let b = at
+  while (b < lines.length && rfcNormalize(lines[b]).length === 0) {
+    b = b + 1
+  }
+  if (b >= lines.length || gateWordsLine(lines[b]) === null) {
+    return -1
+  }
+  for (const p of pageBreaks) {
+    if (p >= at && p <= b) {
+      return b
+    }
+  }
+  return -1
+}
+
+/**
  * The blocks of words a section's lines print, in order (see the module
  * comment).
  *
  * @param lines the section's lines
+ * @param pageBreaks where page furniture was removed from them (RfcSection.pageBreaks)
  * @returns each block
  */
-export const gateWordBlocks = (lines: string[]): GateWordBlock[] => {
+export const gateWordBlocks = (lines: string[], pageBreaks: i32[]): GateWordBlock[] => {
   const out: GateWordBlock[] = []
   let i = 0
   while (i < lines.length) {
@@ -172,6 +196,12 @@ export const gateWordBlocks = (lines: string[]): GateWordBlock[] => {
         read.push(w)
       }
       i = i + 1
+      if (block && i < lines.length && rfcNormalize(lines[i]).length === 0) {
+        const next = gateWordsAcrossBreak(lines, pageBreaks, i)
+        if (next > 0) {
+          i = next
+        }
+      }
     }
     if (!block) {
       continue

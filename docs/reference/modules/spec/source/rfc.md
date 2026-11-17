@@ -107,6 +107,16 @@ Only the section's own lines, up to its first subsection.
 ownLines: string[]
 ```
 
+#### RfcSection.pageBreaks
+
+Where page furniture (a footer, a form feed, a header) was removed: each is
+the index in `lines` of the line that followed it, so a value printed
+across a page break can be read as one.
+
+```ts
+pageBreaks: i32[]
+```
+
 #### RfcSection.title
 
 The heading's text.

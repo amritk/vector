@@ -18,6 +18,10 @@ const SIGNATURES_TEST_C: string = `{
     {"name": "wordsOut", "params": [{"name": "k", "type": "bytes"}], "returns": "bytes"},
     {"name": "bytesOut", "params": [{"name": "k", "type": "words32"}], "returns": "words32"},
     {"name": "narrow", "params": [{"name": "k", "type": "words64"}], "returns": "words64"},
+    {"name": "maybeOut", "params": [{"name": "k", "type": "words32"}], "returns": "words32"},
+    {"name": "maybeIn", "params": [{"name": "k", "type": "words32"}], "returns": "words32"},
+    {"name": "oneWord", "params": [{"name": "k", "type": "words32"}], "returns": "words32"},
+    {"name": "halfWords", "params": [{"name": "k", "type": "words32"}], "returns": "words32"},
     {"name": "hmac", "module": "nish/other", "params": [{"name": "a", "type": "bytes"}], "returns": "bytes"}
   ],
   "clauses": []
@@ -68,6 +72,10 @@ export const main = (): i32 => {
     "wordsOut: declared (bytes) -> bytes, but nish/fixtures/sig_module has (u8[]): u32[]",
     "bytesOut: declared (words32) -> words32, but nish/fixtures/sig_module has (u32[]): u8[]",
     "narrow: declared (words64) -> words64, but nish/fixtures/sig_module has (u64[]): u16[]",
+    "maybeOut: declared (words32) -> words32, but nish/fixtures/sig_module has (u32[]): u32[] | null",
+    "maybeIn: declared (words32) -> words32, but nish/fixtures/sig_module has (u32[] | null): u32[]",
+    "oneWord: declared (words32) -> words32, but nish/fixtures/sig_module has (u32[]): u32",
+    "halfWords: declared (words32) -> words32, but nish/fixtures/sig_module has (u16[]): u32[]",
   ])
   t.eqLines("under a nish root", gateSignatures(signaturesTestCtx(null, "tests/spec/gates/..")), [
     "signatures: cannot read tests/spec/gates/../std/fixtures/sig_module.ts, the source of nish/fixtures/sig_module",

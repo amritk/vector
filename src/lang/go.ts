@@ -47,6 +47,12 @@ export const langTableGo = (): LangTable => {
   t.literal("bool", langSpell("true", ""))
   t.literal("null", langSpell("nil", ""))
   t.literal("concat", langSpell("append(append([]byte{}, a...), b...)", ""))
+  t.type("words16", langSpell("[]uint16", ""))
+  t.type("words32", langSpell("[]uint32", ""))
+  t.type("words64", langSpell("[]uint64", ""))
+  t.literal("words16", langSpell("[]uint16{0x6170, 0x7865}", ""))
+  t.literal("words32", langSpell("[]uint32{0x61707865, 0x3320646e}", ""))
+  t.literal("words64", langSpell("[]uint64{0x3320646e61707865, 0x6b20657479622d32}", ""))
   t.moduleForm = "package"
   t.moduleNote =
     'the neutral path is the import path; the package name is its last segment without underscores (Effective Go, Package names): nish/crypto/hkdf → import "nish/crypto/hkdf", package hkdf'

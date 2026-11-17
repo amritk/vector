@@ -80,6 +80,12 @@ export const langTableJava = (): LangTable => {
   t.literal("bool", langSpell("true", ""))
   t.literal("null", langSpell("null", "Optional.empty() where the refusal is meant"))
   t.literal("concat", langSpell("ByteBuffer.allocate(a.length + b.length).put(a).put(b).array()", ""))
+  t.type("words16", langSpell("int[]", "widened to int, as u16 is"))
+  t.type("words32", langSpell("long[]", "widened to long, as u32 is"))
+  t.type("words64", langSpell("long[]", "each element read unsigned, as u64 is"))
+  t.literal("words16", langSpell("new int[] { 0x6170, 0x7865 }", ""))
+  t.literal("words32", langSpell("new long[] { 0x61707865L, 0x3320646eL }", ""))
+  t.literal("words64", langSpell("new long[] { 0x3320646e61707865L, 0x6b20657479622d32L }", ""))
   t.moduleForm = "class"
   t.moduleNote =
     "a final class of static methods named for the last segment, in a package of the others (JLS §6.1, package names lowercase): nish/crypto/hkdf → class Hkdf in package nish.crypto"

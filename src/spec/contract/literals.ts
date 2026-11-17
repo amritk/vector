@@ -177,7 +177,7 @@ export const LITERALS_BYTES: string =
 
 /** The refusal of a bracketed word array. */
 export const LITERALS_WORDS: string =
-  "words are 4, 8 or 16 lowercase hex digits in brackets, spaces apart, all one width, with 0x on every word or on none: [0x11111111 0x22222222]"
+  "words are 4, 8 or 16 lowercase hex digits in brackets, one space apart, all one width, with 0x on every word or on none: [0x11111111 0x22222222]"
 
 /** `×`, the multiplication sign RFCs print a run with. */
 const literalsTimes = (): string => charsFromCodePoint(0xd7)
@@ -487,7 +487,10 @@ const literalsBracket = (r: LiteralsReader, label: string | null, labelAt: i32):
   }
   const none: string[] = []
   const tokens = close < r.text.length ? literalsTokens(r.text.substring(at + 1, close)) : none
-  const words = close < r.text.length && literalsAreWords(tokens)
+  // Words are one space apart, as bytes are: a tab, a run of spaces or a
+  // space at either end is not a word array (LITERALS_WORDS says so).
+  const words =
+    close < r.text.length && literalsAreWords(tokens) && r.text.substring(at + 1, close) === tokens.join(" ")
   if (label === null) {
     const bytes = literalsBytes(r)
     if (bytes !== null) {

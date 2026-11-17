@@ -50,6 +50,12 @@ export const langTableRust = (): LangTable => {
       "a borrow of the joined Vec<u8>, as a bytes input is &[u8]; a returned value is [a, b].concat()",
     ),
   )
+  t.type("words16", langSpell("&[u16]", "a returned value is Vec<u16>"))
+  t.type("words32", langSpell("&[u32]", "a returned value is Vec<u32>"))
+  t.type("words64", langSpell("&[u64]", "a returned value is Vec<u64>"))
+  t.literal("words16", langSpell("&[0x6170u16, 0x7865u16]", "each word suffixed with its type"))
+  t.literal("words32", langSpell("&[0x61707865u32, 0x3320646eu32]", "each word suffixed with its type"))
+  t.literal("words64", langSpell("&[0x3320646e61707865u64, 0x6b20657479622d32u64]", "each word suffixed with its type"))
   t.moduleForm = "crate-path"
   t.moduleNote =
     "the segments as a path of modules, the root segment the crate (The Rust Reference, Items › Modules): nish/crypto/hkdf → nish::crypto::hkdf"

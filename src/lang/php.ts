@@ -76,6 +76,15 @@ export const langTablePhp = (): LangTable => {
   t.literal("bool", langSpell("true", ""))
   t.literal("null", langSpell("null", ""))
   t.literal("concat", langSpell("$a . $b", ""))
+  t.type("words16", langSpell("array", "a list of int; a 64-bit build is assumed"))
+  t.type("words32", langSpell("array", "a list of int; a 64-bit build is assumed"))
+  t.type(
+    "words64",
+    langUnsupported("PHP int is signed 64-bit, so an array of u64 has no native element type, as u64 has none"),
+  )
+  t.literal("words16", langSpell("[0x6170, 0x7865]", ""))
+  t.literal("words32", langSpell("[0x61707865, 0x3320646e]", ""))
+  t.literal("words64", langUnsupported("PHP has no native u64, so a word above PHP_INT_MAX cannot be written"))
   t.moduleForm = "class"
   t.moduleNote =
     "a final class of static methods, its fully qualified name the segments in PascalCase (PSR-4 autoloads classes, not functions): nish/crypto/hkdf → Nish\\Crypto\\Hkdf"

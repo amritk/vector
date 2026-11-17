@@ -106,7 +106,7 @@ class GateLits {
     }
     this.text = rfcSectionText(sec)
     this.lines = gateLines(sec.lines)
-    this.blocks = gateWordBlocks(sec.lines)
+    this.blocks = gateWordBlocks(sec.lines, sec.pageBreaks)
     this.bounds = []
   }
 }

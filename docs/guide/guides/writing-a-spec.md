@@ -211,7 +211,7 @@ These are what Call and Expected cells may hold:
 | `Key = 0b0b0b` | labelled bytes: lowercase hex pairs, no spaces. The label is the name the cited section prints the value under. A label may be several words, and its first word may start with digits joined to a letter (`32-bit fixed-common part = 07000000`); a bare number is not a label. A later word may be a comma-grouped number (`After 1,000 iterations`), and one later word may be a parenthesised group of such words (`MESSAGE (length 1 byte) = 72`, as RFC 8032 prints it). A group may not come first, hold a bare comma or a paren, be empty, be left open, or be followed by a second group |
 | `L = 42` | a labelled decimal integer, checked against the cited section's "L = 42". Where the parameter (or return) type is an integer type it is the int; anywhere else digits that are also hex pairs (`42`) are labelled bytes, and digits with a leading zero are never an int: `L = 00` is bytes, and `L = 042` (not whole hex pairs) is refused |
 | `22 × 0b`, `22 x 0b`, `IKM = 22 × 0b` | a run of bytes written that many times (`{hex, repeat}`), as RFCs print runs; optionally labelled. `22×0b` also reads. The count is at least 1, the run lowercase hex pairs, and the expansion at most 65536 bytes |
-| `[0x11111111 0x01020304]`, `State = [879531e0 c5ecf37d]` | a word array, where the signature takes or returns `u16[]`, `u32[]` or `u64[]`: words of the type's width (4, 8 or 16 lowercase hex digits), spaces apart, with `0x` on every word or on none, as the cited section prints them; optionally labelled. Unlabelled `[879531e0 c5ecf37d]` is bytes where the type is `u8[]`. See [What a printed value is](#what-a-printed-value-is) |
+| `[0x11111111 0x01020304]`, `State = [879531e0 c5ecf37d]` | a word array, where the signature takes or returns `u16[]`, `u32[]` or `u64[]`: words of the type's width (4, 8 or 16 lowercase hex digits), one space apart (as bytes are), with `0x` on every word or on none, as the cited section prints them; optionally labelled. Unlabelled `[879531e0 c5ecf37d]` is bytes where the type is `u8[]`. See [What a printed value is](#what-a-printed-value-is) |
 | `concat([00], Key = ff)` | the parts joined, all bytes; one level (`concat` does not nest), at least one part. `‖` is refused |
 
 A bare decimal integer (`42`, `-9223372036854775808`) is an int, and an f64
@@ -486,8 +486,12 @@ of matching bytes:
   is only part of a block, a block written with `0x` where the section has
   none (or the reverse), or a word that differs, is refused. A block printed
   under a short line (`Sample ChaCha State`) or as a one-line `name = …`
-  takes that line as its label, and a labelled value must name it. The
-  expected value may not be the block an argument is bound to.
+  takes that line as its label, and a labelled value must name it. An
+  unlabelled value may still bind to a labelled block, where unlabelled
+  bytes printed under a label are refused: a word value must equal a whole
+  block, so its words alone say which block it is, while bytes can match
+  part of any dump and need the label to say which one. The expected value
+  may not be the block an argument is bound to.
 - **Labels.** A value printed under a name (`Key =`, `Input scalar:`, a short
   line such as `Plaintext:` above a dump) must give that name:
   `{"hex": "0b0b…", "label": "Key"}`. A label the section does not print the

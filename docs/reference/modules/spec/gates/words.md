@@ -4,7 +4,9 @@
 
 `spec/gates/words` — the blocks of words a section prints, which a
 u16[], u32[] or u64[] vector value binds to. A block is a maximal run of
-non-blank lines, each either a grid row (words of one width, one of which
+non-blank lines (a page break does not end one: the blank lines around
+removed page furniture are skipped when a row continues the block below
+them, while any other blank line ends it), each either a grid row (words of one width, one of which
 may be marked with a leading `*` that is not part of it) or one
 `name = word` assignment, all its words of one width (4, 8 or 16
 lowercase hex digits) and one spelling (`0x` on all or none). A run with
@@ -13,8 +15,8 @@ any other line is not a block. A block's words are read row by row.
 A block's label is the name of a one-line assignment, or else the short
 line printed above it (blank lines between), when that line is not a
 sentence (it does not end in `.`, `:` or `,`), not a heading (it does not
-open with a section number) and holds no words of its own. The names of a block of several assignments (`a = …`, `b = …`) name
-its words, not the block, so such a block has no label.
+open with a section number) and holds no words of its own. The names of
+a block of several assignments (`a = …`, `b = …`) name its words, not the block, so such a block has no label.
 
 Generated from [src/spec/gates/words.ts](https://github.com/amritk/vector/blob/main/src/spec/gates/words.ts).
 
@@ -93,12 +95,18 @@ The blocks of words a section's lines print, in order (see the module
 comment).
 
 ```ts
-function gateWordBlocks(lines: string[]): GateWordBlock[]
+function gateWordBlocks(lines: string[], pageBreaks: i32[]): GateWordBlock[]
 ```
 
 <scalar-field name="lines" type="string[]" required>
 
 the section's lines
+
+</scalar-field>
+
+<scalar-field name="pageBreaks" type="i32[]" required>
+
+where page furniture was removed from them (RfcSection.pageBreaks)
 
 </scalar-field>
 
