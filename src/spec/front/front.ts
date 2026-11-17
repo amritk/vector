@@ -35,6 +35,7 @@ import {
   vocabIntMax,
   vocabIntMin,
   vocabIntTypes,
+  vocabWordTypes,
   vocabIsIntType,
   vocabIsJsonSafe,
   vocabValueType,
@@ -540,6 +541,9 @@ const frontBases = (): string[] => {
   }
   out.push("f64")
   out.push("secret-bytes")
+  for (const t of vocabWordTypes()) {
+    out.push(t)
+  }
   return out
 }
 
@@ -550,6 +554,9 @@ const frontTsBases = (): string[] => {
   }
   out.push("f64")
   out.push("Secret<u8[]>")
+  out.push("u16[]")
+  out.push("u32[]")
+  out.push("u64[]")
   return out
 }
 
@@ -1495,6 +1502,11 @@ const frontForallVar = (p: FrontProp): Result<ForallVar, FrontRefusal> => {
   const ty = frontReadType(c).orReturn()
   if (ty.name === "f64") {
     return Err(frontRefuse("properties over f64 are not sampled yet; give f64 cases as vectors", ty.pos))
+  }
+  if (ty.name === "u16[]" || ty.name === "u32[]" || ty.name === "u64[]") {
+    return Err(
+      frontRefuse(`properties over ${ty.name} are not sampled yet; give word-array cases as vectors`, ty.pos),
+    )
   }
   let type = ""
   if (ty.name === "u8[]") {

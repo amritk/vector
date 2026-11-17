@@ -5,7 +5,7 @@
  * its path, and gives null for an expression it cannot type.
  */
 
-import { ExprKind, LitKind } from "./types"
+import { ExprKind, LitKind, typesIsWords, typesWordsKey } from "./types"
 import { Expr, FnSig, Literal } from "./types"
 import { vocabBaseOf, vocabFitsInt, vocabIsIntType, vocabIsOptional, vocabValueType } from "./vocab"
 
@@ -141,6 +141,9 @@ export const typeOfLiteral = (lit: Literal): string => {
   }
   if (k === LitKind.F64) {
     return "f64"
+  }
+  if (typesIsWords(k)) {
+    return typesWordsKey(k)
   }
   return k === LitKind.Bool ? "bool" : "null"
 }

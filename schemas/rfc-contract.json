@@ -350,9 +350,15 @@
         "u32",
         "u32?",
         "u64",
-        "u64?"
+        "u64?",
+        "words16",
+        "words16?",
+        "words32",
+        "words32?",
+        "words64",
+        "words64?"
       ],
-      "description": "A parameter's type. bytes is an octet string; string is Unicode text, UTF-8 encoded (RFC 3629); f64 is an IEEE 754-2019 binary64; i8 … u64 are the fixed-width integers (see intType); secret-bytes is bytes whose value is secret: a language may wrap them in its own secret type, but in the contract they are bytes. T? as a parameter is an optional input: the argument may be absent, written null."
+      "description": "A parameter's type. bytes is an octet string; string is Unicode text, UTF-8 encoded (RFC 3629); f64 is an IEEE 754-2019 binary64; i8 … u64 are the fixed-width integers (see intType); secret-bytes is bytes whose value is secret: a language may wrap them in its own secret type, but in the contract they are bytes; words16, words32 and words64 are arrays of u16, u32 and u64 words. T? as a parameter is an optional input: the argument may be absent, written null."
     },
     "returnType": {
       "enum": [
@@ -381,7 +387,13 @@
         "u32",
         "u32?",
         "u64",
-        "u64?"
+        "u64?",
+        "words16",
+        "words16?",
+        "words32",
+        "words32?",
+        "words64",
+        "words64?"
       ],
       "description": "A result's type, from the types of paramType. T? as a result is a refusing return: the function declines this input and returns no value, written null."
     },
@@ -611,6 +623,72 @@
             }
           },
           "required": ["concat"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "An array of 16-bit words, each exactly as the spec prints it: 4 lowercase hex digits, with 0x on every word or on none.",
+          "properties": {
+            "words16": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "pattern": "^(?:0x)?[0-9a-f]{4}$"
+              }
+            },
+            "label": {
+              "$ref": "#/$defs/label"
+            },
+            "unchecked": {
+              "type": "string"
+            }
+          },
+          "required": ["words16"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "An array of 32-bit words, each exactly as the spec prints it: 8 lowercase hex digits, with 0x on every word or on none.",
+          "properties": {
+            "words32": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "pattern": "^(?:0x)?[0-9a-f]{8}$"
+              }
+            },
+            "label": {
+              "$ref": "#/$defs/label"
+            },
+            "unchecked": {
+              "type": "string"
+            }
+          },
+          "required": ["words32"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "An array of 64-bit words, each exactly as the spec prints it: 16 lowercase hex digits, with 0x on every word or on none.",
+          "properties": {
+            "words64": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "pattern": "^(?:0x)?[0-9a-f]{16}$"
+              }
+            },
+            "label": {
+              "$ref": "#/$defs/label"
+            },
+            "unchecked": {
+              "type": "string"
+            }
+          },
+          "required": ["words64"]
         }
       ]
     },

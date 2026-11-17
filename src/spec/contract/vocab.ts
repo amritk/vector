@@ -17,13 +17,51 @@
 export const vocabIntTypes = (): string[] => ["i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64"]
 
 /**
+ * The word-array types, by word width: arrays of u16, u32 and u64.
+ *
+ * @returns words16 words32 words64
+ */
+export const vocabWordTypes = (): string[] => ["words16", "words32", "words64"]
+
+/**
+ * Whether a type is one of the word-array types.
+ *
+ * @param t a type
+ * @returns true for words16, words32 and words64
+ */
+export const vocabIsWordType = (t: string): boolean => vocabHas(vocabWordTypes(), t)
+
+/**
+ * How many hex digits one word of a word-array type is printed with.
+ *
+ * @param t a word-array type
+ * @returns 4 for words16, 8 for words32, 16 for words64, 0 otherwise
+ */
+export const vocabWordDigits = (t: string): i32 => {
+  if (t === "words16") {
+    return 4
+  }
+  if (t === "words32") {
+    return 8
+  }
+  if (t === "words64") {
+    return 16
+  }
+  return 0
+}
+
+/**
  * The value types a parameter or return can have, before the optional `?`.
  *
- * @returns bytes, string, bool, f64, secret-bytes, then each integer type
+ * @returns bytes, string, bool, f64, secret-bytes, each integer type, then
+ * each word-array type
  */
 export const vocabBaseTypes = (): string[] => {
   const out = ["bytes", "string", "bool", "f64", "secret-bytes"]
   for (const t of vocabIntTypes()) {
+    out.push(t)
+  }
+  for (const t of vocabWordTypes()) {
     out.push(t)
   }
   return out
@@ -46,9 +84,21 @@ export const vocabSigTypes = (): string[] => {
 /**
  * The literal kinds, each named by the key that opens it.
  *
- * @returns hex ascii str int f64 bool null concat
+ * @returns hex ascii str int f64 bool null concat words16 words32 words64
  */
-export const vocabLiteralKinds = (): string[] => ["hex", "ascii", "str", "int", "f64", "bool", "null", "concat"]
+export const vocabLiteralKinds = (): string[] => [
+  "hex",
+  "ascii",
+  "str",
+  "int",
+  "f64",
+  "bool",
+  "null",
+  "concat",
+  "words16",
+  "words32",
+  "words64",
+]
 
 /**
  * The languages a module path or a name can be overridden for.

@@ -109,7 +109,7 @@ export const main = (): i32 => {
     t,
     `"returns": "string"`,
     `"returns": "str"`,
-    "functions[0].returns: one of bytes bytes? string string? bool bool? f64 f64? secret-bytes secret-bytes? i8 i8? i16 i16? i32 i32? i64 i64? u8 u8? u16 u16? u32 u32? u64 u64?",
+    "functions[0].returns: one of bytes bytes? string string? bool bool? f64 f64? secret-bytes secret-bytes? i8 i8? i16 i16? i32 i32? i64 i64? u8 u8? u16 u16? u32 u32? u64 u64? words16 words16? words32 words32? words64 words64?",
   )
   shapeExpect(
     t,
@@ -318,6 +318,44 @@ export const main = (): i32 => {
     `{"concat": [{"hex": "0g"}]}`,
     "clauses[0].args[0].concat[0].hex: lowercase hex with an even number of digits",
   )
+  // Word arrays: each width, its spelling, and what a word list may not be.
+  const wordOk: string[] = [
+    `{"words16": ["0x1111", "0x2222"]}`,
+    `{"words32": ["11111111", "22222222"], "label": "State"}`,
+    `{"words64": ["0x0123456789abcdef"], "unchecked": "the RFC prints it once"}`,
+  ]
+  for (const w of wordOk) {
+    t.eqStr(`${w} reads`, shapeErrorsOf(`{"hex": "00"}`, w).join("\n"), "")
+  }
+  const wordBad: string[] = [
+    `{"words32": ["1111111"]}`,
+    "clauses[0].args[0].words32: words of 8 lowercase hex digits, with 0x on every word or on none",
+    `{"words32": ["0x1111"]}`,
+    "clauses[0].args[0].words32: words of 8 lowercase hex digits, with 0x on every word or on none",
+    `{"words16": ["11111111"]}`,
+    "clauses[0].args[0].words16: words of 4 lowercase hex digits, with 0x on every word or on none",
+    `{"words64": ["11111111"]}`,
+    "clauses[0].args[0].words64: words of 16 lowercase hex digits, with 0x on every word or on none",
+    `{"words32": ["1111111A"]}`,
+    "clauses[0].args[0].words32: words of 8 lowercase hex digits, with 0x on every word or on none",
+    `{"words32": ["1111111g"]}`,
+    "clauses[0].args[0].words32: words of 8 lowercase hex digits, with 0x on every word or on none",
+    `{"words32": ["0x11111111", "22222222"]}`,
+    "clauses[0].args[0].words32: words of 8 lowercase hex digits, with 0x on every word or on none",
+    `{"words32": ["0X11111111"]}`,
+    "clauses[0].args[0].words32: words of 8 lowercase hex digits, with 0x on every word or on none",
+    `{"words32": []}`,
+    "read: clauses[0].args[0].words32: a non-empty array",
+    `{"words32": [1]}`,
+    "read: clauses[0].args[0].words32[0]: a string",
+    `{"words32": ["11111111"], "label": "1"}`,
+    "clauses[0].args[0].label: the name the RFC prints the value under, with a letter",
+    `{"words32": ["11111111"], "hex": "00"}`,
+    'read: clauses[0].args[0]: unknown field "words32"',
+  ]
+  for (let i = 0; i + 1 < wordBad.length; i += 2) {
+    shapeExpect(t, `{"hex": "00"}`, wordBad[i], wordBad[i + 1])
+  }
   shapeExpect(
     t,
     `{"hex": "00"}`,
@@ -494,7 +532,7 @@ export const main = (): i32 => {
     'read: clauses[1].forall[0].type: an integer type (i8 i16 i32 i64 u8 u16 u32 u64), "f64", "bytes" or "string"',
     `"returns": "string"`,
     `"returns": "u64??"`,
-    "functions[0].returns: one of bytes bytes? string string? bool bool? f64 f64? secret-bytes secret-bytes? i8 i8? i16 i16? i32 i32? i64 i64? u8 u8? u16 u16? u32 u32? u64 u64?",
+    "functions[0].returns: one of bytes bytes? string string? bool bool? f64 f64? secret-bytes secret-bytes? i8 i8? i16 i16? i32 i32? i64 i64? u8 u8? u16 u16? u32 u32? u64 u64? words16 words16? words32 words32? words64 words64?",
     `"target": {"module": "nish/hex"}`,
     `"target": {"module": "nish/hex", "lang": "x"}`,
     'read: contract.target: unknown field "lang"',

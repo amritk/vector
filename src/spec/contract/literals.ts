@@ -14,11 +14,11 @@
  * binary64 encoding that text reads as.
  */
 
-import { charsCodePointAt, charsFromCodePoint, charsIsStringText, charsSequenceLength } from "./chars"
+import { charsCodePointAt, charsFromCodePoint, charsIsStringText, charsIsWordList, charsSequenceLength } from "./chars"
 import { contractF64Bits, contractF64Overflows, contractF64Parse } from "./f64"
-import { FnSig, LitKind, Literal } from "./types"
+import { FnSig, LitKind, Literal, typesWordsKind } from "./types"
 import { typeIntBase, typeLiteralFits, typeOfLiteral } from "./typing"
-import { vocabIsJsonSafe, vocabValueType } from "./vocab"
+import { vocabBaseOf, vocabIsJsonSafe, vocabIsWordType, vocabValueType } from "./vocab"
 
 /** The form a cell writes a literal in, before a type settles it. */
 export enum RawKind {
@@ -44,6 +44,8 @@ export enum RawKind {
   Repeat = 9,
   /** `concat(a, b)`. */
   Concat = 10,
+  /** `[0x11111111 0x22222222]` or `State = [11111111 22222222]`: words of 4, 8 or 16 hex digits. */
+  Words = 11,
 }
 
 /** A literal as the cell writes it, before a type says what a string is. */
@@ -66,6 +68,12 @@ export class RawLiteral {
   /** A concat's parts. */
   parts: RawLiteral[]
   /**
+   * A bracket's words as printed, when they are a word array (all 4, 8 or 16
+   * hex digits, `0x` on every word or on none); empty otherwise. Bytes like
+   * `[879531e0 c5ecf37d]` carry their words too, for a word-array type.
+   */
+  words: string[]
+  /**
    * Makes a raw literal.
    *
    * @param kind its form
@@ -79,6 +87,7 @@ export class RawLiteral {
     this.count = 0
     this.flag = false
     this.parts = []
+    this.words = []
   }
 }
 
@@ -165,6 +174,10 @@ export const LITERALS_REPEAT_RUN: string = "a repeated run is whole bytes: lower
 /** The refusal of a bracketed byte string. */
 export const LITERALS_BYTES: string =
   "bytes are lowercase hex pairs in brackets, at most one space apart: [00 0f], or [] for none"
+
+/** The refusal of a bracketed word array. */
+export const LITERALS_WORDS: string =
+  "words are 4, 8 or 16 lowercase hex digits in brackets, spaces apart, all one width, with 0x on every word or on none: [0x11111111 0x22222222]"
 
 /** `×`, the multiplication sign RFCs print a run with. */
 const literalsTimes = (): string => charsFromCodePoint(0xd7)
@@ -417,6 +430,86 @@ const literalsBytes = (r: LiteralsReader): RawLiteral | null => {
       return literalsFail(r, LITERALS_BYTES, at)
     }
   }
+}
+
+/** The space-separated tokens of a bracket's text, without the brackets. */
+const literalsTokens = (body: string): string[] => {
+  const out: string[] = []
+  let start = -1
+  for (let j = 0; j <= body.length; j++) {
+    const c = j < body.length ? body.charCodeAt(j) : 0x20
+    const space = c === 0x20 || c === 0x09
+    if (space && start >= 0) {
+      out.push(body.substring(start, j))
+      start = -1
+    } else if (!space && start < 0) {
+      start = j
+    }
+  }
+  return out
+}
+
+/** Whether tokens are a word array: what charsIsWordList accepts at one of the three widths. */
+const literalsAreWords = (tokens: string[]): boolean => {
+  if (tokens.length === 0) {
+    return false
+  }
+  const first = tokens[0]
+  const digits = first.startsWith("0x") ? first.length - 2 : first.length
+  return (digits === 4 || digits === 8 || digits === 16) && charsIsWordList(tokens, digits)
+}
+
+/** Whether a bracket's tokens were meant as words: one has `0x`, or every one is 4 digits or more. */
+const literalsLooksLikeWords = (tokens: string[]): boolean => {
+  if (tokens.length === 0) {
+    return false
+  }
+  let long = true
+  for (const t of tokens) {
+    if (t.startsWith("0x") || t.startsWith("0X")) {
+      return true
+    }
+    long = long && t.length >= 4
+  }
+  return long
+}
+
+/**
+ * `[...]` at the reader: bytes, a word array, or both (`[879531e0 c5ecf37d]`
+ * is either, as the type says). With a label it is a word array only, so a
+ * labelled byte string stays `Label = hex`.
+ */
+const literalsBracket = (r: LiteralsReader, label: string | null, labelAt: i32): RawLiteral | null => {
+  const at = r.i
+  let close = at + 1
+  while (close < r.text.length && r.text.charCodeAt(close) !== 0x5d) {
+    close++
+  }
+  const none: string[] = []
+  const tokens = close < r.text.length ? literalsTokens(r.text.substring(at + 1, close)) : none
+  const words = close < r.text.length && literalsAreWords(tokens)
+  if (label === null) {
+    const bytes = literalsBytes(r)
+    if (bytes !== null) {
+      if (words) {
+        bytes.words = tokens
+      }
+      return bytes
+    }
+  }
+  if (words) {
+    r.message = ""
+    r.i = close + 1
+    const lit = new RawLiteral(RawKind.Words, "")
+    lit.words = tokens
+    lit.label = label
+    return lit
+  }
+  if (literalsLooksLikeWords(tokens)) {
+    r.message = ""
+    return literalsFail(r, LITERALS_WORDS, at)
+  }
+  return label === null ? null : literalsFail(r, literalsLabelledMessage(), labelAt)
 }
 
 /** The end of `null`, `true` or `false` at `j`, or -1. */
@@ -690,6 +783,9 @@ const literalsLabelled = (r: LiteralsReader, labelEnd: i32): RawLiteral | null =
     lit.label = label
     return lit
   }
+  if (literalsByte(r, r.i) === 0x5b) {
+    return literalsBracket(r, label, at)
+  }
   const end = literalsValueEnd(r, r.i)
   const text = r.text.substring(r.i, end)
   const isHex = literalsIsHexPairs(text)
@@ -751,7 +847,7 @@ const literalsOne = (r: LiteralsReader, inConcat: boolean): RawLiteral | null =>
     }
   }
   if (c === 0x5b) {
-    return literalsBytes(r)
+    return literalsBracket(r, null, at)
   }
   if (literalsHas(r, at, "(empty)")) {
     r.i = at + 7
@@ -986,6 +1082,14 @@ export const literalsSettle = (raw: RawLiteral, ty: string | null): Result<Liter
     return Err(
       `the types do not settle ${literalsQuote(raw.text)}: a quoted string goes where bytes or a string does, not ${where}`,
     )
+  }
+  // `[879531e0 c5ecf37d]` is bytes and words both; a word-array type reads its words.
+  if (k === RawKind.Words || (k === RawKind.Bytes && raw.words.length > 0 && ty !== null && vocabIsWordType(vocabBaseOf(ty)))) {
+    const first = raw.words[0]
+    const lit = new Literal(typesWordsKind(first.startsWith("0x") ? first.length - 2 : first.length), "")
+    lit.words = raw.words
+    lit.label = raw.label
+    return Ok(lit)
   }
   if (k === RawKind.Bytes) {
     return Ok(new Literal(LitKind.Hex, raw.text))

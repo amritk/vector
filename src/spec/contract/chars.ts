@@ -359,3 +359,28 @@ export const charsHasLetter = (s: string): boolean => {
   }
   return false
 }
+
+/**
+ * Whether words are one word array as printed: each is `digits` lowercase hex
+ * digits, and either every word opens with `0x` or none does.
+ *
+ * @param words the words
+ * @param digits the hex digits of one word (4, 8 or 16)
+ * @returns true when the words are a non-empty, consistently spelled array
+ */
+export const charsIsWordList = (words: string[], digits: i32): boolean => {
+  if (words.length === 0) {
+    return false
+  }
+  const prefixed = words[0].startsWith("0x")
+  for (const w of words) {
+    if (w.startsWith("0x") !== prefixed) {
+      return false
+    }
+    const body = prefixed ? w.substring(2, w.length) : w
+    if (!charsIsLowerHex(body, digits)) {
+      return false
+    }
+  }
+  return true
+}

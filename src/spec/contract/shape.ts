@@ -15,6 +15,7 @@ import {
   charsIsId,
   charsIsIdent,
   charsIsLowerHex,
+  charsIsWordList,
   charsIsModule,
   charsIsSection,
   charsIsStringText,
@@ -30,6 +31,8 @@ import {
   ForallVar,
   Iterate,
   LitKind,
+  typesIsWords,
+  typesWordsKey,
   Literal,
   NameOverride,
   Tolerance,
@@ -45,6 +48,7 @@ import {
   vocabLevels,
   vocabOps,
   vocabSigTypes,
+  vocabWordDigits,
 } from "./vocab"
 
 /** The longest bytes or string value a property variable may range over. */
@@ -302,6 +306,12 @@ const shapeLiteral = (s: ShapeContext, lit: Literal, at: string): void => {
   } else if (lit.kind === LitKind.Concat) {
     for (let i = 0; i < lit.parts.length; i++) {
       shapeLiteral(s, lit.parts[i], `${at}.concat[${i}]`)
+    }
+  } else if (typesIsWords(lit.kind)) {
+    const key = typesWordsKey(lit.kind)
+    const digits = vocabWordDigits(key)
+    if (!charsIsWordList(lit.words, digits)) {
+      shapeFail(s, `${at}.${key}`, `words of ${digits} lowercase hex digits, with 0x on every word or on none`)
     }
   }
 }

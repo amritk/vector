@@ -14,7 +14,7 @@ import {
 
 const FRONT_TEST_DEPTH: string = "the expression nests more than 64 deep; name a part with const"
 const FRONT_TEST_TYPES: string =
-  "u8[], string, boolean, i8, i16, i32, i64, u8, u16, u32, u64, f64, Secret<u8[]>, each optionally `| null`"
+  "u8[], string, boolean, i8, i16, i32, i64, u8, u16, u32, u64, f64, Secret<u8[]>, u16[], u32[], u64[], each optionally `| null`"
 const FRONT_TEST_FORALL: string =
   "is not a forall type; use u8[], string or an integer type (i8, i16, i32, i64, u8, u16, u32, u64)"
 const FRONT_TEST_BYTES: string = "a bytes literal is lowercase hex pairs separated by single spaces, like [00 0f]"
