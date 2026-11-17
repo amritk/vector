@@ -16,9 +16,13 @@ const script = path.join(
 const advice =
   "shorten it in place: simplify, never move text into another file to fit";
 
-/** A temp dir holding `files` ({ path: content }); `caps` is written as the caps file unless a string. */
-const repo = (files, caps) => {
+/**
+ * A temp dir holding `files` ({ path: content }), removed when test `t` ends;
+ * `caps` is written as the caps file, verbatim when a string.
+ */
+const repo = (t, files, caps) => {
   const dir = mkdtempSync(path.join(tmpdir(), "doc-caps-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
   const all = {
     ...files,
     "scripts/doc-caps.json":
@@ -83,6 +87,13 @@ const CASES = [
       `gone.md: missing, but scripts/doc-caps.json caps it at 10 bytes; ${advice}`,
     ],
   ],
+  [
+    "a directory, not a file",
+    { "d/a.md": "" },
+    { d: 10 },
+    1,
+    ["d: missing, but scripts/doc-caps.json caps it at 10 bytes"],
+  ],
   ["malformed JSON", {}, "{ not json", 2, ["is not valid JSON"]],
   ["an array, not an object", {}, "[]", 2, ["must be an object"]],
   [
@@ -96,16 +107,12 @@ const CASES = [
 ];
 
 for (const [name, files, caps, status, lines] of CASES) {
-  test(name, () => {
-    const dir = repo(files, caps);
-    try {
-      const r = run(dir);
-      assert.equal(r.status, status, r.stderr);
-      for (const l of lines) assert.ok(r.stderr.includes(l), r.stderr);
-      if (status === 0) assert.equal(r.stderr, "");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+  test(name, (t) => {
+    const dir = repo(t, files, caps);
+    const r = run(dir);
+    assert.equal(r.status, status, r.stderr);
+    for (const l of lines) assert.ok(r.stderr.includes(l), r.stderr);
+    if (status === 0) assert.equal(r.stderr, "");
   });
 }
 
@@ -138,76 +145,56 @@ const BASE_CASES = [
 ];
 
 for (const [name, headCaps, status, lines] of BASE_CASES) {
-  test(`--base: ${name}`, () => {
-    const dir = repo(files, baseCaps);
-    try {
-      const sha = commit(dir);
-      writeFileSync(
-        path.join(dir, "scripts/doc-caps.json"),
-        JSON.stringify(headCaps),
-      );
-      const r = run(dir, "--base", sha);
-      assert.equal(r.status, status, r.stderr);
-      for (const l of lines) assert.ok(r.stderr.includes(l), r.stderr);
-      if (status === 0) assert.equal(r.stderr, "");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+  test(`--base: ${name}`, (t) => {
+    const dir = repo(t, files, baseCaps);
+    const sha = commit(dir);
+    writeFileSync(
+      path.join(dir, "scripts/doc-caps.json"),
+      JSON.stringify(headCaps),
+    );
+    const r = run(dir, "--base", sha);
+    assert.equal(r.status, status, r.stderr);
+    for (const l of lines) assert.ok(r.stderr.includes(l), r.stderr);
+    if (status === 0) assert.equal(r.stderr, "");
   });
 }
 
-test("--base: a base without the caps file has no previous caps", () => {
-  const dir = repo(files, baseCaps);
-  try {
-    rmSync(path.join(dir, "scripts/doc-caps.json"));
-    const sha = commit(dir);
-    writeFileSync(
-      path.join(dir, "scripts/doc-caps.json"),
-      JSON.stringify(baseCaps),
-    );
-    const r = run(dir, "--base", sha);
-    assert.equal(r.status, 0, r.stderr);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+test("--base: a base without the caps file has no previous caps", (t) => {
+  const dir = repo(t, files, baseCaps);
+  rmSync(path.join(dir, "scripts/doc-caps.json"));
+  const sha = commit(dir);
+  writeFileSync(
+    path.join(dir, "scripts/doc-caps.json"),
+    JSON.stringify(baseCaps),
+  );
+  const r = run(dir, "--base", sha);
+  assert.equal(r.status, 0, r.stderr);
 });
 
-test("--base: a base whose caps file is malformed exits 2", () => {
-  const dir = repo(files, "{ not json");
-  try {
-    const sha = commit(dir);
-    writeFileSync(
-      path.join(dir, "scripts/doc-caps.json"),
-      JSON.stringify(baseCaps),
-    );
-    const r = run(dir, "--base", sha);
-    assert.equal(r.status, 2, r.stderr);
-    assert.ok(r.stderr.includes(`${sha}:scripts/doc-caps.json`), r.stderr);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+test("--base: a base whose caps file is malformed exits 2", (t) => {
+  const dir = repo(t, files, "{ not json");
+  const sha = commit(dir);
+  writeFileSync(
+    path.join(dir, "scripts/doc-caps.json"),
+    JSON.stringify(baseCaps),
+  );
+  const r = run(dir, "--base", sha);
+  assert.equal(r.status, 2, r.stderr);
+  assert.ok(r.stderr.includes(`${sha}:scripts/doc-caps.json`), r.stderr);
 });
 
-test("--base: a base that names no commit exits 2", () => {
-  const dir = repo(files, baseCaps);
-  try {
-    commit(dir);
-    const r = run(dir, "--base", "0000000000000000000000000000000000000000");
-    assert.equal(r.status, 2, r.stderr);
-    assert.ok(r.stderr.includes("cannot read the base"), r.stderr);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+test("--base: a base that names no commit exits 2", (t) => {
+  const dir = repo(t, files, baseCaps);
+  commit(dir);
+  const r = run(dir, "--base", "0000000000000000000000000000000000000000");
+  assert.equal(r.status, 2, r.stderr);
+  assert.ok(r.stderr.includes("cannot read the base"), r.stderr);
 });
 
-test("--base: outside a git repo the base is unreadable, exit 2", () => {
-  const dir = repo(files, baseCaps);
-  try {
-    const r = run(dir, "--base", "HEAD");
-    assert.equal(r.status, 2, r.stderr);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+test("--base: outside a git repo the base is unreadable, exit 2", (t) => {
+  const dir = repo(t, files, baseCaps);
+  const r = run(dir, "--base", "HEAD");
+  assert.equal(r.status, 2, r.stderr);
 });
 
 // [name, arguments]
@@ -217,25 +204,17 @@ const USAGE_CASES = [
 ];
 
 for (const [name, args] of USAGE_CASES) {
-  test(`bad usage: ${name} exits 2`, () => {
-    const dir = repo(files, baseCaps);
-    try {
-      const r = run(dir, ...args);
-      assert.equal(r.status, 2, r.stderr);
-      assert.ok(r.stderr.includes("usage:"), r.stderr);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+  test(`bad usage: ${name} exits 2`, (t) => {
+    const dir = repo(t, files, baseCaps);
+    const r = run(dir, ...args);
+    assert.equal(r.status, 2, r.stderr);
+    assert.ok(r.stderr.includes("usage:"), r.stderr);
   });
 }
 
-test("a missing caps file exits 2", () => {
-  const dir = repo({}, {});
-  try {
-    rmSync(path.join(dir, "scripts/doc-caps.json"));
-    const r = run(dir);
-    assert.equal(r.status, 2, r.stderr);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+test("a missing caps file exits 2", (t) => {
+  const dir = repo(t, {}, {});
+  rmSync(path.join(dir, "scripts/doc-caps.json"));
+  const r = run(dir);
+  assert.equal(r.status, 2, r.stderr);
 });

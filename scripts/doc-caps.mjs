@@ -59,7 +59,11 @@ const capsAt = (ref) => {
   } catch {
     return "";
   }
-  return git("show", `${ref}:${capsFile}`);
+  try {
+    return git("show", `${ref}:${capsFile}`);
+  } catch {
+    fail(2, `cannot read ${capsFile} at the base ${ref}`);
+  }
 };
 
 const args = process.argv.slice(2);
@@ -82,7 +86,9 @@ const problems = [];
 for (const [file, cap] of Object.entries(caps)) {
   let size;
   try {
-    size = statSync(file).size;
+    const st = statSync(file);
+    if (!st.isFile()) throw new Error("not a file");
+    size = st.size;
   } catch {
     problems.push(
       `${file}: missing, but ${capsFile} caps it at ${cap} bytes; ${advice}`,
