@@ -159,6 +159,10 @@ const words = (line) => {
   return out;
 };
 
+/** A golden's text with `{{version}}` and `{{root}}` filled in. */
+const fill = (text) =>
+  text.replaceAll("{{version}}", VERSION).replaceAll("{{root}}", realRoot);
+
 const read = (dir, name) => {
   const path = join(dir, name);
   return existsSync(path) ? readFileSync(path, "utf8") : null;
@@ -260,8 +264,6 @@ for (const dir of cases) {
     problems.push("exit file is missing or not a number");
   else if (r.status !== wantExit)
     problems.push(`exit ${r.status ?? r.signal}, want ${wantExit}`);
-  const fill = (text) =>
-    text.replaceAll("{{version}}", VERSION).replaceAll("{{root}}", realRoot);
   const outFile = read(dir, "stdout");
   const wantOut = outFile === null ? null : fill(outFile);
   if (wantOut === null) problems.push("stdout file is missing");

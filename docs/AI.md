@@ -29,51 +29,50 @@ vector does two things, and no model is involved in either:
    `EQUIVALENT` exits 0, and `DIFFERENT` and `UNDECIDED` exit 1. Do not
    report `UNDECIDED` as equivalent. See
    [Exit codes](guide/guides/exit-codes.md#by-command).
-4. **A `MISMATCH` (exit 2) means vector has a bug. Report it.** Do not repair
-   the program to make it go away.
-5. **The proof is over exact rationals, and an `Int` is unbounded there.**
+4. **The proof is over exact rationals, and an `Int` is unbounded there.**
    The emitted code runs in float64. A float64 gate samples boundary, dense
    and random inputs, and anything it finds makes the run `REFUTED`. It
    samples float64 and proves nothing about it, so prefer inequalities to an
    exact `==` on `Real`.
-6. **An `Int` `+`, `-` or `*` that may leave ±(2^53−1) is an `Int overflow`,
+5. **An `Int` `+`, `-` or `*` that may leave ±(2^53−1) is an `Int overflow`,
    and the run is `REFUTED`**, even when every postcondition holds over the
    integers. Write it so no intermediate grows past its operands, such as
    `low + (high - low)`, or bound the parameters with `requires`. See
    [Int arithmetic runs in float64](guide/guides/proving.md#int-arithmetic-runs-in-float64).
-7. **`UNKNOWN` usually means the arithmetic is non-linear.** Multiply
+6. **`UNKNOWN` usually means the arithmetic is non-linear.** Multiply
    variables only by literal constants, and restate the clause.
-8. **A trivial `ensures`, one that holds whatever the body does, fails.** So
+7. **A trivial `ensures`, one that holds whatever the body does, fails.** So
    do contradictory `requires`, which make the proof vacuous. Restate a
    trivial clause as a real constraint on `result`. Remove a contradictory
    `requires`; never add more to force a proof.
-9. **A hazard is checked on the path the emitted code takes.** An `ite`
+8. **A hazard is checked on the path the emitted code takes.** An `ite`
    branch, the right side of a short-circuit `and`, `or` or `implies`, and
    each `requires` after the first lean only on what was checked before them.
    So `x != 0 and 1 / x > 0` is safe, and `1 / x > 0 and x != 0` is a
    division hazard.
-10. **`--emit` writes only on `PROVEN`.** On any other verdict it writes
+9. **`--emit` writes only on `PROVEN`.** On any other verdict it writes
     nothing, and it leaves an existing file as it was.
-11. **`spec run` `SATISFIED` is evidence, not proof.** The implementation
+10. **`spec run` `SATISFIED` is evidence, not proof.** The implementation
     returned the printed vectors and held the properties at their samples.
     Run `spec mutate` to find the bugs the contract cannot tell apart from
     the real code. See [What a pass means](guide/guides/testing.md#what-a-pass-means).
-12. **Never hand-edit a generated file.** `spec extract` writes
+11. **Never hand-edit a generated file.** `spec extract` writes
     `contracts/*.json`, `scripts/build-spec.sh` builds `specs/*.xml` from
     `specs/*.md`, and `spec emit` writes the test. Change the source, and
     run the generator again.
-13. **`spec frozen` refuses a change that touches both sides.** The spec side
+12. **`spec frozen` refuses a change that touches both sides.** The spec side
     is `specs/`, `contracts/`, `rfcs/` and generated tests. The other side is
     the implementation. Land the spec first, then the implementation. See
     [frozen](guide/guides/pr-gates.md#frozen).
 
 ## Rules
 
-- **Exit codes.** Every command exits 0 when the check passed, 1 when it
-  refused the input, and 2 when it could not run. The table for each command
-  is in [Exit codes](guide/guides/exit-codes.md#by-command).
-- **z3.** vector finds z3 at `$VECTOR_Z3`, then at `.z3/z3` beside the
-  binary, then on `PATH`. See [Finding z3](guide/guides/exit-codes.md#finding-z3).
+- **Exit codes.** A command exits 0 when the check passed, 1 when it
+  refused the input, and 2 when it could not run, except that `diff` also
+  exits 2 for `INVALID` and `ERROR`. The table for each command is in
+  [Exit codes](guide/guides/exit-codes.md#by-command).
+- **z3.** vector finds z3 at `$VECTOR_Z3`, then at `.z3/z3` in the
+  checkout the binary was built from, then on `PATH`. See [Finding z3](guide/guides/exit-codes.md#finding-z3).
 - **The files.** A spec plan holds the axioms and the units, and a program
   holds one expression per unit, with `requires` and `ensures` clauses. Each
   clause is tagged with the axiom it enforces, and every axiom must be
