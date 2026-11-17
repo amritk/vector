@@ -28,10 +28,14 @@ A contract ([`schemas/rfc-contract.json`][schema], described in
   (or `DEFINITION`);
 - **exclusions**: the MUST and SHALL sentences a functional test cannot observe
   (nonce uniqueness, constant-time comparison), each with its reason;
+- **outOfScope**: the exports of the module no clause tests, each with the
+  reason, from the spec's `Out of scope: <export>, <reason>` paragraphs;
+  [`spec exports`](pr-gates.md#exports) reports a change to one as a note;
 - **functions**: the implementation's signatures, plus any reference function
   from another module that a property may call;
 - **clauses**: **vectors** (known answers, each saying where its expected value
-  comes from) and **properties** (`forall` a typed domain, `where` restricts
+  comes from; a literal may carry the label the RFC prints it under, such as
+  `After 1,000 iterations` or `MESSAGE (length 0 bytes)`) and **properties** (`forall` a typed domain, `where` restricts
   it, `assert` must hold).
 
 ### An iterated vector

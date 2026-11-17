@@ -228,8 +228,8 @@ const truncTestFidelityCases = (t: Suite): void => {
   const truncs: string[] = [`{"bytes": 16}`, `{"bits": 96}`, `{"bits": 128}`]
   const want: string[] = [
     `T1.truncate: the truncation to 16 bytes is not printed in ${t5}`,
-    `T1.truncate: the truncation to 96 bits is not printed in ${t5}\nT1.expect: 12-byte value is only part of a value printed in ${t5} (under "HMAC-SHA-256"): a vector uses whole printed values (concat them to join several)`,
-    `T1.truncate: the truncation to 128 bits is not printed in ${t1}\nT1.args[0]: 20-byte value is not printed in ${t1}\nT1.args[1]: 20-byte value is not printed in ${t1}\nT1.expect: 16-byte value is not printed in ${t1}`,
+    `T1.truncate: the truncation to 96 bits is not printed in ${t5}\nT1.expect: the 12-byte expect is only part of a value printed in ${t5} (under "HMAC-SHA-256"): a vector uses whole printed values (concat them to join several)`,
+    `T1.truncate: the truncation to 128 bits is not printed in ${t1}\nT1.args[0]: the 20-byte args[0] is not printed in ${t1}\nT1.args[1]: the 20-byte args[1] is not printed in ${t1}\nT1.expect: the 16-byte expect is not printed in ${t1}`,
   ]
   for (let i = 0; i < want.length; i++) {
     t.eqStr(

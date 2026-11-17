@@ -1,0 +1,1 @@
+vector spec run tests/fixtures/iterate-emit/contracts/sha256-pair.json --lang go --package vector=tests/fixtures/go/vector

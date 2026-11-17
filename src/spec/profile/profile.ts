@@ -178,6 +178,8 @@ export class ProfileMd {
   path: string
   /** Its number of lines; no place past the last is printed. */
   lines: i32
+  /** Its lines, when it was read; a paragraph the XML marks no line for is found here. */
+  text: string[]
   /**
    * Makes a markdown file's record.
    *
@@ -185,6 +187,7 @@ export class ProfileMd {
    * @param lines how many lines it has
    */
   constructor(path: string, lines: i32) {
+    this.text = []
     this.path = path
     this.lines = lines
   }
@@ -207,8 +210,32 @@ export const profileMdRead = (path: string | null): ProfileMd | null => {
   if (text.length === 0) {
     return new ProfileMd(path, 0)
   }
-  const lines = split(text, "\n").length
-  return new ProfileMd(path, text.endsWith("\n") ? lines - 1 : lines)
+  const all = split(text, "\n")
+  const md = new ProfileMd(path, text.endsWith("\n") ? all.length - 1 : all.length)
+  md.text = all
+  return md
+}
+
+/**
+ * Where a paragraph is: its own markdown line when exactly one line of the
+ * markdown starts with `head` (kramdown-rfc marks no line for a paragraph),
+ * else the XML node's place.
+ */
+const profileParaLoc = (c: ProfileContext, p: XmlNode, head: string): ProfileLoc => {
+  const md = c.md
+  if (md === null) {
+    return profileLocOf(p)
+  }
+  let found = -1
+  for (let i = 0; i < md.lines; i++) {
+    if (profileTrim(md.text[i]).startsWith(head)) {
+      if (found >= 0) {
+        return profileLocOf(p)
+      }
+      found = i + 1
+    }
+  }
+  return found < 0 ? profileLocOf(p) : new ProfileLoc(p.line, found, p.line)
 }
 
 /** The RFCs a spec may cite, read beforehand, and the ones it needed but were not there. */
@@ -495,6 +522,10 @@ const profileRefuseAt = (c: ProfileContext, loc: ProfileLoc, message: string, co
 
 const profileRefuse = (c: ProfileContext, n: XmlNode, message: string): void => {
   profileRefuseAt(c, profileLocOf(n), message, 0)
+}
+
+const profileRefuseLoc = (c: ProfileContext, loc: ProfileLoc, message: string): void => {
+  profileRefuseAt(c, loc, message, 0)
 }
 
 /**
@@ -1954,7 +1985,7 @@ const profileIterateTuple = (s: string): string[] => {
  * One element of an Iterate: paragraph's next tuple: a name, or a call on
  * names; null, refused, when it is neither.
  */
-const profileIterateNext = (c: ProfileContext, p: XmlNode, id: string, s: string): Expr | null => {
+const profileIterateNext = (c: ProfileContext, loc: ProfileLoc, id: string, s: string): Expr | null => {
   if (charsIsIdent(s)) {
     return new Expr(ExprKind.Var, s)
   }
@@ -1970,7 +2001,7 @@ const profileIterateNext = (c: ProfileContext, p: XmlNode, id: string, s: string
       return e
     }
   }
-  profileRefuse(c, p, `${id}'s next "${s}" is neither a name nor a call on the names: ${PROFILE_ITERATE_FORM}`)
+  profileRefuseLoc(c, loc, `${id}'s next "${s}" is neither a name nor a call on the names: ${PROFILE_ITERATE_FORM}`)
   return null
 }
 
@@ -1990,19 +2021,27 @@ const profileReadIterate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, 
   const text = profileTrim(profileAfter(c, p, PROFILE_ITERATE))
   const words = split(text, " ")
   const id = words[0]
+  const loc = profileParaLoc(c, p, `${PROFILE_ITERATE}${id} `)
   if (words.length < 2 || words[1] === "times,") {
-    profileRefuse(c, p, `${id}'s Iterate: paragraph gives no count before "times,": ${PROFILE_ITERATE_FORM}`)
+    // Echo the author's own paragraph, with the count put where it goes.
+    const rest = profileTrim(text.substring(id.length, text.length))
+    const after = rest.length === 0 ? "times, (k, u) <- (f(k, u), k)" : rest
+    profileRefuseLoc(
+      c,
+      loc,
+      `${id}'s Iterate: paragraph gives no count before "times,": it reads "${PROFILE_ITERATE}${text}"; put the count there, like ${PROFILE_ITERATE}${id} 1,000 ${after}`,
+    )
     return
   }
   if (words.length < 3 || words[2] !== "times,") {
-    profileRefuse(c, p, `an Iterate: paragraph reads "<id> <count> times," first: ${PROFILE_ITERATE_FORM}`)
+    profileRefuseLoc(c, loc, `an Iterate: paragraph reads "<id> <count> times," first: ${PROFILE_ITERATE_FORM}`)
     return
   }
   const count = profileIterateCount(words[1])
   if (count < 0) {
-    profileRefuse(
+    profileRefuseLoc(
       c,
-      p,
+      loc,
       `${id}'s count is a whole number from 1 to 1,000,000,000 in digits, grouped in threes by commas or not at all, not "${words[1]}": ${PROFILE_ITERATE_FORM}`,
     )
     return
@@ -2015,9 +2054,9 @@ const profileReadIterate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, 
     width = "\u2190".length
   }
   if (arrow < 0) {
-    profileRefuse(
+    profileRefuseLoc(
       c,
-      p,
+      loc,
       `${id}'s Iterate: paragraph has no "<-" between its names and its next: ${PROFILE_ITERATE_FORM}`,
     )
     return
@@ -2030,7 +2069,7 @@ const profileReadIterate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, 
     it.slow = true
     lhs = profileTrim(lhs.substring("slow,".length, lhs.length))
     if (lhs.startsWith("slow,")) {
-      profileRefuse(c, p, `${id}'s Iterate: paragraph says "slow," twice; once is enough: ${PROFILE_ITERATE_FORM}`)
+      profileRefuseLoc(c, loc, `${id}'s Iterate: paragraph says "slow," twice; once is enough: ${PROFILE_ITERATE_FORM}`)
       return
     }
   }
@@ -2038,26 +2077,26 @@ const profileReadIterate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, 
   const open = lhs.indexOf("(")
   const comma = lhs.indexOf(",")
   if (open < 0 && comma >= 0 && split(lhs, ",").every((n: string): boolean => charsIsIdent(profileTrim(n)))) {
-    profileRefuse(
+    profileRefuseLoc(
       c,
-      p,
+      loc,
       `${id}'s names "${lhs}" are more than one, so they stand in parentheses, (${lhs}): ${PROFILE_ITERATE_FORM}`,
     )
     return
   }
   if (open === 0 && !lhs.endsWith(")")) {
-    profileRefuse(
+    profileRefuseLoc(
       c,
-      p,
+      loc,
       `${id}'s Iterate: paragraph has "${lhs}" before "<-"; the names end at their ")", and "slow," stands before them: ${PROFILE_ITERATE_FORM}`,
     )
     return
   }
   const extra = open >= 0 ? lhs.substring(0, open) : comma >= 0 ? lhs.substring(0, comma + 1) : ""
   if (profileTrim(extra).length > 0) {
-    profileRefuse(
+    profileRefuseLoc(
       c,
-      p,
+      loc,
       `${id}'s Iterate: paragraph has "${profileTrim(extra)}" after "times,", where only "slow," may stand: ${PROFILE_ITERATE_FORM}`,
     )
     return
@@ -2065,20 +2104,20 @@ const profileReadIterate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, 
   it.names = profileIterateTuple(lhs)
   for (const n of it.names) {
     if (!charsIsIdent(n)) {
-      profileRefuse(c, p, `${id}'s name "${n}" is not an identifier: ${PROFILE_ITERATE_FORM}`)
+      profileRefuseLoc(c, loc, `${id}'s name "${n}" is not an identifier: ${PROFILE_ITERATE_FORM}`)
       return
     }
   }
   const nexts = profileIterateTuple(rhs)
   for (const s of nexts) {
-    const e = profileIterateNext(c, p, id, s)
+    const e = profileIterateNext(c, loc, id, s)
     if (e === null) {
       return
     }
     it.next.push(e)
   }
   if (!rowIds.has(id)) {
-    profileRefuse(c, p, `Iterate: names "${id}", which is no vector of the table: ${PROFILE_ITERATE_FORM}`)
+    profileRefuseLoc(c, loc, `Iterate: names "${id}", which is no vector of the table: ${PROFILE_ITERATE_FORM}`)
     return
   }
   const v = read.get(id)
@@ -2086,36 +2125,36 @@ const profileReadIterate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, 
     return
   }
   if (v.iterate !== null) {
-    profileRefuse(c, p, `${id} is iterated already; a vector has at most one Iterate: paragraph`)
+    profileRefuseLoc(c, loc, `${id} is iterated already; a vector has at most one Iterate: paragraph`)
     return
   }
   const fn = profileFn(c, v.call)
   const arity = fn !== null ? fn.params.length : v.args.length
   if (it.names.length !== arity) {
-    profileRefuse(
+    profileRefuseLoc(
       c,
-      p,
+      loc,
       `${id} names ${it.names.length}, but ${v.call} takes ${arity}; one name per parameter: ${PROFILE_ITERATE_FORM}`,
     )
     return
   }
   if (it.next.length !== arity) {
-    profileRefuse(
+    profileRefuseLoc(
       c,
-      p,
+      loc,
       `${id}'s next has ${it.next.length}, but ${v.call} takes ${arity}; one per parameter: ${PROFILE_ITERATE_FORM}`,
     )
     return
   }
   for (const e of it.next) {
     if (e.kind === ExprKind.Var && !vocabHas(it.names, e.name)) {
-      profileRefuse(c, p, `${id}'s next names "${e.name}", which is not one of its names: ${PROFILE_ITERATE_FORM}`)
+      profileRefuseLoc(c, loc, `${id}'s next names "${e.name}", which is not one of its names: ${PROFILE_ITERATE_FORM}`)
       return
     }
     if (e.kind === ExprKind.Call && !profileIterateIsCall(e, v.call, it.names)) {
-      profileRefuse(
+      profileRefuseLoc(
         c,
-        p,
+        loc,
         `${id}'s next calls ${e.name}(${e.args.map((a: Expr): string => a.name).join(", ")}); a call there is the row's ${v.call}(${it.names.join(", ")}): ${PROFILE_ITERATE_FORM}`,
       )
       return
@@ -2123,7 +2162,7 @@ const profileReadIterate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, 
   }
   v.iterate = it
   c.iterateIds.push(id)
-  c.iterateLocs.push(profileLocOf(p))
+  c.iterateLocs.push(loc)
 }
 
 const profileCodeCell = (c: ProfileContext, td: XmlNode): string | null => {

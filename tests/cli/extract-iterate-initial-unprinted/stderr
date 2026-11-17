@@ -1,0 +1,1 @@
+vector: tests/fixtures/profile/profile-iterate-initial-unprinted.md:30 (tests/fixtures/profile/profile-iterate-initial-unprinted.xml:71): fidelity: the 32-byte args[1] is not printed in RFC §5.2 ("Test Vectors")

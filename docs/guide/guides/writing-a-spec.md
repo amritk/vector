@@ -583,7 +583,9 @@ of matching bytes:
   printed line (`BASE64("f") = "Zg=="`). A label printed several times in
   the cited section is read in rounds (the k-th `Key` goes with the k-th
   `Data` and the k-th `HMAC-SHA-256`), so citing a parent section cannot mix
-  values from two test cases.
+  values from two test cases. A label printed once goes with the round it is
+  printed among: RFC 8032 Section 7.1 prints `MESSAGE (length 0 bytes)` once,
+  in TEST 1, so it is refused beside TEST 2's `SECRET KEY` and `SIGNATURE`.
 - **Named test cases.** Where a section prints several test cases under
   headings (`Test Vector #2:`, a line of its own or followed by text), and a
   label is printed a different number of times than another, the rounds do

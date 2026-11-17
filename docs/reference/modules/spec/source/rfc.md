@@ -35,6 +35,7 @@ Generated from [src/spec/source/rfc.ts](https://github.com/amritk/vector/blob/ma
 - [`rfcOwnSpans`](#rfcownspans)
 - [`rfcHexValues`](#rfchexvalues)
 - [`rfcUnvaluedLabels`](#rfcunvaluedlabels)
+- [`rfcUnvaluedLines`](#rfcunvaluedlines)
 - [`rfcHexPrinted`](#rfchexprinted)
 - [`rfcQuoteProblem`](#rfcquoteproblem)
 
@@ -201,6 +202,16 @@ hex: string
 
 ```ts
 label: string | null
+```
+
+#### HexValue.line
+
+The index, in its section's lines, of the line that names the value, or
+of its first line when nothing names it; -1 when it was not read from a
+section.
+
+```ts
+line: i32
 ```
 
 ### rfcNormalize
@@ -474,6 +485,27 @@ the section
 <scalar-field name="returns" type="string[]">
 
 the names, in order, whitespace collapsed
+
+</scalar-field>
+
+### rfcUnvaluedLines
+
+The lines the names of rfcUnvaluedLabels are printed on, so a gate can tell
+which test case an empty value belongs to.
+
+```ts
+function rfcUnvaluedLines(sec: RfcSection): i32[]
+```
+
+<scalar-field name="sec" type="RfcSection" required>
+
+the section
+
+</scalar-field>
+
+<scalar-field name="returns" type="i32[]">
+
+each name's index in the section's lines, in the same order
 
 </scalar-field>
 
