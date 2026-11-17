@@ -13,5 +13,17 @@ export const check = (
 /** Generic: left out. */
 export const pick = <T>(a: T): T => a
 
+/** Right: words in, words or null out. */
+export const quarter = (state: u32[], a: i32): u32[] | null => null
+
+/** Declared bytes, exports u32 words. */
+export const wordsOut = (k: u8[]): u32[] => []
+
+/** Declared u32 words, exports bytes. */
+export const bytesOut = (k: u32[]): u8[] => new Uint8Array(0)
+
+/** Declared u64 words, exports u16 words. */
+export const narrow = (k: u64[]): u16[] => []
+
 /** Not a function. */
 export const LIMIT: i32 = 3

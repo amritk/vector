@@ -11,7 +11,9 @@
  * labels, with the expected value not also an input. In a source read from
  * XML, a byte list such as `[00 0f f0 ff]` is a whole printed value, as
  * `hexEncode([00 0f f0 ff])` prints one; in plain text, `[10]` is a
- * reference. A value printed for one of several variants ("HMAC-SHA-256"
+ * reference. A u16[], u32[] or u64[] value is one whole block of words
+ * the section prints (spec/gates/words), word for word as printed, `0x` and
+ * all, and the expected value is not the block an input is. A value printed for one of several variants ("HMAC-SHA-256"
  * beside "HMAC-SHA-512") must be the one the called function names. An
  * expected null, true or false must be stated by a covered requirement
  * (gateStatesResult).
@@ -22,7 +24,7 @@ import { asciiLower } from "nish/text"
 import { toHex, utf8Bytes } from "../../core/hex"
 import { CheckContext, CheckNote } from "../check"
 import { contractF64Bits, contractF64IsNaN, contractF64Parse } from "../contract/f64"
-import { Clause, ClauseKind, Iterate, LitKind, Literal, VectorSourceKind } from "../contract/types"
+import { Clause, ClauseKind, Iterate, LitKind, Literal, typesIsWords, VectorSourceKind } from "../contract/types"
 import { SourceSet, sourceFind } from "../source/load"
 import {
   HexValue,
@@ -37,6 +39,7 @@ import { gateArgsAt, gateCitedSection, gatePlace, gateQuoteMissing, gateSources 
 import { gateIssue, gateWarn } from "./note"
 import { gateResultWord, gateStatesResult } from "./result"
 import { gateByteLists, gateF64Printed, gateIntLabelCount, gateIntRounds, gateLines, gateTextLines } from "./text"
+import { GateWordBlock, gateWordBlocks } from "./words"
 
 /** Where one literal of a vector was found: under a label, or on lines. */
 class GateBound {
@@ -52,6 +55,8 @@ class GateBound {
   lines: i32[] | null
   /** For text: the value. */
   text: string
+  /** For words: the index of the block of words it is, or -1. */
+  block: i32
   constructor(at: string, label: string | null) {
     this.at = at
     this.label = label
@@ -59,6 +64,7 @@ class GateBound {
     this.has = []
     this.lines = null
     this.text = ""
+    this.block = -1
   }
 }
 
@@ -75,6 +81,8 @@ class GateLits {
   values: HexValue[]
   text: string
   lines: string
+  /** The blocks of words the section prints (gateWordBlocks). */
+  blocks: GateWordBlock[]
   bounds: GateBound[]
   /**
    * @param id the vector's id
@@ -98,6 +106,7 @@ class GateLits {
     }
     this.text = rfcSectionText(sec)
     this.lines = gateLines(sec.lines)
+    this.blocks = gateWordBlocks(sec.lines)
     this.bounds = []
   }
 }
@@ -236,6 +245,127 @@ const gateHexCheck = (l: GateLits, at: string, hex: string, label: string | null
     }
   }
   gateRounds(l, new GateBound(at, label), of, has)
+}
+
+/** A word without its `0x`. */
+const gateWordBare = (w: string): string => (w.startsWith("0x") ? w.substring(2, w.length) : w)
+
+/** Whether `want` is `words` from `from` on, as printed or, with `bare`, ignoring `0x`. */
+const gateWordsAt = (words: string[], want: string[], from: i32, bare: boolean): boolean => {
+  if (from + want.length > words.length) {
+    return false
+  }
+  for (let i = 0; i < want.length; i++) {
+    const a = words[from + i]
+    const b = want[i]
+    if (bare ? gateWordBare(a) !== gateWordBare(b) : a !== b) {
+      return false
+    }
+  }
+  return true
+}
+
+/** Whether `want` is a run of `words` shorter than all of them, ignoring `0x`. */
+const gateWordsInside = (words: string[], want: string[]): boolean => {
+  if (want.length >= words.length) {
+    return false
+  }
+  for (let i = 0; i + want.length <= words.length; i++) {
+    if (gateWordsAt(words, want, i, true)) {
+      return true
+    }
+  }
+  return false
+}
+
+/** ` (under "label")` for a block printed under a label, or "". */
+const gateWordsUnder = (b: GateWordBlock): string => {
+  const bl = b.label
+  return bl !== null ? ` (under "${bl}")` : ""
+}
+
+/**
+ * A word-array value: one whole block of words the section prints, word for
+ * word as printed, under the label the literal names. An unlabelled value
+ * binds to the block it is.
+ */
+const gateWordsCheck = (l: GateLits, lit: Literal, at: string): void => {
+  const want = lit.words
+  const n = want.length
+  const exact: i32[] = []
+  for (let b = 0; b < l.blocks.length; b++) {
+    const words = l.blocks[b].words
+    if (words.length === n && gateWordsAt(words, want, 0, false)) {
+      exact.push(b)
+    }
+  }
+  if (exact.length === 0) {
+    const prefixed = want[0].startsWith("0x")
+    for (const b of l.blocks) {
+      if (b.words.length === n && gateWordsAt(b.words, want, 0, true)) {
+        gateLitFail(
+          l,
+          at,
+          `the ${n} words are printed in ${l.inSection}${gateWordsUnder(b)} ${prefixed ? "without" : "with"} 0x: write each word as printed`,
+        )
+        return
+      }
+    }
+    for (const b of l.blocks) {
+      if (gateWordsInside(b.words, want)) {
+        gateLitFail(
+          l,
+          at,
+          `${n}-word value is only part of a ${b.words.length}-word block printed in ${l.inSection}${gateWordsUnder(b)}: a vector uses a whole printed block`,
+        )
+        return
+      }
+    }
+    gateLitFail(l, at, `${n}-word value is not printed as one block in ${l.inSection}`)
+    return
+  }
+  const label = lit.label
+  if (label === null) {
+    const b = new GateBound(at, null)
+    b.block = exact[0]
+    l.bounds.push(b)
+    return
+  }
+  const named: string[] = []
+  let block = -1
+  for (const e of exact) {
+    const bl = l.blocks[e].label
+    if (bl !== null) {
+      named.push(bl)
+      if (block < 0 && gateSameLabel(bl, label)) {
+        block = e
+      }
+    }
+  }
+  if (block < 0) {
+    gateLitFail(
+      l,
+      at,
+      named.length > 0
+        ? `the value is printed in ${l.inSection} under ${gateQuoted(named)}, not under "${label}"`
+        : `the value is printed in ${l.inSection}, but not under the label "${label}"`,
+    )
+    return
+  }
+  let of = 0
+  const has: i32[] = []
+  for (let b = 0; b < l.blocks.length; b++) {
+    const bl = l.blocks[b].label
+    if (bl !== null && gateSameLabel(bl, label)) {
+      if (exact.indexOf(b) >= 0) {
+        has.push(of)
+      }
+      of = of + 1
+    }
+  }
+  const bound = new GateBound(at, label)
+  bound.block = block
+  gateRounds(l, bound, of, has)
 }
 
 /** A text value printed whole on some lines of the section; false when it is not. */
@@ -384,6 +514,10 @@ const gateLitCheck = (l: GateLits, lit: Literal, at: string): void => {
     }
     return
   }
+  if (typesIsWords(lit.kind)) {
+    gateWordsCheck(l, lit, at)
+    return
+  }
   if (lit.kind !== LitKind.Int && lit.kind !== LitKind.F64) {
     return
   }
@@ -482,6 +616,21 @@ const gateOneTestCase = (l: GateLits, args: i32, sec: RfcSection): void => {
     }
   }
   for (let e = args; e < l.bounds.length; e++) {
+    const block = l.bounds[e].block
+    if (block >= 0) {
+      for (let a = 0; a < args; a++) {
+        if (l.bounds[a].block === block) {
+          gateNote(
+            l,
+            `${id}.${l.bounds[e].at}`,
+            `the expected value is the block of words ${l.bounds[a].at} is bound to as well: an input is not the expected result`,
+            false,
+          )
+          break
+        }
+      }
+      continue
+    }
     const label = l.bounds[e].label
     if (label === null) {
       continue

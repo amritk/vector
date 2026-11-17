@@ -14,6 +14,10 @@ const SIGNATURES_TEST_C: string = `{
     {"name": "derive", "params": [{"name": "s", "type": "bytes?"}, {"name": "k", "type": "secret-bytes"}, {"name": "n", "type": "u32"}], "returns": "bytes"},
     {"name": "check", "params": [{"name": "a", "type": "string"}, {"name": "b", "type": "string"}], "returns": "bool"},
     {"name": "pick", "params": [{"name": "a", "type": "bytes"}], "returns": "bytes"},
+    {"name": "quarter", "params": [{"name": "s", "type": "words32"}, {"name": "a", "type": "i32"}], "returns": "words32?"},
+    {"name": "wordsOut", "params": [{"name": "k", "type": "bytes"}], "returns": "bytes"},
+    {"name": "bytesOut", "params": [{"name": "k", "type": "words32"}], "returns": "words32"},
+    {"name": "narrow", "params": [{"name": "k", "type": "words64"}], "returns": "words64"},
     {"name": "hmac", "module": "nish/other", "params": [{"name": "a", "type": "bytes"}], "returns": "bytes"}
   ],
   "clauses": []
@@ -49,12 +53,21 @@ export const main = (): i32 => {
   t.eqStr("an integer", gateNishType("u64"), "u64")
   t.eqStr("unknown", gateNishType("Map<string, i32>"), "?Map<string, i32>")
   t.eqStr("not Nish", gateNishType("bytes"), "?bytes")
+  t.eqStr("u16 words", gateNishType("u16[]"), "words16")
+  t.eqStr("u32 words", gateNishType("u32[]"), "words32")
+  t.eqStr("optional u32 words", gateNishType("u32[] | null"), "words32?")
+  t.eqStr("optional u64 words, null first", gateNishType("null | u64[]"), "words64?")
+  t.eqStr("i32 words are not a word array", gateNishType("i32[]"), "?i32[]")
+  t.eqStr("the contract's word is not Nish", gateNishType("words32"), "?words32")
 
   const fixture = "tests/spec/gates/fixtures/sig_module.txt"
   const all = gateSignatures(signaturesTestCtx(fixture, null))
   t.eqLines("findings", all, [
     "check: declared (string, string) -> bool, but nish/fixtures/sig_module has (string, Map<string, i32>): boolean",
     "pick: nish/fixtures/sig_module does not export pick",
+    "wordsOut: declared (bytes) -> bytes, but nish/fixtures/sig_module has (u8[]): u32[]",
+    "bytesOut: declared (words32) -> words32, but nish/fixtures/sig_module has (u32[]): u8[]",
+    "narrow: declared (words64) -> words64, but nish/fixtures/sig_module has (u64[]): u16[]",
   ])
   t.eqLines("under a nish root", gateSignatures(signaturesTestCtx(null, "tests/spec/gates/..")), [
     "signatures: cannot read tests/spec/gates/../std/fixtures/sig_module.ts, the source of nish/fixtures/sig_module",
