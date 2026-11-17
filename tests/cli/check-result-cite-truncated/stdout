@@ -1,0 +1,16 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ mini-tag · RFC 9992 (Mini Tags profile) · nish/mini/tag
+ Status: INVALID
+
+ Gate failures
+  ✘ fidelity 3-TAG.truncate: the truncation to 2 bytes is not printed in RFC §3 ("Test Vectors")
+  ✘ provenance 3-CHECK.source: RFC §2 ("Checking"), the result citation of 3-CHECK (inputs §3), does not state the expected result: R-CHECK does not require "true" as the result (an affirmative MUST, SHALL or REQUIRED to, a result verb, then "true"); and no property derives it: P-CHECK calls tag for a value no cited vector of tag expects with matching arguments (unused: 3-TAG compares only the first 2 bytes of its result, so …
+
+ Requirements
+  ○ R-CHECK  §2 MUST  "A receiver MUST check each tag against its key and message."
+      ○ 3-TAG (first 2 bytes)  ○ 3-CHECK  ○ P-CHECK (28 samples: 4 boundary)
+
+ Warnings
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

@@ -1,0 +1,12 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ mini-tag · RFC 9992 (Mini Tags profile) · nish/mini/tag
+ Status: CONTRACT_VALID
+
+ Requirements
+  ○ R-CHECK  §2 MUST  "A receiver MUST check each tag against its key and message."
+      ○ 3-TAG  ○ 3-CHECK  ○ P-CHECK (28 samples: 4 boundary)
+
+ Warnings
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

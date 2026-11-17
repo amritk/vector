@@ -1,0 +1,1 @@
+vector spec check tests/cli/check-result-cite-unwrap-null/contracts/mini-look.json --spec tests/cli/check-result-cite-unwrap-null/rfcs/rfc9993.txt

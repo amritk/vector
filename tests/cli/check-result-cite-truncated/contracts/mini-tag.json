@@ -1,0 +1,171 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "mini-tag",
+  "source": {
+    "rfc": 9992,
+    "title": "Mini Tags profile",
+    "sha256": "20a21b547bb7121a32c3b2b6f9cc8ca9c67cc8792c844c20e1e1f47285a92d64"
+  },
+  "sources": [
+    {
+      "id": "rfc9992",
+      "rfc": 9992,
+      "file": "rfcs/rfc9992.txt",
+      "sha256": "20a21b547bb7121a32c3b2b6f9cc8ca9c67cc8792c844c20e1e1f47285a92d64"
+    }
+  ],
+  "target": {
+    "module": "nish/mini/tag"
+  },
+  "requirements": [
+    {
+      "id": "R-CHECK",
+      "section": "2",
+      "level": "MUST",
+      "quote": "A receiver MUST check each tag against its key and message."
+    }
+  ],
+  "functions": [
+    {
+      "name": "tag",
+      "params": [
+        {
+          "name": "key",
+          "type": "bytes"
+        },
+        {
+          "name": "msg",
+          "type": "bytes"
+        }
+      ],
+      "returns": "bytes"
+    },
+    {
+      "name": "check",
+      "params": [
+        {
+          "name": "key",
+          "type": "bytes"
+        },
+        {
+          "name": "msg",
+          "type": "bytes"
+        },
+        {
+          "name": "t",
+          "type": "bytes"
+        }
+      ],
+      "returns": "bool"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "3-TAG",
+      "title": "the tag of the vector",
+      "covers": ["R-CHECK"],
+      "source": {
+        "cite": {
+          "section": "3"
+        }
+      },
+      "call": "tag",
+      "args": [
+        {
+          "hex": "01",
+          "label": "KEY"
+        },
+        {
+          "hex": "02",
+          "label": "MESSAGE"
+        }
+      ],
+      "expect": {
+        "hex": "0a0b",
+        "label": "TAG"
+      },
+      "truncate": {
+        "bytes": 2
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "3-CHECK",
+      "title": "the tag checks",
+      "covers": ["R-CHECK"],
+      "source": {
+        "spec": "2"
+      },
+      "section": "3",
+      "call": "check",
+      "args": [
+        {
+          "hex": "01",
+          "label": "KEY"
+        },
+        {
+          "hex": "02",
+          "label": "MESSAGE"
+        },
+        {
+          "hex": "0a0b",
+          "label": "TAG"
+        }
+      ],
+      "expect": {
+        "bool": true
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-CHECK",
+      "title": "a tag checks against the key and message it was made of",
+      "covers": ["R-CHECK"],
+      "forall": [
+        {
+          "name": "key",
+          "type": "bytes",
+          "minLen": 1,
+          "maxLen": 1
+        },
+        {
+          "name": "msg",
+          "type": "bytes",
+          "minLen": 0,
+          "maxLen": 1
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "check",
+            "args": [
+              {
+                "var": "key"
+              },
+              {
+                "var": "msg"
+              },
+              {
+                "call": "tag",
+                "args": [
+                  {
+                    "var": "key"
+                  },
+                  {
+                    "var": "msg"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "bool": true
+          }
+        ]
+      }
+    }
+  ]
+}

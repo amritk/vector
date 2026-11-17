@@ -1,0 +1,27 @@
+Independent Submission                                        V. Authors
+Request for Comments: 9992                                        vector
+Category: Informational                                    November 2026
+
+
+                          Mini Tags in Text
+
+1.  Introduction
+
+   A mini tag binds a message to a key.
+
+2.  Checking
+
+   A receiver MUST check each tag against its key and message.
+
+3.  Test Vectors
+
+   KEY = 01
+   MESSAGE = 02
+   TAG = 0a0b
+
+
+
+
+
+Authors                       Informational                     [Page 1]
+

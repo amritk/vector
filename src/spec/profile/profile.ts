@@ -2232,8 +2232,13 @@ const profileReadRow = (c: ProfileContext, cells: XmlNode[], section: string, tr
   v.title = title
   v.covers = covers
   v.source = source
-  // A cited vector's section is in its source.
-  if (source.kind !== VectorSourceKind.Cite) {
+  // A cited vector's section is in its source; a vector whose result is
+  // cited apart from its inputs is at the inputs' section, carried here.
+  const inputs = source.cite
+  if (source.kind === VectorSourceKind.Spec && inputs !== null) {
+    v.section = inputs.section
+    source.cite = null
+  } else if (source.kind !== VectorSourceKind.Cite) {
     v.section = section
   }
   v.call = pcall.call
@@ -2260,6 +2265,89 @@ const profileSourceTail = (td: XmlNode): XmlNode | null => {
     return null
   }
   return k
+}
+
+/** The accepted way to cite a vector's result apart from its inputs, as refusals print it. */
+const PROFILE_RESULT_FORM: string =
+  "{{Section N of RFCx}}; result {{Section M of RFCx}}, two sections of the main RFC, for an Expected of null, true or false"
+
+/** Refuses a Source cell that misses the result form, saying why; always null. */
+const profileResultRefuse = (c: ProfileContext, td: XmlNode, why: string): VectorSource | null => {
+  profileRefuse(c, td, `Source: ${why}; write ${PROFILE_RESULT_FORM}`)
+  return null
+}
+
+/**
+ * A Source cell that cites a vector's inputs to one section of the main RFC
+ * and its null, true or false result to another, `{{Section A of RFCx}};
+ * result {{Section B of RFCx}}`: a Spec source of B, whose `cite` carries A
+ * for the row to take as its section. Null, refused, for anything else.
+ */
+const profileResultCite = (
+  c: ProfileContext,
+  td: XmlNode,
+  lead: XmlNode,
+  expect: Literal | null,
+): VectorSource | null => {
+  const sep = lead.next
+  const res: XmlNode | null = sep === null ? null : sep.next
+  if (sep === null || sep.name.length > 0 || profileTrim(profileRawText(sep)) !== "; result" || res === null) {
+    return profileResultRefuse(c, td, "a result's section follows the inputs' after \"; result \"")
+  }
+  let after = res.next
+  while (after !== null && after.name.length === 0 && profileTrim(after.text).length === 0) {
+    after = after.next
+  }
+  const leadSection: string | null = lead.name === "xref" ? xmlAttr(lead, "section") : null
+  const resSection: string | null = res.name === "xref" ? xmlAttr(res, "section") : null
+  if (leadSection === null || resSection === null) {
+    return profileResultRefuse(
+      c,
+      td,
+      "both the inputs and the result are cited to a section of the RFC, not an anchor or a code span",
+    )
+  }
+  if (after !== null) {
+    return profileResultRefuse(
+      c,
+      td,
+      `nothing may follow the result's section, not "${profileTrim(profileRawText(after))}"`,
+    )
+  }
+  const a = profileCitedRfc(c, lead)
+  const b = profileCitedRfc(c, res)
+  if (a < 0 || b < 0) {
+    return null
+  }
+  if (c.mainRfc < 0 || a !== c.mainRfc || b !== c.mainRfc) {
+    return profileResultRefuse(
+      c,
+      td,
+      c.mainRfc < 0
+        ? "a result is cited apart from its inputs only in a spec whose main source is an RFC"
+        : `both sections are of the main source, RFC${c.mainRfc}`,
+    )
+  }
+  if (leadSection === resSection) {
+    return profileResultRefuse(c, td, `the result's section is another than the inputs', not ${leadSection} again`)
+  }
+  if (expect === null) {
+    return null
+  }
+  if (expect.kind !== LitKind.Null && expect.kind !== LitKind.Bool) {
+    return profileResultRefuse(
+      c,
+      td,
+      `a section states a null, true or false result, so the Expected is one, not ${literalsKindOf(expect)}`,
+    )
+  }
+  c.cited.add(a)
+  const inputs = new Citation()
+  inputs.section = leadSection
+  const out = new VectorSource(VectorSourceKind.Spec)
+  out.text = resSection
+  out.cite = inputs
+  return out
 }
 
 /** What a Source cell's leading element is, as a refusal names it. */
@@ -2291,6 +2379,9 @@ const profileSourceCell = (c: ProfileContext, td: XmlNode, expect: Literal | nul
       k = k.next
     }
     const tail = profileTrim(rest)
+    if (tail.startsWith(";")) {
+      return profileResultCite(c, td, lead, expect)
+    }
     const name = tail.startsWith(",") ? profileTrim(tail.substring(1)) : ""
     const cited = lead.name === "xref" && xmlAttr(lead, "section") !== null
     if (!cited || !textOnly || charsTestVector(name) === 0 || tail !== `, ${name}`) {
