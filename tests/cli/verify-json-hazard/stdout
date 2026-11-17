@@ -1,0 +1,23 @@
+{
+  "status": "REFUTED",
+  "dashboard": "╔════════════════════════════════════════════════════════════════════╗\n║                        VECTOR — PROOF REPORT                       ║\n╠════════════════════════════════════════════════════════════════════╣\n║ Prompt:  \"verify: tests/fixtures/overflow.json\"                    ║\n║ Attempt: 1/1      Solver: Z3 4.16.0 (native)      Status: REFUTED  ║\n╠════════════════════════════════════════════════════════════════════╣\n║ LAYER 1 · spanEnd(low: Int, high: Int): Int                        ║\n║   { low <= high  ∧  low >= 0 }  high + high - high                 ║\n║   { result == high }                                               ║\n║   ✔ ensures AX-WIDTH  proven (unsat, ∀ inputs)                     ║\n║   ✘ Int overflow: high + high may leave ±(2^53−1), where float64   ║\n║   rounds (e.g. low = 0, high = 4503599627370496)                   ║\n║   ⚠ guard low <= high ∧ low >= 0 enforced at runtime; proven to    ║\n║   hold at every internal call site                                 ║\n╠════════════════════════════════════════════════════════════════════╣\n║ VERDICT: 1 CONTRACT VIOLATION(S) FOUND — SEE ABOVE                 ║\n║ \"Testing shows the presence of bugs, never their absence.\"         ║\n╚════════════════════════════════════════════════════════════════════╝",
+  "feedback": "Function spanEnd: Int overflow — high + high can leave ±(2^53−1), where float64 rounds (e.g. low = 0, high = 4503599627370496) — rewrite it so no intermediate grows past its operands, or bound the parameters with requires clauses.",
+  "items": [
+    {
+      "function": "spanEnd",
+      "axiomId": "(range)",
+      "property": "high + high",
+      "issue": "range-hazard",
+      "counterexample": {
+        "inputs": {
+          "low": "0",
+          "high": "4503599627370496"
+        },
+        "result": "4503599627370496",
+        "replay": "confirmed"
+      },
+      "hint": "An Int is a float64 in the emitted code, exact only within ±(2^53−1), and this value can leave that range for the input shown. Rewrite it so no intermediate grows past its operands (low + (high - low) * k, not (low + high) * k), or bound the parameters with requires clauses."
+    }
+  ],
+  "styleWarnings": []
+}

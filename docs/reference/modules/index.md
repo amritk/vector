@@ -13,6 +13,7 @@ Generated from [src/index.ts](https://github.com/amritk/vector/blob/main/src/ind
 ## Exports
 
 - [`VECTOR_VERSION`](#vector_version)
+- [`vectorAgentsDoc`](#vectoragentsdoc)
 - [`vectorRun`](#vectorrun)
 - [`vectorVerifyJson`](#vectorverifyjson)
 - [`vectorDiffJson`](#vectordiffjson)
@@ -28,6 +29,29 @@ The version `vector --version` prints; kept equal to package.json's.
 ```ts
 const VECTOR_VERSION: string
 ```
+
+### vectorAgentsDoc
+
+Where an agent reads vector's rules, traps first, as the top-level help's
+Agents section names it: `<root>/docs/AI.md` when that file exists, else
+its URL on GitHub (a binary built from the npm library, which holds only
+src/).
+
+```ts
+function vectorAgentsDoc(root: string): string
+```
+
+<scalar-field name="root" type="string" required>
+
+the checkout the binary was built from (sourceInstallRoot)
+
+</scalar-field>
+
+<scalar-field name="returns" type="string">
+
+the path of docs/AI.md under `root`, or its GitHub URL
+
+</scalar-field>
 
 ### vectorRun
 
