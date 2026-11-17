@@ -95,8 +95,8 @@ text passes even with the rule removed.
 
 **Generated files are regenerated, never edited by hand.** That covers
 `docs/reference/**` and its routes in `scalar.config.json`, `tests/dogfood/**`, `contracts/*.json`
-(extracted from `specs/*.xml`) and `specs/*.xml` (built from `specs/*.md` by
-`scripts/build-spec.sh`). Change the source and rerun the generator.
+(extracted from `specs/*.xml`) and `specs/*.xml` and fixture `.xml` (built from
+their `.md` by `scripts/build-spec.sh`). Change the source and rerun the generator.
 `CHANGELOG.md` and every version bump are release-please's: never edit the
 version or the changelog by hand.
 
