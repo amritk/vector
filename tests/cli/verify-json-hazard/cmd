@@ -1,0 +1,1 @@
+vector verify --json tests/fixtures/overflow-spec.json tests/fixtures/overflow.json
