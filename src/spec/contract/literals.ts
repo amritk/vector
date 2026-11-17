@@ -461,11 +461,16 @@ const literalsGroupedEnd = (r: LiteralsReader, j: i32): i32 => {
  * The end of a label at `j` (before its ` = `), or -1. A label is words of
  * letters, digits, `_` and `-`, one space apart; the first word starts with a
  * letter, or with digits then a letter (`32-bit fixed-common part`, as RFC
- * 8439 prints it), so `22 x 0b` and `42` stay a run and an int. A later word
- * may be a comma-grouped number (`After 1,000 iterations`, as RFC 7748
- * prints it), and one later word may be a parenthesised group of such words
- * (`MESSAGE (length 1 byte)`, as RFC 8032 prints it), so the comma and paren
- * inside it do not end the argument.
+ * 8439 prints it), so `22 x 0b` and `42` stay a run and an int. An apostrophe
+ * may join two letters inside a word (`Alice's private key`, as RFC 7748
+ * prints it). A later word may be a comma-grouped number (`After 1,000
+ * iterations`, as RFC 7748 prints it), and one later word may be a
+ * parenthesised group of such words (`MESSAGE (length 1 byte)`, as RFC 8032
+ * prints it), so the comma and paren inside it do not end the argument.
+ * The words may end in one `, alias` (`Alice's private key, a` or `Alice's
+ * public key, X25519(a, 9)`, as RFC 7748 prints them): the comma is the
+ * label's only when its alias is followed by ` = `, so `f(K = 00, b = 11)`
+ * is still two arguments.
  */
 const literalsLabelEnd = (r: LiteralsReader, j: i32): i32 => {
   let k = j
@@ -478,13 +483,14 @@ const literalsLabelEnd = (r: LiteralsReader, j: i32): i32 => {
   if (!literalsIsLetter(literalsByte(r, k))) {
     return -1
   }
-  while (literalsIsLabelChar(literalsByte(r, k))) {
-    k++
-  }
+  k = literalsLabelCharsEnd(r, k)
   let grouped = false
   for (;;) {
     if (literalsHas(r, k, " = ")) {
       return k
+    }
+    if (literalsHas(r, k, ", ")) {
+      return literalsAliasEnd(r, j, k)
     }
     if (literalsByte(r, k) !== 0x20) {
       return -1
@@ -492,7 +498,7 @@ const literalsLabelEnd = (r: LiteralsReader, j: i32): i32 => {
     k++
     if (literalsByte(r, k) === 0x28 && !grouped) {
       grouped = true
-      k = literalsGroupEnd(r, k + 1)
+      k = literalsGroupEnd(r, k + 1, false)
       if (k < 0) {
         return -1
       }
@@ -505,25 +511,58 @@ const literalsLabelEnd = (r: LiteralsReader, j: i32): i32 => {
   }
 }
 
+/**
+ * The end of a label whose words, from `j`, end in a `, ` at `k`: past its
+ * one alias, a label word (`a`) or a word joined to a parenthesised group
+ * that may hold `, ` (`X25519(a, 9)`), when ` = ` follows it; -1 otherwise.
+ * Words that are themselves an f64 (`NaN`, `Infinity`) take no alias, so
+ * `f(NaN, a = 00)` is still two arguments.
+ */
+const literalsAliasEnd = (r: LiteralsReader, j: i32, k: i32): i32 => {
+  if (literalsF64End(r, j) === k) {
+    return -1
+  }
+  let m = literalsLabelWordEnd(r, k + 2)
+  if (m >= 0 && literalsByte(r, m) === 0x28) {
+    m = literalsGroupEnd(r, m + 1, true)
+  }
+  return m >= 0 && literalsHas(r, m, " = ") ? m : -1
+}
+
+/**
+ * The end of a run of label characters at `j`, where an apostrophe counts
+ * only between two letters (`Alice's`); `j` when there is none.
+ */
+const literalsLabelCharsEnd = (r: LiteralsReader, j: i32): i32 => {
+  let k = j
+  for (;;) {
+    const c = literalsByte(r, k)
+    if (literalsIsLabelChar(c)) {
+      k++
+    } else if (c === 0x27 && literalsIsLetter(literalsByte(r, k - 1)) && literalsIsLetter(literalsByte(r, k + 1))) {
+      k++
+    } else {
+      return k
+    }
+  }
+}
+
 /** The end of one later label word at `j` (a comma-grouped number, or label characters), or -1. */
 const literalsLabelWordEnd = (r: LiteralsReader, j: i32): i32 => {
   if (!literalsIsLabelChar(literalsByte(r, j))) {
     return -1
   }
   const grouped = literalsGroupedEnd(r, j)
-  let k = grouped >= 0 ? grouped : j
-  while (literalsIsLabelChar(literalsByte(r, k))) {
-    k++
-  }
-  return k
+  return literalsLabelCharsEnd(r, grouped >= 0 ? grouped : j)
 }
 
 /**
  * The end of a label's parenthesised group, past its `)`, from `j` just after
- * its `(`: label words one space apart, at least one, with no paren inside.
- * -1 when there is none.
+ * its `(`: label words one space apart, or also `, ` apart when `commas` (an
+ * alias's group, `X25519(a, 9)`), at least one, with no paren inside. -1 when
+ * there is none.
  */
-const literalsGroupEnd = (r: LiteralsReader, j: i32): i32 => {
+const literalsGroupEnd = (r: LiteralsReader, j: i32, commas: boolean): i32 => {
   let k = literalsLabelWordEnd(r, j)
   for (;;) {
     if (k < 0) {
@@ -531,6 +570,9 @@ const literalsGroupEnd = (r: LiteralsReader, j: i32): i32 => {
     }
     if (literalsByte(r, k) === 0x29) {
       return k + 1
+    }
+    if (commas && literalsHas(r, k, ", ")) {
+      k++
     }
     if (literalsByte(r, k) !== 0x20) {
       return -1
