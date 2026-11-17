@@ -32,7 +32,11 @@ read `.nish/docs/AI.md` (the language as rules, traps first).
   and SHA-256, child processes, z3, and diagnostics.
 - `tests/<area>/*_test.ts` are Nish programs built on `nish/testing`.
   `tests/cli/<case>/` is a golden case: `cmd` (`vector <args>`), `stdout`,
-  an optional `stderr`, and `exit`, checked against `dist/vector`.
+  an optional `stderr`, and `exit`, checked against `dist/vector`. An
+  optional `repo` names a `tests/fixtures/<name>/` with `base/` and `head/`
+  trees: the runner commits them into a throwaway git repository (`main` =
+  base, `work` = head), which `{{repo}}` names in `cmd` and `<repo>` in the
+  output.
 - `tests/dogfood/` holds vector's tests of itself, emitted from its own specs
   (`specs/vector-*.md`) with `--package vector=src`. They are generated, so
   regenerate them; never edit them.
