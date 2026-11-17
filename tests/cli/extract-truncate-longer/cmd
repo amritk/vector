@@ -1,0 +1,1 @@
+vector spec extract tests/fixtures/profile/profile-truncate-longer.xml -o tests/fixtures/profile/profile-truncate-longer.json

@@ -34,6 +34,7 @@ Generated from [src/spec/contract/literals.ts](https://github.com/amritk/vector/
 - [`literalsLabelledMessage`](#literalslabelledmessage)
 - [`literalsParseCall`](#literalsparsecall)
 - [`literalsParse`](#literalsparse)
+- [`literalsByteLength`](#literalsbytelength)
 - [`literalsKindOf`](#literalskindof)
 - [`literalsQuote`](#literalsquote)
 - [`literalsSettle`](#literalssettle)
@@ -477,6 +478,27 @@ the cell's text
 <scalar-field name="returns" type="Result&lt;RawLiteral, LiteralError&gt;">
 
 the raw literal, or why the text is not one
+
+</scalar-field>
+
+### literalsByteLength
+
+How many bytes a bytes literal stands for: its hex pairs times its repeat,
+an ascii literal's characters, or the sum of a concat's parts.
+
+```ts
+function literalsByteLength(lit: Literal): i64
+```
+
+<scalar-field name="lit" type="Literal" required>
+
+the literal
+
+</scalar-field>
+
+<scalar-field name="returns" type="i64">
+
+the byte count, or -1 when the literal is not bytes
 
 </scalar-field>
 

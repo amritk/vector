@@ -14,6 +14,7 @@ import { emitToInt } from "./lit"
  */
 export const emitHelperNames = (): string[] => [
   "hexOf",
+  "hexPrefix",
   "hexOrNull",
   "unhex",
   "nibble",
@@ -52,7 +53,7 @@ export const emitHelperNames = (): string[] => [
  * @returns the helpers it needs
  */
 export const emitHelperDeps = (name: string): string[] => {
-  if (name === "hexOrNull") {
+  if (name === "hexOrNull" || name === "hexPrefix") {
     return ["hexOf"]
   }
   if (name === "unhex") {
@@ -106,6 +107,20 @@ const hexOf = (bytes: u8[]): string => {
     parts.push(digits.substring(v & 15, (v & 15) + 1));
   }
   return parts.join("");
+};`
+  }
+  if (name === "hexPrefix") {
+    return `/** The first \`n\` bytes of \`bytes\` as hex; a shorter result says so, and never matches. */
+const hexPrefix = (bytes: u8[], n: i32): string => {
+  const have: i32 = toI32(bytes.length);
+  if (have < n) {
+    return \`a \${have}-byte result, shorter than the \${n} bytes it is truncated to\`;
+  }
+  const head: u8[] = [];
+  for (let i: i32 = 0; i < n; i += 1) {
+    head.push(bytes[i]);
+  }
+  return hexOf(head);
 };`
   }
   if (name === "hexOrNull") {

@@ -70,7 +70,7 @@ import {
   VectorSourceKind,
 } from "../contract/types"
 import { typeCallsIn } from "../contract/typing"
-import { vocabHas, vocabIsBinding, vocabLevels } from "../contract/vocab"
+import { vocabHas, vocabIsBinding, vocabLevels, vocabValueType } from "../contract/vocab"
 import { FrontRefusal, frontParseInterface, frontParseProperty, frontReads } from "../front/front"
 import { RfcDocument, rfcNormalize, rfcSection, rfcSectionText } from "../source/rfc"
 import { XmlDocument } from "../xml/doc"
@@ -1703,7 +1703,7 @@ const profileReadTruncate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>,
     return
   }
   const fn = profileFn(c, v.call)
-  const ret = fn !== null ? fn.returns : ""
+  const ret = fn !== null ? vocabValueType(fn.returns) : ""
   if (ret !== "bytes") {
     profileRefuse(c, p, `${id}'s ${v.call} returns ${ret}, and only a bytes result is truncated`)
     return

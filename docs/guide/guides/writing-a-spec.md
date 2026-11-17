@@ -28,6 +28,7 @@ becomes in the XML.
 | the vectors | one table, header exactly `Id \| Call \| Expected \| Covers \| Source \| Title` | `<table>` |
 | a vector's `tolerance` | a paragraph `Tolerance: V1 ulps 1, {{Section N of RFCx}}: "quote"` (or `abs 1e-9`) right after the vector table or another `Tolerance:` paragraph (see [Tolerances](#tolerances)) | the next sibling `<t>Tolerance: …</t>` |
 | a vector's `iterate` | a paragraph `Iterate: V1 1,000 times, (k, u) <- (f(k, u), k)` in the run after the vector table, among its `Tolerance:` paragraphs (see [Iterations](#iterations)) | the next sibling `<t>Iterate: … &lt;- …</t>` |
+| a vector's `truncate` | a paragraph `Truncate: V1 to 128 bits` (or `to 16 bytes`) in the same run after the vector table (see [Truncations](#truncations)) | the next sibling `<t>Truncate: …</t>` |
 | an `outOfScope` export | a paragraph `Out of scope: <export>, <the reason no clause tests it>`, anywhere in the body | `<t>Out of scope: …</t>` |
 | a requirement's or vector's `section` | the enclosing numbered section (`--- back` gives appendices A, B, …) | the section number `xml2rfc` gives |
 
@@ -180,6 +181,44 @@ Iterate: 5.2-ITER-1M 1000000 times, slow, (k, u) ← (x25519(k, u), k)
   iterated 2,000 times).
 
 An `Iterate:` paragraph anywhere else, or after a table that is not the
+vector table, is refused.
+
+### Truncations
+
+Some RFCs print only the start of a result: RFC 4231 Section 4.6 gives
+HMAC-SHA-256 "truncated to 128 bits". Write the row with the printed,
+truncated value as its Expected, and give it a paragraph in the run directly
+after the vector table, mixed freely with its `Tolerance:` and `Iterate:`
+paragraphs:
+
+```md
+| 4.6-256 | `hmacSha256(Key = 0c0c…0c0c, Data = 5465…6f6e)` | `HMAC-SHA-256 = a3b6167473100ee06e0c796c2955552b` | R-TRUNC | {{Section 4.6 of HMAC}} | RFC 4231 4.6: Test Case 5, HMAC-SHA-256 truncated to 128 bits |
+
+Truncate: 4.6-256 to 128 bits
+```
+
+(The row's hex is shortened here; see `tests/fixtures/profile/profile-truncate.md`.)
+
+- The paragraph reads `Truncate: <id> to <N> bits` or `Truncate: <id> to <N>
+  bytes`, and nothing else. N is a whole number of at least 1 in digits,
+  with no leading zero or commas; a length in bits is a multiple of 8, and
+  the length is 65,536 bytes at most.
+- The vector must be in the table and truncated once at most, and its
+  function must return bytes (`u8[]`).
+- The Expected is the whole truncated result: a 16-byte Expected with
+  `to 96 bits` is refused (`4.6-256's Expected is 16 bytes (128 bits), but
+  Truncate: keeps 12 bytes (96 bits); the Expected is the whole truncated
+  result`), and so is a shorter one.
+- A truncated vector has no tolerance and is not iterated.
+- Extract's fidelity gate refuses the row when its section does not print
+  the length with the paragraph's unit (`to 16 bytes` against a section
+  that says `128 bits`), or when the row's values are not printed there.
+
+The generated test compares the first N bytes of the result with the
+Expected, and fails a result shorter than that rather than comparing what
+there is.
+
+A `Truncate:` paragraph anywhere else, or after a table that is not the
 vector table, is refused.
 
 ### The whole spec

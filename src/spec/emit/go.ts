@@ -547,7 +547,10 @@ const emitGoVector = (ctx: EmitGoContext, k: Clause): string => {
   const call = it === null ? emitGoCall(ctx, sig, args) : "it_r"
   const ret = emitGoVt(sig.returns)
   let body = ""
-  if (ret === "bytes") {
+  const tr = k.truncate
+  if (ret === "bytes" && tr !== null) {
+    body = `t.eqStr(${name}, _hexPrefix(${call}, ${tr.bytes}), "${emitLiteralHex(expect)}")`
+  } else if (ret === "bytes") {
     body = `t.eqStr(${name}, _hexOf(${call}), "${emitLiteralHex(expect)}")`
   } else if (ret === "bytes?") {
     const want = expect.kind === LitKind.Null ? "null" : emitLiteralHex(expect)
@@ -912,6 +915,13 @@ func _h(s string) []byte {
 
 func _hexOf(b []byte) string {
 	return hex.EncodeToString(b)
+}
+
+func _hexPrefix(b []byte, n int) string {
+	if len(b) < n {
+		return fmt.Sprintf("a %d-byte result, shorter than the %d bytes it is truncated to", len(b), n)
+	}
+	return hex.EncodeToString(b[:n])
 }
 
 func _ohex(b *[]byte) string {

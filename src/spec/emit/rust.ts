@@ -603,7 +603,10 @@ const emitRsVector = (ctx: EmitRsContext, k: Clause): string => {
   const call = it === null ? emitRsCall(sig, args) : "it_r"
   const ret = emitRsVt(sig.returns)
   let body = ""
-  if (ret === "bytes") {
+  const tr = k.truncate
+  if (ret === "bytes" && tr !== null) {
+    body = `t.eq_str(${name}, &_hex_prefix(&${call}, ${tr.bytes}), "${emitLiteralHex(expect)}")`
+  } else if (ret === "bytes") {
     body = `t.eq_str(${name}, &_hex_of(&${call}), "${emitLiteralHex(expect)}")`
   } else if (ret === "bytes?") {
     const want = expect.kind === LitKind.Null ? "null" : emitLiteralHex(expect)
@@ -964,6 +967,13 @@ fn _h(hex: &str) -> Vec<u8> {
 
 fn _hex_of(b: &[u8]) -> String {
     b.iter().map(|x| format!("{:02x}", x)).collect()
+}
+
+fn _hex_prefix(b: &[u8], n: usize) -> String {
+    if b.len() < n {
+        return format!("a {}-byte result, shorter than the {} bytes it is truncated to", b.len(), n);
+    }
+    _hex_of(&b[..n])
 }
 
 fn _ohex(b: Option<Vec<u8>>) -> String {
