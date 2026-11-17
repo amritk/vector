@@ -16,6 +16,8 @@ description: >-
 
 # vector spec — spec → contract → Nish test, and the PR that implements it
 
+Before running vector, read [`docs/AI.md`](../../../docs/AI.md): its rules, traps first.
+
 **You** write the spec. **`vector spec extract`** writes the contract from it.
 **The RFC text and Z3 hold the veto**, and **nish runs the test.** Never write
 or edit `contracts/<name>.json` by hand: change the spec, rebuild, and
@@ -202,10 +204,14 @@ Untested: an obligation on the caller: a pure function cannot see its other invo
 Every requirement must then be RFC text: a `Definition:` paragraph, a BCP 14
 sentence of the spec's own, and a vector Source naming a section of the spec
 are refused. `specs/rfc5869-hkdf-sha256.md` and
-`specs/rfc8439-chacha20-poly1305.md` are worked examples. Check such a
-contract with `spec check <contract.json> --spec specs/<name>.xml`: the RFC is
-read from its recorded file, and the contract must be exactly what the profile
-extracts to.
+`specs/rfc8439-chacha20-poly1305.md` are worked examples. The contract records
+the RFC, not the spec, so check it with `spec check contracts/<name>.json`
+(the RFC is read from its recorded file), or name the RFC with
+`--spec rfcs/rfc<N>.txt`. `--spec specs/<name>.xml` names a file the contract
+does not record, and exits 1 (`--spec … is not rfcs/rfc<N>.txt, the main
+source the contract records`). To check that the contract is exactly what the
+profile extracts to, run
+`spec extract specs/<name>.xml -o contracts/<name>.json --check`.
 
 **One vector table** has exactly this header:
 
