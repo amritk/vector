@@ -110,8 +110,12 @@ bytes are held to `expect`:
   65,536) gives the length, in the unit the section prints it in.
 - The call returns bytes, and `expect` is bytes of exactly that length: a
   12-byte `expect` truncated to 128 bits is refused. A word array is not
-  truncated: a call that returns `u16[]`, `u32[]` or `u64[]`, or a words
-  `expect`, is refused (`a truncated vector's expect is bytes, not words32`).
+  truncated: a `Truncate:` paragraph on a vector whose call returns `u16[]`,
+  `u32[]` or `u64[]` is refused as `<id>'s <call> returns words32, and only
+  a bytes result is truncated`. A contract written by hand that does it is
+  refused by typing with `truncate: <call> returns words32, and only a bytes
+  result is truncated`, and a words `expect` by shape with `a truncated
+  vector's expect is bytes, not words32`.
   A truncated vector takes no `tolerance` and no `iterate`.
 - The generated test compares the result's first bytes with `expect`. A
   result shorter than the length fails, as `a 15-byte result, shorter than

@@ -83,6 +83,16 @@ export const main = (): i32 => {
     contractParse(readFileSyncOrNull(`${caseDir}/contracts/scope-plain.json`) ?? "", "plain").expect("parse"),
   )
   t.ok("a plain cite writes no case", plain.indexOf(`"case"`) < 0)
+  // A contract of word arrays (u32[] in and out, words32 literals) writes back
+  // as it was extracted, byte for byte, and loads again to the same contract.
+  const chacha = "tests/fixtures/chacha20/contracts/rfc8439-quarter-round.json"
+  roundtripByValue(t, chacha)
+  const chachaText = readFileSyncOrNull(chacha) ?? ""
+  t.eqLines(
+    `${chacha} writes back line for line`,
+    splitLines(contractWrite(contractParse(chachaText, chacha).expect("parse"))),
+    splitLines(chachaText),
+  )
   // An iterated vector keeps its iterate, and writes slow only when it is true.
   const iterDir = "tests/fixtures/iterate-contract/contracts"
   roundtripByValue(t, `${iterDir}/x25519-iterate.json`)

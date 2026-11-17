@@ -216,6 +216,30 @@ const profileTruncTestRefusals = (t: Suite, xml: string): void => {
     ),
     `${line} 4.6-256's hmacSha256 returns i64, and only a bytes result is truncated`,
   )
+  // A word-array return: hmacSha256 declared to return u16[], u32[] or u64[].
+  const wordRows: string[][] = [
+    ["u16[]", "words16", "[0x0001 0x0002]"],
+    ["u32[]", "words32", "[0x00000001 0x00000002]"],
+    ["u64[]", "words64", "[0x0000000000000001 0x0000000000000002]"],
+  ]
+  for (const w of wordRows) {
+    const words = replaceAll(
+      replaceAll(xml, "data: u8[]): u8[]", `data: u8[]): ${w[0]}`),
+      `HMAC-SHA-256 = ${PROFILE_TRUNC_EXPECT}`,
+      `HMAC-SHA-256 = ${w[2]}`,
+    )
+    t.eqStr(
+      `a ${w[0]} result`,
+      profileTruncTestRead(
+        replaceAll(
+          words,
+          "HMAC-SHA-256 = b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7",
+          `HMAC-SHA-256 = ${w[2]}`,
+        ),
+      ),
+      `${line} 4.6-256's hmacSha256 returns ${w[1]}, and only a bytes result is truncated`,
+    )
+  }
   // A bare "Truncate:" is no Truncate: paragraph but prose, and is not refused.
   t.eqStr("a bare Truncate:", profileTruncTestP(xml, ""), "ok")
   t.eqStr(

@@ -531,10 +531,13 @@ of matching bytes:
   spelling, the print does not say whether the page split one block or
   separates two, so a value that equals the block on either side of that
   break, or runs across it, is refused as meeting a page break (unless the
-  same words are also printed as a whole block elsewhere in the section):
-  cite a vector printed away from the break. A row of another width or spelling, a
+  same words are also printed as a whole block elsewhere in the section,
+  which the value then binds to, under that print's label): cite a vector
+  printed away from the break. A row of another width or spelling, a
   label, a heading or prose after a break ends the block before it, and
-  that block is checked as usual. A block printed under a short line
+  that block is checked as usual. A page footer or header that vector does
+  not recognise as one is left in the text as prose, so it ends a block the
+  same way. A block printed under a short line
   (`Sample ChaCha State`) or as a one-line `name = …` takes that line as
   its label, and a labelled value must name it. The line above is a label
   only when it is at most 60 characters, does not end in `.`, `:` or `,`

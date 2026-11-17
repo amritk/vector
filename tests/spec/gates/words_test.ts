@@ -82,8 +82,11 @@ const WORDS_TEST_BASE: string = `Request for Comments: 9996
  * The rest of it: §5 prints a grid split by a page break (its footer and
  * header removed by rfcParse, the blank lines around them kept), §6 two grids
  * apart by a blank line and then a page break before a sentence, §7
- * u16 and u64 blocks of four words, and §8 to §16 each way a block meets a
- * page break, each closing with the grid 0000ff01 0000ff02 away from any.
+ * u16 and u64 blocks of four words, §8 to §17 each way a block meets a
+ * page break, and §18 a grid split by a break whose top half is printed
+ * again, whole and labelled, away from it, and §19 two test cases, the
+ * second split by a break; §8 to §19 each close with the grid 0000ff01
+ * 0000ff02 away from any break.
  */
 const WORDS_TEST_PAGES: string = `
 5.  Split
@@ -263,6 +266,44 @@ Author                       Informational                      [Page 14]
        0x0001  0x0002
 
        0000ff01  0000ff02
+
+18.  Twin
+
+       000000e1  000000e2
+
+
+
+Author                       Informational                      [Page 15]
+\fRFC 9996                      Words                        November 2026
+
+
+       000000e3  000000e4
+
+   Twin State
+
+       000000e1  000000e2
+
+       0000ff01  0000ff02
+
+19.  Cases
+
+   Test Vector #1:
+
+       000000f1  000000f2
+
+   Test Vector #2:
+
+       000000f3  000000f4
+
+
+
+Author                       Informational                      [Page 16]
+\fRFC 9996                      Words                        November 2026
+
+
+       000000f5  000000f6
+
+       0000ff01  0000ff02
 `
 
 /** The whole RFC. */
@@ -292,7 +333,11 @@ const WORDS_TEST_AFTER: string = `"879531e0", "c5ecf37d", "bdb886dc", "c9a62f8a"
  * out) citing section `sec`, its argument `arg` and its expected value
  * `expect` (each a contract literal).
  */
-const wordsTestRow = (kind: string, sec: string, arg: string, expect: string): string[] => {
+const wordsTestRow = (kind: string, sec: string, arg: string, expect: string): string[] =>
+  wordsTestCite(kind, `{"section": "${sec}"}`, arg, expect)
+
+/** The findings for one vector as in wordsTestRow, citing `cite` (a contract citation's JSON). */
+const wordsTestCite = (kind: string, cite: string, arg: string, expect: string): string[] => {
   const contract = `{
   "contract": "c4",
   "source": {"title": "T", "rfc": 9996},
@@ -302,7 +347,7 @@ const wordsTestRow = (kind: string, sec: string, arg: string, expect: string): s
     {"name": "f", "params": [{"name": "s", "type": "${kind}"}], "returns": "${kind}"}
   ],
   "clauses": [
-    {"kind": "vector", "id": "W1", "title": "t", "covers": ["R1"], "source": {"cite": {"section": "${sec}"}}, "call": "f",
+    {"kind": "vector", "id": "W1", "title": "t", "covers": ["R1"], "source": {"cite": ${cite}}, "call": "f",
      "args": [${arg}], "expect": ${expect}}
   ]
 }`
@@ -439,6 +484,7 @@ const wordsTestPageBlocks = (t: Suite): void => {
   t.eqStr("three grids across two breaks", wordsTestSizes("15"), "2!>,2!>,2!,2")
   t.eqStr("a page break inside a run ends it, as a blank line does", wordsTestSizes("16"), "2!>,2!,2")
   t.eqStr("a row of another width after a break inside a run", wordsTestSizes("17"), "2,2,2")
+  t.eqStr("a marked half printed again, whole, away from the break", wordsTestSizes("18"), "2!>,2!,2,2")
 }
 
 /** The word-array fidelity table: both layouts, against each way a row can differ from the print. */
@@ -633,7 +679,7 @@ const wordsTestTable = (t: Suite): void => {
   )
 }
 
-/** The grid each of §8 to §16 closes with, away from any page break. */
+/** The grid each of §8 to §19 closes with, away from any page break. */
 const WORDS_TEST_CLOSE: string = `{"words32": ["0000ff01", "0000ff02"]}`
 
 /** The refusal of a value that meets an ambiguous page break. */
@@ -644,7 +690,7 @@ const wordsTestBreak = (t: Suite, name: string, sec: string, arg: string, label:
   wordsTestIs(t, name, wordsTestRow("words32", sec, wordsTestLit(arg, label), WORDS_TEST_CLOSE), want)
 }
 
-/** Fidelity over §5's grid split by a page break, §6's grids apart by a blank line, and §8 to §16. */
+/** Fidelity over §5's grid split by a page break, §6's grids apart by a blank line, and §8 to §19. */
 const wordsTestPageRows = (t: Suite): void => {
   const out = `{"words32": ["00000021", "00000022"]}`
   wordsTestIs(
@@ -798,6 +844,47 @@ const wordsTestPageRows = (t: Suite): void => {
     "",
     "",
   )
+  const twin = `"000000e1", "000000e2"`
+  wordsTestBreak(t, "a marked half printed whole elsewhere binds to that print", "18", twin, "", "")
+  wordsTestBreak(t, "and binds under that print's label", "18", twin, "Twin State", "")
+  wordsTestBreak(
+    t,
+    "but not under a label neither print has",
+    "18",
+    twin,
+    "Split State",
+    `under "Twin State", not under "Split State"`,
+  )
+  wordsTestBreak(
+    t,
+    "the other half, printed nowhere else, is refused",
+    "18",
+    `"000000e3", "000000e4"`,
+    "",
+    WORDS_TEST_AT_BREAK,
+  )
+  wordsTestBreak(
+    t,
+    "the whole split grid is still refused",
+    "18",
+    `${twin}, "000000e3", "000000e4"`,
+    "",
+    WORDS_TEST_AT_BREAK,
+  )
+  const tv2 = `{"section": "19", "case": "Test Vector #2"}`
+  const caseRows: string[][] = [
+    ["a test case's half-grid above its page break is refused", `"000000f3", "000000f4"`, WORDS_TEST_AT_BREAK],
+    ["and the half below it", `"000000f5", "000000f6"`, WORDS_TEST_AT_BREAK],
+    ["and the whole grid across it", `"000000f3", "000000f4", "000000f5", "000000f6"`, WORDS_TEST_AT_BREAK],
+    [
+      "another test case's grid is not printed in this one",
+      `"000000f1", "000000f2"`,
+      "2-word value is not printed as one block in RFC §19, Test Vector #2",
+    ],
+  ]
+  for (const r of caseRows) {
+    wordsTestIs(t, r[0], wordsTestCite("words32", tv2, wordsTestLit(r[1], ""), WORDS_TEST_CLOSE), r[2])
+  }
 }
 
 /** One row over §7's u16 or u64 blocks: `arg` against the second block of its width. */
