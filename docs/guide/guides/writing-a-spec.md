@@ -209,7 +209,7 @@ These are what Call and Expected cells may hold:
 | `[]`, `(empty)` | empty bytes; labelled (`MESSAGE (length 0 bytes) = (empty)`), the empty value a section prints under that label (see [What a printed value is](#what-a-printed-value-is)) |
 | `null`, `true`, `false` | themselves |
 | `42`, `-1` | a decimal integer, in range for the parameter's type (`i8` … `u64`, e.g. `u8` 0..255); where the type is `f64` it is that f64 |
-| `Key = 0b0b0b` | labelled bytes: lowercase hex pairs, no spaces. The label is the name the cited section prints the value under. A label may be several words, and its first word may start with digits joined to a letter (`32-bit fixed-common part = 07000000`); a bare number is not a label. A later word may be a comma-grouped number (`After 1,000 iterations`), and one later word may be a parenthesised group of such words (`MESSAGE (length 1 byte) = 72`, as RFC 8032 prints it). A group may not come first, hold a bare comma or a paren, be empty, be left open, or be followed by a second group |
+| `Key = 0b0b0b` | labelled bytes: lowercase hex pairs, no spaces. The label is the name the cited section prints the value under. A label may be several words, and its first word may start with digits joined to a letter (`32-bit fixed-common part = 07000000`); a bare number is not a label. A later word may be a comma-grouped number (`After 1,000 iterations`), and one later word may be a parenthesised group of such words (`MESSAGE (length 1 byte) = 72`, as RFC 8032 prints it). An apostrophe may join two letters inside a word (`Alice's private key`). The words may end in one alias after `, `: a single word, which may be joined to a group whose words are also `, ` apart (`Alice's private key, a = 7707…`, `Alice's public key, X25519(a, 9) = 8520…`, as RFC 7748 §6.1 prints them). An apostrophe may not start or end a word, follow another, or touch a digit (`'Alice`, `Alice''s`, `Alice'9`). A comma takes no space before it and exactly one after (`key,a` and `X25519(a,9)` are refused). An alias is one word (`key, a b` is refused), there is at most one, and a number such as `NaN` takes none, so `f(NaN, a = 00)` is still two arguments. A group may not come first, hold a paren, be empty, be left open, be followed by a second group or by more of its word (`X25519(a, 9)b`), or, outside an alias, hold a comma (`M (a, 9)`); in an alias it may not stand apart from its word (`X25519 (a, 9)`) |
 | `L = 42` | a labelled decimal integer, checked against the cited section's "L = 42". Where the parameter (or return) type is an integer type it is the int; anywhere else digits that are also hex pairs (`42`) are labelled bytes, and digits with a leading zero are never an int: `L = 00` is bytes, and `L = 042` (not whole hex pairs) is refused |
 | `22 × 0b`, `22 x 0b`, `IKM = 22 × 0b` | a run of bytes written that many times (`{hex, repeat}`), as RFCs print runs; optionally labelled. `22×0b` also reads. The count is at least 1, the run lowercase hex pairs, and the expansion at most 65536 bytes |
 | `concat([00], Key = ff)` | the parts joined, all bytes; one level (`concat` does not nest), at least one part. `‖` is refused |
@@ -471,8 +471,16 @@ of matching bytes:
   printed by `"Zg=="`).
 - **Labels.** A value printed under a name (`Key =`, `Input scalar:`, a short
   line such as `Plaintext:` above a dump) must give that name:
-  `{"hex": "0b0b…", "label": "Key"}`. A label the section does not print the
-  value under is refused.
+  `{"hex": "0b0b…", "label": "Key"}`. A label is matched as the section
+  prints it, apostrophe and alias included: RFC 7748 §6.1 prints Alice's key
+  as `Alice's private key, a:`, so a row writes
+  `x25519Base(Alice's private key, a = 7707…)` and expects
+  `Alice's public key, X25519(a, 9) = 8520…`. A label the section does not
+  print the value under is refused: `Alice's private key, b`,
+  `Alice private key, a`, `Alice's public key, X25519(a, 5)`, and Bob's key
+  under `Alice's private key, a` all are, as is a value the cited section
+  does not print at all (the 32-byte base point `[09 00 … 00]` against
+  §6.1, or §6.1's key cited from §6.2).
 - **Empty values.** A section prints an empty value as a label with nothing
   below it, its length stated as 0 (`MESSAGE (length 0 bytes):`, or
   `octets`). Empty bytes bind only under such a label:

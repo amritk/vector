@@ -1,0 +1,1 @@
+vector: tests/fixtures/rfc7748-dh/specs/rfc7748-dh-alias.md:29 (tests/fixtures/rfc7748-dh/specs/rfc7748-dh-alias.xml:126): fidelity: the value is printed in RFC §6.1 ("Curve25519") under "Alice's public key, X25519(a, 9)", not under "Alice's public key, X25519(a, 5)"
