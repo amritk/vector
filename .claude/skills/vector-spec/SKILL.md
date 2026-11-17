@@ -346,7 +346,9 @@ Run it last, after step 4's `emit` and `stale`, so it sees the whole PR.
   - no contract was found.
 
 Its positional arguments are the contracts to check, from the repository's
-top; with none, it checks every `contracts/*.json`. `--repo <dir>` names the
+top; with none, it checks every `contracts/*.json`. Either way, a generated
+test whose one sha line names any contract in `contracts/` counts on the spec
+side, so a PR changing two contracts may name only one of them. `--repo <dir>` names the
 repository (default: the current directory).
 
 From here, the spec and contract change only in a PR of their own.
