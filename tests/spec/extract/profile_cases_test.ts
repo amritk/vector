@@ -1337,7 +1337,9 @@ const profileCasesTestVectors = (t: Suite, all: ProfileCasesTestRfcs): void => {
   caseRows.push(profileCasesTestSrc(`${profileCasesTestTt("echo f")}, Test Vector #2`, '"f"', "V21"))
   caseWant.push(`${caseForm}; ", Test Vector #2" after the code span is not one`)
   caseRows.push(profileCasesTestSrc(`${PROFILE_CASES_RFC10} ${PROFILE_CASES_RFC10}, Test Vector #2`, '"f"', "V22"))
-  caseWant.push(profileCasesTestResultWhy(`a result's section follows the inputs' after "; result "`))
+  caseWant.push(`${caseForm}; ", Test Vector #2" after the section is not one`)
+  caseRows.push(profileCasesTestSrc(`${PROFILE_CASES_RFC10} ${profileCasesTestTt("x")}`, '"f"', "V22b"))
+  caseWant.push(`${caseForm}; "x" after the section is not one`)
   caseRows.push(profileCasesTestSrc("<em>f</em>, Test Vector #2", '"f"', "V23"))
   caseWant.push(`${caseForm}; ", Test Vector #2" after the <em> element is not one`)
   profileCasesTestRefusedWith(
@@ -1907,7 +1909,6 @@ const profileCasesTestResultCite = (t: Suite, all: ProfileCasesTestRfcs): void =
       '"f"',
       "a section states a null, true or false result, so the Expected is one, not bytes",
     ),
-    new ProfileCasesTestResultCase("a comma", `${x2}, result ${x3}`, 'isHex("66")', "true", follows),
     new ProfileCasesTestResultCase("no space", `${x2};result ${x3}`, 'isHex("66")', "true", follows),
     new ProfileCasesTestResultCase("a capital", `${x2}; Result ${x3}`, 'isHex("66")', "true", follows),
     new ProfileCasesTestResultCase("no word", `${x2}; ${x3}`, 'isHex("66")', "true", follows),
@@ -1978,6 +1979,16 @@ const profileCasesTestResultCite = (t: Suite, all: ProfileCasesTestRfcs): void =
       [profileCasesTestResultWhy(k.want)],
     )
   }
+  // A tail that does not start with ";" is not the result form: the test-case refusal names it.
+  profileCasesTestRefusedWith(
+    t,
+    all,
+    "a result cited apart, refused: a comma",
+    profileCasesTestResultSpec('isHex("66")', "true", `${x2}, result ${x3}`),
+    [
+      `Source: only one test case may follow a section, written {{Section N of RFCx}}, Test Vector #N (N from 1, with no leading zero); ", result" after the section is not one`,
+    ],
+  )
   profileCasesTestRefusedWith(
     t,
     all,

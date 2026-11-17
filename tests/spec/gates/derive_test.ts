@@ -1,7 +1,7 @@
 import { Suite } from "nish/testing"
 import { CheckContext } from "../../../src/spec/check"
 import { contractParse } from "../../../src/spec/contract/read"
-import { Clause, Contract, Requirement } from "../../../src/spec/contract/types"
+import { Clause, Contract, Expr, ExprKind, Requirement } from "../../../src/spec/contract/types"
 import { gateDerivedResult } from "../../../src/spec/gates/derive"
 import { gateProvenance, gateResultApart } from "../../../src/spec/gates/provenance"
 import { LoadedSource, SourceSet } from "../../../src/spec/source/load"
@@ -337,7 +337,7 @@ const deriveTestShared = (section: string, source: string | null): CheckContext 
   deriveTestClause(ctx.contract, "P-FLIP").covers = ["R6"]
   deriveTestClause(ctx.contract, "V").covers.push("R6")
   const set = ctx.sources
-  if (source !== null && set !== null) {
+  if (source !== null && source !== "rfc9999" && set !== null) {
     set.sources.push(new LoadedSource(source, "o.txt", "o.txt", rfcParse(DERIVE_TEST_RFC)))
   }
   return ctx
@@ -559,6 +559,22 @@ const deriveTestShapes = (): DeriveTestCase[] => {
       "P computes an argument (unwrap) that is not matched here",
     ),
     new DeriveTestCase(
+      "unwrap of two calls",
+      deriveTestProp(
+        "",
+        deriveTestEq(
+          deriveTestCall(
+            `{"op": "unwrap", "args": [${deriveTestCall(DERIVE_TEST_PK, DERIVE_TEST_MSG, bb)}, ${deriveTestCall(DERIVE_TEST_PK, DERIVE_TEST_MSG, bb)}]}`,
+            DERIVE_TEST_MSG,
+            bb,
+          ),
+          yes,
+        ),
+      ),
+      row,
+      "P computes an argument (unwrap) that is not matched here",
+    ),
+    new DeriveTestCase(
       "two calls deep",
       deriveTestProp("", deriveTestEq(deriveTestCall(pk2, DERIVE_TEST_MSG, bb), yes)),
       deriveTestRow("a2", `{"hex": "02"}`, "bb", "true", ""),
@@ -642,6 +658,30 @@ const deriveTestWheres = (): DeriveTestCase[] => {
   ]
 }
 
+/**
+ * What gateDerivedResult says of V when P passes a let as verify's first
+ * argument: the reader takes a let only at the assert, so the let is set
+ * in place of the parsed argument.
+ */
+const deriveTestLetArg = (): string => {
+  const props = deriveTestProp(
+    "",
+    deriveTestEq(deriveTestCall(DERIVE_TEST_PK, DERIVE_TEST_MSG, `{"hex": "bb"}`), `{"bool": true}`),
+  )
+  const r = contractParse(deriveTestBase(props, deriveTestRow("aa", `{"hex": "02"}`, "bb", "true", "")), "c1")
+  if (r.isErr()) {
+    return `unparsed: ${r.error.join("; ")}`
+  }
+  const c = r.value
+  const a = deriveTestClause(c, "P").assert
+  if (a === null || a.args.length === 0) {
+    return "no assert"
+  }
+  a.args[0].args[0] = new Expr(ExprKind.Let, "")
+  const why = gateDerivedResult(c.clauses, ["R5"], deriveTestClause(c, "V"))
+  return why === null ? "" : why
+}
+
 /** The derived rule, alone and through the provenance gate. */
 export const main = (): i32 => {
   const t = new Suite("spec/gates/derive")
@@ -651,6 +691,7 @@ export const main = (): i32 => {
   for (const c of deriveTestShapes()) {
     t.eqStr(c.name, deriveTestWhy(c.props, c.vectors, ["R5"]), c.want)
   }
+  t.eqStr("a let as an argument", deriveTestLetArg(), "P computes an argument (a let) that is not matched here")
   for (const c of deriveTestWheres()) {
     t.eqStr(c.name, deriveTestWhy(c.props, c.vectors, ["R5"]), c.want)
   }
@@ -723,6 +764,11 @@ export const main = (): i32 => {
   if (other.length !== 1) {
     console.log(other.join("\n"))
   }
+  t.eqStr(
+    "the gate derives through a requirement of B naming the main source",
+    gateProvenance(deriveTestShared("5", "rfc9999")).join("\n"),
+    "",
+  )
   const elsewhere = gateProvenance(deriveTestShared("5", "rfc8888"))
   t.ok(
     "the gate does not derive through a requirement of another source",

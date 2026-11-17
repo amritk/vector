@@ -2379,7 +2379,7 @@ const profileSourceCell = (c: ProfileContext, td: XmlNode, expect: Literal | nul
       k = k.next
     }
     const tail = profileTrim(rest)
-    if (tail.startsWith(";") || !textOnly) {
+    if (tail.startsWith(";")) {
       return profileResultCite(c, td, lead, expect)
     }
     const name = tail.startsWith(",") ? profileTrim(tail.substring(1)) : ""

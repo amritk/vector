@@ -506,7 +506,7 @@ Every vector says where its expected value comes from (`source`):
 | `{"command": "…"}`, with `"section"` for the args | the command's trimmed stdout (lowercase hex for bytes) | `spec check --run-sources` only; otherwise reported as not run, never as passed. A timeout, a nonzero exit or other output fails. See [Running the source commands](spec-to-contract.md#running-the-source-commands) |
 | `{"spec": "4.2"}`, with `"section"` for the args | `null` or a `bool` that section states | provenance: a requirement the vector covers, cited to that section, must state `null`, `true` or `false` as the result, by [the rule below](#when-a-section-states-null-true-or-false) |
 
-A vector whose inputs and result are cited apart, `{{Section 7.1 of RFC8032}}; result {{Section 5.1.7 of RFC8032}}`, is a `spec` source of the result's section with the inputs' `"section"`: `{"spec": "5.1.7"}, "section": "7.1"`. Fidelity checks the inputs against section 7.1; provenance checks the result against section 5.1.7, by the stated rule or, failing that, [the derived rule](#when-a-property-derives-the-result). The report shows its source as `§7.1, result §5.1.7`.
+A vector whose inputs and result are cited apart, `{{Section 7.1 of RFC8032}}; result {{Section 5.1.7 of RFC8032}}`, is a `spec` source of the result's section with the inputs' `"section"`: `{"spec": "5.1.7"}, "section": "7.1"`. Fidelity checks the inputs against section 7.1; provenance checks the result against section 5.1.7, by the stated rule or, failing that, [the derived rule](#when-a-property-derives-the-result). The report shows its evidence as `vector, §7.1, result §5.1.7`.
 
 A vector without a source fails the shape gate. A `cite` source for a `null`
 or `bool` is held to the same rule by fidelity.
@@ -747,8 +747,10 @@ refusals, in the order they are tried:
    "P leaves z unbound", "P binds msg to a N-byte value, outside its domain
    a..b", "P binds n to N, outside its domain a..b", "P binds msg, a bytes
    variable, to a value that is not bytes", "P bounds n by a value that is
-   not an integer", or, for a type with no bounds here (a string), "P binds
-   s, of type string, which is not bound here".
+   not an integer", or "P binds n, of type u64, which is not bound here" for
+   a variable this rule does not bound: a `u64`, `f64`, `bool` or `string`
+   variable, an integer variable with no bounds, or an integer variable bound
+   to a value that is not an integer.
 7. The property's `where`, if any, holds for the bound values. Otherwise:
    "P's where does not hold for the vector's inputs", or "P's where cannot be
    evaluated: …" when it holds a call or anything else the sampler does not
