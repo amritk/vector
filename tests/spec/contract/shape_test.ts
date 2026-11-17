@@ -166,6 +166,27 @@ export const main = (): i32 => {
     `clauses[0].section: a cited vector's args are read in source.cite; drop "section"`,
   )
   shapeExpect(t, `{"cite": {"section": "10"}}`, `{"command": " "}`, "clauses[0].source.command: a shell command")
+  // A cite's case is `Test Vector #N`, N from 1 with no leading zero.
+  t.eqStr(
+    "a cite with a test case passes",
+    shapeErrorsOf(`{"cite": {"section": "10"}}`, `{"cite": {"section": "10", "case": "Test Vector #12"}}`).join("\n"),
+    "",
+  )
+  const badCases: string[] = ["Test Vector #0", "Test Vector #02", "Test vector #2", "Test Vector 2", "#2", ""]
+  for (const bad of badCases) {
+    shapeExpect(
+      t,
+      `{"cite": {"section": "10"}}`,
+      `{"cite": {"section": "10", "case": "${bad}"}}`,
+      "clauses[0].source.cite.case: a test case of the section, as Test Vector #N (N from 1, no leading zero)",
+    )
+  }
+  t.ok(
+    "a cite's case must be a string",
+    shapeErrorsOf(`{"cite": {"section": "10"}}`, `{"cite": {"section": "10", "case": 2}}`)
+      .join("\n")
+      .startsWith("read: "),
+  )
   shapeExpect(
     t,
     `{"cite": {"section": "10"}}`,

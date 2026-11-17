@@ -1071,6 +1071,11 @@
         },
         "section": {
           "$ref": "#/$defs/section"
+        },
+        "case": {
+          "type": "string",
+          "pattern": "^Test Vector #[1-9][0-9]{0,5}$",
+          "description": "One test case of the section, as `Test Vector #N`: the vector's labelled values are read from that case alone, from its `Test Vector #N:` heading to the next. Absent for the whole section."
         }
       },
       "required": ["section"]

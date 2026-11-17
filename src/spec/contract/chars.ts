@@ -214,6 +214,29 @@ export const charsIsIdent = (s: string): boolean => {
 }
 
 /**
+ * The number a test case's name gives it: `Test Vector #N`, exactly, with N
+ * a positive number written without a leading zero.
+ *
+ * @param s the name
+ * @returns N, or 0 when `s` is not such a name
+ */
+export const charsTestVector = (s: string): i32 => {
+  const head = "Test Vector #"
+  if (!s.startsWith(head) || s.length === head.length || s.length > head.length + 6) {
+    return 0
+  }
+  let n = 0
+  for (let i = head.length; i < s.length; i++) {
+    const c = s.charCodeAt(i)
+    if (!charsIsDigit(c) || (i === head.length && c === 0x30)) {
+      return 0
+    }
+    n = n * 10 + (c - 0x30)
+  }
+  return n
+}
+
+/**
  * Whether `s` is a section number: digits in dot-separated parts (`2.3`), or
  * an appendix letter with optional parts (`A`, `A.1`).
  *

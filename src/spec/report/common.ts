@@ -258,7 +258,11 @@ export const reportEvidence = (ctx: CheckContext, k: Clause): string => {
       return `vector, spec ${s.text}`
     }
     const cite = s.cite
-    return cite === null ? "vector" : `vector, ${reportCite(ctx.contract, cite.source, cite.section)}`
+    if (cite === null) {
+      return "vector"
+    }
+    const tc = cite.testCase
+    return `vector, ${reportCite(ctx.contract, cite.source, cite.section)}${tc === null ? "" : `, ${tc}`}`
   }
   const stat = reportStat(ctx, k.id)
   return stat === null ? "property" : `${reportSampleCount(ctx, k.id)} samples (${stat.boundary} boundary)`

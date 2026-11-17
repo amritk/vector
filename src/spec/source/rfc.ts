@@ -345,6 +345,114 @@ export const rfcSection = (doc: RfcDocument, id: string): RfcSection | null => {
 }
 
 /**
+ * The number a line heads a test case with: its first non-blank text is
+ * `Test Vector #N:`, N from 1 with no leading zero, whether the heading
+ * stands alone (above a `===` rule) or the case's description follows it on
+ * the line.
+ *
+ * @param line the line
+ * @returns N, or 0 when the line heads no test case
+ */
+const rfcCaseHeading = (line: string): i32 => {
+  const head = "Test Vector #"
+  const t = trim(line)
+  if (!t.startsWith(head) || t.length === head.length || t.charCodeAt(head.length) === 0x30) {
+    return 0
+  }
+  let n = 0
+  let i = head.length
+  for (; i < t.length && i < head.length + 6; i++) {
+    const c = t.charCodeAt(i)
+    if (c < 0x30 || c > 0x39) {
+      break
+    }
+    n = n * 10 + (c - 0x30)
+  }
+  return i > head.length && i < t.length && t.charCodeAt(i) === 0x3a ? n : 0
+}
+
+/**
+ * Whether a line is shaped like a test case's heading, `Test Vector #<digits>:`,
+ * whether or not rfcCaseHeading takes its number: such a line ends the case
+ * above it, so a case never runs on into a block it does not head.
+ *
+ * @param line the line
+ * @returns true when its first non-blank text is `Test Vector #`, digits and a colon
+ */
+const rfcCaseShaped = (line: string): boolean => {
+  const head = "Test Vector #"
+  const t = trim(line)
+  if (!t.startsWith(head)) {
+    return false
+  }
+  let i = head.length
+  while (i < t.length && t.charCodeAt(i) >= 0x30 && t.charCodeAt(i) <= 0x39) {
+    i++
+  }
+  return i > head.length && i < t.length && t.charCodeAt(i) === 0x3a
+}
+
+/**
+ * Whether a section is split into test cases by `Test Vector #N:` headings
+ * (RFC 8439 §A.3's form).
+ *
+ * @param sec the section
+ * @returns true when one of its own lines heads a test case
+ */
+export const rfcHasCases = (sec: RfcSection): boolean =>
+  sec.ownLines.some((l: string): boolean => rfcCaseHeading(l) > 0)
+
+/**
+ * One test case of a section, as a section of its own: the lines from its
+ * `Test Vector #N:` heading up to the next heading-shaped line
+ * (rfcCaseShaped) or the section's end. It keeps the section's number and title, so a check of the case
+ * reads as one of the section, narrowed, and the page breaks that fall in it,
+ * counted from its first line.
+ *
+ * @param sec the section
+ * @param n the test case's number, from 1
+ * @returns the case, or why the section holds no one case by that number,
+ *   worded to follow the section's name
+ */
+export const rfcCaseSection = (sec: RfcSection, n: i32): Result<RfcSection, string> => {
+  const name = `Test Vector #${n}`
+  if (n < 1) {
+    return Err(`${name} is not a test case: they are numbered from 1`)
+  }
+  if (sec.lines.length > sec.ownLines.length) {
+    return Err(`has subsections, so ${name} is not one test case of it: cite the subsection that holds it`)
+  }
+  let start = -1
+  let count = 0
+  for (let i = 0; i < sec.lines.length; i++) {
+    if (rfcCaseHeading(sec.lines[i]) === n) {
+      count++
+      if (start < 0) {
+        start = i
+      }
+    }
+  }
+  if (count === 0) {
+    return Err(`has no "${name}:" heading, so it holds no ${name}`)
+  }
+  if (count > 1) {
+    return Err(`heads ${count} test cases "${name}:", so which one is meant is unclear`)
+  }
+  let end = start + 1
+  while (end < sec.lines.length && !rfcCaseShaped(sec.lines[end])) {
+    end++
+  }
+  const lines = sec.lines.slice(start, end)
+  const one = new RfcSection(sec.id, sec.title, lines, lines)
+  for (const b of sec.pageBreaks) {
+    if (b >= start && b < end) {
+      one.pageBreaks.push(b - start)
+    }
+  }
+  return Ok(one)
+}
+
+/**
  * A section's text, whitespace collapsed (rfcNormalize).
  *
  * @param sec the section

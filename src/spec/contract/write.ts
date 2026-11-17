@@ -174,6 +174,7 @@ const writeVectorSource = (s: VectorSource): WriteNode => {
     const c = writeObj()
     writeSetStr(c, "source", cite.source)
     writeSet(c, "section", writeStr(cite.section))
+    writeSetStr(c, "case", cite.testCase)
     writeSet(o, "cite", c)
   } else {
     writeSet(o, s.kind === VectorSourceKind.Command ? "command" : "spec", writeStr(s.text))

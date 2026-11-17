@@ -6,9 +6,11 @@
 or the implementation, never both, so a test cannot be loosened to match
 the code it tests. A path's side is decided by the path, with one
 exception: a generated test under `test/spec/` is spec side while its one
-`// vector-contract-sha256:` line names a contract the gate checks. Every
-contract checked must load, read every source it declares (each must still
-be the file and SHA-256 it records), and pin its main source. Fails closed:
+`// vector-contract-sha256:` line names a contract under contracts/ or one
+given, as its bytes are in the work tree. Only the given contracts (every
+contracts/*.json when none are given) are checked: each must load, read
+every source it declares (each must still be the file and SHA-256 it
+records), and pin its main source. Fails closed:
 a git error, an unreadable contract or a missing source is a failure.
 
 Generated from [src/spec/pr/frozen.ts](https://github.com/amritk/vector/blob/main/src/spec/pr/frozen.ts).
@@ -26,6 +28,7 @@ Generated from [src/spec/pr/frozen.ts](https://github.com/amritk/vector/blob/mai
 - [`frozenResolve`](#frozenresolve)
 - [`frozenContractProblems`](#frozencontractproblems)
 - [`frozenDefaultContracts`](#frozendefaultcontracts)
+- [`frozenContractShas`](#frozencontractshas)
 - [`frozenCheck`](#frozencheck)
 
 ## Declarations
@@ -44,7 +47,7 @@ const FROZEN_SPEC: i32 = 0
 
 ### FROZEN_GENERATED
 
-A generated test naming a contract the gate checks: spec side.
+A generated test whose one sha line names a contract in contracts/ or a given one: spec side.
 
 ```ts
 const FROZEN_GENERATED: i32 = 1
@@ -204,6 +207,35 @@ the repository's top
 <scalar-field name="returns" type="string[]">
 
 their paths
+
+</scalar-field>
+
+### frozenContractShas
+
+The SHA-256 of every contract a generated test may name to be spec side:
+the contracts checked and every contracts/*.json at the repository's top
+(frozenDefaultContracts) but a symbolic link, each as its bytes are in the
+work tree. A contract that is only classified this way is never checked.
+
+```ts
+function frozenContractShas(top: string, checked: string[]): Set<string>
+```
+
+<scalar-field name="top" type="string" required>
+
+the repository's top
+
+</scalar-field>
+
+<scalar-field name="checked" type="string[]" required>
+
+the contracts the gate checks, absolute (frozenResolve)
+
+</scalar-field>
+
+<scalar-field name="returns" type="Set&lt;string&gt;">
+
+the hex SHA-256 of each one that can be read
 
 </scalar-field>
 

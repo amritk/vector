@@ -281,6 +281,75 @@ export const main = (): i32 => {
     litTestParse("M (after 1,000 runs) = 72"),
     "labelled-int:72 label=M (after 1,000 runs) hex=72",
   )
+  // Labels as RFC 7748 Section 6.1 prints them: an apostrophe inside a word,
+  // and one `, alias` whose word may join a group that holds `, `.
+  const labelRows: string[][] = [
+    ["Alice's private key, a = 0b0b", "labelled:0b0b label=Alice's private key, a"],
+    ["Alice's public key, X25519(a, 9) = 0b0b", "labelled:0b0b label=Alice's public key, X25519(a, 9)"],
+    ["Bob's private key, b = 0b0b", "labelled:0b0b label=Bob's private key, b"],
+    ["Bob's public key, X25519(b, 9) = 0b0b", "labelled:0b0b label=Bob's public key, X25519(b, 9)"],
+    ["Their shared secret, K = 0b0b", "labelled:0b0b label=Their shared secret, K"],
+    ["Alice's key = 0b0b", "labelled:0b0b label=Alice's key"],
+    ["key, X25519(a) = 0b0b", "labelled:0b0b label=key, X25519(a)"],
+    ["key, f(a, b, c) = 0b0b", "labelled:0b0b label=key, f(a, b, c)"],
+    ["key, f(a b) = 0b0b", "labelled:0b0b label=key, f(a b)"],
+    ["key, f(1,000 runs, b) = 0b0b", "labelled:0b0b label=key, f(1,000 runs, b)"],
+    ["M (x), m = 0b0b", "labelled:0b0b label=M (x), m"],
+    ["'Alice key = 0b0b", "not a literal @1"],
+    ["Alice' key = 0b0b", "not a literal @1"],
+    ["Alice''s key = 0b0b", "not a literal @1"],
+    ["Alice's' key = 0b0b", "not a literal @1"],
+    ["Alice'9 key = 0b0b", "not a literal @1"],
+    ["Alice 's key = 0b0b", "not a literal @1"],
+    ["key,a = 0b0b", "not a literal @1"],
+    ["key ,a = 0b0b", "not a literal @1"],
+    ["key ,  a = 0b0b", "not a literal @1"],
+    ["key, , a = 0b0b", "not a literal @1"],
+    ["key,  a = 0b0b", "not a literal @1"],
+    ["key, a, b = 0b0b", "not a literal @1"],
+    ["key, = 0b0b", "not a literal @1"],
+    ["key, a b = 0b0b", "not a literal @1"],
+    ["key, 'a = 0b0b", "not a literal @1"],
+    ["key, X25519(a,9) = 0b0b", "not a literal @1"],
+    ["key, X25519(a, ) = 0b0b", "not a literal @1"],
+    ["key, X25519(, a) = 0b0b", "not a literal @1"],
+    ["key, X25519() = 0b0b", "not a literal @1"],
+    ["key, X25519((a)) = 0b0b", "not a literal @1"],
+    ["key, X25519(a, 9 = 0b0b", "not a literal @1"],
+    ["key, X25519(a, 9) (b) = 0b0b", "not a literal @1"],
+    ["key, X25519 (a, 9) = 0b0b", "not a literal @1"],
+    ["key, X25519(a, 9)b = 0b0b", "not a literal @1"],
+    ["M (a, 9) = 0b0b", "not a literal @1"],
+    // At most one group: one in the words leaves none for the alias.
+    ["M (x), f(a) = 0b0b", "not a literal @1"],
+    ["M (a b), X25519(a, 9) = 0b0b", "not a literal @1"],
+    ["M (x), a = 0b0b", "labelled:0b0b label=M (x), a"],
+    ["Alice's'b private key = 0b0b", "labelled:0b0b label=Alice's'b private key"],
+    ["key, a'b = 0b0b", "labelled:0b0b label=key, a'b"],
+    ["key, f(1,000, b) = 0b0b", "not a literal @1"],
+  ]
+  for (let i = 0; i < labelRows.length; i++) {
+    t.eqStr(`the label ${labelRows[i][0]}`, litTestParse(labelRows[i][0]), labelRows[i][1])
+  }
+  // The comma ends the argument unless the alias after it is a label's.
+  const split: string[][] = [
+    ["f(Key = 00, b = 11)", "f(labelled:00 label=Key, labelled-int:11 label=b hex=11)"],
+    ["f(NaN, a = 00)", "f(f64:NaN, labelled:00 label=a)"],
+    ["f(Infinity, a = 00)", "f(f64:Infinity, labelled:00 label=a)"],
+    ["f(-Infinity, a = 00)", "f(f64:-Infinity, labelled:00 label=a)"],
+    ["f(1e5, a = 00)", "f(f64:1e5, labelled:00 label=a)"],
+    ["f(1E5, a = 00)", "f(f64:1E5, labelled:00 label=a)"],
+    ["f(true, a = 00)", "f(bool: true, labelled:00 label=a)"],
+    ["f(null, a = 00)", "f(null:, labelled:00 label=a)"],
+    ["f(1, a = 00)", "f(int:1, labelled:00 label=a)"],
+    [
+      "f(Alice's private key, a = 0b, Bob's public key, X25519(b, 9) = 0c)",
+      "f(labelled:0b label=Alice's private key, a, labelled:0c label=Bob's public key, X25519(b, 9))",
+    ],
+  ]
+  for (let i = 0; i < split.length; i++) {
+    t.eqStr(`the call ${split[i][0]}`, litTestCall(split[i][0]), split[i][1])
+  }
   t.eqStr(
     "a labelled empty value",
     litTestParse("MESSAGE (length 0 bytes) = (empty)"),
@@ -496,6 +565,15 @@ export const main = (): i32 => {
     "words: label=State words=11111111,22222222",
     "State = [1111]",
     "words: label=State words=1111",
+    // RFC 8439 §2.2.1 prints its expected state under "After applying
+    // QUARTERROUND(2, 7, 8, 13)": a call joined to its group, commas inside,
+    // with no alias before it, is not a label, so that value is written unlabelled.
+    "Sample ChaCha State = [879531e0 c5ecf37d]",
+    "words: label=Sample ChaCha State words=879531e0,c5ecf37d",
+    "After applying QUARTERROUND(2, 7, 8, 13) = [879531e0 c5ecf37d]",
+    "not a literal @1",
+    "[879531e0 c5ecf37d]",
+    "bytes:879531e0c5ecf37d words=879531e0,c5ecf37d",
     "[00 0f]",
     "bytes:000f",
     "[000f]",

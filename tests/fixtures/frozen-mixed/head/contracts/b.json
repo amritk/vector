@@ -1,0 +1,11 @@
+{
+  "contract": "b",
+  "source": {"title": "B2", "rfc": 4648, "sha256": "20be475fef2752375647b5ee6dcbefdc61110ae85127921ced8b7a27f89f1178"},
+  "target": {"module": "nish/hex"},
+  "requirements": [{"id": "R1", "section": "1", "level": "MUST", "quote": "It MUST work."}],
+  "functions": [{"name": "enc", "params": [{"name": "b", "type": "bytes"}], "returns": "string"}],
+  "clauses": [
+    {"kind": "vector", "id": "V1", "title": "t", "covers": ["R1"],
+     "source": {"cite": {"section": "1"}}, "call": "enc", "args": [{"hex": "00"}], "expect": {"str": "00"}}
+  ]
+}

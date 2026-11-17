@@ -276,6 +276,8 @@ export class Citation {
   source: string | null = null
   /** The section cited. */
   section: string
+  /** The one test case of the section the vector is, as `Test Vector #N`; null for the whole section. */
+  testCase: string | null = null
   /** Starts with no source or section. */
   constructor() {
     this.section = ""

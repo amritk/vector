@@ -802,6 +802,14 @@ The id of the cited source; null for the main one.
 source: string | null
 ```
 
+#### Citation.testCase
+
+The one test case of the section the vector is, as `Test Vector #N`; null for the whole section.
+
+```ts
+testCase: string | null
+```
+
 ### VectorSourceKind
 
 Where a vector's expected value comes from.

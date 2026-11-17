@@ -1,0 +1,7 @@
+spec frozen against main: OK
+
+  ✓ contract contracts/a.json
+  spec contracts/a.json
+  spec contracts/b.json
+  generated test/spec/a.ts
+  generated test/spec/b.ts
