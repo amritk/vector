@@ -259,6 +259,14 @@ The markdown file.
 path: string
 ```
 
+#### ProfileMd.text
+
+Its lines, when it was read; a paragraph the XML marks no line for is found here.
+
+```ts
+text: string[]
+```
+
 ### profileMdRead
 
 Reads the markdown a spec was built from, to count its lines.
