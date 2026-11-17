@@ -71,6 +71,15 @@ option directly, does not count: drive it through `vectorRun` or the binary
 and assert its effect. For a parser or gate rule, test its neighbours too
 (table-driven), not just the case that motivated it.
 
+**A gate that accepts a value on another clause's word computes it, never
+assumes it.** When a rule takes one clause's printed value as what another
+clause's expression denotes (a sibling vector's result standing in for a
+property's sub-call), evaluate that expression with the sampler's semantics
+and refuse every form it does not compute: a truncated, iterated or
+toleranced value, or `unwrap` of a `null`, is not `g(args)`. Every condition
+such a rule adds lands with a test shown to fail when that condition is
+deleted.
+
 **Generated files are regenerated, never edited by hand.** That covers
 `docs/reference/**` and its routes in `scalar.config.json`, `tests/dogfood/**`, `contracts/*.json`
 (extracted from `specs/*.xml`) and `specs/*.xml` (built from `specs/*.md` by
