@@ -27,7 +27,10 @@ const truncTestTemplate = (): string => `{
   "requirements": [{"id": "R1", "section": "4.6", "level": "MUST", "quote": "Test with a truncation of output to 128 bits."}],
   "functions": [
     {"name": "hmacSha256", "params": [{"name": "key", "type": "secret-bytes"}, {"name": "data", "type": "bytes"}], "returns": "bytes"},
-    {"name": "hmacHex", "params": [{"name": "key", "type": "bytes"}, {"name": "data", "type": "bytes"}], "returns": "string"}
+    {"name": "hmacHex", "params": [{"name": "key", "type": "bytes"}, {"name": "data", "type": "bytes"}], "returns": "string"},
+    {"name": "hmacWords16", "params": [{"name": "key", "type": "bytes"}, {"name": "data", "type": "bytes"}], "returns": "words16"},
+    {"name": "hmacWords32", "params": [{"name": "key", "type": "bytes"}, {"name": "data", "type": "bytes"}], "returns": "words32"},
+    {"name": "hmacWords64", "params": [{"name": "key", "type": "bytes"}, {"name": "data", "type": "bytes"}], "returns": "words64"}
   ],
   "clauses": [
     {"kind": "vector", "id": "T1", "title": "t", "covers": ["R1"], "source": {"cite": {"section": "SECTION"}}, "call": "CALL",
@@ -133,6 +136,9 @@ const truncTestShapes = (t: Suite): void => {
     `{"hex": "${TRUNC_TEST_MAC}00", "label": "HMAC-SHA-256"}`,
     `{"str": "${TRUNC_TEST_MAC}"}`,
     `{"int": 1}`,
+    `{"words16": ["a3b6", "1674", "7310", "0ee0", "6e0c", "796c", "2955", "552b"]}`,
+    `{"words32": ["a3b61674", "73100ee0", "6e0c796c", "2955552b"]}`,
+    `{"words64": ["0xa3b6167473100ee0", "0x6e0c796c2955552b"]}`,
   ]
   const want: string[] = [
     `${at}: the expect is 12 bytes, so the truncation is 12 bytes (96 bits), not 16 bytes (128 bits)`,
@@ -140,6 +146,9 @@ const truncTestShapes = (t: Suite): void => {
     `${at}: the expect is 17 bytes, so the truncation is 17 bytes (136 bits), not 16 bytes (128 bits)`,
     `${at}: a truncated vector's expect is bytes, not string`,
     `${at}: a truncated vector's expect is bytes, not i32`,
+    `${at}: a truncated vector's expect is bytes, not words16`,
+    `${at}: a truncated vector's expect is bytes, not words32`,
+    `${at}: a truncated vector's expect is bytes, not words64`,
   ]
   for (let i = 0; i < cases.length; i++) {
     t.eqStr(`shape: ${want[i]}`, truncTestShape(cases[i], `{"bits": 128}`), want[i])
@@ -179,6 +188,9 @@ const truncTestByteLength = (t: Suite): void => {
   t.ok("a repeated run", truncTestLit(`{"hex": "0b0c", "repeat": 3}`) === toI64(6))
   t.ok("a string", truncTestLit(`{"str": "ab"}`) === toI64(-1))
   t.ok("an int", truncTestLit(`{"int": 16}`) === toI64(-1))
+  t.ok("words16", truncTestLit(`{"words16": ["a3b6", "1674"]}`) === toI64(-1))
+  t.ok("words32", truncTestLit(`{"words32": ["a3b61674"]}`) === toI64(-1))
+  t.ok("words64", truncTestLit(`{"words64": ["a3b6167473100ee0"]}`) === toI64(-1))
 }
 
 /** The typing findings of the §4.6 vector calling `call`. */
@@ -197,6 +209,13 @@ const truncTestTyping = (t: Suite): void => {
       "T1: truncate: hmacHex returns string, and only a bytes result is truncated",
     ) >= 0,
   )
+  for (const w of ["words16", "words32", "words64"]) {
+    const call = `hmacW${w.substring(1, w.length)}`
+    t.ok(
+      `a ${w} result`,
+      truncTestTypingOf(call).indexOf(`T1: truncate: ${call} returns ${w}, and only a bytes result is truncated`) >= 0,
+    )
+  }
 }
 
 /** fidelity: the length printed with its unit in the cited section, and the expect a whole printed value there. */

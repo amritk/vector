@@ -1,0 +1,1 @@
+vector spec emit tests/fixtures/chacha20/contracts/rfc8439-quarter-round.json --package fixture=tests/fixtures/chacha20/fixture -o dist/emit-words-nish-golden.ts

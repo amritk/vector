@@ -26,6 +26,8 @@ import {
   Truncate,
   VectorSource,
   VectorSourceKind,
+  typesIsWords,
+  typesWordsKey,
 } from "./types"
 import { vocabLanguages } from "./vocab"
 
@@ -114,6 +116,12 @@ const writeLiteral = (lit: Literal): WriteNode => {
     writeSet(o, "bool", writeRaw(lit.flag ? "true" : "false"))
   } else if (lit.kind === LitKind.Null) {
     writeSet(o, "null", writeRaw("true"))
+  } else if (typesIsWords(lit.kind)) {
+    const words = writeArr()
+    for (let i = 0; i < lit.words.length; i++) {
+      words.items.push(writeStr(lit.words[i]))
+    }
+    writeSet(o, typesWordsKey(lit.kind), words)
   } else {
     const parts = writeArr()
     for (let i = 0; i < lit.parts.length; i++) {

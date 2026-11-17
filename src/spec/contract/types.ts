@@ -24,9 +24,15 @@ export enum LitKind {
   Null = 6,
   /** Opened by `concat`: the parts joined. */
   Concat = 7,
+  /** Opened by `words16`: 16-bit words as printed, 4 hex digits each. */
+  Words16 = 8,
+  /** Opened by `words32`: 32-bit words as printed, 8 hex digits each. */
+  Words32 = 9,
+  /** Opened by `words64`: 64-bit words as printed, 16 hex digits each. */
+  Words64 = 10,
 }
 
-/** A literal value: bytes, text, a number, a boolean, null, or a concatenation. */
+/** A literal value: bytes, words, text, a number, a boolean, null, or a concatenation. */
 export class Literal {
   /** Which key opened the literal. */
   kind: LitKind
@@ -46,6 +52,8 @@ export class Literal {
   quoted: boolean
   /** A concat literal's parts. */
   parts: Literal[]
+  /** A word array's words, each as printed (`0x` and all). */
+  words: string[]
   /**
    * Makes a literal of one form.
    *
@@ -58,6 +66,7 @@ export class Literal {
     this.kind = kind
     this.text = text
     this.parts = []
+    this.words = []
   }
 }
 
@@ -539,4 +548,39 @@ export class Contract {
     this.functions = []
     this.clauses = []
   }
+}
+
+/**
+ * Whether a literal kind is a word array.
+ *
+ * @param kind a literal kind
+ * @returns true for Words16, Words32 and Words64
+ */
+export const typesIsWords = (kind: LitKind): boolean =>
+  kind === LitKind.Words16 || kind === LitKind.Words32 || kind === LitKind.Words64
+
+/**
+ * The key that opens a word-array literal, which is also its type's name.
+ *
+ * @param kind a word-array literal kind
+ * @returns words16, words32 or words64
+ */
+export const typesWordsKey = (kind: LitKind): string => {
+  if (kind === LitKind.Words16) {
+    return "words16"
+  }
+  return kind === LitKind.Words32 ? "words32" : "words64"
+}
+
+/**
+ * The word-array literal kind whose words have a number of hex digits.
+ *
+ * @param digits 4, 8 or 16
+ * @returns Words16, Words32 or Words64
+ */
+export const typesWordsKind = (digits: i32): LitKind => {
+  if (digits === 4) {
+    return LitKind.Words16
+  }
+  return digits === 8 ? LitKind.Words32 : LitKind.Words64
 }

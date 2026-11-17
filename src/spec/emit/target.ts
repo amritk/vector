@@ -9,7 +9,8 @@
  * so the same file also runs under that framework.
  */
 
-import { vocabLanguages } from "../contract/vocab"
+import { FnSig } from "../contract/types"
+import { vocabBaseOf, vocabIsWordType, vocabLanguages } from "../contract/vocab"
 
 /** A test's language and harness, and whether its slow vectors run. */
 export class EmitTarget {
@@ -117,4 +118,25 @@ export const emitTargetExt = (lang: string): string => {
     return ".go"
   }
   return lang === "rust" ? ".rs" : ".ts"
+}
+
+/**
+ * Why a function cannot be tested in a language whose emitter has no word
+ * arrays yet: it takes or returns one. Only the Nish emitter holds them.
+ *
+ * @param f the function
+ * @param language the language's name, as a message spells it (`Rust`)
+ * @returns the refusal, or null when no parameter or result is a word array
+ */
+export const emitTargetWordsRefusal = (f: FnSig, language: string): string | null => {
+  const types: string[] = [vocabBaseOf(f.returns)]
+  for (const p of f.params) {
+    types.push(vocabBaseOf(p.type))
+  }
+  for (const t of types) {
+    if (vocabIsWordType(t)) {
+      return `${f.name}: word arrays (${t}) are not emitted for ${language} yet; emit the Nish test`
+    }
+  }
+  return null
 }

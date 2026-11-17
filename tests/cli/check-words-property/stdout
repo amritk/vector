@@ -1,0 +1,38 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ rfc8439-quarter-round · RFC 8439 (ChaCha20 and Poly1305: the quarter round) · fixture/chacha20
+ Status: INVALID
+
+ Gate failures
+  ✘ typing P-WORDS-LITERAL: assert: word arrays in a property are not checked yet; give word-array cases as vectors
+  ✘ typing P-WORDS-CALL: assert: chacha20Zero takes or returns a word array, and word arrays in a property are not checked yet; give word-array cases as vectors
+  ✘ typing P-WORDS-WHERE: where: word arrays in a property are not checked yet; give word-array cases as vectors
+  ✘ domain P-WORDS-WHERE: where: cannot be evaluated: word arrays are not evaluated
+
+ Requirements
+  ○ R-QUARTER-ROUND  §2.1.1 DEFINITION  "After running a Quarter Round on these four numbers, we get the…"
+      ○ 2.1.1-QUARTER-ROUND  ○ P-WORDS-LITERAL (4 samples: 4 boundary)  ○ P-WORDS-CALL (4 samples: 4 boundary)  ○ P-WORDS-WHERE (0 samples: 0 boundary)  ○ P-PLAIN (4 samples: 4 boundary)
+  ○ R-QUARTER-ROUND-STATE  §2.2.1 DEFINITION  "Note that only the numbers in positions 2, 7, 8, and 13 changed."
+      ○ 2.2.1-QUARTER-ROUND-STATE
+
+ Not tested, by decision
+  §2.3 "Words 13-15 are a nonce, which MUST not be repeated for…" — this fixture checks the quarter round only
+  §2.5 "The pair (r,s) should be unique, and MUST be unpredicta…" — this fixture checks the quarter round only
+  §2.6 "Any document that specifies the use of Poly1305 as a MA…" — this fixture checks the quarter round only
+  §2.6 "This MUST be unique per invocation with the same key, s…" — this fixture checks the quarter round only
+  §4 "Additionally, any protocol using this algorithm MUST in…" — this fixture checks the quarter round only
+  §4 "Tag truncation MUST NOT be done." — this fixture checks the quarter round only
+  §4 "The Poly1305 key MUST be unpredictable to an attacker." — this fixture checks the quarter round only
+  §4 "For this reason, with online protocols, implementation …" — this fixture checks the quarter round only
+
+ Warnings
+  ! 2.1.1-QUARTER-ROUND.args[1]: not checked against the RFC: the integer 0 has no "label" to find it by
+  ! 2.1.1-QUARTER-ROUND.args[2]: not checked against the RFC: the integer 1 has no "label" to find it by
+  ! 2.1.1-QUARTER-ROUND.args[3]: not checked against the RFC: the integer 2 has no "label" to find it by
+  ! 2.1.1-QUARTER-ROUND.args[4]: not checked against the RFC: the integer 3 has no "label" to find it by
+  ! 2.2.1-QUARTER-ROUND-STATE.args[1]: not checked against the RFC: the integer 2 has no "label" to find it by
+  ! 2.2.1-QUARTER-ROUND-STATE.args[2]: not checked against the RFC: the integer 7 has no "label" to find it by
+  ! 2.2.1-QUARTER-ROUND-STATE.args[3]: not checked against the RFC: the integer 8 has no "label" to find it by
+  ! 2.2.1-QUARTER-ROUND-STATE.args[4]: not checked against the RFC: the integer 13 has no "label" to find it by
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

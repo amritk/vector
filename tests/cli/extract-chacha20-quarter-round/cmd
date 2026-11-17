@@ -1,0 +1,1 @@
+vector spec extract tests/fixtures/chacha20/specs/rfc8439-quarter-round.xml -o tests/fixtures/chacha20/contracts/rfc8439-quarter-round.json --check

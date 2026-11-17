@@ -154,7 +154,11 @@ export const main = (): i32 => {
       }
     }
   }
-  s.eqStr("the only construct a language cannot express is PHP's u64", unsupported.join(","), "php:u64")
+  s.eqStr(
+    "the only constructs a language cannot express are PHP's u64, its u64[] and its u64[] literal",
+    unsupported.join(","),
+    "php:u64,php:words64,php:words64",
+  )
 
   const rust = langFind("rust")
   s.eqStr("rust is found", rust === null ? "<none>" : rust.title, "Rust")

@@ -189,6 +189,16 @@ const rfcTestCase = (id: string, n: i32): string => {
   return r.isErr() ? `error: ${r.error}` : rfcTestValues(r.value)
 }
 
+/** Where page furniture was removed from case `n` of section 1 in rfcTestCasesText, as `at:line|`. */
+const rfcTestCaseBreaks = (n: i32): string => {
+  const r = rfcCaseSection(rfcTestSection(rfcParse(rfcTestCasesText()), "1"), n)
+  if (r.isErr()) {
+    return r.error
+  }
+  const sec = r.value
+  return sec.pageBreaks.map((b: i32): string => `${b}:${sec.lines[b]}|`).join("")
+}
+
 /** Reading an RFC's text: sections, page furniture, quotes and printed hex. */
 export const main = (): i32 => {
   const t = new Suite("spec/source rfc")
@@ -339,6 +349,8 @@ export const main = (): i32 => {
   t.eqStr("its subsection's case", rfcTestCase("3.1", 1), "Key=4444")
   const one = rfcCaseSection(rfcTestSection(cases, "1"), 1)
   t.ok("a case keeps the section's id and title", one.isOk() && one.value.id === "1" && one.value.title === "Cases")
+  t.eqStr("a case keeps a page break inside it, counted from its heading", rfcTestCaseBreaks(2), "5:|6:|")
+  t.eqStr("and none from outside it", rfcTestCaseBreaks(1), "")
 
   // Reading refuses what is not an RFC, and what hides text.
   t.ok("an RFC reads", rfcRead(rfcTestText(), "r.txt").isOk())

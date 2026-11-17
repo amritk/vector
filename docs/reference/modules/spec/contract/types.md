@@ -37,6 +37,9 @@ Generated from [src/spec/contract/types.ts](https://github.com/amritk/vector/blo
 - [`OutOfScope`](#outofscope)
 - [`AllowedSurvivor`](#allowedsurvivor)
 - [`Contract`](#contract)
+- [`typesIsWords`](#typesiswords)
+- [`typesWordsKey`](#typeswordskey)
+- [`typesWordsKind`](#typeswordskind)
 
 ## Declarations
 
@@ -96,9 +99,27 @@ Opened by `str`: a text string.
 
 </scalar-field>
 
+<scalar-field name="Words16" type="8">
+
+Opened by `words16`: 16-bit words as printed, 4 hex digits each.
+
+</scalar-field>
+
+<scalar-field name="Words32" type="9">
+
+Opened by `words32`: 32-bit words as printed, 8 hex digits each.
+
+</scalar-field>
+
+<scalar-field name="Words64" type="10">
+
+Opened by `words64`: 64-bit words as printed, 16 hex digits each.
+
+</scalar-field>
+
 ### Literal
 
-A literal value: bytes, text, a number, a boolean, null, or a concatenation.
+A literal value: bytes, words, text, a number, a boolean, null, or a concatenation.
 
 ```ts
 class Literal
@@ -194,6 +215,14 @@ Why the value is not checked against its source.
 
 ```ts
 unchecked: string | null
+```
+
+#### Literal.words
+
+A word array's words, each as printed (`0x` and all).
+
+```ts
+words: string[]
 ```
 
 ### ExprKind
@@ -1481,3 +1510,63 @@ The module under test.
 ```ts
 target: Target
 ```
+
+### typesIsWords
+
+Whether a literal kind is a word array.
+
+```ts
+function typesIsWords(kind: LitKind): boolean
+```
+
+<scalar-field name="kind" type="LitKind" required>
+
+a literal kind
+
+</scalar-field>
+
+<scalar-field name="returns" type="boolean">
+
+true for Words16, Words32 and Words64
+
+</scalar-field>
+
+### typesWordsKey
+
+The key that opens a word-array literal, which is also its type's name.
+
+```ts
+function typesWordsKey(kind: LitKind): string
+```
+
+<scalar-field name="kind" type="LitKind" required>
+
+a word-array literal kind
+
+</scalar-field>
+
+<scalar-field name="returns" type="string">
+
+words16, words32 or words64
+
+</scalar-field>
+
+### typesWordsKind
+
+The word-array literal kind whose words have a number of hex digits.
+
+```ts
+function typesWordsKind(digits: i32): LitKind
+```
+
+<scalar-field name="digits" type="i32" required>
+
+4, 8 or 16
+
+</scalar-field>
+
+<scalar-field name="returns" type="LitKind">
+
+Words16, Words32 or Words64
+
+</scalar-field>

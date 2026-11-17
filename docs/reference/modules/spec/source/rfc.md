@@ -109,6 +109,16 @@ Only the section's own lines, up to its first subsection.
 ownLines: string[]
 ```
 
+#### RfcSection.pageBreaks
+
+Where page furniture (a footer, a form feed, a header) was removed: each is
+the index in `lines` of the line that followed it, so a value printed
+across a page break can be read as one.
+
+```ts
+pageBreaks: i32[]
+```
+
 #### RfcSection.title
 
 The heading's text.
@@ -316,7 +326,8 @@ true when one of its own lines heads a test case
 One test case of a section, as a section of its own: the lines from its
 `Test Vector #N:` heading up to the next heading-shaped line
 (rfcCaseShaped) or the section's end. It keeps the section's number and title, so a check of the case
-reads as one of the section, narrowed.
+reads as one of the section, narrowed, and the page breaks that fall in it,
+counted from its first line.
 
 ```ts
 function rfcCaseSection(sec: RfcSection, n: i32): Result<RfcSection, string>

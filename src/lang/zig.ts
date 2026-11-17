@@ -59,6 +59,12 @@ export const langTableZig = (): LangTable => {
   t.literal("bool", langSpell("true", ""))
   t.literal("null", langSpell("null", ""))
   t.literal("concat", langSpell("a ++ b", "comptime; at run time std.mem.concat"))
+  t.type("words16", langSpell("[]const u16", ""))
+  t.type("words32", langSpell("[]const u32", ""))
+  t.type("words64", langSpell("[]const u64", ""))
+  t.literal("words16", langSpell("&[_]u16{ 0x6170, 0x7865 }", ""))
+  t.literal("words32", langSpell("&[_]u32{ 0x61707865, 0x3320646e }", ""))
+  t.literal("words64", langSpell("&[_]u64{ 0x3320646e61707865, 0x6b20657479622d32 }", ""))
   t.moduleForm = "file"
   t.moduleNote =
     'a source file is a struct; the neutral path plus .zig, imported under its last segment: nish/crypto/hkdf → nish/crypto/hkdf.zig, const hkdf = @import("nish/crypto/hkdf.zig")'

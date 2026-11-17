@@ -31,6 +31,7 @@ Generated from [src/spec/contract/literals.ts](https://github.com/amritk/vector/
 - [`LITERALS_REPEAT_SIZE`](#literals_repeat_size)
 - [`LITERALS_REPEAT_RUN`](#literals_repeat_run)
 - [`LITERALS_BYTES`](#literals_bytes)
+- [`LITERALS_WORDS`](#literals_words)
 - [`literalsLabelledMessage`](#literalslabelledmessage)
 - [`literalsParseCall`](#literalsparsecall)
 - [`literalsParse`](#literalsparse)
@@ -113,6 +114,12 @@ A decimal integer.
 <scalar-field name="Str" type="0">
 
 `"text"`: bytes or a string, as the type says.
+
+</scalar-field>
+
+<scalar-field name="Words" type="11">
+
+`[0x11111111 0x22222222]` or `State = [11111111 22222222]`: words of 4, 8 or 16 hex digits.
 
 </scalar-field>
 
@@ -199,6 +206,16 @@ an int's decimal text, or an f64's text; "" otherwise.
 
 ```ts
 text: string
+```
+
+#### RawLiteral.words
+
+A bracket's words as printed, when they are a word array (all 4, 8 or 16
+hex digits, `0x` on every word or on none); empty otherwise. Bytes like
+`[879531e0 c5ecf37d]` carry their words too, for a word-array type.
+
+```ts
+words: string[]
 ```
 
 ### LiteralError
@@ -425,6 +442,16 @@ The refusal of a bracketed byte string.
 
 ```ts
 const LITERALS_BYTES: string
+```
+
+<a id="literals_words"></a>
+
+### LITERALS_WORDS
+
+The refusal of a bracketed word array.
+
+```ts
+const LITERALS_WORDS: string
 ```
 
 ### literalsLabelledMessage

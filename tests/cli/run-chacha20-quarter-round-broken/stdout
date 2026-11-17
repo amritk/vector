@@ -1,0 +1,7 @@
+VIOLATED: rfc8439-quarter-round (exit 1)
+  fail  R-QUARTER-ROUND
+  fail  R-QUARTER-ROUND-STATE
+FAIL  [2.1.1-QUARTER-ROUND] RFC 8439 2.1.1: a quarter round on four numbers (R-QUARTER-ROUND)
+      expected "[ea2a92f4 cb1cf8ce 4581472e 5881c4bb]", got "[ea2a92f4 658e7c67 4581472e 5881c4bb]"
+FAIL  [2.2.1-QUARTER-ROUND-STATE] RFC 8439 2.2.1: QUARTERROUND(2, 7, 8, 13) on the ChaCha state (R-QUARTER-ROUND-STATE)
+      expected "[879531e0 c5ecf37d bdb886dc c9a62f8a 44c20ef3 3390af7f d9fc690b cfacafd2 e46bea80 b00a5631 974c541a 359e9963 5c971061 ccc07c79 2098d9d6 91dbd320]", got "[879531e0 c5ecf37d bdb886dc c9a62f8a 44c20ef3 3390af7f d9fc690b 67d657e9 e46bea80 b00a5631 974c541a 359e9963 5c971061 ccc07c79 2098d9d6 91dbd320]"

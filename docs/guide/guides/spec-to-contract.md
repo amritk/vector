@@ -109,8 +109,14 @@ bytes are held to `expect`:
 - Exactly one of **bits** (8 to 524,288, a multiple of 8) or **bytes** (1 to
   65,536) gives the length, in the unit the section prints it in.
 - The call returns bytes, and `expect` is bytes of exactly that length: a
-  12-byte `expect` truncated to 128 bits is refused. A truncated vector takes
-  no `tolerance` and no `iterate`.
+  12-byte `expect` truncated to 128 bits is refused. A word array is not
+  truncated: a `Truncate:` paragraph on a vector whose call returns `u16[]`,
+  `u32[]` or `u64[]` is refused as `<id>'s <call> returns words32, and only
+  a bytes result is truncated`. A contract written by hand that does it is
+  refused by typing with `truncate: <call> returns words32, and only a bytes
+  result is truncated`, and a words `expect` by shape with `a truncated
+  vector's expect is bytes, not words32`.
+  A truncated vector takes no `tolerance` and no `iterate`.
 - The generated test compares the result's first bytes with `expect`. A
   result shorter than the length fails, as `a 15-byte result, shorter than
   the 16 bytes it is truncated to`: it is never compared as it is.
@@ -432,11 +438,11 @@ No model is involved in any of them.
 | Gate | Refuses |
 |---|---|
 | shape | a contract that is not well formed, including free text (titles, quotes, reasons) with a line break or another control character; an `iterate` whose names or next do not match the parameters (see [An iterated vector](#an-iterated-vector)) |
-| fidelity | a quote not in its cited section; a vector's value not printed in its section as a whole value, under the label it is printed under (see [What a printed value is](writing-a-spec.md#what-a-printed-value-is)); values from two test cases; an iterated vector's count not printed in its section, or a label that counts another number; a truncated vector's length not printed in its section (see [A truncated vector](#a-truncated-vector)); a source whose bytes no longer match its pinned SHA-256 |
+| fidelity | a quote not in its cited section; a vector's value not printed in its section as a whole value (a word array as a whole block of words, spelled as printed), under the label it is printed under (see [What a printed value is](writing-a-spec.md#what-a-printed-value-is)); values from two test cases; an iterated vector's count not printed in its section, or a label that counts another number; a truncated vector's length not printed in its section (see [A truncated vector](#a-truncated-vector)); a source whose bytes no longer match its pinned SHA-256 |
 | completeness | any MUST, MUST NOT, SHALL, SHALL NOT or REQUIRED sentence of the main source that is neither inside a requirement's quote nor an exclusion's |
 | provenance | a `spec` source whose section never states the expected `null` or bool (see [When a section states null, true or false](writing-a-spec.md#when-a-section-states-null-true-or-false)); a `command` source that failed under `--run-sources` |
 | coverage | a binding requirement no clause checks; a clause citing a requirement the contract does not state; a property or vector that calls no function under test |
-| typing | an ill-typed call or expression (`bytes?` and `string?` must be `unwrap`ped; `where` may not call the implementation; a `let` may not shadow a name or bind a bare `null`); an `iterate.next` element of the wrong type for its parameter |
+| typing | an ill-typed call or expression (`bytes?` and `string?` must be `unwrap`ped; `where` may not call the implementation; a `let` may not shadow a name or bind a bare `null`); a property that holds or calls word arrays (*not yet* checked; give them as vectors); an `iterate.next` element of the wrong type for its parameter |
 | signatures | a declared signature that is not the module's export (with `--nish-root` or `--module`) |
 | domain | a property whose domain is empty (Z3 says `unsat`: it would pass vacuously) |
 

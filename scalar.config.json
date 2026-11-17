@@ -557,6 +557,11 @@
                     "title": "spec/gates/typing",
                     "filepath": "docs/reference/modules/spec/gates/typing.md"
                   },
+                  "/spec-gates-words": {
+                    "type": "page",
+                    "title": "spec/gates/words",
+                    "filepath": "docs/reference/modules/spec/gates/words.md"
+                  },
                   "/spec-pr-cli": {
                     "type": "page",
                     "title": "spec/pr/cli",

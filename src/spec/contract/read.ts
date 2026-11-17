@@ -44,7 +44,7 @@ import {
   VectorSource,
   VectorSourceKind,
 } from "./types"
-import { vocabHas, vocabIsDecimal, vocabIsIntType, vocabIsJsonSafe, vocabLanguages } from "./vocab"
+import { vocabHas, vocabIsDecimal, vocabIsIntType, vocabIsJsonSafe, vocabLanguages, vocabLiteralKinds } from "./vocab"
 
 /** What an intValue may be, as the error says it. */
 const READ_INT_WANT: string = "an integer within ±(2^53−1), or a decimal string for one beyond it (RFC 7493 §2.2)"
@@ -244,7 +244,7 @@ const readIntValue = (r: ContractReader, v: JsonValue, at: string): Literal | nu
 }
 
 const readLiteralKind = (r: ContractReader, v: JsonValue): i32 => {
-  const keys = ["hex", "ascii", "str", "int", "f64", "bool", "null", "concat"]
+  const keys = vocabLiteralKinds()
   for (let i = 0; i < keys.length; i++) {
     if (readHas(r, v, keys[i])) {
       return i
@@ -260,7 +260,7 @@ const readLiteral = (r: ContractReader, v: JsonValue, at: string): Literal | nul
   }
   const k = readLiteralKind(r, v)
   if (k < 0) {
-    readFail(r, at, "not a literal (hex, ascii, str, int, f64, bool, null, concat)")
+    readFail(r, at, "not a literal (hex, ascii, str, int, f64, bool, null, concat, words16, words32, words64)")
     return null
   }
   let lit: Literal | null = null
@@ -314,6 +314,24 @@ const readLiteral = (r: ContractReader, v: JsonValue, at: string): Literal | nul
       lit = new Literal(LitKind.Null, "")
     } else {
       readFail(r, `${at}.null`, "must be true")
+    }
+  } else if (k >= 8) {
+    const key = vocabLiteralKinds()[k]
+    readObject(r, v, at, [key, "label", "unchecked"])
+    const items = readArray(r, v, key, at, true)
+    if (items !== null) {
+      const w = new Literal(k === 8 ? LitKind.Words16 : k === 9 ? LitKind.Words32 : LitKind.Words64, "")
+      if (items.length === 0) {
+        readFail(r, `${at}.${key}`, "a non-empty array")
+      }
+      for (let i = 0; i < items.length; i++) {
+        if (readIsKind(r, items[i], JSON_VALUE_STRING)) {
+          w.words.push(r.doc.string(items[i]))
+        } else {
+          readFail(r, `${at}.${key}[${i}]`, "a string")
+        }
+      }
+      lit = w
     }
   } else {
     readObject(r, v, at, ["concat"])

@@ -106,7 +106,8 @@ each signature, in source order
 
 ### gateNishType
 
-A Nish type as the contract writes it: `u8[]` is `bytes`, `boolean` is
+A Nish type as the contract writes it: `u8[]` is `bytes`, `u16[]`,
+`u32[]` and `u64[]` are `words16`, `words32` and `words64`, `boolean` is
 `bool`, `T | null` is `T?`; a type the contract has no name for is `?T`
 (`bytes` is the contract's word, not Nish's, so it is unknown here).
 

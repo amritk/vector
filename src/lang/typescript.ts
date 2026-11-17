@@ -53,6 +53,12 @@ export const langTableTypescript = (): LangTable => {
   t.literal("bool", langSpell("true", ""))
   t.literal("null", langSpell("null", ""))
   t.literal("concat", langSpell("Uint8Array.of(...a, ...b)", ""))
+  t.type("words16", langSpell("Uint16Array", ""))
+  t.type("words32", langSpell("Uint32Array", ""))
+  t.type("words64", langSpell("BigUint64Array", ""))
+  t.literal("words16", langSpell("Uint16Array.of(0x6170, 0x7865)", ""))
+  t.literal("words32", langSpell("Uint32Array.of(0x61707865, 0x3320646e)", ""))
+  t.literal("words64", langSpell("BigUint64Array.of(0x3320646e61707865n, 0x6b20657479622d32n)", ""))
   t.moduleForm = "file"
   t.moduleNote =
     'an ES module at the neutral path, imported as a namespace named for its last segment: nish/crypto/hkdf → import * as hkdf from "nish/crypto/hkdf", called hkdf.<name>'

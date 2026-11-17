@@ -198,9 +198,9 @@ The IEEE 754-2019 binary64 encoding (§3.4) as 16 lowercase hex digits, most sig
 
 ### `paramType`
 
-A parameter's type. bytes is an octet string; string is Unicode text, UTF-8 encoded (RFC 3629); f64 is an IEEE 754-2019 binary64; i8 … u64 are the fixed-width integers (see intType); secret-bytes is bytes whose value is secret: a language may wrap them in its own secret type, but in the contract they are bytes. T? as a parameter is an optional input: the argument may be absent, written null.
+A parameter's type. bytes is an octet string; string is Unicode text, UTF-8 encoded (RFC 3629); f64 is an IEEE 754-2019 binary64; i8 … u64 are the fixed-width integers (see intType); secret-bytes is bytes whose value is secret: a language may wrap them in its own secret type, but in the contract they are bytes; words16, words32 and words64 are arrays of u16, u32 and u64 words. T? as a parameter is an optional input: the argument may be absent, written null.
 
-`"bytes"` \| `"bytes?"` \| `"string"` \| `"string?"` \| `"bool"` \| `"bool?"` \| `"f64"` \| `"f64?"` \| `"secret-bytes"` \| `"secret-bytes?"` \| `"i8"` \| `"i8?"` \| `"i16"` \| `"i16?"` \| `"i32"` \| `"i32?"` \| `"i64"` \| `"i64?"` \| `"u8"` \| `"u8?"` \| `"u16"` \| `"u16?"` \| `"u32"` \| `"u32?"` \| `"u64"` \| `"u64?"`
+`"bytes"` \| `"bytes?"` \| `"string"` \| `"string?"` \| `"bool"` \| `"bool?"` \| `"f64"` \| `"f64?"` \| `"secret-bytes"` \| `"secret-bytes?"` \| `"i8"` \| `"i8?"` \| `"i16"` \| `"i16?"` \| `"i32"` \| `"i32?"` \| `"i64"` \| `"i64?"` \| `"u8"` \| `"u8?"` \| `"u16"` \| `"u16?"` \| `"u32"` \| `"u32?"` \| `"u64"` \| `"u64?"` \| `"words16"` \| `"words16?"` \| `"words32"` \| `"words32?"` \| `"words64"` \| `"words64?"`
 
 <a id="def-returntype"></a>
 
@@ -208,7 +208,7 @@ A parameter's type. bytes is an octet string; string is Unicode text, UTF-8 enco
 
 A result's type, from the types of paramType. T? as a result is a refusing return: the function declines this input and returns no value, written null.
 
-`"bytes"` \| `"bytes?"` \| `"string"` \| `"string?"` \| `"bool"` \| `"bool?"` \| `"f64"` \| `"f64?"` \| `"secret-bytes"` \| `"secret-bytes?"` \| `"i8"` \| `"i8?"` \| `"i16"` \| `"i16?"` \| `"i32"` \| `"i32?"` \| `"i64"` \| `"i64?"` \| `"u8"` \| `"u8?"` \| `"u16"` \| `"u16?"` \| `"u32"` \| `"u32?"` \| `"u64"` \| `"u64?"`
+`"bytes"` \| `"bytes?"` \| `"string"` \| `"string?"` \| `"bool"` \| `"bool?"` \| `"f64"` \| `"f64?"` \| `"secret-bytes"` \| `"secret-bytes?"` \| `"i8"` \| `"i8?"` \| `"i16"` \| `"i16?"` \| `"i32"` \| `"i32?"` \| `"i64"` \| `"i64?"` \| `"u8"` \| `"u8?"` \| `"u16"` \| `"u16?"` \| `"u32"` \| `"u32?"` \| `"u64"` \| `"u64?"` \| `"words16"` \| `"words16?"` \| `"words32"` \| `"words32?"` \| `"words64"` \| `"words64?"`
 
 <a id="def-requirement"></a>
 
@@ -278,6 +278,9 @@ One or more of:
 - [an object `variant 6`](#def-literal-variant-6)
 - [an object `variant 7`](#def-literal-variant-7): The absent value of a T?: a refusing return as a result, an absent argument as an optional input.
 - [an object `variant 8`](#def-literal-variant-8)
+- [an object `variant 9`](#def-literal-variant-9): An array of 16-bit words, each exactly as the spec prints it: 4 lowercase hex digits, with 0x on every word or on none.
+- [an object `variant 10`](#def-literal-variant-10): An array of 32-bit words, each exactly as the spec prints it: 8 lowercase hex digits, with 0x on every word or on none.
+- [an object `variant 11`](#def-literal-variant-11): An array of 64-bit words, each exactly as the spec prints it: 16 lowercase hex digits, with 0x on every word or on none.
 
 <a id="def-literal-variant-1"></a>
 
@@ -367,6 +370,42 @@ No other property is allowed.
 | Property | Type | Required | Description |
 | --- | --- | --- | --- |
 | `concat` | [`literal`](#def-literal)[] | yes | at least 1 items. |
+
+No other property is allowed.
+
+<a id="def-literal-variant-9"></a>
+
+#### `variant 9`
+
+| Property | Type | Required | Description |
+| --- | --- | --- | --- |
+| `words16` | `string`[] \| `string`[] | yes |  |
+| `label` | [`label`](#def-label) | no |  |
+| `unchecked` | `string` | no |  |
+
+No other property is allowed.
+
+<a id="def-literal-variant-10"></a>
+
+#### `variant 10`
+
+| Property | Type | Required | Description |
+| --- | --- | --- | --- |
+| `words32` | `string`[] \| `string`[] | yes |  |
+| `label` | [`label`](#def-label) | no |  |
+| `unchecked` | `string` | no |  |
+
+No other property is allowed.
+
+<a id="def-literal-variant-11"></a>
+
+#### `variant 11`
+
+| Property | Type | Required | Description |
+| --- | --- | --- | --- |
+| `words64` | `string`[] \| `string`[] | yes |  |
+| `label` | [`label`](#def-label) | no |  |
+| `unchecked` | `string` | no |  |
 
 No other property is allowed.
 

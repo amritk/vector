@@ -25,6 +25,7 @@ import { TypeEnv, typeCallsIn, typeEnvBind, typeIntBase, typeOf } from "../contr
 import { vocabIsIntType, vocabIsOptional, vocabValueType } from "../contract/vocab"
 import { EmitOptions, emitClauseFn, emitClauseLines, emitHeaderLines, emitSortedUnique, emitTestName } from "./emit"
 import { EMIT_SLOW_SKIP, emitF64IsFinite, emitLiteralHex, emitQuote } from "./lit"
+import { emitTargetWordsRefusal } from "./target"
 
 /** What emitting one Python test has gathered so far. */
 class EmitPyContext {
@@ -175,6 +176,10 @@ export const emitPyRefusals = (c: Contract): string[] => {
   const out: string[] = []
   const names: string[] = []
   for (const f of c.functions) {
+    const words = emitTargetWordsRefusal(f, "Python")
+    if (words !== null) {
+      out.push(words)
+    }
     const why = emitPyNameRefusal(f)
     if (why !== null) {
       out.push(why)
