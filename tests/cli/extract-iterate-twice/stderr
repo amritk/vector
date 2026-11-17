@@ -1,0 +1,1 @@
+vector: tests/fixtures/profile/profile-iterate-twice.xml:95: 5.2-ITER-1000's Iterate: paragraph gives no count before "times,": it reads "Iterate: 5.2-ITER-1000 times, (k, u) <- (x25519(k, u), k)"; put the count there, like Iterate: 5.2-ITER-1000 1,000 times, (k, u) <- (x25519(k, u), k)

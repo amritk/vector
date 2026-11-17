@@ -1,2 +1,2 @@
-vector: tests/fixtures/profile/profile-iterate-count-unprinted.md:55 (tests/fixtures/profile/profile-iterate-count-unprinted.xml:71): fidelity: the count 2,000 is not printed in RFC §5.2
 vector: tests/fixtures/profile/profile-iterate-count-unprinted.md:55 (tests/fixtures/profile/profile-iterate-count-unprinted.xml:71): fidelity: the expected label "After 1,000 iterations" counts 1,000, but the vector iterates 2,000 times
+vector: tests/fixtures/profile/profile-iterate-count-unprinted.md:58 (tests/fixtures/profile/profile-iterate-count-unprinted.xml:95): fidelity: the count 2,000 is not printed in RFC §5.2

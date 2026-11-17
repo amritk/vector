@@ -80,7 +80,7 @@ class ProfileTestPlace {
  * no mark, or a mark past the .md's end.
  */
 const profileTestWhere = (t: Suite): void => {
-  const md = new ProfileMd("a.md", 12)
+  const md = new ProfileMd("a.md", 13)
   md.text = [
     "--- middle",
     "",
@@ -91,6 +91,7 @@ const profileTestWhere = (t: Suite): void => {
     "characters it needs to be found.",
     "| TAG-2 | 01 |",
     "| TAG-2 | 02 |",
+    "| TAG-0 | TAG-3 |",
     "--- back",
     "The decoder MUST NOT allocate twice.",
     "",
@@ -116,20 +117,28 @@ const profileTestWhere = (t: Suite): void => {
       "a.md:6 (a.xml:23)",
     ),
     new ProfileTestPlace("the same text twice", 24, 1, 15, "| TAG-2 |", "a.xml:24"),
+    new ProfileTestPlace(
+      "a first cell only where a row starts, not another row's later cell",
+      28,
+      1,
+      15,
+      "| TAG-3 |",
+      "a.xml:28",
+    ),
     new ProfileTestPlace("text the markdown does not hold", 25, 1, 15, "Nowhere in it.", "a.xml:25"),
     new ProfileTestPlace("no text", 26, 1, 15, "", "a.xml:26"),
     new ProfileTestPlace("a short wrapped start is not enough", 27, 1, 15, "found. And more", "a.xml:27"),
     new ProfileTestPlace(
       "a later part's line is not this part's",
       40,
-      10,
+      11,
       38,
       "The decoder MUST NOT allocate twice.",
-      "a.md:11 (a.xml:40)",
+      "a.md:12 (a.xml:40)",
     ),
     new ProfileTestPlace("no mark before it", 15, -1, 0, "The decoder MUST NOT allocate twice.", "a.xml:15"),
-    new ProfileTestPlace("the last markdown line", 15, 12, 15, "", "a.md:12"),
-    new ProfileTestPlace("past the markdown's end", 15, 13, 15, "", "a.xml:15"),
+    new ProfileTestPlace("the last markdown line", 15, 13, 15, "", "a.md:13"),
+    new ProfileTestPlace("past the markdown's end", 15, 14, 15, "", "a.xml:15"),
   ]
   for (const k of cases) {
     t.eqStr(k.name, profileWhereText(profileWhere(k.line, k.mdLine, k.markLine, "a.xml", md, k.text)), k.want)

@@ -538,17 +538,35 @@ const profileMdLine = (s: string): string => {
 /** How long a wrapped line's part must be to stand for the start of a text. */
 const PROFILE_WRAP_MIN: i32 = 16
 
+/** Whether `m` from `p` to its end is how `text` starts, compared in place. */
+const profileTailOpens = (m: string, p: i32, text: string): boolean => {
+  if (m.length - p > text.length) {
+    return false
+  }
+  for (let i = p; i < m.length; i++) {
+    if (m.charCodeAt(i) !== text.charCodeAt(i - p)) {
+      return false
+    }
+  }
+  return true
+}
+
 /**
- * Whether a markdown line holds `text`: the whole of it, or (where the text
- * wraps onto the next line) its first PROFILE_WRAP_MIN characters or more
- * ending the line from a word's start.
+ * Whether a markdown line holds `text`: a row's first cell (`| Id |`) only
+ * where the line starts, as a row's does, so another row's later cell is no
+ * match; other text the whole of it anywhere, or (where the text wraps onto
+ * the next line) its first PROFILE_WRAP_MIN characters or more ending the
+ * line from a word's start.
  */
 const profileMdHolds = (m: string, text: string): boolean => {
+  if (text.startsWith("| ")) {
+    return m.startsWith(text)
+  }
   if (m.indexOf(text) >= 0) {
     return true
   }
   for (let p = 0; m.length - p >= PROFILE_WRAP_MIN; p++) {
-    if ((p === 0 || m.charCodeAt(p - 1) === 0x20) && text.startsWith(m.substring(p, m.length))) {
+    if ((p === 0 || m.charCodeAt(p - 1) === 0x20) && profileTailOpens(m, p, text)) {
       return true
     }
   }
