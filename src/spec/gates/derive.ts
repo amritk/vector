@@ -6,16 +6,20 @@
  * covers a requirement of that section the vector covers, asserts that the
  * vector's call is the vector's expected literal, and its call's arguments
  * are the vector's, each one either a quantified variable bound inside its
- * domain, a literal equal to it, or another cited vector's call whose
- * expected value it is, read through `unwrap` only when that value is not
- * null (unwrap of null fails the sample, so it never denotes null). Only a
- * vector compared whole and called once is used, the row or a sibling: a
- * truncated, iterated or toleranced vector's expected value is not its
- * call's. Every step is checked here; any that fails refuses.
+ * domain or another cited vector's call whose expected value it is, read
+ * through `unwrap` only when that value is not null (unwrap of null fails the
+ * sample, so it never denotes null). Only a vector compared whole and called
+ * once is used, the row or a sibling: a truncated, iterated or toleranced
+ * vector's expected value is not its call's. The property must imply the row,
+ * not restate it: no argument is a literal, at any depth; each of the call's
+ * arguments reads a quantified variable; and each variable admits another
+ * value than the row's inside its domain and where (a neighbour: a byte
+ * flipped, added or removed, or an integer one off). Every step is checked
+ * here; any that fails refuses.
  */
 
 import { Clause, ClauseKind, Expr, ExprKind, ForallVar, Literal, VectorSourceKind } from "../contract/types"
-import { SampleKind, SampleValue, sampleHolds, sampleInt, sampleLiteral } from "../sample/eval"
+import { SampleKind, SampleValue, sampleBytes, sampleHolds, sampleInt, sampleLiteral } from "../sample/eval"
 import { sampleParseInt } from "../sample/ints"
 
 /** How many calls deep an argument may reach through other vectors. */
@@ -200,10 +204,7 @@ const deriveUnify = (p: Clause, sibs: Clause[], e: Expr, x: SampleValue, m: Deri
     return
   }
   if (e.kind === ExprKind.Lit) {
-    const v = deriveValue(e.lit)
-    if (v === null || !deriveSame(v, x)) {
-      m.why = `${p.id} passes a literal that is not the vector's value`
-    }
+    m.why = `${p.id} passes a literal argument, which restates the vector instead of deriving its result: bind it through a quantified variable or a cited vector`
     return
   }
   if (e.kind === ExprKind.Op && e.name === "unwrap" && e.args.length === 1 && e.args[0].kind === ExprKind.Call) {
@@ -245,6 +246,68 @@ const deriveOutside = (p: Clause, v: ForallVar, x: SampleValue): string | null =
     return `${p.id} binds ${v.name} to ${x.n}, outside its domain ${v.min}..${v.max}`
   }
   return null
+}
+
+/** Whether an expression reads a variable anywhere. */
+const deriveMentions = (e: Expr): boolean => {
+  if (e.kind === ExprKind.Var) {
+    return true
+  }
+  for (const a of e.args) {
+    if (deriveMentions(a)) {
+      return true
+    }
+  }
+  return false
+}
+
+/** The values next to a bound one that the rule tries: each byte's low bit flipped, a byte added and one removed, or one more and one less. */
+const deriveNeighbours = (x: SampleValue): SampleValue[] => {
+  const out: SampleValue[] = []
+  if (x.kind === SampleKind.Bytes) {
+    for (let i = 0; i < x.bytes.length; i++) {
+      const b: u8[] = x.bytes.slice(0, x.bytes.length)
+      b[i] = toU8(toI32(b[i]) ^ 1)
+      out.push(sampleBytes(b))
+    }
+    const longer: u8[] = x.bytes.slice(0, x.bytes.length)
+    longer.push(toU8(0))
+    out.push(sampleBytes(longer))
+    if (x.bytes.length > 0) {
+      out.push(sampleBytes(x.bytes.slice(0, x.bytes.length - 1)))
+    }
+    return out
+  }
+  if (x.kind === SampleKind.Int) {
+    out.push(sampleInt(x.n - 1, x.ty))
+    out.push(sampleInt(x.n + 1, x.ty))
+  }
+  return out
+}
+
+/**
+ * Whether the property admits another value for a variable than the one the
+ * vector binds, the others held: a neighbour inside its domain for which the
+ * where holds. A variable that admits only the vector's value is a literal by
+ * another name.
+ */
+const deriveAdmitsOther = (p: Clause, v: ForallVar, env: Map<string, SampleValue>): boolean => {
+  const x = env.get(v.name)
+  if (x === undefined) {
+    return false
+  }
+  for (const y of deriveNeighbours(x)) {
+    if (deriveOutside(p, v, y) !== null) {
+      continue
+    }
+    const tryEnv = deriveCopy(env)
+    tryEnv.set(v.name, y)
+    const holds = sampleHolds(p.where, tryEnv)
+    if (holds.isOk() && (p.where === null || holds.value)) {
+      return true
+    }
+  }
+  return false
 }
 
 /** Why one property does not derive the vector's result, or null when it does. */
@@ -294,6 +357,16 @@ const deriveFrom = (clauses: Clause[], k: Clause, want: SampleValue, p: Clause):
   }
   if (p.where !== null && !holds.value) {
     return `${p.id}'s where does not hold for the vector's inputs`
+  }
+  for (let i = 0; i < call.args.length; i++) {
+    if (!deriveMentions(call.args[i])) {
+      return `${p.id} passes argument ${i + 1} through no variable it quantifies over, so it restates the vector instead of deriving its result`
+    }
+  }
+  for (const v of p.forall) {
+    if (!deriveAdmitsOther(p, v, m.env)) {
+      return `${p.id} admits only the vector's value for ${v.name} (its domain and where allow no other), so it restates the vector instead of deriving its result`
+    }
   }
   return null
 }

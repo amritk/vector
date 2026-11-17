@@ -16,6 +16,8 @@ description: >-
 
 # vector spec — spec → contract → Nish test, and the PR that implements it
 
+Before running vector, read [`docs/AI.md`](../../../docs/AI.md): its rules, traps first.
+
 **You** write the spec. **`vector spec extract`** writes the contract from it.
 **The RFC text and Z3 hold the veto**, and **nish runs the test.** Never write
 or edit `contracts/<name>.json` by hand: change the spec, rebuild, and
@@ -202,10 +204,14 @@ Untested: an obligation on the caller: a pure function cannot see its other invo
 Every requirement must then be RFC text: a `Definition:` paragraph, a BCP 14
 sentence of the spec's own, and a vector Source naming a section of the spec
 are refused. `specs/rfc5869-hkdf-sha256.md` and
-`specs/rfc8439-chacha20-poly1305.md` are worked examples. Check such a
-contract with `spec check <contract.json> --spec specs/<name>.xml`: the RFC is
-read from its recorded file, and the contract must be exactly what the profile
-extracts to.
+`specs/rfc8439-chacha20-poly1305.md` are worked examples. The contract records
+the RFC, not the spec, so check it with `spec check contracts/<name>.json`
+(the RFC is read from its recorded file), or name the RFC with
+`--spec rfcs/rfc<N>.txt`. `--spec specs/<name>.xml` names a file the contract
+does not record, and exits 1 (`--spec … is not rfcs/rfc<N>.txt, the main
+source the contract records`). To check that the contract is exactly what the
+profile extracts to, run
+`spec extract specs/<name>.xml -o contracts/<name>.json --check`.
 
 **One vector table** has exactly this header:
 
@@ -227,6 +233,11 @@ extracts to.
   - `Key = 0b0b0b`: labelled bytes. Use the label the cited section prints
     the value under, several words if it does; the first word may start with
     digits joined to a letter (`32-bit fixed-common part = 07000000`).
+    A later word may be a comma-grouped number (`After 1,000 iterations`),
+    and one later word a parenthesised group (`MESSAGE (length 1 byte) = 72`,
+    as RFC 8032 prints it).
+  - `MESSAGE (length 0 bytes) = (empty)`: the empty value a section prints
+    as a label with nothing below it and a length of 0.
   - `concat(a, b, …)`: one level, all parts bytes. Never `‖`.
   - `[0x11111111 0x01020304]` or `State = [879531e0 c5ecf37d]`: a word
     array, for `u16[]`, `u32[]` or `u64[]`. Each word has the type's width
@@ -243,7 +254,9 @@ extracts to.
     of M states it, or a property covering a requirement of M asserts the
     call equals it for inputs inside its domains, each input either a
     quantified variable or another cited vector's expected value (under
-    `unwrap` only a non-null one). Use it
+    `unwrap` only a non-null one), never a literal in the property, and
+    each variable free to take another value than the vector's (a domain
+    of one value, or a `where` that pins it, only restates the row). Use it
     for a verify vector whose section defines the check but never says
     "MUST return true" (see the guide's "When a property derives the
     result"). Widen the property's domain to hold the vector's inputs. A
@@ -259,7 +272,9 @@ extracts to.
 - **Values from an RFC:**
   - Each one is a *whole* printed value, never a prefix or a tail. A word
     array is a whole printed block of words, word for word.
-  - Take the arguments and the expected value from one test case.
+  - Take the arguments and the expected value from one test case. A label
+    printed once goes with the test case it is printed in: RFC 8032 §7.1's
+    empty MESSAGE belongs to TEST 1, not to TEST 2's key and signature.
   - Where a case is printed for several variants, use the row whose number
     is in the function's name.
   - [Writing a spec](../../../docs/guide/guides/writing-a-spec.md)'s "What a
@@ -433,10 +448,15 @@ root's std. `--nish <bin>` builds with that compiler as it is.
 Every export the diff adds to or changes in the target module must be a
 function the contract tests. Exit 1 names each one that is not.
 
-A spec cannot declare `outOfScope` exports yet: the profile has no construct
-for them. When `exports` fails, either drop the export from the
-implementation, or add the function to the spec, with a clause that tests it,
-in a spec-side PR.
+When `exports` fails, do one of these in a spec-side PR:
+
+- drop the export from the implementation;
+- add the function to the spec, with a clause that tests it;
+- declare it out of scope with a paragraph
+  `Out of scope: <export>, <the reason no clause tests it>`, anywhere in the
+  body. The reason uses no BCP 14 keyword. `exports` then reports a change to
+  that export as a note, not a failure. The name is not checked against the
+  module, so a misspelt one excuses nothing.
 
 ### 7. Mutate the diff
 

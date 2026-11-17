@@ -17,11 +17,14 @@ Generated from [src/verify/verify.ts](https://github.com/amritk/vector/blob/main
 - [`OUTCOME_UNKNOWN`](#outcome_unknown)
 - [`OUTCOME_INVALID`](#outcome_invalid)
 - [`OUTCOME_ERROR`](#outcome_error)
+- [`OUTCOME_MISMATCH`](#outcome_mismatch)
 - [`FeedbackItem`](#feedbackitem)
 - [`VerifyOutcome`](#verifyoutcome)
 - [`collectFeedbackItems`](#collectfeedbackitems)
 - [`formatReportFeedback`](#formatreportfeedback)
+- [`verifyMismatchLines`](#verifymismatchlines)
 - [`verifySpecAndProgram`](#verifyspecandprogram)
+- [`verifyReportOutcome`](#verifyreportoutcome)
 - [`counterexampleJson`](#counterexamplejson)
 - [`verifyOutcomeJson`](#verifyoutcomejson)
 
@@ -75,6 +78,16 @@ z3 could not run, or rejected the script.
 
 ```ts
 const OUTCOME_ERROR: string = "ERROR"
+```
+
+<a id="outcome_mismatch"></a>
+
+### OUTCOME_MISMATCH
+
+A counterexample z3 gave does not do what z3 said when replayed exactly: a bug in vector.
+
+```ts
+const OUTCOME_MISMATCH: string = "MISMATCH"
 ```
 
 ### FeedbackItem
@@ -185,6 +198,14 @@ The property, in math style.
 property: string
 ```
 
+#### FeedbackItem.replay
+
+What replaying `cex` found (`confirmed`, `not-replayed`, `mismatch`); "" when it was not z3's.
+
+```ts
+replay: string
+```
+
 #### FeedbackItem.withCex
 
 Attaches a counterexample.
@@ -196,6 +217,32 @@ withCex(cex: Counterexample): FeedbackItem
 <scalar-field name="cex" type="Counterexample" required>
 
 the counterexample
+
+</scalar-field>
+
+<scalar-field name="returns" type="FeedbackItem">
+
+this item, to chain
+
+</scalar-field>
+
+#### FeedbackItem.withReplayedCex
+
+Attaches z3's counterexample and what replaying it found.
+
+```ts
+withReplayedCex(cex: Counterexample, replay: string): FeedbackItem
+```
+
+<scalar-field name="cex" type="Counterexample" required>
+
+the counterexample
+
+</scalar-field>
+
+<scalar-field name="replay" type="string" required>
+
+the replay's outcome
 
 </scalar-field>
 
@@ -275,6 +322,14 @@ What went wrong, for ERROR.
 message: string
 ```
 
+#### VerifyOutcome.mismatches
+
+One `MISMATCH` line per counterexample that did not replay, for MISMATCH.
+
+```ts
+mismatches: string[]
+```
+
 #### VerifyOutcome.status
 
 One of the `OUTCOME_*` statuses.
@@ -333,6 +388,27 @@ the lines, joined by newlines
 
 </scalar-field>
 
+### verifyMismatchLines
+
+One line per counterexample whose replay was a mismatch: z3 said it breaks
+the program, and exact evaluation says it does not.
+
+```ts
+function verifyMismatchLines(report: VerifyReport): string[]
+```
+
+<scalar-field name="report" type="VerifyReport" required>
+
+the report, after `replayReport`
+
+</scalar-field>
+
+<scalar-field name="returns" type="string[]">
+
+the lines, in function order
+
+</scalar-field>
+
 ### verifySpecAndProgram
 
 Runs the whole gate over a parsed spec plan and program: shape, types, the
@@ -386,6 +462,51 @@ the outcome
 
 </scalar-field>
 
+### verifyReportOutcome
+
+Decides an outcome from what z3 said about a program: every counterexample
+is replayed first, and one that does not replay makes it MISMATCH; then,
+on a clean proof, the float64 gate runs.
+
+```ts
+function verifyReportOutcome(
+  program: Program,
+  report: VerifyReport,
+  label: string,
+  styleWarnings: StyleWarning[],
+): VerifyOutcome
+```
+
+<scalar-field name="program" type="Program" required>
+
+the program, typechecked
+
+</scalar-field>
+
+<scalar-field name="report" type="VerifyReport" required>
+
+z3's report on it, as `solveProgram` returned it
+
+</scalar-field>
+
+<scalar-field name="label" type="string" required>
+
+what was verified, for the dashboard
+
+</scalar-field>
+
+<scalar-field name="styleWarnings" type="StyleWarning[]" required>
+
+the advisory warnings
+
+</scalar-field>
+
+<scalar-field name="returns" type="VerifyOutcome">
+
+the outcome
+
+</scalar-field>
+
 ### counterexampleJson
 
 A counterexample as JSON: `{ inputs: { name: value }, result }`, `result`
@@ -411,8 +532,10 @@ the JSON object
 
 The outcome as `vector verify --json` prints it. Which members appear
 depends on the status: PROVEN has `dashboard`, `emittedCode` and
-`styleWarnings`; REFUTED and UNKNOWN have `dashboard`, `feedback`, `items`
-and `styleWarnings`; INVALID has `errors` and `feedback`; ERROR has `message`.
+`styleWarnings`; REFUTED, UNKNOWN and MISMATCH have `dashboard`,
+`feedback`, `items` and `styleWarnings`; INVALID has `errors` and
+`feedback`; ERROR has `message`. A counterexample z3 gave carries
+`replay`: `confirmed`, `not-replayed` or `mismatch`.
 
 ```ts
 function verifyOutcomeJson(outcome: VerifyOutcome): OutJson

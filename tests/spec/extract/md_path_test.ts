@@ -71,9 +71,9 @@ const mdPathTestReader = (t: Suite, readers: SourceReaders): void => {
   const a = mdPathTestTree(t, MD_PATH_TEST_FOO, MD_PATH_TEST_TWELVE, "bad")
   if (a !== null) {
     t.eqLines(
-      "an XML reader refusal below a mark names the mark's markdown line and the XML line",
+      "an XML reader refusal below a mark names the XML alone, never the mark's markdown line",
       mdPathTestLines(mdPathTestRun(a, readers)),
-      [`${a.md}:10 (${a.xml}:3): ${MD_PATH_TEST_ROOT}`],
+      [`${a.xml}:3: ${MD_PATH_TEST_ROOT}`],
     )
   }
   const x = mdPathTestTree(t, '<?xml version="1.0"?>\n<?line 10?><foo/>\n', MD_PATH_TEST_TWELVE, "bad")
@@ -209,11 +209,8 @@ const mdPathTestLinesOf = (ats: string[], minus: i32): string =>
 
 // extract-mini.xml's last unsigned `<?line N?>` is `<?line 21?>` on XML line
 // 30; the XML runs ahead of the markdown after it (one XML line per table
-// cell), so a refusal below it names md line 21 and its own XML line.
-
-/** Whether every place is the .md at `mdLine` together with the XML at some line. */
-const mdPathTestNear = (ats: string[], tr: MdPathTestTree, mdLine: i32): boolean =>
-  ats.every((a: string): boolean => a.startsWith(`${tr.md}:${mdLine} (${tr.xml}:`) && a.endsWith(")"))
+// cell), so a refusal below it names the markdown line that holds its text,
+// found by that text, and its own XML line.
 
 /** A profile refusal names the .md at a markdown line, else the XML at its line. */
 const mdPathTestProfile = (t: Suite, mini: string, md: string, readers: SourceReaders): void => {
@@ -221,28 +218,32 @@ const mdPathTestProfile = (t: Suite, mini: string, md: string, readers: SourceRe
   const r = mdPathTestBoth(t, "a profile refusal", xml, md, readers)
   if (r !== null) {
     const name = "a profile refusal at a markdown line names the .md; with no .md, the XML at its line"
-    t.ok(`${name}: the .md at the last mark, with the XML line`, mdPathTestNear(r.md, r.withMd, 21))
+    t.eqLines(`${name}: each at its own .md line, with the XML line`, r.md, [
+      `${r.withMd.md}:52 (${r.withMd.xml}:64)`,
+      `${r.withMd.md}:82 (${r.withMd.xml}:88)`,
+    ])
+    t.contains(`${name}: the property's md line`, mdPathTestLineAt(md, 82), "// P-CANONICAL covers R-ENC-DIGITS")
     t.ok(
       `${name}: the XML`,
       r.xml.every((a: string): boolean => mdPathTestFileOf(a) === r.withoutMd.xml),
     )
     // Not md line 55, where adding the lines since the mark would put the
-    // sentence: it is on md line 52, and nothing in the XML says so.
+    // sentence: it is on md line 52, where its text is.
     t.eqStr(`${name}: lines`, mdPathTestLinesOf(r.md, 0), mdPathTestLinesOf(r.xml, 0))
     t.eqStr(`${name}: the sentence's XML line`, mdPathTestLinesOf([r.md[0]], 0), "64")
     t.contains(`${name}: at the sentence`, mdPathTestLineAt(xml, mdPathTestLineOf(r.xml[0])), "Each byte <bcp14>MUST")
-    // The markdown line printed is the mark's, 21, never past the sentence's, 52.
+    // The markdown line printed is the sentence's, 52, not the mark's, 21.
     const printed = r.md[0].startsWith(`${r.withMd.md}:`) ? r.md[0].substring(r.withMd.md.length + 1) : ""
-    t.eqStr(`${name}: the printed md line`, printed.substring(0, printed.indexOf(" ")), "21")
+    t.eqStr(`${name}: the printed md line`, printed.substring(0, printed.indexOf(" ")), "52")
     t.contains(`${name}: the sentence's md line`, mdPathTestLineAt(md, 52), "Each byte MUST be written")
   }
 
   const bad = "export const hexDecode = (text: string): u8[] | null"
   const junk = replaceAll(mini, bad, `${bad} junk`)
-  const s = mdPathTestBoth(t, "a ts-interface refusal", junk, md, readers)
+  const s = mdPathTestBoth(t, "a ts-interface refusal", junk, replaceAll(md, bad, `${bad} junk`), readers)
   if (s !== null) {
     const name = "a profile refusal in a ts-interface block is at the line in the block, in either file"
-    t.eqStr(`${name}: the .md`, s.md[0], `${s.withMd.md}:21 (${s.withMd.xml}:49:54)`)
+    t.eqStr(`${name}: the .md`, s.md[0], `${s.withMd.md}:35 (${s.withMd.xml}:49:54)`)
     t.eqStr(`${name}: the XML, at the column of the junk`, s.xml[0], `${s.withoutMd.xml}:49:54`)
     t.eqStr(`${name}: the XML line`, mdPathTestLineAt(junk, 49), `${bad} junk`)
     // The functions the gates name are at their XML lines in the block too.

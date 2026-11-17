@@ -159,6 +159,14 @@ The counterexample of a refuted clause.
 cex: Counterexample
 ```
 
+#### ClauseVerdict.clauseIndex
+
+The clause's index in the function's ensures; -1 when unset.
+
+```ts
+clauseIndex: i32
+```
+
 #### ClauseVerdict.hasCex
 
 Whether `cex` holds a counterexample.
@@ -173,6 +181,22 @@ The clause in math style.
 
 ```ts
 pretty: string
+```
+
+#### ClauseVerdict.replay
+
+What replaying `cex` found (`verify/solve/replay`); "" before it runs.
+
+```ts
+replay: string
+```
+
+#### ClauseVerdict.replayDetail
+
+The replay's detail: the check that differed, or why it was not replayed.
+
+```ts
+replayDetail: string
 ```
 
 #### ClauseVerdict.status
@@ -244,12 +268,44 @@ Whether `cex` holds an example input.
 hasCex: boolean
 ```
 
+#### Hazard.index
+
+Which hazard of its kind in its function, counting every query of that kind.
+
+```ts
+index: i32
+```
+
+#### Hazard.kind
+
+`QUERY_DIV`, `QUERY_PRE` or `QUERY_RANGE`.
+
+```ts
+kind: i32
+```
+
 #### Hazard.pretty
 
 The division, the callee's requires or the Int expression, in math style.
 
 ```ts
 pretty: string
+```
+
+#### Hazard.replay
+
+What replaying `cex` found (`verify/solve/replay`); "" before it runs.
+
+```ts
+replay: string
+```
+
+#### Hazard.replayDetail
+
+The replay's detail: the check that differed, or why it was not replayed.
+
+```ts
+replayDetail: string
 ```
 
 ### FnReport
@@ -506,6 +562,14 @@ How long z3 took, in milliseconds.
 
 ```ts
 millis: i32
+```
+
+#### VerifyReport.mismatchCount
+
+How many counterexamples did not replay as z3 said (`verify/solve/replay`).
+
+```ts
+mismatchCount: i32
 ```
 
 #### VerifyReport.preCount

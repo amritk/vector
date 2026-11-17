@@ -20,3 +20,9 @@ func Sha256Hex(text string) string {
 	sum := sha256.Sum256([]byte(text))
 	return ToHex(sum[:])
 }
+
+// Sha256Pair is the SHA-256 of a followed by b, as lowercase hex: a
+// two-argument function, so an iterated vector can swap its arguments.
+func Sha256Pair(a string, b string) string {
+	return Sha256Hex(a + b)
+}

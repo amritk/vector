@@ -1,0 +1,26 @@
+Test Fixture                                                      vector
+Request for Comments: 99999                               Not an RFC
+Category: Informational                                  November 2026
+
+
+                     Paired SHA-256: Test Vectors 
+
+Abstract
+
+   This text is a test fixture for vector's iterated vectors, laid out
+   as an RFC's plain text so that vector reads it.  It is not an RFC.
+
+1.  Pairing
+
+   A pair starts from the texts a = "abc" and b = "xyz".  For each
+   iteration, set a to sha256Pair(a, b) and b to the old a, both at
+   once.  The final result is the a left after the last iteration.
+
+   Pairs are run for 1 iteration, for 2 iterations and for 1,000
+   iterations.
+
+
+
+
+vector                        Informational                     [Page 1]
+

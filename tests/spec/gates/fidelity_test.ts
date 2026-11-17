@@ -552,6 +552,12 @@ const FIDELITY_TEST_ED_RFC: string = `Request for Comments: 8032
 /** TEST 1's secret key and signature, the arguments and result around an empty message. */
 const FIDELITY_TEST_ED_SK1: string = "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60"
 const FIDELITY_TEST_ED_SIG1: string = "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e06522490155"
+/** TEST 2's secret key and signature, around its one-byte message. */
+const FIDELITY_TEST_ED_SK2: string = "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb"
+const FIDELITY_TEST_ED_SIG2: string = "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da"
+/** TEST 3's secret key and signature, which the NOTE labels follow. */
+const FIDELITY_TEST_ED_SK3: string = "c5aa8df43f9f837bedb7442f31dcb7b166d38535076f094b85ce3a2e0b4458f7"
+const FIDELITY_TEST_ED_SIG3: string = "6291d657deec24024827e69c3abe01a30ce548a284743a445e3680d7db5ac3ac"
 
 /**
  * The findings for one Ed25519 vector citing RFC 8032 §7.1: a secret key,
@@ -592,11 +598,7 @@ const fidelityTestEmpty = (t: Suite): void => {
   fidelityTestRowIs(
     t,
     "TEST 2's one-byte message",
-    fidelityTestEd(
-      "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
-      `{"hex": "72", "label": "MESSAGE (length 1 byte)"}`,
-      "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da",
-    ),
+    fidelityTestEd(FIDELITY_TEST_ED_SK2, `{"hex": "72", "label": "MESSAGE (length 1 byte)"}`, FIDELITY_TEST_ED_SIG2),
     "",
   )
   fidelityTestEdIs(
@@ -617,8 +619,18 @@ const fidelityTestEmpty = (t: Suite): void => {
     `{"hex": "", "label": "MESSAGE (length 9 bytes)"}`,
     `the empty value is not printed in RFC §7.1 ("Test Vectors for Ed25519") under "MESSAGE (length 9 bytes)" with nothing below it`,
   )
-  fidelityTestEdIs(t, "empty under a length in octets", `{"hex": "", "label": "NOTE (length 0 octets)"}`, "")
-  fidelityTestEdIs(t, "empty under the singular byte", `{"hex": "", "label": "NOTE (length 0 byte)"}`, "")
+  fidelityTestRowIs(
+    t,
+    "empty under a length in octets",
+    fidelityTestEd(FIDELITY_TEST_ED_SK3, `{"hex": "", "label": "NOTE (length 0 octets)"}`, FIDELITY_TEST_ED_SIG3),
+    "",
+  )
+  fidelityTestRowIs(
+    t,
+    "empty under the singular byte",
+    fidelityTestEd(FIDELITY_TEST_ED_SK3, `{"hex": "", "label": "NOTE (length 0 byte)"}`, FIDELITY_TEST_ED_SIG3),
+    "",
+  )
   fidelityTestEdIs(t, "an unlabelled empty value", `{"hex": ""}`, "the empty value is not printed")
 }
 
@@ -730,21 +742,21 @@ const fidelityTestCases = (t: Suite): void => {
       `{"section": "2", "case": "Test Vector #2"}`,
       "0202",
       "0c0c",
-      `C1.expect: 2-byte value is not printed in RFC §2, Test Vector #2 ("Poly")`,
+      `C1.expect: the 2-byte expect is not printed in RFC §2, Test Vector #2 ("Poly")`,
     ],
     [
       "#2's key cited as #3",
       `{"section": "2", "case": "Test Vector #3"}`,
       "0202",
       "0c0c",
-      `C1.args[0]: 2-byte value is not printed in RFC §2, Test Vector #3 ("Poly")`,
+      `C1.args[0]: the 2-byte args[0] is not printed in RFC §2, Test Vector #3 ("Poly")`,
     ],
     [
       "#1's key with #2's tag, cited as #2",
       `{"section": "2", "case": "Test Vector #2"}`,
       "0101",
       "0b0b",
-      `C1.args[0]: 2-byte value is not printed in RFC §2, Test Vector #2 ("Poly")`,
+      `C1.args[0]: the 2-byte args[0] is not printed in RFC §2, Test Vector #2 ("Poly")`,
     ],
     [
       "labels printed more than once within one case",
@@ -798,6 +810,42 @@ const fidelityTestCases = (t: Suite): void => {
   )
 }
 
+/**
+ * A label printed once belongs to the test case its line falls in: each row
+ * is a name, the secret key, the message literal, the signature, and the
+ * finding wanted ("" for none).
+ */
+const fidelityTestOnce = (t: Suite): void => {
+  const empty = `{"hex": "", "label": "MESSAGE (length 0 bytes)"}`
+  const one = `{"hex": "72", "label": "MESSAGE (length 1 byte)"}`
+  const two = `{"hex": "af82", "label": "MESSAGE (length 2 bytes)"}`
+  const apart = "so they are from different test cases: use the values printed together"
+  const rows: string[][] = [
+    ["TEST 1 with its empty message", FIDELITY_TEST_ED_SK1, empty, FIDELITY_TEST_ED_SIG1, ""],
+    ["TEST 2 with its message", FIDELITY_TEST_ED_SK2, one, FIDELITY_TEST_ED_SIG2, ""],
+    ["TEST 3 with its message", FIDELITY_TEST_ED_SK3, two, FIDELITY_TEST_ED_SIG3, ""],
+    [
+      "TEST 2 with TEST 1's empty message",
+      FIDELITY_TEST_ED_SK2,
+      empty,
+      FIDELITY_TEST_ED_SIG2,
+      `E1.args[1]: "MESSAGE (length 0 bytes)" is printed once in RFC §7.1 ("Test Vectors for Ed25519"), with the 1st of 3 "SECRET KEY", but args[0] is the 2nd of 3 "SECRET KEY", expect is the 2nd of 3 "SIGNATURE", ${apart}`,
+    ],
+    ["TEST 1 with TEST 2's message", FIDELITY_TEST_ED_SK1, one, FIDELITY_TEST_ED_SIG1, apart],
+    ["TEST 3 with TEST 2's message", FIDELITY_TEST_ED_SK3, one, FIDELITY_TEST_ED_SIG3, apart],
+    [
+      "TEST 1 with a NOTE after TEST 3",
+      FIDELITY_TEST_ED_SK1,
+      `{"hex": "", "label": "NOTE (length 0 octets)"}`,
+      FIDELITY_TEST_ED_SIG1,
+      apart,
+    ],
+  ]
+  for (const r of rows) {
+    fidelityTestRowIs(t, `one test case: ${r[0]}`, fidelityTestEd(r[1], r[2], r[3]), r[4])
+  }
+}
+
 /** The fidelity gate. */
 export const main = (): i32 => {
   const t = new Suite("spec/gates/fidelity")
@@ -815,19 +863,28 @@ export const main = (): i32 => {
   t.ok("whole words inside a sentence", !fidelityTestHas(all, "R5:", ""))
   t.ok("a true vector", !fidelityTestHas(all, "V1:", "") && !fidelityTestHas(all, "V1.", ""))
   t.ok("under another label", fidelityTestHas(all, "V2.args[0]:", `under "IKM", not under "salt"`))
-  t.ok("part of a value", fidelityTestHas(all, "V2.args[1]:", "2-byte value is only part of a value"))
-  t.ok("not printed", fidelityTestHas(all, "V2.expect:", "2-byte value is not printed in RFC §3"))
+  t.ok("part of a value", fidelityTestHas(all, "V2.args[1]:", "the 2-byte args[1] is only part of a value"))
+  t.ok("not printed", fidelityTestHas(all, "V2.expect:", "the 2-byte expect is not printed in RFC §3"))
   t.ok("a label it needs", fidelityTestHas(all, "V3.args[0]:", `under "salt": name it with "label"`))
   t.ok("an input as the result", fidelityTestHas(all, "V3.expect:", "an input is not the expected result"))
   t.ok("an unprinted integer", fidelityTestHas(all, "V4.args[1]:", `RFC §3 does not print "L" followed by 43`))
   t.ok("different rounds", fidelityTestHas(all, "V5:", "so they are from different test cases"))
   t.ok("one round", !fidelityTestHas(all, "V10:", "") && !fidelityTestHas(all, "V10.", ""))
-  t.ok("a byte list in plain text is not a value", fidelityTestHas(all, "V11.args[0]:", "4-byte value is not printed"))
-  t.ok("a reference in plain text is not a value", fidelityTestHas(all, "V13.args[0]:", "1-byte value is not printed"))
+  t.ok(
+    "a byte list in plain text is not a value",
+    fidelityTestHas(all, "V11.args[0]:", "the 4-byte args[0] is not printed"),
+  )
+  t.ok(
+    "a reference in plain text is not a value",
+    fidelityTestHas(all, "V13.args[0]:", "the 1-byte args[0] is not printed"),
+  )
   const xml = gateFidelity(fidelityTestCtx("r.xml"))
   t.ok("bytes printed in brackets, from XML", !fidelityTestHas(xml, "V11", ""))
   t.ok("a bracketed byte list in XML, not a reference", !fidelityTestHas(xml, "V13", ""))
-  t.ok("other bytes than the brackets'", fidelityTestHas(xml, "V12.args[0]:", "4-byte value is not printed in RFC §7"))
+  t.ok(
+    "other bytes than the brackets'",
+    fidelityTestHas(xml, "V12.args[0]:", "the 4-byte args[0] is not printed in RFC §7"),
+  )
   t.ok("another variant", fidelityTestHas(all, "V6.expect:", "hmacSha256 names 256"))
   t.ok("part of a string", fidelityTestHas(all, "V7.args[0]:", "only part of a longer value"))
   t.ok("a whole string", !fidelityTestHas(all, "V8:", "") && !fidelityTestHas(all, "V8.", ""))
@@ -881,6 +938,7 @@ export const main = (): i32 => {
   fidelityTestTable(t)
   fidelityTestEmpty(t)
   fidelityTestCases(t)
+  fidelityTestOnce(t)
   t.ok("iterated findings", it.length === 19)
   if (it.length !== 19) {
     console.log(it.join("\n"))

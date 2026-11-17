@@ -529,7 +529,7 @@ const extractCasesTestGate = (x: ExtractCasesTestCtx): void => {
     const r = extractCasesTestCli(x, ["extract", tr.xml, "-o", tr.out])
     t.eqLines(name, extractCasesTestErr(r), [
       "exit 1",
-      beside ? `vector: ${mdPath}:21 (${tr.xml}:189): ${fid}` : `vector: ${tr.xml}:189: ${fid}`,
+      beside ? `vector: ${mdPath}:162 (${tr.xml}:189): ${fid}` : `vector: ${tr.xml}:189: ${fid}`,
     ])
     t.eqStr(`${name}: nothing on stdout`, r.stdout, "")
     t.ok(`${name}: no contract written`, readFileSyncOrNull(tr.out) === null)

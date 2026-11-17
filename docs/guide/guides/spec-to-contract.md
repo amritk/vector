@@ -28,10 +28,14 @@ A contract ([`schemas/rfc-contract.json`][schema], described in
   (or `DEFINITION`);
 - **exclusions**: the MUST and SHALL sentences a functional test cannot observe
   (nonce uniqueness, constant-time comparison), each with its reason;
+- **outOfScope**: the exports of the module no clause tests, each with the
+  reason, from the spec's `Out of scope: <export>, <reason>` paragraphs;
+  [`spec exports`](pr-gates.md#exports) reports a change to one as a note;
 - **functions**: the implementation's signatures, plus any reference function
   from another module that a property may call;
 - **clauses**: **vectors** (known answers, each saying where its expected value
-  comes from) and **properties** (`forall` a typed domain, `where` restricts
+  comes from; a literal may carry the label the RFC prints it under, such as
+  `After 1,000 iterations` or `MESSAGE (length 0 bytes)`) and **properties** (`forall` a typed domain, `where` restricts
   it, `assert` must hold).
 
 ### An iterated vector
@@ -234,16 +238,26 @@ It refuses everything it cannot read, all at once, each refusal at
 `file:line`, or `file:line:col` when it knows the column (a malformed literal
 in a test vector's cell, a parse error in the `ts-interface` block, malformed
 XML). A refusal names the markdown the XML was built from, `specs/<name>.md`
-beside it, only at a line the XML vouches for. kramdown-rfc marks the XML with
+beside it, only at a line it can find there. kramdown-rfc marks the XML with
 `<?line N?>` only where a part starts (the abstract, the middle, the back),
 not at every paragraph, and tables and other multi-line constructs move the
-lines after a mark apart. So a refusal on the line of a mark names
-the markdown line alone; any other names the markdown line of the last mark
-before it, with the XML line it is exactly on beside it:
+lines after a mark apart. So a refusal on the line of a mark names the
+markdown line alone. Any other refusal is looked up by its own text (the
+sentence, a table row's first cell, the start of the paragraph, or the code
+line it is about, such as a front end, an interface line or a property's
+first line) in the markdown between its mark and the next `--- ` line, with
+the markdown's `*` and `_` emphasis markers dropped as well as kept. If the
+text is on exactly one line there, the refusal names that markdown line, with
+the XML line it is exactly on beside it:
 
 ```text
-specs/<name>.md:<last mark's line> (specs/<name>.xml:<line>[:col])
+specs/<name>.md:<line holding the text> (specs/<name>.xml:<line>[:col])
 ```
+
+If the text is on no line there, or on more than one, the refusal names the
+XML line alone rather than a markdown line that might be the wrong one. Text
+the markdown spells differently from the XML in another way, such as an
+escape or an xref, is not found, so it too names the XML line alone.
 
 The column, when there is one, counts along the XML line, so it is printed
 with an XML line and never with a markdown line alone. A refusal before any
@@ -251,17 +265,18 @@ mark, past the end of the markdown, or with no markdown beside the XML names
 the XML alone, so a refusal never names a file that is not there or a line
 that is not in it. A refusal that cites a second place, such as an anchor used
 twice or a closing tag that does not match, prints it the same way. Here a
-BCP 14 sentence is added to the XML with no anchor and no `Untested:`
-paragraph:
+BCP 14 sentence with no anchor and no `Untested:` paragraph is added to both
+the markdown and the XML built from it:
 
 <!-- exit 1 -->
 ```sh
 sed -i 's|return an empty array, not null.</t>|&\n<t>hexDecode <bcp14>MUST</bcp14> be fast.</t>|' specs/example-hex.xml
+sed -i 's|^{: #R-DEC-EMPTY}$|&\n\nhexDecode MUST be fast.|' specs/example-hex.md
 ./dist/vector spec extract specs/example-hex.xml -o contracts/example-hex.json
 ```
 
 ```text
-vector: specs/example-hex.md:21 (specs/example-hex.xml:140): BCP 14 sentence has no anchor and no Untested: paragraph after it: "hexDecode MUST be fast."
+vector: specs/example-hex.md:142 (specs/example-hex.xml:140): BCP 14 sentence has no anchor and no Untested: paragraph after it: "hexDecode MUST be fast."
 ```
 
 ```sh
@@ -348,7 +363,7 @@ git checkout -q contracts
 
 | Flag | What it does |
 |---|---|
-| `--spec <file>` | the main source's file, read directly (a spec's XML, or an RFC's `.txt` or `.xml`) |
+| `--spec <file>` | the main source's file, read directly (a spec's XML, or an RFC's `.txt` or `.xml`); for a contract whose main source is an RFC (`vector-main-RFC<N>`), that is the RFC, not the spec |
 | `--run-sources` | run each vector's `command` source and compare what it prints (see below) |
 | `--module <file>` | the module source the signatures are checked against |
 | `--nish-root <dir>` | a nish checkout or install, whose `std/` holds the module under test |

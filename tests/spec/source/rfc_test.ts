@@ -17,6 +17,7 @@ import {
   rfcSection,
   rfcSectionText,
   rfcUnvaluedLabels,
+  rfcUnvaluedLines,
 } from "../../../src/spec/source/rfc"
 
 /** A small RFC: a title page, page furniture, numbered sections, an appendix and hex in each shape. */
@@ -199,6 +200,26 @@ const rfcTestCaseBreaks = (n: i32): string => {
   return sec.pageBreaks.map((b: i32): string => `${b}:${sec.lines[b]}|`).join("")
 }
 
+/**
+ * Where each value and each unvalued label of a one-section RFC whose body is
+ * `body` is printed: `label@line` for values, then `!label@line` for the
+ * unvalued, space-separated.
+ */
+const rfcTestLines = (body: string): string => {
+  const text = `Request for Comments: 1\n\f\n1.  Intro\n\n   ${body}\n`
+  const sec = rfcTestSection(rfcParse(text), "1")
+  const out: string[] = []
+  for (const v of rfcHexValues(sec)) {
+    out.push(`${v.label ?? "-"}@${v.line}`)
+  }
+  const names = rfcUnvaluedLabels(sec)
+  const lines = rfcUnvaluedLines(sec)
+  for (let i = 0; i < names.length; i++) {
+    out.push(`!${names[i]}@${lines[i]}`)
+  }
+  return out.join(" ")
+}
+
 /** Reading an RFC's text: sections, page furniture, quotes and printed hex. */
 export const main = (): i32 => {
   const t = new Suite("spec/source rfc")
@@ -313,6 +334,22 @@ export const main = (): i32 => {
     rfcTestUnvalued("MESSAGE (length 0 bytes):\n   SIGNATURE = 0xe556"),
     "MESSAGE (length 0 bytes)",
   )
+  // Where a value is printed: the line of the label that names it, else its first line.
+  const where: string[][] = [
+    ["a label above its value", "K:\n   9d61", "K@2"],
+    ["a label on the value's line", "K = 0x9d61", "K@2"],
+    ["an unnamed value", "9d61 9d61", "-@2"],
+    ["a value over several lines", "K:\n   9d61\n   9d61\n   L:\n   e556", "K@2 L@5"],
+    [
+      "an unvalued label between two values",
+      "SECRET KEY:\n   9d61\n\n   MESSAGE (length 0 bytes):\n\n   SIGNATURE:\n   e556",
+      "SECRET KEY@2 SIGNATURE@7 !MESSAGE (length 0 bytes)@5",
+    ],
+    ["a last unvalued label", "K:\n   9d61\n   M:", "K@2 !M@4"],
+  ]
+  for (const w of where) {
+    t.eqStr(`printed at: ${w[0]}`, rfcTestLines(w[1]), w[2])
+  }
   t.eqStr("a letter-led inline label is", rfcTestBody("IV = 4041424344454647"), "IV=4041424344454647")
 
   // Test cases: a section split by `Test Vector #N:` headings.

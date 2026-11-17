@@ -1,0 +1,22 @@
+{
+  "status": "REFUTED",
+  "dashboard": "╔════════════════════════════════════════════════════════════════════╗\n║                        VECTOR — PROOF REPORT                       ║\n╠════════════════════════════════════════════════════════════════════╣\n║ Prompt:  \"verify: tests/fixtures/unsat.json\"                       ║\n║ Attempt: 1/1      Solver: Z3 4.16.0 (native)      Status: REFUTED  ║\n╠════════════════════════════════════════════════════════════════════╣\n║ LAYER 1 · usdToEur(amount: Real): Real                             ║\n║   { amount >= 0 }  amount * 0.91                                   ║\n║   { result > amount }                                              ║\n║   ✘ ensures AX-BAD  REFUTED (sat)                                  ║\n║       counterexample: amount = 0 → result = 0                      ║\n║   ⚠ guard amount >= 0 enforced at runtime; proven to hold at every ║\n║   internal call site                                               ║\n╠════════════════════════════════════════════════════════════════════╣\n║ VERDICT: 1 CONTRACT VIOLATION(S) FOUND — SEE ABOVE                 ║\n║ \"Testing shows the presence of bugs, never their absence.\"         ║\n╚════════════════════════════════════════════════════════════════════╝",
+  "feedback": "Function usdToEur, ensures AX-BAD (result > amount): REFUTED — counterexample amount = 0 gives result = 0.",
+  "items": [
+    {
+      "function": "usdToEur",
+      "axiomId": "AX-BAD",
+      "property": "result > amount",
+      "issue": "counterexample",
+      "counterexample": {
+        "inputs": {
+          "amount": "0"
+        },
+        "result": "0",
+        "replay": "confirmed"
+      },
+      "hint": "The postcondition is false for the input shown. Fix the body or tighten a requires clause so it holds for all remaining inputs."
+    }
+  ],
+  "styleWarnings": []
+}

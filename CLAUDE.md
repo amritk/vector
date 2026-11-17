@@ -17,6 +17,7 @@ read `.nish/docs/AI.md` (the language as rules, traps first).
 | `npm run lint` | biome, over the Nish sources and the Node scripts |
 | `npm run tested-exports` | refuse an exported function no test calls by name |
 | `npm run dogfood` | refuse a `tests/dogfood/` test that is not what vector emits from its spec now |
+| `npm run doc-caps` | refuse an agent-facing doc over its byte cap in `scripts/doc-caps.json` |
 
 ## Layout
 
@@ -32,7 +33,11 @@ read `.nish/docs/AI.md` (the language as rules, traps first).
   and SHA-256, child processes, z3, and diagnostics.
 - `tests/<area>/*_test.ts` are Nish programs built on `nish/testing`.
   `tests/cli/<case>/` is a golden case: `cmd` (`vector <args>`), `stdout`,
-  an optional `stderr`, and `exit`, checked against `dist/vector`.
+  an optional `stderr`, and `exit`, checked against `dist/vector`. An
+  optional `repo` names a `tests/fixtures/<name>/` with `base/` and `head/`
+  trees: the runner commits them into a throwaway git repository (`main` =
+  base, `work` = head), which `{{repo}}` names in `cmd` and `<repo>` in the
+  output.
 - `tests/dogfood/` holds vector's tests of itself, emitted from its own specs
   (`specs/vector-*.md`) with `--package vector=src`. They are generated, so
   regenerate them; never edit them.
@@ -58,7 +63,9 @@ read `.nish/docs/AI.md` (the language as rules, traps first).
 
 Locally, before pushing: `npm run build`, `node tests/run.mjs <filter>` for
 every area the change touches, `npm run lint`, `npm run tested-exports`, and
-`npm run dogfood` when the emitter, a `specs/vector-*` spec or its module changed.
+`npm run dogfood` when the emitter, a `specs/vector-*` spec or its module changed,
+and `npm run doc-caps` when an agent-facing doc changed. A doc over its cap is
+shortened in place; a cap is never raised or dropped, and CI refuses either.
 **The full gate is CI** (`.github/workflows/ci.yml`): it builds, runs every
 test, lints and smoke-runs the binary on every push.
 
@@ -70,6 +77,21 @@ golden that only shows a flag is accepted, or a unit test that sets the
 option directly, does not count: drive it through `vectorRun` or the binary
 and assert its effect. For a parser or gate rule, test its neighbours too
 (table-driven), not just the case that motivated it.
+
+**A gate that accepts a value on another clause's word computes it, never
+assumes it.** When a rule takes one clause's printed value as what another
+clause's expression denotes (a sibling vector's result standing in for a
+property's sub-call), evaluate that expression with the sampler's semantics
+and refuse every form it does not compute: a truncated, iterated or
+toleranced value, or `unwrap` of a `null`, is not `g(args)`. Every condition
+such a rule adds lands with a test shown to fail when that condition is
+deleted.
+
+**A gate rule that reads an RFC's layout (a block, a grid, a dump) is tested
+on text that goes through `rfcParse` with real `[Page N]` footers and `\f`
+headers.** The tests cover a value on each side of a page break, and two
+separate blocks split only by one. A boundary rule tested without that page
+text passes even with the rule removed.
 
 **Generated files are regenerated, never edited by hand.** That covers
 `docs/reference/**` and its routes in `scalar.config.json`, `tests/dogfood/**`, `contracts/*.json`

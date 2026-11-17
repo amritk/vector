@@ -1,0 +1,5 @@
+VIOLATED: sha256-chain (exit 1)
+  pass  R-CHAIN
+  fail  R-LOWER
+FAIL  [CHAIN-100000] sha256Hex chained 100,000 times from "abc", every digest's digits fed back (R-LOWER)
+      expected "73ea48fec15cc6261dc5aeeaafdb469b94fe3384e264dab224a2b06f7917a3e1", got "ab1422f1e8fb21e96db4464fed2f3a83dfa8886cb7722916bbbe012bb33d826a"
