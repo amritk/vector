@@ -2153,6 +2153,17 @@ const profileSourceTail = (td: XmlNode): XmlNode | null => {
   return k
 }
 
+/** What a Source cell's leading element is, as a refusal names it. */
+const profileSourceLead = (lead: XmlNode, cited: boolean): string => {
+  if (cited) {
+    return "section"
+  }
+  if (lead.name === "tt") {
+    return "code span"
+  }
+  return lead.name === "xref" ? "anchor" : `<${lead.name}> element`
+}
+
 /** The Source cell, judged against the settled Expected when there is one. */
 const profileSourceCell = (c: ProfileContext, td: XmlNode, expect: Literal | null): VectorSource | null => {
   let el = profileOnly(td)
@@ -2177,7 +2188,7 @@ const profileSourceCell = (c: ProfileContext, td: XmlNode, expect: Literal | nul
       profileRefuse(
         c,
         td,
-        `Source: only one test case may follow a section, written ${PROFILE_CASE_FORM}; "${tail}" after the ${cited ? "section" : lead.name === "tt" ? "code span" : "anchor"} is not one`,
+        `Source: only one test case may follow a section, written ${PROFILE_CASE_FORM}; "${tail}" after the ${profileSourceLead(lead, cited)} is not one`,
       )
       return null
     }

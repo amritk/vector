@@ -144,6 +144,14 @@ const rfcTestCasesText = (): string =>
     "   Key:",
     "   0e0e",
     "",
+    "   Test Vector #9:",
+    "   Key:",
+    "   0f0f",
+    "",
+    "   Test Vector #1234567:",
+    "   Key:",
+    "   1010",
+    "",
     "2.  Twice",
     "",
     "   Test Vector #1:",
@@ -301,11 +309,12 @@ export const main = (): i32 => {
   const cases = rfcParse(rfcTestCasesText())
   t.ok("a section with headings has cases", rfcHasCases(rfcTestSection(cases, "1")))
   t.ok("prose, a bare #, no colon and a heading mid-line head none", !rfcHasCases(rfcTestSection(cases, "4")))
-  t.ok("a parent's cases in its subsection are not its own", rfcHasCases(rfcTestSection(cases, "3.1")))
+  t.ok("a subsection has cases of its own", rfcHasCases(rfcTestSection(cases, "3.1")))
   t.eqStr("a heading alone, above a rule", rfcTestCase("1", 1), "Key=0a0a")
   t.eqStr("a heading with text, across a page break", rfcTestCase("1", 2), "Key=0b0b Tag=0c0c")
-  t.eqStr("a heading with a leading zero ends no case", rfcTestCase("1", 10), "Key=0d0d Key=0e0e")
-  t.eqStr("nor heads one", rfcTestCase("1", 2).indexOf("0e0e") < 0 ? "ok" : "in #2", "ok")
+  t.eqStr("a heading with a leading zero heads no case, but ends the one above", rfcTestCase("1", 10), "Key=0d0d")
+  t.eqStr("so does a heading with too many digits", rfcTestCase("1", 9), "Key=0f0f")
+  t.eqStr("nor is either one part of another case", rfcTestCase("1", 2).indexOf("0e0e") < 0 ? "ok" : "in #2", "ok")
   t.eqStr(
     "no such case",
     rfcTestCase("1", 12),

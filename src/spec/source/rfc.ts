@@ -350,6 +350,27 @@ const rfcCaseHeading = (line: string): i32 => {
 }
 
 /**
+ * Whether a line is shaped like a test case's heading, `Test Vector #<digits>:`,
+ * whether or not rfcCaseHeading takes its number: such a line ends the case
+ * above it, so a case never runs on into a block it does not head.
+ *
+ * @param line the line
+ * @returns true when its first non-blank text is `Test Vector #`, digits and a colon
+ */
+const rfcCaseShaped = (line: string): boolean => {
+  const head = "Test Vector #"
+  const t = trim(line)
+  if (!t.startsWith(head)) {
+    return false
+  }
+  let i = head.length
+  while (i < t.length && t.charCodeAt(i) >= 0x30 && t.charCodeAt(i) <= 0x39) {
+    i++
+  }
+  return i > head.length && i < t.length && t.charCodeAt(i) === 0x3a
+}
+
+/**
  * Whether a section is split into test cases by `Test Vector #N:` headings
  * (RFC 8439 §A.3's form).
  *
@@ -361,8 +382,8 @@ export const rfcHasCases = (sec: RfcSection): boolean =>
 
 /**
  * One test case of a section, as a section of its own: the lines from its
- * `Test Vector #N:` heading up to the next such heading or the section's
- * end. It keeps the section's number and title, so a check of the case
+ * `Test Vector #N:` heading up to the next heading-shaped line
+ * (rfcCaseShaped) or the section's end. It keeps the section's number and title, so a check of the case
  * reads as one of the section, narrowed.
  *
  * @param sec the section
@@ -395,7 +416,7 @@ export const rfcCaseSection = (sec: RfcSection, n: i32): Result<RfcSection, stri
     return Err(`heads ${count} test cases "${name}:", so which one is meant is unclear`)
   }
   let end = start + 1
-  while (end < sec.lines.length && rfcCaseHeading(sec.lines[end]) === 0) {
+  while (end < sec.lines.length && !rfcCaseShaped(sec.lines[end])) {
     end++
   }
   const lines = sec.lines.slice(start, end)

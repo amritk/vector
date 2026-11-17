@@ -314,8 +314,8 @@ true when one of its own lines heads a test case
 ### rfcCaseSection
 
 One test case of a section, as a section of its own: the lines from its
-`Test Vector #N:` heading up to the next such heading or the section's
-end. It keeps the section's number and title, so a check of the case
+`Test Vector #N:` heading up to the next heading-shaped line
+(rfcCaseShaped) or the section's end. It keeps the section's number and title, so a check of the case
 reads as one of the section, narrowed.
 
 ```ts

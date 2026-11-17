@@ -659,6 +659,19 @@ RFC 9996                      Example Spec                     May 2020
    Tag:
    0c0c
 
+   Test Vector #4: labels printed more than once
+
+   Key:
+   0404
+   Tag:
+   0e0e
+   Key:
+   0505
+   Tag:
+   0d0d
+   Tag:
+   0f0f
+
 3.  Parent
 
    Test Vector #1:
@@ -732,6 +745,13 @@ const fidelityTestCases = (t: Suite): void => {
       "0101",
       "0b0b",
       `C1.args[0]: 2-byte value is not printed in RFC §2, Test Vector #2 ("Poly")`,
+    ],
+    [
+      "labels printed more than once within one case",
+      `{"section": "2", "case": "Test Vector #4"}`,
+      "0404",
+      "0d0d",
+      `"Key" is printed 2 times, "Tag" is printed 3 times in RFC §2, Test Vector #4 ("Poly"), so which printings belong to one test case is unclear: cite the subsection that holds one test case`,
     ],
     [
       "no such case",

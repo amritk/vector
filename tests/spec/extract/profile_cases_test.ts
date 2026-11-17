@@ -1338,6 +1338,8 @@ const profileCasesTestVectors = (t: Suite, all: ProfileCasesTestRfcs): void => {
   caseWant.push(`${caseForm}; ", Test Vector #2" after the code span is not one`)
   caseRows.push(profileCasesTestSrc(`${PROFILE_CASES_RFC10} ${PROFILE_CASES_RFC10}, Test Vector #2`, '"f"', "V22"))
   caseWant.push(`${caseForm}; ", Test Vector #2" after the section is not one`)
+  caseRows.push(profileCasesTestSrc("<em>f</em>, Test Vector #2", '"f"', "V23"))
+  caseWant.push(`${caseForm}; ", Test Vector #2" after the <em> element is not one`)
   profileCasesTestRefusedWith(
     t,
     all,
