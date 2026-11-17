@@ -60,13 +60,17 @@ const truncTestShape = (expect: string, trunc: string): string => {
 const truncTestContract = (text: string): Contract => contractParse(text, "c1").expect("parse")
 
 /** The fidelity findings of the vector, citing `section`, expecting `expect`, truncated by `trunc`. */
-const truncTestFidelity = (section: string, expect: string, trunc: string): string => {
+const truncTestFidelity = (section: string, expect: string, trunc: string): string =>
+  truncTestFidelityIn(readFileSyncOrNull("tests/fixtures/profile/rfc4231.txt") ?? "", section, expect, trunc)
+
+/** truncTestFidelity against the RFC text `rfc` in place of the fixture's. */
+const truncTestFidelityIn = (rfc: string, section: string, expect: string, trunc: string): string => {
   const ctx = new CheckContext("contracts/c1.json", ".")
   ctx.contract = truncTestContract(truncTestText(section, "hmacSha256", expect, trunc))
   const set = new SourceSet()
   set.main = "rfc4231"
   const file = "tests/fixtures/profile/rfc4231.txt"
-  set.sources.push(new LoadedSource("rfc4231", file, file, rfcParse(readFileSyncOrNull(file) ?? "")))
+  set.sources.push(new LoadedSource("rfc4231", file, file, rfcParse(rfc)))
   ctx.sources = set
   return gateFidelity(ctx).join("\n")
 }
@@ -217,6 +221,69 @@ const truncTestFidelityCases = (t: Suite): void => {
   }
 }
 
+/**
+ * fidelity: the length's neighbours, each in a cut of §4.6: where the number
+ * and unit are printed, and how they may be spelled.
+ */
+const truncTestFidelityNeighbours = (t: Suite): void => {
+  const rfc = readFileSyncOrNull("tests/fixtures/profile/rfc4231.txt") ?? ""
+  const sentence = "Test with a truncation of output to 128 bits."
+  t.ok("the fixture prints the sentence", rfc.indexOf(sentence) > 0)
+  const refusal = "T1.truncate: the truncation to 128 bits is not printed in RFC §4.6"
+  const cuts: string[] = [
+    replaceAll(
+      replaceAll(rfc, sentence, "Test with a truncation of output."),
+      "4.6.  Test Case 5",
+      "4.6.  Test Case 5, 128 bits",
+    ),
+    replaceAll(rfc, sentence, "Test with a truncation of output to 1128 bits."),
+    replaceAll(rfc, sentence, "Test with a truncation of output to 128\n   bits."),
+    replaceAll(rfc, sentence, "Test with a truncation of output to 128 Bits."),
+    replaceAll(rfc, sentence, "Test with a truncation of output to 128 octets."),
+  ]
+  const names: string[] = [
+    "only in a heading",
+    "1128 bits against 128",
+    "split across a line break",
+    "128 Bits",
+    "128 octets, another unit",
+  ]
+  const refused: boolean[] = [true, true, false, false, true]
+  for (let i = 0; i < cuts.length; i++) {
+    const got = truncTestFidelityIn(cuts[i], "4.6", truncTestExpect(32), `{"bits": 128}`)
+    t.eqStr(
+      `fidelity: ${names[i]}: the length ${refused[i] ? "refused" : "found"}`,
+      `${got.indexOf(refusal) >= 0}`,
+      `${refused[i]}`,
+    )
+    t.eqStr(
+      `fidelity: ${names[i]}: no other value refused`,
+      `${got.indexOf("T1.expect") < 0 && got.indexOf("T1.args") < 0}`,
+      "true",
+    )
+  }
+  // The Expected printed whole in §4.6 but not the length is the {"bytes": 16}
+  // case of truncTestFidelityCases: the length's refusal and nothing else.
+  // A comma-grouped number: 1,024 bits of a 128-byte value printed whole.
+  let mac = ""
+  let rows = ""
+  for (let r = 0; r < 8; r++) {
+    const row = `${TRUNC_TEST_MAC.substring(0, 30)}${r}${r}`
+    mac = `${mac}${row}`
+    rows = r === 0 ? row : `${rows}\n                  ${row}`
+  }
+  const wide = replaceAll(
+    replaceAll(rfc, sentence, `${sentence} Then to 1,024 bits.`),
+    `HMAC-SHA-256 = ${TRUNC_TEST_MAC}`,
+    `HMAC-SHA-256 = ${rows}`,
+  )
+  t.eqStr(
+    "fidelity: 1,024 bits, comma-grouped: found",
+    truncTestFidelityIn(wide, "4.6", `{"hex": "${mac}", "label": "HMAC-SHA-256"}`, `{"bits": 1024}`),
+    "",
+  )
+}
+
 /** A vector's truncate, through read, write, shape, typing and fidelity. */
 export const main = (): i32 => {
   const t = new Suite("spec/contract truncate")
@@ -225,5 +292,6 @@ export const main = (): i32 => {
   truncTestByteLength(t)
   truncTestTyping(t)
   truncTestFidelityCases(t)
+  truncTestFidelityNeighbours(t)
   return t.done()
 }
