@@ -28,6 +28,8 @@ Generated from [src/spec/source/rfc.ts](https://github.com/amritk/vector/blob/ma
 - [`rfcParse`](#rfcparse)
 - [`rfcRead`](#rfcread)
 - [`rfcSection`](#rfcsection)
+- [`rfcHasCases`](#rfchascases)
+- [`rfcCaseSection`](#rfccasesection)
 - [`rfcSectionText`](#rfcsectiontext)
 - [`rfcQuoteIn`](#rfcquotein)
 - [`rfcOwnSpans`](#rfcownspans)
@@ -285,6 +287,57 @@ the section number, like "2.3" or "A.1"
 <scalar-field name="returns" type="RfcSection | null">
 
 the section, or null when the RFC has none by that number
+
+</scalar-field>
+
+### rfcHasCases
+
+Whether a section is split into test cases by `Test Vector #N:` headings
+(RFC 8439 §A.3's form).
+
+```ts
+function rfcHasCases(sec: RfcSection): boolean
+```
+
+<scalar-field name="sec" type="RfcSection" required>
+
+the section
+
+</scalar-field>
+
+<scalar-field name="returns" type="boolean">
+
+true when one of its own lines heads a test case
+
+</scalar-field>
+
+### rfcCaseSection
+
+One test case of a section, as a section of its own: the lines from its
+`Test Vector #N:` heading up to the next heading-shaped line
+(rfcCaseShaped) or the section's end. It keeps the section's number and title, so a check of the case
+reads as one of the section, narrowed.
+
+```ts
+function rfcCaseSection(sec: RfcSection, n: i32): Result<RfcSection, string>
+```
+
+<scalar-field name="sec" type="RfcSection" required>
+
+the section
+
+</scalar-field>
+
+<scalar-field name="n" type="i32" required>
+
+the test case's number, from 1
+
+</scalar-field>
+
+<scalar-field name="returns" type="Result&lt;RfcSection, string&gt;">
+
+the case, or why the section holds no one case by that number,
+  worded to follow the section's name
 
 </scalar-field>
 

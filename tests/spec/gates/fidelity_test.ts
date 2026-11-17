@@ -622,6 +622,182 @@ const fidelityTestEmpty = (t: Suite): void => {
   fidelityTestEdIs(t, "an unlabelled empty value", `{"hex": ""}`, "the empty value is not printed")
 }
 
+/** An RFC whose §2 is split into test cases, as RFC 8439 §A.3 is; §3 has a subsection, §4 no headings. */
+const FIDELITY_TEST_CASES_RFC: string = `Request for Comments: 9996
+
+1.  Rules
+
+   It MUST tag.
+
+2.  Poly
+
+   The test vector #2 below is longer.
+
+   Test Vector #1:
+   ==============
+
+   Key:
+   0101
+
+   Tag:
+   0a0a
+
+   Test Vector #2: a longer one
+
+   Key:
+   0202
+
+Author                        Informational                     [Page 1]
+\f
+RFC 9996                      Example Spec                     May 2020
+
+   Tag:
+   0b0b
+
+   Test Vector #3: a tag alone
+
+   Tag:
+   0c0c
+
+   Test Vector #4: labels printed more than once
+
+   Key:
+   0404
+   Tag:
+   0e0e
+   Key:
+   0505
+   Tag:
+   0d0d
+   Tag:
+   0f0f
+
+3.  Parent
+
+   Test Vector #1:
+
+   Key:
+   0101
+
+3.1.  Child
+
+   Tag:
+   0a0a
+
+4.  Plain
+
+   Key:
+   0101
+   Tag:
+   0a0a
+   Key:
+   0202
+   Tag:
+   0b0b
+   Tag:
+   0c0c
+`
+
+/** The findings for one vector of f(key) = tag, citing `cite` (a contract citation's JSON). */
+const fidelityTestCase = (cite: string, key: string, tag: string): string[] => {
+  const contract = `{
+  "contract": "c5",
+  "source": {"title": "T", "rfc": 9996},
+  "target": {"module": "nish/x"},
+  "requirements": [{"id": "R1", "section": "1", "level": "MUST", "quote": "It MUST tag."}],
+  "functions": [{"name": "f", "params": [{"name": "k", "type": "bytes"}], "returns": "bytes"}],
+  "clauses": [
+    {"kind": "vector", "id": "C1", "title": "t", "covers": ["R1"], "source": {"cite": ${cite}}, "call": "f",
+     "args": [{"hex": "${key}", "label": "Key"}], "expect": {"hex": "${tag}", "label": "Tag"}}
+  ]
+}`
+  const ctx = new CheckContext("contracts/c5.json", ".")
+  ctx.contract = contractParse(contract, "c5").expect("parse")
+  const set = new SourceSet()
+  set.main = "rfc9996"
+  set.sources.push(new LoadedSource("rfc9996", "r.txt", "r.txt", rfcParse(FIDELITY_TEST_CASES_RFC)))
+  ctx.sources = set
+  return gateFidelity(ctx)
+}
+
+/** Vectors scoped to one test case of a section, beside the same vectors citing the whole section. */
+const fidelityTestCases = (t: Suite): void => {
+  const rows: string[][] = [
+    ["#1, its own values", `{"section": "2", "case": "Test Vector #1"}`, "0101", "0a0a", ""],
+    ["#2, split by a page break", `{"section": "2", "case": "Test Vector #2"}`, "0202", "0b0b", ""],
+    [
+      "#2's call with #3's tag",
+      `{"section": "2", "case": "Test Vector #2"}`,
+      "0202",
+      "0c0c",
+      `C1.expect: 2-byte value is not printed in RFC §2, Test Vector #2 ("Poly")`,
+    ],
+    [
+      "#2's key cited as #3",
+      `{"section": "2", "case": "Test Vector #3"}`,
+      "0202",
+      "0c0c",
+      `C1.args[0]: 2-byte value is not printed in RFC §2, Test Vector #3 ("Poly")`,
+    ],
+    [
+      "#1's key with #2's tag, cited as #2",
+      `{"section": "2", "case": "Test Vector #2"}`,
+      "0101",
+      "0b0b",
+      `C1.args[0]: 2-byte value is not printed in RFC §2, Test Vector #2 ("Poly")`,
+    ],
+    [
+      "labels printed more than once within one case",
+      `{"section": "2", "case": "Test Vector #4"}`,
+      "0404",
+      "0d0d",
+      `"Key" is printed 2 times, "Tag" is printed 3 times in RFC §2, Test Vector #4 ("Poly"), so which printings belong to one test case is unclear: cite the subsection that holds one test case`,
+    ],
+    [
+      "no such case",
+      `{"section": "2", "case": "Test Vector #12"}`,
+      "0101",
+      "0a0a",
+      `C1: RFC §2 ("Poly") has no "Test Vector #12:" heading, so it holds no Test Vector #12`,
+    ],
+    [
+      "a section with subsections",
+      `{"section": "3", "case": "Test Vector #1"}`,
+      "0101",
+      "0a0a",
+      `C1: RFC §3 ("Parent") has subsections, so Test Vector #1 is not one test case of it`,
+    ],
+    [
+      "a section without headings",
+      `{"section": "4", "case": "Test Vector #1"}`,
+      "0101",
+      "0a0a",
+      `C1: RFC §4 ("Plain") has no "Test Vector #1:" heading`,
+    ],
+    [
+      "the whole section, which has headings: the hint names one",
+      `{"section": "2"}`,
+      "0101",
+      "0a0a",
+      "which printings belong to one test case is unclear: cite the subsection that holds one test case, or name one: {{Section 2 of RFC9996}}, Test Vector #N",
+    ],
+  ]
+  for (const r of rows) {
+    fidelityTestRowIs(t, `test case: ${r[0]}`, fidelityTestCase(r[1], r[2], r[3]), r[4])
+  }
+  const plain = fidelityTestCase(`{"section": "4"}`, "0101", "0a0a")
+  fidelityTestRowIs(
+    t,
+    "test case: a whole section without headings is refused as before",
+    plain,
+    "which printings belong to one test case is unclear: cite the subsection that holds one test case",
+  )
+  t.ok(
+    "test case: and with no hint",
+    plain.length === 1 && plain[0].endsWith("cite the subsection that holds one test case"),
+  )
+}
+
 /** The fidelity gate. */
 export const main = (): i32 => {
   const t = new Suite("spec/gates/fidelity")
@@ -704,6 +880,7 @@ export const main = (): i32 => {
   t.ok("two numbers and no word: unchecked", !fidelityTestHas(it, "I25", ""))
   fidelityTestTable(t)
   fidelityTestEmpty(t)
+  fidelityTestCases(t)
   t.ok("iterated findings", it.length === 19)
   if (it.length !== 19) {
     console.log(it.join("\n"))

@@ -113,6 +113,7 @@ where the expected value comes from:
 | Source cell | Contract source |
 |---|---|
 | `{{Section N of RFCx}}` | `cite`, section N of that RFC |
+| `{{Section N of RFCx}}, Test Vector #K` | `cite`, section N of that RFC, `case` `Test Vector #K`: the values must all be printed in that one test case (K from 1, no leading zero; any other text after the section is refused) |
 | `{{anchor}}`, a numbered section of this spec | `spec` for a `null` or `bool` expected value; otherwise `cite`, that section, which must print the value |
 | a single code span, `` `python3 -c '…'` `` | `command`, with the table's section for the args; the expected value must be bytes or a string |
 
@@ -247,7 +248,7 @@ These are what Call and Expected cells may hold:
 | `[]`, `(empty)` | empty bytes; labelled (`MESSAGE (length 0 bytes) = (empty)`), the empty value a section prints under that label (see [What a printed value is](#what-a-printed-value-is)) |
 | `null`, `true`, `false` | themselves |
 | `42`, `-1` | a decimal integer, in range for the parameter's type (`i8` … `u64`, e.g. `u8` 0..255); where the type is `f64` it is that f64 |
-| `Key = 0b0b0b` | labelled bytes: lowercase hex pairs, no spaces. The label is the name the cited section prints the value under. A label may be several words, and its first word may start with digits joined to a letter (`32-bit fixed-common part = 07000000`); a bare number is not a label. A later word may be a comma-grouped number (`After 1,000 iterations`), and one later word may be a parenthesised group of such words (`MESSAGE (length 1 byte) = 72`, as RFC 8032 prints it). A group may not come first, hold a bare comma or a paren, be empty, be left open, or be followed by a second group |
+| `Key = 0b0b0b` | labelled bytes: lowercase hex pairs, no spaces. The label is the name the cited section prints the value under. A label may be several words, and its first word may start with digits joined to a letter (`32-bit fixed-common part = 07000000`); a bare number is not a label. A later word may be a comma-grouped number (`After 1,000 iterations`), and one later word may be a parenthesised group of such words (`MESSAGE (length 1 byte) = 72`, as RFC 8032 prints it). An apostrophe may join two letters inside a word (`Alice's private key`). The words may end in one alias after `, `: a single word, which may be joined to a group whose words are also `, ` apart (`Alice's private key, a = 7707…`, `Alice's public key, X25519(a, 9) = 8520…`, as RFC 7748 §6.1 prints them). An apostrophe may not start or end a word, follow another, or touch a digit (`'Alice`, `Alice''s`, `Alice'9`). A comma takes no space before it and exactly one after (`key,a` and `X25519(a,9)` are refused). An alias is one word (`key, a b` is refused), there is at most one, and a number such as `NaN` takes none, so `f(NaN, a = 00)` is still two arguments. A group may not come first, hold a paren, be empty, be left open, be followed by a second group or by more of its word (`X25519(a, 9)b`), or, outside an alias, hold a comma (`M (a, 9)`); in an alias it may not stand apart from its word (`X25519 (a, 9)`) |
 | `L = 42` | a labelled decimal integer, checked against the cited section's "L = 42". Where the parameter (or return) type is an integer type it is the int; anywhere else digits that are also hex pairs (`42`) are labelled bytes, and digits with a leading zero are never an int: `L = 00` is bytes, and `L = 042` (not whole hex pairs) is refused |
 | `22 × 0b`, `22 x 0b`, `IKM = 22 × 0b` | a run of bytes written that many times (`{hex, repeat}`), as RFCs print runs; optionally labelled. `22×0b` also reads. The count is at least 1, the run lowercase hex pairs, and the expansion at most 65536 bytes |
 | `concat([00], Key = ff)` | the parts joined, all bytes; one level (`concat` does not nest), at least one part. `‖` is refused |
@@ -486,7 +487,7 @@ Every vector says where its expected value comes from (`source`):
 
 | `source` | The expected value is | Checked by |
 |---|---|---|
-| `{"cite": {"section": "A.1"}}` (`"source"` optional) | printed in that section, with the args, as one test case (see [What a printed value is](#what-a-printed-value-is)) | fidelity |
+| `{"cite": {"section": "A.1"}}` (`"source"` optional; `"case": "Test Vector #2"` optional) | printed in that section, with the args, as one test case; with `case`, in that test case of the section (see [What a printed value is](#what-a-printed-value-is)) | fidelity |
 | `{"command": "…"}`, with `"section"` for the args | the command's trimmed stdout (lowercase hex for bytes) | `spec check --run-sources` only; otherwise reported as not run, never as passed. A timeout, a nonzero exit or other output fails. See [Running the source commands](spec-to-contract.md#running-the-source-commands) |
 | `{"spec": "4.2"}`, with `"section"` for the args | `null` or a `bool` that section states | provenance: a requirement the vector covers, cited to that section, must state `null`, `true` or `false` as the result, by [the rule below](#when-a-section-states-null-true-or-false) |
 
@@ -509,8 +510,16 @@ of matching bytes:
   printed by `"Zg=="`).
 - **Labels.** A value printed under a name (`Key =`, `Input scalar:`, a short
   line such as `Plaintext:` above a dump) must give that name:
-  `{"hex": "0b0b…", "label": "Key"}`. A label the section does not print the
-  value under is refused.
+  `{"hex": "0b0b…", "label": "Key"}`. A label is matched as the section
+  prints it, apostrophe and alias included: RFC 7748 §6.1 prints Alice's key
+  as `Alice's private key, a:`, so a row writes
+  `x25519Base(Alice's private key, a = 7707…)` and expects
+  `Alice's public key, X25519(a, 9) = 8520…`. A label the section does not
+  print the value under is refused: `Alice's private key, b`,
+  `Alice private key, a`, `Alice's public key, X25519(a, 5)`, and Bob's key
+  under `Alice's private key, a` all are, as is a value the cited section
+  does not print at all (the 32-byte base point `[09 00 … 00]` against
+  §6.1, or §6.1's key cited from §6.2).
 - **Empty values.** A section prints an empty value as a label with nothing
   below it, its length stated as 0 (`MESSAGE (length 0 bytes):`, or
   `octets`). Empty bytes bind only under such a label:
@@ -526,6 +535,17 @@ of matching bytes:
   the cited section is read in rounds (the k-th `Key` goes with the k-th
   `Data` and the k-th `HMAC-SHA-256`), so citing a parent section cannot mix
   values from two test cases.
+- **Named test cases.** Where a section prints several test cases under
+  headings (`Test Vector #2:`, a line of its own or followed by text), and a
+  label is printed a different number of times than another, the rounds do
+  not say which values belong together, so a plain cite is refused. Cite
+  the case instead: `{{Section A.3 of RFC8439}}, Test Vector #2` (in the
+  contract, `"case": "Test Vector #2"`). The case runs from its heading to
+  the next one or the section's end, across page breaks; every rule above
+  applies within it. A value printed only in another case is refused, and
+  so is a case the section has no heading for, a heading printed twice, or
+  a section with subsections. `spec check` applies the case again, and the
+  report shows the source as `§A.3, Test Vector #2`.
 - **Decimals.** In an RFC, an unnamed run of digit-only lines, or one under a
   name that calls it a number (`Input scalar as a number (base 10):`), is a
   decimal number, not bytes, and is not a value.

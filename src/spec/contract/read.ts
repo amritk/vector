@@ -541,12 +541,13 @@ const readFunctions = (r: ContractReader, root: JsonValue, c: Contract): void =>
 }
 
 const readCitation = (r: ContractReader, v: JsonValue, at: string): Citation | null => {
-  if (!readObject(r, v, at, ["source", "section"])) {
+  if (!readObject(r, v, at, ["source", "section", "case"])) {
     return null
   }
   const cite = new Citation()
   cite.source = readString(r, v, "source", at, false)
   cite.section = readRequiredString(r, v, "section", at)
+  cite.testCase = readString(r, v, "case", at, false)
   return cite
 }
 

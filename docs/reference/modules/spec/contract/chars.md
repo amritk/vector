@@ -21,6 +21,7 @@ Generated from [src/spec/contract/chars.ts](https://github.com/amritk/vector/blo
 - [`charsIsLowerHex`](#charsislowerhex)
 - [`charsIsId`](#charsisid)
 - [`charsIsIdent`](#charsisident)
+- [`charsTestVector`](#charstestvector)
 - [`charsIsSection`](#charsissection)
 - [`charsIsAbs`](#charsisabs)
 - [`charsIsF64Text`](#charsisf64text)
@@ -250,6 +251,27 @@ the text
 <scalar-field name="returns" type="boolean">
 
 true for an identifier
+
+</scalar-field>
+
+### charsTestVector
+
+The number a test case's name gives it: `Test Vector #N`, exactly, with N
+a positive number written without a leading zero.
+
+```ts
+function charsTestVector(s: string): i32
+```
+
+<scalar-field name="s" type="string" required>
+
+the name
+
+</scalar-field>
+
+<scalar-field name="returns" type="i32">
+
+N, or 0 when `s` is not such a name
 
 </scalar-field>
 

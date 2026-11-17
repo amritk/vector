@@ -34,7 +34,14 @@
 
 import { split } from "nish/text"
 import { diagPlace } from "../../core/diag"
-import { charsFirstControl, charsIsAbs, charsIsId, charsIsIdent, charsIsSection } from "../contract/chars"
+import {
+  charsFirstControl,
+  charsIsAbs,
+  charsIsId,
+  charsIsIdent,
+  charsIsSection,
+  charsTestVector,
+} from "../contract/chars"
 import { contractF64Overflows, contractF64Parse } from "../contract/f64"
 import {
   RawCall,
@@ -2235,9 +2242,68 @@ const profileReadRow = (c: ProfileContext, cells: XmlNode[], section: string, tr
   return v
 }
 
+/** The accepted way to name one test case of a cited section, as refusals print it. */
+const PROFILE_CASE_FORM: string = "{{Section N of RFCx}}, Test Vector #N (N from 1, with no leading zero)"
+
+/**
+ * A Source cell's leading element and the text after it, when the cell is
+ * an element and then more: `{{Section N of RFCx}}, Test Vector #N` names
+ * one test case of the section. Null when nothing but blanks surrounds a
+ * lone element, or text comes before the first element.
+ */
+const profileSourceTail = (td: XmlNode): XmlNode | null => {
+  let k = td.first
+  while (k !== null && k.name.length === 0 && profileTrim(k.text).length === 0) {
+    k = k.next
+  }
+  if (k === null || k.name.length === 0 || profileOnly(td) !== null) {
+    return null
+  }
+  return k
+}
+
+/** What a Source cell's leading element is, as a refusal names it. */
+const profileSourceLead = (lead: XmlNode, cited: boolean): string => {
+  if (cited) {
+    return "section"
+  }
+  if (lead.name === "tt") {
+    return "code span"
+  }
+  return lead.name === "xref" ? "anchor" : `<${lead.name}> element`
+}
+
 /** The Source cell, judged against the settled Expected when there is one. */
 const profileSourceCell = (c: ProfileContext, td: XmlNode, expect: Literal | null): VectorSource | null => {
-  const el = profileOnly(td)
+  let el = profileOnly(td)
+  let testCase: string | null = null
+  const lead = profileSourceTail(td)
+  if (lead !== null) {
+    // Only text may follow, and only the one form that names a test case.
+    let rest = ""
+    let textOnly = true
+    let k = lead.next
+    while (k !== null) {
+      if (k.name.length > 0) {
+        textOnly = false
+      }
+      rest = rest + profileRawText(k)
+      k = k.next
+    }
+    const tail = profileTrim(rest)
+    const name = tail.startsWith(",") ? profileTrim(tail.substring(1)) : ""
+    const cited = lead.name === "xref" && xmlAttr(lead, "section") !== null
+    if (!cited || !textOnly || charsTestVector(name) === 0 || tail !== `, ${name}`) {
+      profileRefuse(
+        c,
+        td,
+        `Source: only one test case may follow a section, written ${PROFILE_CASE_FORM}; "${tail}" after the ${profileSourceLead(lead, cited)} is not one`,
+      )
+      return null
+    }
+    el = lead
+    testCase = name
+  }
   if (el !== null && el.name === "tt") {
     const command = profileRawText(el)
     if (profileTrim(command).length === 0) {
@@ -2271,6 +2337,7 @@ const profileSourceCell = (c: ProfileContext, td: XmlNode, expect: Literal | nul
       c.cited.add(n)
       const cite = new Citation()
       cite.section = section
+      cite.testCase = testCase
       if (n !== c.mainRfc) {
         cite.source = `rfc${n}`
       }

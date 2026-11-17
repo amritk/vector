@@ -18,6 +18,7 @@ import {
   charsIsModule,
   charsIsSection,
   charsIsStringText,
+  charsTestVector,
 } from "./chars"
 import { contractF64Bits, contractF64FromBits, contractF64IsNaN, contractF64Overflows, contractF64Parse } from "./f64"
 import { literalsByteLength } from "./literals"
@@ -703,6 +704,14 @@ const shapeVectorSource = (s: ShapeContext, k: Clause, at: string): void => {
     if (cite !== null) {
       shapeSourceRef(s, cite.source, `${at}.source.cite.source`)
       shapeSection(s, cite.section, `${at}.source.cite.section`)
+      const tc = cite.testCase
+      if (tc !== null && charsTestVector(tc) === 0) {
+        shapeFail(
+          s,
+          `${at}.source.cite.case`,
+          "a test case of the section, as Test Vector #N (N from 1, no leading zero)",
+        )
+      }
     }
     if (k.section !== null) {
       shapeFail(s, `${at}.section`, `a cited vector's args are read in source.cite; drop "section"`)
