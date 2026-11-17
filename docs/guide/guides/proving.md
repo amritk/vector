@@ -13,8 +13,19 @@
 | `UNKNOWN` | z3 could not decide, usually for non-linear arithmetic; restate the clause with variables multiplied only by literal constants | 1 |
 | `INVALID` | the files are not a well-formed spec plan and program; the problems print as `Validation failed:` | 1 |
 | `ERROR` | z3 failed or rejected the script; the message prints as `Solver error: …` | 1 |
+| `MISMATCH` | a counterexample z3 gave does not do what z3 said when vector replays it: a bug in vector, not in your program | 2 |
 
-Only `PROVEN` exits 0: none of the others proved anything, so each refuses the program. Exit 2 is kept for bad usage, a file that cannot be read, and an `--emit` file that cannot be written.
+Only `PROVEN` exits 0: none of the others proved anything, so each refuses the program. Exit 2 is kept for bad usage, a file that cannot be read, an `--emit` file that cannot be written, and `MISMATCH`.
+
+## Every counterexample is replayed
+
+vector does not take z3's word for a counterexample. Before it reports one, it evaluates the function at that input itself, exactly and without z3: an `Int` as an integer, a `Real` as a rational with a 64-bit numerator and denominator, and a call as the verification script models it. A refuted clause is confirmed when every requires holds there, the body returns z3's result and the clause is false; a hazard, when the input reaches it and its condition holds. One that does not replay is `MISMATCH`, printed as a line of its own:
+
+```text
+MISMATCH  z3's counterexample does not refute <clause> when replayed: this is a bug in vector, not in your program — please report it
+```
+
+`MISMATCH` exits 2 and `--emit` writes nothing. With `--json`, each counterexample carries `"replay"`: `confirmed`, `mismatch`, or `not-replayed`. `not-replayed` means vector could not evaluate the input exactly, because z3 gave a value it cannot read (such as an irrational root) or a step overflowed 64 bits; the counterexample is not checked, and the verdict stays what z3 said.
 
 Files that are not a spec plan and a program are `INVALID`:
 
@@ -178,7 +189,8 @@ A program diffed with itself is `EQUIVALENT`, and exits 0:
 | `UNDECIDED` | some function was neither proven equal nor shown different | 1 |
 | `INVALID` | a file is not a program | 2 |
 | `ERROR` | z3 failed | 2 |
+| `MISMATCH` | a witness z3 gave does not do what z3 said when replayed through both versions: a bug in vector | 2 |
 
-Unlike `verify`, `diff` exits 2 for `INVALID` and `ERROR`: nothing was compared. `--json` prints the outcome as JSON here too.
+Unlike `verify`, `diff` exits 2 for `INVALID` and `ERROR`: nothing was compared. Every witness is replayed through both versions exactly, as `verify` replays a counterexample, and one whose versions turn out to agree there is `MISMATCH`; with `--json` each witness carries `"replay"`. `--json` prints the outcome as JSON here too.
 
 The [`vector verify`](../../reference/command-line/verify.md) and [`vector diff`](../../reference/command-line/diff.md) references list every flag.

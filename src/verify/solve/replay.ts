@@ -13,7 +13,8 @@
  * verdict.
  */
 
-import { parseSexp, Sexp } from "../../core/smt"
+import { trim } from "nish/text"
+import { Sexp, parseSexp } from "../../core/smt"
 import { VOCAB_JSON_SAFE_MAX } from "../../spec/contract/vocab"
 import {
   EXPR_BINOP,
@@ -33,7 +34,6 @@ import { RESULT_NAME } from "../lang/check"
 import { prettyMath } from "../lang/pretty"
 import { QUERY_DIV, QUERY_PRE, QUERY_RANGE } from "../smt/script"
 import { Counterexample, VerifyReport } from "./report"
-import { trim } from "nish/text"
 
 /** The input does what z3 said it does. */
 export const REPLAY_CONFIRMED: string = "confirmed"
@@ -49,10 +49,12 @@ export const REPLAY_WIDENED: i32 = 2
 /** A diff witness of an input both accept where the bodies differ. */
 export const REPLAY_VALUE: i32 = 3
 
-const REPLAY_HALF: i64 = toI64(1) << toI64(62)
+// 2^31, squared to 2^62: a literal past 2^53 cannot be written exactly.
+const REPLAY_2_31: i64 = 2147483648
+const REPLAY_HALF: i64 = REPLAY_2_31 * REPLAY_2_31
 // Every part stays within ±(2^63−1); the one i64 outside, MIN, marks an overflow.
-const REPLAY_MAX: i64 = REPLAY_HALF - toI64(1) + REPLAY_HALF
-const REPLAY_OVER: i64 = -REPLAY_MAX - toI64(1)
+const REPLAY_MAX: i64 = REPLAY_HALF - 1 + REPLAY_HALF
+const REPLAY_OVER: i64 = -REPLAY_MAX - 1
 const REPLAY_WHY_OVERFLOW: string = "a step leaves the i64 range the replay computes in"
 const REPLAY_WHY_DIV_ZERO: string = "a value depends on a division by zero, which z3 leaves unspecified"
 
@@ -538,7 +540,9 @@ const replayTerm = (ctx: ReplayCtx, e: LangExpr, scope: ReplayScope, path: Repla
     }
     const r = replayTerm(ctx, e.args[1], scope, rightPath)
     if (e.op === "/" && ctx.record) {
-      ctx.divs.push(new ReplayHit(path, replayEq(r, replayInt(toI64(0))), `the divisor is ${replayValueText(r)}, not 0`))
+      ctx.divs.push(
+        new ReplayHit(path, replayEq(r, replayInt(toI64(0))), `the divisor is ${replayValueText(r)}, not 0`),
+      )
     }
     if (e.op === "min" || e.op === "max") {
       const c = replayRelation(e.op === "min" ? "<=" : ">=", l, r)
@@ -546,9 +550,7 @@ const replayTerm = (ctx: ReplayCtx, e: LangExpr, scope: ReplayScope, path: Repla
     }
     const t = replayBinop(e.op, l, r)
     if (ctx.record && e.ty === "Int" && (e.op === "+" || e.op === "-" || e.op === "*")) {
-      ctx.ranges.push(
-        new ReplayHit(path, replayOutsideSafe(ctx, t), `${replayValueText(t)} is within ±(2^53−1)`),
-      )
+      ctx.ranges.push(new ReplayHit(path, replayOutsideSafe(ctx, t), `${replayValueText(t)} is within ±(2^53−1)`))
     }
     return t
   }
@@ -639,7 +641,7 @@ export const replayEvaluate = (program: Program, fn: FnUnit, names: string[], va
   const run = new ReplayRun(new ReplayCtx(program, true))
   for (let i = 0; i < toI32(fn.params.length); i++) {
     const p = fn.params[i]
-    const at = i < toI32(names.length) ? toI32(values.length) > i ? i : -1 : -1
+    const at = i < toI32(names.length) && i < toI32(values.length) ? i : -1
     if (at < 0 || names[at] === "") {
       run.unbound = `no value for the parameter ${p.name}`
       return run
@@ -826,7 +828,10 @@ export const replayHazard = (
   checks.expect(hit.cond, hit.detail)
   if (cex.result !== "?" && cex.result !== "") {
     const given = replayParseValue(cex.result)
-    checks.expect(replayEq(run.body, given), `the body returns ${replayValueText(run.body)} there, not z3's result ${cex.result}`)
+    checks.expect(
+      replayEq(run.body, given),
+      `the body returns ${replayValueText(run.body)} there, not z3's result ${cex.result}`,
+    )
   }
   return checks.result()
 }

@@ -767,6 +767,11 @@
                     "title": "verify/smt/script",
                     "filepath": "docs/reference/modules/verify/smt/script.md"
                   },
+                  "/verify-solve-replay": {
+                    "type": "page",
+                    "title": "verify/solve/replay",
+                    "filepath": "docs/reference/modules/verify/solve/replay.md"
+                  },
                   "/verify-solve-report": {
                     "type": "page",
                     "title": "verify/solve/report",

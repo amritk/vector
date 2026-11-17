@@ -11,9 +11,11 @@ import { STATUS_PROVEN, dashInputs, renderDashboard, verdictStatus } from "./emi
 import { checkConformance } from "./emit/float64"
 import { OutJson, outJsonArray, outJsonObject, outJsonString, outJsonStrings } from "./emit/outjson"
 import { emitTypeScript } from "./emit/typescript"
+import { Program } from "./lang/ast"
 import { checkAxiomTraceability, checkSpecProgramConsistency, typecheckProgram } from "./lang/check"
 import { readProgram, readSpecPlan } from "./lang/read"
 import { StyleWarning, collectStyleWarnings } from "./lang/style"
+import { REPLAY_MISMATCH, replayReport } from "./solve/replay"
 import { CLAUSE_PROVEN, CLAUSE_REFUTED, Counterexample, VerifyReport, solveProgram } from "./solve/report"
 
 /** Every proven clause holds, over the reals and in float64. */
@@ -26,6 +28,8 @@ export const OUTCOME_UNKNOWN: string = "UNKNOWN"
 export const OUTCOME_INVALID: string = "INVALID"
 /** z3 could not run, or rejected the script. */
 export const OUTCOME_ERROR: string = "ERROR"
+/** A counterexample z3 gave does not do what z3 said when replayed exactly: a bug in vector. */
+export const OUTCOME_MISMATCH: string = "MISMATCH"
 
 /** One machine-readable repair instruction: a single clause or hazard to fix. */
 export class FeedbackItem {
@@ -43,6 +47,8 @@ export class FeedbackItem {
   cex: Counterexample
   /** What to do about it. */
   hint: string
+  /** What replaying `cex` found (`confirmed`, `not-replayed`, `mismatch`); "" when it was not z3's. */
+  replay: string
 
   /**
    * Makes an item with no counterexample.
@@ -61,6 +67,7 @@ export class FeedbackItem {
     this.hasCex = false
     this.cex = new Counterexample("")
     this.hint = hint
+    this.replay = ""
   }
 
   /**
@@ -73,6 +80,18 @@ export class FeedbackItem {
     this.hasCex = true
     this.cex = cex
     return this
+  }
+
+  /**
+   * Attaches z3's counterexample and what replaying it found.
+   *
+   * @param cex the counterexample
+   * @param replay the replay's outcome
+   * @returns this item, to chain
+   */
+  withReplayedCex(cex: Counterexample, replay: string): FeedbackItem {
+    this.replay = replay
+    return this.withCex(cex)
   }
 }
 
@@ -88,6 +107,8 @@ export class VerifyOutcome {
   items: FeedbackItem[]
   /** What went wrong, for ERROR. */
   message: string
+  /** One `MISMATCH` line per counterexample that did not replay, for MISMATCH. */
+  mismatches: string[]
   /** The proof report box, once the solver ran. */
   dashboard: string
   /** The emitted TypeScript, for PROVEN. */
@@ -106,6 +127,7 @@ export class VerifyOutcome {
     this.feedback = ""
     this.items = []
     this.message = ""
+    this.mismatches = []
     this.dashboard = ""
     this.emittedCode = ""
     this.styleWarnings = []
@@ -163,7 +185,7 @@ export const collectFeedbackItems = (report: VerifyReport): FeedbackItem[] => {
             v.pretty,
             "counterexample",
             "The postcondition is false for the input shown. Fix the body or tighten a requires clause so it holds for all remaining inputs.",
-          ).withCex(v.cex),
+          ).withReplayedCex(v.cex, v.replay),
         )
       } else if (v.status !== CLAUSE_PROVEN) {
         items.push(
@@ -185,7 +207,7 @@ export const collectFeedbackItems = (report: VerifyReport): FeedbackItem[] => {
         "division-hazard",
         "The denominator may be zero on some reachable path. Add a requires clause (denominator != 0) or guard the division with an ite.",
       )
-      items.push(h.hasCex ? item.withCex(h.cex) : item)
+      items.push(h.hasCex ? item.withReplayedCex(h.cex, h.replay) : item)
     }
     for (const h of fn.pres) {
       const item = new FeedbackItem(
@@ -195,7 +217,7 @@ export const collectFeedbackItems = (report: VerifyReport): FeedbackItem[] => {
         "precondition-hazard",
         `The call to ${h.callee} can violate its precondition (${h.pretty}) for the arguments shown. Strengthen this function's requires, or guard the call with an ite, so the callee is only reached where its precondition holds.`,
       )
-      items.push(h.hasCex ? item.withCex(h.cex) : item)
+      items.push(h.hasCex ? item.withReplayedCex(h.cex, h.replay) : item)
     }
     for (const h of fn.ranges) {
       const item = new FeedbackItem(
@@ -205,7 +227,7 @@ export const collectFeedbackItems = (report: VerifyReport): FeedbackItem[] => {
         "range-hazard",
         "An Int is a float64 in the emitted code, exact only within ±(2^53−1), and this value can leave that range for the input shown. Rewrite it so no intermediate grows past its operands (low + (high - low) * k, not (low + high) * k), or bound the parameters with requires clauses.",
       )
-      items.push(h.hasCex ? item.withCex(h.cex) : item)
+      items.push(h.hasCex ? item.withReplayedCex(h.cex, h.replay) : item)
     }
   }
   for (const c of report.conformance) {
@@ -231,6 +253,45 @@ export const collectFeedbackItems = (report: VerifyReport): FeedbackItem[] => {
  * @returns the lines, joined by newlines
  */
 export const formatReportFeedback = (report: VerifyReport): string => {
+  const lines = verifyMismatchLines(report)
+  for (const line of verifyFeedbackLines(report)) {
+    lines.push(line)
+  }
+  return lines.join("\n")
+}
+
+/**
+ * One line per counterexample whose replay was a mismatch: z3 said it breaks
+ * the program, and exact evaluation says it does not.
+ *
+ * @param report the report, after `replayReport`
+ * @returns the lines, in function order
+ */
+export const verifyMismatchLines = (report: VerifyReport): string[] => {
+  const lines: string[] = []
+  const tail = "when replayed: this is a bug in vector, not in your program — please report it"
+  for (const fn of report.functions) {
+    for (const v of fn.ensures) {
+      if (v.replay === REPLAY_MISMATCH) {
+        lines.push(
+          `MISMATCH  z3's counterexample does not refute ${fn.name} ${v.axiomId} (${v.pretty}) ${tail} (${dashInputs(v.cex)}: ${v.replayDetail})`,
+        )
+      }
+    }
+    for (const hs of [fn.divs, fn.pres, fn.ranges]) {
+      for (const h of hs) {
+        if (h.replay === REPLAY_MISMATCH) {
+          lines.push(
+            `MISMATCH  z3's counterexample does not reach the hazard ${fn.name} ${h.pretty} ${tail} (${dashInputs(h.cex)}: ${h.replayDetail})`,
+          )
+        }
+      }
+    }
+  }
+  return lines
+}
+
+const verifyFeedbackLines = (report: VerifyReport): string[] => {
   const lines: string[] = []
   for (const fn of report.functions) {
     if (fn.vacuous) {
@@ -285,7 +346,7 @@ export const formatReportFeedback = (report: VerifyReport): string => {
       )
     }
   }
-  return lines.join("\n")
+  return lines
 }
 
 const verifyInvalid = (errors: string[], lead: string): VerifyOutcome => {
@@ -349,19 +410,40 @@ export const verifySpecAndProgram = (
     out.message = solved.error
     return out
   }
-  const report = solved.value
+  return verifyReportOutcome(program, solved.value, label, styleWarnings)
+}
+
+/**
+ * Decides an outcome from what z3 said about a program: every counterexample
+ * is replayed first, and one that does not replay makes it MISMATCH; then,
+ * on a clean proof, the float64 gate runs.
+ *
+ * @param program the program, typechecked
+ * @param report z3's report on it, as `solveProgram` returned it
+ * @param label what was verified, for the dashboard
+ * @param styleWarnings the advisory warnings
+ * @returns the outcome
+ */
+export const verifyReportOutcome = (
+  program: Program,
+  report: VerifyReport,
+  label: string,
+  styleWarnings: StyleWarning[],
+): VerifyOutcome => {
+  const mismatches = replayReport(program, report)
   // The float64 gate checks what the solver proved, so it runs only on a
   // clean proof: a refuted clause has nothing proven to check.
   if (report.ok()) {
     report.conformance = checkConformance(program, report)
   }
   const status = verdictStatus(report)
-  const out = new VerifyOutcome(status === STATUS_PROVEN ? OUTCOME_PROVEN : status)
+  const out = new VerifyOutcome(mismatches > 0 ? OUTCOME_MISMATCH : status === STATUS_PROVEN ? OUTCOME_PROVEN : status)
   out.dashboard = renderDashboard(label, report)
   out.styleWarnings = styleWarnings
   if (status === STATUS_PROVEN) {
     out.emittedCode = emitTypeScript(program)
   } else {
+    out.mismatches = verifyMismatchLines(report)
     out.feedback = formatReportFeedback(report)
     out.items = collectFeedbackItems(report)
   }
@@ -405,8 +487,10 @@ const verifyStyleJson = (warnings: StyleWarning[]): OutJson => {
 /**
  * The outcome as `vector verify --json` prints it. Which members appear
  * depends on the status: PROVEN has `dashboard`, `emittedCode` and
- * `styleWarnings`; REFUTED and UNKNOWN have `dashboard`, `feedback`, `items`
- * and `styleWarnings`; INVALID has `errors` and `feedback`; ERROR has `message`.
+ * `styleWarnings`; REFUTED, UNKNOWN and MISMATCH have `dashboard`,
+ * `feedback`, `items` and `styleWarnings`; INVALID has `errors` and
+ * `feedback`; ERROR has `message`. A counterexample z3 gave carries
+ * `replay`: `confirmed`, `not-replayed` or `mismatch`.
  *
  * @param outcome the outcome
  * @returns the JSON object
@@ -432,7 +516,11 @@ export const verifyOutcomeJson = (outcome: VerifyOutcome): OutJson => {
         .put("property", outJsonString(it.property))
         .put("issue", outJsonString(it.issue))
       if (it.hasCex) {
-        item.put("counterexample", counterexampleJson(it.cex))
+        const cex = counterexampleJson(it.cex)
+        if (it.replay !== "") {
+          cex.put("replay", outJsonString(it.replay))
+        }
+        item.put("counterexample", cex)
       }
       items.add(item.put("hint", outJsonString(it.hint)))
     }

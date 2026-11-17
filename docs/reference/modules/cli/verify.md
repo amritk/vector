@@ -117,9 +117,10 @@ the exit code
 
 ### verifyExitCode
 
-The exit code for a verify outcome: 0 for PROVEN, 1 for everything else.
-ERROR is 1, not 2: z3 failing proved nothing, so the program is refused,
-the same as an UNKNOWN.
+The exit code for a verify outcome: 0 for PROVEN, 2 for MISMATCH, 1 for
+everything else. ERROR is 1, not 2: z3 failing proved nothing, so the
+program is refused, the same as an UNKNOWN. MISMATCH is 2 because the fault
+is vector's: a counterexample z3 gave did not replay.
 
 ```ts
 function verifyExitCode(status: string): i32
@@ -133,7 +134,7 @@ the outcome's status
 
 <scalar-field name="returns" type="i32">
 
-`EXIT_PASS` or `EXIT_REFUSED`
+`EXIT_PASS`, `EXIT_USAGE` or `EXIT_REFUSED`
 
 </scalar-field>
 

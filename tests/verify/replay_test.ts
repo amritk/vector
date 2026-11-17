@@ -1,0 +1,421 @@
+import { Suite } from "nish/testing"
+import { diffExitCode } from "../../src/cli/diff"
+import { verifyExitCode } from "../../src/cli/verify"
+import {
+  CHECK_WITNESS,
+  DIFF_MISMATCH,
+  DiffCheck,
+  MatchedFunctionDiff,
+  ProgramDiffReport,
+  diffDecide,
+  diffReplayWitnesses,
+  pairFunctions,
+} from "../../src/verify/equiv/diff"
+import { FnUnit, Program } from "../../src/verify/lang/ast"
+import { QUERY_DIV, QUERY_RANGE } from "../../src/verify/smt/script"
+import {
+  REPLAY_CONFIRMED,
+  REPLAY_MISMATCH,
+  REPLAY_NARROWED,
+  REPLAY_NOT_REPLAYED,
+  REPLAY_VALUE,
+  REPLAY_WIDENED,
+  replayClause,
+  replayEvaluate,
+  replayHazard,
+  replayParseValue,
+  replayReport,
+  replayValueText,
+  replayWitness,
+} from "../../src/verify/solve/replay"
+import { Counterexample, solveProgram } from "../../src/verify/solve/report"
+import { OUTCOME_MISMATCH, verifyMismatchLines, verifyReportOutcome } from "../../src/verify/verify"
+import { BCase, bBin, bNum, bProgram, bVar } from "./build"
+
+const replayNone = (): string[] => {
+  const none: string[] = []
+  return none
+}
+
+const replayCex = (names: string[], values: string[], result: string): Counterexample => {
+  const cex = new Counterexample(result)
+  for (let i = 0; i < toI32(names.length); i++) {
+    cex.names.push(names[i])
+    cex.values.push(values[i])
+  }
+  return cex
+}
+
+const replayProgram = (t: Suite, c: BCase): Program => {
+  const program = bProgram(c.programText())
+  t.eqStr(`${c.name} builds`, program.isOk() ? "" : program.error, "")
+  return program.isOk() ? program.value : new Program(c.name)
+}
+
+/** One model value, the exact value it denotes ("" when it is not replayed). */
+class ParseCase {
+  text: string
+  want: string
+
+  constructor(text: string, want: string) {
+    this.text = text
+    this.want = want
+  }
+}
+
+/** One replay of `scale`'s single ensures. */
+class ClauseCase {
+  label: string
+  x: string
+  result: string
+  want: string
+  detail: string
+
+  constructor(label: string, x: string, result: string, want: string, detail: string) {
+    this.label = label
+    this.x = x
+    this.result = result
+    this.want = want
+    this.detail = detail
+  }
+}
+
+const replayParseCases = (t: Suite): void => {
+  const cases: ParseCase[] = [
+    new ParseCase("5", "5"),
+    new ParseCase("0", "0"),
+    new ParseCase("(- 5)", "-5"),
+    new ParseCase("(/ 1 3)", "1/3"),
+    new ParseCase("(/ (- 1) 3)", "-1/3"),
+    new ParseCase("(- (/ 1 3))", "-1/3"),
+    new ParseCase("(/ 2 4)", "1/2"),
+    new ParseCase("1.5", "3/2"),
+    new ParseCase("(- 1.5)", "-3/2"),
+    new ParseCase("(/ 3.0 2.0)", "3/2"),
+    new ParseCase("true", "true"),
+    new ParseCase("false", "false"),
+    new ParseCase("(root-obj (+ (^ x 2) (- 2)) 1)", ""),
+    new ParseCase("", ""),
+    new ParseCase("(/ 1 0)", ""),
+    new ParseCase("99999999999999999999", ""),
+  ]
+  for (const c of cases) {
+    const v = replayParseValue(c.text)
+    if (c.want === "") {
+      t.ok(`"${c.text}" is not replayed`, !v.known)
+      t.ok(`"${c.text}" says why`, v.why !== "")
+    } else {
+      t.ok(`"${c.text}" parses`, v.known)
+      t.eqStr(`"${c.text}" is ${c.want}`, replayValueText(v), c.want)
+    }
+  }
+}
+
+// scale(x: Real) requires x >= 0, ensures result > x, body x * 0.91: refuted
+// at every x >= 0 except none, so any non-negative x is a true counterexample.
+const replayScaleCase = (): BCase => {
+  const c = new BCase("scale")
+  c.fn(
+    "scale",
+    1,
+    ["x:Real"],
+    "Real",
+    [bBin(">=", bVar("x"), bNum("0"))],
+    [bBin(">", bVar("result"), bVar("x"))],
+    bBin("*", bVar("x"), bNum("0.91")),
+  )
+  return c
+}
+
+const replayClauseCases = (t: Suite): void => {
+  const program = replayProgram(t, replayScaleCase())
+  if (program.functions.length === 0) {
+    return
+  }
+  const fn = program.functions[0]
+  const cases: ClauseCase[] = [
+    new ClauseCase("confirmed", "5", "4.55", REPLAY_CONFIRMED, ""),
+    new ClauseCase("confirmed, a rational", "(/ 1 3)", "(/ 91 300)", REPLAY_CONFIRMED, ""),
+    new ClauseCase("confirmed, no result", "1.5", "?", REPLAY_CONFIRMED, ""),
+    new ClauseCase("confirmed at zero", "(- 0.0)", "0.0", REPLAY_CONFIRMED, ""),
+    new ClauseCase("a requires fails", "(- 5)", "(- 4.55)", REPLAY_MISMATCH, "requires"),
+    new ClauseCase("the result differs", "5", "6", REPLAY_MISMATCH, "body returns"),
+    new ClauseCase("unparseable", "(root-obj x 1)", "?", REPLAY_NOT_REPLAYED, ""),
+    new ClauseCase("a Bool for a Real", "true", "?", REPLAY_NOT_REPLAYED, "not a Real"),
+    new ClauseCase("overflow", "(/ 1 9223372036854775807)", "?", REPLAY_NOT_REPLAYED, ""),
+  ]
+  for (const c of cases) {
+    const r = replayClause(program, fn, fn.ensures[0], replayCex(["x"], [c.x], c.result))
+    t.eqStr(`${c.label}: outcome`, r.outcome, c.want)
+    if (c.detail !== "") {
+      t.contains(`${c.label}: detail`, r.detail, c.detail)
+    }
+  }
+  // At x = 0 the body is 0 and 0 > 0 is false: still a counterexample. A
+  // clause that holds needs a body that clears it: x * 2 > x at x = 1.
+  const holds = new BCase("double")
+  holds.fn(
+    "double",
+    1,
+    ["x:Real"],
+    "Real",
+    [bBin(">=", bVar("x"), bNum("0"))],
+    [bBin(">", bVar("result"), bVar("x"))],
+    bBin("*", bVar("x"), bNum("2")),
+  )
+  const doubled = replayProgram(t, holds)
+  if (doubled.functions.length > 0) {
+    const d = doubled.functions[0]
+    const r = replayClause(doubled, d, d.ensures[0], replayCex(["x"], ["1"], "2"))
+    t.eqStr("the clause holds: mismatch", r.outcome, REPLAY_MISMATCH)
+    t.contains("the clause holds: detail", r.detail, "holds there")
+  }
+  // An overflow mid-walk: x * x past i64 is not replayed, never a verdict.
+  const square = new BCase("square")
+  square.fn(
+    "square",
+    1,
+    ["x:Int"],
+    "Int",
+    replayNone(),
+    [bBin("<", bVar("result"), bNum("0"))],
+    bBin("*", bVar("x"), bVar("x")),
+  )
+  const squared = replayProgram(t, square)
+  if (squared.functions.length > 0) {
+    const s = squared.functions[0]
+    const r = replayClause(squared, s, s.ensures[0], replayCex(["x"], ["3037000500"], "?"))
+    t.eqStr("an i64 overflow: not replayed", r.outcome, REPLAY_NOT_REPLAYED)
+    const missing = replayClause(squared, s, s.ensures[0], replayCex([], [], "?"))
+    t.eqStr("a missing parameter: not replayed", missing.outcome, REPLAY_NOT_REPLAYED)
+  }
+}
+
+const replayAt = (a: string, b: string): Counterexample => replayCex(["a", "b"], [a, b], "?")
+
+const replayWitnessAt = (x: string): DiffCheck => {
+  const c = new DiffCheck(CHECK_WITNESS)
+  c.inputs = replayCex(["x"], [x], "")
+  return c
+}
+
+const replayHazardCases = (t: Suite): void => {
+  // ratio(a, b) = a / b: a division hazard at b = 0.
+  const c = new BCase("ratio")
+  c.fn(
+    "ratio",
+    1,
+    ["a:Real", "b:Real"],
+    "Real",
+    replayNone(),
+    [bBin("==", bVar("result"), bVar("result"))],
+    bBin("/", bVar("a"), bVar("b")),
+  )
+  const program = replayProgram(t, c)
+  if (program.functions.length === 0) {
+    return
+  }
+  const fn = program.functions[0]
+  t.eqStr(
+    "division by 0: confirmed",
+    replayHazard(program, fn, QUERY_DIV, 0, replayAt("1", "0")).outcome,
+    REPLAY_CONFIRMED,
+  )
+  t.eqStr(
+    "division by 2: mismatch",
+    replayHazard(program, fn, QUERY_DIV, 0, replayAt("1", "2")).outcome,
+    REPLAY_MISMATCH,
+  )
+  t.eqStr(
+    "a second division: mismatch",
+    replayHazard(program, fn, QUERY_DIV, 1, replayAt("1", "0")).outcome,
+    REPLAY_MISMATCH,
+  )
+  t.eqStr(
+    "unparseable: not replayed",
+    replayHazard(program, fn, QUERY_DIV, 0, replayAt("x", "0")).outcome,
+    REPLAY_NOT_REPLAYED,
+  )
+
+  // grow(n: Int) = n * 1000: past ±(2^53−1) for large n.
+  const g = new BCase("grow")
+  g.fn(
+    "grow",
+    1,
+    ["n:Int"],
+    "Int",
+    replayNone(),
+    [bBin("==", bVar("result"), bVar("result"))],
+    bBin("*", bVar("n"), bNum("1000")),
+  )
+  const grown = replayProgram(t, g)
+  if (grown.functions.length > 0) {
+    const gf = grown.functions[0]
+    const big = replayCex(["n"], ["9007199254741"], "?")
+    t.eqStr("an Int past 2^53: confirmed", replayHazard(grown, gf, QUERY_RANGE, 0, big).outcome, REPLAY_CONFIRMED)
+    const small = replayCex(["n"], ["7"], "?")
+    t.eqStr("an Int well inside: mismatch", replayHazard(grown, gf, QUERY_RANGE, 0, small).outcome, REPLAY_MISMATCH)
+  }
+
+  const run = replayEvaluate(program, fn, ["a", "b"], ["(/ 1 3)", "(- 2)"])
+  t.eqStr("evaluate: the body", replayValueText(run.body), "-1/6")
+  t.eqStr("evaluate: bound", run.unbound, "")
+}
+
+/** One diff witness replay. */
+class WitnessCase {
+  label: string
+  kind: i32
+  x: string
+  oldResult: string
+  newResult: string
+  want: string
+
+  constructor(label: string, kind: i32, x: string, oldResult: string, newResult: string, want: string) {
+    this.label = label
+    this.kind = kind
+    this.x = x
+    this.oldResult = oldResult
+    this.newResult = newResult
+    this.want = want
+  }
+}
+
+// old: f(x) requires x >= 0, = x + 1; new: f(x) requires x >= 1, = x + 2.
+const replayVersion = (t: Suite, low: string, add: string): Program => {
+  const c = new BCase("versions")
+  c.fn(
+    "f",
+    1,
+    ["x:Int"],
+    "Int",
+    [bBin(">=", bVar("x"), bNum(low))],
+    [bBin("==", bVar("result"), bVar("result"))],
+    bBin("+", bVar("x"), bNum(add)),
+  )
+  return replayProgram(t, c)
+}
+
+const replayFnOf = (program: Program): FnUnit => program.functions[0]
+
+const replayWitnessCases = (t: Suite): void => {
+  const was = replayVersion(t, "0", "1")
+  const now = replayVersion(t, "1", "2")
+  if (was.functions.length === 0 || now.functions.length === 0) {
+    return
+  }
+  const cases: WitnessCase[] = [
+    new WitnessCase("narrowed at 0", REPLAY_NARROWED, "0", "", "", REPLAY_CONFIRMED),
+    new WitnessCase("narrowed at 5", REPLAY_NARROWED, "5", "", "", REPLAY_MISMATCH),
+    new WitnessCase("widened at 0", REPLAY_WIDENED, "0", "", "", REPLAY_MISMATCH),
+    new WitnessCase("value at 5", REPLAY_VALUE, "5", "6", "7", REPLAY_CONFIRMED),
+    new WitnessCase("value at 5, no results", REPLAY_VALUE, "5", "?", "?", REPLAY_CONFIRMED),
+    new WitnessCase("value at 5, a wrong result", REPLAY_VALUE, "5", "6", "8", REPLAY_MISMATCH),
+    new WitnessCase("value at 0, rejected", REPLAY_VALUE, "0", "1", "2", REPLAY_MISMATCH),
+    new WitnessCase("value unparseable", REPLAY_VALUE, "(f 1)", "?", "?", REPLAY_NOT_REPLAYED),
+  ]
+  for (const c of cases) {
+    const r = replayWitness(
+      was,
+      replayFnOf(was),
+      now,
+      replayFnOf(now),
+      c.kind,
+      replayCex(["x"], [c.x], "?"),
+      c.oldResult,
+      c.newResult,
+    )
+    t.eqStr(`witness ${c.label}`, r.outcome, c.want)
+  }
+  // Equal results are a mismatch: both versions return x + 1.
+  const same = replayVersion(t, "0", "1")
+  const eq = replayWitness(
+    was,
+    replayFnOf(was),
+    same,
+    replayFnOf(same),
+    REPLAY_VALUE,
+    replayCex(["x"], ["5"], "?"),
+    "",
+    "",
+  )
+  t.eqStr("equal results: mismatch", eq.outcome, REPLAY_MISMATCH)
+  t.contains("equal results: detail", eq.detail, "both versions return 6")
+}
+
+// A real report on `scale`, its counterexample then forged to one z3 would
+// never give: the outcome is MISMATCH and the exit 2.
+const replayVerifyMismatch = (t: Suite): void => {
+  const program = replayProgram(t, replayScaleCase())
+  const solved = solveProgram(program)
+  t.ok("scale solves", solved.isOk())
+  if (solved.isErr() || program.functions.length === 0) {
+    return
+  }
+  const report = solved.value
+  const verdict = report.functions[0].ensures[0]
+  t.ok("scale is refuted with a counterexample", verdict.hasCex)
+  t.eqI32("a real counterexample replays clean", replayReport(program, report), 0)
+  t.eqStr("a real counterexample is confirmed", verdict.replay, REPLAY_CONFIRMED)
+
+  verdict.cex = replayCex(["x"], ["(- 5)"], "?")
+  const out = verifyReportOutcome(program, report, "test", [])
+  t.eqStr("a forged counterexample: MISMATCH", out.status, OUTCOME_MISMATCH)
+  t.eqI32("MISMATCH exits 2", verifyExitCode(out.status), 2)
+  t.eqStr("the verdict records the mismatch", verdict.replay, REPLAY_MISMATCH)
+  t.eqI32("one mismatch line", toI32(out.mismatches.length), 1)
+  const lines = verifyMismatchLines(report)
+  t.contains(
+    "the mismatch line",
+    lines.length > 0 ? lines[0] : "",
+    "MISMATCH  z3's counterexample does not refute scale scale_E0 (result > x) when replayed: this is a bug in vector, not in your program — please report it",
+  )
+  t.contains("the feedback leads with it", out.feedback, "MISMATCH  z3's counterexample")
+  t.eqStr("nothing is emitted on MISMATCH", out.emittedCode, "")
+
+  verdict.cex = replayCex(["x"], ["(root-obj x 1)"], "?")
+  const unread = verifyReportOutcome(program, report, "test", [])
+  t.ok("not-replayed keeps the verdict", unread.status !== OUTCOME_MISMATCH)
+  t.eqI32("not-replayed exits 1", verifyExitCode(unread.status), 1)
+}
+
+// A diff verdict with a forged witness: MISMATCH, exit 2.
+const replayDiffMismatch = (t: Suite): void => {
+  const was = replayVersion(t, "0", "1")
+  const now = replayVersion(t, "1", "2")
+  const pairing = pairFunctions(was, now)
+  t.eqI32("one comparable pair", toI32(pairing.comparable.length), 1)
+  const value = replayWitnessAt("5")
+  value.hasResults = true
+  value.oldResult = "6"
+  value.newResult = "7"
+  const good = new MatchedFunctionDiff("f", "f(x: Int) -> Int", replayWitnessAt("0"), new DiffCheck("none"), value)
+  t.eqI32("real witnesses replay clean", diffReplayWitnesses(was, now, pairing.comparable, [good]), 0)
+  t.eqStr("a narrowed witness is confirmed", good.domainNarrowed.replay, REPLAY_CONFIRMED)
+
+  const report = new ProgramDiffReport("versions", "versions")
+  report.matched.push(
+    new MatchedFunctionDiff(
+      "f",
+      "f(x: Int) -> Int",
+      replayWitnessAt("5"),
+      new DiffCheck("none"),
+      new DiffCheck("none"),
+    ),
+  )
+  const out = diffDecide(was, now, pairing, report)
+  t.eqStr("a forged witness: MISMATCH", out.status, DIFF_MISMATCH)
+  t.eqI32("diff MISMATCH exits 2", diffExitCode(out.status), 2)
+  t.contains("the summary says so", out.summary, "this is a bug in vector, not in your programs")
+}
+
+export const main = (): i32 => {
+  const t = new Suite("verify/replay")
+  replayParseCases(t)
+  replayClauseCases(t)
+  replayHazardCases(t)
+  replayWitnessCases(t)
+  replayVerifyMismatch(t)
+  replayDiffMismatch(t)
+  return t.done()
+}

@@ -47,7 +47,8 @@
           "witness": {
             "inputs": {
               "amount": "0"
-            }
+            },
+            "replay": "confirmed"
           }
         },
         "domainWidened": {
@@ -60,7 +61,8 @@
               "amount": "100"
             },
             "oldResult": "91",
-            "newResult": "92"
+            "newResult": "92",
+            "replay": "confirmed"
           }
         },
         "status": "DIFFERENT",

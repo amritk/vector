@@ -20,7 +20,7 @@ The 3 JSON Schemas in `schemas/`.
 
 <scalar-card title="Modules" icon="phosphor/regular/books" href="#modules">
 
-The 116 source files of `src/`, from their doc comments.
+The 117 source files of `src/`, from their doc comments.
 
 </scalar-card>
 
@@ -152,5 +152,6 @@ The 116 source files of `src/`, from their doc comments.
 | [`verify/lang/read`](modules/verify/lang/read.md) | reads a program and a spec plan out of parsed JSON, checking their shape against `schemas/program.json` and `schemas/spec-plan.json`. |
 | [`verify/lang/style`](modules/verify/lang/style.md) | advisory checks that never gate a proof. |
 | [`verify/smt/script`](modules/verify/smt/script.md) | translates a typechecked vector-lang program into one SMT-LIB2 script for z3: per function, a reachability query, a proof and a triviality query per ensures clause, and a query per division, per callee precondition and per Int operation the emitted code evaluates. |
+| [`verify/solve/replay`](modules/verify/solve/replay.md) | re-evaluates, without z3, each input z3 says breaks a program: a counterexample to an ensures clause, an input that reaches a hazard, a witness of `vector diff`. |
 | [`verify/solve/report`](modules/verify/solve/report.md) | runs a program's verification script through z3 and reads the answers into a report. |
 | [`verify/verify`](modules/verify/verify.md) | the whole deterministic gate over a spec plan and a program: shape, types, the plan's decomposition, axiom traceability, z3, then the float64 gate. |
