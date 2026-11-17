@@ -1,5 +1,6 @@
 import { Suite } from "nish/testing"
 import { replaceAll } from "nish/text"
+import { makeTempDir } from "../../../src/core/fs"
 import { sha256Hex } from "../../../src/core/hex"
 import { runProcess } from "../../../src/core/process"
 import {
@@ -290,10 +291,19 @@ const frozenTestTwoRepo = (t: Suite): Result<boolean, string> => {
   const top = gitdiffTop(dir).orReturn()
 
   const shas = frozenContractShas(top, [`${top}/contracts/a.json`])
+  t.ok("the classifying set holds contract a", shas.has(sha256Hex(a0)))
+  t.ok("and contract b in contracts/, not given", shas.has(sha256Hex(b0)))
+  t.ok("but no sidecar", !shas.has(sha256Hex(sidecar)))
+  t.ok("and each contract once", shas.size === 2)
   t.ok(
-    "the classifying set holds every contract in contracts/, once, but no sidecar",
-    shas.size === 2 && shas.has(sha256Hex(a0)) && shas.has(sha256Hex(b0)) && !shas.has(sha256Hex(sidecar)),
+    "a given contract that cannot be read adds nothing",
+    frozenContractShas(top, [`${top}/contracts/a.json`, `${top}/contracts/gone.json`]).size === 2,
   )
+  const bare = makeTempDir("vector-frozen-bare-").orReturn()
+  t.ok("a repository with no contracts/ holds only the given contracts", frozenContractShas(bare, []).size === 0)
+  writeFileSync(`${bare}/c.json`, a0)
+  t.ok("and those it is given", frozenContractShas(bare, [`${bare}/c.json`]).size === 1)
+  prTestRemove(bare)
   t.ok("and a given contract outside contracts/", frozenContractShas(top, [`${top}/rfcs/rfc4648.txt`]).size === 3)
   runProcess(["ln", "-s", "../src/x.ts", `${dir}/contracts/l.json`], "", 10000).orReturn()
   t.ok(
