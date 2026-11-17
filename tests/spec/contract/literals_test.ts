@@ -2,10 +2,12 @@ import { Suite } from "nish/testing"
 import { charsFromCodePoint } from "../../../src/spec/contract/chars"
 import {
   CellError,
+  LITERALS_BYTES,
   LITERALS_MAX_REPEAT,
   LITERALS_REPEAT_COUNT,
   LITERALS_REPEAT_RUN,
   LITERALS_REPEAT_SIZE,
+  LITERALS_WORDS,
   RawKind,
   RawLiteral,
   literalsKindOf,
@@ -16,7 +18,7 @@ import {
   literalsSettle,
   literalsSettleVector,
 } from "../../../src/spec/contract/literals"
-import { FnSig, LitKind, Literal, Param } from "../../../src/spec/contract/types"
+import { FnSig, LitKind, Literal, Param, typesIsWords, typesWordsKey } from "../../../src/spec/contract/types"
 import { typeIntBase } from "../../../src/spec/contract/typing"
 
 /** A raw kind's name. */
@@ -33,6 +35,7 @@ const litTestKind = (k: RawKind): string => {
     RawKind.LabelledInt,
     RawKind.Repeat,
     RawKind.Concat,
+    RawKind.Words,
   ]
   const names: string[] = [
     "str",
@@ -46,6 +49,7 @@ const litTestKind = (k: RawKind): string => {
     "labelled-int",
     "repeat",
     "concat",
+    "words",
   ]
   for (let i = 0; i < kinds.length; i++) {
     if (kinds[i] === k) {
@@ -71,6 +75,9 @@ const litTestRaw = (r: RawLiteral): string => {
   }
   if (r.kind === RawKind.Bool) {
     out = `${out} ${r.flag ? "true" : "false"}`
+  }
+  if (r.kind === RawKind.Words) {
+    out = `${out} words=${r.words.join(",")}`
   }
   if (r.kind === RawKind.Concat) {
     out = `${out} (${r.parts.map((p: RawLiteral): string => litTestRaw(p)).join(", ")})`
@@ -110,6 +117,9 @@ const litTestLit = (l: Literal): string => {
   if (l.kind === LitKind.Null) {
     return "{null}"
   }
+  if (typesIsWords(l.kind)) {
+    return `{${typesWordsKey(l.kind)}:${l.words.join(",")}${tail}}`
+  }
   return `{concat:${l.parts.map((p: Literal): string => litTestLit(p)).join(",")}}`
 }
 
@@ -117,6 +127,18 @@ const litTestLit = (l: Literal): string => {
 const litTestParse = (text: string): string => {
   const r = literalsParse(text)
   return r.isOk() ? litTestRaw(r.value) : `${r.error.message} @${r.error.col}`
+}
+
+/** As litTestParse, with the words bytes carry for a word-array type. */
+const litTestParseWords = (text: string): string => {
+  const r = literalsParse(text)
+  if (r.isErr()) {
+    return `${r.error.message} @${r.error.col}`
+  }
+  const raw = r.value
+  return raw.kind === RawKind.Bytes && raw.words.length > 0
+    ? `${litTestRaw(raw)} words=${raw.words.join(",")}`
+    : litTestRaw(raw)
 }
 
 /** The call of `text`, or its refusal. */
@@ -259,6 +281,75 @@ export const main = (): i32 => {
     litTestParse("M (after 1,000 runs) = 72"),
     "labelled-int:72 label=M (after 1,000 runs) hex=72",
   )
+  // Labels as RFC 7748 Section 6.1 prints them: an apostrophe inside a word,
+  // and one `, alias` whose word may join a group that holds `, `.
+  const labelRows: string[][] = [
+    ["Alice's private key, a = 0b0b", "labelled:0b0b label=Alice's private key, a"],
+    ["Alice's public key, X25519(a, 9) = 0b0b", "labelled:0b0b label=Alice's public key, X25519(a, 9)"],
+    ["Bob's private key, b = 0b0b", "labelled:0b0b label=Bob's private key, b"],
+    ["Bob's public key, X25519(b, 9) = 0b0b", "labelled:0b0b label=Bob's public key, X25519(b, 9)"],
+    ["Their shared secret, K = 0b0b", "labelled:0b0b label=Their shared secret, K"],
+    ["Alice's key = 0b0b", "labelled:0b0b label=Alice's key"],
+    ["key, X25519(a) = 0b0b", "labelled:0b0b label=key, X25519(a)"],
+    ["key, f(a, b, c) = 0b0b", "labelled:0b0b label=key, f(a, b, c)"],
+    ["key, f(a b) = 0b0b", "labelled:0b0b label=key, f(a b)"],
+    ["key, f(1,000 runs, b) = 0b0b", "labelled:0b0b label=key, f(1,000 runs, b)"],
+    ["M (x), m = 0b0b", "labelled:0b0b label=M (x), m"],
+    ["'Alice key = 0b0b", "not a literal @1"],
+    ["Alice' key = 0b0b", "not a literal @1"],
+    ["Alice''s key = 0b0b", "not a literal @1"],
+    ["Alice's' key = 0b0b", "not a literal @1"],
+    ["Alice'9 key = 0b0b", "not a literal @1"],
+    ["Alice 's key = 0b0b", "not a literal @1"],
+    ["key,a = 0b0b", "not a literal @1"],
+    ["key ,a = 0b0b", "not a literal @1"],
+    ["key ,  a = 0b0b", "not a literal @1"],
+    ["key, , a = 0b0b", "not a literal @1"],
+    ["key,  a = 0b0b", "not a literal @1"],
+    ["key, a, b = 0b0b", "not a literal @1"],
+    ["key, = 0b0b", "not a literal @1"],
+    ["key, a b = 0b0b", "not a literal @1"],
+    ["key, 'a = 0b0b", "not a literal @1"],
+    ["key, X25519(a,9) = 0b0b", "not a literal @1"],
+    ["key, X25519(a, ) = 0b0b", "not a literal @1"],
+    ["key, X25519(, a) = 0b0b", "not a literal @1"],
+    ["key, X25519() = 0b0b", "not a literal @1"],
+    ["key, X25519((a)) = 0b0b", "not a literal @1"],
+    ["key, X25519(a, 9 = 0b0b", "not a literal @1"],
+    ["key, X25519(a, 9) (b) = 0b0b", "not a literal @1"],
+    ["key, X25519 (a, 9) = 0b0b", "not a literal @1"],
+    ["key, X25519(a, 9)b = 0b0b", "not a literal @1"],
+    ["M (a, 9) = 0b0b", "not a literal @1"],
+    // At most one group: one in the words leaves none for the alias.
+    ["M (x), f(a) = 0b0b", "not a literal @1"],
+    ["M (a b), X25519(a, 9) = 0b0b", "not a literal @1"],
+    ["M (x), a = 0b0b", "labelled:0b0b label=M (x), a"],
+    ["Alice's'b private key = 0b0b", "labelled:0b0b label=Alice's'b private key"],
+    ["key, a'b = 0b0b", "labelled:0b0b label=key, a'b"],
+    ["key, f(1,000, b) = 0b0b", "not a literal @1"],
+  ]
+  for (let i = 0; i < labelRows.length; i++) {
+    t.eqStr(`the label ${labelRows[i][0]}`, litTestParse(labelRows[i][0]), labelRows[i][1])
+  }
+  // The comma ends the argument unless the alias after it is a label's.
+  const split: string[][] = [
+    ["f(Key = 00, b = 11)", "f(labelled:00 label=Key, labelled-int:11 label=b hex=11)"],
+    ["f(NaN, a = 00)", "f(f64:NaN, labelled:00 label=a)"],
+    ["f(Infinity, a = 00)", "f(f64:Infinity, labelled:00 label=a)"],
+    ["f(-Infinity, a = 00)", "f(f64:-Infinity, labelled:00 label=a)"],
+    ["f(1e5, a = 00)", "f(f64:1e5, labelled:00 label=a)"],
+    ["f(1E5, a = 00)", "f(f64:1E5, labelled:00 label=a)"],
+    ["f(true, a = 00)", "f(bool: true, labelled:00 label=a)"],
+    ["f(null, a = 00)", "f(null:, labelled:00 label=a)"],
+    ["f(1, a = 00)", "f(int:1, labelled:00 label=a)"],
+    [
+      "f(Alice's private key, a = 0b, Bob's public key, X25519(b, 9) = 0c)",
+      "f(labelled:0b label=Alice's private key, a, labelled:0c label=Bob's public key, X25519(b, 9))",
+    ],
+  ]
+  for (let i = 0; i < split.length; i++) {
+    t.eqStr(`the call ${split[i][0]}`, litTestCall(split[i][0]), split[i][1])
+  }
   t.eqStr(
     "a labelled empty value",
     litTestParse("MESSAGE (length 0 bytes) = (empty)"),
@@ -437,5 +528,170 @@ export const main = (): i32 => {
   }
   t.eqStr("a bracketed run", litTestCall(`f(22 ${times} [0b])`), `${LITERALS_REPEAT_RUN} @8`)
   t.eqStr("a run ends at a space", litTestParse(`2 ${times} 0b 0b`), "unexpected text after the value @8")
+
+  // Word arrays: what a bracket of words reads as, and what it refuses.
+  const words: string[] = [
+    "[0x11111111 0x22222222]",
+    "words: words=0x11111111,0x22222222",
+    "[11111111 22222222]",
+    "bytes:1111111122222222 words=11111111,22222222",
+    "[1111 2222]",
+    "bytes:11112222 words=1111,2222",
+    "[0x1111]",
+    "words: words=0x1111",
+    "[0x0123456789abcdef]",
+    "words: words=0x0123456789abcdef",
+    "[0123456789abcdef 0000000000000000]",
+    "bytes:0123456789abcdef0000000000000000 words=0123456789abcdef,0000000000000000",
+    "[0x11111111\t0x22222222]",
+    `${LITERALS_WORDS} @1`,
+    "[0x11111111  0x22222222]",
+    `${LITERALS_WORDS} @1`,
+    "[ 0x11111111 0x22222222]",
+    `${LITERALS_WORDS} @1`,
+    "[0x11111111 0x22222222 ]",
+    `${LITERALS_WORDS} @1`,
+    "[11111111  22222222]",
+    `${LITERALS_WORDS} @1`,
+    "[1111\t2222]",
+    `${LITERALS_WORDS} @1`,
+    "State = [0x11111111  0x22222222]",
+    `${LITERALS_WORDS} @9`,
+    "[00  0f]",
+    `${LITERALS_BYTES} @1`,
+    "State = [0x11111111]",
+    "words: label=State words=0x11111111",
+    "State = [11111111 22222222]",
+    "words: label=State words=11111111,22222222",
+    "State = [1111]",
+    "words: label=State words=1111",
+    // RFC 8439 §2.2.1 prints its expected state under "After applying
+    // QUARTERROUND(2, 7, 8, 13)": a call joined to its group, commas inside,
+    // with no alias before it, is not a label, so that value is written unlabelled.
+    "Sample ChaCha State = [879531e0 c5ecf37d]",
+    "words: label=Sample ChaCha State words=879531e0,c5ecf37d",
+    "After applying QUARTERROUND(2, 7, 8, 13) = [879531e0 c5ecf37d]",
+    "not a literal @1",
+    "[879531e0 c5ecf37d]",
+    "bytes:879531e0c5ecf37d words=879531e0,c5ecf37d",
+    "[00 0f]",
+    "bytes:000f",
+    "[000f]",
+    "bytes:000f words=000f",
+    "[0x111111111]",
+    `${LITERALS_WORDS} @1`,
+    "[0x111111]",
+    `${LITERALS_WORDS} @1`,
+    "[0x1111111g]",
+    `${LITERALS_WORDS} @1`,
+    "[1111111g]",
+    `${LITERALS_WORDS} @1`,
+    "[0x1111111F]",
+    `${LITERALS_WORDS} @1`,
+    "[0X11111111]",
+    `${LITERALS_WORDS} @1`,
+    "[0x11111111 22222222]",
+    `${LITERALS_WORDS} @1`,
+    "[11111111 0x22222222]",
+    `${LITERALS_WORDS} @1`,
+    "[1111 22222222]",
+    "bytes:111122222222",
+    "[0x1111 0x22222222]",
+    `${LITERALS_WORDS} @1`,
+    "[111111111]",
+    `${LITERALS_WORDS} @1`,
+    "[00 0x11]",
+    `${LITERALS_WORDS} @1`,
+    "[0x]",
+    `${LITERALS_WORDS} @1`,
+    "[0F]",
+    `${LITERALS_BYTES} @1`,
+    "[0x11111111",
+    `${LITERALS_BYTES} @1`,
+    "State = [00 0f]",
+    `${labelled} @1`,
+    "State = [0x1111111]",
+    `${LITERALS_WORDS} @9`,
+    "[0x11111111] x",
+    "unexpected text after the value @14",
+  ]
+  for (let i = 0; i + 1 < words.length; i += 2) {
+    t.eqStr(`words: ${words[i]}`, litTestParseWords(words[i]), words[i + 1])
+  }
+
+  // Settling: a word type reads a bracket's words; any other type keeps bytes.
+  const settle: string[] = [
+    "[0x11111111 0x22222222]",
+    "words32",
+    "{words32:0x11111111,0x22222222}",
+    "[0x11111111 0x22222222]",
+    "bytes",
+    "{words32:0x11111111,0x22222222}",
+    "[11111111 22222222]",
+    "words32",
+    "{words32:11111111,22222222}",
+    "[11111111 22222222]",
+    "words32?",
+    "{words32:11111111,22222222}",
+    "[11111111 22222222]",
+    "bytes",
+    "{hex:1111111122222222}",
+    "[11111111 22222222]",
+    "words16",
+    "{words32:11111111,22222222}",
+    "[1111 2222]",
+    "words16",
+    "{words16:1111,2222}",
+    "[0x0123456789abcdef]",
+    "words64",
+    "{words64:0x0123456789abcdef}",
+    "[00 0f]",
+    "words32",
+    "{hex:000f}",
+    "State = [11111111]",
+    "words32",
+    "{words32:11111111 label:State}",
+    "State = [11111111]",
+    "bytes",
+    "{words32:11111111 label:State}",
+  ]
+  for (let i = 0; i + 2 < settle.length; i += 3) {
+    t.eqStr(`settles ${settle[i]} at ${settle[i + 1]}`, litTestSettle(settle[i], settle[i + 1]), settle[i + 2])
+  }
+
+  // A literal of one kind where another goes, for every width and bytes.
+  const kinds: string[] = ["bytes", "words16", "words32", "words64"]
+  const samples: string[] = ["[00 0f]", "[0x1111 0x2222]", "[0x11111111 0x22222222]", "[0x1111111111111111]"]
+  const read: string[] = [
+    "{hex:000f}",
+    "{words16:0x1111,0x2222}",
+    "{words32:0x11111111,0x22222222}",
+    "{words64:0x1111111111111111}",
+  ]
+  for (const want of kinds) {
+    const fn = litTestFn("f", ["x", want], want)
+    for (let i = 0; i < samples.length; i++) {
+      const got = kinds[i]
+      const r = litTestVector(fn, `f(${samples[i]})`, samples[i])
+      const expect =
+        got === want
+          ? `${read[i]} -> ${read[i]}`
+          : `Call: argument 1 of f (x) is ${want}, not ${got}\nExpected: f returns ${want}, not ${got}`
+      t.eqStr(`${samples[i]} where ${want} goes`, r, expect)
+    }
+  }
+  const optional = litTestFn("f", ["x", "words32?"], "words32?")
+  t.eqStr("null where words32? goes", litTestVector(optional, "f(null)", "null"), "{null} -> {null}")
+  t.eqStr(
+    "words32 where words32? goes",
+    litTestVector(optional, "f([0x11111111])", "[11111111]"),
+    "{words32:0x11111111} -> {words32:11111111}",
+  )
+  const ints = litTestFn("f", ["x", "words32", "a", "i32"], "words32")
+  t.eqStr(
+    "a decimal i32 beside words",
+    litTestVector(ints, "f([11111111], 7)", "[22222222]"),
+    "{words32:11111111} {int:7} -> {words32:22222222}",
+  )
   return t.done()
 }

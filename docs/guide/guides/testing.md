@@ -153,6 +153,9 @@ A function is called by its name in the language, from the contract's
 language table: a contract's `toHex` is Python's `to_hex`, unless the contract
 names it for Python itself. A name the language cannot use, such as a
 keyword, or two functions that would share one name, is refused (exit 1).
+Word arrays (`u16[]`, `u32[]`, `u64[]`) are emitted for Nish only: another
+language refuses a function that takes or returns one, naming it and the
+word type (exit 1), so emit the Nish test for it.
 
 `--package <name>=<dir>` places modules the same way, with the language's
 extension: `vector/core/hex` is `<dir>/core/hex.py`, loaded by its path
@@ -489,6 +492,21 @@ every vector was skipped as slow, so nothing ran: pass --slow
 ```
 
 In `--json`, each clause skipped as slow also has `"slow": true`.
+
+### Truncated vectors
+
+A [truncated vector](spec-to-contract.md#a-truncated-vector) is checked on
+the result's first bytes only: the emitted test of RFC 4231 test case 5
+compares the first 16 bytes of `hmacSha256`'s 32 with the printed value. A
+result shorter than the truncation fails, in every language, with a detail
+like `a 15-byte result, shorter than the 16 bytes it is truncated to`; it is
+never compared as it is, so an implementation that returns too little does
+not pass by matching the start.
+
+`spec run` names the truncation on each line it prints about the vector, as
+`  skip  4.6-256 (first 128 bits) (slow; pass --slow)` or after a failure's
+line, and in the JSON report the clause has `"truncate": {"bits": 128}`, as
+the contract writes it.
 
 ## A planted bug
 

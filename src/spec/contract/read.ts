@@ -40,10 +40,11 @@ import {
   Requirement,
   SourceDecl,
   Tolerance,
+  Truncate,
   VectorSource,
   VectorSourceKind,
 } from "./types"
-import { vocabHas, vocabIsDecimal, vocabIsIntType, vocabIsJsonSafe, vocabLanguages } from "./vocab"
+import { vocabHas, vocabIsDecimal, vocabIsIntType, vocabIsJsonSafe, vocabLanguages, vocabLiteralKinds } from "./vocab"
 
 /** What an intValue may be, as the error says it. */
 const READ_INT_WANT: string = "an integer within ±(2^53−1), or a decimal string for one beyond it (RFC 7493 §2.2)"
@@ -243,7 +244,7 @@ const readIntValue = (r: ContractReader, v: JsonValue, at: string): Literal | nu
 }
 
 const readLiteralKind = (r: ContractReader, v: JsonValue): i32 => {
-  const keys = ["hex", "ascii", "str", "int", "f64", "bool", "null", "concat"]
+  const keys = vocabLiteralKinds()
   for (let i = 0; i < keys.length; i++) {
     if (readHas(r, v, keys[i])) {
       return i
@@ -259,7 +260,7 @@ const readLiteral = (r: ContractReader, v: JsonValue, at: string): Literal | nul
   }
   const k = readLiteralKind(r, v)
   if (k < 0) {
-    readFail(r, at, "not a literal (hex, ascii, str, int, f64, bool, null, concat)")
+    readFail(r, at, "not a literal (hex, ascii, str, int, f64, bool, null, concat, words16, words32, words64)")
     return null
   }
   let lit: Literal | null = null
@@ -313,6 +314,24 @@ const readLiteral = (r: ContractReader, v: JsonValue, at: string): Literal | nul
       lit = new Literal(LitKind.Null, "")
     } else {
       readFail(r, `${at}.null`, "must be true")
+    }
+  } else if (k >= 8) {
+    const key = vocabLiteralKinds()[k]
+    readObject(r, v, at, [key, "label", "unchecked"])
+    const items = readArray(r, v, key, at, true)
+    if (items !== null) {
+      const w = new Literal(k === 8 ? LitKind.Words16 : k === 9 ? LitKind.Words32 : LitKind.Words64, "")
+      if (items.length === 0) {
+        readFail(r, `${at}.${key}`, "a non-empty array")
+      }
+      for (let i = 0; i < items.length; i++) {
+        if (readIsKind(r, items[i], JSON_VALUE_STRING)) {
+          w.words.push(r.doc.string(items[i]))
+        } else {
+          readFail(r, `${at}.${key}[${i}]`, "a string")
+        }
+      }
+      lit = w
     }
   } else {
     readObject(r, v, at, ["concat"])
@@ -540,12 +559,13 @@ const readFunctions = (r: ContractReader, root: JsonValue, c: Contract): void =>
 }
 
 const readCitation = (r: ContractReader, v: JsonValue, at: string): Citation | null => {
-  if (!readObject(r, v, at, ["source", "section"])) {
+  if (!readObject(r, v, at, ["source", "section", "case"])) {
     return null
   }
   const cite = new Citation()
   cite.source = readString(r, v, "source", at, false)
   cite.section = readRequiredString(r, v, "section", at)
+  cite.testCase = readString(r, v, "case", at, false)
   return cite
 }
 
@@ -629,6 +649,32 @@ const readIterate = (r: ContractReader, v: JsonValue, at: string): Iterate | nul
   return it
 }
 
+/** A vector's `truncate`: exactly one of `bits` (a multiple of 8) or `bytes`, at most 65536 bytes. */
+const readTruncate = (r: ContractReader, v: JsonValue, at: string): Truncate | null => {
+  if (!readObject(r, v, at, ["bits", "bytes"])) {
+    return null
+  }
+  const hasBits = r.doc.kind(r.doc.get(v, "bits")) !== JSON_VALUE_NONE
+  const hasBytes = r.doc.kind(r.doc.get(v, "bytes")) !== JSON_VALUE_NONE
+  if (hasBits === hasBytes) {
+    readFail(r, at, "exactly one of bits or bytes")
+    return null
+  }
+  if (hasBytes) {
+    const n = readCount(r, v, "bytes", at, 1, 65536, true)
+    return n < 0 ? null : new Truncate(n, "bytes")
+  }
+  const bits = readCount(r, v, "bits", at, 8, 524288, true)
+  if (bits < 0) {
+    return null
+  }
+  if (bits % 8 !== 0) {
+    readFail(r, `${at}.bits`, "a whole number of bytes: a multiple of 8")
+    return null
+  }
+  return new Truncate(bits / 8, "bits")
+}
+
 const readForall = (r: ContractReader, v: JsonValue, at: string): ForallVar | null => {
   if (!readIsKind(r, v, JSON_VALUE_OBJECT)) {
     readFail(r, at, "an object")
@@ -710,6 +756,7 @@ const readClause = (r: ContractReader, v: JsonValue, at: string): Clause | null 
       "expect",
       "tolerance",
       "iterate",
+      "truncate",
     ])
   } else {
     readObject(r, v, at, ["kind", "id", "title", "covers", "forall", "where", "assert", "samples"])
@@ -748,6 +795,10 @@ const readClause = (r: ContractReader, v: JsonValue, at: string): Clause | null 
     const it = r.doc.get(v, "iterate")
     if (r.doc.kind(it) !== JSON_VALUE_NONE) {
       c.iterate = readIterate(r, it, `${at}.iterate`)
+    }
+    const tr = r.doc.get(v, "truncate")
+    if (r.doc.kind(tr) !== JSON_VALUE_NONE) {
+      c.truncate = readTruncate(r, tr, `${at}.truncate`)
     }
     return c
   }

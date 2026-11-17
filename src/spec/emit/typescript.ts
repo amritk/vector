@@ -27,6 +27,7 @@ import { TypeEnv, typeCallsIn, typeEnvBind, typeIntBase, typeOf, typeOfInt } fro
 import { vocabFitsInt, vocabIsIntType, vocabIsOptional, vocabValueType } from "../contract/vocab"
 import { EmitOptions, emitClauseFn, emitClauseLines, emitHeaderLines, emitSortedUnique, emitTestName } from "./emit"
 import { EMIT_SLOW_SKIP, emitF64IsFinite, emitLiteralHex, emitQuote } from "./lit"
+import { emitTargetWordsRefusal } from "./target"
 
 /** What emitting one TypeScript test has gathered so far. */
 class EmitTsContext {
@@ -184,6 +185,10 @@ export const emitTsRefusals = (c: Contract): string[] => {
   const out: string[] = []
   const names: string[] = []
   for (const f of c.functions) {
+    const words = emitTargetWordsRefusal(f, "TypeScript")
+    if (words !== null) {
+      out.push(words)
+    }
     const why = emitTsNameRefusal(f)
     if (why !== null) {
       out.push(why)
@@ -528,7 +533,10 @@ const emitTsVector = (ctx: EmitTsContext, k: Clause): string => {
   const call = it === null ? emitTsCall(sig, args) : "it_r"
   const ret = emitTsVt(sig.returns)
   let body = ""
-  if (ret === "bytes") {
+  const tr = k.truncate
+  if (ret === "bytes" && tr !== null) {
+    body = `t.eq_str(${name}, _hex_prefix(${call}, ${tr.bytes}), "${emitLiteralHex(expect)}")`
+  } else if (ret === "bytes") {
     body = `t.eq_str(${name}, _hex_of(${call}), "${emitLiteralHex(expect)}")`
   } else if (ret === "bytes?") {
     const want = expect.kind === LitKind.Null ? "null" : emitLiteralHex(expect)
@@ -893,6 +901,13 @@ function _hex_of(b: unknown): string {
     out += "0123456789abcdef"[x >> 4] + "0123456789abcdef"[x & 15]
   }
   return out
+}
+
+function _hex_prefix(b: unknown, n: number): string {
+  if (b instanceof Uint8Array && b.length < n) {
+    return \`a \${b.length}-byte result, shorter than the \${n} bytes it is truncated to\`
+  }
+  return _hex_of(b instanceof Uint8Array ? b.subarray(0, n) : b)
 }
 
 function _str_or_null(s: unknown): string {

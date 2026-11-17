@@ -28,11 +28,14 @@ Generated from [src/spec/source/rfc.ts](https://github.com/amritk/vector/blob/ma
 - [`rfcParse`](#rfcparse)
 - [`rfcRead`](#rfcread)
 - [`rfcSection`](#rfcsection)
+- [`rfcHasCases`](#rfchascases)
+- [`rfcCaseSection`](#rfccasesection)
 - [`rfcSectionText`](#rfcsectiontext)
 - [`rfcQuoteIn`](#rfcquotein)
 - [`rfcOwnSpans`](#rfcownspans)
 - [`rfcHexValues`](#rfchexvalues)
 - [`rfcUnvaluedLabels`](#rfcunvaluedlabels)
+- [`rfcUnvaluedLines`](#rfcunvaluedlines)
 - [`rfcHexPrinted`](#rfchexprinted)
 - [`rfcQuoteProblem`](#rfcquoteproblem)
 
@@ -105,6 +108,16 @@ Only the section's own lines, up to its first subsection.
 
 ```ts
 ownLines: string[]
+```
+
+#### RfcSection.pageBreaks
+
+Where page furniture (a footer, a form feed, a header) was removed: each is
+the index in `lines` of the line that followed it, so a value printed
+across a page break can be read as one.
+
+```ts
+pageBreaks: i32[]
 ```
 
 #### RfcSection.title
@@ -189,6 +202,16 @@ hex: string
 
 ```ts
 label: string | null
+```
+
+#### HexValue.line
+
+The index, in its section's lines, of the line that names the value, or
+of its first line when nothing names it; -1 when it was not read from a
+section.
+
+```ts
+line: i32
 ```
 
 ### rfcNormalize
@@ -285,6 +308,58 @@ the section number, like "2.3" or "A.1"
 <scalar-field name="returns" type="RfcSection | null">
 
 the section, or null when the RFC has none by that number
+
+</scalar-field>
+
+### rfcHasCases
+
+Whether a section is split into test cases by `Test Vector #N:` headings
+(RFC 8439 §A.3's form).
+
+```ts
+function rfcHasCases(sec: RfcSection): boolean
+```
+
+<scalar-field name="sec" type="RfcSection" required>
+
+the section
+
+</scalar-field>
+
+<scalar-field name="returns" type="boolean">
+
+true when one of its own lines heads a test case
+
+</scalar-field>
+
+### rfcCaseSection
+
+One test case of a section, as a section of its own: the lines from its
+`Test Vector #N:` heading up to the next heading-shaped line
+(rfcCaseShaped) or the section's end. It keeps the section's number and title, so a check of the case
+reads as one of the section, narrowed, and the page breaks that fall in it,
+counted from its first line.
+
+```ts
+function rfcCaseSection(sec: RfcSection, n: i32): Result<RfcSection, string>
+```
+
+<scalar-field name="sec" type="RfcSection" required>
+
+the section
+
+</scalar-field>
+
+<scalar-field name="n" type="i32" required>
+
+the test case's number, from 1
+
+</scalar-field>
+
+<scalar-field name="returns" type="Result&lt;RfcSection, string&gt;">
+
+the case, or why the section holds no one case by that number,
+  worded to follow the section's name
 
 </scalar-field>
 
@@ -410,6 +485,27 @@ the section
 <scalar-field name="returns" type="string[]">
 
 the names, in order, whitespace collapsed
+
+</scalar-field>
+
+### rfcUnvaluedLines
+
+The lines the names of rfcUnvaluedLabels are printed on, so a gate can tell
+which test case an empty value belongs to.
+
+```ts
+function rfcUnvaluedLines(sec: RfcSection): i32[]
+```
+
+<scalar-field name="sec" type="RfcSection" required>
+
+the section
+
+</scalar-field>
+
+<scalar-field name="returns" type="i32[]">
+
+each name's index in the section's lines, in the same order
 
 </scalar-field>
 

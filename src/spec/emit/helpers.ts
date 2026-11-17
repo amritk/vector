@@ -14,6 +14,7 @@ import { emitToInt } from "./lit"
  */
 export const emitHelperNames = (): string[] => [
   "hexOf",
+  "hexPrefix",
   "hexOrNull",
   "unhex",
   "nibble",
@@ -41,6 +42,10 @@ export const emitHelperNames = (): string[] => [
   "asciiOrNull",
   "charAtStr",
   "copyBytes",
+  "wordHex",
+  "wordsHex16",
+  "wordsHex32",
+  "wordsHex64",
   "Unwrap",
   "unwrapStr",
 ]
@@ -52,7 +57,7 @@ export const emitHelperNames = (): string[] => [
  * @returns the helpers it needs
  */
 export const emitHelperDeps = (name: string): string[] => {
-  if (name === "hexOrNull") {
+  if (name === "hexOrNull" || name === "hexPrefix") {
     return ["hexOf"]
   }
   if (name === "unhex") {
@@ -63,6 +68,9 @@ export const emitHelperDeps = (name: string): string[] => {
   }
   if (name === "unwrapStr") {
     return ["Unwrap"]
+  }
+  if (name === "wordsHex16" || name === "wordsHex32" || name === "wordsHex64") {
+    return ["wordHex"]
   }
   return []
 }
@@ -83,6 +91,26 @@ const emitHelperRem = (t: string): string => {
 }
 
 /**
+ * A word array of `u<n>` words as the contract prints it, each word in its
+ * full width of hex digits, or `null` spelled out.
+ */
+const emitHelperWordsHex = (n: string): string => {
+  const widen = n === "64" ? "x" : "toU64(x)"
+  const digits = n === "16" ? 4 : n === "32" ? 8 : 16
+  return `/** \`w\` as bracketed hex words, or \`null\` spelled out. */
+const wordsHex${n} = (w: u${n}[] | null): string => {
+  if (w === null) {
+    return "null";
+  }
+  const parts: string[] = [];
+  for (const x of w) {
+    parts.push(wordHex(${widen}, ${digits}));
+  }
+  return \`[\${parts.join(" ")}]\`;
+};`
+}
+
+/**
  * A helper's definition, as the emitted test spells it.
  *
  * @param name a helper from emitHelperNames, but not `unwrapStr`
@@ -90,6 +118,23 @@ const emitHelperRem = (t: string): string => {
  * @returns the definition, or "" for an unknown name
  */
 export const emitHelperText = (name: string, withStr: boolean): string => {
+  for (const n of ["16", "32", "64"]) {
+    if (name === `wordsHex${n}`) {
+      return emitHelperWordsHex(n)
+    }
+  }
+  if (name === "wordHex") {
+    return `/** \`v\`'s low \`digits\` hex digits, in lowercase. */
+const wordHex = (v: u64, digits: i32): string => {
+  const hex: string = "0123456789abcdef";
+  const parts: string[] = [];
+  for (let i: i32 = digits - 1; i >= 0; i -= 1) {
+    const d: i32 = toI32((v >> toU64(i * 4)) & toU64(15));
+    parts.push(hex.substring(d, d + 1));
+  }
+  return parts.join("");
+};`
+  }
   for (const t of ["i64", "u8", "u16", "u32", "u64"]) {
     if (name === `rem${emitToInt(t).substring(2, 5)}`) {
       return emitHelperRem(t)
@@ -106,6 +151,20 @@ const hexOf = (bytes: u8[]): string => {
     parts.push(digits.substring(v & 15, (v & 15) + 1));
   }
   return parts.join("");
+};`
+  }
+  if (name === "hexPrefix") {
+    return `/** The first \`n\` bytes of \`bytes\` as hex; a shorter result says so, and never matches. */
+const hexPrefix = (bytes: u8[], n: i32): string => {
+  const have: i32 = toI32(bytes.length);
+  if (have < n) {
+    return \`a \${have}-byte result, shorter than the \${n} bytes it is truncated to\`;
+  }
+  const head: u8[] = [];
+  for (let i: i32 = 0; i < n; i += 1) {
+    head.push(bytes[i]);
+  }
+  return hexOf(head);
 };`
   }
   if (name === "hexOrNull") {

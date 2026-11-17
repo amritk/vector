@@ -18,8 +18,11 @@ import {
   charsIsModule,
   charsIsSection,
   charsIsStringText,
+  charsIsWordList,
+  charsTestVector,
 } from "./chars"
 import { contractF64Bits, contractF64FromBits, contractF64IsNaN, contractF64Overflows, contractF64Parse } from "./f64"
+import { literalsByteLength } from "./literals"
 import {
   Clause,
   ClauseKind,
@@ -33,8 +36,12 @@ import {
   Literal,
   NameOverride,
   Tolerance,
+  Truncate,
   VectorSourceKind,
+  typesIsWords,
+  typesWordsKey,
 } from "./types"
+import { typeOfLiteral } from "./typing"
 import {
   vocabCompareDecimal,
   vocabFitsInt,
@@ -45,6 +52,7 @@ import {
   vocabLevels,
   vocabOps,
   vocabSigTypes,
+  vocabWordDigits,
 } from "./vocab"
 
 /** The longest bytes or string value a property variable may range over. */
@@ -302,6 +310,12 @@ const shapeLiteral = (s: ShapeContext, lit: Literal, at: string): void => {
   } else if (lit.kind === LitKind.Concat) {
     for (let i = 0; i < lit.parts.length; i++) {
       shapeLiteral(s, lit.parts[i], `${at}.concat[${i}]`)
+    }
+  } else if (typesIsWords(lit.kind)) {
+    const key = typesWordsKey(lit.kind)
+    const digits = vocabWordDigits(key)
+    if (!charsIsWordList(lit.words, digits)) {
+      shapeFail(s, `${at}.${key}`, `words of ${digits} lowercase hex digits, with 0x on every word or on none`)
     }
   }
 }
@@ -595,6 +609,36 @@ const shapeIsIterateCall = (e: Expr, call: string, names: string[]): boolean => 
   return true
 }
 
+/** A vector's `truncate`: a bytes result held to its first `bytes`, which are the whole expect. */
+const shapeTruncate = (s: ShapeContext, k: Clause, t: Truncate, at: string): void => {
+  if (t.bytes < 1 || t.bytes > 65536) {
+    shapeFail(s, at, "a length of 1..65536 bytes")
+  }
+  if (t.unit !== "bits" && t.unit !== "bytes") {
+    shapeFail(s, at, "a length in bits or bytes")
+  }
+  if (k.tolerance !== null) {
+    shapeFail(s, at, "a truncated vector compares bytes exactly; drop the tolerance")
+  }
+  if (k.iterate !== null) {
+    shapeFail(s, at, "a vector is truncated or iterated, not both")
+  }
+  const expect = k.expect
+  if (expect === null) {
+    return
+  }
+  const n = literalsByteLength(expect)
+  if (n < 0) {
+    shapeFail(s, at, `a truncated vector's expect is bytes, not ${typeOfLiteral(expect)}`)
+  } else if (n !== t.bytes) {
+    shapeFail(
+      s,
+      at,
+      `the expect is ${n} bytes, so the truncation is ${n} bytes (${n * 8} bits), not ${t.bytes} bytes (${t.bytes * 8} bits)`,
+    )
+  }
+}
+
 /** A vector's `iterate`: a count in range, one name and one next element per parameter, at least one the call. */
 const shapeIterate = (s: ShapeContext, k: Clause, it: Iterate, at: string): void => {
   if (it.count < 1 || it.count > 1000000000) {
@@ -670,6 +714,14 @@ const shapeVectorSource = (s: ShapeContext, k: Clause, at: string): void => {
     if (cite !== null) {
       shapeSourceRef(s, cite.source, `${at}.source.cite.source`)
       shapeSection(s, cite.section, `${at}.source.cite.section`)
+      const tc = cite.testCase
+      if (tc !== null && charsTestVector(tc) === 0) {
+        shapeFail(
+          s,
+          `${at}.source.cite.case`,
+          "a test case of the section, as Test Vector #N (N from 1, no leading zero)",
+        )
+      }
     }
     if (k.section !== null) {
       shapeFail(s, `${at}.section`, `a cited vector's args are read in source.cite; drop "section"`)
@@ -770,6 +822,10 @@ const shapeClauses = (s: ShapeContext): void => {
       const it = k.iterate
       if (it !== null) {
         shapeIterate(s, k, it, `${at}.iterate`)
+      }
+      const tr = k.truncate
+      if (tr !== null) {
+        shapeTruncate(s, k, tr, `${at}.truncate`)
       }
       if (!charsIsIdent(k.call)) {
         shapeFail(s, `${at}.call`, "a function name")

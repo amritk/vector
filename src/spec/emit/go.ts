@@ -26,6 +26,7 @@ import { TypeEnv, typeCallsIn, typeEnvBind, typeIntBase, typeOf, typeOfInt } fro
 import { vocabFitsInt, vocabIsIntType, vocabIsOptional, vocabValueType } from "../contract/vocab"
 import { EmitOptions, emitClauseFn, emitClauseLines, emitHeaderLines, emitSortedUnique, emitTestName } from "./emit"
 import { EMIT_SLOW_SKIP, emitF64IsFinite, emitLiteralHex } from "./lit"
+import { emitTargetWordsRefusal } from "./target"
 
 /** What emitting one Go test has gathered so far. */
 class EmitGoContext {
@@ -101,6 +102,10 @@ export const emitGoRefusals = (c: Contract): string[] => {
   const out: string[] = []
   const names: string[] = []
   for (const f of c.functions) {
+    const words = emitTargetWordsRefusal(f, "Go")
+    if (words !== null) {
+      out.push(words)
+    }
     const n = emitGoName(f)
     if (!emitGoIsExported(n)) {
       out.push(
@@ -547,7 +552,10 @@ const emitGoVector = (ctx: EmitGoContext, k: Clause): string => {
   const call = it === null ? emitGoCall(ctx, sig, args) : "it_r"
   const ret = emitGoVt(sig.returns)
   let body = ""
-  if (ret === "bytes") {
+  const tr = k.truncate
+  if (ret === "bytes" && tr !== null) {
+    body = `t.eqStr(${name}, _hexPrefix(${call}, ${tr.bytes}), "${emitLiteralHex(expect)}")`
+  } else if (ret === "bytes") {
     body = `t.eqStr(${name}, _hexOf(${call}), "${emitLiteralHex(expect)}")`
   } else if (ret === "bytes?") {
     const want = expect.kind === LitKind.Null ? "null" : emitLiteralHex(expect)
@@ -912,6 +920,13 @@ func _h(s string) []byte {
 
 func _hexOf(b []byte) string {
 	return hex.EncodeToString(b)
+}
+
+func _hexPrefix(b []byte, n int) string {
+	if len(b) < n {
+		return fmt.Sprintf("a %d-byte result, shorter than the %d bytes it is truncated to", len(b), n)
+	}
+	return hex.EncodeToString(b[:n])
 }
 
 func _ohex(b *[]byte) string {

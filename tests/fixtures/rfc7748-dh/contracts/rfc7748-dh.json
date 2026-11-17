@@ -1,0 +1,147 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "rfc7748-dh",
+  "source": {
+    "rfc": 7748,
+    "title": "Elliptic Curves for Security: X25519's Diffie-Hellman vector",
+    "sha256": "279ca0ecc5e92e2962e27b846986aeb74729d9dd34bd4a04a362f80dcb596ad3"
+  },
+  "sources": [
+    {
+      "id": "rfc7748",
+      "rfc": 7748,
+      "file": "rfcs/rfc7748.txt",
+      "sha256": "279ca0ecc5e92e2962e27b846986aeb74729d9dd34bd4a04a362f80dcb596ad3"
+    }
+  ],
+  "target": {
+    "module": "fixture/x25519"
+  },
+  "requirements": [
+    {
+      "id": "R-FUNC",
+      "section": "5",
+      "level": "DEFINITION",
+      "quote": "The functions take a scalar and a u-coordinate as inputs and produce a u-coordinate as output."
+    },
+    {
+      "id": "R-DH",
+      "section": "6.1",
+      "level": "DEFINITION",
+      "quote": "Both now share K = X25519(a, X25519(b, 9)) = X25519(b, X25519(a, 9)) as a shared secret."
+    }
+  ],
+  "exclusions": [
+    {
+      "section": "5",
+      "quote": "When receiving such an array, implementations of X25519 (but not X448) MUST mask the most significant bit in the final byte.",
+      "reason": "this fixture checks the Section 6.1 vector only; amritk/nish's specs/rfc7748-x25519.md tests the mask"
+    },
+    {
+      "section": "5",
+      "quote": "Implementations MUST accept non-canonical values and process them as if they had been reduced modulo the field prime.",
+      "reason": "this fixture checks the Section 6.1 vector only; amritk/nish's specs/rfc7748-x25519.md tests non-canonical values"
+    },
+    {
+      "section": "5",
+      "quote": "For X25519, the unused, most significant bit MUST be zero.",
+      "reason": "this fixture checks the Section 6.1 vector only; amritk/nish's specs/rfc7748-x25519.md tests the output's top bit"
+    },
+    {
+      "section": "5",
+      "quote": "The cswap function SHOULD be implemented in constant time (i.e., independent of the swap argument).",
+      "reason": "timing is not observable by a functional test"
+    },
+    {
+      "section": "A",
+      "quote": "The trace of Frobenius MUST NOT be in {0, 1} in order to rule out the attacks described in [smart], [satoh], and [semaev], as in [brainpool] and [safecurves].",
+      "reason": "an obligation on choosing a curve, which Curve25519 already meets; nothing an implementation of X25519 does can satisfy or violate it"
+    },
+    {
+      "section": "A",
+      "quote": "MOV Degree [reducing]: the embedding degree MUST be greater than (order - 1) / 100, as in [brainpool] and [safecurves].",
+      "reason": "an obligation on choosing a curve, which Curve25519 already meets; nothing an implementation of X25519 does can satisfy or violate it"
+    },
+    {
+      "section": "A",
+      "quote": "CM Discriminant: discriminant D MUST be greater than 2^100, as in [safecurves].",
+      "reason": "an obligation on choosing a curve, which Curve25519 already meets; nothing an implementation of X25519 does can satisfy or violate it"
+    }
+  ],
+  "functions": [
+    {
+      "name": "x25519",
+      "params": [
+        {
+          "name": "scalar",
+          "type": "secret-bytes"
+        },
+        {
+          "name": "u",
+          "type": "bytes"
+        }
+      ],
+      "returns": "secret-bytes?"
+    },
+    {
+      "name": "x25519Base",
+      "params": [
+        {
+          "name": "scalar",
+          "type": "secret-bytes"
+        }
+      ],
+      "returns": "bytes?"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "6.1-ALICE",
+      "title": "Alice's public key",
+      "covers": ["R-FUNC", "R-DH"],
+      "source": {
+        "cite": {
+          "section": "6.1"
+        }
+      },
+      "call": "x25519Base",
+      "args": [
+        {
+          "hex": "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
+          "label": "Alice's private key, a"
+        }
+      ],
+      "expect": {
+        "hex": "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a",
+        "label": "Alice's public key, X25519(a, 9)"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "6.1-K",
+      "title": "the shared secret",
+      "covers": ["R-DH"],
+      "source": {
+        "cite": {
+          "section": "6.1"
+        }
+      },
+      "call": "x25519",
+      "args": [
+        {
+          "hex": "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
+          "label": "Alice's private key, a"
+        },
+        {
+          "hex": "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f",
+          "label": "Bob's public key, X25519(b, 9)"
+        }
+      ],
+      "expect": {
+        "hex": "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742",
+        "label": "Their shared secret, K"
+      }
+    }
+  ]
+}

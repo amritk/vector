@@ -14,11 +14,11 @@
  * binary64 encoding that text reads as.
  */
 
-import { charsCodePointAt, charsFromCodePoint, charsIsStringText, charsSequenceLength } from "./chars"
+import { charsCodePointAt, charsFromCodePoint, charsIsStringText, charsIsWordList, charsSequenceLength } from "./chars"
 import { contractF64Bits, contractF64Overflows, contractF64Parse } from "./f64"
-import { FnSig, LitKind, Literal } from "./types"
+import { FnSig, LitKind, Literal, typesWordsKind } from "./types"
 import { typeIntBase, typeLiteralFits, typeOfLiteral } from "./typing"
-import { vocabIsJsonSafe, vocabValueType } from "./vocab"
+import { vocabBaseOf, vocabIsJsonSafe, vocabIsWordType, vocabValueType } from "./vocab"
 
 /** The form a cell writes a literal in, before a type settles it. */
 export enum RawKind {
@@ -44,6 +44,8 @@ export enum RawKind {
   Repeat = 9,
   /** `concat(a, b)`. */
   Concat = 10,
+  /** `[0x11111111 0x22222222]` or `State = [11111111 22222222]`: words of 4, 8 or 16 hex digits. */
+  Words = 11,
 }
 
 /** A literal as the cell writes it, before a type says what a string is. */
@@ -66,6 +68,12 @@ export class RawLiteral {
   /** A concat's parts. */
   parts: RawLiteral[]
   /**
+   * A bracket's words as printed, when they are a word array (all 4, 8 or 16
+   * hex digits, `0x` on every word or on none); empty otherwise. Bytes like
+   * `[879531e0 c5ecf37d]` carry their words too, for a word-array type.
+   */
+  words: string[]
+  /**
    * Makes a raw literal.
    *
    * @param kind its form
@@ -79,6 +87,7 @@ export class RawLiteral {
     this.count = 0
     this.flag = false
     this.parts = []
+    this.words = []
   }
 }
 
@@ -165,6 +174,10 @@ export const LITERALS_REPEAT_RUN: string = "a repeated run is whole bytes: lower
 /** The refusal of a bracketed byte string. */
 export const LITERALS_BYTES: string =
   "bytes are lowercase hex pairs in brackets, at most one space apart: [00 0f], or [] for none"
+
+/** The refusal of a bracketed word array. */
+export const LITERALS_WORDS: string =
+  "words are 4, 8 or 16 lowercase hex digits in brackets, one space apart, all one width, with 0x on every word or on none: [0x11111111 0x22222222]"
 
 /** `×`, the multiplication sign RFCs print a run with. */
 const literalsTimes = (): string => charsFromCodePoint(0xd7)
@@ -419,6 +432,89 @@ const literalsBytes = (r: LiteralsReader): RawLiteral | null => {
   }
 }
 
+/** The space-separated tokens of a bracket's text, without the brackets. */
+const literalsTokens = (body: string): string[] => {
+  const out: string[] = []
+  let start = -1
+  for (let j = 0; j <= body.length; j++) {
+    const c = j < body.length ? body.charCodeAt(j) : 0x20
+    const space = c === 0x20 || c === 0x09
+    if (space && start >= 0) {
+      out.push(body.substring(start, j))
+      start = -1
+    } else if (!space && start < 0) {
+      start = j
+    }
+  }
+  return out
+}
+
+/** Whether tokens are a word array: what charsIsWordList accepts at one of the three widths. */
+const literalsAreWords = (tokens: string[]): boolean => {
+  if (tokens.length === 0) {
+    return false
+  }
+  const first = tokens[0]
+  const digits = first.startsWith("0x") ? first.length - 2 : first.length
+  return (digits === 4 || digits === 8 || digits === 16) && charsIsWordList(tokens, digits)
+}
+
+/** Whether a bracket's tokens were meant as words: one has `0x`, or every one is 4 digits or more. */
+const literalsLooksLikeWords = (tokens: string[]): boolean => {
+  if (tokens.length === 0) {
+    return false
+  }
+  let long = true
+  for (const t of tokens) {
+    if (t.startsWith("0x") || t.startsWith("0X")) {
+      return true
+    }
+    long = long && t.length >= 4
+  }
+  return long
+}
+
+/**
+ * `[...]` at the reader: bytes, a word array, or both (`[879531e0 c5ecf37d]`
+ * is either, as the type says). With a label it is a word array only, so a
+ * labelled byte string stays `Label = hex`.
+ */
+const literalsBracket = (r: LiteralsReader, label: string | null, labelAt: i32): RawLiteral | null => {
+  const at = r.i
+  let close = at + 1
+  while (close < r.text.length && r.text.charCodeAt(close) !== 0x5d) {
+    close++
+  }
+  const none: string[] = []
+  const tokens = close < r.text.length ? literalsTokens(r.text.substring(at + 1, close)) : none
+  // Words are one space apart, as bytes are: a tab, a run of spaces or a
+  // space at either end is not a word array (LITERALS_WORDS says so).
+  const words =
+    close < r.text.length && literalsAreWords(tokens) && r.text.substring(at + 1, close) === tokens.join(" ")
+  if (label === null) {
+    const bytes = literalsBytes(r)
+    if (bytes !== null) {
+      if (words) {
+        bytes.words = tokens
+      }
+      return bytes
+    }
+  }
+  if (words) {
+    r.message = ""
+    r.i = close + 1
+    const lit = new RawLiteral(RawKind.Words, "")
+    lit.words = tokens
+    lit.label = label
+    return lit
+  }
+  if (literalsLooksLikeWords(tokens)) {
+    r.message = ""
+    return literalsFail(r, LITERALS_WORDS, at)
+  }
+  return label === null ? null : literalsFail(r, literalsLabelledMessage(), labelAt)
+}
+
 /** The end of `null`, `true` or `false` at `j`, or -1. */
 const literalsWordEnd = (r: LiteralsReader, j: i32): i32 => {
   for (const w of ["null", "true", "false"]) {
@@ -461,11 +557,16 @@ const literalsGroupedEnd = (r: LiteralsReader, j: i32): i32 => {
  * The end of a label at `j` (before its ` = `), or -1. A label is words of
  * letters, digits, `_` and `-`, one space apart; the first word starts with a
  * letter, or with digits then a letter (`32-bit fixed-common part`, as RFC
- * 8439 prints it), so `22 x 0b` and `42` stay a run and an int. A later word
- * may be a comma-grouped number (`After 1,000 iterations`, as RFC 7748
- * prints it), and one later word may be a parenthesised group of such words
- * (`MESSAGE (length 1 byte)`, as RFC 8032 prints it), so the comma and paren
- * inside it do not end the argument.
+ * 8439 prints it), so `22 x 0b` and `42` stay a run and an int. An apostrophe
+ * may join two letters inside a word (`Alice's private key`, as RFC 7748
+ * prints it). A later word may be a comma-grouped number (`After 1,000
+ * iterations`, as RFC 7748 prints it), and one later word may be a
+ * parenthesised group of such words (`MESSAGE (length 1 byte)`, as RFC 8032
+ * prints it), so the comma and paren inside it do not end the argument.
+ * The words may end in one `, alias` (`Alice's private key, a` or `Alice's
+ * public key, X25519(a, 9)`, as RFC 7748 prints them): the comma is the
+ * label's only when its alias is followed by ` = `, so `f(K = 00, b = 11)`
+ * is still two arguments.
  */
 const literalsLabelEnd = (r: LiteralsReader, j: i32): i32 => {
   let k = j
@@ -478,13 +579,14 @@ const literalsLabelEnd = (r: LiteralsReader, j: i32): i32 => {
   if (!literalsIsLetter(literalsByte(r, k))) {
     return -1
   }
-  while (literalsIsLabelChar(literalsByte(r, k))) {
-    k++
-  }
+  k = literalsLabelCharsEnd(r, k)
   let grouped = false
   for (;;) {
     if (literalsHas(r, k, " = ")) {
       return k
+    }
+    if (literalsHas(r, k, ", ")) {
+      return literalsAliasEnd(r, j, k, grouped)
     }
     if (literalsByte(r, k) !== 0x20) {
       return -1
@@ -492,7 +594,7 @@ const literalsLabelEnd = (r: LiteralsReader, j: i32): i32 => {
     k++
     if (literalsByte(r, k) === 0x28 && !grouped) {
       grouped = true
-      k = literalsGroupEnd(r, k + 1)
+      k = literalsGroupEnd(r, k + 1, false)
       if (k < 0) {
         return -1
       }
@@ -505,25 +607,62 @@ const literalsLabelEnd = (r: LiteralsReader, j: i32): i32 => {
   }
 }
 
+/**
+ * The end of a label whose words, from `j`, end in a `, ` at `k`: past its
+ * one alias, a label word (`a`) or a word joined to a parenthesised group
+ * that may hold `, ` (`X25519(a, 9)`), when ` = ` follows it; -1 otherwise.
+ * Words that are themselves an f64 (`NaN`, `Infinity`) take no alias, so
+ * `f(NaN, a = 00)` is still two arguments. A label holds at most one group,
+ * so when its words already hold one (`grouped`) the alias may not.
+ */
+const literalsAliasEnd = (r: LiteralsReader, j: i32, k: i32, grouped: boolean): i32 => {
+  if (literalsF64End(r, j) === k) {
+    return -1
+  }
+  let m = literalsLabelWordEnd(r, k + 2)
+  if (m >= 0 && literalsByte(r, m) === 0x28) {
+    if (grouped) {
+      return -1
+    }
+    m = literalsGroupEnd(r, m + 1, true)
+  }
+  return m >= 0 && literalsHas(r, m, " = ") ? m : -1
+}
+
+/**
+ * The end of a run of label characters at `j`, where an apostrophe counts
+ * only between two letters (`Alice's`); `j` when there is none.
+ */
+const literalsLabelCharsEnd = (r: LiteralsReader, j: i32): i32 => {
+  let k = j
+  for (;;) {
+    const c = literalsByte(r, k)
+    if (literalsIsLabelChar(c)) {
+      k++
+    } else if (c === 0x27 && literalsIsLetter(literalsByte(r, k - 1)) && literalsIsLetter(literalsByte(r, k + 1))) {
+      k++
+    } else {
+      return k
+    }
+  }
+}
+
 /** The end of one later label word at `j` (a comma-grouped number, or label characters), or -1. */
 const literalsLabelWordEnd = (r: LiteralsReader, j: i32): i32 => {
   if (!literalsIsLabelChar(literalsByte(r, j))) {
     return -1
   }
   const grouped = literalsGroupedEnd(r, j)
-  let k = grouped >= 0 ? grouped : j
-  while (literalsIsLabelChar(literalsByte(r, k))) {
-    k++
-  }
-  return k
+  return literalsLabelCharsEnd(r, grouped >= 0 ? grouped : j)
 }
 
 /**
  * The end of a label's parenthesised group, past its `)`, from `j` just after
- * its `(`: label words one space apart, at least one, with no paren inside.
- * -1 when there is none.
+ * its `(`: label words one space apart, or also `, ` apart when `commas` (an
+ * alias's group, `X25519(a, 9)`), at least one, with no paren inside. -1 when
+ * there is none.
  */
-const literalsGroupEnd = (r: LiteralsReader, j: i32): i32 => {
+const literalsGroupEnd = (r: LiteralsReader, j: i32, commas: boolean): i32 => {
   let k = literalsLabelWordEnd(r, j)
   for (;;) {
     if (k < 0) {
@@ -531,6 +670,9 @@ const literalsGroupEnd = (r: LiteralsReader, j: i32): i32 => {
     }
     if (literalsByte(r, k) === 0x29) {
       return k + 1
+    }
+    if (commas && literalsHas(r, k, ", ")) {
+      k++
     }
     if (literalsByte(r, k) !== 0x20) {
       return -1
@@ -690,6 +832,9 @@ const literalsLabelled = (r: LiteralsReader, labelEnd: i32): RawLiteral | null =
     lit.label = label
     return lit
   }
+  if (literalsByte(r, r.i) === 0x5b) {
+    return literalsBracket(r, label, at)
+  }
   const end = literalsValueEnd(r, r.i)
   const text = r.text.substring(r.i, end)
   const isHex = literalsIsHexPairs(text)
@@ -751,7 +896,7 @@ const literalsOne = (r: LiteralsReader, inConcat: boolean): RawLiteral | null =>
     }
   }
   if (c === 0x5b) {
-    return literalsBytes(r)
+    return literalsBracket(r, null, at)
   }
   if (literalsHas(r, at, "(empty)")) {
     r.i = at + 7
@@ -875,6 +1020,41 @@ export const literalsParse = (text: string): Result<RawLiteral, LiteralError> =>
 }
 
 /**
+ * How many bytes a bytes literal stands for: its hex pairs times its repeat,
+ * an ascii literal's characters, or the sum of a concat's parts.
+ *
+ * @param lit the literal
+ * @returns the byte count, or -1 when the literal is not bytes
+ */
+export const literalsByteLength = (lit: Literal): i64 => {
+  if (lit.kind === LitKind.Concat) {
+    let n: i64 = 0
+    for (const p of lit.parts) {
+      const m = literalsByteLength(p)
+      if (m < 0) {
+        return -1
+      }
+      n += m
+    }
+    return n
+  }
+  if (lit.kind === LitKind.Ascii) {
+    return toI64(lit.text.length)
+  }
+  if (lit.kind !== LitKind.Hex) {
+    return -1
+  }
+  let digits: i64 = 0
+  for (let i = 0; i < lit.text.length; i++) {
+    const c = toI32(lit.text.charCodeAt(i))
+    if ((c >= 48 && c <= 57) || (c >= 97 && c <= 102) || (c >= 65 && c <= 70)) {
+      digits += 1
+    }
+  }
+  return (digits / 2) * toI64(lit.repeat < 0 ? 1 : lit.repeat)
+}
+
+/**
  * What a literal is, as a refusal names it: "an int", "bytes", "null", ...
  *
  * @param lit the literal
@@ -986,6 +1166,17 @@ export const literalsSettle = (raw: RawLiteral, ty: string | null): Result<Liter
     return Err(
       `the types do not settle ${literalsQuote(raw.text)}: a quoted string goes where bytes or a string does, not ${where}`,
     )
+  }
+  // `[879531e0 c5ecf37d]` is bytes and words both; a word-array type reads its words.
+  if (
+    k === RawKind.Words ||
+    (k === RawKind.Bytes && raw.words.length > 0 && ty !== null && vocabIsWordType(vocabBaseOf(ty)))
+  ) {
+    const first = raw.words[0]
+    const lit = new Literal(typesWordsKind(first.startsWith("0x") ? first.length - 2 : first.length), "")
+    lit.words = raw.words
+    lit.label = raw.label
+    return Ok(lit)
   }
   if (k === RawKind.Bytes) {
     return Ok(new Literal(LitKind.Hex, raw.text))

@@ -95,6 +95,39 @@ export const langTableC = (): LangTable => {
     "concat",
     langSpell("(const uint8_t[]){0x0b, 0x61}", "no concatenation of arrays; the joined bytes are written as one array"),
   )
+  t.type(
+    "words16",
+    langSpell(
+      "const uint16_t *",
+      "a pointer/length pair, as bytes are; a returned array goes to a caller-supplied buffer",
+    ),
+  )
+  t.type(
+    "words32",
+    langSpell(
+      "const uint32_t *",
+      "a pointer/length pair, as bytes are; a returned array goes to a caller-supplied buffer",
+    ),
+  )
+  t.type(
+    "words64",
+    langSpell(
+      "const uint64_t *",
+      "a pointer/length pair, as bytes are; a returned array goes to a caller-supplied buffer",
+    ),
+  )
+  t.literal("words16", langSpell("(const uint16_t[]){0x6170, 0x7865}", "a compound literal, with its length sizeof'd"))
+  t.literal(
+    "words32",
+    langSpell("(const uint32_t[]){0x61707865, 0x3320646e}", "a compound literal, with its length sizeof'd"),
+  )
+  t.literal(
+    "words64",
+    langSpell(
+      "(const uint64_t[]){0x3320646e61707865, 0x6b20657479622d32}",
+      "a compound literal, with its length sizeof'd",
+    ),
+  )
   t.moduleForm = "header-prefix"
   t.moduleNote =
     "a header at the neutral path plus .h, and every symbol prefixed by the segments joined with _ (C has one namespace for external names): nish/crypto/hkdf → nish/crypto/hkdf.h, nish_crypto_hkdf_<name>"

@@ -1,0 +1,1 @@
+vector: tests/fixtures/chacha20/tampered/rfc8439-quarter-round.md:25 (tests/fixtures/chacha20/tampered/rfc8439-quarter-round.xml:135): fidelity: 16-word value is not printed as one block in RFC §2.2.1 ("Test Vector for the Quarter Round on the ChaCha State")

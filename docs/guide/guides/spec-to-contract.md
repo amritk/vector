@@ -28,10 +28,14 @@ A contract ([`schemas/rfc-contract.json`][schema], described in
   (or `DEFINITION`);
 - **exclusions**: the MUST and SHALL sentences a functional test cannot observe
   (nonce uniqueness, constant-time comparison), each with its reason;
+- **outOfScope**: the exports of the module no clause tests, each with the
+  reason, from the spec's `Out of scope: <export>, <reason>` paragraphs;
+  [`spec exports`](pr-gates.md#exports) reports a change to one as a note;
 - **functions**: the implementation's signatures, plus any reference function
   from another module that a property may call;
 - **clauses**: **vectors** (known answers, each saying where its expected value
-  comes from) and **properties** (`forall` a typed domain, `where` restricts
+  comes from; a literal may carry the label the RFC prints it under, such as
+  `After 1,000 iterations` or `MESSAGE (length 0 bytes)`) and **properties** (`forall` a typed domain, `where` restricts
   it, `assert` must hold).
 
 ### An iterated vector
@@ -92,6 +96,45 @@ back in:
   iterations`, a value printed under `X448 after 1,000 iterations` is still
   refused for a call to `x25519`, while `After 1,000,000 iterations` is not
   a variant of `After 1,000 iterations`.
+
+### A truncated vector
+
+A vector may carry `truncate`, for a result its section prints cut short
+(RFC 4231 §4.6: HMAC "truncated to 128 bits"). Only the result's first
+bytes are held to `expect`:
+
+```json
+"call": "hmacSha256",
+"args": [{"hex": "0c0c…", "label": "Key"}, {"hex": "5465…", "label": "Data"}],
+"expect": {"hex": "a3b6167473100ee06e0c796c2955552b", "label": "HMAC-SHA-256"},
+"truncate": {"bits": 128}
+```
+
+- Exactly one of **bits** (8 to 524,288, a multiple of 8) or **bytes** (1 to
+  65,536) gives the length, in the unit the section prints it in.
+- The call returns bytes, and `expect` is bytes of exactly that length: a
+  12-byte `expect` truncated to 128 bits is refused. A word array is not
+  truncated: a `Truncate:` paragraph on a vector whose call returns `u16[]`,
+  `u32[]` or `u64[]` is refused as `<id>'s <call> returns words32, and only
+  a bytes result is truncated`. A contract written by hand that does it is
+  refused by typing with `truncate: <call> returns words32, and only a bytes
+  result is truncated`, and a words `expect` by shape with `a truncated
+  vector's expect is bytes, not words32`.
+  A truncated vector takes no `tolerance` and no `iterate`.
+- The generated test compares the result's first bytes with `expect`. A
+  result shorter than the length fails, as `a 15-byte result, shorter than
+  the 16 bytes it is truncated to`: it is never compared as it is.
+
+`spec check` binds the length to the cited section: the number and its unit
+(`128 bits`, `16 bytes`) are printed there as two whole words outside a
+heading, the unit in any case and the number with or without commas. The
+expected value is still a whole printed value under its label, so a row cut
+to 12 of the 16 printed bytes is refused as only part of a value.
+
+The report names the truncation beside the vector: the text report lists it
+as `○ 4.6-256 (first 128 bits)`, the markdown report's Clause cell the same,
+and the JSON report has `"truncations": {"4.6-256": {"bits": 128}}`, each
+length as the contract writes it, which is `{}` when no vector is truncated.
 
 ## 1. Build the XML
 
@@ -399,11 +442,11 @@ No model is involved in any of them.
 | Gate | Refuses |
 |---|---|
 | shape | a contract that is not well formed, including free text (titles, quotes, reasons) with a line break or another control character; an `iterate` whose names or next do not match the parameters (see [An iterated vector](#an-iterated-vector)) |
-| fidelity | a quote not in its cited section; a vector's value not printed in its section as a whole value, under the label it is printed under (see [What a printed value is](writing-a-spec.md#what-a-printed-value-is)); values from two test cases; an iterated vector's count not printed in its section, or a label that counts another number; a source whose bytes no longer match its pinned SHA-256 |
+| fidelity | a quote not in its cited section; a vector's value not printed in its section as a whole value (a word array as a whole block of words, spelled as printed), under the label it is printed under (see [What a printed value is](writing-a-spec.md#what-a-printed-value-is)); values from two test cases; an iterated vector's count not printed in its section, or a label that counts another number; a truncated vector's length not printed in its section (see [A truncated vector](#a-truncated-vector)); a source whose bytes no longer match its pinned SHA-256 |
 | completeness | any MUST, MUST NOT, SHALL, SHALL NOT or REQUIRED sentence of the main source that is neither inside a requirement's quote nor an exclusion's |
 | provenance | a `spec` source whose section never states the expected `null` or bool (see [When a section states null, true or false](writing-a-spec.md#when-a-section-states-null-true-or-false)); a `command` source that failed under `--run-sources` |
 | coverage | a binding requirement no clause checks; a clause citing a requirement the contract does not state; a property or vector that calls no function under test |
-| typing | an ill-typed call or expression (`bytes?` and `string?` must be `unwrap`ped; `where` may not call the implementation; a `let` may not shadow a name or bind a bare `null`); an `iterate.next` element of the wrong type for its parameter |
+| typing | an ill-typed call or expression (`bytes?` and `string?` must be `unwrap`ped; `where` may not call the implementation; a `let` may not shadow a name or bind a bare `null`); a property that holds or calls word arrays (*not yet* checked; give them as vectors); an `iterate.next` element of the wrong type for its parameter |
 | signatures | a declared signature that is not the module's export (with `--nish-root` or `--module`) |
 | domain | a property whose domain is empty (Z3 says `unsat`: it would pass vacuously) |
 
@@ -525,9 +568,9 @@ R-ITER passes because both 5.2-ITER-1 and 5.2-ITER-1000 return the printed
 k. With `--slow` the 1,000,000-iteration vector runs too, which takes about
 two minutes rather than about three seconds.
 
-A vector is compared with its expected value whole, so a result the RFC
-prints truncated (RFC 4231 test case 5, the first 128 bits of the HMAC)
-still cannot be compared. Leave that vector out of the table, and put an
-`Untested:` paragraph after the requirement it would have tested, saying why.
+A result the RFC prints truncated (RFC 4231 test case 5, the first 128 bits
+of the HMAC) is a row like any other plus a `Truncate:` paragraph after the
+table, `Truncate: 4.6-256 to 128 bits`; see [Truncations](writing-a-spec.md#truncations)
+and [A truncated vector](#a-truncated-vector).
 
 [schema]: https://github.com/amritk/vector/blob/main/schemas/rfc-contract.json

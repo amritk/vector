@@ -29,6 +29,12 @@ export class RfcSection {
   /** Only the section's own lines, up to its first subsection. */
   ownLines: string[]
   /**
+   * Where page furniture (a footer, a form feed, a header) was removed: each is
+   * the index in `lines` of the line that followed it, so a value printed
+   * across a page break can be read as one.
+   */
+  pageBreaks: i32[]
+  /**
    * Makes a section.
    *
    * @param id the section number
@@ -41,6 +47,7 @@ export class RfcSection {
     this.title = title
     this.lines = lines
     this.ownLines = ownLines
+    this.pageBreaks = []
   }
 }
 
@@ -62,6 +69,12 @@ export class HexValue {
   hex: string
   /** "Key" for "Key = 00:01:…", "IKM" for "IKM = 0x0b…"; null when nothing names it. */
   label: string | null
+  /**
+   * The index, in its section's lines, of the line that names the value, or
+   * of its first line when nothing names it; -1 when it was not read from a
+   * section.
+   */
+  line: i32 = -1
   /**
    * Makes a value.
    *
@@ -229,12 +242,21 @@ const rfcHeading = (line: string): string[] | null => {
 export const rfcParse = (text: string): RfcDocument => {
   const doc = new RfcDocument()
   const lines: string[] = []
+  const breaks: i32[] = []
   for (const raw of splitLines(text)) {
     let l = raw.endsWith("\r") ? raw.substring(0, raw.length - 1) : raw
-    if (l.indexOf("\f") >= 0) {
+    const fed = l.indexOf("\f") >= 0
+    if (fed) {
       l = replaceAll(l, "\f", "")
     }
-    if (!rfcIsFooter(l) && !rfcIsHeader(l)) {
+    if (rfcIsFooter(l) || rfcIsHeader(l)) {
+      if (breaks.length === 0 || breaks[breaks.length - 1] !== lines.length) {
+        breaks.push(lines.length)
+      }
+    } else {
+      if (fed && (breaks.length === 0 || breaks[breaks.length - 1] !== lines.length)) {
+        breaks.push(lines.length)
+      }
       lines.push(l)
     }
   }
@@ -278,7 +300,13 @@ export const rfcParse = (text: string): RfcDocument => {
       }
     }
     const ownEnd = k + 1 < ids.length ? ats[k + 1] : lines.length
-    doc.sections.push(new RfcSection(ids[k], titles[k], lines.slice(ats[k], end), lines.slice(ats[k], ownEnd)))
+    const sec = new RfcSection(ids[k], titles[k], lines.slice(ats[k], end), lines.slice(ats[k], ownEnd))
+    for (const b of breaks) {
+      if (b > ats[k] && b < end) {
+        sec.pageBreaks.push(b - ats[k])
+      }
+    }
+    doc.sections.push(sec)
   }
   return doc
 }
@@ -320,6 +348,114 @@ export const rfcSection = (doc: RfcDocument, id: string): RfcSection | null => {
     }
   }
   return null
+}
+
+/**
+ * The number a line heads a test case with: its first non-blank text is
+ * `Test Vector #N:`, N from 1 with no leading zero, whether the heading
+ * stands alone (above a `===` rule) or the case's description follows it on
+ * the line.
+ *
+ * @param line the line
+ * @returns N, or 0 when the line heads no test case
+ */
+const rfcCaseHeading = (line: string): i32 => {
+  const head = "Test Vector #"
+  const t = trim(line)
+  if (!t.startsWith(head) || t.length === head.length || t.charCodeAt(head.length) === 0x30) {
+    return 0
+  }
+  let n = 0
+  let i = head.length
+  for (; i < t.length && i < head.length + 6; i++) {
+    const c = t.charCodeAt(i)
+    if (c < 0x30 || c > 0x39) {
+      break
+    }
+    n = n * 10 + (c - 0x30)
+  }
+  return i > head.length && i < t.length && t.charCodeAt(i) === 0x3a ? n : 0
+}
+
+/**
+ * Whether a line is shaped like a test case's heading, `Test Vector #<digits>:`,
+ * whether or not rfcCaseHeading takes its number: such a line ends the case
+ * above it, so a case never runs on into a block it does not head.
+ *
+ * @param line the line
+ * @returns true when its first non-blank text is `Test Vector #`, digits and a colon
+ */
+const rfcCaseShaped = (line: string): boolean => {
+  const head = "Test Vector #"
+  const t = trim(line)
+  if (!t.startsWith(head)) {
+    return false
+  }
+  let i = head.length
+  while (i < t.length && t.charCodeAt(i) >= 0x30 && t.charCodeAt(i) <= 0x39) {
+    i++
+  }
+  return i > head.length && i < t.length && t.charCodeAt(i) === 0x3a
+}
+
+/**
+ * Whether a section is split into test cases by `Test Vector #N:` headings
+ * (RFC 8439 §A.3's form).
+ *
+ * @param sec the section
+ * @returns true when one of its own lines heads a test case
+ */
+export const rfcHasCases = (sec: RfcSection): boolean =>
+  sec.ownLines.some((l: string): boolean => rfcCaseHeading(l) > 0)
+
+/**
+ * One test case of a section, as a section of its own: the lines from its
+ * `Test Vector #N:` heading up to the next heading-shaped line
+ * (rfcCaseShaped) or the section's end. It keeps the section's number and title, so a check of the case
+ * reads as one of the section, narrowed, and the page breaks that fall in it,
+ * counted from its first line.
+ *
+ * @param sec the section
+ * @param n the test case's number, from 1
+ * @returns the case, or why the section holds no one case by that number,
+ *   worded to follow the section's name
+ */
+export const rfcCaseSection = (sec: RfcSection, n: i32): Result<RfcSection, string> => {
+  const name = `Test Vector #${n}`
+  if (n < 1) {
+    return Err(`${name} is not a test case: they are numbered from 1`)
+  }
+  if (sec.lines.length > sec.ownLines.length) {
+    return Err(`has subsections, so ${name} is not one test case of it: cite the subsection that holds it`)
+  }
+  let start = -1
+  let count = 0
+  for (let i = 0; i < sec.lines.length; i++) {
+    if (rfcCaseHeading(sec.lines[i]) === n) {
+      count++
+      if (start < 0) {
+        start = i
+      }
+    }
+  }
+  if (count === 0) {
+    return Err(`has no "${name}:" heading, so it holds no ${name}`)
+  }
+  if (count > 1) {
+    return Err(`heads ${count} test cases "${name}:", so which one is meant is unclear`)
+  }
+  let end = start + 1
+  while (end < sec.lines.length && !rfcCaseShaped(sec.lines[end])) {
+    end++
+  }
+  const lines = sec.lines.slice(start, end)
+  const one = new RfcSection(sec.id, sec.title, lines, lines)
+  for (const b of sec.pageBreaks) {
+    if (b >= start && b < end) {
+      one.pageBreaks.push(b - start)
+    }
+  }
+  return Ok(one)
 }
 
 /**
@@ -380,9 +516,18 @@ class RfcHexReader {
   colonOpen: boolean
   /** The names printed with no value below them, in order. */
   unvalued: string[]
+  /** The line each of `unvalued` is printed on. */
+  unvaluedLines: i32[]
+  /** The index of the line being read. */
+  at: i32 = 0
+  /** The line `pending` is printed on. */
+  pendingLine: i32 = -1
+  /** The line that names the current value, or its first line. */
+  labelLine: i32 = -1
   constructor() {
     this.values = []
     this.unvalued = []
+    this.unvaluedLines = []
     this.cur = ""
     this.bareOnly = true
     this.colonOpen = false
@@ -436,7 +581,9 @@ const rfcHexFlush = (r: RfcHexReader): void => {
   const label = r.label
   const decimal = r.bareOnly && rfcAllDigits(r.cur) && (label === null || rfcDecimalLabel(label))
   if (r.cur.length > 0 && !decimal) {
-    r.values.push(new HexValue(r.cur, label))
+    const v = new HexValue(r.cur, label)
+    v.line = r.labelLine
+    r.values.push(v)
   }
   r.cur = ""
   r.label = null
@@ -453,6 +600,7 @@ const rfcHexStart = (r: RfcHexReader, name: string | null, bare: boolean): void 
       rfcHexUnvalued(r)
     }
     r.label = named ? name : r.pending
+    r.labelLine = !named && r.pending !== null ? r.pendingLine : r.at
     r.bareOnly = bare
     r.pending = null
   } else if (!bare) {
@@ -751,19 +899,30 @@ export const rfcHexValues = (sec: RfcSection): HexValue[] => rfcHexRead(sec).val
  */
 export const rfcUnvaluedLabels = (sec: RfcSection): string[] => rfcHexRead(sec).unvalued
 
+/**
+ * The lines the names of rfcUnvaluedLabels are printed on, so a gate can tell
+ * which test case an empty value belongs to.
+ *
+ * @param sec the section
+ * @returns each name's index in the section's lines, in the same order
+ */
+export const rfcUnvaluedLines = (sec: RfcSection): i32[] => rfcHexRead(sec).unvaluedLines
+
 /** Records the pending name as printed with no value, when it is one. */
 const rfcHexUnvalued = (r: RfcHexReader): void => {
   const p = r.pending
   if (p !== null) {
     r.unvalued.push(p)
+    r.unvaluedLines.push(r.pendingLine)
   }
 }
 
 /** Reads a section's values and the names printed with none (rfcHexValues). */
 const rfcHexRead = (sec: RfcSection): RfcHexReader => {
   const r = new RfcHexReader()
-  for (const raw of sec.lines) {
-    const line = rfcDropAside(raw)
+  for (let i = 0; i < sec.lines.length; i++) {
+    r.at = i
+    const line = rfcDropAside(sec.lines[i])
     if (trim(line).length === 0) {
       continue
     }
@@ -791,6 +950,7 @@ const rfcHexRead = (sec: RfcSection): RfcHexReader => {
     rfcHexFlush(r)
     rfcHexUnvalued(r)
     r.pending = rfcLabelLine(line)
+    r.pendingLine = i
   }
   rfcHexFlush(r)
   rfcHexUnvalued(r)

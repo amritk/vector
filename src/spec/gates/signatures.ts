@@ -10,7 +10,7 @@
 import { splitWhitespace } from "nish/text"
 import { CheckContext } from "../check"
 import { Contract, FnSig } from "../contract/types"
-import { vocabBaseTypes } from "../contract/vocab"
+import { vocabBaseTypes, vocabIsWordType } from "../contract/vocab"
 import { gateTargets } from "./cite"
 import { gateIssue, gateWarn } from "./note"
 
@@ -124,7 +124,8 @@ export const gateModuleSignatures = (source: string): GateModuleSig[] => {
 }
 
 /**
- * A Nish type as the contract writes it: `u8[]` is `bytes`, `boolean` is
+ * A Nish type as the contract writes it: `u8[]` is `bytes`, `u16[]`,
+ * `u32[]` and `u64[]` are `words16`, `words32` and `words64`, `boolean` is
  * `bool`, `T | null` is `T?`; a type the contract has no name for is `?T`
  * (`bytes` is the contract's word, not Nish's, so it is unknown here).
  *
@@ -142,13 +143,15 @@ export const gateNishType = (t: string): string => {
     opt = "?"
   }
   // The contract's own words for these are not Nish types.
-  let name = base === "bytes" || base === "bool" || base === "secret-bytes" ? "" : base
+  let name = base === "bytes" || base === "bool" || base === "secret-bytes" || vocabIsWordType(base) ? "" : base
   if (base === "u8[]") {
     name = "bytes"
   } else if (base === "Secret<u8[]>") {
     name = "secret-bytes"
   } else if (base === "boolean") {
     name = "bool"
+  } else if (base === "u16[]" || base === "u32[]" || base === "u64[]") {
+    name = `words${base.substring(1, 3)}`
   }
   return vocabBaseTypes().indexOf(name) >= 0 ? `${name}${opt}` : `?${t}`
 }

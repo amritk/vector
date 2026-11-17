@@ -24,9 +24,15 @@ export enum LitKind {
   Null = 6,
   /** Opened by `concat`: the parts joined. */
   Concat = 7,
+  /** Opened by `words16`: 16-bit words as printed, 4 hex digits each. */
+  Words16 = 8,
+  /** Opened by `words32`: 32-bit words as printed, 8 hex digits each. */
+  Words32 = 9,
+  /** Opened by `words64`: 64-bit words as printed, 16 hex digits each. */
+  Words64 = 10,
 }
 
-/** A literal value: bytes, text, a number, a boolean, null, or a concatenation. */
+/** A literal value: bytes, words, text, a number, a boolean, null, or a concatenation. */
 export class Literal {
   /** Which key opened the literal. */
   kind: LitKind
@@ -46,6 +52,8 @@ export class Literal {
   quoted: boolean
   /** A concat literal's parts. */
   parts: Literal[]
+  /** A word array's words, each as printed (`0x` and all). */
+  words: string[]
   /**
    * Makes a literal of one form.
    *
@@ -58,6 +66,7 @@ export class Literal {
     this.kind = kind
     this.text = text
     this.parts = []
+    this.words = []
   }
 }
 
@@ -267,6 +276,8 @@ export class Citation {
   source: string | null = null
   /** The section cited. */
   section: string
+  /** The one test case of the section the vector is, as `Test Vector #N`; null for the whole section. */
+  testCase: string | null = null
   /** Starts with no source or section. */
   constructor() {
     this.section = ""
@@ -344,6 +355,46 @@ export class Iterate {
   }
 }
 
+/**
+ * A vector held to its call's first bytes: the result is at least `bytes`
+ * long, and its first `bytes` bytes are the expect.
+ */
+export class Truncate {
+  /** How many leading bytes of the result are compared, at least 1. */
+  bytes: i64
+  /** The unit the length is written in: "bits" (bytes × 8) or "bytes". */
+  unit: string
+  /**
+   * Holds a vector to its result's first bytes.
+   *
+   * @param bytes how many leading bytes are compared
+   * @param unit "bits" or "bytes", the unit the source writes the length in
+   */
+  constructor(bytes: i64, unit: string) {
+    this.bytes = bytes
+    this.unit = unit
+  }
+
+  /**
+   * The truncation as a report names it, in the unit the spec wrote:
+   * `first 128 bits`, or `first 16 bytes`.
+   *
+   * @returns the words, without brackets
+   */
+  label(): string {
+    return `first ${this.count()} ${this.unit}`
+  }
+
+  /**
+   * The length in the unit the spec wrote: 128 for 128 bits, 16 for 16 bytes.
+   *
+   * @returns the count of bits or bytes, as `unit` says
+   */
+  count(): i64 {
+    return this.unit === "bytes" ? this.bytes : this.bytes * 8
+  }
+}
+
 /** A variable a property quantifies over, and its domain. */
 export class ForallVar {
   /** The variable's name. */
@@ -410,6 +461,8 @@ export class Clause {
   tolerance: Tolerance | null = null
   /** A vector's iteration; null when the call runs once. */
   iterate: Iterate | null = null
+  /** How many leading bytes of a vector's result are compared; null when all of it is. */
+  truncate: Truncate | null = null
   /** The variables a property quantifies over. */
   forall: ForallVar[]
   /** A property's restriction of its domain; null when none. */
@@ -495,4 +548,39 @@ export class Contract {
     this.functions = []
     this.clauses = []
   }
+}
+
+/**
+ * Whether a literal kind is a word array.
+ *
+ * @param kind a literal kind
+ * @returns true for Words16, Words32 and Words64
+ */
+export const typesIsWords = (kind: LitKind): boolean =>
+  kind === LitKind.Words16 || kind === LitKind.Words32 || kind === LitKind.Words64
+
+/**
+ * The key that opens a word-array literal, which is also its type's name.
+ *
+ * @param kind a word-array literal kind
+ * @returns words16, words32 or words64
+ */
+export const typesWordsKey = (kind: LitKind): string => {
+  if (kind === LitKind.Words16) {
+    return "words16"
+  }
+  return kind === LitKind.Words32 ? "words32" : "words64"
+}
+
+/**
+ * The word-array literal kind whose words have a number of hex digits.
+ *
+ * @param digits 4, 8 or 16
+ * @returns Words16, Words32 or Words64
+ */
+export const typesWordsKind = (digits: i32): LitKind => {
+  if (digits === 4) {
+    return LitKind.Words16
+  }
+  return digits === 8 ? LitKind.Words32 : LitKind.Words64
 }

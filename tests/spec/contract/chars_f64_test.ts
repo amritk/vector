@@ -15,6 +15,7 @@ import {
   charsIsStringText,
   charsName,
   charsSequenceLength,
+  charsTestVector,
 } from "../../../src/spec/contract/chars"
 import {
   contractF64Bits,
@@ -64,6 +65,31 @@ export const main = (): i32 => {
   t.ok("idents", charsIsIdent("_a1") && !charsIsIdent("1a") && !charsIsIdent("a-b") && !charsIsIdent(""))
   t.ok("sections", charsIsSection("2.3") && charsIsSection("A") && charsIsSection("A.1") && charsIsSection("10"))
   t.ok("not sections", !charsIsSection("") && !charsIsSection("2.") && !charsIsSection(".2") && !charsIsSection("a.1"))
+  // A test case's name, Test Vector #N: N from 1, no leading zero, nothing around it.
+  const cases: string[][] = [
+    ["Test Vector #1", "1"],
+    ["Test Vector #2", "2"],
+    ["Test Vector #11", "11"],
+    ["Test Vector #999999", "999999"],
+    ["Test Vector #1000000", "0"],
+    ["Test Vector #0", "0"],
+    ["Test Vector #02", "0"],
+    ["Test Vector #", "0"],
+    ["Test Vector 2", "0"],
+    ["Test vector #2", "0"],
+    ["test vector #2", "0"],
+    ["Test Vector #2.", "0"],
+    ["Test Vector #2:", "0"],
+    ["Test Vector #2 ", "0"],
+    [" Test Vector #2", "0"],
+    ["Test Vector #-2", "0"],
+    ["Test Vector #2a", "0"],
+    ["Test Vectors #2", "0"],
+    ["", "0"],
+  ]
+  for (const c of cases) {
+    t.eqStr(`test case "${c[0]}"`, `${charsTestVector(c[0])}`, c[1])
+  }
   t.ok(
     "abs",
     charsIsAbs("0") &&

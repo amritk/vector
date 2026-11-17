@@ -53,6 +53,24 @@ export const langTableDart = (): LangTable => {
   t.literal("bool", langSpell("true", ""))
   t.literal("null", langSpell("null", ""))
   t.literal("concat", langSpell("Uint8List.fromList([...a, ...b])", ""))
+  t.type("words16", langSpell("Uint16List", "dart:typed_data"))
+  t.type("words32", langSpell("Uint32List", "dart:typed_data"))
+  t.type(
+    "words64",
+    langSpell(
+      "Uint64List",
+      "dart:typed_data; Uint64List is not supported on the web, and an element reads back as a signed int",
+    ),
+  )
+  t.literal("words16", langSpell("Uint16List.fromList([0x6170, 0x7865])", ""))
+  t.literal("words32", langSpell("Uint32List.fromList([0x61707865, 0x3320646e])", ""))
+  t.literal(
+    "words64",
+    langSpell(
+      "Uint64List.fromList([0x3320646e61707865, 0x6b20657479622d32])",
+      "a word of 2^63 or more is its signed int",
+    ),
+  )
   t.moduleForm = "file"
   t.moduleNote =
     "a library file in the package named by the first segment, imported with a prefix named for the last: nish/crypto/hkdf → import 'package:nish/crypto/hkdf.dart' as hkdf, called hkdf.<name>; a one-segment module is the package's main library (nish → package:nish/nish.dart)"

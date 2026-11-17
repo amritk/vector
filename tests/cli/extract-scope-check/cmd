@@ -1,0 +1,1 @@
+vector spec extract tests/fixtures/test-vector-scope/specs/scope-poly1305.xml -o tests/fixtures/test-vector-scope/contracts/scope-poly1305.json --check

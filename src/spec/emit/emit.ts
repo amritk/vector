@@ -17,10 +17,10 @@
 
 import { Sample, SampleTable, checkSamplesOf } from "../check"
 import { shapeNishModuleFile } from "../contract/shape"
-import { ClauseKind, ExprKind, LitKind } from "../contract/types"
+import { ClauseKind, ExprKind, LitKind, typesIsWords } from "../contract/types"
 import { Clause, Contract, Expr, FnSig, Literal } from "../contract/types"
 import { TypeEnv, typeCallsIn, typeEnvBind, typeIntBase, typeOf } from "../contract/typing"
-import { vocabBaseOf, vocabIsIntType, vocabIsOptional, vocabValueType } from "../contract/vocab"
+import { vocabBaseOf, vocabIsIntType, vocabIsOptional, vocabIsWordType, vocabValueType } from "../contract/vocab"
 import { emitHelperDeps, emitHelperNames, emitHelperText } from "./helpers"
 import {
   EMIT_SLOW_SKIP,
@@ -159,6 +159,8 @@ export const emitNishType = (t: string): string => {
     out = "u8[]"
   } else if (base === "bool") {
     out = "boolean"
+  } else if (vocabIsWordType(base)) {
+    out = `u${base.substring(5, 7)}[]`
   }
   return vocabIsOptional(t) ? `${out} | null` : out
 }
@@ -260,6 +262,44 @@ const emitCall = (ctx: EmitContext, sig: FnSig, args: string[]): string => {
   return `${name}(${args.join(", ")})`
 }
 
+/** A word's hex digits: the word as printed, without its `0x` (the literal is lowercase). */
+const emitWordDigits = (w: string): string => (w.startsWith("0x") ? w.substring(2, w.length) : w)
+
+/**
+ * One word as a Nish value of its width. Each is typed on its own, from zero,
+ * since an array literal in an optional parameter's place is read as i32[]
+ * and a u64 literal past 2^53 is refused; a 64-bit word is its two halves.
+ */
+const emitWord = (digits: string): string => {
+  if (digits.length === 4) {
+    return `(toU16(0) + 0x${digits})`
+  }
+  if (digits.length === 8) {
+    return `(toU32(0) + 0x${digits})`
+  }
+  const hi = digits.substring(0, 8)
+  const lo = `(toU64(0) + 0x${digits.substring(8, 16)})`
+  return hi === "00000000" ? lo : `(((toU64(0) + 0x${hi}) << toU64(32)) | ${lo})`
+}
+
+/** A word-array literal as a Nish array. */
+const emitWordsLit = (lit: Literal): string => {
+  const words: string[] = []
+  for (const w of lit.words) {
+    words.push(emitWord(emitWordDigits(w)))
+  }
+  return `[${words.join(", ")}]`
+}
+
+/** A word-array literal's words as the wordsHex helpers print them. */
+const emitWordsWant = (lit: Literal): string => {
+  const words: string[] = []
+  for (const w of lit.words) {
+    words.push(emitWordDigits(w))
+  }
+  return `[${words.join(" ")}]`
+}
+
 /** A literal where a value of type `ty` goes. */
 const emitLiteral = (ctx: EmitContext, lit: Literal, ty: string): string => {
   if (lit.kind === LitKind.Null) {
@@ -276,6 +316,9 @@ const emitLiteral = (ctx: EmitContext, lit: Literal, ty: string): string => {
   }
   if (lit.kind === LitKind.Str) {
     return emitQuote(lit.text)
+  }
+  if (typesIsWords(lit.kind)) {
+    return emitWordsLit(lit)
   }
   return `${emitUse(ctx, "unhex")}("${emitLiteralHex(lit)}")`
 }
@@ -605,6 +648,10 @@ export const emitWrap = (text: string, width: i32): string[] => {
  */
 export const emitClauseLines = (c: Contract, k: Clause): string[] => {
   const lines: string[] = [emitCommentText(k.title)]
+  const tr = k.truncate
+  if (tr !== null) {
+    lines.push(emitCommentText(`Holds the result's ${tr.label()} to the expected value.`))
+  }
   for (const id of k.covers) {
     for (const r of c.requirements) {
       if (r.id === id) {
@@ -717,7 +764,10 @@ const emitVectorCheck = (
 ): string => {
   const ret = vocabValueType(sig.returns)
   let body = ""
-  if (ret === "bytes") {
+  const tr = k.truncate
+  if (ret === "bytes" && tr !== null) {
+    body = `t.eqStr(${name}, ${emitUse(ctx, "hexPrefix")}(${call}, ${tr.bytes}), "${emitLiteralHex(expect)}")`
+  } else if (ret === "bytes") {
     body = `t.eqStr(${name}, ${emitUse(ctx, "hexOf")}(${call}), "${emitLiteralHex(expect)}")`
   } else if (ret === "bytes?") {
     const want = expect.kind === LitKind.Null ? "null" : emitLiteralHex(expect)
@@ -737,6 +787,10 @@ const emitVectorCheck = (
   } else if (ret === "string?") {
     const want = expect.kind === LitKind.Null ? "null" : `"${expect.text}"`
     body = `t.eqStr(${name}, ${emitUse(ctx, "strOrNull")}(${call}), ${emitQuote(want)})`
+  } else if (vocabIsWordType(vocabBaseOf(ret))) {
+    const want = expect.kind === LitKind.Null ? "null" : emitWordsWant(expect)
+    const helper = emitUse(ctx, `wordsHex${vocabBaseOf(ret).substring(5, 7)}`)
+    body = `t.eqStr(${name}, ${helper}(${call}), "${want}")`
   } else {
     ctx.errors.push(`${k.id}: Nish cannot check a ${sig.returns} result`)
   }

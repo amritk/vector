@@ -1,0 +1,8 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ tests/fixtures/profile/profile-truncate-zero.json · not a contract the schema accepts
+ Status: INVALID
+
+ Gate failures
+  ✘ shape: clauses[1].truncate.bits: an integer in 8..524288
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

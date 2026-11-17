@@ -56,6 +56,12 @@ export const langTablePython = (): LangTable => {
   t.literal("bool", langSpell("True", ""))
   t.literal("null", langSpell("None", ""))
   t.literal("concat", langSpell("a + b", ""))
+  t.type("words16", langSpell("list[int]", "arbitrary precision; the width is the implementation's to check"))
+  t.type("words32", langSpell("list[int]", "arbitrary precision; the width is the implementation's to check"))
+  t.type("words64", langSpell("list[int]", "arbitrary precision; the width is the implementation's to check"))
+  t.literal("words16", langSpell("[0x6170, 0x7865]", ""))
+  t.literal("words32", langSpell("[0x61707865, 0x3320646e]", ""))
+  t.literal("words64", langSpell("[0x3320646e61707865, 0x6b20657479622d32]", ""))
   t.moduleForm = "module"
   t.moduleNote =
     "a module at the dotted neutral path, lowercase (PEP 8, Package and Module Names): nish/crypto/hkdf → nish.crypto.hkdf"

@@ -20,7 +20,7 @@ The 3 JSON Schemas in `schemas/`.
 
 <scalar-card title="Modules" icon="phosphor/regular/books" href="#modules">
 
-The 114 source files of `src/`, from their doc comments.
+The 116 source files of `src/`, from their doc comments.
 
 </scalar-card>
 
@@ -100,6 +100,7 @@ The 114 source files of `src/`, from their doc comments.
 | [`spec/gates/cite`](modules/spec/gates/cite.md) | what the gates that read a contract's sources share: reading them once a run, finding the section a citation names, and naming a citation in a message ("RFC §2.2" in the main RFC, "rfc2104 §2" in another source). |
 | [`spec/gates/completeness`](modules/spec/gates/completeness.md) | every binding sentence of the main source is accounted for. |
 | [`spec/gates/coverage`](modules/spec/gates/coverage.md) | every binding requirement is checked by some clause, and every clause checks the module under test. |
+| [`spec/gates/derive`](modules/spec/gates/derive.md) | the derived rule for a vector whose inputs are cited to one section of the main RFC and whose null, true or false result to another. |
 | [`spec/gates/domain`](modules/spec/gates/domain.md) | every property's domain is inhabited, and its inputs are chosen. |
 | [`spec/gates/fidelity`](modules/spec/gates/fidelity.md) | the contract says what its sources say. |
 | [`spec/gates/ids`](modules/spec/gates/ids.md) | the ids gate: every requirement, function and clause id is unique, so a citation or a call names exactly one thing. |
@@ -110,6 +111,7 @@ The 114 source files of `src/`, from their doc comments.
 | [`spec/gates/signatures`](modules/spec/gates/signatures.md) | the functions a contract declares for the module under test are what that module exports. |
 | [`spec/gates/text`](modules/spec/gates/text.md) | how the fidelity and completeness gates read a section's text, without lookaround (nish/regex has none): word lists matched at word edges, the binding BCP 14 keywords, a labelled integer or f64, and the lines a value is printed on as a whole value. |
 | [`spec/gates/typing`](modules/spec/gates/typing.md) | the typing gate: every vector calls a declared function with arguments and an expected value of its parameter and return types, and every property's `where` and `assert` are well-typed booleans over its variables (`where` may call nothing: a domain must be decidable without the implementation). |
+| [`spec/gates/words`](modules/spec/gates/words.md) | the blocks of words a section prints, which a u16[], u32[] or u64[] vector value binds to. |
 | [`spec/pr/cli`](modules/spec/pr/cli.md) | what the PR gates' commands share: reading `--format` and `--base`, and printing a report with the exit code it earns. |
 | [`spec/pr/exports`](modules/spec/pr/exports.md) | every export a PR adds to or changes in a contract's target module is tested by the contract (one of its `functions`) or listed in its `outOfScope` with a reason, so no new surface lands untested. |
 | [`spec/pr/frozen`](modules/spec/pr/frozen.md) | a PR changes the spec side (specs/, contracts/, rfcs/) or the implementation, never both, so a test cannot be loosened to match the code it tests. |
@@ -121,7 +123,7 @@ The 114 source files of `src/`, from their doc comments.
 | [`spec/pr/stale`](modules/spec/pr/stale.md) | whether a generated test was emitted from the contract as it is now: its header comment's one `// vector-contract-sha256: <hex>` line must name the SHA-256 of the contract file's bytes. |
 | [`spec/profile/profile`](modules/spec/profile/profile.md) | the vector profile: what an RFC XML v3 spec, built by kramdown-rfc and `xml2rfc --v2v3`, must say for vector to read a contract from it, and the reading. |
 | [`spec/report/common`](modules/spec/report/common.md) | what every format of the check's report shares: the status, the findings placed where they are, the warnings shown, and how a citation, a requirement's evidence and a long text are written. |
-| [`spec/report/json`](modules/spec/report/json.md) | the check's report as one JSON object, for tools: `{status, contract, issues, warnings, coverage, samples, sources}`. |
+| [`spec/report/json`](modules/spec/report/json.md) | the check's report as one JSON object, for tools: `{status, contract, issues, warnings, coverage, samples, sources, truncations}`. |
 | [`spec/report/markdown`](modules/spec/report/markdown.md) | the check's report as GitHub markdown, for a PR comment: each requirement's quote, then the clauses that cover it; then the source commands, the exclusions and the warnings. |
 | [`spec/report/text`](modules/spec/report/text.md) | the check's report for a terminal: the status, every finding, each requirement with the clauses that cover it, the source commands, the exclusions and the warnings. |
 | [`spec/run/command`](modules/spec/run/command.md) | `vector spec run`: emit a contract's test, run it (with a nish install, or the language's own interpreter), and report the verdict per requirement. |

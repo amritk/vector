@@ -1,0 +1,1 @@
+vector spec check tests/fixtures/result-cite/contracts/mini-tag.json --spec tests/fixtures/result-cite/rfcs/rfc9992.txt

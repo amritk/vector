@@ -149,6 +149,25 @@ export const main = (): i32 => {
   t.ok("a string literal", sampleToLiteral(sampleStr("x")).kind === LitKind.Str)
   t.ok("a literal's value", sampleLiteral(new Literal(LitKind.Hex, "0a0b")).expect("hex").bytes.length === 2)
   t.ok("no f64 literal", sampleLiteral(new Literal(LitKind.F64, "1.5")).isErr())
+  // Each literal kind that is not evaluated, and why.
+  const unevaluated: Literal[] = [
+    new Literal(LitKind.F64, "1.5"),
+    new Literal(LitKind.Words16, ""),
+    new Literal(LitKind.Words32, ""),
+    new Literal(LitKind.Words64, ""),
+  ]
+  const why: string[] = [
+    "f64 values are not evaluated",
+    "word arrays are not evaluated",
+    "word arrays are not evaluated",
+    "word arrays are not evaluated",
+  ]
+  let row = 0
+  for (const lit of unevaluated) {
+    const r = sampleLiteral(lit)
+    t.eqStr(`not evaluated, row ${row}`, r.isErr() ? r.error : "evaluated", why[row])
+    row++
+  }
 
   // smt
   const vars = p1.forall

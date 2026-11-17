@@ -14,7 +14,7 @@ import {
 
 const FRONT_TEST_DEPTH: string = "the expression nests more than 64 deep; name a part with const"
 const FRONT_TEST_TYPES: string =
-  "u8[], string, boolean, i8, i16, i32, i64, u8, u16, u32, u64, f64, Secret<u8[]>, each optionally `| null`"
+  "u8[], string, boolean, i8, i16, i32, i64, u8, u16, u32, u64, f64, Secret<u8[]>, u16[], u32[], u64[], each optionally `| null`"
 const FRONT_TEST_FORALL: string =
   "is not a forall type; use u8[], string or an integer type (i8, i16, i32, i64, u8, u16, u32, u64)"
 const FRONT_TEST_BYTES: string = "a bytes literal is lowercase hex pairs separated by single spaces, like [00 0f]"
@@ -293,6 +293,14 @@ const frontTestInterface = (t: Suite): void => {
     all.isOk() ? frontTestIface(all.value) : frontTestRefusal(all.error),
     "nish/crypto/x | a(p: bytes, q: bytes?, r: string, s: string?): i32; b(p: u32, q: bool, k: secret-bytes): secret-bytes?; c(): string?; d(): secret-bytes; e(): bytes? | 3,4,5,6,7",
   )
+  const words = frontParseInterface(
+    "// module: nish/w\nexport function w(a: u16[], b: u16[] | null, c: null | u64[]): u64[] | null\nexport const x = (a: u32[]): u16[]\n",
+  )
+  t.eqStr(
+    "ts-interface: the word arrays, either null order",
+    words.isOk() ? frontTestIface(words.value) : frontTestRefusal(words.error),
+    "nish/w | w(a: words16, b: words16?, c: words64?): words64?; x(a: words32): words16 | 2,3",
+  )
   const lf = "// module: nish/m\n// c\nexport function f(a: u8[]): i32\n"
   const want = frontParseInterface(lf)
   const crlf = frontParseInterface(replaceAll(lf, "\n", "\r\n"))
@@ -473,6 +481,22 @@ const frontTestRefusals = (t: Suite, fns: FnSig[]): void => {
       "properties over f64 are not sampled yet; give f64 cases as vectors",
       "f64",
     ],
+    [
+      `${h}forall (w: u16[] /* 0..1 */) => true`,
+      "properties over u16[] are not sampled yet; give word-array cases as vectors",
+      "u16[]",
+    ],
+    [
+      `${h}forall (w: u32[] /* 0..1 */) => true`,
+      "properties over u32[] are not sampled yet; give word-array cases as vectors",
+      "u32[]",
+    ],
+    [
+      `${h}forall (w: u64[] /* 0..1 */) => true`,
+      "properties over u64[] are not sampled yet; give word-array cases as vectors",
+      "u64[]",
+    ],
+    [`${h}forall (w: i32[] /* 0..1 */) => true`, `\`i32[]\` ${FRONT_TEST_FORALL}`, "i32[]"],
     [`${h}forall (b: u8[]) => true`, "`b` needs a bounds comment, like /* 0..64 */", ")"],
     [`${h}forall (b: u8[] // 0..1\n) => true`, "`b` needs a bounds comment, like /* 0..64 */", "// 0"],
     [`${h}forall (b: u8[] /* 64 */) => true`, "the bounds of `b` (u8[]) must read `lo..hi`, like /* 0..64 */", "/*"],

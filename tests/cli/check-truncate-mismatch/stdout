@@ -1,0 +1,8 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ profile-truncate · RFC 4231 (Profile fixture: a vector held to its truncated result) · nish/crypto/hmac
+ Status: INVALID
+
+ Gate failures
+  ✘ shape: clauses[1].truncate: the expect is 16 bytes, so the truncation is 16 bytes (128 bits), not 15 bytes (120 bits)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

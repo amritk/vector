@@ -30,12 +30,16 @@ Generated from [src/spec/contract/types.ts](https://github.com/amritk/vector/blo
 - [`VectorSource`](#vectorsource)
 - [`Tolerance`](#tolerance)
 - [`Iterate`](#iterate)
+- [`Truncate`](#truncate)
 - [`ForallVar`](#forallvar)
 - [`ClauseKind`](#clausekind)
 - [`Clause`](#clause)
 - [`OutOfScope`](#outofscope)
 - [`AllowedSurvivor`](#allowedsurvivor)
 - [`Contract`](#contract)
+- [`typesIsWords`](#typesiswords)
+- [`typesWordsKey`](#typeswordskey)
+- [`typesWordsKind`](#typeswordskind)
 
 ## Declarations
 
@@ -95,9 +99,27 @@ Opened by `str`: a text string.
 
 </scalar-field>
 
+<scalar-field name="Words16" type="8">
+
+Opened by `words16`: 16-bit words as printed, 4 hex digits each.
+
+</scalar-field>
+
+<scalar-field name="Words32" type="9">
+
+Opened by `words32`: 32-bit words as printed, 8 hex digits each.
+
+</scalar-field>
+
+<scalar-field name="Words64" type="10">
+
+Opened by `words64`: 64-bit words as printed, 16 hex digits each.
+
+</scalar-field>
+
 ### Literal
 
-A literal value: bytes, text, a number, a boolean, null, or a concatenation.
+A literal value: bytes, words, text, a number, a boolean, null, or a concatenation.
 
 ```ts
 class Literal
@@ -193,6 +215,14 @@ Why the value is not checked against its source.
 
 ```ts
 unchecked: string | null
+```
+
+#### Literal.words
+
+A word array's words, each as printed (`0x` and all).
+
+```ts
+words: string[]
 ```
 
 ### ExprKind
@@ -773,6 +803,14 @@ The id of the cited source; null for the main one.
 source: string | null
 ```
 
+#### Citation.testCase
+
+The one test case of the section the vector is, as `Test Vector #N`; null for the whole section.
+
+```ts
+testCase: string | null
+```
+
 ### VectorSourceKind
 
 Where a vector's expected value comes from.
@@ -956,6 +994,80 @@ Whether a test runs the vector only when asked.
 ```ts
 slow: boolean
 ```
+
+### Truncate
+
+A vector held to its call's first bytes: the result is at least `bytes`
+long, and its first `bytes` bytes are the expect.
+
+```ts
+class Truncate
+```
+
+#### new Truncate
+
+Holds a vector to its result's first bytes.
+
+```ts
+new Truncate(bytes: i64, unit: string): Truncate
+```
+
+<scalar-field name="bytes" type="i64" required>
+
+how many leading bytes are compared
+
+</scalar-field>
+
+<scalar-field name="unit" type="string" required>
+
+"bits" or "bytes", the unit the source writes the length in
+
+</scalar-field>
+
+#### Truncate.bytes
+
+How many leading bytes of the result are compared, at least 1.
+
+```ts
+bytes: i64
+```
+
+#### Truncate.unit
+
+The unit the length is written in: "bits" (bytes × 8) or "bytes".
+
+```ts
+unit: string
+```
+
+#### Truncate.count
+
+The length in the unit the spec wrote: 128 for 128 bits, 16 for 16 bytes.
+
+```ts
+count(): i64
+```
+
+<scalar-field name="returns" type="i64">
+
+the count of bits or bytes, as `unit` says
+
+</scalar-field>
+
+#### Truncate.label
+
+The truncation as a report names it, in the unit the spec wrote:
+`first 128 bits`, or `first 16 bytes`.
+
+```ts
+label(): string
+```
+
+<scalar-field name="returns" type="string">
+
+the words, without brackets
+
+</scalar-field>
 
 ### ForallVar
 
@@ -1207,6 +1319,14 @@ How far an f64 result may be from expect; null when exact.
 tolerance: Tolerance | null
 ```
 
+#### Clause.truncate
+
+How many leading bytes of a vector's result are compared; null when all of it is.
+
+```ts
+truncate: Truncate | null
+```
+
 #### Clause.where
 
 A property's restriction of its domain; null when none.
@@ -1390,3 +1510,63 @@ The module under test.
 ```ts
 target: Target
 ```
+
+### typesIsWords
+
+Whether a literal kind is a word array.
+
+```ts
+function typesIsWords(kind: LitKind): boolean
+```
+
+<scalar-field name="kind" type="LitKind" required>
+
+a literal kind
+
+</scalar-field>
+
+<scalar-field name="returns" type="boolean">
+
+true for Words16, Words32 and Words64
+
+</scalar-field>
+
+### typesWordsKey
+
+The key that opens a word-array literal, which is also its type's name.
+
+```ts
+function typesWordsKey(kind: LitKind): string
+```
+
+<scalar-field name="kind" type="LitKind" required>
+
+a word-array literal kind
+
+</scalar-field>
+
+<scalar-field name="returns" type="string">
+
+words16, words32 or words64
+
+</scalar-field>
+
+### typesWordsKind
+
+The word-array literal kind whose words have a number of hex digits.
+
+```ts
+function typesWordsKind(digits: i32): LitKind
+```
+
+<scalar-field name="digits" type="i32" required>
+
+4, 8 or 16
+
+</scalar-field>
+
+<scalar-field name="returns" type="LitKind">
+
+Words16, Words32 or Words64
+
+</scalar-field>

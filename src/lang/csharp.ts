@@ -71,6 +71,12 @@ export const langTableCsharp = (): LangTable => {
   t.literal("bool", langSpell("true", ""))
   t.literal("null", langSpell("null", ""))
   t.literal("concat", langSpell("[.. a, .. b]", "a collection expression (C# 12)"))
+  t.type("words16", langSpell("ushort[]", ""))
+  t.type("words32", langSpell("uint[]", ""))
+  t.type("words64", langSpell("ulong[]", ""))
+  t.literal("words16", langSpell("new ushort[] { 0x6170, 0x7865 }", ""))
+  t.literal("words32", langSpell("new uint[] { 0x61707865, 0x3320646e }", ""))
+  t.literal("words64", langSpell("new ulong[] { 0x3320646e61707865, 0x6b20657479622d32 }", ""))
   t.moduleForm = "class"
   t.moduleNote =
     "a static class named for the last segment, in a namespace of the others, all PascalCase (Design Guidelines, Names of Namespaces): nish/crypto/hkdf → static class Hkdf in namespace Nish.Crypto"

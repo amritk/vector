@@ -31,9 +31,11 @@ Generated from [src/spec/contract/literals.ts](https://github.com/amritk/vector/
 - [`LITERALS_REPEAT_SIZE`](#literals_repeat_size)
 - [`LITERALS_REPEAT_RUN`](#literals_repeat_run)
 - [`LITERALS_BYTES`](#literals_bytes)
+- [`LITERALS_WORDS`](#literals_words)
 - [`literalsLabelledMessage`](#literalslabelledmessage)
 - [`literalsParseCall`](#literalsparsecall)
 - [`literalsParse`](#literalsparse)
+- [`literalsByteLength`](#literalsbytelength)
 - [`literalsKindOf`](#literalskindof)
 - [`literalsQuote`](#literalsquote)
 - [`literalsSettle`](#literalssettle)
@@ -112,6 +114,12 @@ A decimal integer.
 <scalar-field name="Str" type="0">
 
 `"text"`: bytes or a string, as the type says.
+
+</scalar-field>
+
+<scalar-field name="Words" type="11">
+
+`[0x11111111 0x22222222]` or `State = [11111111 22222222]`: words of 4, 8 or 16 hex digits.
 
 </scalar-field>
 
@@ -198,6 +206,16 @@ an int's decimal text, or an f64's text; "" otherwise.
 
 ```ts
 text: string
+```
+
+#### RawLiteral.words
+
+A bracket's words as printed, when they are a word array (all 4, 8 or 16
+hex digits, `0x` on every word or on none); empty otherwise. Bytes like
+`[879531e0 c5ecf37d]` carry their words too, for a word-array type.
+
+```ts
+words: string[]
 ```
 
 ### LiteralError
@@ -426,6 +444,16 @@ The refusal of a bracketed byte string.
 const LITERALS_BYTES: string
 ```
 
+<a id="literals_words"></a>
+
+### LITERALS_WORDS
+
+The refusal of a bracketed word array.
+
+```ts
+const LITERALS_WORDS: string
+```
+
 ### literalsLabelledMessage
 
 The refusal of a labelled value.
@@ -477,6 +505,27 @@ the cell's text
 <scalar-field name="returns" type="Result&lt;RawLiteral, LiteralError&gt;">
 
 the raw literal, or why the text is not one
+
+</scalar-field>
+
+### literalsByteLength
+
+How many bytes a bytes literal stands for: its hex pairs times its repeat,
+an ascii literal's characters, or the sum of a concat's parts.
+
+```ts
+function literalsByteLength(lit: Literal): i64
+```
+
+<scalar-field name="lit" type="Literal" required>
+
+the literal
+
+</scalar-field>
+
+<scalar-field name="returns" type="i64">
+
+the byte count, or -1 when the literal is not bytes
 
 </scalar-field>
 

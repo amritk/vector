@@ -25,6 +25,7 @@ import { TypeEnv, typeCallsIn, typeEnvBind, typeIntBase, typeOf } from "../contr
 import { vocabIsIntType, vocabIsOptional, vocabValueType } from "../contract/vocab"
 import { EmitOptions, emitClauseFn, emitClauseLines, emitHeaderLines, emitSortedUnique, emitTestName } from "./emit"
 import { EMIT_SLOW_SKIP, emitF64IsFinite, emitLiteralHex, emitQuote } from "./lit"
+import { emitTargetWordsRefusal } from "./target"
 
 /** What emitting one Python test has gathered so far. */
 class EmitPyContext {
@@ -175,6 +176,10 @@ export const emitPyRefusals = (c: Contract): string[] => {
   const out: string[] = []
   const names: string[] = []
   for (const f of c.functions) {
+    const words = emitTargetWordsRefusal(f, "Python")
+    if (words !== null) {
+      out.push(words)
+    }
     const why = emitPyNameRefusal(f)
     if (why !== null) {
       out.push(why)
@@ -458,7 +463,10 @@ const emitPyVector = (ctx: EmitPyContext, k: Clause): string => {
   const call = it === null ? emitPyCall(sig, args) : "it_r"
   const ret = vocabValueType(sig.returns)
   let body = ""
-  if (ret === "bytes") {
+  const tr = k.truncate
+  if (ret === "bytes" && tr !== null) {
+    body = `t.eq_str(${name}, _hex_prefix(${call}, ${tr.bytes}), "${emitLiteralHex(expect)}")`
+  } else if (ret === "bytes") {
     body = `t.eq_str(${name}, _hex_of(${call}), "${emitLiteralHex(expect)}")`
   } else if (ret === "bytes?") {
     const want = expect.kind === LitKind.Null ? "null" : emitLiteralHex(expect)
@@ -780,6 +788,13 @@ def _hex_of(b):
     if type(b) is bytes:
         return b.hex()
     return repr(b)
+
+
+def _hex_prefix(b, n):
+    """b's first n bytes as hex; a shorter result says so, and never matches."""
+    if type(b) is bytes and len(b) < n:
+        return f"a {len(b)}-byte result, shorter than the {n} bytes it is truncated to"
+    return _hex_of(b[:n] if type(b) is bytes else b)
 
 
 def _str_or_null(s):

@@ -1,0 +1,1 @@
+vector spec emit tests/fixtures/chacha20/contracts/rfc8439-quarter-round.json --lang python -o dist/emit-words-python-golden

@@ -83,6 +83,12 @@ export const langTableCpp = (): LangTable => {
       "no array concatenation in a literal; the joined bytes are written as one array",
     ),
   )
+  t.type("words16", langSpell("std::span<const std::uint16_t>", "a returned value is std::vector<std::uint16_t>"))
+  t.type("words32", langSpell("std::span<const std::uint32_t>", "a returned value is std::vector<std::uint32_t>"))
+  t.type("words64", langSpell("std::span<const std::uint64_t>", "a returned value is std::vector<std::uint64_t>"))
+  t.literal("words16", langSpell("std::array<std::uint16_t, 2>{0x6170, 0x7865}", ""))
+  t.literal("words32", langSpell("std::array<std::uint32_t, 2>{0x61707865, 0x3320646e}", ""))
+  t.literal("words64", langSpell("std::array<std::uint64_t, 2>{0x3320646e61707865, 0x6b20657479622d32}", ""))
   t.moduleForm = "namespace"
   t.moduleNote =
     "nested namespaces, one per segment, declared in the header at the neutral path plus .hpp: nish/crypto/hkdf → namespace nish::crypto::hkdf in nish/crypto/hkdf.hpp"

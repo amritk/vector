@@ -1,0 +1,15 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ mini-tag · RFC 9992 (Mini Tags profile) · nish/mini/tag
+ Status: INVALID
+
+ Gate failures
+  ✘ provenance 3-CHECK.source: RFC §1 ("Introduction"), the result citation of 3-CHECK (inputs §3), does not state the expected result: 3-CHECK covers no requirement cited to it, so nothing there requires the result "true"; and no property derives it: no property covers a requirement of the result's section that 3-CHECK covers
+
+ Requirements
+  ○ R-CHECK  §2 MUST  "A receiver MUST check each tag against its key and message."
+      ○ 3-TAG  ○ 3-CHECK  ○ P-CHECK (28 samples: 4 boundary)
+
+ Warnings
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

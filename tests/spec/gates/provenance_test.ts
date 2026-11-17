@@ -46,6 +46,54 @@ const PROVENANCE_TEST_RFC: string = `Request for Comments: 9999
    It MUST return null when the input is odd.
 `
 
+/**
+ * A contract whose vectors cite their inputs to one section and their result
+ * to another: section 2 states "true", section 1 states nothing.
+ */
+const PROVENANCE_TEST_APART: string = `{
+  "contract": "c2",
+  "source": {"title": "T", "rfc": 9998},
+  "target": {"module": "nish/x"},
+  "requirements": [
+    {"id": "R2", "section": "2", "level": "MUST", "quote": "It MUST return true when the tag matches."},
+    {"id": "R3", "section": "3", "level": "MUST", "quote": "It MUST print the tags."}
+  ],
+  "functions": [{"name": "b", "params": [{"name": "a", "type": "string"}], "returns": "bool"}],
+  "clauses": [
+    {"kind": "vector", "id": "Q1", "title": "t", "covers": ["R2"], "source": {"spec": "2"}, "section": "3", "call": "b",
+     "args": [{"str": "abc"}], "expect": {"bool": true}},
+    {"kind": "vector", "id": "Q2", "title": "t", "covers": ["R2"], "source": {"spec": "1"}, "section": "3", "call": "b",
+     "args": [{"str": "abc"}], "expect": {"bool": true}}
+  ]
+}`
+
+/** The RFC the two-citation contract cites. */
+const PROVENANCE_TEST_APART_RFC: string = `Request for Comments: 9998
+
+1.  Intro
+
+   Hello there.
+
+2.  Checking
+
+   It MUST return true when the tag matches.
+
+3.  Tags
+
+   It MUST print the tags.
+`
+
+/** A context over the two-citation contract. */
+const provenanceTestApart = (): CheckContext => {
+  const ctx = new CheckContext("contracts/c2.json", ".")
+  ctx.contract = contractParse(PROVENANCE_TEST_APART, "c2").expect("parse apart")
+  const set = new SourceSet()
+  set.main = "rfc9998"
+  set.sources.push(new LoadedSource("rfc9998", "r.txt", "r.txt", rfcParse(PROVENANCE_TEST_APART_RFC)))
+  ctx.sources = set
+  return ctx
+}
+
 /** A context with the contract, a hand-built source set, and two commands run. */
 const provenanceTestCtx = (): CheckContext => {
   const ctx = new CheckContext("contracts/c1.json", ".")
@@ -101,5 +149,12 @@ export const main = (): i32 => {
   if (all.length !== 3) {
     console.log(all.join("\n"))
   }
+  const apart = gateProvenance(provenanceTestApart())
+  t.ok("a result stated by another section than the inputs'", !provenanceTestHas(apart, "Q1"))
+  t.eqStr(
+    "a result section that states nothing, named with the inputs' section",
+    apart.join("\n"),
+    'Q2.source: RFC §1 ("Intro"), the result citation of Q2 (inputs §3), does not state the expected result: Q2 covers no requirement cited to it, so nothing there requires the result "true"; and no property derives it: no property covers a requirement of the result\'s section that Q2 covers',
+  )
   return t.done()
 }

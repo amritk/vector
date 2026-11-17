@@ -149,7 +149,14 @@ export const main = (): i32 => {
   t.ok("R2 not covered", !reportCovered(ctx, "R2"))
   t.eqStr("a command's evidence", reportEvidence(ctx, c.clauses[0]), "vector, expected from printf 'a|b'")
   t.eqStr("a citation's evidence", reportEvidence(ctx, c.clauses[1]), "vector, rfc2104 §5")
-  t.eqStr("a spec's evidence", reportEvidence(ctx, c.clauses[2]), "vector, spec 4")
+  t.eqStr("a spec's evidence, its result cited apart", reportEvidence(ctx, c.clauses[2]), "vector, §2, result §4")
+  const at = REPORT_TEST_C.indexOf(`"section": "2"`, REPORT_TEST_C.indexOf(`"V-SPEC"`))
+  const same = contractParse(`${REPORT_TEST_C.slice(0, at)}"section": "4"${REPORT_TEST_C.slice(at + 14)}`, "c1")
+  t.eqStr(
+    "a spec's evidence, one section",
+    same.isOk() ? reportEvidence(ctx, same.value.clauses[2]) : "unparsed",
+    "vector, spec 4",
+  )
   t.eqLines(
     "the command runs",
     reportSourceRuns(ctx).map((r: CheckSourceRun): string => `${r.clause} ${r.outcome}`),
@@ -223,7 +230,7 @@ export const main = (): i32 => {
     "| --- | --- | --- | --- | --- |",
     "| `V-CMD` | a \\| b | ⭕ not run | vector, expected from printf 'a\\|b' |   |",
     "| `V-CITE` | t | ⭕ not run | vector, rfc2104 §5 |   |",
-    "| `V-SPEC` | t | ⭕ not run | vector, spec 4 |   |",
+    "| `V-SPEC` | t | ⭕ not run | vector, §2, result §4 |   |",
     "",
     "#### R2 · rfc2104 §3 SHOULD · ❌ uncovered",
     "",
@@ -249,7 +256,7 @@ export const main = (): i32 => {
   t.eqStr(
     "the json report",
     reportJson(ctx, found),
-    '{"status":"INVALID","contract":"c1","issues":[{"gate":"fidelity","at":"R1","message":"quote not found"},{"gate":"coverage","at":"R2","message":"no clause covers it"},{"gate":"ids","at":"","message":"duplicate id X"}],"warnings":[{"gate":"signatures","at":"f","message":"not checked"}],"coverage":{"R1":["V-CMD","V-CITE"],"R2":[]},"samples":{"P1":{"count":2,"boundary":2,"random":0,"inhabited":false,"notes":[]}},"sources":{"V-CMD":{"command":"printf \'a|b\'","outcome":"fail","detail":"printed \\"a|b\\""}}}',
+    '{"status":"INVALID","contract":"c1","issues":[{"gate":"fidelity","at":"R1","message":"quote not found"},{"gate":"coverage","at":"R2","message":"no clause covers it"},{"gate":"ids","at":"","message":"duplicate id X"}],"warnings":[{"gate":"signatures","at":"f","message":"not checked"}],"coverage":{"R1":["V-CMD","V-CITE"],"R2":[]},"samples":{"P1":{"count":2,"boundary":2,"random":0,"inhabited":false,"notes":[]}},"sources":{"V-CMD":{"command":"printf \'a|b\'","outcome":"fail","detail":"printed \\"a|b\\""}},"truncations":{}}',
   )
 
   // A shape failure hides the requirements, whose fields cannot be trusted.

@@ -507,6 +507,11 @@
                     "title": "spec/gates/coverage",
                     "filepath": "docs/reference/modules/spec/gates/coverage.md"
                   },
+                  "/spec-gates-derive": {
+                    "type": "page",
+                    "title": "spec/gates/derive",
+                    "filepath": "docs/reference/modules/spec/gates/derive.md"
+                  },
                   "/spec-gates-domain": {
                     "type": "page",
                     "title": "spec/gates/domain",
@@ -556,6 +561,11 @@
                     "type": "page",
                     "title": "spec/gates/typing",
                     "filepath": "docs/reference/modules/spec/gates/typing.md"
+                  },
+                  "/spec-gates-words": {
+                    "type": "page",
+                    "title": "spec/gates/words",
+                    "filepath": "docs/reference/modules/spec/gates/words.md"
                   },
                   "/spec-pr-cli": {
                     "type": "page",

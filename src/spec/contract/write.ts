@@ -23,8 +23,11 @@ import {
   Literal,
   NameOverride,
   Tolerance,
+  Truncate,
   VectorSource,
   VectorSourceKind,
+  typesIsWords,
+  typesWordsKey,
 } from "./types"
 import { vocabLanguages } from "./vocab"
 
@@ -113,6 +116,12 @@ const writeLiteral = (lit: Literal): WriteNode => {
     writeSet(o, "bool", writeRaw(lit.flag ? "true" : "false"))
   } else if (lit.kind === LitKind.Null) {
     writeSet(o, "null", writeRaw("true"))
+  } else if (typesIsWords(lit.kind)) {
+    const words = writeArr()
+    for (let i = 0; i < lit.words.length; i++) {
+      words.items.push(writeStr(lit.words[i]))
+    }
+    writeSet(o, typesWordsKey(lit.kind), words)
   } else {
     const parts = writeArr()
     for (let i = 0; i < lit.parts.length; i++) {
@@ -166,6 +175,7 @@ const writeVectorSource = (s: VectorSource): WriteNode => {
     const c = writeObj()
     writeSetStr(c, "source", cite.source)
     writeSet(c, "section", writeStr(cite.section))
+    writeSetStr(c, "case", cite.testCase)
     writeSet(o, "cite", c)
   } else {
     writeSet(o, s.kind === VectorSourceKind.Command ? "command" : "spec", writeStr(s.text))
@@ -183,6 +193,16 @@ const writeTolerance = (t: Tolerance): WriteNode => {
   writeSetStr(o, "source", t.source)
   writeSet(o, "section", writeStr(t.section))
   writeSet(o, "quote", writeStr(t.quote))
+  return o
+}
+
+const writeTruncate = (t: Truncate): WriteNode => {
+  const o = writeObj()
+  if (t.unit === "bits") {
+    writeSet(o, "bits", writeRaw(`${t.bytes * 8}`))
+  } else {
+    writeSet(o, "bytes", writeRaw(`${t.bytes}`))
+  }
   return o
 }
 
@@ -249,6 +269,10 @@ const writeClause = (c: Clause): WriteNode => {
     const it = c.iterate
     if (it !== null) {
       writeSet(o, "iterate", writeIterate(it))
+    }
+    const tr = c.truncate
+    if (tr !== null) {
+      writeSet(o, "truncate", writeTruncate(tr))
     }
     return o
   }

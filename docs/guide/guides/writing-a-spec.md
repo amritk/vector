@@ -28,6 +28,7 @@ becomes in the XML.
 | the vectors | one table, header exactly `Id \| Call \| Expected \| Covers \| Source \| Title` | `<table>` |
 | a vector's `tolerance` | a paragraph `Tolerance: V1 ulps 1, {{Section N of RFCx}}: "quote"` (or `abs 1e-9`) right after the vector table or another `Tolerance:` paragraph (see [Tolerances](#tolerances)) | the next sibling `<t>Tolerance: …</t>` |
 | a vector's `iterate` | a paragraph `Iterate: V1 1,000 times, (k, u) <- (f(k, u), k)` in the run after the vector table, among its `Tolerance:` paragraphs (see [Iterations](#iterations)) | the next sibling `<t>Iterate: … &lt;- …</t>` |
+| a vector's `truncate` | a paragraph `Truncate: V1 to 128 bits` (or `to 16 bytes`) in the same run after the vector table (see [Truncations](#truncations)) | the next sibling `<t>Truncate: …</t>` |
 | an `outOfScope` export | a paragraph `Out of scope: <export>, <the reason no clause tests it>`, anywhere in the body | `<t>Out of scope: …</t>` |
 | a requirement's or vector's `section` | the enclosing numbered section (`--- back` gives appendices A, B, …) | the section number `xml2rfc` gives |
 
@@ -90,7 +91,11 @@ source. The contract then takes the RFC form: `source.rfc` is N,
 - Everything a requirement holds must be RFC text. A `Definition:`
   paragraph, an anchored BCP 14 paragraph, an excluded paragraph, a vector
   Source naming a section of the spec, and any BCP 14 sentence of the spec's
-  own are refused.
+  own are refused. The one vector Source that names a section through
+  `spec` is the result citation, `{{Section N of RFCx}}; result {{Section M
+  of RFCx}}` with both sections of RFC N, which extracts to `"source":
+  {"spec": "M"}, "section": "N"` (see [When a section states `null`, `true`
+  or `false`](#when-a-section-states-null-true-or-false)).
 - A spec has one such key. A misspelt key, an RFC not under `normative:`,
   and an RFC nothing cites are refused.
 - The RFC may be `.xml` or `.txt`; [`tests/fixtures/rfc-main/`][rfc-main]
@@ -112,6 +117,8 @@ where the expected value comes from:
 | Source cell | Contract source |
 |---|---|
 | `{{Section N of RFCx}}` | `cite`, section N of that RFC |
+| `{{Section N of RFCx}}, Test Vector #K` | `cite`, section N of that RFC, `case` `Test Vector #K`: the values must all be printed in that one test case (K from 1, no leading zero; any other text after the section is refused) |
+| `{{Section N of RFCx}}; result {{Section M of RFCx}}` | `spec`, section M, with section N for the args: the inputs are printed in section N and the `null`, `true` or `false` expected value is supported by section M, as [stated](#when-a-section-states-null-true-or-false) or [derived](#when-a-property-derives-the-result). Both are sections of the main RFC, M is not N, both are written as section references (not anchors or code spans), and nothing may follow |
 | `{{anchor}}`, a numbered section of this spec | `spec` for a `null` or `bool` expected value; otherwise `cite`, that section, which must print the value |
 | a single code span, `` `python3 -c '…'` `` | `command`, with the table's section for the args; the expected value must be bytes or a string |
 
@@ -182,6 +189,44 @@ Iterate: 5.2-ITER-1M 1000000 times, slow, (k, u) ← (x25519(k, u), k)
 An `Iterate:` paragraph anywhere else, or after a table that is not the
 vector table, is refused.
 
+### Truncations
+
+Some RFCs print only the start of a result: RFC 4231 Section 4.6 gives
+HMAC-SHA-256 "truncated to 128 bits". Write the row with the printed,
+truncated value as its Expected, and give it a paragraph in the run directly
+after the vector table, mixed freely with its `Tolerance:` and `Iterate:`
+paragraphs:
+
+```md
+| 4.6-256 | `hmacSha256(Key = 0c0c…0c0c, Data = 5465…6f6e)` | `HMAC-SHA-256 = a3b6167473100ee06e0c796c2955552b` | R-TRUNC | {{Section 4.6 of HMAC}} | RFC 4231 4.6: Test Case 5, HMAC-SHA-256 truncated to 128 bits |
+
+Truncate: 4.6-256 to 128 bits
+```
+
+(The row's hex is shortened here; see `tests/fixtures/profile/profile-truncate.md`.)
+
+- The paragraph reads `Truncate: <id> to <N> bits` or `Truncate: <id> to <N>
+  bytes`, and nothing else. N is a whole number of at least 1 in digits,
+  with no leading zero or commas; a length in bits is a multiple of 8, and
+  the length is 65,536 bytes at most.
+- The vector must be in the table and truncated once at most, and its
+  function must return bytes (`u8[]`).
+- The Expected is the whole truncated result: a 16-byte Expected with
+  `to 96 bits` is refused (`4.6-256's Expected is 16 bytes (128 bits), but
+  Truncate: keeps 12 bytes (96 bits); the Expected is the whole truncated
+  result`), and so is a shorter one.
+- A truncated vector has no tolerance and is not iterated.
+- Extract's fidelity gate refuses the row when its section does not print
+  the length with the paragraph's unit (`to 16 bytes` against a section
+  that says `128 bits`), or when the row's values are not printed there.
+
+The generated test compares the first N bytes of the result with the
+Expected, and fails a result shorter than that rather than comparing what
+there is.
+
+A `Truncate:` paragraph anywhere else, or after a table that is not the
+vector table, is refused.
+
 ### The whole spec
 
 - At least one requirement, and at least one vector row or property.
@@ -208,9 +253,10 @@ These are what Call and Expected cells may hold:
 | `[]`, `(empty)` | empty bytes; labelled (`MESSAGE (length 0 bytes) = (empty)`), the empty value a section prints under that label (see [What a printed value is](#what-a-printed-value-is)) |
 | `null`, `true`, `false` | themselves |
 | `42`, `-1` | a decimal integer, in range for the parameter's type (`i8` … `u64`, e.g. `u8` 0..255); where the type is `f64` it is that f64 |
-| `Key = 0b0b0b` | labelled bytes: lowercase hex pairs, no spaces. The label is the name the cited section prints the value under. A label may be several words, and its first word may start with digits joined to a letter (`32-bit fixed-common part = 07000000`); a bare number is not a label. A later word may be a comma-grouped number (`After 1,000 iterations`), and one later word may be a parenthesised group of such words (`MESSAGE (length 1 byte) = 72`, as RFC 8032 prints it). A group may not come first, hold a bare comma or a paren, be empty, be left open, or be followed by a second group |
+| `Key = 0b0b0b` | labelled bytes: lowercase hex pairs, no spaces. The label is the name the cited section prints the value under. A label may be several words, and its first word may start with digits joined to a letter (`32-bit fixed-common part = 07000000`); a bare number is not a label. A later word may be a comma-grouped number (`After 1,000 iterations`), and one later word may be a parenthesised group of such words (`MESSAGE (length 1 byte) = 72`, as RFC 8032 prints it). An apostrophe may join two letters inside a word (`Alice's private key`). The words may end in one alias after `, `: a single word, which may be joined to a group whose words are also `, ` apart (`Alice's private key, a = 7707…`, `Alice's public key, X25519(a, 9) = 8520…`, as RFC 7748 §6.1 prints them). An apostrophe may not start or end a word, follow another, or touch a digit (`'Alice`, `Alice''s`, `Alice'9`). A comma takes no space before it and exactly one after (`key,a` and `X25519(a,9)` are refused). An alias is one word (`key, a b` is refused), there is at most one, and a number such as `NaN` takes none, so `f(NaN, a = 00)` is still two arguments. A group may not come first, hold a paren, be empty, be left open, be followed by a second group or by more of its word (`X25519(a, 9)b`), or, outside an alias, hold a comma (`M (a, 9)`); in an alias it may not stand apart from its word (`X25519 (a, 9)`) |
 | `L = 42` | a labelled decimal integer, checked against the cited section's "L = 42". Where the parameter (or return) type is an integer type it is the int; anywhere else digits that are also hex pairs (`42`) are labelled bytes, and digits with a leading zero are never an int: `L = 00` is bytes, and `L = 042` (not whole hex pairs) is refused |
 | `22 × 0b`, `22 x 0b`, `IKM = 22 × 0b` | a run of bytes written that many times (`{hex, repeat}`), as RFCs print runs; optionally labelled. `22×0b` also reads. The count is at least 1, the run lowercase hex pairs, and the expansion at most 65536 bytes |
+| `[0x11111111 0x01020304]`, `State = [879531e0 c5ecf37d]` | a word array, where the signature takes or returns `u16[]`, `u32[]` or `u64[]`: words of the type's width (4, 8 or 16 lowercase hex digits), one space apart (as bytes are), with `0x` on every word or on none, as the cited section prints them; optionally labelled. Unlabelled `[879531e0 c5ecf37d]` is bytes where the type is `u8[]`. See [What a printed value is](#what-a-printed-value-is) |
 | `concat([00], Key = ff)` | the parts joined, all bytes; one level (`concat` does not nest), at least one part. `‖` is refused |
 
 A bare decimal integer (`42`, `-9223372036854775808`) is an int, and an f64
@@ -235,6 +281,7 @@ is marked *not yet*.
 | `secret-bytes` | `Secret<u8[]>` | bytes whose value is secret; a language may wrap them, but in the contract they are bytes |
 | `i8` … `i64`, `u8` … `u64` | `i8` … `i64`, `u8` … `u64` | fixed-width integers, as C11 §7.20.1.1 `intN_t`/`uintN_t`; `+ - *` wrap modulo 2^N |
 | `f64` | `f64` | an IEEE 754-2019 binary64 value |
+| `words16`, `words32`, `words64` | `u16[]`, `u32[]`, `u64[]` | an array of 16-, 32- or 64-bit words, written as JSON strings of 4, 8 or 16 lowercase hex digits (`{"words32": ["0x11111111", "0x01020304"]}`), each as the source prints it, `0x` and all |
 | `B?` | `B \| null` | see below; any type may take it |
 
 The profile reads every spelling in the table, and `| null` on each. `B?`
@@ -273,7 +320,10 @@ The profile spells a tolerance as a [`Tolerance:` paragraph](#tolerances).
 
 A `forall` over `f64` is *not yet* sampled: the schema records such a
 domain (`{"type": "f64", "min": "-1.5", "max": "Infinity"}`) and vector
-refuses the property. A
+refuses the property. Word arrays are *not yet* checked in a property
+either: a `forall` over `u16[]`, `u32[]` or `u64[]` is refused, as is a
+property whose `where` or assertion holds a word-array literal or calls a function that
+takes or returns one, so give word-array cases as vectors. A
 `forall` integer may be any of `i8` … `u64`, with the same wide-integer
 strings for bounds. The sampler takes each type's minimum and maximum, and Z3
 solves over bit-vectors of its width, so `+ - * %` wrap as the evaluator's
@@ -282,8 +332,8 @@ do.
 ### What the Nish test can hold
 
 Nish has `i32`, `i64`, `u8`, `u16`, `u32`, `u64` and `f64` but no `i8` or
-`i16`, and `| null` only on reference types (`u8[]`, `string`,
-`Secret<u8[]>`). So the emitter refuses a signature or `forall` using what
+`i16`, and `| null` only on reference types (`u8[]`, `u16[]`, `u32[]`, `u64[]`,
+`string`, `Secret<u8[]>`). So the emitter refuses a signature or `forall` using what
 Nish lacks, and a module outside `nish/` unless `--package` says where it
 lives ([Test your own modules](testing.md#test-your-own-modules)).
 
@@ -291,6 +341,11 @@ lives ([Test your own modules](testing.md#test-your-own-modules)).
   Nish has no import aliasing, so a function under test cannot share one of
   their names; `spec extract` names the clash.
 - A 64-bit int is written as `hi·2^32 + lo`, so no literal passes 2^53.
+- A word is a typed literal (`toU32(0) + 0x01020304`); a `u64` word past 32
+  bits is its two halves, shifted and joined. A word-array result is
+  compared as its words in hex, so a failure prints both arrays. Only the
+  Nish test holds word arrays: `--lang rust`, `go`, `python` and
+  `typescript` refuse a function that takes or returns one.
 - An f64 is its shortest round-tripping decimal, or, for `-0`, `NaN` and the
   infinities, its bits.
 - `i32` and `i64` `+ - *` are emitted as `wrappingAdd`, `wrappingSub` and
@@ -447,9 +502,11 @@ Every vector says where its expected value comes from (`source`):
 
 | `source` | The expected value is | Checked by |
 |---|---|---|
-| `{"cite": {"section": "A.1"}}` (`"source"` optional) | printed in that section, with the args, as one test case (see [What a printed value is](#what-a-printed-value-is)) | fidelity |
+| `{"cite": {"section": "A.1"}}` (`"source"` optional; `"case": "Test Vector #2"` optional) | printed in that section, with the args, as one test case; with `case`, in that test case of the section (see [What a printed value is](#what-a-printed-value-is)) | fidelity |
 | `{"command": "…"}`, with `"section"` for the args | the command's trimmed stdout (lowercase hex for bytes) | `spec check --run-sources` only; otherwise reported as not run, never as passed. A timeout, a nonzero exit or other output fails. See [Running the source commands](spec-to-contract.md#running-the-source-commands) |
 | `{"spec": "4.2"}`, with `"section"` for the args | `null` or a `bool` that section states | provenance: a requirement the vector covers, cited to that section, must state `null`, `true` or `false` as the result, by [the rule below](#when-a-section-states-null-true-or-false) |
+
+A vector whose inputs and result are cited apart, `{{Section 7.1 of RFC8032}}; result {{Section 5.1.7 of RFC8032}}`, is a `spec` source of the result's section with the inputs' `"section"`: `{"spec": "5.1.7"}, "section": "7.1"`. Fidelity checks the inputs against section 7.1; provenance checks the result against section 5.1.7, by the stated rule or, failing that, [the derived rule](#when-a-property-derives-the-result). The report shows its evidence as `vector, §7.1, result §5.1.7`.
 
 A vector without a source fails the shape gate. A `cite` source for a `null`
 or `bool` is held to the same rule by fidelity.
@@ -468,10 +525,50 @@ of matching bytes:
   values. A `str` must be printed whole: in quotes, in a markdown code span,
   on a line of its own, or ending a line after `=` or `:` (`"Zg"` is not
   printed by `"Zg=="`).
+- **Words.** A `words16`, `words32` or `words64` value must equal one whole
+  block of words the cited section prints, word for word and spelled as
+  printed: `0x` on every word or on none, as there. A block is a run of
+  non-blank lines, each a row of words of one width (one word may be marked
+  with a leading `*`, not part of it) or one `name = word` line. A value that
+  is only part of a block, a block written with `0x` where the section has
+  none (or the reverse), or a word that differs, is refused. A blank line
+  ends a block, and so does a page break (the page footer and header xml2rfc
+  prints, whether or not blank lines surround them). Where a block ends at a
+  page break and the next line is a row of words of the same width and
+  spelling, the print does not say whether the page split one block or
+  separates two, so a value that equals the block on either side of that
+  break, or runs across it, is refused as meeting a page break (unless the
+  same words are also printed as a whole block elsewhere in the section,
+  which the value then binds to, under that print's label): cite a vector
+  printed away from the break. A row of another width or spelling, a
+  label, a heading or prose after a break ends the block before it, and
+  that block is checked as usual. A page footer or header that vector does
+  not recognise as one is left in the text as prose, so it ends a block the
+  same way. A block printed under a short line
+  (`Sample ChaCha State`) or as a one-line `name = …` takes that line as
+  its label, and a labelled value must name it. The line above is a label
+  only when it is at most 60 characters, does not end in `.`, `:` or `,`
+  (so `State:` labels no word block, though `Plaintext:` labels bytes), does
+  not open with a section number, and holds no word of 4, 8 or 16 hex digits. A
+  block of several `name = word` lines has no label: its names name its
+  words. An
+  unlabelled value may still bind to a labelled block, where unlabelled
+  bytes printed under a label are refused: a word value must equal a whole
+  block, so its words alone say which block it is, while bytes can match
+  part of any dump and need the label to say which one. The expected value
+  may not be the block an argument is bound to.
 - **Labels.** A value printed under a name (`Key =`, `Input scalar:`, a short
   line such as `Plaintext:` above a dump) must give that name:
-  `{"hex": "0b0b…", "label": "Key"}`. A label the section does not print the
-  value under is refused.
+  `{"hex": "0b0b…", "label": "Key"}`. A label is matched as the section
+  prints it, apostrophe and alias included: RFC 7748 §6.1 prints Alice's key
+  as `Alice's private key, a:`, so a row writes
+  `x25519Base(Alice's private key, a = 7707…)` and expects
+  `Alice's public key, X25519(a, 9) = 8520…`. A label the section does not
+  print the value under is refused: `Alice's private key, b`,
+  `Alice private key, a`, `Alice's public key, X25519(a, 5)`, and Bob's key
+  under `Alice's private key, a` all are, as is a value the cited section
+  does not print at all (the 32-byte base point `[09 00 … 00]` against
+  §6.1, or §6.1's key cited from §6.2).
 - **Empty values.** A section prints an empty value as a label with nothing
   below it, its length stated as 0 (`MESSAGE (length 0 bytes):`, or
   `octets`). Empty bytes bind only under such a label:
@@ -486,7 +583,20 @@ of matching bytes:
   printed line (`BASE64("f") = "Zg=="`). A label printed several times in
   the cited section is read in rounds (the k-th `Key` goes with the k-th
   `Data` and the k-th `HMAC-SHA-256`), so citing a parent section cannot mix
-  values from two test cases.
+  values from two test cases. A label printed once goes with the round it is
+  printed among: RFC 8032 Section 7.1 prints `MESSAGE (length 0 bytes)` once,
+  in TEST 1, so it is refused beside TEST 2's `SECRET KEY` and `SIGNATURE`.
+- **Named test cases.** Where a section prints several test cases under
+  headings (`Test Vector #2:`, a line of its own or followed by text), and a
+  label is printed a different number of times than another, the rounds do
+  not say which values belong together, so a plain cite is refused. Cite
+  the case instead: `{{Section A.3 of RFC8439}}, Test Vector #2` (in the
+  contract, `"case": "Test Vector #2"`). The case runs from its heading to
+  the next one or the section's end, across page breaks; every rule above
+  applies within it. A value printed only in another case is refused, and
+  so is a case the section has no heading for, a heading printed twice, or
+  a section with subsections. `spec check` applies the case again, and the
+  report shows the source as `§A.3, Test Vector #2`.
 - **Decimals.** In an RFC, an unnamed run of digit-only lines, or one under a
   name that calls it a number (`Input scalar as a number (base 10):`), is a
   decimal number, not bytes, and is not a value.
@@ -512,6 +622,22 @@ own quote. The rule is an allow list and fails closed: a false refusal costs
 a rewording of the requirement's quote, while a false pass would break the
 gate. There is no way around it: a `cite` source is held to the same rule,
 and a `command` source cannot expect `null` or a `bool`.
+
+A vector may cite its inputs and its result to two sections of the main RFC,
+`{{Section 7.1 of RFC8032}}; result {{Section 5.1.7 of RFC8032}}`. The steps
+below then run over the result's section (5.1.7), not the inputs' (7.1), and
+when they refuse, [a property may derive the
+result](#when-a-property-derives-the-result) instead. A refusal names both
+sections: `RFC §5.1.7 ("Verify"), the result citation of 7.1-T1-VER (inputs
+§7.1), does not state the expected result: …; and no property derives it:
+…`.
+
+A sentence that defines the check, such as Section 5.1.7's "Check the group
+equation `[8][S]B = [8]R + [8][k]A'`.", does not state a result on its own: it
+states a check, not that check's outcome on the cited bytes. A section that
+printed a tampered signature, which fails the check, would read the same, so
+accepting the sentence as `true` would pass a wrong vector. Such a vector is
+accepted only when a property derives the result.
 
 1. The vector `covers` a requirement cited to that very section (same source,
    same section). Otherwise: "covers no requirement cited to it".
@@ -569,6 +695,86 @@ table or a code block, a requirement cited to another section, and, by
 design, any descriptive sentence without a keyword, such as "f returns null
 on failure" or "abc decodes to null".
 
+<a id="when-a-property-derives-the-result"></a>
+
+### When a property derives the result
+
+A section that defines a check (RFC 8032's Section 5.1.7, "Verify") rarely
+says in words that a vector's check returns `true`. A vector whose inputs and
+result are cited to two sections of the main RFC is still accepted when a
+property of the contract derives its result. Every step fails closed, and the
+refusal names the property (or the vector) and the step. Each step's
+refusals, in the order they are tried:
+
+1. The vector's result is its call's, exactly: it has no truncation, no
+   iteration and no tolerance. Otherwise: "V compares only the first N bytes
+   of its result, so its expected value is not its call's", "V iterates its
+   call N times, so …" or "V allows a tolerance, so …".
+2. The expected value is `null`, `true` or `false`. Otherwise: "V expects
+   neither null, true nor false".
+3. A property covers a requirement cited to the result's section that the
+   vector covers too. Otherwise: "no property covers a requirement of the
+   result's section that V covers". Every such property is tried, and when
+   none derives the result the refusal lists each one's reason, joined by
+   `; `.
+4. The property asserts one equality, `f(…) === literal`, where `f` is the
+   vector's call and the literal is the vector's expected value. Otherwise:
+   "P does not assert a single equality" (also for `!=` or `&&`), "P does not
+   assert that f is a literal" (a call of another function, or no literal
+   side), or "P asserts another result than the vector's".
+5. Each argument of that call is the vector's, in order. Otherwise: "V has
+   an argument that is not evaluated here" or "P passes N arguments where M
+   are given". An argument may be:
+   - a quantified variable, which binds to the vector's value, the same
+     variable always to the same value. Otherwise: "P uses x, which it does
+     not quantify over" or "P uses x for two different values";
+   - a literal equal to the vector's value. Otherwise: "P passes a literal
+     that is not the vector's value";
+   - a call of another function, optionally under `unwrap`, at most two calls
+     deep, that yields the value: another vector of the contract, whose
+     expected value is cited to a section of an RFC, calls that function with
+     matching arguments, expects that value, and has no truncation, iteration
+     or tolerance. Otherwise: "P reaches g more than 2 calls deep" or "P
+     calls g for a value no cited vector of g expects with matching
+     arguments". When a vector of g matched but was not exact, the message
+     names it: "(unused: K compares only the first 2 bytes of its result, so
+     its expected value is not its call's)". `unwrap(g(…))` never yields
+     null (unwrap of null fails the sample), so it does not match a null
+     value: "P unwraps g where the vector has null, a value unwrap never
+     gives". A plain `g(…)` may yield null.
+   Anything else (`concat`, a `let` block) is refused: "P computes
+   an argument (concat) that is not matched here".
+6. Every quantified variable is bound inside its domain: a byte string's
+   length within its `/* a..b */`, an integer within its bounds. Otherwise:
+   "P leaves z unbound", "P binds msg to a N-byte value, outside its domain
+   a..b", "P binds n to N, outside its domain a..b", "P binds msg, a bytes
+   variable, to a value that is not bytes", "P bounds n by a value that is
+   not an integer", or "P binds n, of type u64, which is not bound here" for
+   a variable this rule does not bound: a `u64`, `f64`, `bool` or `string`
+   variable, an integer variable with no bounds, or an integer variable bound
+   to a value that is not an integer.
+7. The property's `where`, if any, holds for the bound values. Otherwise:
+   "P's where does not hold for the vector's inputs", or "P's where cannot be
+   evaluated: …" when it holds a call or anything else the sampler does not
+   evaluate.
+
+So the property `forall (key: u8[] /* 1..1 */, msg: u8[] /* 0..1 */) =>
+check(key, msg, tag(key, msg)) === true` derives `check(KEY = 01, MESSAGE =
+02, TAG = 0a0b)` = `true` when another vector cites `tag(KEY = 01, MESSAGE =
+02)` = `TAG = 0a0b` to the RFC: the property holds for every key and message
+in its domain, and the vector's are among them. When neither rule holds, the
+refusal names both sections and gives both reasons: "RFC §5.1.7 ("Verify"),
+the result citation of V (inputs §7.1), does not state the expected result:
+…; and no property derives it: …".
+
+[`tests/fixtures/result-ed25519/`][result-ed25519] does this over the
+unmodified RFC 8032: `P-ROUNDTRIP`, `ed25519Verify(unwrap(ed25519PublicKey(seed)),
+msg, unwrap(ed25519Sign(seed, msg))) === true` with `msg` in `0..130`, derives
+TEST 1, 2, 3 and SHA(abc) of Section 7.1 from their public-key and signature
+vectors. TEST 1024 is refused: "P-ROUNDTRIP binds msg to a 1023-byte value,
+outside its domain 0..130". Widen the domain to `0..1023` and it is derived
+too.
+
 ## Authoring notes
 
 - Close the front matter with `--- abstract`.
@@ -583,5 +789,6 @@ on failure" or "abc decodes to null".
 [profile-hex]: https://github.com/amritk/vector/blob/main/tests/fixtures/profile/profile-hex.md
 [survival]: https://github.com/amritk/vector/blob/main/tests/fixtures/kramdown/SURVIVAL.md
 [rfc-main]: https://github.com/amritk/vector/tree/main/tests/fixtures/rfc-main
+[result-ed25519]: https://github.com/amritk/vector/tree/main/tests/fixtures/result-ed25519
 [schema]: https://github.com/amritk/vector/blob/main/schemas/rfc-contract.json
 [vocab]: https://github.com/amritk/vector/blob/main/src/spec/contract/vocab.ts

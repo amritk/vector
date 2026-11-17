@@ -11,32 +11,50 @@
  * labels, with the expected value not also an input. In a source read from
  * XML, a byte list such as `[00 0f f0 ff]` is a whole printed value, as
  * `hexEncode([00 0f f0 ff])` prints one; in plain text, `[10]` is a
- * reference. A value printed for one of several variants ("HMAC-SHA-256"
+ * reference. A u16[], u32[] or u64[] value is one whole block of words
+ * the section prints (spec/gates/words), word for word as printed, `0x` and
+ * all, and the expected value is not the block an input is. A value printed for one of several variants ("HMAC-SHA-256"
  * beside "HMAC-SHA-512") must be the one the called function names. An
  * expected null, true or false must be stated by a covered requirement
- * (gateStatesResult).
+ * (gateStatesResult). A truncated vector's length is printed there too, as
+ * a whole number then its unit (`128 bits`), outside a heading; its
+ * expected value is still a whole printed value, the truncated output.
  */
 
 import { jsonStringifyString } from "nish/json"
 import { asciiLower } from "nish/text"
 import { toHex, utf8Bytes } from "../../core/hex"
 import { CheckContext, CheckNote } from "../check"
+import { charsTestVector } from "../contract/chars"
 import { contractF64Bits, contractF64IsNaN, contractF64Parse } from "../contract/f64"
-import { Clause, ClauseKind, Iterate, LitKind, Literal, VectorSourceKind } from "../contract/types"
+import {
+  Clause,
+  ClauseKind,
+  Iterate,
+  LitKind,
+  Literal,
+  Truncate,
+  VectorSourceKind,
+  typesIsWords,
+} from "../contract/types"
 import { SourceSet, sourceFind } from "../source/load"
 import {
   HexValue,
   RfcSection,
+  rfcCaseSection,
+  rfcHasCases,
   rfcHexValues,
   rfcNormalize,
   rfcParse,
   rfcSectionText,
   rfcUnvaluedLabels,
+  rfcUnvaluedLines,
 } from "../source/rfc"
 import { gateArgsAt, gateCitedSection, gatePlace, gateQuoteMissing, gateSources } from "./cite"
 import { gateIssue, gateWarn } from "./note"
 import { gateResultWord, gateStatesResult } from "./result"
 import { gateByteLists, gateF64Printed, gateIntLabelCount, gateIntRounds, gateLines, gateTextLines } from "./text"
+import { GateWordBlock, gateWordBlocks } from "./words"
 
 /** Where one literal of a vector was found: under a label, or on lines. */
 class GateBound {
@@ -52,13 +70,23 @@ class GateBound {
   lines: i32[] | null
   /** For text: the value. */
   text: string
+  /** For words: the index of the block of words it is, or -1. */
+  block: i32
+  /**
+   * The section line of each printing of its label, in order, for a hex or
+   * empty value under a label; empty for numbers and text, whose places are
+   * not read by line.
+   */
+  printed: i32[]
   constructor(at: string, label: string | null) {
     this.at = at
     this.label = label
     this.of = 0
     this.has = []
+    this.printed = []
     this.lines = null
     this.text = ""
+    this.block = -1
   }
 }
 
@@ -75,7 +103,11 @@ class GateLits {
   values: HexValue[]
   text: string
   lines: string
+  /** The blocks of words the section prints (gateWordBlocks). */
+  blocks: GateWordBlock[]
   bounds: GateBound[]
+  /** Appended to a refusal that asks for one test case: how to name one of the section's, or "". */
+  hint: string
   /**
    * @param id the vector's id
    * @param where the section, for messages
@@ -98,7 +130,9 @@ class GateLits {
     }
     this.text = rfcSectionText(sec)
     this.lines = gateLines(sec.lines)
+    this.blocks = gateWordBlocks(sec.lines, sec.pageBreaks)
     this.bounds = []
+    this.hint = ""
   }
 }
 
@@ -187,12 +221,12 @@ const gateHexCheck = (l: GateLits, at: string, hex: string, label: string | null
         gateLitFail(
           l,
           at,
-          `${hex.length / 2}-byte value is only part of a value printed in ${l.inSection}${under}: a vector uses whole printed values (concat them to join several)`,
+          `the ${hex.length / 2}-byte ${at} is only part of a value printed in ${l.inSection}${under}: a vector uses whole printed values (concat them to join several)`,
         )
         return
       }
     }
-    gateLitFail(l, at, `${hex.length / 2}-byte value is not printed in ${l.inSection}`)
+    gateLitFail(l, at, `the ${hex.length / 2}-byte ${at} is not printed in ${l.inSection}`)
     return
   }
   const named: string[] = []
@@ -226,16 +260,198 @@ const gateHexCheck = (l: GateLits, at: string, hex: string, label: string | null
   }
   let of = 0
   const has: i32[] = []
+  const b = new GateBound(at, label)
   for (const v of l.values) {
     const vl = v.label
     if (vl !== null && gateSameLabel(vl, label)) {
       if (v.hex === hex) {
         has.push(of)
       }
+      b.printed.push(v.line)
       of = of + 1
     }
   }
-  gateRounds(l, new GateBound(at, label), of, has)
+  gateRounds(l, b, of, has)
+}
+
+/** A word without its `0x`. */
+const gateWordBare = (w: string): string => (w.startsWith("0x") ? w.substring(2, w.length) : w)
+
+/** Whether `want` is `words` from `from` on, as printed or, with `bare`, ignoring `0x`. */
+const gateWordsAt = (words: string[], want: string[], from: i32, bare: boolean): boolean => {
+  if (from + want.length > words.length) {
+    return false
+  }
+  for (let i = 0; i < want.length; i++) {
+    const a = words[from + i]
+    const b = want[i]
+    if (bare ? gateWordBare(a) !== gateWordBare(b) : a !== b) {
+      return false
+    }
+  }
+  return true
+}
+
+/** Whether `want` is a run of `words` shorter than all of them, ignoring `0x`. */
+const gateWordsInside = (words: string[], want: string[]): boolean => {
+  if (want.length >= words.length) {
+    return false
+  }
+  for (let i = 0; i + want.length <= words.length; i++) {
+    if (gateWordsAt(words, want, i, true)) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * Whether `want` runs across a page break between blocks that break may
+ * join (GateWordBlock.joinsNext), ignoring `0x`: the words on either side
+ * may be one block or two, so the print does not say whether it is a block.
+ */
+const gateWordsAcross = (blocks: GateWordBlock[], want: string[]): boolean => {
+  let b = 0
+  while (b < blocks.length) {
+    const words: string[] = []
+    const joins: i32[] = []
+    let e = b
+    for (const w of blocks[e].words) {
+      words.push(w)
+    }
+    while (blocks[e].joinsNext && e + 1 < blocks.length) {
+      joins.push(words.length)
+      e = e + 1
+      for (const w of blocks[e].words) {
+        words.push(w)
+      }
+    }
+    for (let i = 0; i + want.length <= words.length; i++) {
+      let crosses = false
+      for (const j of joins) {
+        if (i < j && i + want.length > j) {
+          crosses = true
+        }
+      }
+      if (crosses && gateWordsAt(words, want, i, true)) {
+        return true
+      }
+    }
+    b = e + 1
+  }
+  return false
+}
+
+/** The refusal of a word value that meets a page break the print does not say a block ends at. */
+const gateWordsBreakFail = (l: GateLits, at: string, n: i32): void => {
+  gateLitFail(
+    l,
+    at,
+    `${n}-word value meets a page break in ${l.inSection}, and the rows on either side of it may be one block or two: the print does not say which, so the value cannot be checked against it`,
+  )
+}
+
+/** ` (under "label")` for a block printed under a label, or "". */
+const gateWordsUnder = (b: GateWordBlock): string => {
+  const bl = b.label
+  return bl !== null ? ` (under "${bl}")` : ""
+}
+
+/**
+ * A word-array value: one whole block of words the section prints, word for
+ * word as printed, under the label the literal names. An unlabelled value
+ * binds to the block it is.
+ */
+const gateWordsCheck = (l: GateLits, lit: Literal, at: string): void => {
+  const want = lit.words
+  const n = want.length
+  const exact: i32[] = []
+  let broken = false
+  for (let b = 0; b < l.blocks.length; b++) {
+    const words = l.blocks[b].words
+    if (words.length === n && gateWordsAt(words, want, 0, false)) {
+      if (l.blocks[b].atBreak) {
+        broken = true
+      } else {
+        exact.push(b)
+      }
+    }
+  }
+  if (exact.length === 0 && broken) {
+    gateWordsBreakFail(l, at, n)
+    return
+  }
+  if (exact.length === 0) {
+    if (gateWordsAcross(l.blocks, want)) {
+      gateWordsBreakFail(l, at, n)
+      return
+    }
+    const prefixed = want[0].startsWith("0x")
+    for (const b of l.blocks) {
+      if (b.words.length === n && gateWordsAt(b.words, want, 0, true)) {
+        gateLitFail(
+          l,
+          at,
+          `the ${n} words are printed in ${l.inSection}${gateWordsUnder(b)} ${prefixed ? "without" : "with"} 0x: write each word as printed`,
+        )
+        return
+      }
+    }
+    for (const b of l.blocks) {
+      if (gateWordsInside(b.words, want)) {
+        gateLitFail(
+          l,
+          at,
+          `${n}-word value is only part of a ${b.words.length}-word block printed in ${l.inSection}${gateWordsUnder(b)}: a vector uses a whole printed block`,
+        )
+        return
+      }
+    }
+    gateLitFail(l, at, `${n}-word value is not printed as one block in ${l.inSection}`)
+    return
+  }
+  const label = lit.label
+  if (label === null) {
+    const b = new GateBound(at, null)
+    b.block = exact[0]
+    l.bounds.push(b)
+    return
+  }
+  const named: string[] = []
+  let block = -1
+  for (const e of exact) {
+    const bl = l.blocks[e].label
+    if (bl !== null) {
+      named.push(bl)
+      if (block < 0 && gateSameLabel(bl, label)) {
+        block = e
+      }
+    }
+  }
+  if (block < 0) {
+    gateLitFail(
+      l,
+      at,
+      named.length > 0
+        ? `the value is printed in ${l.inSection} under ${gateQuoted(named)}, not under "${label}"`
+        : `the value is printed in ${l.inSection}, but not under the label "${label}"`,
+    )
+    return
+  }
+  let of = 0
+  const has: i32[] = []
+  for (let b = 0; b < l.blocks.length; b++) {
+    const bl = l.blocks[b].label
+    if (bl !== null && gateSameLabel(bl, label)) {
+      if (exact.indexOf(b) >= 0) {
+        has.push(of)
+      }
+      of = of + 1
+    }
+  }
+  const bound = new GateBound(at, label)
+  bound.block = block
+  gateRounds(l, bound, of, has)
 }
 
 /** A text value printed whole on some lines of the section; false when it is not. */
@@ -307,7 +523,15 @@ const gateEmptyCheck = (l: GateLits, at: string, label: string): void => {
     )
     return
   }
-  const of = rfcUnvaluedLabels(l.sec).filter((u: string): boolean => gateSameLabel(u, label)).length
+  const names = rfcUnvaluedLabels(l.sec)
+  const lines = rfcUnvaluedLines(l.sec)
+  const b = new GateBound(at, label)
+  for (let i = 0; i < names.length; i++) {
+    if (gateSameLabel(names[i], label)) {
+      b.printed.push(lines[i])
+    }
+  }
+  const of = b.printed.length
   if (of === 0) {
     gateLitFail(l, at, `the empty value is not printed in ${l.inSection} under "${label}" with nothing below it`)
     return
@@ -324,7 +548,7 @@ const gateEmptyCheck = (l: GateLits, at: string, label: string): void => {
   for (let i = 0; i < of; i++) {
     has.push(i)
   }
-  gateRounds(l, new GateBound(at, label), toI32(of), has)
+  gateRounds(l, b, of, has)
 }
 
 /** Checks one literal (and a concat's parts) against the section, adding its bounds. */
@@ -382,6 +606,10 @@ const gateLitCheck = (l: GateLits, lit: Literal, at: string): void => {
           : `the string ${json} is not printed in ${l.inSection}`,
       )
     }
+    return
+  }
+  if (typesIsWords(lit.kind)) {
+    gateWordsCheck(l, lit, at)
     return
   }
   if (lit.kind !== LitKind.Int && lit.kind !== LitKind.F64) {
@@ -459,17 +687,19 @@ const gateOneTestCase = (l: GateLits, args: i32, sec: RfcSection): void => {
     gateNote(
       l,
       id,
-      `${counts.join(", ")} in ${inSection}, so which printings belong to one test case is unclear: cite the subsection that holds one test case`,
+      `${counts.join(", ")} in ${inSection}, so which printings belong to one test case is unclear: cite the subsection that holds one test case${l.hint}`,
       false,
     )
-  } else if (repeated.length > 1) {
-    let shared = false
+  } else if (repeated.length > 0) {
+    const shared: i32[] = []
     for (const r of repeated[0].has) {
       if (repeated.every((b: GateBound): boolean => b.has.indexOf(r) >= 0)) {
-        shared = true
+        shared.push(r)
       }
     }
-    if (!shared) {
+    if (shared.length > 0) {
+      gateOnceRound(l, repeated, shared, inSection)
+    } else {
       const each = repeated.map(
         (b: GateBound): string => `${b.at} is the ${gateNth(b.has)} of ${b.of} "${gateBoundLabel(b)}"`,
       )
@@ -482,6 +712,21 @@ const gateOneTestCase = (l: GateLits, args: i32, sec: RfcSection): void => {
     }
   }
   for (let e = args; e < l.bounds.length; e++) {
+    const block = l.bounds[e].block
+    if (block >= 0) {
+      for (let a = 0; a < args; a++) {
+        if (l.bounds[a].block === block) {
+          gateNote(
+            l,
+            `${id}.${l.bounds[e].at}`,
+            `the expected value is the block of words ${l.bounds[a].at} is bound to as well: an input is not the expected result`,
+            false,
+          )
+          break
+        }
+      }
+      continue
+    }
     const label = l.bounds[e].label
     if (label === null) {
       continue
@@ -498,6 +743,56 @@ const gateOneTestCase = (l: GateLits, args: i32, sec: RfcSection): void => {
         break
       }
     }
+  }
+}
+
+/**
+ * A label printed once is tied to the round its line falls in: after the last
+ * printing of the round before, and before the first printing of the round
+ * after, of the repeated labels. RFC 8032 §7.1 prints `MESSAGE (length 0
+ * bytes)` once, in TEST 1, so TEST 2's SECRET KEY and SIGNATURE with it are
+ * refused. Numbers and text are not placed by line, so they are not tied.
+ */
+const gateOnceRound = (l: GateLits, repeated: GateBound[], shared: i32[], inSection: string): void => {
+  const rounds = repeated[0].of
+  if (repeated.some((b: GateBound): boolean => b.printed.length !== rounds)) {
+    return
+  }
+  const start: i32[] = []
+  const end: i32[] = []
+  for (let r = 0; r < rounds; r++) {
+    let lo = repeated[0].printed[r]
+    let hi = lo
+    for (const b of repeated) {
+      lo = Math.min(lo, b.printed[r])
+      hi = Math.max(hi, b.printed[r])
+    }
+    start.push(lo)
+    end.push(hi)
+  }
+  for (const b of l.bounds) {
+    if (b.of > 1 || b.printed.length !== 1) {
+      continue
+    }
+    const p = b.printed[0]
+    const near: i32[] = []
+    for (let r = 0; r < rounds; r++) {
+      if ((r === 0 || end[r - 1] < p) && (r === rounds - 1 || p < start[r + 1])) {
+        near.push(r)
+      }
+    }
+    if (near.length === 0 || near.some((r: i32): boolean => shared.indexOf(r) >= 0)) {
+      continue
+    }
+    const each = repeated.map(
+      (o: GateBound): string => `${o.at} is the ${gateNth(o.has)} of ${o.of} "${gateBoundLabel(o)}"`,
+    )
+    gateNote(
+      l,
+      `${l.id}.${b.at}`,
+      `"${gateBoundLabel(b)}" is printed once in ${inSection}, with the ${gateNth(near)} of ${rounds} "${gateBoundLabel(repeated[0])}", but ${each.join(", ")}, so they are from different test cases: use the values printed together`,
+      false,
+    )
   }
 }
 
@@ -833,6 +1128,43 @@ const gateIterateCount = (
 }
 
 /**
+ * A truncated vector's length against its section: the number then the unit
+ * the contract records (`128 bits`, or `16 bytes`) are printed there as two
+ * whole tokens, outside a heading, the unit in any case and the number with
+ * its commas dropped. A line break between them is a space.
+ */
+const gateTruncateLength = (
+  ctx: CheckContext,
+  out: string[],
+  k: Clause,
+  t: Truncate,
+  sec: RfcSection,
+  where: string,
+): void => {
+  const want = t.unit === "bits" ? `${t.bytes * 8}` : `${t.bytes}`
+  const words: string[] = []
+  for (const line of sec.lines) {
+    if (!gateFidHeading(line)) {
+      for (const w of gateFidTokens(line)) {
+        words.push(w)
+      }
+    }
+  }
+  for (let i = 0; i + 1 < words.length; i++) {
+    if (gateFidNumber(words[i]) === want && asciiLower(words[i + 1]) === t.unit) {
+      return
+    }
+  }
+  gateIssue(
+    ctx,
+    out,
+    GATE_FIDELITY,
+    `${k.id}.truncate`,
+    `the truncation to ${gateGrouped(want)} ${t.unit} is not printed in ${where} ("${sec.title}")`,
+  )
+}
+
+/**
  * A value printed under one of several labels that differ only in a number
  * ("HMAC-SHA-256", "HMAC-SHA-512") must be the variant the called function
  * names: another variant's number in the name is refused, none of them is a
@@ -959,14 +1291,29 @@ const gateFidelityVector = (ctx: CheckContext, out: string[], set: SourceSet, k:
   if (at.section.length === 0) {
     return
   }
-  const sec = gateCitedSection(ctx, out, g, at.source, at.section, k.id)
-  if (sec === null) {
+  const whole = gateCitedSection(ctx, out, g, at.source, at.section, k.id)
+  if (whole === null) {
     return
   }
-  const where = gatePlace(set, at.source, at.section)
+  let sec = whole
+  let where = gatePlace(set, at.source, at.section)
   const loaded = sourceFind(set, at.source)
   const xml = loaded === null ? false : loaded.file.endsWith(".xml")
+  // Named, one test case narrows the section to its own lines.
+  const tc = at.testCase
+  if (tc !== null) {
+    const one = rfcCaseSection(whole, charsTestVector(tc))
+    if (one.isErr()) {
+      gateIssue(ctx, out, g, k.id, `${where} ("${whole.title}") ${one.error}`)
+      return
+    }
+    sec = one.value
+    where = `${where}, ${tc}`
+  }
   const l = new GateLits(k.id, where, sec, xml)
+  if (tc === null && loaded !== null && loaded.doc.number >= 1 && rfcHasCases(whole)) {
+    l.hint = `, or name one: {{Section ${at.section} of RFC${loaded.doc.number}}}, Test Vector #N`
+  }
   for (let i = 0; i < k.args.length; i++) {
     gateLitCheck(l, k.args[i], `args[${i}]`)
   }
@@ -984,6 +1331,10 @@ const gateFidelityVector = (ctx: CheckContext, out: string[], set: SourceSet, k:
   const it = k.iterate
   if (it !== null) {
     gateIterateCount(ctx, out, k, it, sec, where)
+  }
+  const tr = k.truncate
+  if (tr !== null) {
+    gateTruncateLength(ctx, out, k, tr, sec, where)
   }
   for (const n of l.notes) {
     if (n.warning) {

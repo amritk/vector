@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.0](https://github.com/amritk/vector/compare/v0.3.1...v0.4.0) (2026-11-17)
+
+
+### Features
+
+* **spec:** add u16[], u32[] and u64[] word arrays to contracts ([#131](https://github.com/amritk/vector/issues/131)) ([f9be4fb](https://github.com/amritk/vector/commit/f9be4fbb8e132cdc222eb772d1bc224e126d1401))
+* **spec:** cite a vector's stated result to a second RFC section ([#133](https://github.com/amritk/vector/issues/133)) ([ca00f28](https://github.com/amritk/vector/commit/ca00f2813458e472c1a9d101e87ffdaa817316c0))
+* **spec:** hold a truncated result to a vector row with a Truncate paragraph ([#130](https://github.com/amritk/vector/issues/130)) ([293f44a](https://github.com/amritk/vector/commit/293f44afd8ad5daecc9b87bf6a524b6a4d5eed1a))
+* **spec:** let a label hold an apostrophe, a comma alias and a group with a comma ([#127](https://github.com/amritk/vector/issues/127)) ([869d875](https://github.com/amritk/vector/commit/869d8753a5bf5e68890c730d43e96737b8d5d93d))
+* **spec:** scope a vector row's labels to an in-section Test Vector #N ([#129](https://github.com/amritk/vector/issues/129)) ([ae1e7ed](https://github.com/amritk/vector/commit/ae1e7ed97af5f4e2d282dfa7a6bc81d11976676e))
+
+
+### Bug Fixes
+
+* **spec:** classify generated tests by every contract in spec frozen ([#126](https://github.com/amritk/vector/issues/126)) ([4672a7b](https://github.com/amritk/vector/commit/4672a7b2ab8ef08b8f63a42afcd59bf1fecd17e4))
+
 ## [0.3.1](https://github.com/amritk/vector/compare/v0.3.0...v0.3.1) (2026-11-16)
 
 

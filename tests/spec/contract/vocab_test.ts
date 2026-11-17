@@ -1,6 +1,8 @@
 import { JSON_VALUE_NONE, JsonDocument, JsonValue } from "nish/json-value"
 import { Suite } from "nish/testing"
 import { newJsonDocument, readJsonFile } from "../../../src/core/json"
+import { charsIsWordList } from "../../../src/spec/contract/chars"
+import { typesWordsKey, typesWordsKind } from "../../../src/spec/contract/types"
 import {
   Outcome,
   VOCAB_JSON_SAFE_MAX,
@@ -17,6 +19,7 @@ import {
   vocabIsIntType,
   vocabIsJsonSafe,
   vocabIsOptional,
+  vocabIsWordType,
   vocabLanguages,
   vocabLevels,
   vocabLiteralKinds,
@@ -24,6 +27,8 @@ import {
   vocabOutcomeOf,
   vocabSigTypes,
   vocabValueType,
+  vocabWordDigits,
+  vocabWordTypes,
 } from "../../../src/spec/contract/vocab"
 
 /** The strings of a JSON array. */
@@ -126,5 +131,39 @@ export const main = (): i32 => {
   t.eqStr("JSON safe max", VOCAB_JSON_SAFE_MAX, "9007199254740991")
   t.ok("2^53-1 is JSON safe", vocabIsJsonSafe("9007199254740991") && vocabIsJsonSafe("-9007199254740991"))
   t.ok("2^53 is not", !vocabIsJsonSafe("9007199254740992") && !vocabIsJsonSafe("-9007199254740992"))
+
+  t.eqLines("the word-array types", vocabWordTypes(), ["words16", "words32", "words64"])
+  const wordTypes: string[] = ["words16", "words32", "words64", "words8", "words32?", "bytes", "u32", ""]
+  const wordDigits: i32[] = [4, 8, 16, 0, 0, 0, 0, 0]
+  for (let i = 0; i < wordTypes.length; i++) {
+    t.ok(`${wordTypes[i]} is a word type: ${wordDigits[i] > 0}`, vocabIsWordType(wordTypes[i]) === wordDigits[i] > 0)
+    t.ok(`${wordTypes[i]} words have ${wordDigits[i]} digits`, vocabWordDigits(wordTypes[i]) === wordDigits[i])
+  }
+  for (const d of [4, 8, 16]) {
+    t.eqStr(`the kind of ${d}-digit words`, typesWordsKey(typesWordsKind(d)), `words${d * 4}`)
+  }
+
+  const lists: string[][] = [
+    ["0x11111111", "0x01020304"],
+    ["11111111", "01020304"],
+    ["0x11111111", "01020304"],
+    ["11111111", "0x01020304"],
+    ["1111111", "01020304"],
+    ["0x1111111f1", "0x01020304"],
+    ["0X11111111"],
+    ["1111111F"],
+    ["ffff"],
+    ["ffffffffffffffff"],
+    [],
+  ]
+  const listDigits: i32[] = [8, 8, 8, 8, 8, 8, 8, 8, 4, 16, 8]
+  const listOk: boolean[] = [true, true, false, false, false, false, false, false, true, true, false]
+  for (let i = 0; i < lists.length; i++) {
+    t.ok(
+      `[${lists[i].join(" ")}] is ${listOk[i] ? "" : "not "}a ${listDigits[i]}-digit word list`,
+      charsIsWordList(lists[i], listDigits[i]) === listOk[i],
+    )
+  }
+  t.ok("8-digit words are not 4-digit words", !charsIsWordList(["11111111"], 4))
   return t.done()
 }

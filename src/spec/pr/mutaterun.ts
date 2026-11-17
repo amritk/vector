@@ -639,6 +639,25 @@ const mutaterunWithTest = (
 }
 
 /**
+ * Notes each slow vector of the contract at `contractPath` in `r`: the test
+ * mutate emits skips it, as `spec emit` does without `--slow`, so no mutant
+ * meets it.
+ */
+const mutaterunSlowNotes = (contractPath: string, r: PrReport): void => {
+  const loaded = contractLoadFile(contractPath)
+  if (loaded.isErr()) {
+    return
+  }
+  for (const cl of loaded.value.clauses) {
+    if (cl.iterate?.slow ?? false) {
+      r.notes.push(
+        `slow vector ${cl.id} was not run against the mutants: the emitted test skips it, as spec emit does without --slow`,
+      )
+    }
+  }
+}
+
+/**
  * The contract's test as `spec emit` writes it, for a run given no `--test`:
  * `Ok(null)` with the refusals added to `r` when the contract is refused,
  * `Err` when it cannot be read or a tool its check needs (z3) failed, which
@@ -647,6 +666,7 @@ const mutaterunWithTest = (
 const mutaterunEmit = (contractPath: string, r: PrReport): Result<string | null, string> => {
   const emitted = emitContractFile(contractPath, null, new EmitPackages(), ".", new EmitTarget("nish", "standalone"))
   if (emitted.isOk()) {
+    mutaterunSlowNotes(contractPath, r)
     return Ok(emitted.value.program)
   }
   const none: string | null = null

@@ -40,16 +40,21 @@ to 7 without touching anything on the spec side.
 into a class:
 
 - **spec**: `specs/`, `contracts/` and `rfcs/`;
-- **generated**: a test in `test/spec/` whose `// vector-contract-sha256:`
-  line names a contract the gate checks. It counts on the spec side, so it
-  lands with its contract, not with the implementation;
+- **generated**: a test in `test/spec/` whose one `// vector-contract-sha256:`
+  line names a contract in `contracts/` (not a symbolic link) or one given on
+  the command line, as that contract is in the work tree. It counts on the
+  spec side, so it lands with its contract, not with the implementation. A
+  test with no such line, with two, or naming no contract is implementation;
 - **neutral**: `docs/` and the top-level `*.md` files;
 - **implementation**: everything else.
 
 It refuses a change with both spec and implementation files, and a contract
 whose recorded source hashes no longer match the files. The contracts are
-named from the repository's top, and default to every `contracts/*.json`;
-`--repo <dir>` names the repository when it is not the current directory.
+named from the repository's top, and default to every `contracts/*.json`.
+Only the contracts given are checked and listed: naming one contract of a PR
+that changes two still classes both tests as generated, but reports nothing
+about the other. `--repo <dir>` names the repository when it is not the
+current directory.
 
 ```sh
 ./dist/vector spec frozen --base HEAD
@@ -362,7 +367,10 @@ in a spec-side PR before the implementation.
 - `--test <file>` runs that test program against each mutant. Without it,
   mutate emits the contract's test as `spec emit` does, checking the contract
   with the current directory as the repository's top, so run it from there,
-  as CI does.
+  as CI does. That test skips a slow vector, as `spec emit` does without
+  `--slow`, and mutate notes each one it skipped
+  (`slow vector CHAIN-100000 was not run against the mutants: …`): no mutant
+  meets it, so a bug only it would catch survives.
 
 ### When it refuses, and when it exits 2
 

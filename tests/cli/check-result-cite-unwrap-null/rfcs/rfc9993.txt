@@ -1,0 +1,27 @@
+Independent Submission                                        V. Authors
+Request for Comments: 9993                                        vector
+Category: Informational                                    November 2026
+
+
+                         Mini Lookups in Text
+
+1.  Introduction
+
+   A mini lookup finds the value a key holds.
+
+2.  Use
+
+   A receiver MUST use each value a lookup finds.
+
+3.  Test Vectors
+
+   A lookup of KEY MUST return null.
+
+   KEY = 01
+
+
+
+
+
+Authors                       Informational                     [Page 1]
+

@@ -1,0 +1,1 @@
+vector spec check tests/cli/check-result-cite-stray/contracts/mini-tag.json --spec tests/cli/check-result-cite-stray/rfcs/rfc9992.txt

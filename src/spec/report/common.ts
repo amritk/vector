@@ -7,6 +7,7 @@
 import { splitWhitespace } from "nish/text"
 import { CheckContext, CheckNote, CheckReport, CheckSampleStat, CheckSourceRun, checkSamplesOf } from "../check"
 import { Clause, ClauseKind, Contract, VectorSourceKind } from "../contract/types"
+import { gateResultApart } from "../gates/provenance"
 import { gateRunCommands } from "../gates/run"
 import { sourceDecls, sourceMainId } from "../source/load"
 
@@ -243,7 +244,8 @@ export const reportSampleCount = (ctx: CheckContext, id: string): i32 => toI32(c
  *
  * @param ctx the check's context
  * @param k the clause
- * @returns the evidence, such as `vector, §2.2` or `24 samples (6 boundary)`
+ * @returns the evidence, such as `vector, §2.2`, `vector, §7.1, result §5.1.7`
+ *   (inputs and result cited apart) or `24 samples (6 boundary)`
  */
 export const reportEvidence = (ctx: CheckContext, k: Clause): string => {
   const s = k.source
@@ -254,11 +256,20 @@ export const reportEvidence = (ctx: CheckContext, k: Clause): string => {
     if (s.kind === VectorSourceKind.Command) {
       return `vector, expected from ${s.text}`
     }
+    const inputs = k.section
+    const c = ctx.contract
+    if (inputs !== null && gateResultApart(c, k)) {
+      return `vector, ${reportCite(c, null, inputs)}, result ${reportCite(c, null, s.text)}`
+    }
     if (s.kind === VectorSourceKind.Spec) {
       return `vector, spec ${s.text}`
     }
     const cite = s.cite
-    return cite === null ? "vector" : `vector, ${reportCite(ctx.contract, cite.source, cite.section)}`
+    if (cite === null) {
+      return "vector"
+    }
+    const tc = cite.testCase
+    return `vector, ${reportCite(ctx.contract, cite.source, cite.section)}${tc === null ? "" : `, ${tc}`}`
   }
   const stat = reportStat(ctx, k.id)
   return stat === null ? "property" : `${reportSampleCount(ctx, k.id)} samples (${stat.boundary} boundary)`

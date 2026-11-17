@@ -34,12 +34,20 @@
 
 import { split } from "nish/text"
 import { diagPlace } from "../../core/diag"
-import { charsFirstControl, charsIsAbs, charsIsId, charsIsIdent, charsIsSection } from "../contract/chars"
+import {
+  charsFirstControl,
+  charsIsAbs,
+  charsIsId,
+  charsIsIdent,
+  charsIsSection,
+  charsTestVector,
+} from "../contract/chars"
 import { contractF64Overflows, contractF64Parse } from "../contract/f64"
 import {
   RawCall,
   RawLiteral,
   SettledVector,
+  literalsByteLength,
   literalsKindOf,
   literalsParse,
   literalsParseCall,
@@ -64,11 +72,12 @@ import {
   SourceDecl,
   Target,
   Tolerance,
+  Truncate,
   VectorSource,
   VectorSourceKind,
 } from "../contract/types"
 import { typeCallsIn } from "../contract/typing"
-import { vocabHas, vocabIsBinding, vocabLevels } from "../contract/vocab"
+import { vocabHas, vocabIsBinding, vocabLevels, vocabValueType } from "../contract/vocab"
 import { FrontRefusal, frontParseInterface, frontParseProperty, frontReads } from "../front/front"
 import { RfcDocument, rfcNormalize, rfcSection, rfcSectionText } from "../source/rfc"
 import { XmlDocument } from "../xml/doc"
@@ -85,12 +94,17 @@ const PROFILE_OUT_OF_SCOPE: string = "Out of scope: "
 const PROFILE_OUT_OF_SCOPE_FORM: string = "Out of scope: <export>, <the reason no clause tests it>"
 const PROFILE_ULPS_MAX: string = "9007199254740991"
 const PROFILE_STRAY_TOLERANCE: string =
-  "this Tolerance: paragraph follows no vector table; it must directly follow the vector table or another Tolerance: or Iterate: paragraph"
+  "this Tolerance: paragraph follows no vector table; it must directly follow the vector table or another Tolerance:, Iterate: or Truncate: paragraph"
 const PROFILE_ITERATE: string = "Iterate: "
 const PROFILE_ITERATE_FORM: string = "Iterate: V1 1,000 times, (k, u) <- (f(k, u), k)"
 const PROFILE_ITERATE_MAX: i64 = 1000000000
 const PROFILE_STRAY_ITERATE: string =
-  "this Iterate: paragraph follows no vector table; it must directly follow the vector table or a Tolerance: or Iterate: paragraph, like Iterate: V1 1,000 times, (k, u) <- (f(k, u), k)"
+  "this Iterate: paragraph follows no vector table; it must directly follow the vector table or a Tolerance:, Iterate: or Truncate: paragraph, like Iterate: V1 1,000 times, (k, u) <- (f(k, u), k)"
+const PROFILE_TRUNCATE: string = "Truncate: "
+const PROFILE_TRUNCATE_FORM: string = "Truncate: V1 to 128 bits (or to 16 bytes)"
+const PROFILE_TRUNCATE_MAX_BYTES: i64 = 65536
+const PROFILE_STRAY_TRUNCATE: string =
+  "this Truncate: paragraph follows no vector table; it must directly follow the vector table or a Tolerance:, Iterate: or Truncate: paragraph, like Truncate: V1 to 128 bits (or to 16 bytes)"
 const PROFILE_MAIN_KEY: string = "vector-main-"
 const PROFILE_ID_RULE: string = `is not letters, digits, ".", "_" and "-", starting with a letter or digit`
 
@@ -164,6 +178,8 @@ export class ProfileMd {
   path: string
   /** Its number of lines; no place past the last is printed. */
   lines: i32
+  /** Its lines, when it was read; a paragraph the XML marks no line for is found here. */
+  text: string[]
   /**
    * Makes a markdown file's record.
    *
@@ -171,6 +187,7 @@ export class ProfileMd {
    * @param lines how many lines it has
    */
   constructor(path: string, lines: i32) {
+    this.text = []
     this.path = path
     this.lines = lines
   }
@@ -193,8 +210,32 @@ export const profileMdRead = (path: string | null): ProfileMd | null => {
   if (text.length === 0) {
     return new ProfileMd(path, 0)
   }
-  const lines = split(text, "\n").length
-  return new ProfileMd(path, text.endsWith("\n") ? lines - 1 : lines)
+  const all = split(text, "\n")
+  const md = new ProfileMd(path, text.endsWith("\n") ? all.length - 1 : all.length)
+  md.text = all
+  return md
+}
+
+/**
+ * Where a paragraph is: its own markdown line when exactly one line of the
+ * markdown starts with `head` (kramdown-rfc marks no line for a paragraph),
+ * else the XML node's place.
+ */
+const profileParaLoc = (c: ProfileContext, p: XmlNode, head: string): ProfileLoc => {
+  const md = c.md
+  if (md === null) {
+    return profileLocOf(p)
+  }
+  let found = -1
+  for (let i = 0; i < md.lines; i++) {
+    if (profileTrim(md.text[i]).startsWith(head)) {
+      if (found >= 0) {
+        return profileLocOf(p)
+      }
+      found = i + 1
+    }
+  }
+  return found < 0 ? profileLocOf(p) : new ProfileLoc(p.line, found, p.line)
 }
 
 /** The RFCs a spec may cite, read beforehand, and the ones it needed but were not there. */
@@ -313,11 +354,14 @@ class ProfileTable {
   section: string
   tolerances: XmlNode[]
   iterates: XmlNode[]
+  /** The Truncate: paragraphs right after it. */
+  truncates: XmlNode[]
   constructor(node: XmlNode, section: string) {
     this.node = node
     this.section = section
     this.tolerances = []
     this.iterates = []
+    this.truncates = []
   }
 }
 
@@ -354,6 +398,10 @@ class ProfileContext {
   /** Each iterated vector, and (alongside) its Iterate: paragraph. */
   iterateIds: string[]
   iterateLocs: ProfileLoc[]
+  /** The ids of the truncated vectors, in the order read. */
+  truncateIds: string[]
+  /** Where each truncated vector's Truncate: paragraph is. */
+  truncateLocs: ProfileLoc[]
   properties: Clause[]
   propertyLocs: ProfileLoc[]
   /** Each export out of scope, and (alongside) its Out of scope: paragraph. */
@@ -388,6 +436,8 @@ class ProfileContext {
     this.toleranceLocs = []
     this.iterateIds = []
     this.iterateLocs = []
+    this.truncateIds = []
+    this.truncateLocs = []
     this.properties = []
     this.propertyLocs = []
     this.outOfScope = []
@@ -472,6 +522,10 @@ const profileRefuseAt = (c: ProfileContext, loc: ProfileLoc, message: string, co
 
 const profileRefuse = (c: ProfileContext, n: XmlNode, message: string): void => {
   profileRefuseAt(c, profileLocOf(n), message, 0)
+}
+
+const profileRefuseLoc = (c: ProfileContext, loc: ProfileLoc, message: string): void => {
+  profileRefuseAt(c, loc, message, 0)
 }
 
 /**
@@ -1360,18 +1414,21 @@ const profileBlocks = (c: ProfileContext, parent: XmlNode, section: string): voi
   for (let i = 0; i < kids.length; i++) {
     const n = kids[i]
     if (n.name === "table") {
-      // The run of Tolerance: and Iterate: paragraphs right after it, in any
-      // order, goes with it; a BCP 14 keyword in one is quoted, not used.
+      // The run of Tolerance:, Iterate: and Truncate: paragraphs right after
+      // it, in any order, goes with it; a BCP 14 keyword in one is quoted, not used.
       const table = new ProfileTable(n, section)
       for (let j = i + 1; j < kids.length; j++) {
         const iterate = profileStartsWith(c, kids[j], PROFILE_ITERATE)
-        if (!iterate && !profileStartsWith(c, kids[j], PROFILE_TOLERANCE)) {
+        const truncate = profileStartsWith(c, kids[j], PROFILE_TRUNCATE)
+        if (!iterate && !truncate && !profileStartsWith(c, kids[j], PROFILE_TOLERANCE)) {
           break
         }
         used.add(kids[j])
         profileHandle(c, kids[j])
         if (iterate) {
           table.iterates.push(kids[j])
+        } else if (truncate) {
+          table.truncates.push(kids[j])
         } else {
           table.tolerances.push(kids[j])
         }
@@ -1474,6 +1531,9 @@ const profileBlocks = (c: ProfileContext, parent: XmlNode, section: string): voi
     } else if (profileStartsWith(c, n, PROFILE_ITERATE)) {
       profileHandle(c, n)
       profileRefuse(c, n, PROFILE_STRAY_ITERATE)
+    } else if (profileStartsWith(c, n, PROFILE_TRUNCATE)) {
+      profileHandle(c, n)
+      profileRefuse(c, n, PROFILE_STRAY_TRUNCATE)
     }
   }
 }
@@ -1575,6 +1635,9 @@ const profileReadTable = (c: ProfileContext, t: ProfileTable): void => {
     for (const p of t.iterates) {
       profileRefuse(c, p, PROFILE_STRAY_ITERATE)
     }
+    for (const p of t.truncates) {
+      profileRefuse(c, p, PROFILE_STRAY_TRUNCATE)
+    }
     return
   }
   if (header.join("|") !== want.join("|")) {
@@ -1612,6 +1675,90 @@ const profileReadTable = (c: ProfileContext, t: ProfileTable): void => {
   for (const p of t.iterates) {
     profileReadIterate(c, p, rowIds, read)
   }
+  for (const p of t.truncates) {
+    profileReadTruncate(c, p, rowIds, read)
+  }
+}
+
+/**
+ * A Truncate: paragraph, `<id> to <N> bits` or `<id> to <N> bytes`: the row's
+ * bytes result is held to its first N bytes, which its Expected prints whole.
+ */
+const profileReadTruncate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, read: Map<string, Clause>): void => {
+  const words = split(profileTrim(profileAfter(c, p, PROFILE_TRUNCATE)), " ").filter(
+    (w: string): boolean => w.length > 0,
+  )
+  if (words.length !== 4 || words[1] !== "to") {
+    profileRefuse(
+      c,
+      p,
+      `a Truncate: paragraph reads "<id> to <N> bits" or "<id> to <N> bytes": ${PROFILE_TRUNCATE_FORM}`,
+    )
+    return
+  }
+  const id = words[0]
+  const len = words[2]
+  const unit = words[3]
+  if (!profileAllDigits(len) || len.startsWith("0") || len.length > 7) {
+    profileRefuse(
+      c,
+      p,
+      `${id}'s length is a whole number of at least 1 in digits, with no leading zero, not "${len}": ${PROFILE_TRUNCATE_FORM}`,
+    )
+    return
+  }
+  if (unit !== "bits" && unit !== "bytes") {
+    profileRefuse(c, p, `${id}'s length is in "bits" or "bytes", not "${unit}": ${PROFILE_TRUNCATE_FORM}`)
+    return
+  }
+  let n: i64 = 0
+  for (let i = 0; i < len.length; i++) {
+    n = n * 10 + toI64(len.charCodeAt(i) - 48)
+  }
+  if (unit === "bits" && n % 8 !== 0) {
+    profileRefuse(
+      c,
+      p,
+      `${id} is truncated to ${len} bits, which is no whole number of bytes; a length in bits is a multiple of 8`,
+    )
+    return
+  }
+  const bytes = unit === "bits" ? n / 8 : n
+  if (bytes > PROFILE_TRUNCATE_MAX_BYTES) {
+    profileRefuse(c, p, `${id} is truncated to ${len} ${unit}, more than 65536 bytes`)
+    return
+  }
+  if (!rowIds.has(id)) {
+    profileRefuse(c, p, `Truncate: names "${id}", which is no vector of the table: ${PROFILE_TRUNCATE_FORM}`)
+    return
+  }
+  const v = read.get(id)
+  if (v === undefined) {
+    return
+  }
+  if (v.truncate !== null) {
+    profileRefuse(c, p, `${id} is truncated already; a vector has at most one Truncate: paragraph`)
+    return
+  }
+  const fn = profileFn(c, v.call)
+  const ret = fn !== null ? vocabValueType(fn.returns) : ""
+  if (ret !== "bytes") {
+    profileRefuse(c, p, `${id}'s ${v.call} returns ${ret}, and only a bytes result is truncated`)
+    return
+  }
+  const expect = v.expect
+  const got: i64 = expect === null ? toI64(-1) : literalsByteLength(expect)
+  if (got >= 0 && got !== bytes) {
+    profileRefuse(
+      c,
+      p,
+      `${id}'s Expected is ${got} bytes (${got * 8} bits), but Truncate: keeps ${bytes} bytes (${bytes * 8} bits); the Expected is the whole truncated result`,
+    )
+    return
+  }
+  v.truncate = new Truncate(bytes, unit)
+  c.truncateIds.push(id)
+  c.truncateLocs.push(profileLocOf(p))
 }
 
 /** Whether `s` is a section number at or under `parent` (`2.1` is under `2`). */
@@ -1838,7 +1985,7 @@ const profileIterateTuple = (s: string): string[] => {
  * One element of an Iterate: paragraph's next tuple: a name, or a call on
  * names; null, refused, when it is neither.
  */
-const profileIterateNext = (c: ProfileContext, p: XmlNode, id: string, s: string): Expr | null => {
+const profileIterateNext = (c: ProfileContext, loc: ProfileLoc, id: string, s: string): Expr | null => {
   if (charsIsIdent(s)) {
     return new Expr(ExprKind.Var, s)
   }
@@ -1854,7 +2001,7 @@ const profileIterateNext = (c: ProfileContext, p: XmlNode, id: string, s: string
       return e
     }
   }
-  profileRefuse(c, p, `${id}'s next "${s}" is neither a name nor a call on the names: ${PROFILE_ITERATE_FORM}`)
+  profileRefuseLoc(c, loc, `${id}'s next "${s}" is neither a name nor a call on the names: ${PROFILE_ITERATE_FORM}`)
   return null
 }
 
@@ -1874,19 +2021,27 @@ const profileReadIterate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, 
   const text = profileTrim(profileAfter(c, p, PROFILE_ITERATE))
   const words = split(text, " ")
   const id = words[0]
+  const loc = profileParaLoc(c, p, `${PROFILE_ITERATE}${id} `)
   if (words.length < 2 || words[1] === "times,") {
-    profileRefuse(c, p, `${id}'s Iterate: paragraph gives no count before "times,": ${PROFILE_ITERATE_FORM}`)
+    // Echo the author's own paragraph, with the count put where it goes.
+    const rest = profileTrim(text.substring(id.length, text.length))
+    const after = rest.length === 0 ? "times, (k, u) <- (f(k, u), k)" : rest
+    profileRefuseLoc(
+      c,
+      loc,
+      `${id}'s Iterate: paragraph gives no count before "times,": it reads "${PROFILE_ITERATE}${text}"; put the count there, like ${PROFILE_ITERATE}${id} 1,000 ${after}`,
+    )
     return
   }
   if (words.length < 3 || words[2] !== "times,") {
-    profileRefuse(c, p, `an Iterate: paragraph reads "<id> <count> times," first: ${PROFILE_ITERATE_FORM}`)
+    profileRefuseLoc(c, loc, `an Iterate: paragraph reads "<id> <count> times," first: ${PROFILE_ITERATE_FORM}`)
     return
   }
   const count = profileIterateCount(words[1])
   if (count < 0) {
-    profileRefuse(
+    profileRefuseLoc(
       c,
-      p,
+      loc,
       `${id}'s count is a whole number from 1 to 1,000,000,000 in digits, grouped in threes by commas or not at all, not "${words[1]}": ${PROFILE_ITERATE_FORM}`,
     )
     return
@@ -1899,9 +2054,9 @@ const profileReadIterate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, 
     width = "\u2190".length
   }
   if (arrow < 0) {
-    profileRefuse(
+    profileRefuseLoc(
       c,
-      p,
+      loc,
       `${id}'s Iterate: paragraph has no "<-" between its names and its next: ${PROFILE_ITERATE_FORM}`,
     )
     return
@@ -1914,7 +2069,7 @@ const profileReadIterate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, 
     it.slow = true
     lhs = profileTrim(lhs.substring("slow,".length, lhs.length))
     if (lhs.startsWith("slow,")) {
-      profileRefuse(c, p, `${id}'s Iterate: paragraph says "slow," twice; once is enough: ${PROFILE_ITERATE_FORM}`)
+      profileRefuseLoc(c, loc, `${id}'s Iterate: paragraph says "slow," twice; once is enough: ${PROFILE_ITERATE_FORM}`)
       return
     }
   }
@@ -1922,26 +2077,26 @@ const profileReadIterate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, 
   const open = lhs.indexOf("(")
   const comma = lhs.indexOf(",")
   if (open < 0 && comma >= 0 && split(lhs, ",").every((n: string): boolean => charsIsIdent(profileTrim(n)))) {
-    profileRefuse(
+    profileRefuseLoc(
       c,
-      p,
+      loc,
       `${id}'s names "${lhs}" are more than one, so they stand in parentheses, (${lhs}): ${PROFILE_ITERATE_FORM}`,
     )
     return
   }
   if (open === 0 && !lhs.endsWith(")")) {
-    profileRefuse(
+    profileRefuseLoc(
       c,
-      p,
+      loc,
       `${id}'s Iterate: paragraph has "${lhs}" before "<-"; the names end at their ")", and "slow," stands before them: ${PROFILE_ITERATE_FORM}`,
     )
     return
   }
   const extra = open >= 0 ? lhs.substring(0, open) : comma >= 0 ? lhs.substring(0, comma + 1) : ""
   if (profileTrim(extra).length > 0) {
-    profileRefuse(
+    profileRefuseLoc(
       c,
-      p,
+      loc,
       `${id}'s Iterate: paragraph has "${profileTrim(extra)}" after "times,", where only "slow," may stand: ${PROFILE_ITERATE_FORM}`,
     )
     return
@@ -1949,20 +2104,20 @@ const profileReadIterate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, 
   it.names = profileIterateTuple(lhs)
   for (const n of it.names) {
     if (!charsIsIdent(n)) {
-      profileRefuse(c, p, `${id}'s name "${n}" is not an identifier: ${PROFILE_ITERATE_FORM}`)
+      profileRefuseLoc(c, loc, `${id}'s name "${n}" is not an identifier: ${PROFILE_ITERATE_FORM}`)
       return
     }
   }
   const nexts = profileIterateTuple(rhs)
   for (const s of nexts) {
-    const e = profileIterateNext(c, p, id, s)
+    const e = profileIterateNext(c, loc, id, s)
     if (e === null) {
       return
     }
     it.next.push(e)
   }
   if (!rowIds.has(id)) {
-    profileRefuse(c, p, `Iterate: names "${id}", which is no vector of the table: ${PROFILE_ITERATE_FORM}`)
+    profileRefuseLoc(c, loc, `Iterate: names "${id}", which is no vector of the table: ${PROFILE_ITERATE_FORM}`)
     return
   }
   const v = read.get(id)
@@ -1970,36 +2125,36 @@ const profileReadIterate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, 
     return
   }
   if (v.iterate !== null) {
-    profileRefuse(c, p, `${id} is iterated already; a vector has at most one Iterate: paragraph`)
+    profileRefuseLoc(c, loc, `${id} is iterated already; a vector has at most one Iterate: paragraph`)
     return
   }
   const fn = profileFn(c, v.call)
   const arity = fn !== null ? fn.params.length : v.args.length
   if (it.names.length !== arity) {
-    profileRefuse(
+    profileRefuseLoc(
       c,
-      p,
+      loc,
       `${id} names ${it.names.length}, but ${v.call} takes ${arity}; one name per parameter: ${PROFILE_ITERATE_FORM}`,
     )
     return
   }
   if (it.next.length !== arity) {
-    profileRefuse(
+    profileRefuseLoc(
       c,
-      p,
+      loc,
       `${id}'s next has ${it.next.length}, but ${v.call} takes ${arity}; one per parameter: ${PROFILE_ITERATE_FORM}`,
     )
     return
   }
   for (const e of it.next) {
     if (e.kind === ExprKind.Var && !vocabHas(it.names, e.name)) {
-      profileRefuse(c, p, `${id}'s next names "${e.name}", which is not one of its names: ${PROFILE_ITERATE_FORM}`)
+      profileRefuseLoc(c, loc, `${id}'s next names "${e.name}", which is not one of its names: ${PROFILE_ITERATE_FORM}`)
       return
     }
     if (e.kind === ExprKind.Call && !profileIterateIsCall(e, v.call, it.names)) {
-      profileRefuse(
+      profileRefuseLoc(
         c,
-        p,
+        loc,
         `${id}'s next calls ${e.name}(${e.args.map((a: Expr): string => a.name).join(", ")}); a call there is the row's ${v.call}(${it.names.join(", ")}): ${PROFILE_ITERATE_FORM}`,
       )
       return
@@ -2007,7 +2162,7 @@ const profileReadIterate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, 
   }
   v.iterate = it
   c.iterateIds.push(id)
-  c.iterateLocs.push(profileLocOf(p))
+  c.iterateLocs.push(loc)
 }
 
 const profileCodeCell = (c: ProfileContext, td: XmlNode): string | null => {
@@ -2116,8 +2271,13 @@ const profileReadRow = (c: ProfileContext, cells: XmlNode[], section: string, tr
   v.title = title
   v.covers = covers
   v.source = source
-  // A cited vector's section is in its source.
-  if (source.kind !== VectorSourceKind.Cite) {
+  // A cited vector's section is in its source; a vector whose result is
+  // cited apart from its inputs is at the inputs' section, carried here.
+  const inputs = source.cite
+  if (source.kind === VectorSourceKind.Spec && inputs !== null) {
+    v.section = inputs.section
+    source.cite = null
+  } else if (source.kind !== VectorSourceKind.Cite) {
     v.section = section
   }
   v.call = pcall.call
@@ -2126,9 +2286,154 @@ const profileReadRow = (c: ProfileContext, cells: XmlNode[], section: string, tr
   return v
 }
 
+/** The accepted way to name one test case of a cited section, as refusals print it. */
+const PROFILE_CASE_FORM: string = "{{Section N of RFCx}}, Test Vector #N (N from 1, with no leading zero)"
+
+/**
+ * A Source cell's leading element and the text after it, when the cell is
+ * an element and then more: `{{Section N of RFCx}}, Test Vector #N` names
+ * one test case of the section. Null when nothing but blanks surrounds a
+ * lone element, or text comes before the first element.
+ */
+const profileSourceTail = (td: XmlNode): XmlNode | null => {
+  let k = td.first
+  while (k !== null && k.name.length === 0 && profileTrim(k.text).length === 0) {
+    k = k.next
+  }
+  if (k === null || k.name.length === 0 || profileOnly(td) !== null) {
+    return null
+  }
+  return k
+}
+
+/** The accepted way to cite a vector's result apart from its inputs, as refusals print it. */
+const PROFILE_RESULT_FORM: string =
+  "{{Section N of RFCx}}; result {{Section M of RFCx}}, two sections of the main RFC, for an Expected of null, true or false"
+
+/** Refuses a Source cell that misses the result form, saying why; always null. */
+const profileResultRefuse = (c: ProfileContext, td: XmlNode, why: string): VectorSource | null => {
+  profileRefuse(c, td, `Source: ${why}; write ${PROFILE_RESULT_FORM}`)
+  return null
+}
+
+/**
+ * A Source cell that cites a vector's inputs to one section of the main RFC
+ * and its null, true or false result to another, `{{Section A of RFCx}};
+ * result {{Section B of RFCx}}`: a Spec source of B, whose `cite` carries A
+ * for the row to take as its section. Null, refused, for anything else.
+ */
+const profileResultCite = (
+  c: ProfileContext,
+  td: XmlNode,
+  lead: XmlNode,
+  expect: Literal | null,
+): VectorSource | null => {
+  const sep = lead.next
+  const res: XmlNode | null = sep === null ? null : sep.next
+  if (sep === null || sep.name.length > 0 || profileTrim(profileRawText(sep)) !== "; result" || res === null) {
+    return profileResultRefuse(c, td, "a result's section follows the inputs' after \"; result \"")
+  }
+  let after = res.next
+  while (after !== null && after.name.length === 0 && profileTrim(after.text).length === 0) {
+    after = after.next
+  }
+  const leadSection: string | null = lead.name === "xref" ? xmlAttr(lead, "section") : null
+  const resSection: string | null = res.name === "xref" ? xmlAttr(res, "section") : null
+  if (leadSection === null || resSection === null) {
+    return profileResultRefuse(
+      c,
+      td,
+      "both the inputs and the result are cited to a section of the RFC, not an anchor or a code span",
+    )
+  }
+  if (after !== null) {
+    return profileResultRefuse(
+      c,
+      td,
+      `nothing may follow the result's section, not "${profileTrim(profileRawText(after))}"`,
+    )
+  }
+  const a = profileCitedRfc(c, lead)
+  const b = profileCitedRfc(c, res)
+  if (a < 0 || b < 0) {
+    return null
+  }
+  if (c.mainRfc < 0 || a !== c.mainRfc || b !== c.mainRfc) {
+    return profileResultRefuse(
+      c,
+      td,
+      c.mainRfc < 0
+        ? "a result is cited apart from its inputs only in a spec whose main source is an RFC"
+        : `both sections are of the main source, RFC${c.mainRfc}`,
+    )
+  }
+  if (leadSection === resSection) {
+    return profileResultRefuse(c, td, `the result's section is another than the inputs', not ${leadSection} again`)
+  }
+  if (expect === null) {
+    return null
+  }
+  if (expect.kind !== LitKind.Null && expect.kind !== LitKind.Bool) {
+    return profileResultRefuse(
+      c,
+      td,
+      `a section states a null, true or false result, so the Expected is one, not ${literalsKindOf(expect)}`,
+    )
+  }
+  c.cited.add(a)
+  const inputs = new Citation()
+  inputs.section = leadSection
+  const out = new VectorSource(VectorSourceKind.Spec)
+  out.text = resSection
+  out.cite = inputs
+  return out
+}
+
+/** What a Source cell's leading element is, as a refusal names it. */
+const profileSourceLead = (lead: XmlNode, cited: boolean): string => {
+  if (cited) {
+    return "section"
+  }
+  if (lead.name === "tt") {
+    return "code span"
+  }
+  return lead.name === "xref" ? "anchor" : `<${lead.name}> element`
+}
+
 /** The Source cell, judged against the settled Expected when there is one. */
 const profileSourceCell = (c: ProfileContext, td: XmlNode, expect: Literal | null): VectorSource | null => {
-  const el = profileOnly(td)
+  let el = profileOnly(td)
+  let testCase: string | null = null
+  const lead = profileSourceTail(td)
+  if (lead !== null) {
+    // Only text may follow, and only the one form that names a test case.
+    let rest = ""
+    let textOnly = true
+    let k = lead.next
+    while (k !== null) {
+      if (k.name.length > 0) {
+        textOnly = false
+      }
+      rest = rest + profileRawText(k)
+      k = k.next
+    }
+    const tail = profileTrim(rest)
+    if (tail.startsWith(";")) {
+      return profileResultCite(c, td, lead, expect)
+    }
+    const name = tail.startsWith(",") ? profileTrim(tail.substring(1)) : ""
+    const cited = lead.name === "xref" && xmlAttr(lead, "section") !== null
+    if (!cited || !textOnly || charsTestVector(name) === 0 || tail !== `, ${name}`) {
+      profileRefuse(
+        c,
+        td,
+        `Source: only one test case may follow a section, written ${PROFILE_CASE_FORM}; "${tail}" after the ${profileSourceLead(lead, cited)} is not one`,
+      )
+      return null
+    }
+    el = lead
+    testCase = name
+  }
   if (el !== null && el.name === "tt") {
     const command = profileRawText(el)
     if (profileTrim(command).length === 0) {
@@ -2162,6 +2467,7 @@ const profileSourceCell = (c: ProfileContext, td: XmlNode, expect: Literal | nul
       c.cited.add(n)
       const cite = new Citation()
       cite.section = section
+      cite.testCase = testCase
       if (n !== c.mainRfc) {
         cite.source = `rfc${n}`
       }
@@ -2400,9 +2706,16 @@ const profileShapeRefusals = (c: ProfileContext, out: Contract, clauseLocs: Prof
     } else if (e >= 0 && e < exLocs.length) {
       loc = exLocs[e]
     } else if (k >= 0 && k < clauseLocs.length) {
-      // An iterate's issue is its Iterate: paragraph's, not the row's.
+      // An iterate's or a truncate's issue is its paragraph's, not the row's.
       const at = c.iterateIds.indexOf(out.clauses[k].id)
-      loc = at >= 0 && issue.startsWith(`clauses[${k}].iterate`) ? c.iterateLocs[at] : clauseLocs[k]
+      const tr = c.truncateIds.indexOf(out.clauses[k].id)
+      if (at >= 0 && issue.startsWith(`clauses[${k}].iterate`)) {
+        loc = c.iterateLocs[at]
+      } else if (tr >= 0 && issue.startsWith(`clauses[${k}].truncate`)) {
+        loc = c.truncateLocs[tr]
+      } else {
+        loc = clauseLocs[k]
+      }
     } else if (f >= 0 && f < c.fnLocs.length) {
       loc = c.fnLocs[f]
     } else if (o >= 0 && o < c.outOfScopeLocs.length) {
@@ -2547,6 +2860,9 @@ export const profileRead = (
   }
   for (let i = 0; i < c.iterateIds.length; i++) {
     profilePut(c, l, `${c.iterateIds[i]}.iterate`, c.iterateLocs[i])
+  }
+  for (let i = 0; i < c.truncateIds.length; i++) {
+    profilePut(c, l, `${c.truncateIds[i]}.truncate`, c.truncateLocs[i])
   }
   for (let i = 0; i < c.functions.length; i++) {
     profilePut(c, l, c.functions[i].name, c.fnLocs[i])

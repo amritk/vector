@@ -105,9 +105,12 @@ export function hexDecode(text: string): u8[] | null
 The types are those of the table in [Writing a
 spec](../../../docs/guide/guides/writing-a-spec.md#types): `u8[]`, `string`,
 `boolean`, `Secret<u8[]>`, the fixed-width integers `i8` … `i64` and
-`u8` … `u64`, and `f64`. A Nish test can hold all but `i8` and `i16`, which
-Nish lacks, so the emitter refuses them. Add `| null` to `u8[]` or `string`,
-and to `Secret<u8[]>` as a result only.
+`u8` … `u64`, `f64`, and the word arrays `u16[]`, `u32[]` and `u64[]`. A
+Nish test can hold all but `i8` and `i16`, which Nish lacks, so the emitter
+refuses them; only the Nish test holds word arrays. Add `| null` to `u8[]`,
+a word array or `string`, and to `Secret<u8[]>` as a result only. Give
+word-array cases as vectors: a property over or calling word arrays is
+refused.
 
 A property may compare the module with another nish module (HKDF with
 HMAC). Declare that module's functions after a second `// module:` line,
@@ -224,9 +227,34 @@ extracts to.
   - `Key = 0b0b0b`: labelled bytes. Use the label the cited section prints
     the value under, several words if it does; the first word may start with
     digits joined to a letter (`32-bit fixed-common part = 07000000`).
+    A later word may be a comma-grouped number (`After 1,000 iterations`),
+    and one later word a parenthesised group (`MESSAGE (length 1 byte) = 72`,
+    as RFC 8032 prints it).
+  - `MESSAGE (length 0 bytes) = (empty)`: the empty value a section prints
+    as a label with nothing below it and a length of 0.
   - `concat(a, b, …)`: one level, all parts bytes. Never `‖`.
+  - `[0x11111111 0x01020304]` or `State = [879531e0 c5ecf37d]`: a word
+    array, for `u16[]`, `u32[]` or `u64[]`. Each word has the type's width
+    and is spelled as the section prints it, `0x` and all.
 - **Source** says where the expected value comes from:
   - `{{Section N of RFCx}}`: the value is printed there. Prefer this.
+  - `{{Section N of RFCx}}, Test Vector #K`: the values are all printed in
+    that one case of the section, under its `Test Vector #K:` heading. Use
+    it when a section prints several cases and a plain cite is refused as
+    unclear.
+  - `{{Section N of RFCx}}; result {{Section M of RFCx}}`: for a `null`,
+    `true` or `false` result, the inputs are printed in section N and the
+    result is supported by section M of the main RFC: a covered requirement
+    of M states it, or a property covering a requirement of M asserts the
+    call equals it for inputs inside its domains, each input either a
+    quantified variable or another cited vector's expected value (under
+    `unwrap` only a non-null one). Use it
+    for a verify vector whose section defines the check but never says
+    "MUST return true" (see the guide's "When a property derives the
+    result"). Widen the property's domain to hold the vector's inputs. A
+    "Check …" sentence alone never states the result, and a truncated,
+    iterated or toleranced vector, or a sibling vector that is, cannot be
+    derived; `tests/fixtures/result-ed25519/` is the worked example.
   - `{{anchor}}`: a numbered section of this spec. For a `null` or `bool`
     expected value it is a `spec` source (the covered requirement states it);
     for any other value it is a `cite` of that section, which must print the
@@ -234,8 +262,11 @@ extracts to.
   - A code span holding a command: the value is its trimmed stdout, so the
     Expected cell must be bytes or a string.
 - **Values from an RFC:**
-  - Each one is a *whole* printed value, never a prefix or a tail.
-  - Take the arguments and the expected value from one test case.
+  - Each one is a *whole* printed value, never a prefix or a tail. A word
+    array is a whole printed block of words, word for word.
+  - Take the arguments and the expected value from one test case. A label
+    printed once goes with the test case it is printed in: RFC 8032 §7.1's
+    empty MESSAGE belongs to TEST 1, not to TEST 2's key and signature.
   - Where a case is printed for several variants, use the row whose number
     is in the function's name.
   - [Writing a spec](../../../docs/guide/guides/writing-a-spec.md)'s "What a
@@ -346,8 +377,11 @@ Run it last, after step 4's `emit` and `stale`, so it sees the whole PR.
   - no contract was found.
 
 Its positional arguments are the contracts to check, from the repository's
-top; with none, it checks every `contracts/*.json`. `--repo <dir>` names the
-repository (default: the current directory).
+top; with none, it checks every `contracts/*.json`. Either way, a generated
+test whose one sha line names a contract in `contracts/` (not a sidecar or a
+symbolic link) or one given counts on the spec side, so a PR changing two
+contracts may name only one of them. `--repo <dir>` names the repository
+(default: the current directory).
 
 From here, the spec and contract change only in a PR of their own.
 
@@ -406,10 +440,15 @@ root's std. `--nish <bin>` builds with that compiler as it is.
 Every export the diff adds to or changes in the target module must be a
 function the contract tests. Exit 1 names each one that is not.
 
-A spec cannot declare `outOfScope` exports yet: the profile has no construct
-for them. When `exports` fails, either drop the export from the
-implementation, or add the function to the spec, with a clause that tests it,
-in a spec-side PR.
+When `exports` fails, do one of these in a spec-side PR:
+
+- drop the export from the implementation;
+- add the function to the spec, with a clause that tests it;
+- declare it out of scope with a paragraph
+  `Out of scope: <export>, <the reason no clause tests it>`, anywhere in the
+  body. The reason uses no BCP 14 keyword. `exports` then reports a change to
+  that export as a note, not a failure. The name is not checked against the
+  module, so a misspelt one excuses nothing.
 
 ### 7. Mutate the diff
 
@@ -493,6 +532,9 @@ paragraph after the vector table; see tests/fixtures/rfc7748. A vector
 marked `slow` (`Iterate: <id> 1,000,000 times, slow, …`) is skipped, and
 reported as skipped, never passed, unless `spec emit` / `spec run` get
 `--slow`; say so when a run reports a skip. A truncated result (RFC 4231
-test case 5, the first 128 bits of the HMAC) still cannot be compared:
-leave that vector out of the table and put an `Untested:` paragraph after the
-requirement it would have tested, saying why.
+test case 5, the first 128 bits of the HMAC) is a plain row whose Expected
+is the printed, truncated value, plus a `Truncate: <id> to 128 bits` (or
+`to 16 bytes`) paragraph after the vector table; see
+tests/fixtures/profile/profile-truncate.md. The cited section must print the
+length with that unit, the Expected must be exactly that long, and the
+function must return bytes; a result shorter than the length fails.
