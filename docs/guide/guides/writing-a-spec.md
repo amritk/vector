@@ -485,9 +485,24 @@ of matching bytes:
   non-blank lines, each a row of words of one width (one word may be marked
   with a leading `*`, not part of it) or one `name = word` line. A value that
   is only part of a block, a block written with `0x` where the section has
-  none (or the reverse), or a word that differs, is refused. A block printed
-  under a short line (`Sample ChaCha State`) or as a one-line `name = …`
-  takes that line as its label, and a labelled value must name it. An
+  none (or the reverse), or a word that differs, is refused. A blank line
+  ends a block, and so does a page break (the page footer and header xml2rfc
+  prints, whether or not blank lines surround them). Where a block ends at a
+  page break and the next line is a row of words of the same width and
+  spelling, the print does not say whether the page split one block or
+  separates two, so a value that equals the block on either side of that
+  break, or runs across it, is refused as meeting a page break (unless the
+  same words are also printed as a whole block elsewhere in the section):
+  cite a vector printed away from the break. A row of another width or spelling, a
+  label, a heading or prose after a break ends the block before it, and
+  that block is checked as usual. A block printed under a short line
+  (`Sample ChaCha State`) or as a one-line `name = …` takes that line as
+  its label, and a labelled value must name it. The line above is a label
+  only when it is at most 60 characters, does not end in `.`, `:` or `,`
+  (so `State:` labels no word block, though `Plaintext:` labels bytes), does
+  not open with a section number, and holds no word of 4, 8 or 16 hex digits. A
+  block of several `name = word` lines has no label: its names name its
+  words. An
   unlabelled value may still bind to a labelled block, where unlabelled
   bytes printed under a label are refused: a word value must equal a whole
   block, so its words alone say which block it is, while bytes can match

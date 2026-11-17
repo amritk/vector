@@ -284,6 +284,52 @@ const gateWordsInside = (words: string[], want: string[]): boolean => {
   return false
 }
 
+/**
+ * Whether `want` runs across a page break between blocks that break may
+ * join (GateWordBlock.joinsNext), ignoring `0x`: the words on either side
+ * may be one block or two, so the print does not say whether it is a block.
+ */
+const gateWordsAcross = (blocks: GateWordBlock[], want: string[]): boolean => {
+  let b = 0
+  while (b < blocks.length) {
+    const words: string[] = []
+    const joins: i32[] = []
+    let e = b
+    for (const w of blocks[e].words) {
+      words.push(w)
+    }
+    while (blocks[e].joinsNext && e + 1 < blocks.length) {
+      joins.push(words.length)
+      e = e + 1
+      for (const w of blocks[e].words) {
+        words.push(w)
+      }
+    }
+    for (let i = 0; i + want.length <= words.length; i++) {
+      let crosses = false
+      for (const j of joins) {
+        if (i < j && i + want.length > j) {
+          crosses = true
+        }
+      }
+      if (crosses && gateWordsAt(words, want, i, true)) {
+        return true
+      }
+    }
+    b = e + 1
+  }
+  return false
+}
+
+/** The refusal of a word value that meets a page break the print does not say a block ends at. */
+const gateWordsBreakFail = (l: GateLits, at: string, n: i32): void => {
+  gateLitFail(
+    l,
+    at,
+    `${n}-word value meets a page break in ${l.inSection}, and the rows on either side of it may be one block or two: the print does not say which, so the value cannot be checked against it`,
+  )
+}
+
 /** ` (under "label")` for a block printed under a label, or "". */
 const gateWordsUnder = (b: GateWordBlock): string => {
   const bl = b.label
@@ -299,13 +345,26 @@ const gateWordsCheck = (l: GateLits, lit: Literal, at: string): void => {
   const want = lit.words
   const n = want.length
   const exact: i32[] = []
+  let broken = false
   for (let b = 0; b < l.blocks.length; b++) {
     const words = l.blocks[b].words
     if (words.length === n && gateWordsAt(words, want, 0, false)) {
-      exact.push(b)
+      if (l.blocks[b].atBreak) {
+        broken = true
+      } else {
+        exact.push(b)
+      }
     }
   }
+  if (exact.length === 0 && broken) {
+    gateWordsBreakFail(l, at, n)
+    return
+  }
   if (exact.length === 0) {
+    if (gateWordsAcross(l.blocks, want)) {
+      gateWordsBreakFail(l, at, n)
+      return
+    }
     const prefixed = want[0].startsWith("0x")
     for (const b of l.blocks) {
       if (b.words.length === n && gateWordsAt(b.words, want, 0, true)) {

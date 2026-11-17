@@ -4,13 +4,24 @@
 
 `spec/gates/words` — the blocks of words a section prints, which a
 u16[], u32[] or u64[] vector value binds to. A block is a maximal run of
-non-blank lines (a page break does not end one: the blank lines around
-removed page furniture are skipped when a row continues the block below
-them, while any other blank line ends it), each either a grid row (words of one width, one of which
+non-blank lines, each either a grid row (words of one width, one of which
 may be marked with a leading `*` that is not part of it) or one
 `name = word` assignment, all its words of one width (4, 8 or 16
 lowercase hex digits) and one spelling (`0x` on all or none). A run with
 any other line is not a block. A block's words are read row by row.
+
+Any blank line ends a block, a page break's too. Where page furniture was
+removed between two runs that could be one block (the line after the
+break is a row of words of the width and spelling of the line before it),
+the print does not say whether they are one block split by the page or
+two blocks: the blank lines xml2rfc pads a page with look like the blank
+line between two blocks. Each such block is marked `atBreak`, and the
+block before a break that may continue it is marked `joinsNext`, so
+fidelity refuses a value that meets the break rather than guess. Furniture
+removed with no blank line around it ends a run all the same. A row of
+another width or spelling, a `name = word` line of another width, a label
+or any other line after a break ends the block before it, which stays
+unmarked.
 
 A block's label is the name of a one-line assignment, or else the short
 line printed above it (blank lines between), when that line is not a
@@ -65,12 +76,28 @@ the hex digits of each word
 
 </scalar-field>
 
+#### GateWordBlock.atBreak
+
+Whether a page break before or after it may join it to more words, so where it ends is not printed.
+
+```ts
+atBreak: boolean
+```
+
 #### GateWordBlock.digits
 
 The hex digits of each word: 4, 8 or 16.
 
 ```ts
 digits: i32
+```
+
+#### GateWordBlock.joinsNext
+
+Whether the next block is printed after a page break that may join the two into one.
+
+```ts
+joinsNext: boolean
 ```
 
 #### GateWordBlock.label

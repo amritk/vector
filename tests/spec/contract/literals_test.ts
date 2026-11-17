@@ -662,6 +662,12 @@ export const main = (): i32 => {
   // A literal of one kind where another goes, for every width and bytes.
   const kinds: string[] = ["bytes", "words16", "words32", "words64"]
   const samples: string[] = ["[00 0f]", "[0x1111 0x2222]", "[0x11111111 0x22222222]", "[0x1111111111111111]"]
+  const read: string[] = [
+    "{hex:000f}",
+    "{words16:0x1111,0x2222}",
+    "{words32:0x11111111,0x22222222}",
+    "{words64:0x1111111111111111}",
+  ]
   for (const want of kinds) {
     const fn = litTestFn("f", ["x", want], want)
     for (let i = 0; i < samples.length; i++) {
@@ -669,7 +675,7 @@ export const main = (): i32 => {
       const r = litTestVector(fn, `f(${samples[i]})`, samples[i])
       const expect =
         got === want
-          ? `${litTestSettle(samples[i], want)} -> ${litTestSettle(samples[i], want)}`
+          ? `${read[i]} -> ${read[i]}`
           : `Call: argument 1 of f (x) is ${want}, not ${got}\nExpected: f returns ${want}, not ${got}`
       t.eqStr(`${samples[i]} where ${want} goes`, r, expect)
     }

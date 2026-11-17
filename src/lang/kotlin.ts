@@ -87,7 +87,7 @@ export const langTableKotlin = (): LangTable => {
     "words16",
     langSpell(
       "shortArrayOf(0x6170, 0x7865)",
-      "a word above the signed maximum as its unsigned literal converted (0xffffffffu.toInt())",
+      "a word above the signed maximum as its unsigned literal converted (0xffffu.toShort())",
     ),
   )
   t.literal(
@@ -101,7 +101,7 @@ export const langTableKotlin = (): LangTable => {
     "words64",
     langSpell(
       "longArrayOf(0x3320646e61707865, 0x6b20657479622d32)",
-      "a word above the signed maximum as its unsigned literal converted (0xffffffffu.toInt())",
+      "a word above the signed maximum as its unsigned literal converted (0xffffffffffffffffuL.toLong())",
     ),
   )
   t.moduleForm = "class"

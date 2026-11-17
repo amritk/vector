@@ -1,13 +1,24 @@
 /**
  * `spec/gates/words` — the blocks of words a section prints, which a
  * u16[], u32[] or u64[] vector value binds to. A block is a maximal run of
- * non-blank lines (a page break does not end one: the blank lines around
- * removed page furniture are skipped when a row continues the block below
- * them, while any other blank line ends it), each either a grid row (words of one width, one of which
+ * non-blank lines, each either a grid row (words of one width, one of which
  * may be marked with a leading `*` that is not part of it) or one
  * `name = word` assignment, all its words of one width (4, 8 or 16
  * lowercase hex digits) and one spelling (`0x` on all or none). A run with
  * any other line is not a block. A block's words are read row by row.
+ *
+ * Any blank line ends a block, a page break's too. Where page furniture was
+ * removed between two runs that could be one block (the line after the
+ * break is a row of words of the width and spelling of the line before it),
+ * the print does not say whether they are one block split by the page or
+ * two blocks: the blank lines xml2rfc pads a page with look like the blank
+ * line between two blocks. Each such block is marked `atBreak`, and the
+ * block before a break that may continue it is marked `joinsNext`, so
+ * fidelity refuses a value that meets the break rather than guess. Furniture
+ * removed with no blank line around it ends a run all the same. A row of
+ * another width or spelling, a `name = word` line of another width, a label
+ * or any other line after a break ends the block before it, which stays
+ * unmarked.
  *
  * A block's label is the name of a one-line assignment, or else the short
  * line printed above it (blank lines between), when that line is not a
@@ -28,6 +39,10 @@ export class GateWordBlock {
   label: string | null
   /** The hex digits of each word: 4, 8 or 16. */
   digits: i32
+  /** Whether a page break before or after it may join it to more words, so where it ends is not printed. */
+  atBreak: boolean
+  /** Whether the next block is printed after a page break that may join the two into one. */
+  joinsNext: boolean
   /**
    * Makes a block.
    *
@@ -39,6 +54,8 @@ export class GateWordBlock {
     this.words = words
     this.label = label
     this.digits = digits
+    this.atBreak = false
+    this.joinsNext = false
   }
 }
 
@@ -148,25 +165,21 @@ const gateWordsLabelAbove = (lines: string[], start: i32): string | null => {
   return above
 }
 
-/**
- * The first line after the blank run at `at`, when a page break lies in that
- * run and the line is a row of words, so the block above goes on below it;
- * else -1.
- */
-const gateWordsAcrossBreak = (lines: string[], pageBreaks: i32[], at: i32): i32 => {
-  let b = at
-  while (b < lines.length && rfcNormalize(lines[b]).length === 0) {
-    b = b + 1
-  }
-  if (b >= lines.length || gateWordsLine(lines[b]) === null) {
-    return -1
-  }
+/** Whether a page break was removed in the lines from `from` to `to`, both included. */
+const gateWordsBreakIn = (pageBreaks: i32[], from: i32, to: i32): boolean => {
   for (const p of pageBreaks) {
-    if (p >= at && p <= b) {
-      return b
+    if (p >= from && p <= to) {
+      return true
     }
   }
-  return -1
+  return false
+}
+
+/** Whether two lines of words could be rows of one block: the same width and spelling. */
+const gateWordsSameKind = (a: GateWordsLine, b: GateWordsLine): boolean => {
+  const x = a.words[0]
+  const y = b.words[0]
+  return gateWordsDigits(x) === gateWordsDigits(y) && x.startsWith("0x") === y.startsWith("0x")
 }
 
 /**
@@ -179,6 +192,10 @@ const gateWordsAcrossBreak = (lines: string[], pageBreaks: i32[], at: i32): i32 
  */
 export const gateWordBlocks = (lines: string[], pageBreaks: i32[]): GateWordBlock[] => {
   const out: GateWordBlock[] = []
+  // Each run of non-blank lines, which a page break ends as a blank line does: its first line, the line after its last, and the block it is (-1 when none).
+  const starts: i32[] = []
+  const ends: i32[] = []
+  const of: i32[] = []
   let i = 0
   while (i < lines.length) {
     if (rfcNormalize(lines[i]).length === 0) {
@@ -188,7 +205,11 @@ export const gateWordBlocks = (lines: string[], pageBreaks: i32[]): GateWordBloc
     const start = i
     let block = true
     const read: GateWordsLine[] = []
-    while (i < lines.length && rfcNormalize(lines[i]).length > 0) {
+    while (
+      i < lines.length &&
+      rfcNormalize(lines[i]).length > 0 &&
+      (i === start || !gateWordsBreakIn(pageBreaks, i, i))
+    ) {
       const w = gateWordsLine(lines[i])
       if (w === null) {
         block = false
@@ -196,13 +217,10 @@ export const gateWordBlocks = (lines: string[], pageBreaks: i32[]): GateWordBloc
         read.push(w)
       }
       i = i + 1
-      if (block && i < lines.length && rfcNormalize(lines[i]).length === 0) {
-        const next = gateWordsAcrossBreak(lines, pageBreaks, i)
-        if (next > 0) {
-          i = next
-        }
-      }
     }
+    starts.push(start)
+    ends.push(i)
+    of.push(-1)
     if (!block) {
       continue
     }
@@ -227,7 +245,30 @@ export const gateWordBlocks = (lines: string[], pageBreaks: i32[]): GateWordBloc
     } else if (read.length === 1) {
       label = names[0]
     }
-    out.push(new GateWordBlock(words, label, digits))
+    of[of.length - 1] = out.length
+    const one = new GateWordBlock(words, label, digits)
+    out.push(one)
+  }
+  for (let r = 0; r + 1 < starts.length; r++) {
+    if (!gateWordsBreakIn(pageBreaks, ends[r], starts[r + 1])) {
+      continue
+    }
+    const before = gateWordsLine(lines[ends[r] - 1])
+    const after = gateWordsLine(lines[starts[r + 1]])
+    if (before === null || after === null || !gateWordsSameKind(before, after)) {
+      continue
+    }
+    const a = of[r]
+    const b = of[r + 1]
+    if (a >= 0) {
+      out[a].atBreak = true
+    }
+    if (b >= 0) {
+      out[b].atBreak = true
+    }
+    if (a >= 0 && b >= 0) {
+      out[a].joinsNext = true
+    }
   }
   return out
 }

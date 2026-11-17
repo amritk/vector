@@ -47,7 +47,9 @@ const WORDS_EMIT_C: string = `{
 
 /**
  * The module the contract tests: right when `bug` is "", or with one function
- * wrong: "rev16" keeps the order, "inc32" adds 2, "swap64" leaves the halves.
+ * wrong: "rev16" keeps the order, "inc32" adds 2, "swap64" leaves the halves,
+ * "refuse64" refuses two words (null where an array is expected), and
+ * "accept64" takes three (an array where null is expected).
  */
 const wordsEmitModule = (bug: string): string => `export const wordsRev16 = (w: u16[]): u16[] => {
   const out: u16[] = []
@@ -58,7 +60,7 @@ const wordsEmitModule = (bug: string): string => `export const wordsRev16 = (w: 
 }
 
 export const wordsSwap64 = (w: u64[]): u64[] | null => {
-  if (w.length > 2) {
+  if (w.length > ${bug === "refuse64" ? 1 : bug === "accept64" ? 3 : 2}) {
     return null
   }
   const out: u64[] = []
@@ -167,11 +169,13 @@ export const main = (): i32 => {
 
   const dir = makeTempDir("vector-words-emit-").expect("a scratch directory")
   t.eqStr("the right module satisfies it", wordsEmitRun(c, dir, program, ""), "SATISFIED")
-  const bugs: string[] = ["rev16", "inc32", "swap64"]
+  const bugs: string[] = ["rev16", "inc32", "swap64", "refuse64", "accept64"]
   const failed: string[] = [
     `V-REV16: expected "[ffff 00ff 0000]", got "[0000 00ff ffff]"`,
     `V-INC32: expected "[00000001 ffffffff]", got "[00000002 00000000]"`,
     `V-SWAP64: expected "[89abcdef01234567 ffffffff00000000]", got "[0123456789abcdef 00000000ffffffff]"`,
+    `V-SWAP64: expected "[89abcdef01234567 ffffffff00000000]", got "null"`,
+    `V-SWAP64-NULL: expected "null", got "[0000000100000000 0000000200000000 0000000300000000]"`,
   ]
   for (let i = 0; i < bugs.length; i++) {
     t.eqStr(

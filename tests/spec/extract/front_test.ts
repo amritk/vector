@@ -293,6 +293,14 @@ const frontTestInterface = (t: Suite): void => {
     all.isOk() ? frontTestIface(all.value) : frontTestRefusal(all.error),
     "nish/crypto/x | a(p: bytes, q: bytes?, r: string, s: string?): i32; b(p: u32, q: bool, k: secret-bytes): secret-bytes?; c(): string?; d(): secret-bytes; e(): bytes? | 3,4,5,6,7",
   )
+  const words = frontParseInterface(
+    "// module: nish/w\nexport function w(a: u16[], b: u16[] | null, c: null | u64[]): u64[] | null\nexport const x = (a: u32[]): u16[]\n",
+  )
+  t.eqStr(
+    "ts-interface: the word arrays, either null order",
+    words.isOk() ? frontTestIface(words.value) : frontTestRefusal(words.error),
+    "nish/w | w(a: words16, b: words16?, c: words64?): words64?; x(a: words32): words16 | 2,3",
+  )
   const lf = "// module: nish/m\n// c\nexport function f(a: u8[]): i32\n"
   const want = frontParseInterface(lf)
   const crlf = frontParseInterface(replaceAll(lf, "\n", "\r\n"))

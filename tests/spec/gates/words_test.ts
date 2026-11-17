@@ -81,8 +81,9 @@ const WORDS_TEST_BASE: string = `Request for Comments: 9996
 /**
  * The rest of it: §5 prints a grid split by a page break (its footer and
  * header removed by rfcParse, the blank lines around them kept), §6 two grids
- * apart by a blank line and then a page break before a sentence, and §7
- * u16 and u64 blocks of four words.
+ * apart by a blank line and then a page break before a sentence, §7
+ * u16 and u64 blocks of four words, and §8 to §16 each way a block meets a
+ * page break, each closing with the grid 0000ff01 0000ff02 away from any.
  */
 const WORDS_TEST_PAGES: string = `
 5.  Split
@@ -132,6 +133,136 @@ Author                       Informational                      [Page 3]
 
        0x0000000000000005  0x0000000000000006
        0x0000000000000007  0x0000000000000008
+
+8.  Joined
+
+       00000051  00000052
+
+
+
+Author                       Informational                      [Page 5]
+\fRFC 9996                      Words                        November 2026
+
+
+       00000053  00000054
+
+       0000ff01  0000ff02
+
+9.  Width
+
+       00000061  00000062
+
+
+
+Author                       Informational                      [Page 6]
+\fRFC 9996                      Words                        November 2026
+
+
+       0x0001  0x0002
+
+       0000ff01  0000ff02
+
+10.  Spelling
+
+       00000071  00000072
+
+
+
+Author                       Informational                      [Page 7]
+\fRFC 9996                      Words                        November 2026
+
+
+       0x00000073  0x00000074
+
+       0000ff01  0000ff02
+
+11.  Assign
+
+       00000081  00000082
+
+
+
+Author                       Informational                      [Page 8]
+\fRFC 9996                      Words                        November 2026
+
+
+   a = 00000083
+
+       0000ff01  0000ff02
+
+12.  Labelled
+
+       00000091  00000092
+
+
+
+Author                       Informational                      [Page 9]
+\fRFC 9996                      Words                        November 2026
+
+
+   Next State
+
+       00000093  00000094
+
+       0000ff01  0000ff02
+
+13.  Ends
+
+       0000ff01  0000ff02
+
+       000000a1  000000a2
+
+
+
+Author                       Informational                      [Page 10]
+\fRFC 9996                      Words                        November 2026
+
+
+14.  After
+
+       000000a3  000000a4
+
+       0000ff01  0000ff02
+
+15.  Chain
+
+       000000b1  000000b2
+
+
+
+Author                       Informational                      [Page 11]
+\fRFC 9996                      Words                        November 2026
+
+
+       000000b3  000000b4
+
+
+
+Author                       Informational                      [Page 12]
+\fRFC 9996                      Words                        November 2026
+
+
+       000000b5  000000b6
+
+       0000ff01  0000ff02
+
+16.  Inside
+
+       000000c1  000000c2
+Author                       Informational                      [Page 13]
+\fRFC 9996                      Words                        November 2026
+       000000c3  000000c4
+
+       0000ff01  0000ff02
+
+17.  Narrow
+
+       000000d1  000000d2
+Author                       Informational                      [Page 14]
+\fRFC 9996                      Words                        November 2026
+       0x0001  0x0002
+
+       0000ff01  0000ff02
 `
 
 /** The whole RFC. */
@@ -263,13 +394,17 @@ const wordsTestBlocks = (t: Suite): void => {
   wordsTestPageBlocks(t)
 }
 
-/** The sizes of a section's blocks, read as rfcParse leaves it, joined by commas. */
+/**
+ * The sizes of a section's blocks, read as rfcParse leaves it, joined by
+ * commas: `!` marks a block at an ambiguous page break, `>` one the next
+ * block may continue.
+ */
 const wordsTestSizes = (id: string): string => {
   for (const sec of rfcParse(WORDS_TEST_RFC).sections) {
     if (sec.id === id) {
       const sizes: string[] = []
       for (const b of gateWordBlocks(sec.lines, sec.pageBreaks)) {
-        sizes.push(`${b.words.length}`)
+        sizes.push(`${b.words.length}${b.atBreak ? "!" : ""}${b.joinsNext ? ">" : ""}`)
       }
       return sizes.join(",")
     }
@@ -277,16 +412,33 @@ const wordsTestSizes = (id: string): string => {
   return "no section"
 }
 
+/** Where rfcParse removed page furniture from a section, as `at:line|`. */
+const wordsTestBreaks = (id: string): string => {
+  for (const sec of rfcParse(WORDS_TEST_RFC).sections) {
+    if (sec.id === id) {
+      return sec.pageBreaks.map((b: i32): string => `${b}:${sec.lines[b]}|`).join("")
+    }
+  }
+  return "no section"
+}
+
 /** Blocks around page breaks and blank lines, each section's block sizes in order. */
 const wordsTestPageBlocks = (t: Suite): void => {
-  t.eqStr("a page break inside a grid does not split it", wordsTestSizes("5"), "16,2")
-  t.eqStr("a blank line still ends a grid, and a page break before a sentence ends one", wordsTestSizes("6"), "4,4")
+  t.eqStr("rfcParse records a page break where it removed the furniture", wordsTestBreaks("5"), "9:|")
+  t.eqStr("and one inside a run with no blank line around it", wordsTestBreaks("16"), "3:       000000c3  000000c4|")
+  t.eqStr("a page break inside a grid leaves two blocks, both marked", wordsTestSizes("5"), "8!>,8!,2")
+  t.eqStr("a blank line still ends a grid, and a page break before a sentence marks none", wordsTestSizes("6"), "4,4")
   t.eqStr("u16 and u64 blocks", wordsTestSizes("7"), "4,4,4,4")
-  t.eqStr(
-    "without its page breaks the same grid is two blocks",
-    `${gateWordBlocks(rfcParse(WORDS_TEST_RFC).sections[4].lines, []).length}`,
-    "3",
-  )
+  t.eqStr("two grids apart only by a page break", wordsTestSizes("8"), "2!>,2!,2")
+  t.eqStr("a row of another width after a break ends the grid, unmarked", wordsTestSizes("9"), "2,2,2")
+  t.eqStr("a row of another spelling after a break ends the grid, unmarked", wordsTestSizes("10"), "2,2,2")
+  t.eqStr("a name = word line after a break", wordsTestSizes("11"), "2!>,1!,2")
+  t.eqStr("a label line after a break", wordsTestSizes("12"), "2,2,2")
+  t.eqStr("a grid ending at a break that ends its section", wordsTestSizes("13"), "2,2")
+  t.eqStr("a grid starting a section after a break", wordsTestSizes("14"), "2,2")
+  t.eqStr("three grids across two breaks", wordsTestSizes("15"), "2!>,2!>,2!,2")
+  t.eqStr("a page break inside a run ends it, as a blank line does", wordsTestSizes("16"), "2!>,2!,2")
+  t.eqStr("a row of another width after a break inside a run", wordsTestSizes("17"), "2,2,2")
 }
 
 /** The word-array fidelity table: both layouts, against each way a row can differ from the print. */
@@ -481,32 +633,55 @@ const wordsTestTable = (t: Suite): void => {
   )
 }
 
-/** Fidelity over §5's grid split by a page break and §6's grids apart by a blank line. */
+/** The grid each of §8 to §16 closes with, away from any page break. */
+const WORDS_TEST_CLOSE: string = `{"words32": ["0000ff01", "0000ff02"]}`
+
+/** The refusal of a value that meets an ambiguous page break. */
+const WORDS_TEST_AT_BREAK: string = "meets a page break in RFC §"
+
+/** One row: u32 `arg` (words, unlabelled unless `label`) in section `sec`, expecting its closing grid. */
+const wordsTestBreak = (t: Suite, name: string, sec: string, arg: string, label: string, want: string): void => {
+  wordsTestIs(t, name, wordsTestRow("words32", sec, wordsTestLit(arg, label), WORDS_TEST_CLOSE), want)
+}
+
+/** Fidelity over §5's grid split by a page break, §6's grids apart by a blank line, and §8 to §16. */
 const wordsTestPageRows = (t: Suite): void => {
   const out = `{"words32": ["00000021", "00000022"]}`
   wordsTestIs(
     t,
-    "a grid across a page break",
+    "a grid across a page break is refused",
     wordsTestRow("words32", "5", wordsTestLit(WORDS_TEST_SPLIT, ""), out),
-    "",
+    "16-word value meets a page break in RFC §5",
   )
   wordsTestIs(
     t,
-    "a grid across a page break, under its label",
+    "a grid across a page break, under its label, is refused",
     wordsTestRow("words32", "5", `{"words32": [${WORDS_TEST_SPLIT}], "label": "Split State"}`, out),
-    "",
+    WORDS_TEST_AT_BREAK,
   )
   wordsTestIs(
     t,
-    "the half of a grid above its page break",
+    "the half of a grid above its page break is refused",
     wordsTestRow("words32", "5", wordsTestLit(WORDS_TEST_SPLIT_TOP, ""), out),
-    "8-word value is only part of a 16-word block",
+    "8-word value meets a page break",
   )
   wordsTestIs(
     t,
-    "the half of a grid below its page break",
+    "the half of a grid below its page break is refused",
     wordsTestRow("words32", "5", wordsTestLit(WORDS_TEST_SPLIT_BOTTOM, ""), out),
-    "8-word value is only part of a 16-word block",
+    "8-word value meets a page break",
+  )
+  wordsTestIs(
+    t,
+    "a run across the break, inside neither half, is refused",
+    wordsTestRow("words32", "5", wordsTestLit(`"00000017", "00000018", "00000019", "0000001a"`, ""), out),
+    "4-word value meets a page break",
+  )
+  wordsTestIs(
+    t,
+    "a run inside one half is only part of it",
+    wordsTestRow("words32", "5", wordsTestLit(`"00000012", "00000013"`, ""), out),
+    "2-word value is only part of a 8-word block",
   )
   const first = `"00000031", "00000032", "00000033", "00000034"`
   const second = `"00000035", "00000036", "00000037", "00000038"`
@@ -521,6 +696,107 @@ const wordsTestPageRows = (t: Suite): void => {
     "two grids apart by a blank line are not one",
     wordsTestRow("words32", "6", wordsTestLit(`${first}, ${second}`, ""), wordsTestLit(second, "")),
     "8-word value is not printed as one block",
+  )
+  wordsTestIs(
+    t,
+    "a grid ending at a page break before a sentence",
+    wordsTestRow("words32", "6", wordsTestLit(second, ""), wordsTestLit(first, "")),
+    "",
+  )
+  const a = `"00000051", "00000052"`
+  const b = `"00000053", "00000054"`
+  wordsTestBreak(t, "two grids apart by a break, joined, are refused", "8", `${a}, ${b}`, "", WORDS_TEST_AT_BREAK)
+  wordsTestBreak(t, "the grid before the break is refused", "8", a, "", WORDS_TEST_AT_BREAK)
+  wordsTestBreak(t, "the grid after the break is refused", "8", b, "", WORDS_TEST_AT_BREAK)
+  wordsTestBreak(
+    t,
+    "a word on either side of the break is refused",
+    "8",
+    `"00000052", "00000053"`,
+    "",
+    WORDS_TEST_AT_BREAK,
+  )
+  wordsTestBreak(
+    t,
+    "a value across the break, spelled with 0x against the print, is refused",
+    "8",
+    `"0x00000052", "0x00000053"`,
+    "",
+    WORDS_TEST_AT_BREAK,
+  )
+  wordsTestBreak(t, "the closing grid, away from the break", "8", `"0000ff01", "0000ff02"`, "", "an input is not")
+  wordsTestBreak(t, "a grid before a row of another width", "9", `"00000061", "00000062"`, "", "")
+  wordsTestBreak(t, "a grid before a row of another spelling", "10", `"00000071", "00000072"`, "", "")
+  wordsTestBreak(t, "the row of another spelling after a break", "10", `"0x00000073", "0x00000074"`, "", "")
+  wordsTestBreak(
+    t,
+    "a grid and a name = word line across a break, joined, are refused",
+    "11",
+    `"00000081", "00000082", "00000083"`,
+    "",
+    WORDS_TEST_AT_BREAK,
+  )
+  wordsTestBreak(
+    t,
+    "a grid before a name = word line across a break is refused",
+    "11",
+    `"00000081", "00000082"`,
+    "",
+    WORDS_TEST_AT_BREAK,
+  )
+  wordsTestBreak(t, "the name = word line after a break is refused", "11", `"00000083"`, "a", WORDS_TEST_AT_BREAK)
+  wordsTestBreak(t, "a grid before a label line after a break", "12", `"00000091", "00000092"`, "", "")
+  wordsTestBreak(t, "the labelled grid after the break", "12", `"00000093", "00000094"`, "Next State", "")
+  wordsTestBreak(
+    t,
+    "the two grids around a label line are not one",
+    "12",
+    `"00000091", "00000092", "00000093", "00000094"`,
+    "",
+    "4-word value is not printed as one block",
+  )
+  wordsTestBreak(t, "a grid ending its section at a break", "13", `"000000a1", "000000a2"`, "", "")
+  wordsTestBreak(t, "a grid starting its section after a break", "14", `"000000a3", "000000a4"`, "", "")
+  wordsTestBreak(
+    t,
+    "three grids across two breaks, joined, are refused",
+    "15",
+    `"000000b1", "000000b2", "000000b3", "000000b4", "000000b5", "000000b6"`,
+    "",
+    WORDS_TEST_AT_BREAK,
+  )
+  wordsTestBreak(
+    t,
+    "a value across the second of two breaks is refused",
+    "15",
+    `"000000b4", "000000b5"`,
+    "",
+    WORDS_TEST_AT_BREAK,
+  )
+  wordsTestBreak(t, "the middle of three grids is refused", "15", `"000000b3", "000000b4"`, "", WORDS_TEST_AT_BREAK)
+  wordsTestBreak(
+    t,
+    "a run with a page break inside it is refused",
+    "16",
+    `"000000c1", "000000c2", "000000c3", "000000c4"`,
+    "",
+    WORDS_TEST_AT_BREAK,
+  )
+  wordsTestBreak(
+    t,
+    "the run before a break inside it is refused",
+    "16",
+    `"000000c1", "000000c2"`,
+    "",
+    WORDS_TEST_AT_BREAK,
+  )
+  wordsTestBreak(
+    t,
+    "a grid before a row of another width, no blank line between",
+    "17",
+    `"000000d1", "000000d2"`,
+    "",
+    "",
   )
 }
 
