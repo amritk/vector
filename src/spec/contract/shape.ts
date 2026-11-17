@@ -673,7 +673,11 @@ const shapeVectorSource = (s: ShapeContext, k: Clause, at: string): void => {
       shapeSection(s, cite.section, `${at}.source.cite.section`)
       const tc = cite.testCase
       if (tc !== null && charsTestVector(tc) === 0) {
-        shapeFail(s, `${at}.source.cite.case`, "a test case of the section, as Test Vector #N (N from 1, no leading zero)")
+        shapeFail(
+          s,
+          `${at}.source.cite.case`,
+          "a test case of the section, as Test Vector #N (N from 1, no leading zero)",
+        )
       }
     }
     if (k.section !== null) {

@@ -80,7 +80,7 @@ class GateLits {
   lines: string
   bounds: GateBound[]
   /** Appended to a refusal that asks for one test case: how to name one of the section's, or "". */
-  hint: string = ""
+  hint: string
   /**
    * @param id the vector's id
    * @param where the section, for messages
@@ -104,6 +104,7 @@ class GateLits {
     this.text = rfcSectionText(sec)
     this.lines = gateLines(sec.lines)
     this.bounds = []
+    this.hint = ""
   }
 }
 

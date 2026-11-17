@@ -1,0 +1,50 @@
+---
+title: "Test Vector scope: Source cells that name no case"
+abbrev: nish/crypto/chacha20poly1305
+docname: draft-scope-badcase-00
+category: info
+ipr: trust200902
+submissiontype: independent
+v: 3
+date: 2026-11-17
+author:
+  - name: vector
+normative:
+  RFC8439:
+--- abstract
+
+Each Source cell is refused.
+
+--- middle
+
+# Introduction
+
+{::boilerplate bcp14-tagged}
+
+A test fixture over the unmodified RFC 8439.
+
+# Interface
+
+~~~ ts-interface
+// module: nish/crypto/chacha20poly1305
+export const chacha20Block = (key: u8[], counter: u32, nonce: u8[]): u8[] | null
+export const poly1305 = (key: u8[], msg: u8[]): u8[] | null
+~~~
+
+# Requirements
+
+> The output is 64 random-looking bytes.
+> {{Section 2.3 of RFC8439}}
+{: #R-BLOCK gi="blockquote"}
+
+> Poly1305 takes a 32-byte one-time key and a message and produces a 16-byte tag.
+> {{Section 2.5 of RFC8439}}
+{: #R-POLY gi="blockquote"}
+
+# Test Vectors
+
+| Id | Call | Expected | Covers | Source | Title |
+|----|------|----------|--------|--------|-------|
+| ZERO | `poly1305(One-time Poly1305 Key = 0000000000000000000000000000000000000000000000000000000000000000, Text to MAC = 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000)` | `Tag = 00000000000000000000000000000000` | R-POLY | {{Section A.3 of RFC8439}}, Test Vector #0 | RFC 8439 A.3 Test Vector #1: the Poly1305 tag |
+| LEADING-ZERO | `poly1305(One-time Poly1305 Key = 0000000000000000000000000000000036e5f6b5c5e06070f0efca96227a863e, Text to MAC = 416e79207375626d697373696f6e20746f20746865204945544620696e74656e6465642062792074686520436f6e7472696275746f7220666f72207075626c69636174696f6e20617320616c6c206f722070617274206f6620616e204945544620496e7465726e65742d4472616674206f722052464320616e6420616e792073746174656d656e74206d6164652077697468696e2074686520636f6e74657874206f6620616e204945544620616374697669747920697320636f6e7369646572656420616e20224945544620436f6e747269627574696f6e222e20537563682073746174656d656e747320696e636c756465206f72616c2073746174656d656e747320696e20494554462073657373696f6e732c2061732077656c6c206173207772697474656e20616e6420656c656374726f6e696320636f6d6d756e69636174696f6e73206d61646520617420616e792074696d65206f7220706c6163652c207768696368206172652061646472657373656420746f)` | `Tag = 36e5f6b5c5e06070f0efca96227a863e` | R-POLY | {{Section A.3 of RFC8439}}, Test Vector #02 | RFC 8439 A.3 Test Vector #2: the Poly1305 tag |
+| A.1-BLOCK-1 | `chacha20Block(Key = 0000000000000000000000000000000000000000000000000000000000000000, Block Counter = 0, Nonce = 000000000000000000000000)` | `Keystream = 76b8e0ada0f13d90405d6ae55386bd28bdd219b8a08ded1aa836efcc8b770dc7da41597c5157488d7724e03fb8d84a376a43b8f41518a11cc387b669b2ee6586` | R-BLOCK | {{Section A.1 of RFC8439}} | RFC 8439 A.1 Test Vector #1: the ChaCha20 block function |

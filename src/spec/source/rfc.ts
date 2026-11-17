@@ -324,8 +324,9 @@ export const rfcSection = (doc: RfcDocument, id: string): RfcSection | null => {
 
 /**
  * The number a line heads a test case with: its first non-blank text is
- * `Test Vector #N:`, whether the heading stands alone (above a `===` rule)
- * or the case's description follows it on the line.
+ * `Test Vector #N:`, N from 1 with no leading zero, whether the heading
+ * stands alone (above a `===` rule) or the case's description follows it on
+ * the line.
  *
  * @param line the line
  * @returns N, or 0 when the line heads no test case
@@ -333,7 +334,7 @@ export const rfcSection = (doc: RfcDocument, id: string): RfcSection | null => {
 const rfcCaseHeading = (line: string): i32 => {
   const head = "Test Vector #"
   const t = trim(line)
-  if (!t.startsWith(head)) {
+  if (!t.startsWith(head) || t.length === head.length || t.charCodeAt(head.length) === 0x30) {
     return 0
   }
   let n = 0
@@ -355,7 +356,8 @@ const rfcCaseHeading = (line: string): i32 => {
  * @param sec the section
  * @returns true when one of its own lines heads a test case
  */
-export const rfcHasCases = (sec: RfcSection): boolean => sec.ownLines.some((l: string): boolean => rfcCaseHeading(l) > 0)
+export const rfcHasCases = (sec: RfcSection): boolean =>
+  sec.ownLines.some((l: string): boolean => rfcCaseHeading(l) > 0)
 
 /**
  * One test case of a section, as a section of its own: the lines from its
@@ -370,6 +372,9 @@ export const rfcHasCases = (sec: RfcSection): boolean => sec.ownLines.some((l: s
  */
 export const rfcCaseSection = (sec: RfcSection, n: i32): Result<RfcSection, string> => {
   const name = `Test Vector #${n}`
+  if (n < 1) {
+    return Err(`${name} is not a test case: they are numbered from 1`)
+  }
   if (sec.lines.length > sec.ownLines.length) {
     return Err(`has subsections, so ${name} is not one test case of it: cite the subsection that holds it`)
   }

@@ -1,0 +1,19 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ scope-poly1305 · scope-poly1305 (Test Vector scope: Poly1305 and ChaCha20 vectors cited by their case) · nish/crypto/chacha20poly1305
+ Status: INVALID
+
+ Gate failures
+  ✘ fidelity A.3-POLY1305-2.args[0]: 32-byte value is not printed in rfc8439 §A.3, Test Vector #3 ("Poly1305 Message Authentication Code")
+  ✘ fidelity A.3-POLY1305-2.expect: 16-byte value is only part of a value printed in rfc8439 §A.3, Test Vector #3 ("Poly1305 Message Authentication Code") (under "One-time Poly1305 Key"): a vector uses whole printed values (concat them to join several)
+
+ Requirements
+  ○ R-BLOCK  rfc8439 §2.3 DEFINITION  "The output is 64 random-looking bytes."
+      ○ A.1-BLOCK-1-SCOPED
+  ○ R-POLY  rfc8439 §2.5 DEFINITION  "Poly1305 takes a 32-byte one-time key and a message and produce…"
+      ○ A.3-POLY1305-1  ○ A.3-POLY1305-2  ○ A.3-POLY1305-4  ○ A.3-POLY1305-5  ○ A.3-POLY1305-7  ○ A.3-POLY1305-11
+
+ Warnings
+  ! clauses: no property clauses: the contract checks only the RFC's own vectors
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

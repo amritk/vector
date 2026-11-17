@@ -34,7 +34,14 @@
 
 import { split } from "nish/text"
 import { diagPlace } from "../../core/diag"
-import { charsFirstControl, charsIsAbs, charsIsId, charsIsIdent, charsIsSection, charsTestVector } from "../contract/chars"
+import {
+  charsFirstControl,
+  charsIsAbs,
+  charsIsId,
+  charsIsIdent,
+  charsIsSection,
+  charsTestVector,
+} from "../contract/chars"
 import { contractF64Overflows, contractF64Parse } from "../contract/f64"
 import {
   RawCall,
