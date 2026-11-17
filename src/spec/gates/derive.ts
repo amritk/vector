@@ -1,0 +1,297 @@
+/**
+ * `spec/gates/derive` — the derived rule for a vector whose inputs are cited
+ * to one section of the main RFC and whose null, true or false result to
+ * another. When the result's section does not state the result in words, it
+ * still supports it when a property of the contract asserts it: the property
+ * covers a requirement of that section the vector covers, asserts that the
+ * vector's call is the vector's expected literal, and its call's arguments
+ * are the vector's, each one either a quantified variable bound inside its
+ * domain or another cited vector's call whose expected value it is. Every
+ * step is checked here; any that fails refuses.
+ */
+
+import { Clause, ClauseKind, Expr, ExprKind, ForallVar, Literal, VectorSourceKind } from "../contract/types"
+import { SampleKind, SampleValue, sampleHolds, sampleInt, sampleLiteral } from "../sample/eval"
+import { sampleParseInt } from "../sample/ints"
+
+/** How many calls deep an argument may reach through other vectors. */
+const DERIVE_DEPTH: i32 = 2
+
+/** What a unification found: the bindings so far, or why it failed. */
+class DeriveMatch {
+  /** The variables bound so far. */
+  env: Map<string, SampleValue>
+  /** Why the match failed; null while it holds. */
+  why: string | null = null
+  /**
+   * Starts from bindings.
+   *
+   * @param env the bindings
+   */
+  constructor(env: Map<string, SampleValue>) {
+    this.env = env
+  }
+}
+
+/** A copy of bindings, so a failed try leaves the original as it was. */
+const deriveCopy = (env: Map<string, SampleValue>): Map<string, SampleValue> => {
+  const out = new Map<string, SampleValue>()
+  for (const name of env.keys()) {
+    const v = env.get(name)
+    if (v !== undefined) {
+      out.set(name, v)
+    }
+  }
+  return out
+}
+
+/** Whether two values are the same, kind and content. */
+const deriveSame = (x: SampleValue, y: SampleValue): boolean => {
+  if (x.kind !== y.kind) {
+    return false
+  }
+  if (x.kind === SampleKind.Int) {
+    return x.n === y.n
+  }
+  if (x.kind === SampleKind.Bytes) {
+    if (x.bytes.length !== y.bytes.length) {
+      return false
+    }
+    for (let i = 0; i < x.bytes.length; i++) {
+      if (x.bytes[i] !== y.bytes[i]) {
+        return false
+      }
+    }
+    return true
+  }
+  if (x.kind === SampleKind.Str) {
+    return x.text === y.text
+  }
+  if (x.kind === SampleKind.Bool) {
+    return x.flag === y.flag
+  }
+  return true
+}
+
+/** A literal's value, or null when it has none here. */
+const deriveValue = (lit: Literal | null): SampleValue | null => {
+  if (lit === null) {
+    return null
+  }
+  const r = sampleLiteral(lit)
+  return r.isOk() ? r.value : null
+}
+
+/** The quantified variable a name is, or null. */
+const deriveVar = (p: Clause, name: string): ForallVar | null => {
+  for (const v of p.forall) {
+    if (v.name === name) {
+      return v
+    }
+  }
+  return null
+}
+
+/** A value as the variable holds it: an integer takes the variable's type. */
+const deriveAs = (v: ForallVar, x: SampleValue): SampleValue => (x.kind === SampleKind.Int ? sampleInt(x.n, v.type) : x)
+
+/** The vectors other than `row` whose expected value a cited section prints. */
+const deriveSiblings = (clauses: Clause[], row: Clause): Clause[] =>
+  clauses.filter((c: Clause): boolean => {
+    const s = c.source
+    return c.kind === ClauseKind.Vector && c.id !== row.id && s !== null && s.kind === VectorSourceKind.Cite
+  })
+
+/** Unifies a call's arguments with values, in order; fails on the first that does not match. */
+const deriveArgs = (p: Clause, sibs: Clause[], args: Expr[], vals: SampleValue[], m: DeriveMatch, depth: i32): void => {
+  if (args.length !== vals.length) {
+    m.why = `${p.id} passes ${args.length} arguments where ${vals.length} are given`
+    return
+  }
+  for (let i = 0; i < args.length && m.why === null; i++) {
+    deriveUnify(p, sibs, args[i], vals[i], m, depth)
+  }
+}
+
+/** Unifies a call of another function with a value: some cited vector calls it, expects the value, and unifies. */
+const deriveCall = (p: Clause, sibs: Clause[], e: Expr, x: SampleValue, m: DeriveMatch, depth: i32): void => {
+  if (depth >= DERIVE_DEPTH) {
+    m.why = `${p.id} reaches ${e.name} more than ${DERIVE_DEPTH} calls deep`
+    return
+  }
+  for (const s of sibs) {
+    const want = deriveValue(s.expect)
+    if (s.call !== e.name || want === null || !deriveSame(want, x)) {
+      continue
+    }
+    const vals: SampleValue[] = []
+    for (const a of s.args) {
+      const v = deriveValue(a)
+      if (v !== null) {
+        vals.push(v)
+      }
+    }
+    if (vals.length !== s.args.length) {
+      continue
+    }
+    const tryM = new DeriveMatch(deriveCopy(m.env))
+    deriveArgs(p, sibs, e.args, vals, tryM, depth + 1)
+    if (tryM.why === null) {
+      m.env = tryM.env
+      return
+    }
+  }
+  m.why = `${p.id} calls ${e.name} for a value no cited vector of ${e.name} expects with matching arguments`
+}
+
+/** Unifies one expression of the property with a value of the vector. */
+const deriveUnify = (p: Clause, sibs: Clause[], e: Expr, x: SampleValue, m: DeriveMatch, depth: i32): void => {
+  if (e.kind === ExprKind.Var) {
+    const v = deriveVar(p, e.name)
+    if (v === null) {
+      m.why = `${p.id} uses ${e.name}, which it does not quantify over`
+      return
+    }
+    const held = m.env.get(e.name)
+    const value = deriveAs(v, x)
+    if (held === undefined) {
+      m.env.set(e.name, value)
+    } else if (!deriveSame(held, value)) {
+      m.why = `${p.id} uses ${e.name} for two different values`
+    }
+    return
+  }
+  if (e.kind === ExprKind.Lit) {
+    const v = deriveValue(e.lit)
+    if (v === null || !deriveSame(v, x)) {
+      m.why = `${p.id} passes a literal that is not the vector's value`
+    }
+    return
+  }
+  if (e.kind === ExprKind.Op && e.name === "unwrap" && e.args.length === 1 && e.args[0].kind === ExprKind.Call) {
+    deriveCall(p, sibs, e.args[0], x, m, depth)
+    return
+  }
+  if (e.kind === ExprKind.Call) {
+    deriveCall(p, sibs, e, x, m, depth)
+    return
+  }
+  m.why = `${p.id} computes an argument (${e.kind === ExprKind.Op ? e.name : "a let"}) that is not matched here`
+}
+
+/** Why a bound value is outside its variable's domain, or null when inside. */
+const deriveOutside = (p: Clause, v: ForallVar, x: SampleValue): string | null => {
+  if (v.type === "bytes") {
+    if (x.kind !== SampleKind.Bytes) {
+      return `${p.id} binds ${v.name}, a bytes variable, to a value that is not bytes`
+    }
+    const n = toI32(x.bytes.length)
+    if ((v.minLen >= 0 && n < v.minLen) || (v.maxLen >= 0 && n > v.maxLen)) {
+      return `${p.id} binds ${v.name} to a ${n}-byte value, outside its domain ${v.minLen}..${v.maxLen}`
+    }
+    return null
+  }
+  if (x.kind !== SampleKind.Int || !v.hasBounds || v.type === "u64" || v.type === "f64") {
+    return `${p.id} binds ${v.name}, of type ${v.type}, which is not bound here`
+  }
+  const lo = sampleParseInt(v.min)
+  const hi = sampleParseInt(v.max)
+  if (lo.isErr() || hi.isErr()) {
+    return `${p.id} bounds ${v.name} by a value that is not an integer`
+  }
+  if (x.n < lo.value || x.n > hi.value) {
+    return `${p.id} binds ${v.name} to ${x.n}, outside its domain ${v.min}..${v.max}`
+  }
+  return null
+}
+
+/** Why one property does not derive the vector's result, or null when it does. */
+const deriveFrom = (clauses: Clause[], k: Clause, want: SampleValue, p: Clause): string | null => {
+  const a = p.assert
+  if (a === null || a.kind !== ExprKind.Op || a.name !== "==" || a.args.length !== 2) {
+    return `${p.id} does not assert a single equality`
+  }
+  const left = a.args[0]
+  const right = a.args[1]
+  const call = left.kind === ExprKind.Call ? left : right
+  const lit = left.kind === ExprKind.Call ? right : left
+  const said: SampleValue | null = lit.kind === ExprKind.Lit ? deriveValue(lit.lit) : null
+  if (call.kind !== ExprKind.Call || call.name !== k.call || said === null) {
+    return `${p.id} does not assert that ${k.call} is a literal`
+  }
+  if (!deriveSame(said, want)) {
+    return `${p.id} asserts another result than the vector's`
+  }
+  const vals: SampleValue[] = []
+  for (const arg of k.args) {
+    const v = deriveValue(arg)
+    if (v === null) {
+      return `${k.id} has an argument that is not evaluated here`
+    }
+    vals.push(v)
+  }
+  const m = new DeriveMatch(new Map<string, SampleValue>())
+  deriveArgs(p, deriveSiblings(clauses, k), call.args, vals, m, 0)
+  const why = m.why
+  if (why !== null) {
+    return why
+  }
+  for (const v of p.forall) {
+    const x = m.env.get(v.name)
+    if (x === undefined) {
+      return `${p.id} leaves ${v.name} unbound`
+    }
+    const out = deriveOutside(p, v, x)
+    if (out !== null) {
+      return out
+    }
+  }
+  const holds = sampleHolds(p.where, m.env)
+  if (holds.isErr()) {
+    return `${p.id}'s where cannot be evaluated: ${holds.error}`
+  }
+  if (p.where !== null && !holds.value) {
+    return `${p.id}'s where does not hold for the vector's inputs`
+  }
+  return null
+}
+
+/**
+ * Why no property derives a vector's result from its result's section, or
+ * null when one does (see the module comment).
+ *
+ * @param clauses every clause of the contract
+ * @param reqs the ids of the requirements of the main source quoted from the result's section
+ * @param k the vector
+ * @returns why not, or null
+ */
+export const gateDerivedResult = (clauses: Clause[], reqs: string[], k: Clause): string | null => {
+  const want = deriveValue(k.expect)
+  if (want === null || (want.kind !== SampleKind.Bool && want.kind !== SampleKind.Null)) {
+    return `${k.id} expects neither null, true nor false`
+  }
+  const reasons: string[] = []
+  for (const p of clauses) {
+    if (p.kind !== ClauseKind.Property) {
+      continue
+    }
+    let shared = false
+    for (const id of p.covers) {
+      if (reqs.indexOf(id) >= 0 && k.covers.indexOf(id) >= 0) {
+        shared = true
+      }
+    }
+    if (!shared) {
+      continue
+    }
+    const why = deriveFrom(clauses, k, want, p)
+    if (why === null) {
+      return null
+    }
+    reasons.push(why)
+  }
+  if (reasons.length === 0) {
+    return `no property covers a requirement of the result's section that ${k.id} covers`
+  }
+  return reasons.join("; ")
+}

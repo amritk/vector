@@ -237,6 +237,15 @@ extracts to.
     that one case of the section, under its `Test Vector #K:` heading. Use
     it when a section prints several cases and a plain cite is refused as
     unclear.
+  - `{{Section N of RFCx}}; result {{Section M of RFCx}}`: for a `null`,
+    `true` or `false` result, the inputs are printed in section N and the
+    result is supported by section M of the main RFC: a covered requirement
+    of M states it, or a property covering a requirement of M asserts the
+    call equals it for inputs inside its domains, each input either a
+    quantified variable or another cited vector's expected value. Use it
+    for a verify vector whose section defines the check but never says
+    "MUST return true" (see the guide's "When a property derives the
+    result"). Widen the property's domain to hold the vector's inputs.
   - `{{anchor}}`: a numbered section of this spec. For a `null` or `bool`
     expected value it is a `spec` source (the covered requirement states it);
     for any other value it is a `cite` of that section, which must print the

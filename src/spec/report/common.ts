@@ -243,7 +243,8 @@ export const reportSampleCount = (ctx: CheckContext, id: string): i32 => toI32(c
  *
  * @param ctx the check's context
  * @param k the clause
- * @returns the evidence, such as `vector, §2.2` or `24 samples (6 boundary)`
+ * @returns the evidence, such as `vector, §2.2`, `vector, §7.1, result §5.1.7`
+ *   (inputs and result cited apart) or `24 samples (6 boundary)`
  */
 export const reportEvidence = (ctx: CheckContext, k: Clause): string => {
   const s = k.source
@@ -253,6 +254,17 @@ export const reportEvidence = (ctx: CheckContext, k: Clause): string => {
     }
     if (s.kind === VectorSourceKind.Command) {
       return `vector, expected from ${s.text}`
+    }
+    const inputs = k.section
+    const c = ctx.contract
+    if (
+      s.kind === VectorSourceKind.Spec &&
+      inputs !== null &&
+      inputs !== s.text &&
+      c.source.main === null &&
+      c.source.rfc >= 1
+    ) {
+      return `vector, ${reportCite(c, null, inputs)}, result ${reportCite(c, null, s.text)}`
     }
     if (s.kind === VectorSourceKind.Spec) {
       return `vector, spec ${s.text}`

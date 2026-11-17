@@ -114,6 +114,7 @@ where the expected value comes from:
 |---|---|
 | `{{Section N of RFCx}}` | `cite`, section N of that RFC |
 | `{{Section N of RFCx}}, Test Vector #K` | `cite`, section N of that RFC, `case` `Test Vector #K`: the values must all be printed in that one test case (K from 1, no leading zero; any other text after the section is refused) |
+| `{{Section N of RFCx}}; result {{Section M of RFCx}}` | `spec`, section M, with section N for the args: the inputs are printed in section N and the `null`, `true` or `false` expected value is supported by section M, as [stated](#when-a-section-states-null-true-or-false) or [derived](#when-a-property-derives-the-result). Both are sections of the main RFC, M is not N, both are written as section references (not anchors or code spans), and nothing may follow |
 | `{{anchor}}`, a numbered section of this spec | `spec` for a `null` or `bool` expected value; otherwise `cite`, that section, which must print the value |
 | a single code span, `` `python3 -c '…'` `` | `command`, with the table's section for the args; the expected value must be bytes or a string |
 
@@ -501,6 +502,8 @@ Every vector says where its expected value comes from (`source`):
 | `{"command": "…"}`, with `"section"` for the args | the command's trimmed stdout (lowercase hex for bytes) | `spec check --run-sources` only; otherwise reported as not run, never as passed. A timeout, a nonzero exit or other output fails. See [Running the source commands](spec-to-contract.md#running-the-source-commands) |
 | `{"spec": "4.2"}`, with `"section"` for the args | `null` or a `bool` that section states | provenance: a requirement the vector covers, cited to that section, must state `null`, `true` or `false` as the result, by [the rule below](#when-a-section-states-null-true-or-false) |
 
+A vector whose inputs and result are cited apart, `{{Section 7.1 of RFC8032}}; result {{Section 5.1.7 of RFC8032}}`, is a `spec` source of the result's section with the inputs' `"section"`: `{"spec": "5.1.7"}, "section": "7.1"`. Fidelity checks the inputs against section 7.1; provenance checks the result against section 5.1.7, by the stated rule or, failing that, [the derived rule](#when-a-property-derives-the-result). The report shows its source as `§7.1, result §5.1.7`.
+
 A vector without a source fails the shape gate. A `cite` source for a `null`
 or `bool` is held to the same rule by fidelity.
 
@@ -669,6 +672,45 @@ array", "f MUST return null. This was a bug.", the same sentence only in a
 table or a code block, a requirement cited to another section, and, by
 design, any descriptive sentence without a keyword, such as "f returns null
 on failure" or "abc decodes to null".
+
+<a id="when-a-property-derives-the-result"></a>
+
+### When a property derives the result
+
+A section that defines a check (RFC 8032's Section 5.1.7, "Verify") rarely
+says in words that a vector's check returns `true`. A vector whose inputs and
+result are cited to two sections of the main RFC is still accepted when a
+property of the contract derives its result. Every step fails closed, and the
+refusal names the property and the step:
+
+1. The expected value is `null`, `true` or `false`. Otherwise: "expects
+   neither null, true nor false".
+2. The property covers a requirement cited to the result's section that the
+   vector covers too. Otherwise: "no property covers a requirement of the
+   result's section that … covers".
+3. The property asserts one equality, `f(…) === literal`, where `f` is the
+   vector's call and the literal is the vector's expected value. Otherwise:
+   "asserts another result than the vector's".
+4. Each argument of that call is the vector's, in order: a quantified
+   variable binds to it (the same variable always to the same value), or a
+   call of another function (optionally under `unwrap`, at most two calls
+   deep) yields it, because another vector of the contract, whose expected
+   value is cited to a section of an RFC, calls that function with matching
+   arguments and expects that value. Otherwise: "calls g for a value no cited
+   vector of g expects with matching arguments".
+5. Every quantified variable is bound inside its domain: a byte string's
+   length within its `/* a..b */`, an integer within its bounds. Otherwise:
+   "binds msg to a N-byte value, outside its domain a..b".
+6. The property's `where`, if any, holds for the bound values. Otherwise:
+   "'s where does not hold for the vector's inputs".
+
+So the property `forall (key: u8[] /* 1..1 */, msg: u8[] /* 0..1 */) =>
+check(key, msg, tag(key, msg)) === true` derives `check(KEY = 01, MESSAGE =
+02, TAG = 0a0b)` = `true` when another vector cites `tag(KEY = 01, MESSAGE =
+02)` = `TAG = 0a0b` to the RFC: the property holds for every key and message
+in its domain, and the vector's are among them. When neither rule holds, the
+refusal gives both reasons: "does not state the expected result: …; and no
+property derives it: …".
 
 ## Authoring notes
 

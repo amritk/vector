@@ -1337,7 +1337,7 @@ const profileCasesTestVectors = (t: Suite, all: ProfileCasesTestRfcs): void => {
   caseRows.push(profileCasesTestSrc(`${profileCasesTestTt("echo f")}, Test Vector #2`, '"f"', "V21"))
   caseWant.push(`${caseForm}; ", Test Vector #2" after the code span is not one`)
   caseRows.push(profileCasesTestSrc(`${PROFILE_CASES_RFC10} ${PROFILE_CASES_RFC10}, Test Vector #2`, '"f"', "V22"))
-  caseWant.push(`${caseForm}; ", Test Vector #2" after the section is not one`)
+  caseWant.push(profileCasesTestResultWhy(`a result's section follows the inputs' after "; result "`))
   caseRows.push(profileCasesTestSrc("<em>f</em>, Test Vector #2", '"f"', "V23"))
   caseWant.push(`${caseForm}; ", Test Vector #2" after the <em> element is not one`)
   profileCasesTestRefusedWith(
@@ -1808,6 +1808,192 @@ const profileCasesTestUnicodeSpaces = (t: Suite, all: ProfileCasesTestRfcs): voi
   }
 }
 
+/** A result-form refusal's message, for `why`. */
+const profileCasesTestResultWhy = (why: string): string =>
+  `Source: ${why}; write {{Section N of RFCx}}; result {{Section M of RFCx}}, two sections of the main RFC, for an Expected of null, true or false`
+
+/** `{{Section n of RFC8707}}`. */
+const profileCasesTestX8707 = (n: string): string => `<xref target="RFC8707" section="${n}"/>`
+
+/** A spec whose main source is RFC8707, quoting R-N, with one vector V1 of `call` covering it. */
+const profileCasesTestResultSpec = (call: string, expected: string, source: string): string =>
+  profileCasesTestSpecMain(
+    profileCasesTestSec(
+      `${profileCasesTestMainQuote()}\n${profileCasesTestTable([
+        profileCasesTestCells("V1", profileCasesTestTt(call), profileCasesTestTt(expected), "R-N", source, "a title"),
+      ])}\n`,
+      "",
+    ),
+    PROFILE_CASES_MAIN_8707,
+  )
+
+/** The clause V1 of a contract, the first clause when there is none. */
+const profileCasesTestResultV1 = (c: Contract): Clause => {
+  for (const k of c.clauses) {
+    if (k.id === "V1") {
+      return k
+    }
+  }
+  return c.clauses[0]
+}
+
+/** A result form near miss: its Source cell, its Expected, and the reason it is refused ("" when another refusal). */
+class ProfileCasesTestResultCase {
+  /** The case's name. */
+  name: string
+  /** The Source cell. */
+  source: string
+  /** The Call cell's code. */
+  call: string
+  /** The Expected cell's code. */
+  expected: string
+  /** The refusal's message. */
+  want: string
+  /**
+   * A case.
+   *
+   * @param name the case's name
+   * @param source the Source cell
+   * @param call the Call cell's code
+   * @param expected the Expected cell's code
+   * @param want the refusal's message
+   */
+  constructor(name: string, source: string, call: string, expected: string, want: string) {
+    this.name = name
+    this.source = source
+    this.call = call
+    this.expected = expected
+    this.want = want
+  }
+}
+
+/** A vector's inputs cited to one section of the main RFC and its result to another. */
+const profileCasesTestResultCite = (t: Suite, all: ProfileCasesTestRfcs): void => {
+  const x2 = profileCasesTestX8707("2")
+  const x3 = profileCasesTestX8707("3")
+  for (const want of ["true", "false"]) {
+    const c = profileCasesTestContract(
+      t,
+      all,
+      `a result cited apart: ${want}`,
+      profileCasesTestResultSpec('isHex("66")', want, `${x2}; result ${x3}`),
+    )
+    if (c !== null) {
+      const v = profileCasesTestResultV1(c)
+      t.eqStr(`a result cited apart: ${want}: the source`, profileCasesTestSource(v.source), "spec 3")
+      t.eqStr(`a result cited apart: ${want}: the inputs' section`, v.section ?? "none", "2")
+    }
+  }
+  const nul = profileCasesTestContract(
+    t,
+    all,
+    "a null result cited apart",
+    profileCasesTestResultSpec('hexDecode("6")', "null", `${x2} ; result ${x3} `),
+  )
+  if (nul !== null) {
+    t.eqStr(
+      "a null result cited apart: the source",
+      profileCasesTestSource(profileCasesTestResultV1(nul).source),
+      "spec 3",
+    )
+  }
+  const follows = `a result's section follows the inputs' after "; result "`
+  const sections = "both the inputs and the result are cited to a section of the RFC, not an anchor or a code span"
+  const cases: ProfileCasesTestResultCase[] = [
+    new ProfileCasesTestResultCase(
+      "bytes",
+      `${x2}; result ${x3}`,
+      'hexDecode("66")',
+      '"f"',
+      "a section states a null, true or false result, so the Expected is one, not bytes",
+    ),
+    new ProfileCasesTestResultCase("a comma", `${x2}, result ${x3}`, 'isHex("66")', "true", follows),
+    new ProfileCasesTestResultCase("no space", `${x2};result ${x3}`, 'isHex("66")', "true", follows),
+    new ProfileCasesTestResultCase("a capital", `${x2}; Result ${x3}`, 'isHex("66")', "true", follows),
+    new ProfileCasesTestResultCase("no word", `${x2}; ${x3}`, 'isHex("66")', "true", follows),
+    new ProfileCasesTestResultCase("no result's section", `${x2}; result`, 'isHex("66")', "true", follows),
+    new ProfileCasesTestResultCase(
+      "an anchor's result",
+      `${x2}; result <xref target="here"/>`,
+      'isHex("66")',
+      "true",
+      sections,
+    ),
+    new ProfileCasesTestResultCase(
+      "an anchor's inputs",
+      `<xref target="here"/>; result ${x3}`,
+      'isHex("66")',
+      "true",
+      sections,
+    ),
+    new ProfileCasesTestResultCase(
+      "a code span's inputs",
+      `${profileCasesTestTt("echo true")}; result ${x3}`,
+      'isHex("66")',
+      "true",
+      sections,
+    ),
+    new ProfileCasesTestResultCase(
+      "the same section",
+      `${x2}; result ${x2}`,
+      'isHex("66")',
+      "true",
+      "the result's section is another than the inputs', not 2 again",
+    ),
+    new ProfileCasesTestResultCase(
+      "another RFC's inputs",
+      `${PROFILE_CASES_RFC10}; result ${x3}`,
+      'isHex("66")',
+      "true",
+      "both sections are of the main source, RFC8707",
+    ),
+    new ProfileCasesTestResultCase(
+      "another RFC's result",
+      `${x2}; result ${PROFILE_CASES_RFC10}`,
+      'isHex("66")',
+      "true",
+      "both sections are of the main source, RFC8707",
+    ),
+    new ProfileCasesTestResultCase(
+      "a third section",
+      `${x2}; result ${x3}; result ${profileCasesTestX8707("4")}`,
+      'isHex("66")',
+      "true",
+      `nothing may follow the result's section, not "; result"`,
+    ),
+    new ProfileCasesTestResultCase(
+      "a test case",
+      `${x2}; result ${x3}, Test Vector #1`,
+      'isHex("66")',
+      "true",
+      `nothing may follow the result's section, not ", Test Vector #1"`,
+    ),
+  ]
+  for (const k of cases) {
+    profileCasesTestRefusedWith(
+      t,
+      all,
+      `a result cited apart, refused: ${k.name}`,
+      profileCasesTestResultSpec(k.call, k.expected, k.source),
+      [profileCasesTestResultWhy(k.want)],
+    )
+  }
+  profileCasesTestRefusedWith(
+    t,
+    all,
+    "a result cited apart, refused: no main source",
+    profileCasesTestSpec(
+      profileCasesTestSec(
+        `\n${PROFILE_CASES_REQ}\n${profileCasesTestTable([
+          profileCasesTestSrc(`${PROFILE_CASES_RFC10}; result <xref target="RFC4648" section="9"/>`, "null", "V1"),
+        ])}\n`,
+        "",
+      ),
+    ),
+    [profileCasesTestResultWhy("a result is cited apart from its inputs only in a spec whose main source is an RFC")],
+  )
+}
+
 /** The profile's pinned cases. */
 export const main = (): i32 => {
   const t = new Suite("spec/extract profile cases")
@@ -1833,6 +2019,7 @@ export const main = (): i32 => {
   profileCasesTestMissing(t, all)
   profileCasesTestLocator(t, all)
   profileCasesTestMain(t, all)
+  profileCasesTestResultCite(t, all)
   profileCasesTestUnicodeSpaces(t, all)
   return t.done()
 }

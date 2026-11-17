@@ -9,7 +9,9 @@
 
 import { CheckContext, CheckSourceRun } from "../check"
 import { Citation, Clause, ClauseKind, VectorSourceKind } from "../contract/types"
+import { sourceMainId } from "../source/load"
 import { gateCitedSection, gatePlace, gateSources } from "./cite"
+import { gateDerivedResult } from "./derive"
 import { gateIssue, gateWarn } from "./note"
 import { gateResultWord, gateStatesResult } from "./result"
 
@@ -25,7 +27,33 @@ const gateSourceRun = (ctx: CheckContext, id: string): CheckSourceRun | null => 
   return null
 }
 
-/** A spec source's section states the vector's expected result. */
+/**
+ * Whether a vector cites its inputs to one section of the main RFC and its
+ * result to another, so its result may be derived (`spec/gates/derive`).
+ */
+const gateCitesResultApart = (ctx: CheckContext, k: Clause, section: string): boolean => {
+  const inputs = k.section
+  const c = ctx.contract
+  return c.source.main === null && c.source.rfc >= 1 && inputs !== null && inputs !== section
+}
+
+/** The ids of the main source's requirements quoted from a section. */
+const gateSectionReqs = (ctx: CheckContext, section: string): string[] => {
+  const main = sourceMainId(ctx.contract)
+  const out: string[] = []
+  for (const r of ctx.contract.requirements) {
+    const own = r.source
+    if ((own === null || own === main) && r.section === section) {
+      out.push(r.id)
+    }
+  }
+  return out
+}
+
+/**
+ * A spec source's section states the vector's expected result, or, for a
+ * vector citing its result apart from its inputs, a property derives it.
+ */
 const gateSpecSource = (ctx: CheckContext, out: string[], k: Clause, section: string): void => {
   const g = GATE_PROVENANCE
   const set = gateSources(ctx, out, g)
@@ -37,9 +65,23 @@ const gateSpecSource = (ctx: CheckContext, out: string[], k: Clause, section: st
   const cite = new Citation()
   cite.section = section
   const why = gateStatesResult(ctx.contract, set, k, cite, sec, gateResultWord(k.expect))
-  if (why !== null) {
-    const place = gatePlace(set, null, section)
+  if (why === null) {
+    return
+  }
+  const place = gatePlace(set, null, section)
+  if (!gateCitesResultApart(ctx, k, section)) {
     gateIssue(ctx, out, g, at, `${place} ("${sec.title}") does not state the expected result: ${why}`)
+    return
+  }
+  const derived = gateDerivedResult(ctx.contract.clauses, gateSectionReqs(ctx, section), k)
+  if (derived !== null) {
+    gateIssue(
+      ctx,
+      out,
+      g,
+      at,
+      `${place} ("${sec.title}") does not state the expected result: ${why}; and no property derives it: ${derived}`,
+    )
   }
 }
 

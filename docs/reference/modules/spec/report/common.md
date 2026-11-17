@@ -434,7 +434,8 @@ the clause
 
 <scalar-field name="returns" type="string">
 
-the evidence, such as `vector, §2.2` or `24 samples (6 boundary)`
+the evidence, such as `vector, §2.2`, `vector, §7.1, result §5.1.7`
+  (inputs and result cited apart) or `24 samples (6 boundary)`
 
 </scalar-field>
 

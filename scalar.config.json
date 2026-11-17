@@ -507,6 +507,11 @@
                     "title": "spec/gates/coverage",
                     "filepath": "docs/reference/modules/spec/gates/coverage.md"
                   },
+                  "/spec-gates-derive": {
+                    "type": "page",
+                    "title": "spec/gates/derive",
+                    "filepath": "docs/reference/modules/spec/gates/derive.md"
+                  },
                   "/spec-gates-domain": {
                     "type": "page",
                     "title": "spec/gates/domain",

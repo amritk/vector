@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rfc version="3" docName="draft-mini-tag-underived-00">
+  <front>
+    <title>Mini Tags profile</title>
+    <keyword>vector-main-RFC9992</keyword>
+  </front>
+  <middle>
+    <section anchor="interface">
+      <name>Interface</name>
+      <sourcecode type="ts-interface"><![CDATA[
+// module: nish/mini/tag
+export function tag(key: u8[], msg: u8[]): u8[]
+export function check(key: u8[], msg: u8[], t: u8[]): boolean
+]]></sourcecode>
+    </section>
+    <section anchor="checking">
+      <name>Checking</name>
+      <blockquote anchor="R-CHECK">
+        <t>A receiver MUST check each tag against its key and message. <xref section="2" sectionFormat="of" target="RFC9992"/></t>
+      </blockquote>
+      <sourcecode type="ts-property"><![CDATA[
+// P-CHECK covers R-CHECK — a tag checks against the key and message it was made of
+forall (key: u8[] /* 1..1 */, msg: u8[] /* 0..0 */) => check(key, msg, tag(key, msg)) === true
+]]></sourcecode>
+    </section>
+    <section anchor="vectors">
+      <name>Test Vectors</name>
+      <table>
+        <thead>
+          <tr>
+            <th align="left">Id</th>
+            <th align="left">Call</th>
+            <th align="left">Expected</th>
+            <th align="left">Covers</th>
+            <th align="left">Source</th>
+            <th align="left">Title</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td align="left">3-TAG</td>
+            <td align="left"><tt>tag(KEY = 01, MESSAGE = 02)</tt></td>
+            <td align="left"><tt>TAG = 0a0b</tt></td>
+            <td align="left">R-CHECK</td>
+            <td align="left"><xref section="3" sectionFormat="of" target="RFC9992"/></td>
+            <td align="left">the tag of the vector</td>
+          </tr>
+          <tr>
+            <td align="left">3-CHECK</td>
+            <td align="left"><tt>check(KEY = 01, MESSAGE = 02, TAG = 0a0b)</tt></td>
+            <td align="left"><tt>true</tt></td>
+            <td align="left">R-CHECK</td>
+            <td align="left"><xref section="3" sectionFormat="of" target="RFC9992"/>; result <xref section="2" sectionFormat="of" target="RFC9992"/></td>
+            <td align="left">the tag checks</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </middle>
+  <back>
+    <references>
+      <name>Normative References</name>
+      <reference anchor="RFC9992"><front><title>Mini Tags</title></front><seriesInfo name="RFC" value="9992"/></reference>
+    </references>
+  </back>
+</rfc>

@@ -20,7 +20,7 @@ The 3 JSON Schemas in `schemas/`.
 
 <scalar-card title="Modules" icon="phosphor/regular/books" href="#modules">
 
-The 115 source files of `src/`, from their doc comments.
+The 116 source files of `src/`, from their doc comments.
 
 </scalar-card>
 
@@ -100,6 +100,7 @@ The 115 source files of `src/`, from their doc comments.
 | [`spec/gates/cite`](modules/spec/gates/cite.md) | what the gates that read a contract's sources share: reading them once a run, finding the section a citation names, and naming a citation in a message ("RFC §2.2" in the main RFC, "rfc2104 §2" in another source). |
 | [`spec/gates/completeness`](modules/spec/gates/completeness.md) | every binding sentence of the main source is accounted for. |
 | [`spec/gates/coverage`](modules/spec/gates/coverage.md) | every binding requirement is checked by some clause, and every clause checks the module under test. |
+| [`spec/gates/derive`](modules/spec/gates/derive.md) | the derived rule for a vector whose inputs are cited to one section of the main RFC and whose null, true or false result to another. |
 | [`spec/gates/domain`](modules/spec/gates/domain.md) | every property's domain is inhabited, and its inputs are chosen. |
 | [`spec/gates/fidelity`](modules/spec/gates/fidelity.md) | the contract says what its sources say. |
 | [`spec/gates/ids`](modules/spec/gates/ids.md) | the ids gate: every requirement, function and clause id is unique, so a citation or a call names exactly one thing. |
