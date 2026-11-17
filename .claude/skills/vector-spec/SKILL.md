@@ -16,6 +16,8 @@ description: >-
 
 # vector spec — spec → contract → Nish test, and the PR that implements it
 
+Before running vector, read [`docs/AI.md`](../../../docs/AI.md): its rules, traps first.
+
 **You** write the spec. **`vector spec extract`** writes the contract from it.
 **The RFC text and Z3 hold the veto**, and **nish runs the test.** Never write
 or edit `contracts/<name>.json` by hand: change the spec, rebuild, and
