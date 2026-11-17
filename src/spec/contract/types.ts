@@ -346,6 +346,46 @@ export class Iterate {
   }
 }
 
+/**
+ * A vector held to its call's first bytes: the result is at least `bytes`
+ * long, and its first `bytes` bytes are the expect.
+ */
+export class Truncate {
+  /** How many leading bytes of the result are compared, at least 1. */
+  bytes: i64
+  /** The unit the length is written in: "bits" (bytes × 8) or "bytes". */
+  unit: string
+  /**
+   * Holds a vector to its result's first bytes.
+   *
+   * @param bytes how many leading bytes are compared
+   * @param unit "bits" or "bytes", the unit the source writes the length in
+   */
+  constructor(bytes: i64, unit: string) {
+    this.bytes = bytes
+    this.unit = unit
+  }
+
+  /**
+   * The truncation as a report names it, in the unit the spec wrote:
+   * `first 128 bits`, or `first 16 bytes`.
+   *
+   * @returns the words, without brackets
+   */
+  label(): string {
+    return `first ${this.count()} ${this.unit}`
+  }
+
+  /**
+   * The length in the unit the spec wrote: 128 for 128 bits, 16 for 16 bytes.
+   *
+   * @returns the count of bits or bytes, as `unit` says
+   */
+  count(): i64 {
+    return this.unit === "bytes" ? this.bytes : this.bytes * 8
+  }
+}
+
 /** A variable a property quantifies over, and its domain. */
 export class ForallVar {
   /** The variable's name. */
@@ -412,6 +452,8 @@ export class Clause {
   tolerance: Tolerance | null = null
   /** A vector's iteration; null when the call runs once. */
   iterate: Iterate | null = null
+  /** How many leading bytes of a vector's result are compared; null when all of it is. */
+  truncate: Truncate | null = null
   /** The variables a property quantifies over. */
   forall: ForallVar[]
   /** A property's restriction of its domain; null when none. */

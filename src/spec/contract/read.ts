@@ -40,6 +40,7 @@ import {
   Requirement,
   SourceDecl,
   Tolerance,
+  Truncate,
   VectorSource,
   VectorSourceKind,
 } from "./types"
@@ -630,6 +631,32 @@ const readIterate = (r: ContractReader, v: JsonValue, at: string): Iterate | nul
   return it
 }
 
+/** A vector's `truncate`: exactly one of `bits` (a multiple of 8) or `bytes`, at most 65536 bytes. */
+const readTruncate = (r: ContractReader, v: JsonValue, at: string): Truncate | null => {
+  if (!readObject(r, v, at, ["bits", "bytes"])) {
+    return null
+  }
+  const hasBits = r.doc.kind(r.doc.get(v, "bits")) !== JSON_VALUE_NONE
+  const hasBytes = r.doc.kind(r.doc.get(v, "bytes")) !== JSON_VALUE_NONE
+  if (hasBits === hasBytes) {
+    readFail(r, at, "exactly one of bits or bytes")
+    return null
+  }
+  if (hasBytes) {
+    const n = readCount(r, v, "bytes", at, 1, 65536, true)
+    return n < 0 ? null : new Truncate(n, "bytes")
+  }
+  const bits = readCount(r, v, "bits", at, 8, 524288, true)
+  if (bits < 0) {
+    return null
+  }
+  if (bits % 8 !== 0) {
+    readFail(r, `${at}.bits`, "a whole number of bytes: a multiple of 8")
+    return null
+  }
+  return new Truncate(bits / 8, "bits")
+}
+
 const readForall = (r: ContractReader, v: JsonValue, at: string): ForallVar | null => {
   if (!readIsKind(r, v, JSON_VALUE_OBJECT)) {
     readFail(r, at, "an object")
@@ -711,6 +738,7 @@ const readClause = (r: ContractReader, v: JsonValue, at: string): Clause | null 
       "expect",
       "tolerance",
       "iterate",
+      "truncate",
     ])
   } else {
     readObject(r, v, at, ["kind", "id", "title", "covers", "forall", "where", "assert", "samples"])
@@ -749,6 +777,10 @@ const readClause = (r: ContractReader, v: JsonValue, at: string): Clause | null 
     const it = r.doc.get(v, "iterate")
     if (r.doc.kind(it) !== JSON_VALUE_NONE) {
       c.iterate = readIterate(r, it, `${at}.iterate`)
+    }
+    const tr = r.doc.get(v, "truncate")
+    if (r.doc.kind(tr) !== JSON_VALUE_NONE) {
+      c.truncate = readTruncate(r, tr, `${at}.truncate`)
     }
     return c
   }

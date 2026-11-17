@@ -490,6 +490,21 @@ every vector was skipped as slow, so nothing ran: pass --slow
 
 In `--json`, each clause skipped as slow also has `"slow": true`.
 
+### Truncated vectors
+
+A [truncated vector](spec-to-contract.md#a-truncated-vector) is checked on
+the result's first bytes only: the emitted test of RFC 4231 test case 5
+compares the first 16 bytes of `hmacSha256`'s 32 with the printed value. A
+result shorter than the truncation fails, in every language, with a detail
+like `a 15-byte result, shorter than the 16 bytes it is truncated to`; it is
+never compared as it is, so an implementation that returns too little does
+not pass by matching the start.
+
+`spec run` names the truncation on each line it prints about the vector, as
+`  skip  4.6-256 (first 128 bits) (slow; pass --slow)` or after a failure's
+line, and in the JSON report the clause has `"truncate": {"bits": 128}`, as
+the contract writes it.
+
 ## A planted bug
 
 Copy the install, then let HKDF-Expand accept one octet more than RFC 5869

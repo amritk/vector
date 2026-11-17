@@ -1,0 +1,13 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ profile-truncate · RFC 4231 (Profile fixture: a vector held to its truncated result) · nish/crypto/hmac
+ Status: CONTRACT_VALID
+
+ Requirements
+  ○ R-TRUNC  §4.6 DEFINITION  "Test with a truncation of output to 128 bits."
+      ○ 4.2-256  ○ 4.6-256 (first 128 bits)
+
+ Warnings
+  ! clauses: no property clauses: the contract checks only the RFC's own vectors
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

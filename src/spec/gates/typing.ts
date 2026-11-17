@@ -63,6 +63,9 @@ const gateTypingVector = (k: Clause, fns: FnSig[], errors: string[]): void => {
   if (k.tolerance !== null && ret !== "f64") {
     errors.push(`tolerance: ${k.call} returns ${ret}, and only an f64 result is compared within a tolerance`)
   }
+  if (k.truncate !== null && ret !== "bytes") {
+    errors.push(`truncate: ${k.call} returns ${ret}, and only a bytes result is truncated`)
+  }
   const it = k.iterate
   if (it !== null) {
     gateTypingIterate(k, it, sig, errors)

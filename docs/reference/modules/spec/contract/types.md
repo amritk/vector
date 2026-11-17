@@ -30,6 +30,7 @@ Generated from [src/spec/contract/types.ts](https://github.com/amritk/vector/blo
 - [`VectorSource`](#vectorsource)
 - [`Tolerance`](#tolerance)
 - [`Iterate`](#iterate)
+- [`Truncate`](#truncate)
 - [`ForallVar`](#forallvar)
 - [`ClauseKind`](#clausekind)
 - [`Clause`](#clause)
@@ -965,6 +966,80 @@ Whether a test runs the vector only when asked.
 slow: boolean
 ```
 
+### Truncate
+
+A vector held to its call's first bytes: the result is at least `bytes`
+long, and its first `bytes` bytes are the expect.
+
+```ts
+class Truncate
+```
+
+#### new Truncate
+
+Holds a vector to its result's first bytes.
+
+```ts
+new Truncate(bytes: i64, unit: string): Truncate
+```
+
+<scalar-field name="bytes" type="i64" required>
+
+how many leading bytes are compared
+
+</scalar-field>
+
+<scalar-field name="unit" type="string" required>
+
+"bits" or "bytes", the unit the source writes the length in
+
+</scalar-field>
+
+#### Truncate.bytes
+
+How many leading bytes of the result are compared, at least 1.
+
+```ts
+bytes: i64
+```
+
+#### Truncate.unit
+
+The unit the length is written in: "bits" (bytes × 8) or "bytes".
+
+```ts
+unit: string
+```
+
+#### Truncate.count
+
+The length in the unit the spec wrote: 128 for 128 bits, 16 for 16 bytes.
+
+```ts
+count(): i64
+```
+
+<scalar-field name="returns" type="i64">
+
+the count of bits or bytes, as `unit` says
+
+</scalar-field>
+
+#### Truncate.label
+
+The truncation as a report names it, in the unit the spec wrote:
+`first 128 bits`, or `first 16 bytes`.
+
+```ts
+label(): string
+```
+
+<scalar-field name="returns" type="string">
+
+the words, without brackets
+
+</scalar-field>
+
 ### ForallVar
 
 A variable a property quantifies over, and its domain.
@@ -1213,6 +1288,14 @@ How far an f64 result may be from expect; null when exact.
 
 ```ts
 tolerance: Tolerance | null
+```
+
+#### Clause.truncate
+
+How many leading bytes of a vector's result are compared; null when all of it is.
+
+```ts
+truncate: Truncate | null
 ```
 
 #### Clause.where

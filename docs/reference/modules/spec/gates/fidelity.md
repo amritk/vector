@@ -17,7 +17,9 @@ XML, a byte list such as `[00 0f f0 ff]` is a whole printed value, as
 reference. A value printed for one of several variants ("HMAC-SHA-256"
 beside "HMAC-SHA-512") must be the one the called function names. An
 expected null, true or false must be stated by a covered requirement
-(gateStatesResult).
+(gateStatesResult). A truncated vector's length is printed there too, as
+a whole number then its unit (`128 bits`), outside a heading; its
+expected value is still a whole printed value, the truncated output.
 
 Generated from [src/spec/gates/fidelity.ts](https://github.com/amritk/vector/blob/main/src/spec/gates/fidelity.ts).
 

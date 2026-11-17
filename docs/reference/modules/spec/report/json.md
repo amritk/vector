@@ -3,7 +3,8 @@
 # spec/report/json
 
 `spec/report/json` — the check's report as one JSON object, for tools:
-`{status, contract, issues, warnings, coverage, samples, sources}`.
+`{status, contract, issues, warnings, coverage, samples, sources,
+truncations}`.
 
 Generated from [src/spec/report/json.ts](https://github.com/amritk/vector/blob/main/src/spec/report/json.ts).
 
@@ -17,7 +18,8 @@ Generated from [src/spec/report/json.ts](https://github.com/amritk/vector/blob/m
 
 The report as JSON on one line: the status, every finding and warning with
 its gate and place, which clauses cover each requirement, each property's
-sampling, and each source command's run.
+sampling, each source command's run, and each vector held to its result's
+first bytes (`{"bits": 128}` or `{"bytes": 16}`, as the contract writes it).
 
 ```ts
 function reportJson(ctx: CheckContext, report: CheckReport): string

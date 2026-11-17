@@ -773,6 +773,9 @@
         },
         "iterate": {
           "$ref": "#/$defs/iterate"
+        },
+        "truncate": {
+          "$ref": "#/$defs/truncate"
         }
       },
       "required": [
@@ -1070,6 +1073,25 @@
         }
       },
       "required": ["count", "names", "next"]
+    },
+    "truncate": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Hold only the first bytes of the call's result to `expect`, as a spec does when it prints a result truncated (RFC 4231 §4.6: \"Truncate to 128 bits\"). Exactly one of `bits`, a multiple of 8, or `bytes` gives the length, written in the unit the spec prints. The call returns bytes, `expect` is bytes of exactly that length, and a result shorter than the length fails the check rather than being compared as it is. The length must be printed in the cited section with its unit (commas ignored). Not with `tolerance` or `iterate`.",
+      "properties": {
+        "bits": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 524288,
+          "multipleOf": 8
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        }
+      },
+      "oneOf": [{ "required": ["bits"] }, { "required": ["bytes"] }]
     },
     "tolerance": {
       "description": "How far an f64 result may be from `expect`: `abs`, an absolute difference as decimal text, or `ulps`, a count of binary64 units in the last place. It must come from the spec: `quote` is the sentence that states it, in `section` (of `source`, default the main one), checked like a requirement's quote. Without a tolerance an f64 expect is compared bit for bit (IEEE 754-2019 §3.4 encodings), so NaN equals a NaN of the same bits. Only an f64 result takes a tolerance, and an expected NaN or infinity is compared bit for bit even with one. `abs` must be finite: decimal text past binary64's largest finite value is refused (IEEE 754-2019 §7.4). `ulps` is at most 2^53−1, so it is exact as a JSON number (RFC 7493 §2.2).",

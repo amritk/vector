@@ -605,6 +605,10 @@ export const emitWrap = (text: string, width: i32): string[] => {
  */
 export const emitClauseLines = (c: Contract, k: Clause): string[] => {
   const lines: string[] = [emitCommentText(k.title)]
+  const tr = k.truncate
+  if (tr !== null) {
+    lines.push(emitCommentText(`Holds the result's ${tr.label()} to the expected value.`))
+  }
   for (const id of k.covers) {
     for (const r of c.requirements) {
       if (r.id === id) {
@@ -717,7 +721,10 @@ const emitVectorCheck = (
 ): string => {
   const ret = vocabValueType(sig.returns)
   let body = ""
-  if (ret === "bytes") {
+  const tr = k.truncate
+  if (ret === "bytes" && tr !== null) {
+    body = `t.eqStr(${name}, ${emitUse(ctx, "hexPrefix")}(${call}, ${tr.bytes}), "${emitLiteralHex(expect)}")`
+  } else if (ret === "bytes") {
     body = `t.eqStr(${name}, ${emitUse(ctx, "hexOf")}(${call}), "${emitLiteralHex(expect)}")`
   } else if (ret === "bytes?") {
     const want = expect.kind === LitKind.Null ? "null" : emitLiteralHex(expect)

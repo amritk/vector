@@ -14,7 +14,9 @@
  * reference. A value printed for one of several variants ("HMAC-SHA-256"
  * beside "HMAC-SHA-512") must be the one the called function names. An
  * expected null, true or false must be stated by a covered requirement
- * (gateStatesResult).
+ * (gateStatesResult). A truncated vector's length is printed there too, as
+ * a whole number then its unit (`128 bits`), outside a heading; its
+ * expected value is still a whole printed value, the truncated output.
  */
 
 import { jsonStringifyString } from "nish/json"
@@ -23,7 +25,7 @@ import { toHex, utf8Bytes } from "../../core/hex"
 import { CheckContext, CheckNote } from "../check"
 import { charsTestVector } from "../contract/chars"
 import { contractF64Bits, contractF64IsNaN, contractF64Parse } from "../contract/f64"
-import { Clause, ClauseKind, Iterate, LitKind, Literal, VectorSourceKind } from "../contract/types"
+import { Clause, ClauseKind, Iterate, LitKind, Literal, Truncate, VectorSourceKind } from "../contract/types"
 import { SourceSet, sourceFind } from "../source/load"
 import {
   HexValue,
@@ -839,6 +841,43 @@ const gateIterateCount = (
 }
 
 /**
+ * A truncated vector's length against its section: the number then the unit
+ * the contract records (`128 bits`, or `16 bytes`) are printed there as two
+ * whole tokens, outside a heading, the unit in any case and the number with
+ * its commas dropped. A line break between them is a space.
+ */
+const gateTruncateLength = (
+  ctx: CheckContext,
+  out: string[],
+  k: Clause,
+  t: Truncate,
+  sec: RfcSection,
+  where: string,
+): void => {
+  const want = t.unit === "bits" ? `${t.bytes * 8}` : `${t.bytes}`
+  const words: string[] = []
+  for (const line of sec.lines) {
+    if (!gateFidHeading(line)) {
+      for (const w of gateFidTokens(line)) {
+        words.push(w)
+      }
+    }
+  }
+  for (let i = 0; i + 1 < words.length; i++) {
+    if (gateFidNumber(words[i]) === want && asciiLower(words[i + 1]) === t.unit) {
+      return
+    }
+  }
+  gateIssue(
+    ctx,
+    out,
+    GATE_FIDELITY,
+    `${k.id}.truncate`,
+    `the truncation to ${gateGrouped(want)} ${t.unit} is not printed in ${where} ("${sec.title}")`,
+  )
+}
+
+/**
  * A value printed under one of several labels that differ only in a number
  * ("HMAC-SHA-256", "HMAC-SHA-512") must be the variant the called function
  * names: another variant's number in the name is refused, none of them is a
@@ -1005,6 +1044,10 @@ const gateFidelityVector = (ctx: CheckContext, out: string[], set: SourceSet, k:
   const it = k.iterate
   if (it !== null) {
     gateIterateCount(ctx, out, k, it, sec, where)
+  }
+  const tr = k.truncate
+  if (tr !== null) {
+    gateTruncateLength(ctx, out, k, tr, sec, where)
   }
   for (const n of l.notes) {
     if (n.warning) {

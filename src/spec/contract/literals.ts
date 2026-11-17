@@ -921,6 +921,41 @@ export const literalsParse = (text: string): Result<RawLiteral, LiteralError> =>
 }
 
 /**
+ * How many bytes a bytes literal stands for: its hex pairs times its repeat,
+ * an ascii literal's characters, or the sum of a concat's parts.
+ *
+ * @param lit the literal
+ * @returns the byte count, or -1 when the literal is not bytes
+ */
+export const literalsByteLength = (lit: Literal): i64 => {
+  if (lit.kind === LitKind.Concat) {
+    let n: i64 = 0
+    for (const p of lit.parts) {
+      const m = literalsByteLength(p)
+      if (m < 0) {
+        return -1
+      }
+      n += m
+    }
+    return n
+  }
+  if (lit.kind === LitKind.Ascii) {
+    return toI64(lit.text.length)
+  }
+  if (lit.kind !== LitKind.Hex) {
+    return -1
+  }
+  let digits: i64 = 0
+  for (let i = 0; i < lit.text.length; i++) {
+    const c = toI32(lit.text.charCodeAt(i))
+    if ((c >= 48 && c <= 57) || (c >= 97 && c <= 102) || (c >= 65 && c <= 70)) {
+      digits += 1
+    }
+  }
+  return (digits / 2) * toI64(lit.repeat < 0 ? 1 : lit.repeat)
+}
+
+/**
  * What a literal is, as a refusal names it: "an int", "bytes", "null", ...
  *
  * @param lit the literal
