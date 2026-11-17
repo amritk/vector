@@ -227,6 +227,10 @@ extracts to.
   - `concat(a, b, …)`: one level, all parts bytes. Never `‖`.
 - **Source** says where the expected value comes from:
   - `{{Section N of RFCx}}`: the value is printed there. Prefer this.
+  - `{{Section N of RFCx}}, Test Vector #K`: the values are all printed in
+    that one case of the section, under its `Test Vector #K:` heading. Use
+    it when a section prints several cases and a plain cite is refused as
+    unclear.
   - `{{anchor}}`: a numbered section of this spec. For a `null` or `bool`
     expected value it is a `spec` source (the covered requirement states it);
     for any other value it is a `cite` of that section, which must print the

@@ -1,6 +1,6 @@
 import { JSON_VALUE_OBJECT } from "nish/json-value"
 import { Suite } from "nish/testing"
-import { replaceAll } from "nish/text"
+import { replaceAll, trim } from "nish/text"
 import { jsonMember, newJsonDocument, parseJson } from "../../../src/core/json"
 import { LITERALS_BYTES } from "../../../src/spec/contract/literals"
 import { contractFromJson } from "../../../src/spec/contract/read"
@@ -248,7 +248,8 @@ const profileCasesTestSource = (s: VectorSource | null): string => {
     if (cite === null) {
       return "cite ?"
     }
-    return `cite ${cite.source ?? "-"} ${cite.section}`
+    const tc = cite.testCase
+    return `cite ${cite.source ?? "-"} ${cite.section}${tc === null ? "" : ` ${tc}`}`
   }
   if (s.kind === VectorSourceKind.Spec) {
     return `spec ${s.text}`
@@ -389,6 +390,34 @@ const profileCasesTestSectionSource = (t: Suite, all: ProfileCasesTestRfcs): voi
   const e = c.clauses[1].expect
   t.eqStr("section source: the bool expected", e === null ? "none" : profileCasesTestLit(e), "bool false")
   t.eqStr("section source: the spec vector's section", c.clauses[1].section ?? "none", "2")
+}
+
+/** `{{Section N of RFCx}}, Test Vector #N` scopes the cite to that case; a plain cite has none. */
+const profileCasesTestCaseSource = (t: Suite, all: ProfileCasesTestRfcs): void => {
+  const c = profileCasesTestContract(
+    t,
+    all,
+    "a test case in Source",
+    profileCasesTestSpec(
+      profileCasesTestSec(
+        PROFILE_CASES_REQ +
+          profileCasesTestTable([
+            profileCasesTestSrc(`${PROFILE_CASES_RFC10}, Test Vector #2`, '"f"', "V1"),
+            profileCasesTestSrc(`${PROFILE_CASES_RFC10}, Test Vector #11`, '"f"', "V2"),
+            profileCasesTestSrc(PROFILE_CASES_RFC10, '"f"', "V3"),
+          ]),
+        "",
+      ),
+    ),
+  )
+  if (c === null) {
+    return
+  }
+  t.eqStr(
+    "case source: the case of each cite",
+    c.clauses.map((k: Clause): string => profileCasesTestSource(k.source)).join(", "),
+    "cite rfc4648 10 Test Vector #2, cite rfc4648 10 Test Vector #11, cite rfc4648 10",
+  )
 }
 
 /** Cited RFCs are listed in ascending order. */
@@ -1283,6 +1312,41 @@ const profileCasesTestVectors = (t: Suite, all: ProfileCasesTestRfcs): void => {
       `10 xref to "BOOK" names no RFC <reference>`,
     ],
   )
+  // Only `, Test Vector #N` may follow a section, with N from 1 and no leading
+  // zero; every near miss is refused, naming the form, after any source.
+  const caseSuffixes: string[] = [
+    ", Test vector #2",
+    ", Test Vector 2",
+    ", Test Vector #02",
+    ", Test Vector #0",
+    ", Test Vector #",
+    ", Test Vector #2.",
+    " Test Vector #2",
+    ", Test Vector #2, Test Vector #3",
+  ]
+  const caseForm: string =
+    "Source: only one test case may follow a section, written {{Section N of RFCx}}, Test Vector #N (N from 1, with no leading zero)"
+  const caseRows: string[] = []
+  const caseWant: string[] = []
+  for (let i = 0; i < caseSuffixes.length; i++) {
+    caseRows.push(profileCasesTestSrc(PROFILE_CASES_RFC10 + caseSuffixes[i], '"f"', `V${i + 1}`))
+    caseWant.push(`${caseForm}; "${trim(caseSuffixes[i])}" after the section is not one`)
+  }
+  caseRows.push(profileCasesTestSrc(`<xref target="here"/>, Test Vector #2`, '"f"', "V20"))
+  caseWant.push(`${caseForm}; ", Test Vector #2" after the anchor is not one`)
+  caseRows.push(profileCasesTestSrc(`${profileCasesTestTt("echo f")}, Test Vector #2`, '"f"', "V21"))
+  caseWant.push(`${caseForm}; ", Test Vector #2" after the code span is not one`)
+  caseRows.push(profileCasesTestSrc(`${PROFILE_CASES_RFC10} ${PROFILE_CASES_RFC10}, Test Vector #2`, '"f"', "V22"))
+  caseWant.push(`${caseForm}; ", Test Vector #2" after the section is not one`)
+  caseRows.push(profileCasesTestSrc("<em>f</em>, Test Vector #2", '"f"', "V23"))
+  caseWant.push(`${caseForm}; ", Test Vector #2" after the <em> element is not one`)
+  profileCasesTestRefusedWith(
+    t,
+    all,
+    "a Source cell with a malformed test case",
+    profileCasesTestSpec(profileCasesTestSec(PROFILE_CASES_REQ + profileCasesTestTable(caseRows), ' anchor="here"')),
+    caseWant,
+  )
   profileCasesTestRefused(
     t,
     all,
@@ -1751,6 +1815,7 @@ export const main = (): i32 => {
   profileCasesTestMinimal(t, all)
   profileCasesTestBlockquote(t, all)
   profileCasesTestSectionSource(t, all)
+  profileCasesTestCaseSource(t, all)
   profileCasesTestAscending(t, all)
   profileCasesTestProseTable(t, all)
   profileCasesTestShapes(t, all)

@@ -4,6 +4,8 @@ import {
   HexValue,
   RfcDocument,
   RfcSection,
+  rfcCaseSection,
+  rfcHasCases,
   rfcHexPrinted,
   rfcHexValues,
   rfcNormalize,
@@ -103,6 +105,88 @@ const rfcTestBody = (body: string): string => {
 const rfcTestUnvalued = (body: string): string => {
   const text = `Request for Comments: 1\n\f\n1.  Intro\n\n   ${body}\n`
   return rfcUnvaluedLabels(rfcTestSection(rfcParse(text), "1")).join("|")
+}
+
+/** An RFC whose sections split into test cases: in both heading shapes, across a page break, duplicated, and under a subsection. */
+const rfcTestCasesText = (): string =>
+  [
+    "Request for Comments: 8888",
+    "",
+    "1.  Cases",
+    "",
+    "   The test vector #2 below has a longer key.",
+    "   Key:",
+    "   0101",
+    "",
+    "   Test Vector #1:",
+    "   ==============",
+    "",
+    "   Key:",
+    "   0a0a",
+    "",
+    "  Test Vector #2: a longer key",
+    "",
+    "   Key:",
+    "   0b0b",
+    "",
+    "Author                        Informational                     [Page 1]",
+    "\f",
+    "RFC 8888                      Example Spec                     May 2020",
+    "",
+    "   Tag:",
+    "   0c0c",
+    "",
+    "   Test Vector #10:",
+    "   Key:",
+    "   0d0d",
+    "",
+    "   Test Vector #02:",
+    "   Key:",
+    "   0e0e",
+    "",
+    "   Test Vector #9:",
+    "   Key:",
+    "   0f0f",
+    "",
+    "   Test Vector #1234567:",
+    "   Key:",
+    "   1010",
+    "",
+    "2.  Twice",
+    "",
+    "   Test Vector #1:",
+    "   Key:",
+    "   1111",
+    "   Test Vector #1:",
+    "   Key:",
+    "   2222",
+    "",
+    "3.  Parent",
+    "",
+    "   Test Vector #1:",
+    "   Key:",
+    "   3333",
+    "",
+    "3.1.  Child",
+    "",
+    "   Test Vector #1:",
+    "   Key:",
+    "   4444",
+    "",
+    "4.  Plain",
+    "",
+    "   Test Vector: none of these heads a case.",
+    "   Test Vector #: nor this,",
+    "   Test Vector #",
+    "   Test Vector #3 nor this.",
+    "   See Test Vector #1: inside prose.",
+    "",
+  ].join("\n")
+
+/** The values of case `n` of section `id` in rfcTestCasesText, or the reason it has none. */
+const rfcTestCase = (id: string, n: i32): string => {
+  const r = rfcCaseSection(rfcTestSection(rfcParse(rfcTestCasesText()), id), n)
+  return r.isErr() ? `error: ${r.error}` : rfcTestValues(r.value)
 }
 
 /** Reading an RFC's text: sections, page furniture, quotes and printed hex. */
@@ -220,6 +304,41 @@ export const main = (): i32 => {
     "MESSAGE (length 0 bytes)",
   )
   t.eqStr("a letter-led inline label is", rfcTestBody("IV = 4041424344454647"), "IV=4041424344454647")
+
+  // Test cases: a section split by `Test Vector #N:` headings.
+  const cases = rfcParse(rfcTestCasesText())
+  t.ok("a section with headings has cases", rfcHasCases(rfcTestSection(cases, "1")))
+  t.ok("prose, a bare #, no colon and a heading mid-line head none", !rfcHasCases(rfcTestSection(cases, "4")))
+  t.ok("a subsection has cases of its own", rfcHasCases(rfcTestSection(cases, "3.1")))
+  t.eqStr("a heading alone, above a rule", rfcTestCase("1", 1), "Key=0a0a")
+  t.eqStr("a heading with text, across a page break", rfcTestCase("1", 2), "Key=0b0b Tag=0c0c")
+  t.eqStr("a heading with a leading zero heads no case, but ends the one above", rfcTestCase("1", 10), "Key=0d0d")
+  t.eqStr("so does a heading with too many digits", rfcTestCase("1", 9), "Key=0f0f")
+  t.eqStr("nor is either one part of another case", rfcTestCase("1", 2).indexOf("0e0e") < 0 ? "ok" : "in #2", "ok")
+  t.eqStr(
+    "no such case",
+    rfcTestCase("1", 12),
+    'error: has no "Test Vector #12:" heading, so it holds no Test Vector #12',
+  )
+  t.eqStr("case 0 is none", rfcTestCase("1", 0), "error: Test Vector #0 is not a test case: they are numbered from 1")
+  t.eqStr(
+    "a prose mention heads no case",
+    rfcTestCase("4", 3),
+    'error: has no "Test Vector #3:" heading, so it holds no Test Vector #3',
+  )
+  t.eqStr(
+    "a duplicate heading",
+    rfcTestCase("2", 1),
+    'error: heads 2 test cases "Test Vector #1:", so which one is meant is unclear',
+  )
+  t.eqStr(
+    "a section with subsections",
+    rfcTestCase("3", 1),
+    "error: has subsections, so Test Vector #1 is not one test case of it: cite the subsection that holds it",
+  )
+  t.eqStr("its subsection's case", rfcTestCase("3.1", 1), "Key=4444")
+  const one = rfcCaseSection(rfcTestSection(cases, "1"), 1)
+  t.ok("a case keeps the section's id and title", one.isOk() && one.value.id === "1" && one.value.title === "Cases")
 
   // Reading refuses what is not an RFC, and what hides text.
   t.ok("an RFC reads", rfcRead(rfcTestText(), "r.txt").isOk())
