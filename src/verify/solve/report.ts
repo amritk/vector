@@ -66,6 +66,12 @@ export class ClauseVerdict {
   hasCex: boolean
   /** The counterexample of a refuted clause. */
   cex: Counterexample
+  /** The clause's index in the function's ensures; -1 when unset. */
+  clauseIndex: i32
+  /** What replaying `cex` found (`verify/solve/replay`); "" before it runs. */
+  replay: string
+  /** The replay's detail: the check that differed, or why it was not replayed. */
+  replayDetail: string
 
   /**
    * Makes a verdict.
@@ -81,6 +87,9 @@ export class ClauseVerdict {
     this.trivial = false
     this.hasCex = false
     this.cex = new Counterexample("?")
+    this.clauseIndex = -1
+    this.replay = ""
+    this.replayDetail = ""
   }
 }
 
@@ -97,6 +106,14 @@ export class Hazard {
   hasCex: boolean
   /** An input that reaches the hazard. */
   cex: Counterexample
+  /** `QUERY_DIV`, `QUERY_PRE` or `QUERY_RANGE`. */
+  kind: i32
+  /** Which hazard of its kind in its function, counting every query of that kind. */
+  index: i32
+  /** What replaying `cex` found (`verify/solve/replay`); "" before it runs. */
+  replay: string
+  /** The replay's detail: the check that differed, or why it was not replayed. */
+  replayDetail: string
 
   /**
    * Makes a hazard with no example.
@@ -109,6 +126,10 @@ export class Hazard {
     this.pretty = pretty
     this.hasCex = false
     this.cex = new Counterexample("?")
+    this.kind = 0
+    this.index = -1
+    this.replay = ""
+    this.replayDetail = ""
   }
 }
 
@@ -219,6 +240,8 @@ export class VerifyReport {
   conformance: ConformanceIssue[]
   /** How long z3 took, in milliseconds. */
   millis: i32
+  /** How many counterexamples did not replay as z3 said (`verify/solve/replay`). */
+  mismatchCount: i32
 
   /**
    * Makes an empty report.
@@ -239,6 +262,7 @@ export class VerifyReport {
     this.vacuousCount = 0
     this.conformance = []
     this.millis = 0
+    this.mismatchCount = 0
   }
 
   /**
@@ -319,6 +343,12 @@ export const assembleReport = (
     given.push(i < toI32(answers.length) ? answers[i] : new QueryAnswer("unknown"))
   }
   const n = toI32(queries.length)
+  // The n-th hazard query of a kind in a function is the n-th hazard of that
+  // kind the script recorded, which the replay counts the same way.
+  const hazardSeen: i32[][] = []
+  for (let f = 0; f < toI32(program.functions.length); f++) {
+    hazardSeen.push([0, 0, 0])
+  }
   for (let i = 0; i < n; i++) {
     const q = queries[i]
     const a = given[i]
@@ -351,13 +381,22 @@ export const assembleReport = (
         report.satCount = report.satCount + 1
         v.hasCex = true
         v.cex = reportCex(program, q, a)
+        v.clauseIndex = q.clauseIndex
         fr.ensures.push(v)
       } else {
         report.unknownCount = report.unknownCount + 1
         fr.ensures.push(new ClauseVerdict(q.axiomId, q.pretty, CLAUSE_UNKNOWN))
       }
-    } else if ((q.kind === QUERY_DIV || q.kind === QUERY_PRE || q.kind === QUERY_RANGE) && a.result !== "unsat") {
+    } else if (q.kind === QUERY_DIV || q.kind === QUERY_PRE || q.kind === QUERY_RANGE) {
+      const slot = q.kind === QUERY_DIV ? 0 : q.kind === QUERY_PRE ? 1 : 2
+      const index = hazardSeen[q.fnIndex][slot]
+      hazardSeen[q.fnIndex][slot] = index + 1
+      if (a.result === "unsat") {
+        continue
+      }
       const h = new Hazard(q.callee, q.pretty)
+      h.kind = q.kind
+      h.index = index
       if (a.result === "sat") {
         h.hasCex = true
         h.cex = reportCex(program, q, a)

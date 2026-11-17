@@ -58,6 +58,10 @@ Commands
 Flags
   -h, --help     show help
   -v, --version  show the version
+
+Agents
+  before using vector, read its rules, traps first:
+  /path/to/vector/docs/AI.md
 ```
 <!-- x-release-please-end -->
 
