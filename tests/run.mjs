@@ -10,7 +10,9 @@
 // `stderr` (no file means stderr must be empty), and `exit` (the expected
 // status). Each case runs from the repository root. `{{version}}` in
 // `stdout` or `stderr` stands for package.json's version, so a release, which
-// bumps that version, never has to touch a golden.
+// bumps that version, never has to touch a golden. `{{root}}` in them stands
+// for the repository root's real path, with no trailing slash, which is where
+// dist/vector finds the files it names (docs/AI.md).
 //
 // A case may also hold `repo`: one line naming a fixture directory, from the
 // repository root, that holds `base/` and `head/` trees. The runner copies
@@ -61,6 +63,7 @@ const TIMEOUT_MS = 120_000;
 const VERSION = JSON.parse(
   readFileSync(join(root, "package.json"), "utf8"),
 ).version;
+const realRoot = realpathSync(root);
 const repoZ3 = join(root, ".z3/z3");
 const unitEnv =
   process.env.VECTOR_Z3 || !existsSync(repoZ3)
@@ -257,15 +260,14 @@ for (const dir of cases) {
     problems.push("exit file is missing or not a number");
   else if (r.status !== wantExit)
     problems.push(`exit ${r.status ?? r.signal}, want ${wantExit}`);
-  const wantOut =
-    read(dir, "stdout")?.replaceAll("{{version}}", VERSION) ?? null;
+  const fill = (text) =>
+    text.replaceAll("{{version}}", VERSION).replaceAll("{{root}}", realRoot);
+  const outFile = read(dir, "stdout");
+  const wantOut = outFile === null ? null : fill(outFile);
   if (wantOut === null) problems.push("stdout file is missing");
   else if (r.stdout !== wantOut)
     problems.push(`stdout differs:\n--- want\n${wantOut}--- got\n${r.stdout}`);
-  const wantErr = (read(dir, "stderr") ?? "").replaceAll(
-    "{{version}}",
-    VERSION,
-  );
+  const wantErr = fill(read(dir, "stderr") ?? "");
   if (r.stderr !== wantErr)
     problems.push(`stderr differs:\n--- want\n${wantErr}--- got\n${r.stderr}`);
   if (problems.length === 0) {

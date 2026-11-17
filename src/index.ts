@@ -7,7 +7,7 @@
  */
 
 import { Style } from "nish/cli"
-import { Cli, ROOT, finish } from "nish/cli-args"
+import { Cli, PARSE_HELP, ROOT, finish } from "nish/cli-args"
 import { DIFF_ID, registerDiff } from "./cli/diff"
 import { SPEC_CHECK_ID, registerSpecCheck } from "./cli/spec-check"
 import { SPEC_EMIT_ID, registerSpecEmit } from "./cli/spec-emit"
@@ -19,13 +19,32 @@ import { SPEC_RUN_ID, registerSpecRun } from "./cli/spec-run"
 import { SPEC_STALE_ID, registerSpecStale } from "./cli/spec-stale"
 import { VERIFY_ID, registerVerify } from "./cli/verify"
 import { EXIT_USAGE } from "./core/diag"
+import { joinPath } from "./core/fs"
 import { newJsonDocument, parseJson } from "./core/json"
+import { sourceInstallRoot } from "./spec/source/path"
 import { outJsonRender } from "./verify/emit/outjson"
 import { diffOutcomeJson, diffPrograms } from "./verify/equiv/diff"
 import { verifyOutcomeJson, verifySpecAndProgram } from "./verify/verify"
 
 /** The version `vector --version` prints; kept equal to package.json's. */
 export const VECTOR_VERSION: string = "0.4.0" // x-release-please-version
+
+/** Where docs/AI.md is read when the binary's checkout does not hold it. */
+const VECTOR_AI_DOC_URL: string = "https://github.com/amritk/vector/blob/main/docs/AI.md"
+
+/**
+ * Where an agent reads vector's rules, traps first, as the top-level help's
+ * Agents section names it: `<root>/docs/AI.md` when that file exists, else
+ * its URL on GitHub (a binary built from the npm library, which holds only
+ * src/).
+ *
+ * @param root the checkout the binary was built from (sourceInstallRoot)
+ * @returns the path of docs/AI.md under `root`, or its GitHub URL
+ */
+export const vectorAgentsDoc = (root: string): string => {
+  const path = joinPath(root, "docs/AI.md")
+  return realpathSync(path) !== null && !isDirectorySync(path) ? path : VECTOR_AI_DOC_URL
+}
 
 /**
  * Runs vector's command line over `args`, as `vector <args>` would: it
@@ -51,6 +70,13 @@ export const vectorRun = (args: string[]): i32 => {
 
   const plain = new Style(false, false)
   const r = cli.parse(args, 0)
+  if (r.kind === PARSE_HELP && r.command === ROOT) {
+    // Not an epilog: the command-line reference copies epilogs, and this path is the checkout's.
+    console.log(
+      `${r.help(plain)}\n\nAgents\n  before using vector, read its rules, traps first:\n  ${vectorAgentsDoc(sourceInstallRoot())}`,
+    )
+    process.exit(0)
+  }
   finish(r, plain, plain)
   if (r.id === VERIFY_ID) return verify.run(r)
   if (r.id === DIFF_ID) return diff.run(r)
