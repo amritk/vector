@@ -40,6 +40,7 @@ import {
   RawCall,
   RawLiteral,
   SettledVector,
+  literalsByteLength,
   literalsKindOf,
   literalsParse,
   literalsParseCall,
@@ -64,6 +65,7 @@ import {
   SourceDecl,
   Target,
   Tolerance,
+  Truncate,
   VectorSource,
   VectorSourceKind,
 } from "../contract/types"
@@ -85,12 +87,17 @@ const PROFILE_OUT_OF_SCOPE: string = "Out of scope: "
 const PROFILE_OUT_OF_SCOPE_FORM: string = "Out of scope: <export>, <the reason no clause tests it>"
 const PROFILE_ULPS_MAX: string = "9007199254740991"
 const PROFILE_STRAY_TOLERANCE: string =
-  "this Tolerance: paragraph follows no vector table; it must directly follow the vector table or another Tolerance: or Iterate: paragraph"
+  "this Tolerance: paragraph follows no vector table; it must directly follow the vector table or another Tolerance:, Iterate: or Truncate: paragraph"
 const PROFILE_ITERATE: string = "Iterate: "
 const PROFILE_ITERATE_FORM: string = "Iterate: V1 1,000 times, (k, u) <- (f(k, u), k)"
 const PROFILE_ITERATE_MAX: i64 = 1000000000
 const PROFILE_STRAY_ITERATE: string =
-  "this Iterate: paragraph follows no vector table; it must directly follow the vector table or a Tolerance: or Iterate: paragraph, like Iterate: V1 1,000 times, (k, u) <- (f(k, u), k)"
+  "this Iterate: paragraph follows no vector table; it must directly follow the vector table or a Tolerance:, Iterate: or Truncate: paragraph, like Iterate: V1 1,000 times, (k, u) <- (f(k, u), k)"
+const PROFILE_TRUNCATE: string = "Truncate: "
+const PROFILE_TRUNCATE_FORM: string = "Truncate: V1 to 128 bits (or to 16 bytes)"
+const PROFILE_TRUNCATE_MAX_BYTES: i64 = 65536
+const PROFILE_STRAY_TRUNCATE: string =
+  "this Truncate: paragraph follows no vector table; it must directly follow the vector table or a Tolerance:, Iterate: or Truncate: paragraph, like Truncate: V1 to 128 bits (or to 16 bytes)"
 const PROFILE_MAIN_KEY: string = "vector-main-"
 const PROFILE_ID_RULE: string = `is not letters, digits, ".", "_" and "-", starting with a letter or digit`
 
@@ -313,11 +320,14 @@ class ProfileTable {
   section: string
   tolerances: XmlNode[]
   iterates: XmlNode[]
+  /** The Truncate: paragraphs right after it. */
+  truncates: XmlNode[]
   constructor(node: XmlNode, section: string) {
     this.node = node
     this.section = section
     this.tolerances = []
     this.iterates = []
+    this.truncates = []
   }
 }
 
@@ -354,6 +364,10 @@ class ProfileContext {
   /** Each iterated vector, and (alongside) its Iterate: paragraph. */
   iterateIds: string[]
   iterateLocs: ProfileLoc[]
+  /** The ids of the truncated vectors, in the order read. */
+  truncateIds: string[]
+  /** Where each truncated vector's Truncate: paragraph is. */
+  truncateLocs: ProfileLoc[]
   properties: Clause[]
   propertyLocs: ProfileLoc[]
   /** Each export out of scope, and (alongside) its Out of scope: paragraph. */
@@ -388,6 +402,8 @@ class ProfileContext {
     this.toleranceLocs = []
     this.iterateIds = []
     this.iterateLocs = []
+    this.truncateIds = []
+    this.truncateLocs = []
     this.properties = []
     this.propertyLocs = []
     this.outOfScope = []
@@ -1360,18 +1376,21 @@ const profileBlocks = (c: ProfileContext, parent: XmlNode, section: string): voi
   for (let i = 0; i < kids.length; i++) {
     const n = kids[i]
     if (n.name === "table") {
-      // The run of Tolerance: and Iterate: paragraphs right after it, in any
-      // order, goes with it; a BCP 14 keyword in one is quoted, not used.
+      // The run of Tolerance:, Iterate: and Truncate: paragraphs right after
+      // it, in any order, goes with it; a BCP 14 keyword in one is quoted, not used.
       const table = new ProfileTable(n, section)
       for (let j = i + 1; j < kids.length; j++) {
         const iterate = profileStartsWith(c, kids[j], PROFILE_ITERATE)
-        if (!iterate && !profileStartsWith(c, kids[j], PROFILE_TOLERANCE)) {
+        const truncate = profileStartsWith(c, kids[j], PROFILE_TRUNCATE)
+        if (!iterate && !truncate && !profileStartsWith(c, kids[j], PROFILE_TOLERANCE)) {
           break
         }
         used.add(kids[j])
         profileHandle(c, kids[j])
         if (iterate) {
           table.iterates.push(kids[j])
+        } else if (truncate) {
+          table.truncates.push(kids[j])
         } else {
           table.tolerances.push(kids[j])
         }
@@ -1474,6 +1493,9 @@ const profileBlocks = (c: ProfileContext, parent: XmlNode, section: string): voi
     } else if (profileStartsWith(c, n, PROFILE_ITERATE)) {
       profileHandle(c, n)
       profileRefuse(c, n, PROFILE_STRAY_ITERATE)
+    } else if (profileStartsWith(c, n, PROFILE_TRUNCATE)) {
+      profileHandle(c, n)
+      profileRefuse(c, n, PROFILE_STRAY_TRUNCATE)
     }
   }
 }
@@ -1575,6 +1597,9 @@ const profileReadTable = (c: ProfileContext, t: ProfileTable): void => {
     for (const p of t.iterates) {
       profileRefuse(c, p, PROFILE_STRAY_ITERATE)
     }
+    for (const p of t.truncates) {
+      profileRefuse(c, p, PROFILE_STRAY_TRUNCATE)
+    }
     return
   }
   if (header.join("|") !== want.join("|")) {
@@ -1612,6 +1637,90 @@ const profileReadTable = (c: ProfileContext, t: ProfileTable): void => {
   for (const p of t.iterates) {
     profileReadIterate(c, p, rowIds, read)
   }
+  for (const p of t.truncates) {
+    profileReadTruncate(c, p, rowIds, read)
+  }
+}
+
+/**
+ * A Truncate: paragraph, `<id> to <N> bits` or `<id> to <N> bytes`: the row's
+ * bytes result is held to its first N bytes, which its Expected prints whole.
+ */
+const profileReadTruncate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, read: Map<string, Clause>): void => {
+  const words = split(profileTrim(profileAfter(c, p, PROFILE_TRUNCATE)), " ").filter(
+    (w: string): boolean => w.length > 0,
+  )
+  if (words.length !== 4 || words[1] !== "to") {
+    profileRefuse(
+      c,
+      p,
+      `a Truncate: paragraph reads "<id> to <N> bits" or "<id> to <N> bytes": ${PROFILE_TRUNCATE_FORM}`,
+    )
+    return
+  }
+  const id = words[0]
+  const len = words[2]
+  const unit = words[3]
+  if (!profileAllDigits(len) || len.startsWith("0") || len.length > 7) {
+    profileRefuse(
+      c,
+      p,
+      `${id}'s length is a whole number of at least 1 in digits, with no leading zero, not "${len}": ${PROFILE_TRUNCATE_FORM}`,
+    )
+    return
+  }
+  if (unit !== "bits" && unit !== "bytes") {
+    profileRefuse(c, p, `${id}'s length is in "bits" or "bytes", not "${unit}": ${PROFILE_TRUNCATE_FORM}`)
+    return
+  }
+  let n: i64 = 0
+  for (let i = 0; i < len.length; i++) {
+    n = n * 10 + toI64(len.charCodeAt(i) - 48)
+  }
+  if (unit === "bits" && n % 8 !== 0) {
+    profileRefuse(
+      c,
+      p,
+      `${id} is truncated to ${len} bits, which is no whole number of bytes; a length in bits is a multiple of 8`,
+    )
+    return
+  }
+  const bytes = unit === "bits" ? n / 8 : n
+  if (bytes > PROFILE_TRUNCATE_MAX_BYTES) {
+    profileRefuse(c, p, `${id} is truncated to ${len} ${unit}, more than 65536 bytes`)
+    return
+  }
+  if (!rowIds.has(id)) {
+    profileRefuse(c, p, `Truncate: names "${id}", which is no vector of the table: ${PROFILE_TRUNCATE_FORM}`)
+    return
+  }
+  const v = read.get(id)
+  if (v === undefined) {
+    return
+  }
+  if (v.truncate !== null) {
+    profileRefuse(c, p, `${id} is truncated already; a vector has at most one Truncate: paragraph`)
+    return
+  }
+  const fn = profileFn(c, v.call)
+  const ret = fn !== null ? fn.returns : ""
+  if (ret !== "bytes") {
+    profileRefuse(c, p, `${id}'s ${v.call} returns ${ret}, and only a bytes result is truncated`)
+    return
+  }
+  const expect = v.expect
+  const got: i64 = expect === null ? toI64(-1) : literalsByteLength(expect)
+  if (got >= 0 && got !== bytes) {
+    profileRefuse(
+      c,
+      p,
+      `${id}'s Expected is ${got} bytes (${got * 8} bits), but Truncate: keeps ${bytes} bytes (${bytes * 8} bits); the Expected is the whole truncated result`,
+    )
+    return
+  }
+  v.truncate = new Truncate(bytes, unit)
+  c.truncateIds.push(id)
+  c.truncateLocs.push(profileLocOf(p))
 }
 
 /** Whether `s` is a section number at or under `parent` (`2.1` is under `2`). */
@@ -2400,9 +2509,16 @@ const profileShapeRefusals = (c: ProfileContext, out: Contract, clauseLocs: Prof
     } else if (e >= 0 && e < exLocs.length) {
       loc = exLocs[e]
     } else if (k >= 0 && k < clauseLocs.length) {
-      // An iterate's issue is its Iterate: paragraph's, not the row's.
+      // An iterate's or a truncate's issue is its paragraph's, not the row's.
       const at = c.iterateIds.indexOf(out.clauses[k].id)
-      loc = at >= 0 && issue.startsWith(`clauses[${k}].iterate`) ? c.iterateLocs[at] : clauseLocs[k]
+      const tr = c.truncateIds.indexOf(out.clauses[k].id)
+      if (at >= 0 && issue.startsWith(`clauses[${k}].iterate`)) {
+        loc = c.iterateLocs[at]
+      } else if (tr >= 0 && issue.startsWith(`clauses[${k}].truncate`)) {
+        loc = c.truncateLocs[tr]
+      } else {
+        loc = clauseLocs[k]
+      }
     } else if (f >= 0 && f < c.fnLocs.length) {
       loc = c.fnLocs[f]
     } else if (o >= 0 && o < c.outOfScopeLocs.length) {
@@ -2547,6 +2663,9 @@ export const profileRead = (
   }
   for (let i = 0; i < c.iterateIds.length; i++) {
     profilePut(c, l, `${c.iterateIds[i]}.iterate`, c.iterateLocs[i])
+  }
+  for (let i = 0; i < c.truncateIds.length; i++) {
+    profilePut(c, l, `${c.truncateIds[i]}.truncate`, c.truncateLocs[i])
   }
   for (let i = 0; i < c.functions.length; i++) {
     profilePut(c, l, c.functions[i].name, c.fnLocs[i])

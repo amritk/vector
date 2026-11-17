@@ -23,6 +23,7 @@ import {
   Literal,
   NameOverride,
   Tolerance,
+  Truncate,
   VectorSource,
   VectorSourceKind,
 } from "./types"
@@ -186,6 +187,16 @@ const writeTolerance = (t: Tolerance): WriteNode => {
   return o
 }
 
+const writeTruncate = (t: Truncate): WriteNode => {
+  const o = writeObj()
+  if (t.unit === "bits") {
+    writeSet(o, "bits", writeRaw(`${t.bytes * 8}`))
+  } else {
+    writeSet(o, "bytes", writeRaw(`${t.bytes}`))
+  }
+  return o
+}
+
 const writeIterate = (it: Iterate): WriteNode => {
   const o = writeObj()
   writeSet(o, "count", writeRaw(`${it.count}`))
@@ -249,6 +260,10 @@ const writeClause = (c: Clause): WriteNode => {
     const it = c.iterate
     if (it !== null) {
       writeSet(o, "iterate", writeIterate(it))
+    }
+    const tr = c.truncate
+    if (tr !== null) {
+      writeSet(o, "truncate", writeTruncate(tr))
     }
     return o
   }
