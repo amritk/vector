@@ -49,6 +49,8 @@ Generated from [src/spec/profile/profile.ts](https://github.com/amritk/vector/bl
 - [`profileWhere`](#profilewhere)
 - [`profileWhereText`](#profilewheretext)
 - [`profileRefusalAt`](#profilerefusalat)
+- [`profileRefusalPlace`](#profilerefusalplace)
+- [`profileRefusalOrder`](#profilerefusalorder)
 - [`profileTrim`](#profiletrim)
 - [`profileRead`](#profileread)
 - [`profileLocate`](#profilelocate)
@@ -148,6 +150,14 @@ Why the profile was refused.
 message: string
 ```
 
+#### ProfileRefusal.xmlLine
+
+The XML line the refusal was raised at, whichever line is printed (`line` itself unless profileRefusalAt set it); refusals are sorted by it.
+
+```ts
+xmlLine: i32
+```
+
 ### ProfileWhere
 
 A file and a line in it, and the XML line when that line is a markdown line found by its text.
@@ -214,6 +224,14 @@ Whether `line` is a markdown line standing alone, which an XML column does not f
 
 ```ts
 mdOnly: boolean
+```
+
+#### ProfileWhere.xmlLine
+
+The XML line the place is on, whichever line is printed (`line` itself unless profileWhere set it).
+
+```ts
+xmlLine: i32
 ```
 
 ### ProfileMd
@@ -528,6 +546,63 @@ the refusal
 
 </scalar-field>
 
+### profileRefusalPlace
+
+Where two refusals are in XML document order: by the XML line each was
+raised at, then the column on it, whichever file and line they print. A
+markdown line found by its text need not follow the XML's order, and an
+XML line and a markdown line are not comparable numbers. Two refusals at
+one place compare equal, so a stable sort keeps the order they were found.
+
+```ts
+function profileRefusalPlace(a: ProfileRefusal, b: ProfileRefusal): i32
+```
+
+<scalar-field name="a" type="ProfileRefusal" required>
+
+one refusal
+
+</scalar-field>
+
+<scalar-field name="b" type="ProfileRefusal" required>
+
+the other
+
+</scalar-field>
+
+<scalar-field name="returns" type="i32">
+
+-1, 0 or 1
+
+</scalar-field>
+
+### profileRefusalOrder
+
+Two refusals in XML document order (profileRefusalPlace), then by message
+at one place, the order profileRead gives its refusals in.
+
+```ts
+function profileRefusalOrder(a: ProfileRefusal, b: ProfileRefusal): i32
+```
+
+<scalar-field name="a" type="ProfileRefusal" required>
+
+one refusal
+
+</scalar-field>
+
+<scalar-field name="b" type="ProfileRefusal" required>
+
+the other
+
+</scalar-field>
+
+<scalar-field name="returns" type="i32">
+
+-1, 0 or 1
+
+</scalar-field>
+
 ### profileTrim
 
 `s` without leading and trailing white space, as JS `String.prototype.trim`
@@ -589,7 +664,7 @@ the RFCs it may cite; one asked for and absent is recorded in `rfcs.missing`
 
 <scalar-field name="returns" type="Result&lt;ProfileRead, ProfileRefusal[]&gt;">
 
-the contract and where each part was read, or every refusal, in line order
+the contract and where each part was read, or every refusal, in XML document order
 
 </scalar-field>
 
