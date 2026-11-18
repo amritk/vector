@@ -1,0 +1,1 @@
+vector verify tests/fixtures/guard-callers-spec.json tests/fixtures/guard-callers.json
