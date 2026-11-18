@@ -21,11 +21,13 @@ vector does two things, and no model is involved in either:
    with `tail`'s status, 0. Run the command bare, or check `$?` or
    `PIPESTATUS`.
 2. **Only `PROVEN` passes `verify`.** `REFUTED`, `UNKNOWN`, `INVALID` and
-   `ERROR` all exit 1. Exit 2 means the command could not run: bad usage, an
-   unreadable file, or an `--emit` file that cannot be written. Never present
-   code from a run that was not `PROVEN`. See
+   `ERROR` all exit 1. Exit 2 is bad usage, an unreadable file, an `--emit`
+   file that cannot be written, or `MISMATCH`: a counterexample that did not
+   replay, a bug in vector and not a refusal. Never present code from a run
+   that was not `PROVEN`. See
    [Proving a function](guide/guides/proving.md#the-verdicts).
 3. **`diff` exits 2 for `INVALID` and `ERROR`**, not 1 as `verify` does.
+   Like `verify`, it exits 2 for `MISMATCH`, a witness that did not replay.
    `EQUIVALENT` exits 0, and `DIFFERENT` and `UNDECIDED` exit 1. Do not
    report `UNDECIDED` as equivalent. See
    [Exit codes](guide/guides/exit-codes.md#by-command).
@@ -68,8 +70,9 @@ vector does two things, and no model is involved in either:
 ## Rules
 
 - **Exit codes.** A command exits 0 when the check passed, 1 when it
-  refused the input, and 2 when it could not run, except that `diff` also
-  exits 2 for `INVALID` and `ERROR`. The table for each command is in
+  refused the input, and 2 when it could not run or on `MISMATCH`, except
+  that `diff` also exits 2 for `INVALID` and `ERROR`. The table for each
+  command is in
   [Exit codes](guide/guides/exit-codes.md#by-command).
 - **z3.** vector finds z3 at `$VECTOR_Z3`, then at `.z3/z3` in the
   checkout the binary was built from, then on `PATH`. See [Finding z3](guide/guides/exit-codes.md#finding-z3).
@@ -82,7 +85,8 @@ vector does two things, and no model is involved in either:
 - **The repair loop.** Read `feedback` and `items[]`, and change only what
   was refuted. Keep every clause that proved. Fix the program, not the spec,
   unless the spec misread the request. Give up after about four attempts and
-  report the last feedback. Never edit vector to make a proof pass.
+  report the last feedback. Never edit vector to make a proof pass. A
+  `MISMATCH` is a bug in vector: report it, change nothing.
 - **A contract's gates.** `spec check` runs shape, fidelity, completeness,
   provenance, coverage, typing, signatures and domain. Every quote must be in
   its cited section, and every MUST or SHALL sentence must be tested or

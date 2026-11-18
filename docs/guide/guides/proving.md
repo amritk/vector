@@ -33,6 +33,8 @@ MISMATCH  z3's counterexample does not reach the hazard <fn> <hazard> when repla
 
 The dashboard's status is `MISMATCH`, its verdict counts the counterexamples that did not replay, and each is marked `✘ DOES NOT REPLAY (a bug in vector)`. `MISMATCH` exits 2 and `--emit` writes nothing.
 
+`diff` replays its witnesses the same way, through both versions: a witness that does not do what z3 said is diff's `MISMATCH`, which also exits 2. See [Compare two versions](#compare-two-versions).
+
 With `--json`, each counterexample carries `"replay"`: `confirmed`, `mismatch`, or `not-replayed`. `not-replayed` means vector could not evaluate the input exactly: z3 gave a value it cannot read (such as an irrational root), a step overflowed 64 bits, or a value depends on a division by zero, which z3 leaves unspecified. The counterexample is not checked, and the verdict stays what z3 said.
 
 Files that are not a spec plan and a program are `INVALID`:

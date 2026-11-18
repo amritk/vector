@@ -7,7 +7,7 @@ can act on the status alone:
 | --- | --- |
 | 0 | the check ran and passed |
 | 1 | the check ran and refused the input |
-| 2 | the command could not run: bad usage, a file that cannot be read or written, or a tool (z3, git, nish) that failed |
+| 2 | the command could not run: bad usage, a file that cannot be read or written, or a tool (z3, git, nish) that failed; or `MISMATCH`, a counterexample or witness that does not replay: a bug in vector to report |
 
 The [command-line reference](../../reference/command-line.md#exit-codes) is
 the normative list. Read a check by its status, never by the tail of its
