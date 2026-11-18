@@ -51,7 +51,7 @@ const EXIT_REFUSED: i32 = 1
 
 ### EXIT_USAGE
 
-The command could not run (bad usage, or an I/O or tool failure), or a replay found a `MISMATCH`, a bug in vector.
+The command could not run (bad usage, or an I/O or tool failure), or a replay found a `MISMATCH`: a vector bug.
 
 ```ts
 const EXIT_USAGE: i32 = 2

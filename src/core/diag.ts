@@ -12,7 +12,7 @@
 export const EXIT_PASS: i32 = 0
 /** The check ran and refused the input. */
 export const EXIT_REFUSED: i32 = 1
-/** The command could not run (bad usage, or an I/O or tool failure), or a replay found a `MISMATCH`, a bug in vector. */
+/** The command could not run (bad usage, or an I/O or tool failure), or a replay found a `MISMATCH`: a vector bug. */
 export const EXIT_USAGE: i32 = 2
 
 /** One problem vector reports: where it is, what it is, and the exit code it implies. */
