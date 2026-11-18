@@ -613,17 +613,40 @@ const replayVerifyMismatch = (t: Suite): void => {
   t.eqI32("not-replayed exits 1", verifyExitCode(unread.status), 1)
 }
 
+// half(x) requires x >= 0, ensures result * 2 == x; use(y) = half(y),
+// ensures result * 2 == y. Every ensures holds, so use's call to half at
+// y < 0 is the program's only refutation.
+const replayUseOnlyProgram = (t: Suite): Program => {
+  const c = new BCase("useonly")
+  const twice = bBin("*", bVar("result"), bNum("2"))
+  c.fn(
+    "half",
+    1,
+    ["x:Real"],
+    "Real",
+    [bBin(">=", bVar("x"), bNum("0"))],
+    [bBin("==", twice, bVar("x"))],
+    bBin("/", bVar("x"), bNum("2")),
+  )
+  c.fn("use", 2, ["y:Real"], "Real", replayNone(), [bBin("==", twice, bVar("y"))], bCall("half", [bVar("y")]))
+  return replayProgram(t, c)
+}
+
 // Decided: an unreadable z3 result on a hazard the replay decides (use's
 // call to half at y < 0) leaves it not-replayed. The hazard's verdict and
 // exit 1 stand, and the replay's reason names the value it could not read.
+// The hazard is the program's only refutation, so REFUTED and exit 1 come
+// from it and nothing else.
 const replayUnreadableHazard = (t: Suite): void => {
-  const program = replayPreProgram(t)
+  const program = replayUseOnlyProgram(t)
   const solved = solveProgram(program)
-  t.ok("calls solves", solved.isOk())
+  t.ok("useonly solves", solved.isOk())
   if (solved.isErr()) {
     return
   }
   const report = solved.value
+  t.eqI32("useonly: one precondition hazard", report.preCount, 1)
+  t.eqI32("useonly: no refuted ensures", report.satCount, 0)
   let found = false
   for (const f of report.functions) {
     if (f.name === "use" && f.pres.length > 0 && f.pres[0].hasCex) {
@@ -636,6 +659,11 @@ const replayUnreadableHazard = (t: Suite): void => {
       t.eqStr("an unreadable result: the hazard's verdict stands", out.status, OUTCOME_REFUTED)
       t.eqI32("an unreadable result: exits 1", verifyExitCode(out.status), 1)
       t.eqI32("an unreadable result: no mismatch", report.mismatchCount, 0)
+      // Were the hazard dropped, the report would look clean and the float64
+      // gate would run and refute on its own, so REFUTED alone would not
+      // show the hazard stood: it must still count, and the gate not run.
+      t.eqI32("an unreadable result: the hazard still counts", report.preCount, 1)
+      t.eqI32("an unreadable result: the float64 gate did not run", toI32(report.conformance.length), 0)
     }
   }
   t.ok("use's call to half is a hazard with a counterexample", found)

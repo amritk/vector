@@ -1,5 +1,9 @@
 #!/bin/sh
 # A z3 that lies, for tests/verify/mismatch_test.ts: it runs the real z3
 # ($VECTOR_REAL_Z3) and rewrites what it prints with $VECTOR_FORGE, a sed
-# script, so a model can name an input z3 would never give.
-"$VECTOR_REAL_Z3" "$@" | sed -e "$VECTOR_FORGE"
+# script, so a model can name an input z3 would never give. z3's own exit
+# status is kept.
+out=$("$VECTOR_REAL_Z3" "$@")
+status=$?
+printf '%s\n' "$out" | sed -e "$VECTOR_FORGE"
+exit $status

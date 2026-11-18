@@ -33,11 +33,11 @@ export const main = (): i32 => {
   const fake = realpathSync(MISMATCH_FAKE_Z3)
   const fromEnv = getenv("VECTOR_Z3")
   const real = realpathSync(fromEnv !== null && fromEnv !== "" ? fromEnv : ".z3/z3")
-  const dir = makeTempDir("vector-mismatch-")
   if (vector === null || fake === null || real === null) {
     t.fail("dist/vector, the fake z3 and z3", "missing: run npm run build and scripts/fetch-z3.sh")
     return t.done()
   }
+  const dir = makeTempDir("vector-mismatch-")
   if (dir.isErr()) {
     t.fail("a temporary directory", dir.error)
     return t.done()
@@ -57,6 +57,8 @@ export const main = (): i32 => {
   t.contains("verify names the status", verify, "Status: MISMATCH")
   t.contains("verify names the bug", verify, "MISMATCH  z3's counterexample does not refute usdToEur AX-BAD")
   t.contains("and why it does not replay", verify, "(amount = -5: requires amount >= 0 is false")
+  // Nothing is emitted on REFUTED either: what this shows is that MISMATCH
+  // is not a PROVEN that emits.
   t.ok("verify emits nothing", readFileSyncOrNull(out) === null)
 
   // Unforged, the same run is a refutation: exit 1, so the forgery is what
@@ -86,7 +88,8 @@ export const main = (): i32 => {
     "tests/cli/diff-different/new.json",
   ])
   t.ok("unforged, diff reports no MISMATCH", honestDiff.indexOf("MISMATCH") < 0)
-  t.ok("and does not exit 2", !honestDiff.startsWith("exit 2\n"))
+  t.ok("unforged, diff differs: exit 1", honestDiff.startsWith("exit 1\n"))
+  t.contains("at z3's own witness", honestDiff, "domain: amount = 0 was accepted, now REJECTED")
 
   t.ok("the temporary directory is removed", runProcess(["rm", "-rf", "--", dir.value], "", 10000).isOk())
   return t.done()
