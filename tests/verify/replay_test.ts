@@ -222,6 +222,16 @@ const replayHazardCases = (t: Suite): void => {
     [bBin("==", bVar("result"), bVar("result"))],
     bBin("/", bVar("a"), bVar("b")),
   )
+  // recips(a, b) = 1 / a + 1 / b: two divisions, hazard 0 at a = 0 and 1 at b = 0.
+  c.fn(
+    "recips",
+    1,
+    ["a:Real", "b:Real"],
+    "Real",
+    replayNone(),
+    [bBin("==", bVar("result"), bVar("result"))],
+    bBin("+", bBin("/", bNum("1"), bVar("a")), bBin("/", bNum("1"), bVar("b"))),
+  )
   const program = replayProgram(t, c)
   if (program.functions.length === 0) {
     return
@@ -238,10 +248,40 @@ const replayHazardCases = (t: Suite): void => {
     REPLAY_MISMATCH,
   )
   t.eqStr(
-    "a second division: mismatch",
+    "an index past the one division: mismatch",
     replayHazard(program, fn, QUERY_DIV, 1, replayAt("1", "0")).outcome,
     REPLAY_MISMATCH,
   )
+  const recips = replayFnNamed(program, "recips")
+  if (recips === null) {
+    t.fail("recips is in the program", "it is not")
+  } else {
+    t.eqStr(
+      "the first of two divisions at a = 0: confirmed",
+      replayHazard(program, recips, QUERY_DIV, 0, replayAt("0", "1")).outcome,
+      REPLAY_CONFIRMED,
+    )
+    t.eqStr(
+      "the second of two divisions at a = 0: mismatch",
+      replayHazard(program, recips, QUERY_DIV, 1, replayAt("0", "1")).outcome,
+      REPLAY_MISMATCH,
+    )
+    t.eqStr(
+      "the first of two divisions at b = 0: mismatch",
+      replayHazard(program, recips, QUERY_DIV, 0, replayAt("1", "0")).outcome,
+      REPLAY_MISMATCH,
+    )
+    t.eqStr(
+      "the second of two divisions at b = 0: confirmed",
+      replayHazard(program, recips, QUERY_DIV, 1, replayAt("1", "0")).outcome,
+      REPLAY_CONFIRMED,
+    )
+    t.eqStr(
+      "an index past two divisions: mismatch",
+      replayHazard(program, recips, QUERY_DIV, 2, replayAt("0", "0")).outcome,
+      REPLAY_MISMATCH,
+    )
+  }
   t.eqStr(
     "unparseable: not replayed",
     replayHazard(program, fn, QUERY_DIV, 0, replayAt("x", "0")).outcome,
