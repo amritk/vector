@@ -152,7 +152,7 @@ const dashReplay = (lines: string[], replay: string, detail: string): void => {
   }
 }
 
-const dashFunction = (lines: string[], fn: FnReport): void => {
+const dashFunction = (lines: string[], fn: FnReport, report: VerifyReport): void => {
   lines.push(dashRow(`LAYER ${fn.layer} · ${fn.signature}`))
   const pre = fn.requiresPretty.length > 0 ? fn.requiresPretty.join("  ∧  ") : "true"
   dashPush(lines, `{ ${pre} }  ${fn.bodyPretty}`, "  ")
@@ -187,12 +187,28 @@ const dashFunction = (lines: string[], fn: FnReport): void => {
     dashReplay(lines, h.replay, h.replayDetail)
   }
   if (fn.requiresPretty.length > 0) {
-    dashPush(
-      lines,
-      `⚠ guard ${fn.requiresPretty.join(" ∧ ")} enforced at runtime; proven to hold at every internal call site`,
-      "  ",
-    )
+    dashPush(lines, `⚠ guard ${fn.requiresPretty.join(" ∧ ")} enforced at runtime; ${dashGuardSites(fn, report)}`, "  ")
   }
+}
+
+// What the dashboard may say of a function's guard at its internal call
+// sites. Every caller's call is a precondition query; one that was not shown
+// unsat stands as a hazard in that caller's `pres`, refuted or undecided. The
+// guard is proven at every call site only when no caller holds one.
+const dashGuardSites = (fn: FnReport, report: VerifyReport): string => {
+  const callers: string[] = []
+  for (const other of report.functions) {
+    for (const h of other.pres) {
+      if (h.callee === fn.name && callers.indexOf(other.name) < 0) {
+        callers.push(other.name)
+      }
+    }
+  }
+  if (callers.length === 0) {
+    return "proven to hold at every internal call site"
+  }
+  const calls = callers.length === 1 ? "the call" : "the calls"
+  return `not proven at ${calls} from ${callers.join(", ")}`
 }
 
 const dashVerdictLine = (status: string, report: VerifyReport): string => {
@@ -228,7 +244,7 @@ export const renderDashboard = (label: string, report: VerifyReport): string => 
     if (i > 0) {
       lines.push(dashFrame("╟", "─", "╢"))
     }
-    dashFunction(lines, report.functions[i])
+    dashFunction(lines, report.functions[i], report)
   }
   if (report.conformance.length > 0) {
     lines.push(dashFrame("╟", "─", "╢"))

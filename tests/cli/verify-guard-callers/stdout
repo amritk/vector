@@ -1,0 +1,33 @@
+╔════════════════════════════════════════════════════════════════════╗
+║                        VECTOR — PROOF REPORT                       ║
+╠════════════════════════════════════════════════════════════════════╣
+║ Prompt:  "verify: tests/fixtures/guard-callers.json"               ║
+║ Attempt: 1/1      Solver: Z3 4.16.0 (native)      Status: REFUTED  ║
+╠════════════════════════════════════════════════════════════════════╣
+║ LAYER 1 · half(x: Real): Real                                      ║
+║   { x >= 0 }  x / 2                                                ║
+║   { result * 2 == x }                                              ║
+║   ✔ ensures AX-HALF  proven (unsat, ∀ inputs)                      ║
+║   ⚠ guard x >= 0 enforced at runtime; not proven at the call from  ║
+║   use                                                              ║
+╟────────────────────────────────────────────────────────────────────╢
+║ LAYER 2 · use(y: Real): Real                                       ║
+║   { true }  half(y)                                                ║
+║   { result * 2 == y }                                              ║
+║   ✔ ensures AX-USE  proven (unsat, ∀ inputs)                       ║
+║   ✘ call to half may violate its precondition x >= 0 (e.g. y = -1) ║
+╟────────────────────────────────────────────────────────────────────╢
+║ LAYER 2 · safe(z: Real): Real                                      ║
+║   { z >= 0 }  half(z)                                              ║
+║   { result * 2 == z }                                              ║
+║   ✔ ensures AX-SAFE  proven (unsat, ∀ inputs)                      ║
+║   ⚠ guard z >= 0 enforced at runtime; proven to hold at every      ║
+║   internal call site                                               ║
+╠════════════════════════════════════════════════════════════════════╣
+║ VERDICT: 1 CONTRACT VIOLATION(S) FOUND — SEE ABOVE                 ║
+║ "Testing shows the presence of bugs, never their absence."         ║
+╚════════════════════════════════════════════════════════════════════╝
+
+── FEEDBACK (repair and re-verify) ────────────────────
+
+Function use: the call to half can violate its precondition x >= 0 (e.g. y = -1) — strengthen this function's requires or guard the call with an ite.

@@ -1,0 +1,79 @@
+{
+  "programName": "halving",
+  "axioms": [
+    {
+      "id": "AX-HALF-IN",
+      "kind": "pre",
+      "statement": "half takes a non-negative number."
+    },
+    {
+      "id": "AX-HALF",
+      "kind": "post",
+      "statement": "Twice the result is the input."
+    },
+    {
+      "id": "AX-USE",
+      "kind": "post",
+      "statement": "Twice use's result is its input."
+    },
+    {
+      "id": "AX-SAFE-IN",
+      "kind": "pre",
+      "statement": "safe takes a non-negative number."
+    },
+    {
+      "id": "AX-SAFE",
+      "kind": "post",
+      "statement": "Twice safe's result is its input."
+    }
+  ],
+  "units": [
+    {
+      "name": "half",
+      "layer": 1,
+      "purpose": "Halve a non-negative number.",
+      "params": [
+        {
+          "name": "x",
+          "type": "Real"
+        }
+      ],
+      "returnType": "Real",
+      "relevantAxiomIds": [
+        "AX-HALF-IN",
+        "AX-HALF"
+      ]
+    },
+    {
+      "name": "use",
+      "layer": 2,
+      "purpose": "Halve any number, unguarded.",
+      "params": [
+        {
+          "name": "y",
+          "type": "Real"
+        }
+      ],
+      "returnType": "Real",
+      "relevantAxiomIds": [
+        "AX-USE"
+      ]
+    },
+    {
+      "name": "safe",
+      "layer": 2,
+      "purpose": "Halve a non-negative number through half.",
+      "params": [
+        {
+          "name": "z",
+          "type": "Real"
+        }
+      ],
+      "returnType": "Real",
+      "relevantAxiomIds": [
+        "AX-SAFE-IN",
+        "AX-SAFE"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,183 @@
+{
+  "programName": "halving",
+  "functions": [
+    {
+      "name": "half",
+      "layer": 1,
+      "purpose": "Halve a non-negative number.",
+      "params": [
+        {
+          "name": "x",
+          "type": "Real"
+        }
+      ],
+      "returnType": "Real",
+      "requires": [
+        {
+          "axiomId": "AX-HALF-IN",
+          "expr": {
+            "kind": "binop",
+            "op": ">=",
+            "left": {
+              "kind": "var",
+              "name": "x"
+            },
+            "right": {
+              "kind": "num",
+              "value": "0"
+            }
+          }
+        }
+      ],
+      "ensures": [
+        {
+          "axiomId": "AX-HALF",
+          "expr": {
+            "kind": "binop",
+            "op": "==",
+            "left": {
+              "kind": "binop",
+              "op": "*",
+              "left": {
+                "kind": "var",
+                "name": "result"
+              },
+              "right": {
+                "kind": "num",
+                "value": "2"
+              }
+            },
+            "right": {
+              "kind": "var",
+              "name": "x"
+            }
+          }
+        }
+      ],
+      "body": {
+        "kind": "binop",
+        "op": "/",
+        "left": {
+          "kind": "var",
+          "name": "x"
+        },
+        "right": {
+          "kind": "num",
+          "value": "2"
+        }
+      }
+    },
+    {
+      "name": "use",
+      "layer": 2,
+      "purpose": "Halve any number, unguarded.",
+      "params": [
+        {
+          "name": "y",
+          "type": "Real"
+        }
+      ],
+      "returnType": "Real",
+      "requires": [],
+      "ensures": [
+        {
+          "axiomId": "AX-USE",
+          "expr": {
+            "kind": "binop",
+            "op": "==",
+            "left": {
+              "kind": "binop",
+              "op": "*",
+              "left": {
+                "kind": "var",
+                "name": "result"
+              },
+              "right": {
+                "kind": "num",
+                "value": "2"
+              }
+            },
+            "right": {
+              "kind": "var",
+              "name": "y"
+            }
+          }
+        }
+      ],
+      "body": {
+        "kind": "call",
+        "fn": "half",
+        "args": [
+          {
+            "kind": "var",
+            "name": "y"
+          }
+        ]
+      }
+    },
+    {
+      "name": "safe",
+      "layer": 2,
+      "purpose": "Halve a non-negative number through half.",
+      "params": [
+        {
+          "name": "z",
+          "type": "Real"
+        }
+      ],
+      "returnType": "Real",
+      "requires": [
+        {
+          "axiomId": "AX-SAFE-IN",
+          "expr": {
+            "kind": "binop",
+            "op": ">=",
+            "left": {
+              "kind": "var",
+              "name": "z"
+            },
+            "right": {
+              "kind": "num",
+              "value": "0"
+            }
+          }
+        }
+      ],
+      "ensures": [
+        {
+          "axiomId": "AX-SAFE",
+          "expr": {
+            "kind": "binop",
+            "op": "==",
+            "left": {
+              "kind": "binop",
+              "op": "*",
+              "left": {
+                "kind": "var",
+                "name": "result"
+              },
+              "right": {
+                "kind": "num",
+                "value": "2"
+              }
+            },
+            "right": {
+              "kind": "var",
+              "name": "z"
+            }
+          }
+        }
+      ],
+      "body": {
+        "kind": "call",
+        "fn": "half",
+        "args": [
+          {
+            "kind": "var",
+            "name": "z"
+          }
+        ]
+      }
+    }
+  ]
+}
