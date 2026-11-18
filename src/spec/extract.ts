@@ -24,6 +24,7 @@ import {
   profileMdRead,
   profileRead,
   profileRefusalAt,
+  profileRefusalPlace,
   profileWhere,
   profileWhereText,
 } from "./profile/profile"
@@ -40,7 +41,7 @@ export const EXTRACT_SIDECAR_SUFFIX: string = ".survivors.json"
 export class ExtractOutcome {
   /** The canonical contract; "" when there are refusals or errors. */
   text: string
-  /** Why the spec is refused (exit 1), each at a file and line, in line order. */
+  /** Why the spec is refused (exit 1), each at a file and line, in XML document order. */
   refusals: ProfileRefusal[]
   /** Why nothing could be judged (exit 2): an input that cannot be read. */
   errors: string[]
@@ -480,8 +481,9 @@ const extractGateKeep = (out: ProfileRefusal[], seen: Set<string>, r: ProfileRef
  * A gate that places a finding (a note, gateIssue) is placed by the note's
  * `at` through the locator; a finding no note places is at the spec's root.
  * Each refusal is given once, since two fields of one part can break one
- * rule on one line, and they are sorted by line, then XML line: two parts
- * under one `<?line?>` mark share a markdown line but not an XML one. A finding about
+ * rule on one line, and they are sorted in XML document order
+ * (profileRefusalPlace), whichever line each prints, and in the gates' order
+ * at one place. A finding about
  * allowSurvivors is the sidecar's, so it names that file, after the rest.
  *
  * @param report what the gates found
@@ -514,17 +516,7 @@ export const extractGateRefusals = (
   const out: ProfileRefusal[] = []
   const seen = new Set<string>()
   const main = rows.filter((r: ExtractGateRow): boolean => !r.sidecar)
-  main.sort((a: ExtractGateRow, b: ExtractGateRow): i32 => {
-    const x = a.refusal
-    const y = b.refusal
-    if (x.line !== y.line) {
-      return x.line < y.line ? -1 : 1
-    }
-    if (x.exactLine !== y.exactLine) {
-      return x.exactLine < y.exactLine ? -1 : 1
-    }
-    return x.col < y.col ? -1 : x.col > y.col ? 1 : 0
-  })
+  main.sort((a: ExtractGateRow, b: ExtractGateRow): i32 => profileRefusalPlace(a.refusal, b.refusal))
   for (const r of main) {
     extractGateKeep(out, seen, r.refusal)
   }

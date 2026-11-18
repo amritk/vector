@@ -130,6 +130,8 @@ export class ProfileRefusal {
   exactFile: string
   /** The XML line the refusal is on, when `exactFile` is set; 0 otherwise. */
   exactLine: i32 = 0
+  /** The XML line the refusal was raised at, whichever line is printed (`line` itself unless profileRefusalAt set it); refusals are sorted by it. */
+  xmlLine: i32 = 0
   /**
    * Makes a refusal.
    *
@@ -144,6 +146,7 @@ export class ProfileRefusal {
     this.line = line
     this.col = col
     this.message = message
+    this.xmlLine = line
   }
 }
 
@@ -159,6 +162,8 @@ export class ProfileWhere {
   exactLine: i32 = 0
   /** Whether `line` is a markdown line standing alone, which an XML column does not fit. */
   mdOnly: boolean
+  /** The XML line the place is on, whichever line is printed (`line` itself unless profileWhere set it). */
+  xmlLine: i32 = 0
   /**
    * Makes a place.
    *
@@ -170,6 +175,7 @@ export class ProfileWhere {
     this.exactFile = ""
     this.file = file
     this.line = line
+    this.xmlLine = line
   }
 }
 
@@ -645,6 +651,19 @@ export const profileWhere = (
   md: ProfileMd | null,
   text: string,
 ): ProfileWhere => {
+  const w = profileWhereIn(line, mdLine, markLine, xmlPath, md, text)
+  w.xmlLine = line
+  return w
+}
+
+const profileWhereIn = (
+  line: i32,
+  mdLine: i32,
+  markLine: i32,
+  xmlPath: string,
+  md: ProfileMd | null,
+  text: string,
+): ProfileWhere => {
   if (md === null || mdLine < 1 || mdLine > md.lines) {
     return new ProfileWhere(xmlPath, line)
   }
@@ -685,6 +704,7 @@ export const profileRefusalAt = (w: ProfileWhere, col: i32, message: string): Pr
   const r = new ProfileRefusal(w.file, w.line, w.mdOnly ? 0 : col, message)
   r.exactFile = w.exactFile
   r.exactLine = w.exactLine
+  r.xmlLine = w.xmlLine
   return r
 }
 
@@ -704,24 +724,46 @@ const profileRefuseLoc = (c: ProfileContext, loc: ProfileLoc, message: string): 
 }
 
 /**
- * Refusals in order: by line, then column, then message.
+ * Where two refusals are in XML document order: by the XML line each was
+ * raised at, then the column on it, whichever file and line they print. A
+ * markdown line found by its text need not follow the XML's order, and an
+ * XML line and a markdown line are not comparable numbers. Two refusals at
+ * one place compare equal, so a stable sort keeps the order they were found.
+ *
+ * @param a one refusal
+ * @param b the other
+ * @returns -1, 0 or 1
+ */
+export const profileRefusalPlace = (a: ProfileRefusal, b: ProfileRefusal): i32 => {
+  if (a.xmlLine !== b.xmlLine) {
+    return a.xmlLine < b.xmlLine ? -1 : 1
+  }
+  if (a.col !== b.col) {
+    return a.col < b.col ? -1 : 1
+  }
+  return 0
+}
+
+/**
+ * Two refusals in XML document order (profileRefusalPlace), then by message
+ * at one place, the order profileRead gives its refusals in.
+ *
+ * @param a one refusal
+ * @param b the other
+ * @returns -1, 0 or 1
+ */
+export const profileRefusalOrder = (a: ProfileRefusal, b: ProfileRefusal): i32 => {
+  const at = profileRefusalPlace(a, b)
+  return at !== 0 ? at : profileCompare(a.message, b.message)
+}
+
+/**
+ * Refusals in XML document order (profileRefusalOrder).
  *
  * @param rs the refusals, sorted in place
  * @returns them
  */
-const profileSortRefusals = (rs: ProfileRefusal[]): ProfileRefusal[] =>
-  rs.sort((a: ProfileRefusal, b: ProfileRefusal): i32 => {
-    if (a.line !== b.line) {
-      return a.line < b.line ? -1 : 1
-    }
-    if (a.exactLine !== b.exactLine) {
-      return a.exactLine < b.exactLine ? -1 : 1
-    }
-    if (a.col !== b.col) {
-      return a.col < b.col ? -1 : 1
-    }
-    return profileCompare(a.message, b.message)
-  })
+const profileSortRefusals = (rs: ProfileRefusal[]): ProfileRefusal[] => rs.sort(profileRefusalOrder)
 
 /**
  * Two strings in byte order.
@@ -2927,7 +2969,7 @@ const profileSorted = (c: ProfileContext): Result<ProfileRead, ProfileRefusal[]>
  * @param xmlPath the spec's path, whose basename names the contract
  * @param md the markdown it was built from, for refusals at its lines; null when unknown
  * @param rfcs the RFCs it may cite; one asked for and absent is recorded in `rfcs.missing`
- * @returns the contract and where each part was read, or every refusal, in line order
+ * @returns the contract and where each part was read, or every refusal, in XML document order
  */
 export const profileRead = (
   doc: XmlDocument,
