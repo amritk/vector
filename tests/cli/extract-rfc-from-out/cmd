@@ -1,0 +1,1 @@
+vector spec extract tests/fixtures/profile/profile-iterate-count-unprinted.xml -o tests/fixtures/profile-iterate-count-unprinted.json
