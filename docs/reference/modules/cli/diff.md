@@ -6,7 +6,8 @@
 
 The handler reads both files and runs the regeneration gate
 (`verify/equiv/diff`). EQUIVALENT exits 0; DIFFERENT and UNDECIDED exit 1;
-INVALID, an unreadable file and a z3 failure exit 2.
+INVALID, an unreadable file, a z3 failure and a witness that does not
+replay (`MISMATCH`, a bug in vector) exit 2.
 
 Generated from [src/cli/diff.ts](https://github.com/amritk/vector/blob/main/src/cli/diff.ts).
 

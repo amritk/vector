@@ -94,7 +94,7 @@ Check a contract against the RFC it quotes:
 ```
 
 A check exits 0 when it passed, 1 when vector refused the input, and 2 for bad
-usage or a tool failure; [Exit codes and tool
+usage, a tool failure, or a `MISMATCH` (a bug in vector); [Exit codes and tool
 failures](docs/guide/guides/exit-codes.md) lists them by command. The guides
 cover [proving](docs/guide/guides/proving.md), [specs and
 contracts](docs/guide/guides/spec-to-contract.md),

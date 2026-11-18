@@ -24,6 +24,6 @@ function main(): i32
 
 <scalar-field name="returns" type="i32">
 
-the exit code: 0 pass, 1 refused, 2 usage or I/O
+the exit code: 0 pass, 1 refused, 2 usage, I/O or tool failure, or a replay `MISMATCH`
 
 </scalar-field>

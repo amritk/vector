@@ -7,8 +7,9 @@
 The handler reads both files and runs the whole gate (`verify/verify`).
 PROVEN exits 0. REFUTED, UNKNOWN, INVALID and ERROR (z3 failed or rejected
 the script) exit 1: none of them proved anything, so each refuses the
-program. Exit 2 is kept for bad usage, a file that cannot be read, and an
-`--emit` file that cannot be written. `--emit` writes the TypeScript only
+program. Exit 2 is kept for bad usage, a file that cannot be read, an
+`--emit` file that cannot be written, and a counterexample that does not
+replay (`MISMATCH`, a bug in vector). `--emit` writes the TypeScript only
 when the program is proven; on any other outcome it writes nothing and
 leaves an existing file as it was. The write goes to a temporary file
 beside the target, renamed over it, so a failed or interrupted write never
