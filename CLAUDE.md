@@ -51,13 +51,14 @@ read `.nish/docs/AI.md` (the language as rules, traps first).
   with `.orReturn()`.
 - **Keep state in a context class**, passed to the functions that need it,
   not in module-level mutable variables.
-- **Run the compiler rather than guess.** When unsure whether something
-  compiles or what it does, `.nish/bin/nish run <file>` answers in seconds.
+- **Run the compiler rather than guess.** Whether something compiles, and
+  what it does, `.nish/bin/nish run <file>` answers in seconds.
 - **Every export has a doc comment**: what it is for, `@param` for each
   parameter, and `@returns` when it returns something. The generated
   reference fails on a gap, and its undocumented list only shrinks.
 - Exit codes are 0 when a check passed, 1 when vector refused the input, and
-  2 for bad usage or an I/O or tool failure (`src/core/diag.ts`).
+  2 for bad usage, an I/O or tool failure, or a `MISMATCH`, a vector bug
+  (`src/core/diag.ts`).
 
 ## Definition of done
 
@@ -137,8 +138,8 @@ Attestations and npm provenance exist only while the repository is public.
 Dependabot (`.github/dependabot.yml`) proposes updates to the pin once a
 release is 5 days old.
 
-The release PR is opened with `GITHUB_TOKEN`, so CI does not run on it by
-itself; close and reopen it to run the checks before merging.
+The release PR is opened with `GITHUB_TOKEN`, so CI does not run on it;
+close and reopen it to run the checks before merging.
 
 npm publishes through trusted publishing alone: no npm token is stored, in
 GitHub or anywhere else. The trusted publisher for `@amritk/vector` on

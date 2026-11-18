@@ -9,6 +9,6 @@ import { vectorRun } from "./index"
 /**
  * Runs vector with the process's arguments.
  *
- * @returns the exit code: 0 pass, 1 refused, 2 usage or I/O
+ * @returns the exit code: 0 pass, 1 refused, 2 usage, I/O or tool failure, or a replay `MISMATCH`
  */
 export const main = (): i32 => vectorRun(process.argv.slice(1))

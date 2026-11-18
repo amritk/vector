@@ -71,7 +71,7 @@ the words after the program's name, such as `["verify", "spec.json", "program.js
 
 <scalar-field name="returns" type="i32">
 
-the exit code: 0 pass, 1 refused, 2 usage or I/O
+the exit code: 0 pass, 1 refused, 2 usage, I/O or tool failure, or a replay `MISMATCH`
 
 </scalar-field>
 

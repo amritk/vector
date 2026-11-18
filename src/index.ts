@@ -52,7 +52,7 @@ export const vectorAgentsDoc = (root: string): string => {
  * error end the process, as they do for the binary.
  *
  * @param args the words after the program's name, such as `["verify", "spec.json", "program.json"]`
- * @returns the exit code: 0 pass, 1 refused, 2 usage or I/O
+ * @returns the exit code: 0 pass, 1 refused, 2 usage, I/O or tool failure, or a replay `MISMATCH`
  */
 export const vectorRun = (args: string[]): i32 => {
   const cli = new Cli("vector", VECTOR_VERSION, "Prove small programs correct, and hold implementations to their specs")

@@ -80,8 +80,9 @@ the **numeric core**, offer that core, and don't force the rest through.
 
    The exit status agrees: `0` only for `PROVEN`; `1` for `REFUTED`,
    `UNKNOWN`, `INVALID` and `ERROR`, so a script never mistakes an
-   unverified run for a pass; `2` for bad usage, an unreadable input file, or
-   an `--emit` file that cannot be written.
+   unverified run for a pass; `2` for bad usage, an unreadable input file, an
+   `--emit` file that cannot be written, or `MISMATCH` (a counterexample that
+   does not replay: a bug in vector, so report it).
 
 4. **Bound the retries.** Give up after ~4 repair attempts and report the last
    `feedback` honestly rather than presenting unproven code. If Z3 keeps
@@ -121,7 +122,8 @@ Float64 results compare as `Object.is` does: `NaN` equals `NaN`, and `-0`
 differs from `0`, so `-x` and `0 - x` differ at `x = 0`.
 
 `./dist/vector diff` exits `0` for `EQUIVALENT`, `1` for `DIFFERENT` or `UNDECIDED`,
-and `2` for `INVALID`, `ERROR`, bad usage or an unreadable file.
+and `2` for `INVALID`, `ERROR`, `MISMATCH` (a vector bug), bad usage or an
+unreadable file.
 
 ## Contract style (advisory)
 

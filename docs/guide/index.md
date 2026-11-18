@@ -36,4 +36,4 @@ vector is a deterministic judge for code a model writes. It proves small numeric
 - **`vector diff`** proves two programs equivalent, or shows an input on which they differ.
 - **`vector spec`** turns a spec into a contract and a Nish test, and gates a change on it: a frozen contract, a stale test, an uncovered export or a mutant the test misses is refused.
 
-A command that checks something exits 0 when the check passed, 1 when vector refused the input, and 2 for bad usage or an I/O or tool failure; [Exit codes and tool failures](guides/exit-codes.md) lists them by command.
+A command that checks something exits 0 when the check passed, 1 when vector refused the input, and 2 for bad usage, an I/O or tool failure, or a `MISMATCH` (a bug in vector); [Exit codes and tool failures](guides/exit-codes.md) lists them by command.
