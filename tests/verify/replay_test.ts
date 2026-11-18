@@ -29,7 +29,7 @@ import {
   replayWitness,
 } from "../../src/verify/solve/replay"
 import { Counterexample, solveProgram } from "../../src/verify/solve/report"
-import { OUTCOME_MISMATCH, verifyMismatchLines, verifyReportOutcome } from "../../src/verify/verify"
+import { OUTCOME_MISMATCH, OUTCOME_REFUTED, verifyMismatchLines, verifyReportOutcome } from "../../src/verify/verify"
 import { BCase, bBin, bCall, bIte, bNum, bProgram, bUn, bVar } from "./build"
 
 const replayNone = (): string[] => {
@@ -284,8 +284,13 @@ const replayHazardCases = (t: Suite): void => {
 // half(x) requires x >= 0; use(y) = half(y) with no requires: a
 // precondition hazard at y < 0. script.ts inlines half's body past its
 // failed requires, so the body is known there and z3's result is checked.
-const replayPreCases = (t: Suite): void => {
+// both(y) = half(y) + half(y + 1) has two call sites, hazards 0 and 1.
+// inv(x) requires x > 0, = 1 / x; flip(y) = inv(y): at y = 0 the requires
+// fails and the body divides by zero, so it is unknown there and z3's
+// result is not compared.
+const replayPreProgram = (t: Suite): Program => {
   const c = new BCase("calls")
+  const y = bVar("y")
   c.fn(
     "half",
     1,
@@ -296,30 +301,91 @@ const replayPreCases = (t: Suite): void => {
     bBin("/", bVar("x"), bNum("2")),
   )
   c.fn(
-    "use",
+    "inv",
+    1,
+    ["x:Real"],
+    "Real",
+    [bBin(">", bVar("x"), bNum("0"))],
+    [bBin("==", bVar("result"), bVar("result"))],
+    bBin("/", bNum("1"), bVar("x")),
+  )
+  c.fn("use", 2, ["y:Real"], "Real", replayNone(), [bBin("==", bVar("result"), bVar("result"))], bCall("half", [y]))
+  c.fn(
+    "both",
     2,
     ["y:Real"],
     "Real",
     replayNone(),
     [bBin("==", bVar("result"), bVar("result"))],
-    bCall("half", [bVar("y")]),
+    bBin("+", bCall("half", [y]), bCall("half", [bBin("+", y, bNum("1"))])),
   )
-  const program = replayProgram(t, c)
-  if (program.functions.length < 2) {
-    return
+  c.fn("flip", 2, ["y:Real"], "Real", replayNone(), [bBin("==", bVar("result"), bVar("result"))], bCall("inv", [y]))
+  return replayProgram(t, c)
+}
+
+const replayFnNamed = (program: Program, name: string): FnUnit | null => {
+  for (const fn of program.functions) {
+    if (fn.name === name) {
+      return fn
+    }
   }
-  const fn = program.functions[1]
-  const rows: string[][] = [
-    ["a failed requires at y = -1", "0", "(- 1)", "?", REPLAY_CONFIRMED],
-    ["a failed requires, z3's result", "0", "(- 1)", "(- 0.5)", REPLAY_CONFIRMED],
-    ["a failed requires, a wrong result", "0", "(- 1)", "3", REPLAY_MISMATCH],
-    ["a met requires at y = 1", "0", "1", "?", REPLAY_MISMATCH],
-    ["a second call site", "1", "(- 1)", "?", REPLAY_MISMATCH],
+  return null
+}
+
+/** One precondition hazard replay: a function of `y`, the hazard's index, and what the replay must say. */
+class PreCase {
+  label: string
+  fn: string
+  index: i32
+  y: string
+  result: string
+  want: string
+  detail: string
+
+  constructor(label: string, fn: string, index: i32, y: string, result: string, want: string, detail: string) {
+    this.label = label
+    this.fn = fn
+    this.index = index
+    this.y = y
+    this.result = result
+    this.want = want
+    this.detail = detail
+  }
+}
+
+const replayPreCases = (t: Suite): void => {
+  const program = replayPreProgram(t)
+  // detail is what the replay's detail names; "" means it has none.
+  const unread = `the value "(root-obj x 1)" is not one the replay reads`
+  const rows: PreCase[] = [
+    new PreCase("a failed requires at y = -1", "use", 0, "(- 1)", "?", REPLAY_CONFIRMED, ""),
+    new PreCase("a failed requires, z3's result", "use", 0, "(- 1)", "(- 0.5)", REPLAY_CONFIRMED, ""),
+    new PreCase("a failed requires, a wrong result", "use", 0, "(- 1)", "3", REPLAY_MISMATCH, "not z3's result 3"),
+    new PreCase("a failed requires, unreadable", "use", 0, "(- 1)", "(root-obj x 1)", REPLAY_NOT_REPLAYED, unread),
+    new PreCase("a met requires at y = 1", "use", 0, "1", "?", REPLAY_MISMATCH, "half's requires"),
+    new PreCase("an index past the one call site", "use", 1, "(- 1)", "?", REPLAY_MISMATCH, "records 1 such"),
+    new PreCase("the first of two at y = -2", "both", 0, "(- 2)", "?", REPLAY_CONFIRMED, ""),
+    new PreCase("the second of two at y = -2", "both", 1, "(- 2)", "?", REPLAY_CONFIRMED, ""),
+    new PreCase("the first of two at y = -1/2", "both", 0, "(- 0.5)", "?", REPLAY_CONFIRMED, ""),
+    new PreCase("the second of two at y = -1/2", "both", 1, "(- 0.5)", "?", REPLAY_MISMATCH, "half's requires"),
+    new PreCase("an index past both call sites", "both", 2, "(- 2)", "?", REPLAY_MISMATCH, "records 2 such"),
+    new PreCase("an unknown callee body, z3's result", "flip", 0, "0", "7", REPLAY_CONFIRMED, ""),
+    new PreCase("an unknown callee body, no result", "flip", 0, "0", "?", REPLAY_CONFIRMED, ""),
+    new PreCase("a known callee body, a wrong result", "flip", 0, "(- 1)", "7", REPLAY_MISMATCH, "not z3's result 7"),
   ]
   for (const row of rows) {
-    const index = row[1] === "0" ? 0 : 1
-    const r = replayHazard(program, fn, QUERY_PRE, index, replayCex(["y"], [row[2]], row[3]))
-    t.eqStr(`${row[0]}: outcome`, r.outcome, row[4])
+    const fn = replayFnNamed(program, row.fn)
+    if (fn === null) {
+      t.fail(`${row.label}: ${row.fn} is in the program`, "it is not")
+      continue
+    }
+    const r = replayHazard(program, fn, QUERY_PRE, row.index, replayCex(["y"], [row.y], row.result))
+    t.eqStr(`${row.label}: outcome`, r.outcome, row.want)
+    if (row.detail !== "") {
+      t.contains(`${row.label}: detail`, r.detail, row.detail)
+    } else {
+      t.eqStr(`${row.label}: no detail`, r.detail, "")
+    }
   }
 }
 
@@ -545,6 +611,34 @@ const replayVerifyMismatch = (t: Suite): void => {
   t.eqI32("not-replayed exits 1", verifyExitCode(unread.status), 1)
 }
 
+// Decided: an unreadable z3 result on a hazard the replay decides (use's
+// call to half at y < 0) leaves it not-replayed. The hazard's verdict and
+// exit 1 stand, and the replay's reason names the value it could not read.
+const replayUnreadableHazard = (t: Suite): void => {
+  const program = replayPreProgram(t)
+  const solved = solveProgram(program)
+  t.ok("calls solves", solved.isOk())
+  if (solved.isErr()) {
+    return
+  }
+  const report = solved.value
+  let found = false
+  for (const f of report.functions) {
+    if (f.name === "use" && f.pres.length > 0 && f.pres[0].hasCex) {
+      found = true
+      const h = f.pres[0]
+      h.cex.result = "(root-obj x 1)"
+      const out = verifyReportOutcome(program, report, "test", [])
+      t.eqStr("an unreadable result: not replayed", h.replay, REPLAY_NOT_REPLAYED)
+      t.contains("an unreadable result: the reason names it", h.replayDetail, `"(root-obj x 1)" is not one`)
+      t.eqStr("an unreadable result: the hazard's verdict stands", out.status, OUTCOME_REFUTED)
+      t.eqI32("an unreadable result: exits 1", verifyExitCode(out.status), 1)
+      t.eqI32("an unreadable result: no mismatch", report.mismatchCount, 0)
+    }
+  }
+  t.ok("use's call to half is a hazard with a counterexample", found)
+}
+
 // A diff verdict with a forged witness: MISMATCH, exit 2.
 const replayDiffMismatch = (t: Suite): void => {
   const was = replayVersion(t, "0", "1")
@@ -585,6 +679,7 @@ export const main = (): i32 => {
   replayOperatorCases(t)
   replayWitnessCases(t)
   replayVerifyMismatch(t)
+  replayUnreadableHazard(t)
   replayDiffMismatch(t)
   return t.done()
 }
