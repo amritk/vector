@@ -572,6 +572,8 @@ const replayWitnessCases = (t: Suite): void => {
 
 // A real report on `scale`, its counterexample then forged to one z3 would
 // never give: the outcome is MISMATCH and the exit 2.
+// tests/verify/mismatch_test.ts drives the same through dist/vector, with a
+// z3 that forges its model, for verify and for diff.
 const replayVerifyMismatch = (t: Suite): void => {
   const program = replayProgram(t, replayScaleCase())
   const solved = solveProgram(program)
