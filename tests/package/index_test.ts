@@ -55,7 +55,7 @@ const indexAgentsDocBinary = (t: Suite): void => {
   const root = realpathSync(".")
   const made = makeTempDir("vector-agents-bin-")
   if (made.isErr()) {
-    t.fail("agents doc: binary", "cannot make a temp dir")
+    t.fail("agents doc: binary", made.error)
     return
   }
   const bare = realpathSync(made.value) ?? made.value
