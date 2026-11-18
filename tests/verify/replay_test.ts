@@ -664,6 +664,21 @@ const replayUnreadableHazard = (t: Suite): void => {
       // show the hazard stood: it must still count, and the gate not run.
       t.eqI32("an unreadable result: the hazard still counts", report.preCount, 1)
       t.eqI32("an unreadable result: the float64 gate did not run", toI32(report.conformance.length), 0)
+      // What verify hands back, not the hazard read above: its feedback
+      // still holds use's call to half, not replayed, at the value it could
+      // not read.
+      let items = 0
+      for (const it of out.items) {
+        if (it.fn === "use" && it.issue === "precondition-hazard") {
+          items = items + 1
+          t.eqStr("an unreadable result: the item calls half", it.axiomId, "(calls half)")
+          t.eqStr("an unreadable result: the item is not replayed", it.replay, REPLAY_NOT_REPLAYED)
+          t.ok("an unreadable result: the item has the counterexample", it.hasCex)
+          t.eqStr("an unreadable result: the item names the value", it.cex.result, "(root-obj x 1)")
+        }
+      }
+      t.eqI32("an unreadable result: verify reports use's hazard once", items, 1)
+      t.contains("an unreadable result: the feedback names the call", out.feedback, "half")
     }
   }
   t.ok("use's call to half is a hazard with a counterexample", found)
