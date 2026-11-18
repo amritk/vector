@@ -10,6 +10,8 @@ import {
   profileMdRead,
   profileRead,
   profileRefusalAt,
+  profileRefusalOrder,
+  profileRefusalPlace,
   profileWhere,
   profileWhereText,
 } from "../../../src/spec/profile/profile"
@@ -160,7 +162,10 @@ const profileTestWhere = (t: Suite): void => {
     new ProfileTestPlace("past the markdown's end", 15, 17, 15, "", "a.xml:15"),
   ]
   for (const k of cases) {
-    t.eqStr(k.name, profileWhereText(profileWhere(k.line, k.mdLine, k.markLine, "a.xml", md, k.text)), k.want)
+    const w = profileWhere(k.line, k.mdLine, k.markLine, "a.xml", md, k.text)
+    t.eqStr(k.name, profileWhereText(w), k.want)
+    // Whichever line is printed, the place keeps the XML line it is on.
+    t.eqI32(`${k.name}: its XML line`, profileRefusalAt(w, 0, "why").xmlLine, k.line)
   }
   t.eqStr(
     "no markdown file",
@@ -183,6 +188,78 @@ const profileTestWhere = (t: Suite): void => {
     profileRefusalAt(profileWhere(25, 1, 15, "a.xml", md, "Nowhere in it."), 7, "why").col,
     7,
   )
+}
+
+/** A refusal printed at `file:line`, raised at XML line `xml`, column `col`. */
+const profileTestRefusal = (file: string, line: i32, xml: i32, col: i32, message: string): ProfileRefusal => {
+  const r = new ProfileRefusal(file, line, col, message)
+  r.xmlLine = xml
+  return r
+}
+
+/** One ordering case: two refusals, and which comes first. */
+class ProfileTestOrder {
+  name: string
+  a: ProfileRefusal
+  b: ProfileRefusal
+  want: i32
+  constructor(name: string, a: ProfileRefusal, b: ProfileRefusal, want: i32) {
+    this.name = name
+    this.a = a
+    this.b = b
+    this.want = want
+  }
+}
+
+/** Refusals go in XML document order, then by column, then message (the place alone ties on message), whichever line each prints. */
+const profileTestOrder = (t: Suite): void => {
+  const cases: ProfileTestOrder[] = [
+    new ProfileTestOrder(
+      "an earlier XML line printed at a larger XML line number than a later markdown one",
+      profileTestRefusal("a.xml", 253, 253, 0, "b"),
+      profileTestRefusal("a.md", 146, 255, 0, "a"),
+      -1,
+    ),
+    new ProfileTestOrder(
+      "a markdown line found out of the XML's order",
+      profileTestRefusal("a.md", 40, 20, 0, "b"),
+      profileTestRefusal("a.md", 30, 21, 0, "a"),
+      -1,
+    ),
+    new ProfileTestOrder(
+      "a later XML line",
+      profileTestRefusal("a.xml", 9, 9, 0, "a"),
+      profileTestRefusal("a.xml", 8, 8, 0, "b"),
+      1,
+    ),
+    new ProfileTestOrder(
+      "one XML line: the column first",
+      profileTestRefusal("a.xml", 9, 9, 3, "z"),
+      profileTestRefusal("a.xml", 9, 9, 7, "a"),
+      -1,
+    ),
+    new ProfileTestOrder(
+      "one place: the message",
+      profileTestRefusal("a.xml", 9, 9, 3, "b"),
+      profileTestRefusal("a.xml", 9, 9, 3, "a"),
+      1,
+    ),
+    new ProfileTestOrder(
+      "one place and message",
+      profileTestRefusal("a.xml", 9, 9, 3, "a"),
+      profileTestRefusal("a.xml", 9, 9, 3, "a"),
+      0,
+    ),
+  ]
+  for (const k of cases) {
+    t.eqI32(k.name, profileRefusalOrder(k.a, k.b), k.want)
+    t.eqI32(`${k.name}, swapped`, profileRefusalOrder(k.b, k.a), -k.want)
+    // The place alone ties every case at one place, message or not, so the
+    // gates' stable sort keeps the order they found them in.
+    const place = k.a.xmlLine === k.b.xmlLine && k.a.col === k.b.col ? 0 : k.want
+    t.eqI32(`${k.name}, place only`, profileRefusalPlace(k.a, k.b), place)
+    t.eqI32(`${k.name}, place only, swapped`, profileRefusalPlace(k.b, k.a), -place)
+  }
 }
 
 /** A markdown file's record counts its lines, with or without a final newline. */
@@ -272,6 +349,7 @@ const profileTestRefusals = (t: Suite): void => {
 export const main = (): i32 => {
   const t = new Suite("spec/extract profile")
   profileTestWhere(t)
+  profileTestOrder(t)
   profileTestMdRead(t)
   profileTestLocate(t)
   profileTestMini(t)

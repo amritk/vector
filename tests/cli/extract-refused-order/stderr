@@ -1,0 +1,4 @@
+vector: tests/fixtures/profile/profile-order.md:133 (tests/fixtures/profile/profile-order.xml:166:29): Call: bytes are lowercase hex pairs in brackets, at most one space apart: [00 0f], or [] for none
+vector: tests/fixtures/profile/profile-order.xml:253: BCP 14 sentence has no anchor and no Untested: paragraph after it: "hexEncode MUST NOT allocate twice."
+vector: tests/fixtures/profile/profile-order.xml:254: BCP 14 sentence has no anchor and no Untested: paragraph after it: "hexEncode MUST NOT allocate twice."
+vector: tests/fixtures/profile/profile-order.md:146 (tests/fixtures/profile/profile-order.xml:255): BCP 14 sentence has no anchor and no Untested: paragraph after it: "The decoder MUST NOT allocate twice."

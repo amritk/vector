@@ -35,7 +35,7 @@ const extractGatesTestIssue = (
   report.findings.push(new CheckFinding(gate, at.length > 0 ? `${at}: ${message}` : message))
 }
 
-/** Each refusal once, sorted by line; a main-source section at the line naming it; the sidecar's last. */
+/** Each refusal once, in XML order and in the gates' order at one place; a main-source section at the line naming it; the sidecar's last. */
 const extractGatesTestRows = (t: Suite): void => {
   const locator = new ProfileLocator(new ProfileWhere("s.xml", 1))
   locator.at.set("V1", new ProfileWhere("s.xml", 7))
@@ -77,11 +77,12 @@ const extractGatesTestRows = (t: Suite): void => {
   )
 }
 
-/** A ProfileWhere at markdown line `md`, exactly at line `xml` of s.xml. */
+/** A ProfileWhere at markdown line `md`, exactly at line `xml` of s.xml, as profileWhere makes one. */
 const extractGatesTestUnder = (md: i32, xml: i32): ProfileWhere => {
   const w = new ProfileWhere("s.md", md)
   w.exactFile = "s.xml"
   w.exactLine = xml
+  w.xmlLine = xml
   return w
 }
 
@@ -102,6 +103,27 @@ const extractGatesTestUnderOneMark = (t: Suite): void => {
     "each XML line once, in order",
     got.join("\n"),
     ["s.md:30 (s.xml:41): fidelity: same", "s.md:30 (s.xml:47): fidelity: same"].join("\n"),
+  )
+}
+
+/** Gate refusals from two gates go in XML order, not by the line printed: an XML line and a markdown one are not comparable. */
+const extractGatesTestXmlOrder = (t: Suite): void => {
+  const locator = new ProfileLocator(new ProfileWhere("s.xml", 1))
+  // V1 is first in the XML, but kramdown-rfc's text could not be found in
+  // the markdown, so it prints its XML line, 60; V2 prints markdown line 20.
+  locator.at.set("V1", new ProfileWhere("s.xml", 60))
+  locator.at.set("V2", extractGatesTestUnder(20, 70))
+  const report = new CheckReport(new SampleTable())
+  const notes: CheckNote[] = []
+  extractGatesTestIssue(report, notes, "fidelity", "V2.expect", "late")
+  extractGatesTestIssue(report, notes, "provenance", "V1.expect", "early")
+  const got = extractGateRefusals(report, notes, locator, "c.survivors.json", 4648).map(
+    (r): string => `${r.file}:${r.line}: ${r.message}`,
+  )
+  t.eqStr(
+    "XML document order across files and gates",
+    got.join("\n"),
+    ["s.xml:60: provenance: early", "s.md:20: fidelity: late"].join("\n"),
   )
 }
 
@@ -268,6 +290,7 @@ export const main = (): i32 => {
   const t = new Suite("spec/extract gates")
   extractGatesTestRows(t)
   extractGatesTestUnderOneMark(t)
+  extractGatesTestXmlOrder(t)
   extractGatesTestDiff(t)
   const readers = extractReaders()
   if (readers.isErr()) {
