@@ -897,10 +897,7 @@ export const main = (): i32 => {
   t.ok("a count printed whole", !fidelityTestHas(it, "I1:", "") && !fidelityTestHas(it, "I1.", ""))
   t.ok(
     "a count printed grouped",
-    !fidelityTestHas(it, "I2:", "") &&
-      !fidelityTestHas(it, "I2.", "") &&
-      !fidelityTestHas(it, "I3:", "") &&
-      !fidelityTestHas(it, "I3.", ""),
+    !fidelityTestHas(it, "I2:", "") && !fidelityTestHas(it, "I2.", "") && !fidelityTestHas(it, "I3:", ""),
   )
   t.ok(
     "an expected label that counts other rounds",

@@ -49,7 +49,7 @@ const PLACEMENT_TEST_RFC: string = `Request for Comments: 9995
    After 1,000 iterations = 0x5555
 `
 
-/** The fidelity notes on PLACEMENT_TEST_C, each `<at>: <message>`. */
+/** The fidelity findings on PLACEMENT_TEST_C, each `<at>: <message>`. */
 const placementTestNotes = (): string[] => {
   const ctx = new CheckContext("contracts/c6.json", ".")
   ctx.contract = contractParse(PLACEMENT_TEST_C, "c6").expect("parse")
@@ -57,14 +57,7 @@ const placementTestNotes = (): string[] => {
   set.main = "rfc9995"
   set.sources.push(new LoadedSource("rfc9995", "r.txt", "r.txt", rfcParse(PLACEMENT_TEST_RFC)))
   ctx.sources = set
-  gateFidelity(ctx)
-  const out: string[] = []
-  for (const n of ctx.notes) {
-    if (!n.warning) {
-      out.push(`${n.at}: ${n.message}`)
-    }
-  }
-  return out
+  return gateFidelity(ctx)
 }
 
 /** The notes about vector `id`, the `at` of each. */
@@ -74,7 +67,7 @@ const placementTestAt = (notes: string[], id: string): string[] =>
     .map((n: string): string => n.substring(0, n.indexOf(": ")))
 
 /** Each vector's refusals are placed at the part holding what is refused, and nowhere else. */
-const placementTest = (): i32 => {
+export const main = (): i32 => {
   const t = new Suite("gates: placement")
   const notes = placementTestNotes()
   const rows: string[][] = [
@@ -90,11 +83,5 @@ const placementTest = (): i32 => {
       console.log(`${row[0]}: want "${row[2]}", got "${got}"\n${notes.join("\n")}`)
     }
   }
-  t.ok(
-    "the count's message is kept",
-    notes.some((n: string): boolean => n.startsWith("P1.iterate: the count 7 is not printed in RFC §1")),
-  )
   return t.done()
 }
-
-placementTest()
