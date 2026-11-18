@@ -4,14 +4,15 @@
  * Every command ends with one of three codes: 0 when the check passed, 1 when
  * vector refused the input (a counterexample, a stale contract, a missing
  * test), and 2 when the command could not run at all (bad usage, a file that
- * cannot be read, a solver that will not start).
+ * cannot be read, a solver that will not start) or when a counterexample or
+ * witness z3 gave does not replay (`MISMATCH`, a bug in vector, not a refusal).
  */
 
 /** The check ran and passed. */
 export const EXIT_PASS: i32 = 0
 /** The check ran and refused the input. */
 export const EXIT_REFUSED: i32 = 1
-/** The command could not run: bad usage, or an I/O or tool failure. */
+/** The command could not run (bad usage, or an I/O or tool failure), or a replay found a `MISMATCH`, a bug in vector. */
 export const EXIT_USAGE: i32 = 2
 
 /** One problem vector reports: where it is, what it is, and the exit code it implies. */

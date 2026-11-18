@@ -49,4 +49,4 @@ Every command ends with one of these, declared in [src/core/diag.ts](https://git
 | --- | --- | --- |
 | 0 | `EXIT_PASS` | The check ran and passed. |
 | 1 | `EXIT_REFUSED` | The check ran and refused the input. |
-| 2 | `EXIT_USAGE` | The command could not run: bad usage, or an I/O or tool failure. |
+| 2 | `EXIT_USAGE` | The command could not run (bad usage, or an I/O or tool failure), or a replay found a `MISMATCH`, a bug in vector. |
