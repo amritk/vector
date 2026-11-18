@@ -54,11 +54,17 @@ const indexAgentsDocCases = (t: Suite): void => {
 const indexAgentsDocBinary = (t: Suite): void => {
   const root = realpathSync(".")
   const made = makeTempDir("vector-agents-bin-")
-  if (root === null || made.isErr()) {
-    t.fail("agents doc: binary", "cannot resolve the checkout or make a temp dir")
+  if (made.isErr()) {
+    t.fail("agents doc: binary", "cannot make a temp dir")
     return
   }
   const bare = realpathSync(made.value) ?? made.value
+  if (root === null) {
+    const dropped = runProcess(["rm", "-rf", bare], "", 10000)
+    t.ok("agents doc: binary: clean up without a checkout", dropped.isOk() && dropped.value.status === 0)
+    t.fail("agents doc: binary", "cannot resolve the checkout")
+    return
+  }
   t.ok(
     "agents doc: a bare root: make it",
     mkdirAll(joinPath(bare, "src"), 0o755).isOk() && mkdirAll(joinPath(bare, "dist"), 0o755).isOk(),
