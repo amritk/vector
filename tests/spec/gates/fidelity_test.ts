@@ -897,7 +897,10 @@ export const main = (): i32 => {
   t.ok("a count printed whole", !fidelityTestHas(it, "I1:", "") && !fidelityTestHas(it, "I1.", ""))
   t.ok(
     "a count printed grouped",
-    !fidelityTestHas(it, "I2:", "") && !fidelityTestHas(it, "I2.", "") && !fidelityTestHas(it, "I3:", ""),
+    !fidelityTestHas(it, "I2:", "") &&
+      !fidelityTestHas(it, "I2.", "") &&
+      !fidelityTestHas(it, "I3:", "") &&
+      !fidelityTestHas(it, "I3.", ""),
   )
   t.ok(
     "an expected label that counts other rounds",
@@ -907,19 +910,25 @@ export const main = (): i32 => {
       `"After 1,000,000 iterations" counts 1,000,000, but the vector iterates 1,000 times`,
     ),
   )
-  t.ok("not a count inside a word", fidelityTestHas(it, "I5:", "the count 1,000 is not printed in RFC §3"))
-  t.ok("not a count in a name", fidelityTestHas(it, "I6:", "the count 25,519 is not printed"))
+  t.ok("not a count inside a word", fidelityTestHas(it, "I5.iterate:", "the count 1,000 is not printed in RFC §3"))
+  t.ok("not a count in a name", fidelityTestHas(it, "I6.iterate:", "the count 25,519 is not printed"))
   t.ok("a count that is a whole token", !fidelityTestHas(it, "I7", ""))
-  t.ok("not a count: a short group", fidelityTestHas(it, "I8:", "the count 100 is not printed"))
-  t.ok("not a count: a long group", fidelityTestHas(it, "I9:", "the count 10,000 is not printed"))
-  t.ok("not a count: a heading's number", fidelityTestHas(it, "I10:", "the count 3 is not printed"))
-  t.ok("not a count: a hyphened name", fidelityTestHas(it, "I11:", "the count 256 is not printed"))
-  t.ok("not a count: a subsection's number", fidelityTestHas(it, "I12:", "the count 2 is not printed in RFC §5.2"))
-  t.ok("not a count: its parent's number", fidelityTestHas(it, "I13:", "the count 5 is not printed in RFC §5.2"))
+  t.ok("not a count: a short group", fidelityTestHas(it, "I8.iterate:", "the count 100 is not printed"))
+  t.ok("not a count: a long group", fidelityTestHas(it, "I9.iterate:", "the count 10,000 is not printed"))
+  t.ok("not a count: a heading's number", fidelityTestHas(it, "I10.iterate:", "the count 3 is not printed"))
+  t.ok("not a count: a hyphened name", fidelityTestHas(it, "I11.iterate:", "the count 256 is not printed"))
+  t.ok(
+    "not a count: a subsection's number",
+    fidelityTestHas(it, "I12.iterate:", "the count 2 is not printed in RFC §5.2"),
+  )
+  t.ok(
+    "not a count: its parent's number",
+    fidelityTestHas(it, "I13.iterate:", "the count 5 is not printed in RFC §5.2"),
+  )
   t.ok("an iterated vector's variant", fidelityTestHas(it, "I14.args[0]:", `under "For X448"`))
   t.ok("a count's rounds are not a variant", !fidelityTestHas(it, "I2.", "") && !fidelityTestHas(it, "I3.", ""))
   t.ok("a variant whose number is the count", fidelityTestHas(it, "I15.expect:", "x25519 names 25519"))
-  t.ok("not a count: malformed groups", fidelityTestHas(it, "I16:", "the count 1,000,000 is not printed"))
+  t.ok("not a count: malformed groups", fidelityTestHas(it, "I16.iterate:", "the count 1,000,000 is not printed"))
   t.ok("another variant beside its rounds", fidelityTestHas(it, "I17.expect:", "x25519 names 25519"))
   t.ok("its own variant beside its rounds", !fidelityTestHas(it, "I18", ""))
   t.ok("another variant beside its times", fidelityTestHas(it, "I19.expect:", "x25519 names 25519"))

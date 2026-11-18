@@ -1092,7 +1092,8 @@ const gateLabelIsCount = (k: Clause, label: string): boolean => {
 /**
  * An iterated vector's count against its section: the count is printed
  * there as a whole number (commas ignored), outside a heading, and the number the expected
- * label counts rounds with (`gateLabelCount`) is the count.
+ * label counts rounds with (`gateLabelCount`) is the count. An unprinted count
+ * is refused at the vector's Iterate paragraph (`<id>.iterate`), which holds it.
  */
 const gateIterateCount = (
   ctx: CheckContext,
@@ -1109,7 +1110,7 @@ const gateIterateCount = (
     printed = gateWholeNumbers(sec.lines[i]).indexOf(want) >= 0 && !gateFidHeading(sec.lines[i])
   }
   if (!printed) {
-    gateIssue(ctx, out, GATE_FIDELITY, k.id, `the count ${gateGrouped(want)} is not printed in ${where}`)
+    gateIssue(ctx, out, GATE_FIDELITY, `${k.id}.iterate`, `the count ${gateGrouped(want)} is not printed in ${where}`)
   }
   const expect = k.expect
   const label: string | null = expect === null ? null : expect.label
