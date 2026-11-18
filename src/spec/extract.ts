@@ -480,8 +480,9 @@ const extractGateKeep = (out: ProfileRefusal[], seen: Set<string>, r: ProfileRef
  * A gate that places a finding (a note, gateIssue) is placed by the note's
  * `at` through the locator; a finding no note places is at the spec's root.
  * Each refusal is given once, since two fields of one part can break one
- * rule on one line, and they are sorted by line, then XML line: two parts
- * under one `<?line?>` mark share a markdown line but not an XML one. A finding about
+ * rule on one line, and they are in XML document order: by the XML line each
+ * is on, then column, whichever file the printed line is in, and in gate
+ * order on one place. A finding about
  * allowSurvivors is the sidecar's, so it names that file, after the rest.
  *
  * @param report what the gates found
@@ -517,11 +518,8 @@ export const extractGateRefusals = (
   main.sort((a: ExtractGateRow, b: ExtractGateRow): i32 => {
     const x = a.refusal
     const y = b.refusal
-    if (x.line !== y.line) {
-      return x.line < y.line ? -1 : 1
-    }
-    if (x.exactLine !== y.exactLine) {
-      return x.exactLine < y.exactLine ? -1 : 1
+    if (x.xmlLine !== y.xmlLine) {
+      return x.xmlLine < y.xmlLine ? -1 : 1
     }
     return x.col < y.col ? -1 : x.col > y.col ? 1 : 0
   })

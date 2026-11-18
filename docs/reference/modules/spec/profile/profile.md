@@ -148,6 +148,14 @@ Why the profile was refused.
 message: string
 ```
 
+#### ProfileRefusal.xmlLine
+
+The XML line the refusal is on, whichever file `line` is in: what refusals are ordered by.
+
+```ts
+xmlLine: i32
+```
+
 ### ProfileWhere
 
 A file and a line in it, and the XML line when that line is a markdown line found by its text.
@@ -214,6 +222,14 @@ Whether `line` is a markdown line standing alone, which an XML column does not f
 
 ```ts
 mdOnly: boolean
+```
+
+#### ProfileWhere.xmlLine
+
+The XML line the place is on, whichever file `line` is in.
+
+```ts
+xmlLine: i32
 ```
 
 ### ProfileMd
@@ -589,7 +605,7 @@ the RFCs it may cite; one asked for and absent is recorded in `rfcs.missing`
 
 <scalar-field name="returns" type="Result&lt;ProfileRead, ProfileRefusal[]&gt;">
 
-the contract and where each part was read, or every refusal, in line order
+the contract and where each part was read, or every refusal, in XML document order
 
 </scalar-field>
 

@@ -82,7 +82,33 @@ const extractGatesTestUnder = (md: i32, xml: i32): ProfileWhere => {
   const w = new ProfileWhere("s.md", md)
   w.exactFile = "s.xml"
   w.exactLine = xml
+  w.xmlLine = xml
   return w
+}
+
+/**
+ * A place printed as a markdown line and one printed as an XML line are in
+ * XML document order, not in the order of their printed numbers: s.md:20 is
+ * on s.xml:90, after s.xml:60, though 20 < 60; and before s.xml:120.
+ */
+const extractGatesTestXmlOrder = (t: Suite): void => {
+  const locator = new ProfileLocator(new ProfileWhere("s.xml", 1))
+  locator.at.set("V1", new ProfileWhere("s.xml", 120))
+  locator.at.set("V2", extractGatesTestUnder(20, 90))
+  locator.at.set("V3", new ProfileWhere("s.xml", 60))
+  const report = new CheckReport(new SampleTable())
+  const notes: CheckNote[] = []
+  extractGatesTestIssue(report, notes, "fidelity", "V1.expect", "a")
+  extractGatesTestIssue(report, notes, "provenance", "V2.expect", "b")
+  extractGatesTestIssue(report, notes, "typing", "V3.call", "c")
+  const got = extractGateRefusals(report, notes, locator, "c.survivors.json", 4648).map(
+    (r): string => `${r.file}:${r.line}: ${r.message}`,
+  )
+  t.eqStr(
+    "gate refusals in XML document order",
+    got.join("\n"),
+    ["s.xml:60: typing: c", "s.md:20: provenance: b", "s.xml:120: fidelity: a"].join("\n"),
+  )
 }
 
 /** Two parts under one `<?line?>` mark share a markdown line: each is kept, in XML line order. */
@@ -268,6 +294,7 @@ export const main = (): i32 => {
   const t = new Suite("spec/extract gates")
   extractGatesTestRows(t)
   extractGatesTestUnderOneMark(t)
+  extractGatesTestXmlOrder(t)
   extractGatesTestDiff(t)
   const readers = extractReaders()
   if (readers.isErr()) {

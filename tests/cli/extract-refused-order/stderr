@@ -1,0 +1,3 @@
+vector: tests/fixtures/profile/profile-order.xml:254: BCP 14 sentence has no anchor and no Untested: paragraph after it: "Callers MUST NOT log the decoded bytes."
+vector: tests/fixtures/profile/profile-order.md:145 (tests/fixtures/profile/profile-order.xml:255): BCP 14 sentence has no anchor and no Untested: paragraph after it: "The decoder MUST NOT allocate twice."
+vector: tests/fixtures/profile/profile-order.xml:256: BCP 14 sentence has no anchor and no Untested: paragraph after it: "Callers MUST NOT log the decoded bytes."
