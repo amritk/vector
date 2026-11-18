@@ -3,7 +3,7 @@
  Status: INVALID
 
  Gate failures
-  ✘ fidelity 5.2-ITER-2000: the count 2,000 is not printed in RFC §5.2
+  ✘ fidelity 5.2-ITER-2000.iterate: the count 2,000 is not printed in RFC §5.2
   ✘ fidelity 5.2-ITER-2000.expect: the expected label "After 1,000 iterations" counts 1,000, but the vector iterates 2,000 times
   ✘ fidelity 5.2-ITER-LABEL.expect: the expected label "After 1,000,000 iterations" counts 1,000,000, but the vector iterates 1,000 times
 
