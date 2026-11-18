@@ -223,6 +223,14 @@ every committed spec:
 ./dist/vector spec extract specs/example-hex.xml -o contracts/example-hex.json --check
 ```
 
+`-o` also picks the RFC that extract reads. A linked RFC is found from the
+contract's place, not the spec's ([Sources](#sources)), because that is
+where `check` and the other commands will read it, so extract gates the
+contract on the file it will be checked against. Two `-o` paths can
+therefore find two different `rfc<N>` files and give different refusals: a
+`-o` beside a short excerpt passes completeness, and one with only the full
+RFC within reach gets its untested MUST sentences reported.
+
 Extract reads only XML. Given the markdown, it says to build it first:
 
 <!-- exit 2 -->
