@@ -2832,6 +2832,36 @@ const profileCheckCoverage = (c: ProfileContext): void => {
 const profileSourceOf = (c: ProfileContext, q: ProfileQuoted): string | null =>
   q.citeRfc >= 0 && q.citeRfc !== c.mainRfc ? `rfc${q.citeRfc}` : null
 
+/** Whether the contract declares the spec as a source: always, unless the main source is an RFC and no vector is a command's. */
+const profileDeclaresOwn = (c: ProfileContext): boolean => {
+  if (c.mainRfc < 0) {
+    return true
+  }
+  for (const k of c.vectors) {
+    const ks = k.source
+    if (ks !== null && ks.kind === VectorSourceKind.Command) {
+      return true
+    }
+  }
+  return false
+}
+
+/** A spec declared as a source must not take the id `rfc<N>` of an RFC it cites. */
+const profileCheckOwnId = (c: ProfileContext, name: string): void => {
+  if (!profileDeclaresOwn(c)) {
+    return
+  }
+  for (const n of c.cited) {
+    if (name === `rfc${n}`) {
+      profileRefuse(
+        c,
+        c.doc.root,
+        `contract "${name}" is the source id of RFC${n}, which the spec cites; give the spec another docName`,
+      )
+    }
+  }
+}
+
 const profileBuild = (c: ProfileContext, name: string): Contract => {
   const out = new Contract()
   out.contract = name
@@ -2846,17 +2876,15 @@ const profileBuild = (c: ProfileContext, name: string): Contract => {
   const sources: SourceDecl[] = []
   // A command vector's args are printed in the spec's own section, so a
   // main-RFC spec with one declares the spec too, and the vector names it.
-  let ownSection = false
   if (c.mainRfc >= 0) {
     for (const k of c.vectors) {
       const ks = k.source
       if (ks !== null && ks.kind === VectorSourceKind.Command) {
         k.sectionSource = name
-        ownSection = true
       }
     }
   }
-  if (c.mainRfc < 0 || ownSection) {
+  if (profileDeclaresOwn(c)) {
     const own = new SourceDecl()
     own.id = name
     own.path = `../specs/${name}.xml`
@@ -3063,6 +3091,10 @@ export const profileRead = (
   if (c.mainRfc >= 0 && !c.cited.has(c.mainRfc) && key !== null) {
     profileRefuse(c, key, `RFC${c.mainRfc} is the main source, but nothing cites it; quote it in a requirement`)
   }
+  if (c.refusals.length > 0) {
+    return profileSorted(c)
+  }
+  profileCheckOwnId(c, name)
   if (c.refusals.length > 0) {
     return profileSorted(c)
   }

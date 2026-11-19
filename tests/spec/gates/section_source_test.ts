@@ -32,7 +32,7 @@ const SST_RFC: string = `Request for Comments: 9995
    BASE32("foo") = "MZXW6==="
 `
 
-/** The spec's own text, as a source: §5 prints the input, §6 does not, and §2 holds an unquoted MUST. */
+/** The spec's own text, as a source: §5 prints the input, §6 and §10 do not, and §2 holds an unquoted MUST. */
 const SST_OWN: string = `Request for Comments: 9994
 
 2.  Rules
@@ -46,6 +46,10 @@ const SST_OWN: string = `Request for Comments: 9994
 6.  Other Vectors
 
    None here.
+
+10.  Test Vectors Again
+
+   BASE32("foo") = "MZXW6==="
 `
 
 /** A contract with one vector, of `source` (a JSON object), at `section` in `sectionSource`. */
@@ -122,6 +126,13 @@ const sstRows = (): SstRow[] => [
     "",
   ),
   new SstRow(
+    "a command vector in the spec's own section, which does not print them though the RFC's does",
+    SST_COMMAND,
+    `, "section": "10"`,
+    `, "sectionSource": "own"`,
+    `V1.args[0]: the 3-byte args[0] is not printed in own §10 ("Test Vectors Again")`,
+  ),
+  new SstRow(
     "a command vector at a section the spec does not have",
     SST_COMMAND,
     `, "section": "9"`,
@@ -178,6 +189,13 @@ export const main = (): i32 => {
     sstHas(
       sstShape(SST_COMMAND, `, "section": "5"`, `, "sectionSource": "spec"`),
       `clauses[0].sectionSource: "spec" is not an id from contract.sources (own, rfc9995)`,
+    ),
+  )
+  t.ok(
+    "a command vector naming the main source",
+    sstHas(
+      sstShape(SST_COMMAND, `, "section": "10"`, `, "sectionSource": "rfc9995"`),
+      `clauses[0].sectionSource: "rfc9995" is the main source; drop "sectionSource"`,
     ),
   )
   t.ok(

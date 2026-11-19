@@ -696,7 +696,7 @@ const shapeIterate = (s: ShapeContext, k: Clause, it: Iterate, at: string): void
 const shapeNeedSection = (s: ShapeContext, k: Clause, at: string): void => {
   const sec = k.section
   if (sec === null || !charsIsSection(sec)) {
-    shapeFail(s, `${at}.section`, "the main-source section number printing the args")
+    shapeFail(s, `${at}.section`, "the section number printing the args")
   }
 }
 
@@ -736,6 +736,12 @@ const shapeVectorSource = (s: ShapeContext, k: Clause, at: string): void => {
     }
     shapeNeedSection(s, k, at)
     shapeSourceRef(s, k.sectionSource, `${at}.sectionSource`)
+    const top = s.c.source
+    const main = top.rfc >= 1 ? `rfc${top.rfc}` : top.main ?? ""
+    const own = k.sectionSource
+    if (own !== null && own === main) {
+      shapeFail(s, `${at}.sectionSource`, `"${own}" is the main source; drop "sectionSource"`)
+    }
   } else {
     if (!charsIsSection(src.text)) {
       shapeFail(s, `${at}.source.spec`, "a main-source section number")
