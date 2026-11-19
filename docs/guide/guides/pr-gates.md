@@ -25,7 +25,7 @@ usage, a file that cannot be read, or a git or tool failure. Each takes
 | --- | --- | --- | --- |
 | 1. write the spec | `specs/<name>.md`, then `bash scripts/build-spec.sh specs/<name>.md` ([Writing a spec](writing-a-spec.md)) | `specs/<name>.xml` written | a warning, or a render failure |
 | 2. extract and check | `vector spec extract specs/<name>.xml -o contracts/<name>.json`, then `vector spec check contracts/<name>.json --run-sources` ([From a spec to a contract](spec-to-contract.md)) | written; `CONTRACT_VALID` | refusals, each at `file:line` |
-| 3. frozen | `vector spec frozen --base origin/main` | one side only, hashes match | both sides, a changed source |
+| 3. frozen | `vector spec frozen --base origin/main` | one side only, or a rename alone; hashes match | both sides, a changed source |
 | 4. emit and stale | `vector spec emit contracts/<name>.json -o test/spec/<name>.ts`, then `vector spec stale test/spec/<name>.ts contracts/<name>.json` | the test is the contract's | stale, or no marker line |
 | 5. implement and run | `vector spec run contracts/<name>.json --nish-root ../nish` ([Testing an implementation](testing.md)) | `SATISFIED` | `VIOLATED`, `ERROR` or refused |
 | 6. exports | `vector spec exports contracts/<name>.json --nish-root ../nish --base origin/main` | every changed export is tested | an export no clause tests |
@@ -58,6 +58,29 @@ Only the contracts given are checked and listed: naming one contract of a PR
 that changes two still classes both tests as generated, but reports nothing
 about the other. `--repo <dir>` names the repository when it is not the
 current directory.
+
+One change on both sides passes: renaming an export a contract tests. When
+every checked contract that changed drops one function and adds one with the
+same signature (module, parameters, return type and name overrides), and
+every changed file is that rename alone, `frozen` passes and notes
+`passed as a rename: <contract> renames <old> to <new>, and the <n> changed
+files are that rename alone`, where `<n>` counts every changed path, neutral
+ones too. A file is the rename alone when it is a regular
+file at the fork point and now, with the same mode, did not name `<new>` at
+the fork point, names no `<old>` now, and replacing each whole
+identifier `<old>` with `<new>` in its fork-point text gives its text now,
+line for line. The contract's `"sha256"` values and a generated test's
+`// vector-contract-sha256:` line are exempt, since the rename changes them.
+Anything else (a second rename, two contracts renaming one name two ways, a
+changed signature, an added or deleted file, one extra edit) is refused: the
+report names the first file or contract that is not the rename, after the
+usual both-sides problem:
+
+```text
+problems:
+  ✗ the change touches the spec side (contracts/c.json, specs/s.md, specs/s.xml, test/spec/c_test.ts) and the implementation (src/x.ts): change them in separate PRs
+  ✗ not a rename alone: src/x.ts: line 3 is not the rename alone
+```
 
 ```sh
 ./dist/vector spec frozen --base HEAD

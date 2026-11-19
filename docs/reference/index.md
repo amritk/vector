@@ -114,11 +114,12 @@ The 118 source files of `src/`, from their doc comments.
 | [`spec/gates/words`](modules/spec/gates/words.md) | the blocks of words a section prints, which a u16[], u32[] or u64[] vector value binds to. |
 | [`spec/pr/cli`](modules/spec/pr/cli.md) | what the PR gates' commands share: reading `--format` and `--base`, and printing a report with the exit code it earns. |
 | [`spec/pr/exports`](modules/spec/pr/exports.md) | every export a PR adds to or changes in a contract's target module is tested by the contract (one of its `functions`) or listed in its `outOfScope` with a reason, so no new surface lands untested. |
-| [`spec/pr/frozen`](modules/spec/pr/frozen.md) | a PR changes the spec side (specs/, contracts/, rfcs/, and .refcache/, the kramdown-rfc reference cache a spec's build reads) or the implementation, never both, so a test cannot be loosened to match the code it tests. |
+| [`spec/pr/frozen`](modules/spec/pr/frozen.md) | a PR changes the spec side (specs/, contracts/, rfcs/, and .refcache/, the kramdown-rfc reference cache a spec's build reads) or the implementation, never both, so a test cannot be loosened to match the code it tests; the one exception is a change that is only the rename of contracted exports on both sides (spec/pr/rename). |
 | [`spec/pr/gitdiff`](modules/spec/pr/gitdiff.md) | what a change touches, read from git: the files it changes against a base and the lines of each it adds, and the exports a TypeScript module declares. |
 | [`spec/pr/lex`](modules/spec/pr/lex.md) | a TypeScript module's tokens and top-level statements, as far as the export scanner needs them. |
 | [`spec/pr/mutate`](modules/spec/pr/mutate.md) | the mutants of a module's changed lines, and the verdict on how the test met them. |
 | [`spec/pr/mutaterun`](modules/spec/pr/mutaterun.md) | runs a test against each mutant of a module, several at once. |
+| [`spec/pr/rename`](modules/spec/pr/rename.md) | the one change that may touch both sides of a frozen contract: renaming the functions it tests, and nothing else. |
 | [`spec/pr/report`](modules/spec/pr/report.md) | what a PR gate found, and how it prints: as text, as markdown for a PR comment, or as JSON. |
 | [`spec/pr/scope`](modules/spec/pr/scope.md) | the code a contract tests: the module's top-level declarations its functions reach. |
 | [`spec/pr/stale`](modules/spec/pr/stale.md) | whether a generated test was emitted from the contract as it is now: its header comment's one `// vector-contract-sha256: <hex>` line must name the SHA-256 of the contract file's bytes. |

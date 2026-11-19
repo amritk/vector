@@ -441,8 +441,12 @@ forall (b: u8[] /* 0..64 */) => {
 ## Sources and provenance
 
 A source is a document vector reads as it is: RFC XML v3 (`.xml`) or an
-RFC's plain text (with its `Request for Comments: N` header and form feeds).
-Anything else is refused. `.xml` sources are read everywhere a source is:
+RFC's plain text. Paginated text (xml2rfc v2, before RFC 8650) has form
+feeds, and its `Request for Comments: N` header may sit anywhere in the
+front page. Unpaginated text (xml2rfc v3, such as rfc9000.txt) has none, so
+its header must begin a line before the first section heading, and it must
+have no `[Page N]` footer or running `RFC N` header: those mark a paginated
+RFC whose form feeds were stripped. Anything else is refused. `.xml` sources are read everywhere a source is:
 by `extract`, `check`, `emit`, `run`, `frozen` and `mutate`.
 
 ### Hidden text
@@ -461,7 +465,13 @@ Both checks run on the file's bytes and again on the text its reader
 decoded, so an XML character reference such as `&#1058;` cannot slip a
 look-alike past them. One exception follows xml2rfc's own text output: in
 XML, a zero-width space or word joiner written as a character reference
-(`&#8203;`) is dropped from the decoded text, not refused.
+(`&#8203;`) is dropped from the decoded text, not refused. In a source that
+names an RFC (a linked RFC, or `extract`'s own source), a literal U+200B or
+U+2060 is dropped too, as the RFC Editor leaves one as a line-break hint
+(RFC 9000's `0x0100-0x01ff` cell), but only where a neighbour is not a
+letter, digit or mark: one inside a word (between the `MU` and `ST` of `MUST`) is still refused at
+its line. The SHA-256 pin stays the hash of the file's bytes, and the spec's
+own XML gets no such drop.
 
 ### Linked RFCs
 

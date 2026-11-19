@@ -1,0 +1,12 @@
+{
+  "contract": "c",
+  "source": {"title": "T", "main": "s", "sha256": "cf1a03ec422e9413f448384fa9e1ce5539ea4eaed1be0c3de35068a8d0162e2a"},
+  "sources": [{"id": "s", "path": "../specs/s.xml"}],
+  "target": {"module": "nish/hex"},
+  "requirements": [{"id": "R1", "section": "1", "level": "MUST", "quote": "encodeHex MUST return the bytes as lowercase hex."}],
+  "functions": [{"name": "encodeHex", "params": [{"name": "b", "type": "bytes"}], "returns": "string"}],
+  "clauses": [
+    {"kind": "vector", "id": "V1", "title": "one byte", "covers": ["R1"],
+     "source": {"cite": {"section": "1"}}, "call": "encodeHex", "args": [{"hex": "0f"}], "expect": {"str": "0f"}}
+  ]
+}
