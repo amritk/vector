@@ -369,7 +369,8 @@ const fidelityTestTable = (t: Suite): void => {
     )
   }
   // A bracket that is no call label's arguments still names the variant.
-  const bracketed = "   Output (X25519) after 1,000 iterations = 0x2222\n   Output (X448) after 1,000 iterations = 0x5555"
+  const bracketed =
+    "   Output (X25519) after 1,000 iterations = 0x2222\n   Output (X448) after 1,000 iterations = 0x5555"
   fidelityTestRowIs(
     t,
     "another variant, in brackets",
@@ -946,14 +947,7 @@ const fidelityTestScryptRfc = (): string =>
  * JSON) citing section `id` of RFC `num`, whose text is `rfc`: `args` and
  * `expect` are the clause's literals' JSON.
  */
-const fidelityTestWrap = (
-  num: string,
-  rfc: string,
-  fn: string,
-  id: string,
-  args: string,
-  expect: string,
-): string[] => {
+const fidelityTestWrap = (num: string, rfc: string, fn: string, id: string, args: string, expect: string): string[] => {
   const contract = `{
   "contract": "c6",
   "source": {"title": "T", "rfc": ${num}},
@@ -1042,7 +1036,12 @@ const fidelityTestWrapped = (t: Suite): void => {
   const two = `{"hex": "4ddcd8f60b98be21830cee5ef22701f9", "label": "PBKDF2-HMAC-SHA-256 (P=\\"Password\\", S=\\"NaCl\\", c=80000, dkLen=64)"}`
   const other = "they are different test cases"
   const pbRows: string[][] = [
-    ["case 1 with its own args", `{"str": "passwd"}, {"str": "salt"}, {"int": 1, "label": "c"}, {"int": 64, "label": "dkLen"}`, one, ""],
+    [
+      "case 1 with its own args",
+      `{"str": "passwd"}, {"str": "salt"}, {"int": 1, "label": "c"}, {"int": 64, "label": "dkLen"}`,
+      one,
+      "",
+    ],
     [
       "case 2, its label split by a page break",
       `{"str": "Password"}, {"str": "NaCl"}, {"int": 80000, "label": "c"}, {"int": 64, "label": "dkLen"}`,
@@ -1081,7 +1080,11 @@ const fidelityTestWrapped = (t: Suite): void => {
   )
   t.ok(
     "7914 §11: case 2's value under case 1's label",
-    fidelityTestHas(misnamed, "W1.expect:", `under "PBKDF2-HMAC-SHA-256 (P="Password", S="NaCl", c=80000, dkLen=64)", not under`),
+    fidelityTestHas(
+      misnamed,
+      "W1.expect:",
+      `under "PBKDF2-HMAC-SHA-256 (P="Password", S="NaCl", c=80000, dkLen=64)", not under`,
+    ),
   )
   const s1 = `{"hex": "77d6576238657b203b19ca42c18a0497", "label": "scrypt (P=\\"\\", S=\\"\\", N=16, r=1, p=1, dklen=64)"}`
   const s2 = `{"hex": "fdbabe1c9d3472007856e7190d01e9fe", "label": "scrypt (P=\\"password\\", S=\\"NaCl\\", N=1024, r=8, p=16, dkLen=64)"}`
@@ -1109,8 +1112,18 @@ const fidelityTestWrapped = (t: Suite): void => {
   const s3 = `{"hex": "7023bdcb3afd7348461c06cd81fd38eb", "label": "scrypt (P=\\"pleaseletmein\\", S=\\"SodiumChloride\\", N=16384, r=8, p=1, dkLen=64)"}`
   const s4 = `{"hex": "2101cb9b6a511aaeaddbbe09cf70f881", "label": "scrypt (P=\\"pleaseletmein\\", S=\\"SodiumChloride\\", N=1048576, r=8, p=1, dkLen=64)"}`
   const rest = `{"int": 8, "label": "r"}, {"int": 1, "label": "p"}, {"int": 64, "label": "dkLen"}`
-  scRows.push(["case 3, which differs from case 4 only in N", `${please}, {"int": 16384, "label": "N"}, ${rest}`, s3, ""])
-  scRows.push(["case 4, which differs from case 3 only in N", `${please}, {"int": 1048576, "label": "N"}, ${rest}`, s4, ""])
+  scRows.push([
+    "case 3, which differs from case 4 only in N",
+    `${please}, {"int": 16384, "label": "N"}, ${rest}`,
+    s3,
+    "",
+  ])
+  scRows.push([
+    "case 4, which differs from case 3 only in N",
+    `${please}, {"int": 1048576, "label": "N"}, ${rest}`,
+    s4,
+    "",
+  ])
   scRows.push([
     "case 3 with case 4's N",
     `${please}, {"int": 1048576, "label": "N"}, ${rest}`,

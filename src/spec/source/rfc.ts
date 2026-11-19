@@ -529,7 +529,7 @@ class RfcHexReader {
   /** The line `stmt` is printed on. */
   stmtLine: i32 = -1
   /** A call label still open across lines (`PBKDF2-HMAC-SHA-256 (P="passwd",`), whitespace collapsed; "" when none is. */
-  call: string = ""
+  call: string
   /** The line `call` opens on. */
   callLine: i32 = -1
   /** How many lines `call` spans. */
@@ -537,6 +537,7 @@ class RfcHexReader {
   constructor() {
     this.values = []
     this.unvalued = []
+    this.call = ""
     this.unvaluedLines = []
     this.cur = ""
     this.bareOnly = true
