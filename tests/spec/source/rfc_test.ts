@@ -545,6 +545,7 @@ export const main = (): i32 => {
     ["a name with a space is no name", "the key = f(x)\n   = 0a0b0c0d", "-=0a0b0c0d"],
     ["a dotted name is one", "ctx.key = f(x)\n   = 0a0b0c0d", "ctx.key=0a0b0c0d"],
     ["a blank line, as a page break leaves, does not end it", "key = f(x)\n\n   = 0a0b0c0d", "key=0a0b0c0d"],
+    ["a labelled value ends the statement", "key = f(x)\niv:  0e0f\n   = 0a0b0c0d", "iv=0e0f -=0a0b0c0d"],
     [
       "a call wrapped past four lines is no call label",
       "f (a,\n   b,\n   c,\n   d,\n   e) =\n   0a0b0c0d",

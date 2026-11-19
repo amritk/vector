@@ -1048,6 +1048,8 @@ const rfcHexRead = (sec: RfcSection): RfcHexReader => {
       continue
     }
     if (rfcHexPrefixed(r, line) || rfcHexColons(r, line) || rfcHexLabelled(r, line)) {
+      // A value printed under its own label ends the statement above it.
+      r.stmt = null
       continue
     }
     if (rfcTokensHex(line)) {
