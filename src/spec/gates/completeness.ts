@@ -6,13 +6,21 @@
  * it is not tested). So a contract cannot pass by leaving out the requirement
  * it would fail. An exclusion's quote must be in its section, and each one is
  * shown as a warning, so a reader sees what was left out.
+ *
+ * When the main source is a spec's own XML, a requirement anchored on a
+ * blockquote that quotes another source (`> … {{Section 3.1 of RFC4648}}`
+ * `{: #R-X gi="blockquote"}`) cites that source's section, not the spec's.
+ * Its quote still accounts for its words in the one spec section that holds
+ * the blockquote anchored with its id, and nowhere else.
  */
 
 import { jsonStringifyString } from "nish/json"
 import { CheckContext } from "../check"
 import { Exclusion } from "../contract/types"
-import { SourceSet, sourceFind } from "../source/load"
+import { LoadedSource, SourceSet, sourceFind } from "../source/load"
 import { RfcSection, rfcNormalize, rfcOwnSpans } from "../source/rfc"
+import { XmlDocument, xmlDocParse } from "../xml/doc"
+import { XmlNode, xmlAttr, xmlElements } from "../xml/reader"
 import { gateCiteLabel, gateCitedSection, gatePlace, gateQuoteMissing, gateSources } from "./cite"
 import { gateIssue, gateWarn } from "./note"
 import { gateKeywordName, gateKeywordUses, gateParagraphStarts, gateSentenceSpan } from "./text"
@@ -22,11 +30,21 @@ const GATE_COMPLETENESS: string = "completeness"
 /** Whether a citation's source is the main one. */
 const gateInMain = (set: SourceSet, source: string | null): boolean => source === null || source === set.main
 
-/** The quotes cited to one section of the main source: requirements' and exclusions'. */
-const gateSectionQuotes = (ctx: CheckContext, set: SourceSet, section: string): string[] => {
+/**
+ * The quotes that account for one section of the main source: requirements'
+ * and exclusions' cited to it, and the quotes of requirements anchored on a
+ * blockquote that stands in it (`placed`, by id) whatever source they cite.
+ */
+const gateSectionQuotes = (
+  ctx: CheckContext,
+  set: SourceSet,
+  placed: Map<string, string>,
+  section: string,
+): string[] => {
   const out: string[] = []
   for (const r of ctx.contract.requirements) {
-    if (r.section === section && gateInMain(set, r.source)) {
+    const main = gateInMain(set, r.source)
+    if ((main && r.section === section) || (!main && (placed.get(r.id) ?? "") === section)) {
       out.push(r.quote)
     }
   }
@@ -39,6 +57,70 @@ const gateSectionQuotes = (ctx: CheckContext, set: SourceSet, section: string): 
     }
   }
   return out
+}
+
+/** Whether two readings of a document hold the same sections, with the same own text. */
+const gateSameSections = (a: RfcSection[], b: RfcSection[]): boolean => {
+  if (a.length !== b.length) {
+    return false
+  }
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].id !== b[i].id || a[i].ownLines.join("\n") !== b[i].ownLines.join("\n")) {
+      return false
+    }
+  }
+  return true
+}
+
+/** Each anchored blockquote under `n`, by anchor, into `out` with the numbered section around it. */
+const gateQuoteWalk = (doc: XmlDocument, n: XmlNode, out: Map<string, string>): void => {
+  for (const k of xmlElements(n)) {
+    const anchor = xmlAttr(k, "anchor")
+    if (k.name === "blockquote" && anchor !== null) {
+      let up: XmlNode | null = k.parent
+      while (up !== null && up.name !== "section") {
+        up = up.parent
+      }
+      const sa: string | null = up !== null ? xmlAttr(up, "anchor") : null
+      if (sa !== null) {
+        const id = doc.sectionByAnchor.get(sa)
+        if (id !== undefined) {
+          out.set(anchor, id)
+        }
+      }
+    }
+    gateQuoteWalk(doc, k, out)
+  }
+}
+
+/**
+ * The numbered section of the main source each anchored blockquote stands
+ * in, by anchor. Only RFC XML has blockquotes to read: for any other source,
+ * one that does not read as XML, or one whose sections no longer read as the
+ * gates loaded them, it is empty, and no quote of another source counts.
+ */
+const gateQuoteSections = (main: LoadedSource): Map<string, string> => {
+  const out = new Map<string, string>()
+  const text = readFileSyncOrNull(main.file)
+  if (text === null) {
+    return out
+  }
+  const parsed = xmlDocParse(text)
+  if (parsed.isErr() || !gateSameSections(parsed.value.sections, main.doc.sections)) {
+    return out
+  }
+  gateQuoteWalk(parsed.value, parsed.value.root, out)
+  return out
+}
+
+/** Whether some requirement quotes a source other than the main one. */
+const gateQuotesOthers = (ctx: CheckContext, set: SourceSet): boolean => {
+  for (const r of ctx.contract.requirements) {
+    if (!gateInMain(set, r.source)) {
+      return true
+    }
+  }
+  return false
 }
 
 /** Whether one of the spans, two numbers a span, holds all of [start, end). */
@@ -90,7 +172,13 @@ const gateExclusions = (ctx: CheckContext, out: string[], set: SourceSet, ex: Ex
 }
 
 /** Every binding keyword in a section's own text lies inside some quote cited to it. */
-const gateSectionComplete = (ctx: CheckContext, out: string[], set: SourceSet, sec: RfcSection): void => {
+const gateSectionComplete = (
+  ctx: CheckContext,
+  out: string[],
+  set: SourceSet,
+  placed: Map<string, string>,
+  sec: RfcSection,
+): void => {
   const text = rfcNormalize(sec.ownLines.join("\n"))
   const uses = gateKeywordUses(text)
   if (uses.length === 0) {
@@ -98,7 +186,7 @@ const gateSectionComplete = (ctx: CheckContext, out: string[], set: SourceSet, s
   }
   const paras = gateParagraphStarts(sec.ownLines)
   const spans: i32[] = []
-  for (const q of gateSectionQuotes(ctx, set, sec.id)) {
+  for (const q of gateSectionQuotes(ctx, set, placed, sec.id)) {
     for (const s of rfcOwnSpans(sec, q)) {
       spans.push(s)
     }
@@ -120,7 +208,8 @@ const gateSectionComplete = (ctx: CheckContext, out: string[], set: SourceSet, s
 
 /**
  * The completeness gate (see the module comment). It reads only the main
- * source: a contract quotes other sources for what it needs, not whole.
+ * source: a contract quotes other sources for what it needs, not whole, and
+ * a quote of one counts in the main source only where its blockquote stands.
  *
  * @param ctx the check's context, holding the contract
  * @returns each finding
@@ -136,8 +225,9 @@ export const gateCompleteness = (ctx: CheckContext): string[] => {
   if (main === null) {
     return out
   }
+  const placed = gateQuotesOthers(ctx, set) ? gateQuoteSections(main) : new Map<string, string>()
   for (const sec of main.doc.sections) {
-    gateSectionComplete(ctx, out, set, sec)
+    gateSectionComplete(ctx, out, set, placed, sec)
   }
   return out
 }
