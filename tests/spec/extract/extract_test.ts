@@ -192,7 +192,6 @@ const extractTestDiff = (t: Suite): void => {
   )
 }
 
-/** Extract: the committed contracts, refusals at markdown lines, and the diff `--check` prints. */
 /**
  * A literal line-break hint: dropped from the RFC a spec cites where it
  * cannot change a word, refused inside a word there, and refused anywhere in
@@ -240,6 +239,7 @@ const extractTestBreakHints = (t: Suite, readers: SourceReaders): void => {
   runProcess(["rm", "-rf", tmp], "", 5000).expect("rm")
 }
 
+/** Extract: the committed contracts, refusals at markdown lines, and the diff `--check` prints. */
 export const main = (): i32 => {
   const t = new Suite("spec/extract extract")
   extractTestDefaultPath(t)

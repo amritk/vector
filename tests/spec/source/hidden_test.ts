@@ -66,6 +66,12 @@ const hiddenTestDropCases = (): string[][] => [
     "MU@@ST",
     "line 1: invisible character #: remove it | line 1: invisible character #: remove it",
   ],
+  [
+    "a mixed run between two letters",
+    "MU\u200b\u2060ST@",
+    "line 1: invisible character U+200B: remove it | line 1: invisible character U+2060: remove it",
+  ],
+  ["between a 4-byte letter and a letter", "\u{1d431}@x", "line 1: invisible character #: remove it"],
   ["between two digits", "0x01@00", "line 1: invisible character #: remove it"],
   ["between a letter and a digit", "a@1", "line 1: invisible character #: remove it"],
   ["between a non-ASCII letter and a letter", "\u00e9@x", "line 1: invisible character #: remove it"],

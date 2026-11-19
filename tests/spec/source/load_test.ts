@@ -356,7 +356,13 @@ export const main = (): i32 => {
   )
   t.eqStr(
     "a hint inside a word in a linked RFC .xml is refused at its line",
-    loadTestHintProblems(root, "rfc7003.xml", `<rfc number="7003">\n${loadTestXml(`It MU${zw}ST work.`)}`, 7003, null),
+    loadTestHintProblems(
+      root,
+      "rfc7003.xml",
+      `<rfc number="7003">\n<middle><section anchor="intro" numbered="true"><name>Intro</name><t>It MU${zw}ST work.</t></section></middle></rfc>`,
+      7003,
+      null,
+    ),
     "source x: contracts/rfc7003.xml: text a reader cannot see as the gates read it: line 2: invisible character U+200B: remove it",
   )
   t.eqStr(
