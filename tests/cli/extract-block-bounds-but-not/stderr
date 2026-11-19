@@ -1,0 +1,1 @@
+vector: tests/fixtures/block-bounds/specs/block-bounds-but-not.md:49 (tests/fixtures/block-bounds/specs/block-bounds-but-not.xml:72): provenance: §3 ("Validity") does not state the expected result: R-VALID retracts "false" after stating it ("but")
