@@ -7,7 +7,18 @@
 
 import { ExprKind, LitKind, typesIsWords, typesWordsKey } from "./types"
 import { Expr, FnSig, Literal } from "./types"
-import { vocabBaseOf, vocabFitsInt, vocabIsIntType, vocabIsOptional, vocabValueType } from "./vocab"
+import {
+  vocabBaseOf,
+  vocabByteWidth,
+  vocabFitsInt,
+  vocabHas,
+  vocabIsIntType,
+  vocabIsOptional,
+  vocabReadOps,
+  vocabReadType,
+  vocabValueType,
+  vocabWriteOps,
+} from "./vocab"
 
 /** What `typeOf` knows: the functions under test, the variables in scope, and whether calls are allowed. */
 export class TypeEnv {
@@ -340,6 +351,23 @@ const opSameInt = (o: OpTyping): string | null => {
   return a
 }
 
+/**
+ * A write op's one integer, no wider than the op: `le32` takes an i8 to u32.
+ * An int literal was checked against the op's width in `typingOp`.
+ */
+const opWriteInt = (o: OpTyping): string | null => {
+  if (!opWant(o, 1)) {
+    return null
+  }
+  const t = o.ts[0]
+  const bits = vocabByteWidth(o.op) * 8
+  if (!vocabIsIntType(t) || parseInt(t.substring(1)) > bits) {
+    o.errors.push(`${o.at}.args[0]: ${o.op} wants an integer of at most ${bits} bits, got ${t}`)
+    return null
+  }
+  return "bytes"
+}
+
 const typingBytesLike = (t: string): boolean => t === "bytes" || t === "bytes?" || t === "null"
 const typingStringLike = (t: string): boolean => t === "string" || t === "string?" || t === "null"
 
@@ -373,6 +401,17 @@ const typingOp = (e: Expr, env: TypeEnv, at: string, errors: string[]): string |
   if (!ok) {
     return null
   }
+  // A write op's int literal must fit its width, signed or unsigned: le16
+  // takes -32768 to 65535, whatever type the literal takes on its own.
+  if (vocabHas(vocabWriteOps(), e.name) && o.ts.length === 1 && typingIsIntLit(e.args[0])) {
+    const v = typingIntText(e.args[0])
+    const bits = vocabByteWidth(e.name) * 8
+    if (!vocabFitsInt(v, `i${bits}`) && !vocabFitsInt(v, `u${bits}`)) {
+      errors.push(`${at}.args[0]: ${v} does not fit ${e.name}'s ${bits} bits`)
+      return null
+    }
+    o.ts[0] = `u${bits}`
+  }
   // An int literal takes the integer type of the other operand when it fits
   // there, so `x + 1` is a u8 when x is (ISO C11 §6.4.4.1 types a constant by
   // its value; here the context gives the type instead).
@@ -404,8 +443,14 @@ const typingOpResult = (o: OpTyping): string | null => {
   if (op === "slice") {
     return opSig(o, ["bytes", "i32", "i32"], "bytes")
   }
-  if (op === "zeros" || op === "le64") {
+  if (op === "zeros") {
     return opSig(o, ["i32"], "bytes")
+  }
+  if (vocabHas(vocabWriteOps(), op)) {
+    return opWriteInt(o)
+  }
+  if (vocabHas(vocabReadOps(), op)) {
+    return opSig(o, ["bytes"], vocabReadType(op))
   }
   if (op === "fill") {
     return opSig(o, ["i32", "i32"], "bytes")

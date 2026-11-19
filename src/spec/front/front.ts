@@ -37,6 +37,7 @@ import {
   vocabIntTypes,
   vocabIsIntType,
   vocabIsJsonSafe,
+  vocabReadOps,
   vocabValueType,
   vocabWordTypes,
 } from "../contract/vocab"
@@ -660,6 +661,21 @@ const frontCallOps = (): string[] => [
   "zeros",
   "flipBit",
   "le64",
+  "le16",
+  "le32",
+  "be16",
+  "be32",
+  "be64",
+  "leU16",
+  "leU32",
+  "leU64",
+  "beU16",
+  "beU32",
+  "beU64",
+  "leI32",
+  "leI64",
+  "beI32",
+  "beI64",
   "unwrap",
   "utf8",
   "ascii",
@@ -1866,7 +1882,7 @@ function frontName(p: FrontProp, t: FrontTok): Result<FrontV, FrontRefusal> {
   }
   const op = t.text
   const raw = frontArgs(p).orReturn()
-  const bytesOp = vocabHas(frontBytesOps(), op)
+  const bytesOp = vocabHas(frontBytesOps(), op) || vocabHas(vocabReadOps(), op)
   const args: FrontV[] = []
   for (let k = 0; k < raw.length; k++) {
     args.push(bytesOp || (op === "flipBit" && k === 0) ? frontAsBytes(raw[k]) : raw[k])

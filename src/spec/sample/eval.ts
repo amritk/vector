@@ -8,9 +8,10 @@
 import { fromHex, toHex, utf8Bytes } from "../../core/hex"
 import { SHAPE_MAX_LEN } from "../contract/shape"
 import { Expr, ExprKind, LitKind, Literal, typesIsWords } from "../contract/types"
+import { vocabBigEndian, vocabByteWidth, vocabHas, vocabReadOps, vocabReadType, vocabWriteOps } from "../contract/vocab"
 import { sampleIntLess, sampleIntWrap, sampleParseInt } from "./ints"
 
-/** The error an `unwrap(null)` evaluates to. */
+/** The error an `unwrap(null)`, or a read of the wrong number of bytes, evaluates to. */
 export const SAMPLE_UNDEFINED: string = "unwrap of null"
 
 /** Which kind of value. */
@@ -358,13 +359,31 @@ const sampleBytesOp = (op: string, a: SampleValue[]): Result<SampleValue, string
     }
     return Ok(sampleBytes(out))
   }
-  if (op === "le64") {
+  if (vocabHas(vocabWriteOps(), op)) {
+    // The low bytes of the i64 that holds the value: a signed one is
+    // sign-extended there already, a u64 held by its bits.
     const x = toU64(sampleArg(a, 0, SampleKind.Int, op).orReturn().n)
+    const w = vocabByteWidth(op)
     const out: u8[] = []
-    for (let i = 0; i < 8; i++) {
-      out.push(toU8((x >> toU64(i * 8)) & toU64(255)))
+    for (let i = 0; i < w; i++) {
+      const k = vocabBigEndian(op) ? w - 1 - i : i
+      out.push(toU8((x >> toU64(k * 8)) & toU64(255)))
     }
     return Ok(sampleBytes(out))
+  }
+  if (vocabHas(vocabReadOps(), op)) {
+    const src = sampleArg(a, 0, SampleKind.Bytes, op).orReturn().bytes
+    const w = vocabByteWidth(op)
+    if (src.length !== w) {
+      return Err(SAMPLE_UNDEFINED)
+    }
+    let x: u64 = 0
+    for (let i = 0; i < w; i++) {
+      const k: i32 = vocabBigEndian(op) ? i : w - 1 - i
+      x = (x << toU64(8)) | toU64(src[k])
+    }
+    const ty = vocabReadType(op)
+    return Ok(sampleInt(sampleIntWrap(toI64(x), ty), ty))
   }
   if (op === "ascii") {
     const src = sampleArg(a, 0, SampleKind.Bytes, op).orReturn().bytes
@@ -403,7 +422,7 @@ const sampleStrOp = (op: string, a: SampleValue[]): Result<SampleValue, string> 
   return Ok(sampleStr(i >= toI64(0) && i < toI64(s.length) ? s.substring(toI32(i), toI32(i) + 1) : ""))
 }
 
-const SAMPLE_BYTES_OPS: string = " len concat slice zeros fill flipBit le64 ascii xor bitAnd bitOr "
+const SAMPLE_BYTES_OPS: string = " len concat slice zeros fill flipBit le16 le32 le64 be16 be32 be64 leU16 leU32 leU64 beU16 beU32 beU64 leI32 leI64 beI32 beI64 ascii xor bitAnd bitOr "
 const SAMPLE_STR_OPS: string = " strLen strConcat lower upper utf8 charAt "
 
 /** An operator application. */
