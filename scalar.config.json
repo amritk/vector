@@ -602,6 +602,11 @@
                     "title": "spec/pr/mutaterun",
                     "filepath": "docs/reference/modules/spec/pr/mutaterun.md"
                   },
+                  "/spec-pr-rename": {
+                    "type": "page",
+                    "title": "spec/pr/rename",
+                    "filepath": "docs/reference/modules/spec/pr/rename.md"
+                  },
                   "/spec-pr-report": {
                     "type": "page",
                     "title": "spec/pr/report",

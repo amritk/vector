@@ -228,13 +228,16 @@ const renameOnly = (fns: FnSig[], others: FnSig[]): FnSig[] => {
   return out
 }
 
-/** Names of `fns`, joined for a message. */
+/** How many `fns` there are and their names, for a message. */
 const renameNames = (fns: FnSig[]): string => {
+  if (fns.length === 0) {
+    return "none"
+  }
   const out: string[] = []
   for (const f of fns) {
     out.push(f.name)
   }
-  return out.join(", ")
+  return `${fns.length} (${out.join(", ")})`
 }
 
 /** `path` from the repository's top when it is inside it, else as given. */
@@ -269,7 +272,7 @@ export const renamePairs = (top: string, fork: string, contracts: string[]): Res
     if (now.isErr()) {
       continue
     }
-    if ((renameForkMode(top, fork, name).orReturn()) === "") {
+    if (renameForkMode(top, fork, name).orReturn() === "") {
       continue
     }
     const text = gitdiffGit(top, ["cat-file", "blob", `${fork}:${name}`]).orReturn()
@@ -284,7 +287,7 @@ export const renamePairs = (top: string, fork: string, contracts: string[]): Res
       continue
     }
     if (dropped.length !== 1 || added.length !== 1) {
-      v.refusal = `${name}: no rename: it drops ${dropped.length} functions (${renameNames(dropped)}) and adds ${added.length} (${renameNames(added)}), not one each`
+      v.refusal = `${name}: no rename: it drops ${renameNames(dropped)} and adds ${renameNames(added)}, not one function each`
       return Ok(v)
     }
     if (!renameSameSig(dropped[0], added[0])) {

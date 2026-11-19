@@ -304,7 +304,9 @@ export const frozenCheck = (repo: string, base: string, contracts: string[]): Re
     const refusal = v.refusal
     if (refusal === null && v.pairs.length > 0) {
       for (const p of v.pairs) {
-        r.notes.push(`rename ${p.contract}: ${p.from} → ${p.to} (${paths.length} files are the rename alone)`)
+        r.notes.push(
+          `passed as a rename: ${p.contract} renames ${p.from} to ${p.to}, and the ${paths.length} changed files are that rename alone`,
+        )
       }
     } else {
       r.problems.push(
