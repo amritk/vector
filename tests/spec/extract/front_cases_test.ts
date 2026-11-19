@@ -84,7 +84,7 @@ const frontCasesTestForms = (text: string): string => {
 /** The `/* window *\/` comment after a parameter's type: only after u8[], only that text. */
 const frontCasesTestWindow = (t: Suite): void => {
   const m = "// module: nish/m\n"
-  const only = "an interface parameter takes only /* window */, not"
+  const only = "an interface parameter takes only /* window */ or /* out CAP */, not"
   const after = "/* window */ goes only after u8[], which the real function takes as (buf, off, len)"
   const cases: string[][] = [
     ["on u8[]", `${m}export const f = (d: u8[] /* window */): u32`, "d:bytes:window"],
@@ -134,6 +134,157 @@ const frontCasesTestWindow = (t: Suite): void => {
   ]
   for (const k of cases) {
     t.eqStr(`window: ${k[0]}`, frontCasesTestForms(k[1]), k[2])
+  }
+}
+
+/** What parsing `text` as an interface gives: its refusal, or each function's parameters, then `out@at=capacity`. */
+const frontCasesTestOuts = (text: string): string => {
+  const r = frontParseInterface(text)
+  if (r.isErr()) {
+    return frontCasesTestRefusal(r.error)
+  }
+  const out: string[] = []
+  for (const f of r.value.functions) {
+    const ps: string[] = []
+    for (const p of f.params) {
+      const form = p.form
+      ps.push(form === null ? `${p.name}:${p.type}` : `${p.name}:${p.type}:${form}`)
+    }
+    const b = f.out
+    out.push(`(${ps.join(" ")}) -> ${f.returns}${b === null ? "" : ` out@${b.at}=${b.capacity}`}`)
+  }
+  return out.join("; ")
+}
+
+/** The `/* out CAP *\/` comment: after u8[], once per function, a bytes result, a capacity over bytes lengths. */
+const frontCasesTestOut = (t: Suite): void => {
+  const m = "// module: nish/m\n"
+  const after =
+    "/* out CAP */ goes only after u8[], which the real function takes as (out, at) and writes the result into"
+  const cap = "a capacity is decimal numbers, +, *, parentheses and <u8[] parameter>.length"
+  const cases: string[][] = [
+    ["a fixed capacity", `${m}export const f = (d: u8[] /* out 4096 */): u8[]`, "() -> bytes out@0=4096"],
+    [
+      "after a window, before a scalar",
+      `${m}export const f = (s: u8[] /* window */, d: u8[] /* out 2 * s.length + 64 */, n: i32): u8[]`,
+      "(s:bytes:window n:i32) -> bytes out@1=2 * s.length + 64",
+    ],
+    [
+      "a nullable result",
+      `${m}export const f = (s: u8[], d: u8[] /* out 4096 */, n: i32): u8[] | null`,
+      "(s:bytes n:i32) -> bytes? out@1=4096",
+    ],
+    [
+      "written loosely, recorded in one spelling",
+      `${m}export const f = (s: u8[], d: u8[] /*out (2*s.length)+8*/): u8[]`,
+      "(s:bytes) -> bytes out@1=2 * s.length + 8",
+    ],
+    [
+      "naming a parameter declared after it",
+      `${m}export const f = (d: u8[] /* out s.length */, s: u8[]): u8[]`,
+      "(s:bytes) -> bytes out@0=s.length",
+    ],
+    [
+      "one per function, each function its own",
+      `${m}export const f = (d: u8[] /* out 8 */): u8[];\nexport const g = (d: u8[] /* out 9 */): u8[]`,
+      "() -> bytes out@0=8; () -> bytes out@0=9",
+    ],
+    ["absent", `${m}export const f = (d: u8[]): u8[]`, "(d:bytes) -> bytes"],
+    [
+      "bare",
+      `${m}export const f = (d: u8[] /* out */): u8[]`,
+      "`f(d)`: /* out */ needs its capacity, like /* out 2 * d.length + 8 */ @2:27",
+    ],
+    [
+      "twice on one parameter",
+      `${m}export const f = (d: u8[] /* out 4 */ /* out 4 */): u8[]`,
+      "`f(d)` is already an out buffer; write /* out CAP */ once @2:39",
+    ],
+    [
+      "two in one function",
+      `${m}export const f = (d: u8[] /* out 4 */, e: u8[] /* out 4 */): u8[]`,
+      "`f` already writes into `d`; a function has at most one /* out CAP */ buffer @2:48",
+    ],
+    [
+      "a window that is also out",
+      `${m}export const f = (d: u8[] /* window */ /* out 4 */): u8[]`,
+      "`f(d)` cannot be both a window and an out buffer @2:40",
+    ],
+    [
+      "an out that is also a window",
+      `${m}export const f = (d: u8[] /* out 4 */ /* window */): u8[]`,
+      "`f(d)` cannot be both a window and an out buffer @2:39",
+    ],
+    ["on u32[]", `${m}export const f = (d: u32[] /* out 4 */): u8[]`, `\`f(d)\` is u32[]: ${after} @2:28`],
+    ["on a scalar", `${m}export const f = (d: i32 /* out 4 */): u8[]`, `\`f(d)\` is i32: ${after} @2:26`],
+    [
+      "on u8[] | null",
+      `${m}export const f = (d: u8[] | null /* out 4 */): u8[]`,
+      `\`f(d)\` is u8[] | null: ${after} @2:34`,
+    ],
+    [
+      "a line comment",
+      `${m}export const f = (d: u8[] // out 4\n): u8[]`,
+      "`f(d)`: an interface parameter takes only /* window */ or /* out CAP */, not `// out 4` @2:27",
+    ],
+    [
+      "an outer word",
+      `${m}export const f = (d: u8[] /* output 4 */): u8[]`,
+      "`f(d)`: an interface parameter takes only /* window */ or /* out CAP */, not `/* output 4 */` @2:27",
+    ],
+    [
+      "a scalar result",
+      `${m}export const f = (d: u8[] /* out 4 */): i32`,
+      "`f(d)` is an out buffer, so `f` returns the bytes written into it: declare u8[] or u8[] | null, not i32 @2:27",
+    ],
+    [
+      "a string result",
+      `${m}export const f = (d: u8[] /* out 4 */): string`,
+      "`f(d)` is an out buffer, so `f` returns the bytes written into it: declare u8[] or u8[] | null, not string @2:27",
+    ],
+    [
+      "a minus",
+      `${m}export const f = (s: u8[], d: u8[] /* out s.length - 1 */): u8[]`,
+      `\`f(d)\`: the capacity \`s.length - 1\` stops at \`-\`; ${cap} @2:36`,
+    ],
+    [
+      "a dangling plus",
+      `${m}export const f = (d: u8[] /* out 4 + */): u8[]`,
+      `\`f(d)\`: the capacity \`4 +\` stops at the end; ${cap} @2:27`,
+    ],
+    [
+      "a leading zero",
+      `${m}export const f = (d: u8[] /* out 04 */): u8[]`,
+      `\`f(d)\`: the capacity \`04\` stops at \`04\`; ${cap} @2:27`,
+    ],
+    [
+      "a call",
+      `${m}export const f = (s: u8[], d: u8[] /* out max(s.length) */): u8[]`,
+      `\`f(d)\`: the capacity \`max(s.length)\` stops at \`(\`; ${cap} @2:36`,
+    ],
+    [
+      "an undeclared name",
+      `${m}export const f = (d: u8[] /* out s.length */): u8[]`,
+      "`f(d)`: the capacity reads `s.length`, but `s` is not a u8[] parameter of `f` @2:27",
+    ],
+    [
+      "a scalar's length",
+      `${m}export const f = (n: i32, d: u8[] /* out n.length */): u8[]`,
+      "`f(d)`: the capacity reads `n.length`, but `n` is not a u8[] parameter of `f` @2:35",
+    ],
+    [
+      "its own length",
+      `${m}export const f = (d: u8[] /* out d.length */): u8[]`,
+      "`f(d)`: the capacity reads `d.length`, but `d` is not a u8[] parameter of `f` @2:27",
+    ],
+    [
+      "a duplicate of the out's name",
+      `${m}export const f = (d: u8[] /* out 4 */, d: u8[]): u8[]`,
+      "`f` has two parameters named `d` @2:40",
+    ],
+  ]
+  for (const k of cases) {
+    t.eqStr(`out: ${k[0]}`, frontCasesTestOuts(k[1]), k[2])
   }
 }
 
@@ -216,6 +367,7 @@ export const main = (): i32 => {
   const t = new Suite("front cases")
   frontCasesTestModules(t)
   frontCasesTestWindow(t)
+  frontCasesTestOut(t)
   frontCasesTestLiterals(t)
   frontCasesTestSamples(t)
   return t.done()

@@ -1,0 +1,256 @@
+/**
+ * The capacity of an out buffer: how many bytes a function that writes its
+ * result into `(out, at)` may write after `at`. It is a small expression over
+ * the function's `bytes` parameters, like `2 * src.length + 8`: decimal
+ * numbers, `+`, `*`, parentheses and `<param>.length`.
+ */
+
+/** The largest number a capacity may spell: 2^20. */
+const CAPACITY_MAX_LITERAL: i32 = 1048576
+
+/** A number. */
+const CAPACITY_NUM: i32 = 0
+/** `<param>.length`. */
+const CAPACITY_LEN: i32 = 1
+/** A sum of two capacities. */
+const CAPACITY_ADD: i32 = 2
+/** A product of two capacities. */
+const CAPACITY_MUL: i32 = 3
+
+/** A parsed capacity expression. */
+export class CapacityExpr {
+  /** What it is: a number, a length, a sum or a product. */
+  kind: i32
+  /** The number's digits, or the parameter whose length it is. */
+  text: string
+  /** The left operand of a sum or product. */
+  left: CapacityExpr | null = null
+  /** The right operand of a sum or product. */
+  right: CapacityExpr | null = null
+  /**
+   * Makes a leaf.
+   *
+   * @param kind what the node is
+   * @param text the number's digits or the parameter's name
+   */
+  constructor(kind: i32, text: string) {
+    this.kind = kind
+    this.text = text
+  }
+}
+
+/** The tokens of a capacity, and how far the parser has read. */
+class CapacityCursor {
+  /** The tokens, in order. */
+  toks: string[]
+  /** The next token's index. */
+  pos: i32
+  /**
+   * Starts at the first token.
+   *
+   * @param toks the tokens
+   */
+  constructor(toks: string[]) {
+    this.toks = toks
+    this.pos = 0
+  }
+}
+
+const capacityIsDigit = (c: i32): boolean => c >= 48 && c <= 57
+
+const capacityIsIdentStart = (c: i32): boolean => (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95
+
+/** Splits `text` into numbers, names and one-character punctuation; whitespace separates. */
+const capacityLex = (text: string): string[] => {
+  const out: string[] = []
+  let i: i32 = 0
+  const n: i32 = toI32(text.length)
+  while (i < n) {
+    const c: i32 = toI32(text.charCodeAt(i))
+    if (c === 32 || c === 9 || c === 10 || c === 13) {
+      i += 1
+    } else if (capacityIsDigit(c) || capacityIsIdentStart(c)) {
+      let j: i32 = i + 1
+      while (j < n) {
+        const d: i32 = toI32(text.charCodeAt(j))
+        if (!(capacityIsDigit(d) || capacityIsIdentStart(d))) {
+          break
+        }
+        j += 1
+      }
+      out.push(text.slice(i, j))
+      i = j
+    } else {
+      out.push(text.slice(i, i + 1))
+      i += 1
+    }
+  }
+  return out
+}
+
+const capacityPeek = (c: CapacityCursor): string => (c.pos < c.toks.length ? c.toks[c.pos] : "")
+
+/** The token the parser stopped at, as a refusal names it. */
+const capacityStop = (c: CapacityCursor): string => {
+  const t = capacityPeek(c)
+  return t.length === 0 ? "the end" : `\`${t}\``
+}
+
+const capacityAtom = (c: CapacityCursor): Result<CapacityExpr, string> => {
+  const t = capacityPeek(c)
+  if (t === "(") {
+    c.pos += 1
+    const e = capacitySum(c).orReturn()
+    if (capacityPeek(c) !== ")") {
+      return Err(capacityStop(c))
+    }
+    c.pos += 1
+    return Ok(e)
+  }
+  if (t.length === 0) {
+    return Err(capacityStop(c))
+  }
+  const first: i32 = toI32(t.charCodeAt(0))
+  if (capacityIsDigit(first)) {
+    for (let i: i32 = 0; i < toI32(t.length); i++) {
+      if (!capacityIsDigit(toI32(t.charCodeAt(i)))) {
+        return Err(capacityStop(c))
+      }
+    }
+    if ((t.length > 1 && first === 48) || t.length > 7) {
+      return Err(capacityStop(c))
+    }
+    let v: i32 = 0
+    for (let i: i32 = 0; i < toI32(t.length); i++) {
+      v = v * 10 + toI32(t.charCodeAt(i)) - 48
+    }
+    if (v > CAPACITY_MAX_LITERAL) {
+      return Err(capacityStop(c))
+    }
+    c.pos += 1
+    return Ok(new CapacityExpr(CAPACITY_NUM, t))
+  }
+  if (!capacityIsIdentStart(first)) {
+    return Err(capacityStop(c))
+  }
+  c.pos += 1
+  if (capacityPeek(c) !== ".") {
+    return Err(capacityStop(c))
+  }
+  c.pos += 1
+  if (capacityPeek(c) !== "length") {
+    return Err(capacityStop(c))
+  }
+  c.pos += 1
+  return Ok(new CapacityExpr(CAPACITY_LEN, t))
+}
+
+const capacityProduct = (c: CapacityCursor): Result<CapacityExpr, string> => {
+  let e = capacityAtom(c).orReturn()
+  while (capacityPeek(c) === "*") {
+    c.pos += 1
+    const r = capacityAtom(c).orReturn()
+    const m = new CapacityExpr(CAPACITY_MUL, "")
+    m.left = e
+    m.right = r
+    e = m
+  }
+  return Ok(e)
+}
+
+const capacitySum = (c: CapacityCursor): Result<CapacityExpr, string> => {
+  let e = capacityProduct(c).orReturn()
+  while (capacityPeek(c) === "+") {
+    c.pos += 1
+    const r = capacityProduct(c).orReturn()
+    const a = new CapacityExpr(CAPACITY_ADD, "")
+    a.left = e
+    a.right = r
+    e = a
+  }
+  return Ok(e)
+}
+
+/**
+ * Parses a capacity: decimal numbers up to 2^20 with no leading zero, `+`,
+ * `*`, parentheses and `<param>.length`, `*` binding tighter than `+`.
+ *
+ * @param text the capacity as written
+ * @returns the expression, or the token the parser stopped at (`` `-` ``, or
+ *   `the end`)
+ */
+export const capacityParse = (text: string): Result<CapacityExpr, string> => {
+  const c = new CapacityCursor(capacityLex(text))
+  const e = capacitySum(c).orReturn()
+  if (c.pos < c.toks.length) {
+    return Err(capacityStop(c))
+  }
+  return Ok(e)
+}
+
+const capacityShowIn = (e: CapacityExpr, len: (name: string) => string): string => {
+  const l = e.left
+  const r = e.right
+  if (e.kind === CAPACITY_NUM) {
+    return e.text
+  }
+  if (e.kind === CAPACITY_LEN || l === null || r === null) {
+    return len(e.text)
+  }
+  if (e.kind === CAPACITY_ADD) {
+    return `${capacityShowIn(l, len)} + ${capacityShowIn(r, len)}`
+  }
+  const ls = l.kind === CAPACITY_ADD ? `(${capacityShowIn(l, len)})` : capacityShowIn(l, len)
+  const rs = r.kind === CAPACITY_ADD || r.kind === CAPACITY_MUL ? `(${capacityShowIn(r, len)})` : capacityShowIn(r, len)
+  return `${ls} * ${rs}`
+}
+
+/**
+ * A capacity in its one spelling: single spaces around `+` and `*`, and
+ * parentheses only where they change what it means.
+ *
+ * @param e the expression
+ * @returns the text the contract records
+ */
+export const capacityShow = (e: CapacityExpr): string => capacityShowIn(e, (name: string): string => `${name}.length`)
+
+/**
+ * A capacity as a Nish i32 expression, each `<param>.length` read from
+ * `<prefix><param>`.
+ *
+ * @param e the expression
+ * @param prefix what the generated test names a parameter's local with
+ * @returns the Nish expression
+ */
+export const capacityNish = (e: CapacityExpr, prefix: string): string =>
+  capacityShowIn(e, (name: string): string => `toI32(${prefix}${name}.length)`)
+
+const capacityNamesIn = (e: CapacityExpr, out: string[]): void => {
+  if (e.kind === CAPACITY_LEN) {
+    if (out.indexOf(e.text) < 0) {
+      out.push(e.text)
+    }
+    return
+  }
+  const l = e.left
+  const r = e.right
+  if (l !== null) {
+    capacityNamesIn(l, out)
+  }
+  if (r !== null) {
+    capacityNamesIn(r, out)
+  }
+}
+
+/**
+ * The parameters whose length a capacity reads, each once, in the order they
+ * first appear.
+ *
+ * @param e the expression
+ * @returns the parameter names
+ */
+export const capacityNames = (e: CapacityExpr): string[] => {
+  const out: string[] = []
+  capacityNamesIn(e, out)
+  return out
+}

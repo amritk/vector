@@ -256,6 +256,23 @@ export class Param {
   }
 }
 
+/**
+ * A result the real function writes into a buffer it is handed: the real
+ * function takes `(out: u8[], at: i32)` and returns `end`, the result being
+ * `out[at, end)`.
+ */
+export class OutBuffer {
+  /** Where among the declared parameters the `(out, at)` pair goes. */
+  at: i32
+  /** The bytes the buffer holds after `at`, as a capacity expression like `2 * src.length + 8`. */
+  capacity: string
+  /** Starts at index 0 with no capacity. */
+  constructor() {
+    this.at = 0
+    this.capacity = ""
+  }
+}
+
 /** A function under test: its name and signature. */
 export class FnSig {
   /** The function's name. */
@@ -266,6 +283,8 @@ export class FnSig {
   params: Param[]
   /** Its result type, like `bytes` or `i32?`. */
   returns: string
+  /** The buffer the real function writes its `bytes` result into; null when it returns it. */
+  out: OutBuffer | null = null
   /** Per-language overrides of the name. */
   names: NameOverride[] | null = null
   /** Starts with no name, parameters or result. */
