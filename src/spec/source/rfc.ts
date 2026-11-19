@@ -524,6 +524,16 @@ class RfcHexReader {
   pendingLine: i32 = -1
   /** The line that names the current value, or its first line. */
   labelLine: i32 = -1
+  /** The name of the statement a `= <hex>` line continues (`initial_secret = HKDF-Extract(…)`), or null. */
+  stmt: string | null = null
+  /** The line `stmt` is printed on. */
+  stmtLine: i32 = -1
+  /** A call label still open across lines (`PBKDF2-HMAC-SHA-256 (P="passwd",`), whitespace collapsed; "" when none is. */
+  call: string = ""
+  /** The line `call` opens on. */
+  callLine: i32 = -1
+  /** How many lines `call` spans. */
+  callSpan: i32 = 0
   constructor() {
     this.values = []
     this.unvalued = []
@@ -593,6 +603,7 @@ const rfcHexFlush = (r: RfcHexReader): void => {
 
 /** Starts a value, or goes on with the current one. */
 const rfcHexStart = (r: RfcHexReader, name: string | null, bare: boolean): void => {
+  r.call = ""
   if (r.cur.length === 0) {
     const named = name !== null && name.length > 0
     if (named) {
@@ -917,6 +928,98 @@ const rfcHexUnvalued = (r: RfcHexReader): void => {
   }
 }
 
+/** How many more `(` than `)` a text holds. */
+const rfcParenDepth = (t: string): i32 => {
+  let d = 0
+  for (let i = 0; i < t.length; i++) {
+    const c = t.charCodeAt(i)
+    if (c === 40) {
+      d++
+    } else if (c === 41) {
+      d--
+    }
+  }
+  return d
+}
+
+/** The most lines a call label may wrap over. */
+const RFC_CALL_LINES: i32 = 4
+
+/** The hex after the `=` a line starts with (`    = 7db5df06…`), its blanks dropped; null when the line is not one. */
+const rfcContinuedHex = (line: string): string | null => {
+  const t = trim(line)
+  if (!t.startsWith("=")) {
+    return null
+  }
+  const rest = t.substring(1, t.length)
+  return rfcTokensHex(rest) ? splitWhitespace(rest).join("") : null
+}
+
+/**
+ * The name a statement gives to the values its `= ` lines print: the text
+ * before the first `=` (`initial_secret = HKDF-Extract(…)` names
+ * initial_secret), one word of letters, digits, `_`, `-` and `.`; a line with
+ * no `=` names them by its label (`client_initial_secret`).
+ */
+const rfcStatementName = (t: string, label: string | null): string | null => {
+  const eq = t.indexOf("=")
+  if (eq < 0) {
+    return label
+  }
+  const name = trim(t.substring(0, eq))
+  if (name.length === 0 || !rfcIsAlnum(name.charCodeAt(0)) || rfcIsDigit(name.charCodeAt(0))) {
+    return null
+  }
+  for (let i = 0; i < name.length; i++) {
+    const c = name.charCodeAt(i)
+    if (!rfcIsWordByte(c) && c !== 45 && c !== 46) {
+      return null
+    }
+  }
+  return name
+}
+
+/**
+ * Reads a text line as a label: the name of the value below it, a statement
+ * a `= <hex>` line continues, or a line of a call label wrapped over several.
+ */
+const rfcHexText = (r: RfcHexReader, line: string): void => {
+  rfcHexFlush(r)
+  const t = rfcNormalize(line)
+  if (t.startsWith("=")) {
+    // `= f(…)` goes on with the statement above: its name still holds.
+    r.call = ""
+    return
+  }
+  rfcHexUnvalued(r)
+  r.pending = null
+  if (r.call.length > 0) {
+    const joined = `${r.call} ${t}`
+    const depth = rfcParenDepth(joined)
+    if (depth > 0 && r.callSpan + 1 < RFC_CALL_LINES) {
+      r.call = joined
+      r.callSpan = r.callSpan + 1
+      return
+    }
+    r.call = ""
+    if (depth <= 0 && (joined.endsWith("=") || joined.endsWith(":"))) {
+      r.pending = rfcLabelBefore(joined)
+      r.pendingLine = r.callLine
+      r.stmt = null
+      return
+    }
+  }
+  r.pending = rfcLabelLine(line)
+  r.pendingLine = r.at
+  r.stmt = rfcStatementName(t, r.pending)
+  r.stmtLine = r.at
+  if (rfcParenDepth(t) > 0) {
+    r.call = t
+    r.callLine = r.at
+    r.callSpan = 1
+  }
+}
+
 /** Reads a section's values and the names printed with none (rfcHexValues). */
 const rfcHexRead = (sec: RfcSection): RfcHexReader => {
   const r = new RfcHexReader()
@@ -935,6 +1038,16 @@ const rfcHexRead = (sec: RfcSection): RfcHexReader => {
       r.cur = `${r.cur}${dump}`
       continue
     }
+    const continued = rfcContinuedHex(line)
+    if (continued !== null) {
+      // `    = 7db5…` prints the value of the statement above it.
+      rfcHexFlush(r)
+      r.pending = r.stmt
+      r.pendingLine = r.stmtLine
+      rfcHexStart(r, null, rfcAllDigits(continued))
+      r.cur = rfcLower(continued)
+      continue
+    }
     if (rfcHexPrefixed(r, line) || rfcHexColons(r, line) || rfcHexLabelled(r, line)) {
       continue
     }
@@ -947,10 +1060,7 @@ const rfcHexRead = (sec: RfcSection): RfcHexReader => {
       r.cur = `${r.cur}${rfcLower(joined)}`
       continue
     }
-    rfcHexFlush(r)
-    rfcHexUnvalued(r)
-    r.pending = rfcLabelLine(line)
-    r.pendingLine = i
+    rfcHexText(r, line)
   }
   rfcHexFlush(r)
   rfcHexUnvalued(r)
