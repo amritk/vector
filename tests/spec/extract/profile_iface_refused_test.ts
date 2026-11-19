@@ -128,7 +128,7 @@ const profileIfaceRefusedTestForms = (t: Suite, base: string, rfcs: ProfileRfcs)
       "// module: Nish/ref",
       "`Nish/ref`",
     ],
-    ["the module line missing", fn, fn, "module"],
+    ["the module line missing", fn, fn, "missing `// module: <root>/<path>` first line"],
   ]
   for (const row of rows) {
     const xml = profileIfaceRefusedTestBase(t, base, row[1])
@@ -186,6 +186,31 @@ const profileIfaceRefusedTestOrder = (t: Suite, base: string, rfcs: ProfileRfcs)
   )
 }
 
+/** Each refusal independent of a refused interface: still given, with no cascade. */
+const profileIfaceRefusedTestIndependent = (t: Suite, base: string, rfcs: ProfileRfcs): void => {
+  const refused = profileIfaceRefusedTestBase(t, base, `// module: Std/len\n${PROFILE_IFACE_REFUSED_TEST_FN}`)
+  // name, the text replaced, its replacement, a word of the refusal still given
+  const rows: string[][] = [
+    ["a vector's Call that does not parse", "<tt>frame(data = 00)</tt>", "<tt>frame(data = )</tt>", "Call:"],
+    [
+      "a vector's Source in no section of its RFC",
+      `<td>${PROFILE_IFACE_REFUSED_TEST_XREF}</td><td>one octet</td>`,
+      `<td><xref section="99" sectionFormat="of" target="RFC9990"/></td><td>one octet</td>`,
+      "Section 99",
+    ],
+    [
+      "a property's construct outside the subset, beside a call to the block",
+      "=> frame(data) === null",
+      '=> typeof data === "object" && frame(data) === null',
+      "typeof",
+    ],
+  ]
+  for (const row of rows) {
+    const xml = profileIfaceRefusedTestSub(t, refused, row[1], row[2])
+    profileIfaceRefusedTestFirst(t, row[0], xml, rfcs, "// module: Std/len", "`Std/len`", [row[3]])
+  }
+}
+
 /** With the interface read, a call to an undeclared function is still refused. */
 const profileIfaceRefusedTestUndeclared = (t: Suite, base: string, rfcs: ProfileRfcs): void => {
   const fn = PROFILE_IFACE_REFUSED_TEST_FN
@@ -228,6 +253,7 @@ export const main = (): i32 => {
   )
   profileIfaceRefusedTestForms(t, base, rfcs)
   profileIfaceRefusedTestOrder(t, base, rfcs)
+  profileIfaceRefusedTestIndependent(t, base, rfcs)
   profileIfaceRefusedTestUndeclared(t, base, rfcs)
   return t.done()
 }
