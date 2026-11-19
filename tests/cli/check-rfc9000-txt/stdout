@@ -1,0 +1,12 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ rfc9000-txt · RFC 9000 (QUIC: A UDP-Based Multiplexed and Secure Transport) · nish/quic/varint
+ Status: CONTRACT_VALID
+
+ Requirements
+  ○ R-MINIMUM  §16 DEFINITION  "Values do not need to be encoded on the minimum number of bytes…"
+      ○ P-AT-MOST-EIGHT (29 samples: 5 boundary)
+
+ Warnings
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run
