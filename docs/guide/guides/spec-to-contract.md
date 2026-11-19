@@ -182,7 +182,8 @@ git add specs/example-hex.md specs/example-hex.xml contracts/example-hex.json
 renderings are thrown away). It runs offline: kramdown-rfc reads references
 only from the committed `.refcache/`, `{::include}` is disabled, and xml2rfc
 runs with `--no-network`. A spec that cites a reference not yet in the cache
-fails; run once with `--fetch`, then review and commit the `.refcache/` diff.
+fails; run once with `--fetch`, then review and commit the `.refcache/` diff in the same PR as the spec: `spec frozen`
+counts `.refcache/` as spec side.
 
 - **Warnings are errors.** Any kramdown-rfc `*** ` or `** ` line (an unknown
   front-matter key, a missing reference, bad heading nesting) and any xml2rfc

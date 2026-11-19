@@ -39,7 +39,7 @@ reference for every construct below.
 ## The PR workflow, in order
 
 A module lands in two PRs. The first is the **spec side** (`specs/`,
-`contracts/`, `rfcs/`, and generated tests in `test/spec/`); the second is the
+`contracts/`, `rfcs/`, `.refcache/`, and generated tests in `test/spec/`); the second is the
 **implementation**. `frozen` refuses a PR that touches both, so a test can
 never be loosened in the PR that changes the code it tests. Do the steps in
 this order; each one's command is the gate CI runs.
@@ -332,7 +332,7 @@ scripts/build-spec.sh specs/<name>.md         # writes specs/<name>.xml
 
 - It runs offline against the committed `.refcache/`. The first time the spec
   cites a reference, add `--fetch`, then review and commit the `.refcache/`
-  diff.
+  diff in the same PR as the spec: `.refcache/` is spec side.
 - Warnings are errors. Fix the markdown until it builds clean.
 
 **extract**
