@@ -24,6 +24,11 @@ Generated from [src/spec/contract/vocab.ts](https://github.com/amritk/vector/blo
 - [`vocabLiteralKinds`](#vocabliteralkinds)
 - [`vocabLanguages`](#vocablanguages)
 - [`vocabOps`](#vocabops)
+- [`vocabWriteOps`](#vocabwriteops)
+- [`vocabReadOps`](#vocabreadops)
+- [`vocabByteWidth`](#vocabbytewidth)
+- [`vocabBigEndian`](#vocabbigendian)
+- [`vocabReadType`](#vocabreadtype)
 - [`vocabLevels`](#vocablevels)
 - [`vocabIsBinding`](#vocabisbinding)
 - [`Outcome`](#outcome)
@@ -179,6 +184,96 @@ function vocabOps(): string[]
 <scalar-field name="returns" type="string[]">
 
 the schema's op enum, in its order
+
+</scalar-field>
+
+### vocabWriteOps
+
+The ops that write an integer as its bytes: le16 to be64, each the low
+2, 4 or 8 bytes of its two's complement, little- or big-endian.
+
+```ts
+function vocabWriteOps(): string[]
+```
+
+<scalar-field name="returns" type="string[]">
+
+the write ops
+
+</scalar-field>
+
+### vocabReadOps
+
+The ops that read exactly 2, 4 or 8 bytes back as an integer: leU16 to
+beI64. There is no 16-bit signed read.
+
+```ts
+function vocabReadOps(): string[]
+```
+
+<scalar-field name="returns" type="string[]">
+
+the read ops
+
+</scalar-field>
+
+### vocabByteWidth
+
+How many bytes a write or read op takes: 2, 4 or 8.
+
+```ts
+function vocabByteWidth(op: string): i32
+```
+
+<scalar-field name="op" type="string" required>
+
+a write or read op
+
+</scalar-field>
+
+<scalar-field name="returns" type="i32">
+
+its width in bytes
+
+</scalar-field>
+
+### vocabBigEndian
+
+Whether a write or read op is big-endian.
+
+```ts
+function vocabBigEndian(op: string): boolean
+```
+
+<scalar-field name="op" type="string" required>
+
+a write or read op
+
+</scalar-field>
+
+<scalar-field name="returns" type="boolean">
+
+true for the `be` ops
+
+</scalar-field>
+
+### vocabReadType
+
+The integer type a read op gives: `beU32` gives u32.
+
+```ts
+function vocabReadType(op: string): string
+```
+
+<scalar-field name="op" type="string" required>
+
+a read op
+
+</scalar-field>
+
+<scalar-field name="returns" type="string">
+
+its integer type
 
 </scalar-field>
 

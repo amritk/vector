@@ -1,0 +1,1 @@
+vector spec run tests/fixtures/byte-order/contracts/byte-order.json --package vector=src --nish-root .nish

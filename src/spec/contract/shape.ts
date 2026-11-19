@@ -84,7 +84,8 @@ export const shapeTestNames = (): string[] => [
   "remU64",
   "eqF64Bits",
   "nearUlpsF64",
-  "le64",
+  "intBytes",
+  "bytesInt",
   "strEq",
   "isNullStr",
   "strOrNull",
@@ -537,6 +538,14 @@ const shapeFunctions = (s: ShapeContext): void => {
       shapeOverrides(s, p.names, `${pat}.names`)
       if (!vocabHas(sig, p.type)) {
         shapeFail(s, `${pat}.type`, `one of ${sig.join(" ")}`)
+      }
+      const form = p.form
+      if (form !== null) {
+        if (form !== "window") {
+          shapeFail(s, `${pat}.form`, `"window", or absent`)
+        } else if (p.type !== "bytes") {
+          shapeFail(s, `${pat}.form`, `absent: a window is a bytes parameter, not ${p.type}`)
+        }
       }
     }
   }

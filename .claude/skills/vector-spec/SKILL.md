@@ -90,8 +90,7 @@ normative:
 {::boilerplate bcp14-tagged}
 ```
 
-The boilerplate is the first paragraph of `# Introduction`. Then add these
-parts.
+The boilerplate is the first paragraph of `# Introduction`. Then add:
 
 **One interface block.** It is the contract's `target` and `functions`, so
 keep it to the module's exports:
@@ -112,15 +111,15 @@ Nish test can hold all but `i8` and `i16`, which Nish lacks, so the emitter
 refuses them; only the Nish test holds word arrays. Add `| null` to `u8[]`,
 a word array or `string`, and to `Secret<u8[]>` as a result only. Give
 word-array cases as vectors: a property over or calling word arrays is
-refused.
+refused. `u8[] /* window */` is one bytes parameter for a `(buf, off, len)`,
+tested at a nonzero offset, Nish test only.
 
 A property may compare the module with another nish module (HKDF with
 HMAC). Declare that module's functions after a second `// module:` line,
 below the module under test's own, which declares at least one function;
-they are reference functions, not exports. A reference function only helps
-check the module under test: a vector's Call must name a function of the module
-under test, and a property's assertion must call at least one, so a clause that
-calls only reference functions is refused. A module line is exactly
+they are reference functions, not exports. A vector's Call must name a
+function of the module under test, and a property's assertion must call at
+least one: a clause that calls only reference functions is refused. A module line is exactly
 `// module: nish/<path>`, one module, after the previous signature. A comment of any style or case whose text starts `module:` or
 `module nish/` but is not that (`// Module: …`, `//module nish/…`,
 `/* module: … */`, `/// module: …`, two modules) is refused, and so is a module
@@ -207,8 +206,7 @@ are refused. `specs/rfc5869-hkdf-sha256.md` and
 `specs/rfc8439-chacha20-poly1305.md` are worked examples. The contract records
 the RFC, not the spec, so check it with `spec check contracts/<name>.json`
 (the RFC is read from its recorded file), or name the RFC with
-`--spec rfcs/rfc<N>.txt`. `--spec specs/<name>.xml` names a file the contract
-does not record, and exits 1 (`--spec … is not rfcs/rfc<N>.txt, the main
+`--spec rfcs/rfc<N>.txt`. `--spec specs/<name>.xml` exits 1 (`--spec … is not rfcs/rfc<N>.txt, the main
 source the contract records`). To check that the contract is exactly what the
 profile extracts to, run
 `spec extract specs/<name>.xml -o contracts/<name>.json --check`.
@@ -295,7 +293,7 @@ forall (b: u8[] /* 0..64 */) => {
 ~~~
 ````
 
-Write the spec's definitions as checks over a typed domain:
+Write definitions as checks over a typed domain:
 
 - lengths;
 - bounds written as integer comparisons (Z3 samples both sides of each);
@@ -305,7 +303,7 @@ Write the spec's definitions as checks over a typed domain:
 
 Use the [Properties](../../../docs/guide/guides/writing-a-spec.md#properties)
 section of Writing a spec for the subset: operators, operations,
-`where`, and the forms that are refused. Remember that its semantics are
+`where`, and the forms that are refused. Its semantics are
 vector's, not JavaScript's. For example, `.slice` clamps, `a % 0` is 0, and
 `===` on bytes compares contents.
 
@@ -354,13 +352,11 @@ you pass `--run-sources`: it runs on your machine, as you, with your files and
 network. Only the 30 s timeout kills the command's process group: a command
 that exits quickly can leave background children running, and a process that
 detaches with `setsid` is never contained. With no module yet, `check`
-warns that signatures were not checked. That is expected here: once the
-module exists (step 5), `check --nish-root` or `check --module` checks them
-against it. No other command does.
+warns that signatures were not checked, as expected: once the module exists
+(step 5), `check --nish-root` or `--module` checks them. No other command does.
 
 Commit `specs/<name>.md`, `specs/<name>.xml` and `contracts/<name>.json`
-together. Then show the spec to
-a human for approval. **The reviewer confirms that:**
+together, then show the spec to a human for approval. **The reviewer confirms that:**
 
 - each `ts-property` says what the prose it covers says, no more and no less;
 - each `Untested:` reason is true, and what it says checks the sentence
@@ -467,38 +463,39 @@ When `exports` fails, do one of these in a spec-side PR:
   [--jobs N] [--max N] [--format markdown]
 ```
 
-It mutates only the module's lines changed since `--base`, and runs the test
-against each mutant. A survivor is printed with its `file:line`, its mutated
-line, and *behaviour no requirement pins down*, and the command exits 1. Kill
-the survivor with a property or vector the spec supports. Or, in a spec-side
-PR, allow it with a reason in `contracts/<name>.survivors.json`:
+It mutates the module's lines changed since `--base` in code the contract's
+functions reach (the rest are one note) and runs the test on each mutant. A
+survivor is printed with its `file:line`, its mutated line, and *behaviour no
+requirement pins down*, and it exits 1. Kill the survivor with a property or
+vector the spec supports. Or, in a spec-side PR, allow it with a reason in
+`contracts/<name>.survivors.json`:
 
 ```json
 { "allowSurvivors": [{ "file": "std/hex.ts", "line": 42, "reason": "…" }] }
 ```
 
-Then re-extract, which merges that file in verbatim. Re-run `emit`, `stale`
-and `frozen` too (`frozen` skips `*.survivors.json` sidecars), because the contract's bytes changed. Survivors are usually
-found by the implementation PR's `mutate` run, but the allow-list still
-belongs in a spec-side PR.
+Re-extract, which merges it in verbatim, then re-run `emit`, `stale` and
+`frozen` (which skips `*.survivors.json`): the contract's bytes changed.
+Survivors usually surface in the implementation PR, but the allow-list belongs
+in a spec-side PR.
 
 `mutate` also exits 1 in these cases:
 
-- there are zero mutants;
+- zero mutants, as when no changed line is in reach;
 - every mutant is stillborn or its build ran past its time;
-- too many builds or tests (over 10%) ran past their time;
+- over 10% of the builds or tests ran past their time;
 - the test fails on the unmutated module, or the unmutated module does not
   build because of an error in it.
 
 It exits 2 for bad usage, a git error, a z3 failure, or a compiler failure the
 mutant did not cause. Two compiler traps:
 
-- **The compiler must read the copy.** `mutate` builds each mutant in a copy
-  of the root, and first checks (the canary) that the compiler fails on a
-  copy whose module is made unparseable. An installed `bin/nish`, such as
-  `.nish/bin/nish`, is a wrapper that execs another install by absolute path
-  and fails the canary: give `--nish libexec/nish` for an install, or use a
-  real nish checkout.
+- **The compiler must read the slot.** With no `--nish`, mutants build on
+  the root's seed (an install itself, or a checkout's `build/seed`) with its
+  `std/` laid over it; with neither, run `bash scripts/fetch-seed.sh` there
+  (no build needed). A canary checks the compiler fails on the module made
+  unparseable. `--nish <file>` copies the whole root; `.nish/bin/nish` execs
+  another install and fails the canary.
 - **Run it from the repository's top.** Without `--test`, `mutate` emits the
   contract's test as `emit` does, checking the contract with the current
   directory as the repository's top, as CI runs it.

@@ -12,6 +12,13 @@ import {
   typeOfInt,
   typeOfLiteral,
 } from "../../../src/spec/contract/typing"
+import {
+  vocabByteWidth,
+  vocabIntTypes,
+  vocabReadOps,
+  vocabReadType,
+  vocabWriteOps,
+} from "../../../src/spec/contract/vocab"
 
 /** A contract with one property clause; ASSERT is replaced by the expression under test. */
 const BASE: string = `{
@@ -63,6 +70,22 @@ const typingOf = (expr: string, allowCalls: boolean): string => {
     return errors.join("\n")
   }
   return t ?? "null"
+}
+
+/** An int as a contract writes it: a JSON number, or a string past 2^53. */
+const typingIntJson = (v: string): string => (v.length > 15 ? `"${v}"` : v)
+
+/** `expr`'s type, or its errors, with `n` bound to `nType` beside BASE's variables. */
+const typingOfWith = (expr: string, nType: string): string => {
+  const e = typingAssert(expr)
+  if (e === null) {
+    return "read error"
+  }
+  const env = typingEnv(true)
+  typeEnvBind(env, "n", nType)
+  const errors: string[] = []
+  const ty = typeOf(e, env, "assert", errors)
+  return errors.length > 0 ? errors.join("\n") : ty ?? "null"
 }
 
 /** Expression types and the errors typeOf reports. */
@@ -185,6 +208,69 @@ export const main = (): i32 => {
   t.ok("i32 to u32", typeAssignable("i32", "u32"))
   t.ok("not u32 to i32", !typeAssignable("u32", "i32"))
   t.ok("not an optional to its base", !typeAssignable("bytes?", "bytes"))
+
+  // Byte order: a write op takes every integer type no wider than it, and refuses a wider one.
+  for (const op of vocabWriteOps()) {
+    const bits = vocabByteWidth(op) * 8
+    for (const ty of vocabIntTypes()) {
+      const got = typingOfWith(`{"op": "${op}", "args": [{"var": "n"}]}`, ty)
+      if (parseInt(ty.substring(1)) <= bits) {
+        t.eqStr(`${op} takes ${ty}`, got, "bytes")
+      } else {
+        t.eqStr(`${op} refuses ${ty}`, got, `assert.args[0]: ${op} wants an integer of at most ${bits} bits, got ${ty}`)
+      }
+    }
+    t.eqStr(
+      `${op} refuses bytes`,
+      typingOfWith(`{"op": "${op}", "args": [{"var": "b"}]}`, "u8"),
+      `assert.args[0]: ${op} wants an integer of at most ${bits} bits, got bytes`,
+    )
+  }
+  // A write op's int literal fits its width, signed or unsigned, and no further.
+  const litOps = ["le16", "be16", "le32", "be32", "le64", "be64"]
+  const litFits = ["-32768", "65535", "-2147483648", "4294967295", "-9223372036854775808", "18446744073709551615"]
+  const litPast = ["-32769", "65536", "-2147483649", "4294967296", "-9223372036854775809", "18446744073709551616"]
+  for (let i = 0; i < litOps.length; i++) {
+    const op = litOps[i]
+    t.eqStr(
+      `${op} takes ${litFits[i]}`,
+      typingOfWith(`{"op": "${op}", "args": [{"int": ${typingIntJson(litFits[i])}}]}`, "u8"),
+      "bytes",
+    )
+    t.eqStr(
+      `${op} refuses ${litPast[i]}`,
+      typingOfWith(`{"op": "${op}", "args": [{"int": ${typingIntJson(litPast[i])}}]}`, "u8"),
+      op.substring(2) === "64"
+        ? `assert.args[0]: int ${litPast[i]} is outside every integer type`
+        : `assert.args[0]: ${litPast[i]} does not fit ${op}'s ${op.substring(2)} bits`,
+    )
+  }
+  t.eqStr(
+    "le16's literal error",
+    typingOfWith(`{"op": "le16", "args": [{"int": 65536}]}`, "u8"),
+    "assert.args[0]: 65536 does not fit le16's 16 bits",
+  )
+  // A read op takes bytes and gives its integer type.
+  for (const op of vocabReadOps()) {
+    t.eqStr(
+      `${op} reads ${vocabReadType(op)}`,
+      typingOfWith(`{"op": "${op}", "args": [{"var": "b"}]}`, "u8"),
+      vocabReadType(op),
+    )
+    t.eqStr(
+      `${op} refuses an integer`,
+      typingOfWith(`{"op": "${op}", "args": [{"var": "n"}]}`, "u32"),
+      `assert.args[0]: ${op} wants bytes, got u32`,
+    )
+  }
+  t.eqStr(
+    "a read compares with its own type",
+    typingOfWith(
+      `{"op": "==", "args": [{"op": "beU16", "args": [{"op": "be16", "args": [{"var": "n"}]}]}, {"var": "n"}]}`,
+      "u16",
+    ),
+    "bool",
+  )
 
   // typeOfInt.
   t.eqStr("small int", typeOfInt("-5") ?? "", "i32")

@@ -17,10 +17,22 @@
 
 import { Sample, SampleTable, checkSamplesOf } from "../check"
 import { shapeNishModuleFile } from "../contract/shape"
-import { ClauseKind, ExprKind, LitKind, typesIsWords } from "../contract/types"
+import { ClauseKind, ExprKind, LitKind, typesIsWindow, typesIsWords } from "../contract/types"
 import { Clause, Contract, Expr, FnSig, Literal } from "../contract/types"
 import { TypeEnv, typeCallsIn, typeEnvBind, typeIntBase, typeOf } from "../contract/typing"
-import { vocabBaseOf, vocabIsIntType, vocabIsOptional, vocabIsWordType, vocabValueType } from "../contract/vocab"
+import {
+  vocabBaseOf,
+  vocabBigEndian,
+  vocabByteWidth,
+  vocabHas,
+  vocabIsIntType,
+  vocabIsOptional,
+  vocabIsWordType,
+  vocabReadOps,
+  vocabReadType,
+  vocabValueType,
+  vocabWriteOps,
+} from "../contract/vocab"
 import { emitHelperDeps, emitHelperNames, emitHelperText } from "./helpers"
 import {
   EMIT_SLOW_SKIP,
@@ -176,22 +188,55 @@ const emitFn = (ctx: EmitContext, name: string): FnSig | null => {
 
 const emitIsSecret = (t: string): boolean => t !== vocabValueType(t)
 
+/** Whether `sig` takes or returns a Secret. */
+const emitTakesSecret = (sig: FnSig): boolean => {
+  let secret = emitIsSecret(sig.returns)
+  for (const p of sig.params) {
+    secret = secret || emitIsSecret(p.type)
+  }
+  return secret
+}
+
+/** Whether `sig` takes a window. */
+const emitTakesWindow = (sig: FnSig): boolean => sig.params.some((p): boolean => typesIsWindow(p))
+
+/** Whether a call of `sig` goes through its `plain_` wrapper: it takes or returns a Secret, or takes a window. */
+const emitWraps = (sig: FnSig): boolean => emitTakesSecret(sig) || emitTakesWindow(sig)
+
+/** How many guard bytes a window's bytes sit after, so its offset is never 0. */
+const EMIT_WINDOW_LEAD: i32 = 3
+
+/** How many guard bytes follow a window's bytes, so a read past its length is seen. */
+const EMIT_WINDOW_TAIL: i32 = 3
+
 /**
- * `sig.name` on plain bytes, under nish's rules for a Secret: each secret
- * argument is a fresh copy wrapped with `secret` and wiped after the call; a
- * secret result is copied out with `expose`, then wiped.
+ * `sig.name` on plain bytes. Under nish's rules for a Secret, each secret
+ * argument is a fresh copy wrapped with `secret` and wiped after the call,
+ * and a secret result is copied out with `expose`, then wiped. A window's
+ * bytes are passed as `(buf, off, len)`, between guard bytes (0xa5 before,
+ * 0x5a after), so a function that reads from 0 or past `len` sees them.
  */
 const emitPlainWrapper = (ctx: EmitContext, sig: FnSig, name: string): string => {
-  emitUse(ctx, "copyBytes")
-  emitAddOnce(ctx.secretNames, "Secret")
-  emitAddOnce(ctx.secretNames, "wipe")
+  const secret = emitTakesSecret(sig)
+  if (secret) {
+    emitUse(ctx, "copyBytes")
+    emitAddOnce(ctx.secretNames, "Secret")
+    emitAddOnce(ctx.secretNames, "wipe")
+  }
   const params: string[] = []
   const args: string[] = []
   const body: string[] = []
   const wipes: string[] = []
   for (const p of sig.params) {
     params.push(`a_${p.name}: ${emitNishType(vocabValueType(p.type))}`)
-    if (!emitIsSecret(p.type)) {
+    if (typesIsWindow(p)) {
+      const cat = emitUse(ctx, "concatBytes")
+      const fill = emitUse(ctx, "fillBytes")
+      const lead = `${fill}(0xa5, ${EMIT_WINDOW_LEAD})`
+      const tail = `${fill}(0x5a, ${EMIT_WINDOW_TAIL})`
+      body.push(`  const w_${p.name}: u8[] = ${cat}(${cat}(${lead}, a_${p.name}), ${tail});`)
+      args.push(`w_${p.name}, ${EMIT_WINDOW_LEAD}, a_${p.name}.length`)
+    } else if (!emitIsSecret(p.type)) {
       args.push(`a_${p.name}`)
     } else {
       emitAddOnce(ctx.secretNames, "secret")
@@ -233,8 +278,15 @@ const emitPlainWrapper = (ctx: EmitContext, sig: FnSig, name: string): string =>
     }
     body.push("  return r;")
   }
+  const how: string[] = []
+  if (secret) {
+    how.push("secrets are copied in, wiped after")
+  }
+  if (emitTakesWindow(sig)) {
+    how.push("a window is passed as (buf, off, len) between guard bytes")
+  }
   return [
-    `/** ${sig.name} on plain bytes: secrets are copied in, wiped after. */`,
+    `/** ${sig.name} on plain bytes: ${how.join("; ")}. */`,
     `const ${name} = (${params.join(", ")}): ${emitNishType(ret)} => {`,
     body.join("\n"),
     "};",
@@ -243,15 +295,11 @@ const emitPlainWrapper = (ctx: EmitContext, sig: FnSig, name: string): string =>
 
 /**
  * A call of a contract function on emitted arguments. One that takes or
- * returns a Secret goes through a `plain_` wrapper, so the rest of the test
- * sees plain bytes.
+ * returns a Secret, or takes a window, goes through a `plain_` wrapper, so
+ * the rest of the test sees one plain bytes value.
  */
 const emitCall = (ctx: EmitContext, sig: FnSig, args: string[]): string => {
-  let secret = emitIsSecret(sig.returns)
-  for (const p of sig.params) {
-    secret = secret || emitIsSecret(p.type)
-  }
-  if (!secret) {
+  if (!emitWraps(sig)) {
     return `${sig.name}(${args.join(", ")})`
   }
   const name = `plain_${sig.name}`
@@ -419,8 +467,14 @@ const emitHelperOp = (ctx: EmitContext, e: Expr): string | null => {
     const a = emitArg(ctx, e, 0, null)
     return `${emitUse(ctx, "bitwiseBytes")}(${a}, ${emitArg(ctx, e, 1, null)}, ${bitwise})`
   }
-  if (op === "le64") {
-    return `${emitUse(ctx, "le64")}(${emitArg(ctx, e, 0, null)})`
+  if (vocabHas(vocabWriteOps(), op)) {
+    const n = emitToU64(ctx, e.args[0])
+    return `${emitUse(ctx, "intBytes")}(${n}, ${vocabByteWidth(op)}, ${vocabBigEndian(op)})`
+  }
+  if (vocabHas(vocabReadOps(), op)) {
+    const read = `${emitUse(ctx, "bytesInt")}(u, ${emitArg(ctx, e, 0, null)}, ${vocabByteWidth(op)}, ${vocabBigEndian(op)})`
+    const ty = vocabReadType(op)
+    return ty === "u64" ? read : `${emitToInt(ty)}(${read})`
   }
   if (op === "strConcat") {
     return `\`\${${emitArg(ctx, e, 0, null)}}\${${emitArg(ctx, e, 1, null)}}\``
@@ -443,12 +497,19 @@ const emitHelperOp = (ctx: EmitContext, e: Expr): string | null => {
   return null
 }
 
+/** An integer expression as a u64 of the same bits, which `intBytes` writes. */
+const emitToU64 = (ctx: EmitContext, x: Expr): string => {
+  const t = emitTypeOf(ctx, x)
+  const s = emitExpr(ctx, x, t)
+  return t === "u64" ? s : `toU64(${s})`
+}
+
 /** An operator application. */
 const emitOp = (ctx: EmitContext, e: Expr, want: string | null): string => {
   const op = e.name
   const viaHelper = emitHelperOp(ctx, e)
   if (viaHelper !== null) {
-    return viaHelper
+    return emitConv(viaHelper, emitTypeOf(ctx, e), want)
   }
   if (op === "len" || op === "strLen") {
     return emitConv(`toI32(${emitArg(ctx, e, 0, null)}.length)`, "i32", want)
@@ -555,6 +616,36 @@ const emitHasOp = (e: Expr, op: string): boolean => {
   }
   const body = e.body
   return body !== null && emitHasOp(body, op)
+}
+
+/** Whether `e` reads an integer from bytes anywhere in it. */
+const emitHasRead = (e: Expr): boolean => {
+  for (const op of vocabReadOps()) {
+    if (emitHasOp(e, op)) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * Why a sample of an assertion is undefined, in every language: an `unwrap`
+ * met a null, or a read met the wrong number of bytes. Both record on the
+ * test's unwrap recorder, so the sample fails.
+ *
+ * @param assert the property's assertion
+ * @returns the failure's reason, or null when the assertion neither unwraps nor reads
+ */
+export const emitUndefinedWhy = (assert: Expr): string | null => {
+  const unwraps = emitHasOp(assert, "unwrap")
+  const reads = emitHasRead(assert)
+  if (unwraps && reads) {
+    return "unwrap met a null, or a read met the wrong number of bytes"
+  }
+  if (reads) {
+    return "a read met the wrong number of bytes"
+  }
+  return unwraps ? "unwrap met a null" : null
 }
 
 /**
@@ -859,7 +950,8 @@ const emitProperty = (ctx: EmitContext, k: Clause, samples: Sample[]): string =>
     const v = k.forall[j]
     emitTable(ctx, v.name, v.type, j, samples, out)
   }
-  const usesUnwrap = emitHasOp(assert, "unwrap")
+  const undefinedWhy = emitUndefinedWhy(assert)
+  const usesUnwrap = undefinedWhy !== null
   out.push(`  for (let i: i32 = 0; i < ${count}; i += 1) {`)
   ctx.env = new TypeEnv(ctx.c.functions, true)
   const shown: string[] = []
@@ -884,7 +976,7 @@ const emitProperty = (ctx: EmitContext, k: Clause, samples: Sample[]): string =>
     out.push("    if (u.sawNull || !holds) {")
     out.push(`      let why: string = "the assertion is false";`)
     out.push("      if (u.sawNull) {")
-    out.push(`        why = "unwrap met a null";`)
+    out.push(`        why = ${emitQuote(undefinedWhy ?? "")};`)
     out.push("      }")
     out.push(`      return t.fail(${name}, \`${where}: \${why}\`);`)
   } else {
@@ -973,11 +1065,7 @@ export const emitRefusals = (c: Contract, local: string[]): string[] => {
     names.push(f.name)
   }
   for (const f of c.functions) {
-    let secret = emitIsSecret(f.returns)
-    for (const p of f.params) {
-      secret = secret || emitIsSecret(p.type)
-    }
-    if (secret && names.indexOf(`plain_${f.name}`) >= 0) {
+    if (emitWraps(f) && names.indexOf(`plain_${f.name}`) >= 0) {
       out.push(`${f.name}: its wrapper would be plain_${f.name}, which is a contract function's name`)
     }
   }

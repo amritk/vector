@@ -544,10 +544,11 @@ const readFunctions = (r: ContractReader, root: JsonValue, c: Contract): void =>
       if (params !== null) {
         for (let j = 0; j < params.length; j++) {
           const pat = `${at}.params[${j}]`
-          if (readObject(r, params[j], pat, ["name", "type", "names"])) {
+          if (readObject(r, params[j], pat, ["name", "type", "form", "names"])) {
             const p = new Param()
             p.name = readRequiredString(r, params[j], "name", pat)
             p.type = readRequiredString(r, params[j], "type", pat)
+            p.form = readString(r, params[j], "form", pat, false)
             p.names = readOverrides(r, params[j], "names", pat)
             f.params.push(p)
           }

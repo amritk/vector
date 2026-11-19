@@ -47,6 +47,9 @@ const shapeExpect = (t: Suite, from: string, to: string, want: string): void => 
   }
 }
 
+/** BASE's parameter with a `form` of `f`, a JSON value. */
+const shapeForm = (f: string): string => `{"name": "b", "type": "bytes", "form": ${f}}`
+
 /** BASE's expect followed by an `iterate` of `body`. */
 const shapeIter = (body: string): string => `"expect": {"str": "00"}, "iterate": ${body}`
 
@@ -483,7 +486,7 @@ export const main = (): i32 => {
     t,
     `"op": "<="`,
     `"op": "=<"`,
-    "clauses[1].assert.op: one of len concat slice zeros fill flipBit xor bitAnd bitOr unwrap isNull notNull + - * % le64 < <= > >= == != and or not implies strLen strConcat lower upper utf8 ascii charAt",
+    "clauses[1].assert.op: one of len concat slice zeros fill flipBit xor bitAnd bitOr unwrap isNull notNull + - * % le16 le32 le64 be16 be32 be64 leU16 leU32 leU64 beU16 beU32 beU64 leI32 leI64 beI32 beI64 < <= > >= == != and or not implies strLen strConcat lower upper utf8 ascii charAt",
   )
 
   // outOfScope and allowSurvivors.
@@ -563,6 +566,39 @@ export const main = (): i32 => {
   ]
   for (let i = 0; i + 2 < neg.length; i += 3) {
     t.eqStr(`refused: ${neg[i + 1]}`, shapeErrorsOf(neg[i], neg[i + 1]).join(" | "), neg[i + 2])
+  }
+
+  // A parameter's form: only "window", only on bytes.
+  const param = `{"name": "b", "type": "bytes"}`
+  t.eqStr("a window on bytes passes", shapeErrorsOf(param, shapeForm(`"window"`)).join(" | "), "")
+  t.eqStr(
+    "a null form does not read",
+    shapeErrorsOf(param, shapeForm("null")).join(" | "),
+    "read: functions[0].params[0].form: a string",
+  )
+  t.eqStr(
+    "another form is refused",
+    shapeErrorsOf(param, shapeForm(`"slice"`)).join(" | "),
+    `functions[0].params[0].form: "window", or absent`,
+  )
+  t.eqStr(
+    "form is matched exactly",
+    shapeErrorsOf(param, shapeForm(`"Window"`)).join(" | "),
+    `functions[0].params[0].form: "window", or absent`,
+  )
+  t.eqStr(
+    "a numeric form does not read",
+    shapeErrorsOf(param, shapeForm("1")).join(" | "),
+    "read: functions[0].params[0].form: a string",
+  )
+  const typed = ["string", "secret-bytes", "bytes?", "u8", "words32"]
+  for (const ty of typed) {
+    shapeExpect(
+      t,
+      param,
+      `{"name": "b", "type": "${ty}", "form": "window"}`,
+      `functions[0].params[0].form: absent: a window is a bytes parameter, not ${ty}`,
+    )
   }
 
   // The helpers.

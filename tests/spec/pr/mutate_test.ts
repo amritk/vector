@@ -1,4 +1,5 @@
 import { Suite } from "nish/testing"
+import { replaceAll } from "nish/text"
 import { runProcess } from "../../../src/core/process"
 import { contractLoad } from "../../../src/spec/contract/contract"
 import { AllowedSurvivor } from "../../../src/spec/contract/types"
@@ -11,11 +12,13 @@ import {
   MUTATE_SURVIVED,
   MUTATE_TIMED_OUT,
   MutateMutant,
+  MutateSites,
   mutateApply,
   mutateCode,
   mutateJudge,
   mutateLine,
   mutateOutcomeName,
+  mutateOutsideNote,
   mutatePick,
   mutateSites,
 } from "../../../src/spec/pr/mutate"
@@ -53,10 +56,10 @@ const mutateTestRaw = (text: string): MutateMutant[] => {
   return mutateLine(text, 1, kinds)
 }
 
-/** The mutants of a module's changed lines, or the lexer's refusal. */
-const mutateTestSites = (text: string, changed: GitdiffFile): string => {
-  const r = mutateSites(text, changed)
-  return r.isErr() ? `Err ${r.error}` : mutateTestList(r.value)
+/** The mutants of a module's changed lines the roots reach, or the lexer's refusal. */
+const mutateTestSites = (text: string, changed: GitdiffFile, roots: string[]): string => {
+  const r = mutateSites(text, changed, roots)
+  return r.isErr() ? `Err ${r.error}` : mutateTestList(r.value.mutants)
 }
 
 /**
@@ -108,7 +111,11 @@ const MUTATE_TEST_CONTRACT: string = `{
   "source": {"title": "T", "rfc": 4648},
   "target": {"module": "nish/m"},
   "requirements": [{"id": "R1", "section": "3.1", "level": "MUST", "quote": "Q"}],
-  "functions": [{"name": "k", "params": [], "returns": "i32"}],
+  "functions": [
+    {"name": "lt", "params": [], "returns": "bool"},
+    {"name": "k", "params": [], "returns": "i32"},
+    {"name": "f", "params": [], "returns": "i32"}
+  ],
   "allowSurvivors": [
     {"file": "std/m.ts", "line": 3, "reason": "k is a constant the spec leaves open"},
     {"file": "std/m.ts", "line": 9, "reason": "stale"}
@@ -119,6 +126,25 @@ const MUTATE_TEST_CONTRACT: string = `{
   ]
 }
 `
+
+/**
+ * MUTATE_TEST_CONTRACT testing only the functions `names`, its vector calling
+ * `call`; each of `foreign` is a reference function from nish/other.
+ */
+const mutateTestContractOn = (names: string[], call: string, foreign: string[]): string => {
+  const fs: string[] = []
+  for (const n of names) {
+    fs.push(`{"name": "${n}", "params": [], "returns": "i32"}`)
+  }
+  for (const n of foreign) {
+    fs.push(`{"name": "${n}", "module": "nish/other", "params": [], "returns": "i32"}`)
+  }
+  const at = MUTATE_TEST_CONTRACT.indexOf('"functions": [')
+  const end = MUTATE_TEST_CONTRACT.indexOf('],\n  "allowSurvivors"')
+  const head = MUTATE_TEST_CONTRACT.slice(0, at)
+  const tail = MUTATE_TEST_CONTRACT.slice(end + 2)
+  return replaceAll(`${head}"functions": [${fs.join(", ")}],${tail}`, '"call": "k"', `"call": "${call}"`)
+}
 
 /** A nish checkout whose std/m.ts gains lines, run against the stub compiler. */
 const mutateTestRepo = (t: Suite): Result<boolean, string> => {
@@ -178,6 +204,61 @@ const mutateTestRepo = (t: Suite): Result<boolean, string> => {
   )
   t.ok("an unknown base is an error", mutateCheck(`${dir}/c.json`, "nope", run, 0).isErr())
   t.ok("a missing contract is an error", mutateCheck(`${dir}/none.json`, "main", run, 0).isErr())
+  prTestWrite(dir, "calm.sh", "exit 0\n").orReturn()
+  const calm = new MutateRun(root, "", "bin/nish", `${dir}/calm.sh`, 2, MUTATE_TEST_CALM_MS)
+  prTestWrite(dir, "k.json", mutateTestContractOn(["k"], "k", [])).orReturn()
+  const k = mutateCheck(`${dir}/k.json`, "main", calm, 0)
+  t.eqStr(
+    "a contract on k mutates only k's line, and notes the rest",
+    k.isOk()
+      ? `${k.value.items.join(" | ")} || ${k.value.problems.join(" | ")} || ${k.value.notes.join(" | ")}`
+      : k.error,
+    [
+      "survived std/m.ts:3:29 int: export const k = (): i32 => 8 | survived std/m.ts:3:29 int: export const k = (): i32 => 6 ||  || ",
+      "2 changed lines outside the tested functions were not mutated: lt, f | ",
+      "survivor std/m.ts:3 (3:29:int:+1) is allowed: k is a constant the spec leaves open | ",
+      "survivor std/m.ts:3 (3:29:int:-1) is allowed: k is a constant the spec leaves open | ",
+      "STALE? allowSurvivors std/m.ts:9 matched no survivor this run: no mutant of that line ran, so check it still names the line it means",
+    ].join(""),
+  )
+  prTestWrite(dir, "old.json", mutateTestContractOn(["old"], "old", [])).orReturn()
+  const old = mutateCheck(`${dir}/old.json`, "main", calm, 0)
+  t.eqStr(
+    "a change none of whose lines the contract's functions reach is refused, naming them",
+    old.isOk()
+      ? `${old.value.items.join(" | ")} || ${old.value.problems.join(" | ")} || ${old.value.notes.join(" | ")}`
+      : old.error,
+    " || no mutants: no line the change adds to std/m.ts lies in code the contract's functions reach || 3 changed lines outside the tested functions were not mutated: lt, k, f",
+  )
+  prTestWrite(dir, "ref.json", mutateTestContractOn(["k"], "k", ["hmac"])).orReturn()
+  const ref = mutateCheck(`${dir}/ref.json`, "main", calm, 0)
+  t.eqStr(
+    "a reference function from another module is no root, so the scope still holds",
+    ref.isOk() ? `${ref.value.items.length} || ${ref.value.notes.join(" | ")}` : ref.error,
+    [
+      "2 || 2 changed lines outside the tested functions were not mutated: lt, f | ",
+      "survivor std/m.ts:3 (3:29:int:+1) is allowed: k is a constant the spec leaves open | ",
+      "survivor std/m.ts:3 (3:29:int:-1) is allowed: k is a constant the spec leaves open | ",
+      "STALE? allowSurvivors std/m.ts:9 matched no survivor this run: no mutant of that line ran, so check it still names the line it means",
+    ].join(""),
+  )
+  prTestWrite(dir, "ghost.json", mutateTestContractOn(["k", "ghost"], "k", [])).orReturn()
+  const ghost = mutateCheck(`${dir}/ghost.json`, "main", calm, 0)
+  t.eqStr(
+    "a contract function the module does not declare mutates every changed line, and says why",
+    ghost.isOk()
+      ? `${ghost.value.items.join(" | ")} || ${ghost.value.problems.join(" | ")} || ${ghost.value.notes[0]}`
+      : ghost.error,
+    [
+      "survived std/m.ts:2:50 relational: export const lt = (a: i32, b: i32): boolean => a <= b | ",
+      "survived std/m.ts:3:29 int: export const k = (): i32 => 8 | ",
+      "survived std/m.ts:3:29 int: export const k = (): i32 => 6 | ",
+      "stillborn std/m.ts:5:3 return-null: return null || ",
+      "survivor std/m.ts:2 (2:50:relational): `export const lt = (a: i32, b: i32): boolean => a <= b` passes the test: behaviour no requirement pins down || ",
+      "every changed line was mutated, not only the tested functions: ",
+      "the contract's function ghost is not a top-level declaration of the module",
+    ].join(""),
+  )
   prTestCommit(dir, "change").orReturn()
   const none = mutateCheck(`${dir}/c.json`, "work", run, 0)
   t.eqStr(
@@ -327,14 +408,14 @@ const mutateTestJudge = (t: Suite): void => {
   const b = new MutateMutant(3, 2, "int", "+1", "  k = 8")
   b.outcome = MUTATE_KILLED
   const r = new PrReport("mutate", "m")
-  mutateJudge(r, "std/m.ts", [a, b], allow, null, 0)
+  mutateJudge(r, "std/m.ts", [a, b], allow, null, 0, "", false)
   t.eqStr(
     "an unallowed survivor fails, and an allowance whose line was all killed is stale",
     r.problems.join(" | "),
     "survivor std/m.ts:4 (4:1:delete-statement): `` passes the test: behaviour no requirement pins down | allowSurvivors std/m.ts:3 is stale: the test killed every mutant of that line, so the allowance would only excuse whatever survives there next: remove it, or move it to the line it means",
   )
   const rd = new PrReport("mutate", "t")
-  mutateJudge(rd, "std/m.ts", [b], [], null, 5)
+  mutateJudge(rd, "std/m.ts", [b], [], null, 5, "", false)
   t.eqStr("--max reports what it left out", rd.notes.join(" | "), "5 of 6 mutants were not run: --max kept 1")
   t.eqStr(
     "an item per mutant",
@@ -344,7 +425,7 @@ const mutateTestJudge = (t: Suite): void => {
   const s = new MutateMutant(4, 1, "delete-statement", "", "")
   s.outcome = MUTATE_STILLBORN
   const r2 = new PrReport("mutate", "m")
-  mutateJudge(r2, "std/m.ts", [s], allow, null, 0)
+  mutateJudge(r2, "std/m.ts", [s], allow, null, 0, "", false)
   t.eqStr(
     "all stillborn fails",
     r2.problems.join(" | "),
@@ -359,7 +440,7 @@ const mutateTestJudge = (t: Suite): void => {
     k.push(m)
   }
   const r6 = new PrReport("mutate", "m")
-  mutateJudge(r6, "std/m.ts", k, [], null, 0)
+  mutateJudge(r6, "std/m.ts", k, [], null, 0, "", false)
   t.eqStr(
     "a build timeout within the share is noted",
     `${r6.problems.join(" | ")}||${r6.notes.join(" | ")}`,
@@ -369,7 +450,7 @@ const mutateTestJudge = (t: Suite): void => {
   bt2.outcome = MUTATE_BUILD_TIMED_OUT
   k.push(bt2)
   const r7 = new PrReport("mutate", "m")
-  mutateJudge(r7, "std/m.ts", k, [], null, 0)
+  mutateJudge(r7, "std/m.ts", k, [], null, 0, "", false)
   t.eqStr(
     "build timeouts past the share refuse",
     r7.problems.join(" | "),
@@ -389,7 +470,7 @@ const mutateTestJudge = (t: Suite): void => {
   onSeven.line = 7
   onSeven.reason = "r"
   const r8 = new PrReport("mutate", "m")
-  mutateJudge(r8, "std/m.ts", tk, [onSeven], null, 0)
+  mutateJudge(r8, "std/m.ts", tk, [onSeven], null, 0, "", false)
   t.eqStr(
     "a test timeout within the share is noted, not killed",
     `${r8.problems.join(" | ")}||${r8.notes.join(" | ")}`,
@@ -399,7 +480,7 @@ const mutateTestJudge = (t: Suite): void => {
   to2.outcome = MUTATE_TIMED_OUT
   tk.push(to2)
   const r9 = new PrReport("mutate", "m")
-  mutateJudge(r9, "std/m.ts", tk, [], null, 0)
+  mutateJudge(r9, "std/m.ts", tk, [], null, 0, "", false)
   t.eqStr(
     "test timeouts past the share refuse",
     r9.problems.join(" | "),
@@ -407,21 +488,129 @@ const mutateTestJudge = (t: Suite): void => {
   )
   const p = new MutateMutant(4, 1, "delete-statement", "", "")
   const r3 = new PrReport("mutate", "m")
-  mutateJudge(r3, "std/m.ts", [p], allow, null, 0)
+  mutateJudge(r3, "std/m.ts", [p], allow, null, 0, "", false)
   t.eqStr("a mutant not run fails", r3.problems.join(" | "), "mutant 4:1:delete-statement was not run")
   const r4 = new PrReport("mutate", "m")
-  mutateJudge(r4, "std/m.ts", [p], allow, "it exits 1", 0)
+  mutateJudge(r4, "std/m.ts", [p], allow, "it exits 1", 0, "", false)
   t.eqStr(
     "a failing baseline fails alone",
     `${r4.problems.join(" | ")}|${r4.items.length}`,
     "the test fails on the unmutated module, so it proves nothing: it exits 1|0",
   )
   const r5 = new PrReport("mutate", "m")
-  mutateJudge(r5, "std/m.ts", [], allow, null, 0)
+  mutateJudge(r5, "std/m.ts", [], allow, null, 0, "", false)
   t.eqStr(
     "no mutants fails",
     r5.problems.join(" | "),
     "no mutants: the change adds no line of std/m.ts that can be mutated",
+  )
+  const rOut = new PrReport("mutate", "m")
+  mutateJudge(
+    rOut,
+    "std/m.ts",
+    [],
+    allow,
+    null,
+    0,
+    "2 changed lines outside the tested functions were not mutated: f",
+    false,
+  )
+  t.eqStr(
+    "no mutants with lines out of scope fails for the scope, and notes them",
+    `${rOut.problems.join(" | ")} || ${rOut.notes.join(" | ")}`,
+    "no mutants: no line the change adds to std/m.ts lies in code the contract's functions reach || 2 changed lines outside the tested functions were not mutated: f",
+  )
+  const rReached = new PrReport("mutate", "m")
+  mutateJudge(
+    rReached,
+    "std/m.ts",
+    [],
+    allow,
+    null,
+    0,
+    "1 changed line outside the tested functions was not mutated: g",
+    true,
+  )
+  t.eqStr(
+    "no mutants, though a changed line lies in scope, fails for want of a mutant there, not for the scope",
+    `${rReached.problems.join(" | ")} || ${rReached.notes.join(" | ")}`,
+    "no mutants: no line the change adds to std/m.ts in code the contract's functions reach can be mutated || 1 changed line outside the tested functions was not mutated: g",
+  )
+  const rIn = new PrReport("mutate", "m")
+  mutateJudge(
+    rIn,
+    "std/m.ts",
+    [b],
+    [],
+    null,
+    0,
+    "1 changed line outside the tested functions was not mutated: g",
+    false,
+  )
+  t.eqStr(
+    "mutants with lines out of scope pass, and note them",
+    `${rIn.problems.join(" | ")} || ${rIn.notes.join(" | ")}`,
+    " || 1 changed line outside the tested functions was not mutated: g",
+  )
+  const none = new MutateSites("")
+  const one = new MutateSites("")
+  one.outside = 1
+  one.owners = ["g"]
+  const two = new MutateSites("")
+  two.outside = 3
+  two.owners = ["a", "line 4"]
+  t.eqStr(
+    "the out-of-scope note: none, one line, several",
+    `${mutateOutsideNote(none)}|${mutateOutsideNote(one)}|${mutateOutsideNote(two)}`,
+    "|1 changed line outside the tested functions was not mutated: g|3 changed lines outside the tested functions were not mutated: a, line 4",
+  )
+  t.eqStr(
+    "only changed lines the roots reach are mutated",
+    mutateTestSites("const a = 1\nconst b = 2\nconst c = 3\n", mutateTestChanged(1, 3), ["b"]),
+    "2:11:int:+1=const b = 3 | 2:11:int:-1=const b = 1",
+  )
+  const sites = mutateSites("const a = 1\nconst b = 2\nconst c = 3\n", mutateTestChanged(1, 3), ["b"])
+  t.eqStr(
+    "the lines left out are counted with their declarations",
+    sites.isOk() ? `${sites.value.outside} ${sites.value.owners.join(",")} ${sites.value.whole}` : sites.error,
+    "2 a,c ",
+  )
+  // Each row: the module, the changed lines, the roots, then what the sites
+  // hold: mutants, lines counted outside, their owners, whether a changed
+  // line lies in scope.
+  const fn = "const a = 1\nconst f = (x: i32): i32 => {\n  // keep\n  const y = x + 1\n  return y\n}\n"
+  const siteRows: string[][] = [
+    ["two changed lines of one unreached declaration name it once", "a", "0 2 f false"],
+    ["an unreached comment is not counted", "a", "0 0  false"],
+    ["an unreached lone } is not counted", "a", "0 0  false"],
+    ["a reached line with no mutant still counts as reached", "f", "0 0  true"],
+    ["a reached comment beside an unreached line", "f", "0 1 a true"],
+    ["a reached line with mutants", "a", "2 0  true"],
+  ]
+  const siteSpans: i32[][] = [
+    [4, 5],
+    [3, 3],
+    [6, 6],
+    [6, 6],
+    [1, 3],
+    [1, 1],
+  ]
+  for (let i = 0; i < siteRows.length; i++) {
+    const row = siteRows[i]
+    const s = mutateSites(fn, mutateTestChanged(siteSpans[i][0], siteSpans[i][1]), [row[1]])
+    t.eqStr(
+      row[0],
+      s.isOk()
+        ? `${s.value.mutants.length} ${s.value.outside} ${s.value.owners.join(",")} ${s.value.reached}`
+        : s.error,
+      row[2],
+    )
+  }
+  const whole = mutateSites("const a = 1\nconst b = 2\n", mutateTestChanged(1, 2), ["z"])
+  t.eqStr(
+    "a root the module does not declare mutates every changed line, saying why",
+    whole.isOk() ? `${whole.value.mutants.length} ${whole.value.outside} ${whole.value.whole}` : whole.error,
+    "4 0 the contract's function z is not a top-level declaration of the module",
   )
 }
 
@@ -481,29 +670,29 @@ export const main = (): i32 => {
   const text = "/**\n * a < b\n */\nconst a = 1\nconst b = 2\nconst c = 3\n"
   t.eqStr(
     "only changed lines, never a block comment",
-    mutateTestSites(text, mutateTestChanged(2, 5)),
+    mutateTestSites(text, mutateTestChanged(2, 5), ["a", "b", "c"]),
     "4:11:int:+1=const a = 2 | 4:11:int:-1=const a = 0 | 5:11:int:+1=const b = 3 | 5:11:int:-1=const b = 1",
   )
   const tpl = "const s = `a\n  x < y\n  return 1\n${n + 1}`\nconst z = 2\n"
   t.eqStr(
     "no mutant inside a multi-line template literal, only in its ${}",
-    mutateTestSites(tpl, mutateTestChanged(1, 5)),
+    mutateTestSites(tpl, mutateTestChanged(1, 5), ["s", "z"]),
     "4:5:arithmetic=${n - 1}` | 4:7:int:+1=${n + 2}` | 4:7:int:-1=${n + 0}` | 5:11:int:+1=const z = 3 | 5:11:int:-1=const z = 1",
   )
   const mid = "const a = 1 /* b < c\n  return 3\n  d */ + 4\nconst e = 5\n"
   t.eqStr(
     "no mutant after a mid-line /* until its */",
-    mutateTestSites(mid, mutateTestChanged(1, 4)),
+    mutateTestSites(mid, mutateTestChanged(1, 4), ["a", "e"]),
     "1:11:int:+1=const a = 2 /* b < c | 1:11:int:-1=const a = 0 /* b < c | 3:8:arithmetic=  d */ - 4 | 3:10:int:+1=  d */ + 5 | 3:10:int:-1=  d */ + 3 | 4:11:int:+1=const e = 6 | 4:11:int:-1=const e = 4",
   )
   t.eqStr(
     "a line that ends inside a string is not deleted",
-    mutateTestSites("f('a\\\nb')\ng()\n", mutateTestChanged(1, 3)),
+    mutateTestSites("f('a\\\nb')\ng()\n", mutateTestChanged(1, 3), []),
     "3:1:delete-statement=",
   )
   t.eqStr(
     "a module the lexer cannot read is refused",
-    mutateTestSites("const a = (1\n", mutateTestChanged(1, 1)),
+    mutateTestSites("const a = (1\n", mutateTestChanged(1, 1), ["a"]),
     "Err line 1: a `(` that never closes",
   )
   const all: MutateMutant[] = []

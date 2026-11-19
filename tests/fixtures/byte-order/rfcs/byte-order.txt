@@ -1,0 +1,28 @@
+Test Fixture                                                      vector
+Request for Comments: 99999                               Not an RFC
+Category: Informational                                  November 2026
+
+
+                      Integers as Bytes: Properties
+
+Abstract
+
+   This text is a test fixture for vector's byte-order operations, laid
+   out as an RFC's plain text so that vector reads it.  It is not an
+   RFC.
+
+1.  Writing
+
+   An integer written as bytes MUST be written as its two's complement,
+   in the byte order the operation names.
+
+2.  Reading
+
+   Bytes read as an integer MUST be read in the byte order the
+   operation names, as exactly as many bytes as the integer's width.
+
+
+
+
+vector                        Informational                     [Page 1]
+

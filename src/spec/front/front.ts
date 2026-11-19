@@ -37,8 +37,10 @@ import {
   vocabIntTypes,
   vocabIsIntType,
   vocabIsJsonSafe,
+  vocabReadOps,
   vocabValueType,
   vocabWordTypes,
+  vocabWriteOps,
 } from "../contract/vocab"
 
 // ── Refusals ───────────────────────────────────────────────────────────────
@@ -651,21 +653,29 @@ const frontSigType = (c: FrontCursor): Result<string, FrontRefusal> => {
 
 // ── ts-interface ───────────────────────────────────────────────────────────
 
-/** Ops written as plain calls: `xor(a, b)`. */
-const frontCallOps = (): string[] => [
-  "xor",
-  "bitAnd",
-  "bitOr",
-  "fill",
-  "zeros",
-  "flipBit",
-  "le64",
-  "unwrap",
-  "utf8",
-  "ascii",
-  "implies",
-  "concat",
-]
+/** Ops written as plain calls: `xor(a, b)`, and every byte-order op. */
+const frontCallOps = (): string[] => {
+  const ops: string[] = [
+    "xor",
+    "bitAnd",
+    "bitOr",
+    "fill",
+    "zeros",
+    "flipBit",
+    "unwrap",
+    "utf8",
+    "ascii",
+    "implies",
+    "concat",
+  ]
+  for (const op of vocabWriteOps()) {
+    ops.push(op)
+  }
+  for (const op of vocabReadOps()) {
+    ops.push(op)
+  }
+  return ops
+}
 
 /** The module of a `<s>module:<s><path><s>` comment value, or null. */
 const frontModuleOf = (value: string): string | null => {
@@ -776,6 +786,37 @@ export class FrontInterface {
   }
 }
 
+/**
+ * Reads the comments right after a parameter's type, which say how the real
+ * function takes it: only a `window` block comment, after `u8[]`, is one. A module line
+ * there is left for frontPeek to refuse.
+ */
+function frontParamForm(c: FrontCursor, fn: string, param: Param): Result<boolean, FrontRefusal> {
+  let t = frontRaw(c)
+  while (t.kind === FrontKind.Comment && frontModuleLine(t).orReturn().length === 0) {
+    const at = `\`${fn}(${param.name})\``
+    if (t.lineComment || splitWhitespace(t.value).join(" ") !== "window") {
+      const shown = t.lineComment ? `//${t.value}` : `/*${t.value}*/`
+      return Err(frontRefuse(`${at}: an interface parameter takes only /* window */, not \`${shown}\``, frontAt(t)))
+    }
+    if (param.form !== null) {
+      return Err(frontRefuse(`${at} is already a window; write /* window */ once`, frontAt(t)))
+    }
+    if (param.type !== "bytes") {
+      return Err(
+        frontRefuse(
+          `${at} is ${frontTsTy(param.type)}: /* window */ goes only after u8[], which the real function takes as (buf, off, len)`,
+          frontAt(t),
+        ),
+      )
+    }
+    param.form = "window"
+    frontSkipRaw(c)
+    t = frontRaw(c)
+  }
+  return Ok(true)
+}
+
 function frontInterfaceIn(c: FrontCursor): Result<FrontInterface, FrontRefusal> {
   const head = frontRaw(c)
   const m: string | null = head.kind === FrontKind.Comment && head.lineComment ? frontModuleOf(head.value) : null
@@ -858,6 +899,7 @@ function frontInterfaceIn(c: FrontCursor): Result<FrontInterface, FrontRefusal> 
       const param = new Param()
       param.name = p.text
       param.type = frontSigType(c).orReturn()
+      frontParamForm(c, name.text, param).orReturn()
       sig.params.push(param)
       if (!frontEat(c, ",")) {
         break
@@ -1866,7 +1908,7 @@ function frontName(p: FrontProp, t: FrontTok): Result<FrontV, FrontRefusal> {
   }
   const op = t.text
   const raw = frontArgs(p).orReturn()
-  const bytesOp = vocabHas(frontBytesOps(), op)
+  const bytesOp = vocabHas(frontBytesOps(), op) || vocabHas(vocabReadOps(), op)
   const args: FrontV[] = []
   for (let k = 0; k < raw.length; k++) {
     args.push(bytesOp || (op === "flipBit" && k === 0) ? frontAsBytes(raw[k]) : raw[k])

@@ -24,10 +24,29 @@ import { contractF64Bits, contractF64Parse } from "../contract/f64"
 import { ClauseKind, ExprKind, LitKind } from "../contract/types"
 import { Clause, Contract, Expr, FnSig, Literal } from "../contract/types"
 import { TypeEnv, typeCallsIn, typeEnvBind, typeIntBase, typeOf, typeOfInt } from "../contract/typing"
-import { vocabFitsInt, vocabIsIntType, vocabIsOptional, vocabValueType } from "../contract/vocab"
-import { EmitOptions, emitClauseFn, emitClauseLines, emitHeaderLines, emitSortedUnique, emitTestName } from "./emit"
+import {
+  vocabBigEndian,
+  vocabByteWidth,
+  vocabFitsInt,
+  vocabHas,
+  vocabIsIntType,
+  vocabIsOptional,
+  vocabReadOps,
+  vocabReadType,
+  vocabValueType,
+  vocabWriteOps,
+} from "../contract/vocab"
+import {
+  EmitOptions,
+  emitClauseFn,
+  emitClauseLines,
+  emitHeaderLines,
+  emitSortedUnique,
+  emitTestName,
+  emitUndefinedWhy,
+} from "./emit"
 import { EMIT_SLOW_SKIP, emitF64IsFinite, emitLiteralHex, emitQuote } from "./lit"
-import { emitTargetWordsRefusal } from "./target"
+import { emitTargetWindowRefusal, emitTargetWordsRefusal } from "./target"
 
 /** What emitting one TypeScript test has gathered so far. */
 class EmitTsContext {
@@ -188,6 +207,10 @@ export const emitTsRefusals = (c: Contract): string[] => {
     const words = emitTargetWordsRefusal(f, "TypeScript")
     if (words !== null) {
       out.push(words)
+    }
+    const window = emitTargetWindowRefusal(f, "TypeScript")
+    if (window !== null) {
+      out.push(window)
     }
     const why = emitTsNameRefusal(f)
     if (why !== null) {
@@ -370,8 +393,15 @@ const emitTsExpr = (ctx: EmitTsContext, e: Expr, want: string | null): string =>
 /** The ops on bytes and strings, which go through a helper; null for any other op. */
 const emitTsHelperOp = (ctx: EmitTsContext, e: Expr): string | null => {
   const op = e.name
-  const one = ["zeros", "le64", "utf8", "ascii", "strLen"]
-  const oneHelper = ["_fill(0, ", "_le64(", "_utf8(", "_ascii(", "_str_len("]
+  if (vocabHas(vocabWriteOps(), op)) {
+    return `_int_bytes(${emitTsArg(ctx, e, 0, null)}, ${vocabByteWidth(op)}, ${vocabBigEndian(op)})`
+  }
+  if (vocabHas(vocabReadOps(), op)) {
+    const b = emitTsArg(ctx, e, 0, null)
+    return `_bytes_int(u, ${b}, ${vocabByteWidth(op)}, ${vocabBigEndian(op)}, "${vocabReadType(op)}")`
+  }
+  const one = ["zeros", "utf8", "ascii", "strLen"]
+  const oneHelper = ["_fill(0, ", "_utf8(", "_ascii(", "_str_len("]
   const at = one.indexOf(op)
   if (at >= 0) {
     return `${oneHelper[at]}${emitTsArg(ctx, e, 0, null)})`
@@ -481,25 +511,6 @@ const emitTsBindings = (ctx: EmitTsContext, assert: Expr, indent: string, out: s
     e = body
   }
   return e
-}
-
-/** Whether `e` applies the op `op` anywhere. */
-const emitTsHasOp = (e: Expr, op: string): boolean => {
-  if (e.kind === ExprKind.Op && e.name === op) {
-    return true
-  }
-  for (const a of e.args) {
-    if (emitTsHasOp(a, op)) {
-      return true
-    }
-  }
-  for (const b of e.binds) {
-    if (emitTsHasOp(b.value, op)) {
-      return true
-    }
-  }
-  const body = e.body
-  return body !== null && emitTsHasOp(body, op)
 }
 
 /** The comment above a clause's check: its title and each covered requirement quoted. */
@@ -660,7 +671,8 @@ const emitTsProperty = (ctx: EmitTsContext, k: Clause, samples: Sample[]): strin
     const v = k.forall[j]
     emitTsTable(v.name, v.type, j, samples, out)
   }
-  const usesUnwrap = emitTsHasOp(assert, "unwrap")
+  const undefinedWhy = emitUndefinedWhy(assert)
+  const usesUnwrap = undefinedWhy !== null
   out.push(`  for (let i = 0; i < ${count}; i++) {`)
   ctx.env = new TypeEnv(ctx.c.functions, true)
   const shown: string[] = []
@@ -684,7 +696,7 @@ const emitTsProperty = (ctx: EmitTsContext, k: Clause, samples: Sample[]): strin
   const where = `"sample " + (i + 1) + " of ${count} (" + ${shown.join(` + ", " + `)} + "): "`
   if (usesUnwrap) {
     out.push("    if (u.saw_null || holds !== true) {")
-    out.push(`      const why = u.saw_null ? "unwrap met a null" : "the assertion is false"`)
+    out.push(`      const why = u.saw_null ? ${emitQuote(undefinedWhy ?? "")} : "the assertion is false"`)
   } else {
     out.push("    if (holds !== true) {")
     out.push(`      const why = "the assertion is false"`)
@@ -975,10 +987,27 @@ function _bitwise(a: Uint8Array, b: Uint8Array, k: number): Uint8Array {
   return out
 }
 
-function _le64(n: number | bigint): Uint8Array {
-  const d = new DataView(new ArrayBuffer(8))
-  d.setBigUint64(0, BigInt.asUintN(64, BigInt(n)), true)
-  return new Uint8Array(d.buffer)
+/** n's w bytes, big-endian when be, a negative n in two's complement. */
+function _int_bytes(n: number | bigint, w: number, be: boolean): Uint8Array {
+  const x = BigInt.asUintN(w * 8, BigInt(n))
+  const out = new Uint8Array(w)
+  for (let i = 0; i < w; i++) {
+    out[i] = Number((x >> BigInt(8 * (be ? w - 1 - i : i))) & 255n)
+  }
+  return out
+}
+
+/** The integer of type ty b's w bytes hold; any other length records on u, so the sample fails. */
+function _bytes_int(u: Unwrap, b: Uint8Array, w: number, be: boolean, ty: string): number | bigint {
+  if (b.length !== w) {
+    u.saw_null = true
+    return _wrap(0, ty)
+  }
+  let x = 0n
+  for (let i = 0; i < w; i++) {
+    x = (x << 8n) | BigInt(b[be ? i : w - 1 - i])
+  }
+  return _wrap(x, ty)
 }
 
 function _utf8(s: string): Uint8Array {

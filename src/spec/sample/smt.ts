@@ -16,7 +16,17 @@
 import { replaceAll } from "nish/text"
 import { z3Timeout } from "../../core/z3"
 import { Expr, ExprKind, ForallVar, LitKind } from "../contract/types"
-import { vocabIntMax, vocabIntMin, vocabIsIntType } from "../contract/vocab"
+import {
+  vocabBigEndian,
+  vocabByteWidth,
+  vocabHas,
+  vocabIntMax,
+  vocabIntMin,
+  vocabIsIntType,
+  vocabReadOps,
+  vocabReadType,
+  vocabWriteOps,
+} from "../contract/vocab"
 import { sampleIntLess, sampleIntSigned, sampleIntWidth, sampleIntWrap, sampleParseInt } from "./ints"
 
 /** The longest one query may take, in milliseconds. */
@@ -291,6 +301,9 @@ export const sampleIntTypeOf = (e: Expr, vars: ForallVar[]): string | null => {
   if (e.name === "len" || e.name === "strLen") {
     return "i32"
   }
+  if (vocabHas(vocabReadOps(), e.name)) {
+    return vocabReadType(e.name)
+  }
   if (e.name === "+" || e.name === "-" || e.name === "*" || e.name === "%") {
     let ty = ""
     for (const a of e.args) {
@@ -345,6 +358,9 @@ export const sampleIntTerm = (e: Expr, vars: ForallVar[], ty: string): string | 
   if (e.name === "len" || e.name === "strLen") {
     return ty === "i32" ? sampleLenTerm(e.args[0], vars) : null
   }
+  if (vocabHas(vocabReadOps(), e.name)) {
+    return ty === vocabReadType(e.name) ? sampleReadTerm(e, vars) : null
+  }
   if (e.args.length !== 2) {
     return null
   }
@@ -374,6 +390,45 @@ export const sampleIntTerm = (e: Expr, vars: ForallVar[], ty: string): string | 
     return `(ite (>= ${l} 0) (mod ${l} ${r}) (- (mod (- ${l}) ${r})))`
   }
   return null
+}
+
+/**
+ * A read of a write of the same width, `beU32(le32(x))`: x extended to the
+ * width (sign-extended when signed), its bytes swapped when the byte orders
+ * differ, read as the read's type. Any other read is outside the skeleton,
+ * since the skeleton models no bytes beyond their lengths.
+ */
+const sampleReadTerm = (e: Expr, vars: ForallVar[]): string | null => {
+  const w = vocabByteWidth(e.name)
+  const arg = e.args[0]
+  if (arg.kind !== ExprKind.Op || !vocabHas(vocabWriteOps(), arg.name) || vocabByteWidth(arg.name) !== w) {
+    return null
+  }
+  const inner = arg.args[0]
+  const it = sampleIntTypeOf(inner, vars)
+  if (it === null || it === "") {
+    return null
+  }
+  const x = sampleIntTerm(inner, vars, it)
+  if (x === null) {
+    return null
+  }
+  let b = it === "i32" ? `((_ int2bv 32) ${x})` : x
+  const grow = w * 8 - sampleIntWidth(it)
+  if (grow > 0) {
+    b = `((_ ${sampleIntSigned(it) ? "sign_extend" : "zero_extend"} ${grow}) ${b})`
+  }
+  if (vocabBigEndian(e.name) !== vocabBigEndian(arg.name)) {
+    const parts: string[] = []
+    for (let i = 0; i < w; i++) {
+      parts.push(`((_ extract ${i * 8 + 7} ${i * 8}) ${b})`)
+    }
+    b = `(concat ${parts.join(" ")})`
+  }
+  if (vocabReadType(e.name) !== "i32") {
+    return b
+  }
+  return `(ite (bvslt ${b} #x00000000) (- (bv2int ${b}) 4294967296) (bv2int ${b}))`
 }
 
 /**
@@ -469,8 +524,8 @@ export const sampleLenTerm = (e: Expr, vars: ForallVar[]): string | null => {
     return null
   }
   const op = e.name
-  if (op === "le64") {
-    return "8"
+  if (vocabHas(vocabWriteOps(), op)) {
+    return `${vocabByteWidth(op)}`
   }
   if (op === "flipBit" || op === "lower" || op === "upper" || op === "utf8") {
     return sampleLenTerm(e.args[0], vars)

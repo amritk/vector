@@ -1,0 +1,125 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "block-bounds-code",
+  "source": {
+    "title": "Block bounds fixture: a requirement after a property's code block.",
+    "main": "block-bounds-code",
+    "sha256": "2527de4ee518a23f80fb048749108ce83da234f59f54c8b10844d0049cc78d23"
+  },
+  "sources": [
+    {
+      "id": "block-bounds-code",
+      "path": "../specs/block-bounds-code.xml"
+    }
+  ],
+  "target": {
+    "module": "nish/mini"
+  },
+  "requirements": [
+    {
+      "id": "R-ENC-LEN",
+      "section": "3",
+      "level": "MUST",
+      "quote": "miniEncode MUST return exactly two characters per input byte."
+    },
+    {
+      "id": "R-ENC-LOWER",
+      "section": "3",
+      "level": "MUST NOT",
+      "quote": "miniEncode MUST NOT emit uppercase digits."
+    }
+  ],
+  "exclusions": [],
+  "functions": [
+    {
+      "name": "miniEncode",
+      "params": [
+        {
+          "name": "bytes",
+          "type": "bytes"
+        }
+      ],
+      "returns": "string"
+    },
+    {
+      "name": "miniIsValid",
+      "params": [
+        {
+          "name": "text",
+          "type": "string"
+        }
+      ],
+      "returns": "bool"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "V1",
+      "title": "no bytes, no characters",
+      "covers": ["R-ENC-LEN"],
+      "source": {
+        "cite": {
+          "section": "3"
+        }
+      },
+      "call": "miniEncode",
+      "args": [
+        {
+          "hex": ""
+        }
+      ],
+      "expect": {
+        "str": ""
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-ENC-LEN",
+      "title": "two characters per byte",
+      "covers": ["R-ENC-LEN", "R-ENC-LOWER"],
+      "forall": [
+        {
+          "name": "b",
+          "type": "bytes",
+          "minLen": 0,
+          "maxLen": 64
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "op": "strLen",
+            "args": [
+              {
+                "call": "miniEncode",
+                "args": [
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "*",
+            "args": [
+              {
+                "int": 2
+              },
+              {
+                "op": "len",
+                "args": [
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
