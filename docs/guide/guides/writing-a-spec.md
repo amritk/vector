@@ -387,8 +387,10 @@ lives ([Test your own modules](testing.md#test-your-own-modules)).
 
 `target.module` and a reference function's `module` are a neutral path: two
 or more lowercase segments joined by `/` (`nish/crypto/hkdf`), each a path
-segment of RFC 3986 §3.3 limited to `[a-z][a-z0-9_]*`. A language derives its
-own module name from the path; where its rule gives the wrong one,
+segment of RFC 3986 §3.3 limited to `[a-z][a-z0-9_]*(-[a-z0-9][a-z0-9_]*)*`:
+words joined by single `-`s, as in `nish/net/quic-packet`, with no `-` at
+either end. A language derives its own module name from the path, and
+[renames a `-`](testing.md#other-languages) where it cannot spell one; where its rule gives the wrong one,
 `target.modules` overrides it per language (`{"java": "org.example.Hkdf"}`).
 Likewise `names` on a function or a parameter overrides its name per language
 (`{"rust": "expand"}`). The language keys are those

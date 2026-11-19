@@ -11,6 +11,7 @@ import {
   frontParseProperty,
   frontReads,
 } from "../../../src/spec/front/front"
+import { modulePathsAccepted, modulePathsRefused } from "../contract/module_paths"
 
 const FRONT_TEST_DEPTH: string = "the expression nests more than 64 deep; name a part with const"
 const FRONT_TEST_TYPES: string =
@@ -363,6 +364,41 @@ const frontTestInterface = (t: Suite): void => {
   for (const k of modules) {
     const r = frontParseInterface(k[0])
     t.eqStr(`ts-interface: the module line ${k[1]}`, r.isErr() ? frontTestRefusal(r.error) : "accepted", k[1])
+  }
+  frontTestModulePaths(t)
+}
+
+/** The module paths charsIsModule takes, on the first `// module:` line and on a later one. */
+const frontTestModulePaths = (t: Suite): void => {
+  for (const m of modulePathsAccepted()) {
+    const first = frontParseInterface(`// module: ${m}\nexport function f(): i32`)
+    t.eqStr(
+      `ts-interface: first module line ${m}`,
+      first.isErr() ? frontTestRefusal(first.error) : first.value.module,
+      m,
+    )
+    const later = frontParseInterface(
+      `// module: nish/m\nexport function f(): i32\n// module: ${m}\nexport function g(): i32`,
+    )
+    const got = later.isErr() ? frontTestRefusal(later.error) : `${later.value.functions[1].module ?? "none"}`
+    t.eqStr(`ts-interface: later module line ${m}`, got, m)
+  }
+  for (const m of modulePathsRefused()) {
+    const want = `\`${m}\` is not a module path; write <root>/<path>, lowercase segments split by /`
+    const first = frontParseInterface(`// module: ${m}\nexport function f(): i32`)
+    t.eqStr(
+      `ts-interface: first module line ${m}`,
+      first.isErr() ? frontTestRefusal(first.error) : "accepted",
+      `${want} @1:1`,
+    )
+    const later = frontParseInterface(
+      `// module: nish/m\nexport function f(): i32\n// module: ${m}\nexport function g(): i32`,
+    )
+    t.eqStr(
+      `ts-interface: later module line ${m}`,
+      later.isErr() ? frontTestRefusal(later.error) : "accepted",
+      `${want} @3:1`,
+    )
   }
 }
 
