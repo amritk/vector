@@ -341,30 +341,36 @@ export const charsIsF64Text = (s: string): boolean => {
 }
 
 /**
- * Whether `s` is a module path: two or more `/`-separated segments, each
- * `[a-z][a-z0-9_]*`.
+ * Whether `s` is a module path: two or more `/`-separated segments. A segment
+ * is words joined by single `-`, `[a-z][a-z0-9_]*(-[a-z0-9][a-z0-9_]*)*`: the
+ * first word starts with a letter, a later one with a letter or a digit.
  *
  * @param s the text
- * @returns true for a module path like `nish/crypto/hkdf`
+ * @returns true for a module path like `nish/crypto/hkdf` or `nish/net/quic-packet`
  */
 export const charsIsModule = (s: string): boolean => {
   let segments = 0
-  let run = 0
+  // The bytes of the current word, and whether it is its segment's first.
+  let word = 0
+  let first = true
   for (let i = 0; i < s.length; i++) {
     const c = s.charCodeAt(i)
-    if (c === 0x2f) {
-      if (run === 0) {
+    if (c === 0x2f || c === 0x2d) {
+      if (word === 0) {
         return false
       }
-      segments++
-      run = 0
-    } else if (charsIsLower(c) || (run > 0 && (charsIsDigit(c) || c === 0x5f))) {
-      run++
+      if (c === 0x2f) {
+        segments++
+      }
+      word = 0
+      first = c === 0x2f
+    } else if (charsIsLower(c) || (charsIsDigit(c) && (word > 0 || !first)) || (c === 0x5f && word > 0)) {
+      word++
     } else {
       return false
     }
   }
-  return run > 0 && segments >= 1
+  return word > 0 && segments >= 1
 }
 
 /**

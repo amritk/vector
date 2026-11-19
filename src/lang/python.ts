@@ -64,7 +64,7 @@ export const langTablePython = (): LangTable => {
   t.literal("words64", langSpell("[0x3320646e61707865, 0x6b20657479622d32]", ""))
   t.moduleForm = "module"
   t.moduleNote =
-    "a module at the dotted neutral path, lowercase (PEP 8, Package and Module Names): nish/crypto/hkdf → nish.crypto.hkdf"
+    "a module at the dotted neutral path, lowercase (PEP 8, Package and Module Names): nish/crypto/hkdf → nish.crypto.hkdf; a - in a segment becomes _, while a file --package places keeps it: nish/net/quic-packet → nish.net.quic_packet"
   t.nameRule =
     "functions and parameters lower snake_case: words split at each capital, an acronym is one word (parseHTTPRequest → parse_http_request), and a digit run stays on the word before it (hkdfExpandSha256 → hkdf_expand_sha256). A name that is a keyword takes a name override."
   t.choices.push(

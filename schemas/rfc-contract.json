@@ -157,8 +157,8 @@
     },
     "modulePath": {
       "type": "string",
-      "pattern": "^[a-z][a-z0-9_]*(?:/[a-z][a-z0-9_]*)+$",
-      "description": "A module as a neutral path `<root>/<segment>/…`: lowercase segments separated by `/`, like the segments of a URI path (RFC 3986 §3.3)."
+      "pattern": "^[a-z][a-z0-9_]*(?:-[a-z0-9][a-z0-9_]*)*(?:/[a-z][a-z0-9_]*(?:-[a-z0-9][a-z0-9_]*)*)+$",
+      "description": "A module as a neutral path `<root>/<segment>/…`: lowercase segments separated by `/`, like the segments of a URI path (RFC 3986 §3.3). A segment is words joined by single `-` (`quic-packet`); a later word may start with a digit (`http1-codec`, `a-1`)."
     },
     "moduleOverrides": {
       "type": "object",

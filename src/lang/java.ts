@@ -88,7 +88,7 @@ export const langTableJava = (): LangTable => {
   t.literal("words64", langSpell("new long[] { 0x3320646e61707865L, 0x6b20657479622d32L }", ""))
   t.moduleForm = "class"
   t.moduleNote =
-    "a final class of static methods named for the last segment, in a package of the others (JLS §6.1, package names lowercase): nish/crypto/hkdf → class Hkdf in package nish.crypto"
+    "a final class of static methods named for the last segment, in a package of the others (JLS §6.1, package names lowercase): nish/crypto/hkdf → class Hkdf in package nish.crypto; a - in a segment becomes _ in the package and starts a word in the class: nish/net-io/quic-packet → class QuicPacket in package nish.net_io"
   t.nameRule =
     "methods and parameters lowerCamelCase: words split at each capital, a digit run stays on the word before it (hkdfExpandSha256 → hkdfExpandSha256), and an acronym is cased like a word (parseHTTPRequest → parseHttpRequest, readIOStream → readIoStream). A name that is a Java keyword takes a name override."
   t.choices.push(
