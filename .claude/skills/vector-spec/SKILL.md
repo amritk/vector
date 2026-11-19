@@ -463,26 +463,27 @@ When `exports` fails, do one of these in a spec-side PR:
   [--jobs N] [--max N] [--format markdown]
 ```
 
-It mutates only the module's lines changed since `--base`, and runs the test
-against each mutant. A survivor is printed with its `file:line`, its mutated
-line, and *behaviour no requirement pins down*, and the command exits 1. Kill
-the survivor with a property or vector the spec supports. Or, in a spec-side
-PR, allow it with a reason in `contracts/<name>.survivors.json`:
+It mutates the module's lines changed since `--base` in code the contract's
+functions reach (the rest are one note) and runs the test on each mutant. A
+survivor is printed with its `file:line`, its mutated line, and *behaviour no
+requirement pins down*, and it exits 1. Kill the survivor with a property or
+vector the spec supports. Or, in a spec-side PR, allow it with a reason in
+`contracts/<name>.survivors.json`:
 
 ```json
 { "allowSurvivors": [{ "file": "std/hex.ts", "line": 42, "reason": "…" }] }
 ```
 
-Then re-extract, which merges that file in verbatim. Re-run `emit`, `stale`
-and `frozen` too (`frozen` skips `*.survivors.json` sidecars), because the contract's bytes changed. Survivors are usually
-found by the implementation PR's `mutate` run, but the allow-list still
-belongs in a spec-side PR.
+Re-extract, which merges it in verbatim, then re-run `emit`, `stale` and
+`frozen` (which skips `*.survivors.json`): the contract's bytes changed.
+Survivors usually surface in the implementation PR, but the allow-list belongs
+in a spec-side PR.
 
 `mutate` also exits 1 in these cases:
 
-- there are zero mutants;
+- zero mutants, as when no changed line is in reach;
 - every mutant is stillborn or its build ran past its time;
-- too many builds or tests (over 10%) ran past their time;
+- over 10% of the builds or tests ran past their time;
 - the test fails on the unmutated module, or the unmutated module does not
   build because of an error in it.
 

@@ -20,7 +20,7 @@ The 3 JSON Schemas in `schemas/`.
 
 <scalar-card title="Modules" icon="phosphor/regular/books" href="#modules">
 
-The 118 source files of `src/`, from their doc comments.
+The 119 source files of `src/`, from their doc comments.
 
 </scalar-card>
 
@@ -121,6 +121,7 @@ The 118 source files of `src/`, from their doc comments.
 | [`spec/pr/mutaterun`](modules/spec/pr/mutaterun.md) | runs a test against each mutant of a module, several at once. |
 | [`spec/pr/rename`](modules/spec/pr/rename.md) | the one change that may touch both sides of a frozen contract: renaming the functions it tests, and nothing else. |
 | [`spec/pr/report`](modules/spec/pr/report.md) | what a PR gate found, and how it prints: as text, as markdown for a PR comment, or as JSON. |
+| [`spec/pr/scope`](modules/spec/pr/scope.md) | the code a contract tests: the module's top-level declarations its functions reach. |
 | [`spec/pr/stale`](modules/spec/pr/stale.md) | whether a generated test was emitted from the contract as it is now: its header comment's one `// vector-contract-sha256: <hex>` line must name the SHA-256 of the contract file's bytes. |
 | [`spec/profile/profile`](modules/spec/profile/profile.md) | the vector profile: what an RFC XML v3 spec, built by kramdown-rfc and `xml2rfc --v2v3`, must say for vector to read a contract from it, and the reading. |
 | [`spec/report/common`](modules/spec/report/common.md) | what every format of the check's report shares: the status, the findings placed where they are, the warnings shown, and how a citation, a requirement's evidence and a long text are written. |
