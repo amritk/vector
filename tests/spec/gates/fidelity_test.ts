@@ -985,6 +985,165 @@ const fidelityTestWrapCall = (
 }
 
 /**
+ * RFC 4231 §4 laid out as call labels, each over its own 16-byte value:
+ * label i's bytes run from 16 * (i + 1) up (fidelityTestLabelHex).
+ */
+const fidelityTestLabelRfc = (labels: string[]): string => {
+  const out = ["Request for Comments: 4231", "", "1.  Rules", "", "   It MUST derive.", "", "4.  Test Vectors", ""]
+  for (let i = 0; i < labels.length; i++) {
+    out.push(`   ${labels[i]} =`)
+    out.push(`   ${fidelityTestLabelHex(i, " ")}`)
+    out.push("")
+  }
+  return out.join("\n")
+}
+
+/** A label as a JSON string's body: each `"` escaped. */
+const fidelityTestLabelJson = (label: string): string => {
+  let out = ""
+  for (let i = 0; i < label.length; i++) {
+    const c = label.substring(i, i + 1)
+    out = c === '"' ? `${out}\\"` : `${out}${c}`
+  }
+  return out
+}
+
+/** Label i's value in fidelityTestLabelRfc, its bytes joined by `sep`. */
+const fidelityTestLabelHex = (i: i32, sep: string): string => {
+  const digits = "0123456789abcdef"
+  const bytes: string[] = []
+  for (let j = 0; j < 16; j++) {
+    const v = (i + 1) * 16 + j
+    bytes.push(`${digits.substring(v / 16, v / 16 + 1)}${digits.substring(v % 16, (v % 16) + 1)}`)
+  }
+  return bytes.join(sep)
+}
+
+/**
+ * What a call label's variant is, once its test case's inputs are cut out.
+ * Each row is a name, the function called, its params' JSON, the args' JSON,
+ * the index of the label the expected value is printed under, the finding
+ * wanted ("" for none), then the section's labels.
+ */
+const fidelityTestLabels = (t: Suite): void => {
+  const rows: string[][] = [
+    [
+      "a string in single quotes is cut out too",
+      "prfSha256",
+      `{"name": "k", "type": "string"}`,
+      `{"str": "k1"}`,
+      "0",
+      "",
+      "PRF (SHA-256, key='k1')",
+      "PRF (SHA-256, key='k5')",
+    ],
+    [
+      "so is one in curly quotes",
+      "prfSha256",
+      `{"name": "k", "type": "string"}`,
+      `{"str": "k1"}`,
+      "0",
+      "",
+      "PRF (SHA-256, key=\u201ck1\u201d)",
+      "PRF (SHA-256, key=\u201ck5\u201d)",
+    ],
+    [
+      "but a string in no quotes is not cut out",
+      "prfSha256",
+      `{"name": "k", "type": "string"}`,
+      `{"str": "k1"}`,
+      "0",
+      "is only part of a longer value",
+      "PRF (SHA-256, key=k1)",
+      "PRF (SHA-256, key=k2)",
+    ],
+    [
+      "a number after >= is no named argument's",
+      "cmac128",
+      `{"name": "k", "type": "string"}`,
+      `{"str": "Jefe"}`,
+      "1",
+      "but cmac128 names 128",
+      'CMAC (key="Jefe", bits>=128)',
+      'CMAC (key="Jefe", bits>=256)',
+    ],
+    [
+      "a word of letters and digits after = is kept",
+      "kdfSha256",
+      `{"name": "k", "type": "string"}`,
+      `{"str": "Jefe"}`,
+      "1",
+      "but kdfSha256 names 256",
+      'KDF (hash=SHA256, key="Jefe")',
+      'KDF (hash=SHA512, key="Jefe")',
+    ],
+    [
+      "a paired string is cut out: two keys are two test cases, not variants",
+      "prfSha256",
+      `{"name": "k", "type": "string"}`,
+      `{"str": "k1"}`,
+      "0",
+      "",
+      'PRF (SHA-256, key="k1")',
+      'PRF (SHA-256, key="k5")',
+    ],
+    [
+      "an unpaired string is not cut out of the other label",
+      "f",
+      `{"name": "k", "type": "string"}, {"name": "s", "type": "string"}`,
+      `{"str": "pepper"}, {"str": "spice"}`,
+      "0",
+      `args[1] "spice" is printed in the call label "SALT (SHA-512, key="pepper", s="spice")"`,
+      'SALT (SHA-256, key="pepper", s="")',
+      'SALT (SHA-512, key="pepper", s="spice")',
+    ],
+    [
+      "a label that differs only in another case's count is no variant",
+      "f",
+      `{"name": "k", "type": "string"}, {"name": "c", "type": "i32"}`,
+      `{"str": "Jefe"}, {"int": 1, "label": "c"}`,
+      "0",
+      `one of "HKDF (SHA-256, key="Jefe", c=1)" or "HKDF (SHA-512, key="Jefe", c=1)" in`,
+      'HKDF (SHA-256, key="Jefe", c=1)',
+      'HKDF (SHA-256, key="Jefe", c=2)',
+      'HKDF (SHA-512, key="Jefe", c=1)',
+    ],
+    [
+      "a labelled f64 names no call label's argument",
+      "drbgSha256",
+      `{"name": "x", "type": "f64"}`,
+      `{"f64": "1.5", "label": "c"}`,
+      "1",
+      "but drbgSha256 names 256",
+      "DRBG (SHA-256, c=1.5)",
+      "DRBG (SHA-512, c=1.5)",
+    ],
+    [
+      "an f64 printed only in another case's label is no paired integer",
+      "drbgSha256",
+      `{"name": "x", "type": "f64"}`,
+      `{"f64": "4.5", "label": "c"}`,
+      "0",
+      "nothing in the name drbgSha256 says which variant",
+      "DRBG (SHA-256, c=1.5)",
+      "DRBG (SHA-256, c=4.5)",
+    ],
+  ]
+  for (const r of rows) {
+    const labels = r.slice(6, r.length)
+    const at = parseInt(r[4])
+    const fn = `{"name": "${r[1]}", "params": [${r[2]}], "returns": "bytes"}`
+    const expect = `{"hex": "${fidelityTestLabelHex(at, "")}", "label": "${fidelityTestLabelJson(labels[at])}"}`
+    fidelityTestRowIs(
+      t,
+      `4231 §4: ${r[0]}`,
+      fidelityTestWrapCall("4231", fidelityTestLabelRfc(labels), fn, r[1], "4", r[3], expect),
+      r[5],
+    )
+  }
+}
+
+/**
  * Values named across wrapped lines and page breaks: RFC 9001's statements
  * and RFC 7914's call labels. Each row is a name, the section, the args'
  * JSON, the expected literal's JSON, and the finding wanted ("" for none).
@@ -1403,6 +1562,7 @@ export const main = (): i32 => {
   fidelityTestCases(t)
   fidelityTestOnce(t)
   fidelityTestWrapped(t)
+  fidelityTestLabels(t)
   t.ok("iterated findings", it.length === 19)
   if (it.length !== 19) {
     console.log(it.join("\n"))

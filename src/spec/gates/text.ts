@@ -208,9 +208,17 @@ export const gateLines = (lines: string[]): string => {
 /** The quotes a printed string may stand in, opening and closing. */
 const GATE_QUOTES: string = "\"|\"|'|'|\u201c|\u201d|\u2018|\u2019|`|`"
 
+/**
+ * The quotes a printed string may stand in, as pairs: an opening quote, then
+ * its closing one.
+ *
+ * @returns the quotes, opening at each even index and closing after it
+ */
+export const gateQuotePairs = (): string[] => split(GATE_QUOTES, "|")
+
 /** Whether `value` at `p..e` of `lines` is printed whole there. */
 const gateWhole = (lines: string, p: i32, e: i32): boolean => {
-  const quotes = split(GATE_QUOTES, "|")
+  const quotes = gateQuotePairs()
   for (let q = 0; q < quotes.length; q += 2) {
     const open = quotes[q]
     const close = quotes[q + 1]

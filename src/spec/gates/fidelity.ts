@@ -53,7 +53,15 @@ import {
 import { gateArgsAt, gateCitedSection, gatePlace, gateQuoteMissing, gateSources } from "./cite"
 import { gateIssue, gateWarn } from "./note"
 import { gateResultWord, gateStatesResult } from "./result"
-import { gateByteLists, gateF64Printed, gateIntLabelCount, gateIntRounds, gateLines, gateTextLines } from "./text"
+import {
+  gateByteLists,
+  gateF64Printed,
+  gateIntLabelCount,
+  gateIntRounds,
+  gateLines,
+  gateQuotePairs,
+  gateTextLines,
+} from "./text"
 import { GateWordBlock, gateWordBlocks } from "./words"
 
 /** Where one literal of a vector was found: under a label, or on lines. */
@@ -683,15 +691,11 @@ const gateArgText = (b: GateBound): string => {
  * another test case and refused.
  */
 const gateLabelArgs = (l: GateLits, args: i32): void => {
-  let e: GateBound | null = null
-  for (let i = args; i < l.bounds.length; i++) {
-    if (l.bounds[i].at === "expect") {
-      e = l.bounds[i]
-    }
-  }
-  if (e === null) {
+  // Every bound past the args is the expected value's.
+  if (l.bounds.length <= args) {
     return
   }
+  const e = l.bounds[l.bounds.length - 1]
   const label = e.label
   if (label === null) {
     return
@@ -1239,16 +1243,26 @@ const gateTruncateLength = (
   )
 }
 
-/** A label with one paired string's printing cut out: `"salt"` of `(P="passwd", S="salt")` leaves `S=""`. */
+/**
+ * A label with one paired string's printing cut out, in whichever quotes it
+ * stands in (gateQuotePairs): `"salt"` of `(P="passwd", S="salt")` leaves
+ * `S=""`, and `'k1'` of `(key='k1')` leaves `key=''`.
+ */
 const gateLabelUnText = (label: string, text: string): string => {
-  const quoted = `"${text}"`
-  const at = label.indexOf(quoted)
-  return at < 0 ? label : `${label.substring(0, at)}""${label.substring(at + quoted.length)}`
+  const quotes = gateQuotePairs()
+  let out = label
+  for (let q = 0; q < quotes.length; q += 2) {
+    const quoted = `${quotes[q]}${text}${quotes[q + 1]}`
+    const at = out.indexOf(quoted)
+    if (at >= 0) {
+      out = `${out.substring(0, at)}${quotes[q]}${quotes[q + 1]}${out.substring(at + quoted.length)}`
+    }
+  }
+  return out
 }
 
-/** Whether `c` is a letter, digit or `_`: it runs a name or a number on. */
-const gateNameChar = (c: i32): boolean =>
-  (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95
+/** Whether `c` is an ASCII letter or digit: it runs a name or a number on. */
+const gateNameChar = (c: i32): boolean => (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122)
 
 /**
  * A call label with each named integer argument's number cut out: `c=1` and
@@ -1269,7 +1283,7 @@ const gateLabelUnNumbered = (label: string): string => {
     while (e < label.length && gateNameChar(label.charCodeAt(e))) {
       e = e + 1
     }
-    let digits = e > i
+    let digits = true
     for (let k = i; k < e && digits; k++) {
       digits = label.charCodeAt(k) >= 48 && label.charCodeAt(k) <= 57
     }

@@ -718,6 +718,41 @@ export const main = (): i32 => {
     ["so does a bare hex value", "key = f(x)\n   aabbccdd\n   = 2233ff", "-=aabbccdd -=2233ff"],
     ["and a dump", "key = f(x)\n   0000  aa bb cc dd\n   = 2233ff", "-=aabbccdd -=2233ff"],
     [
+      "and its own = line: a statement names one value",
+      "key = f(x)\n   = 0a0b0c0d\n   = 2233ff",
+      "key=0a0b0c0d -=2233ff",
+    ],
+    ["a line led by a letter, not =, is no = line", "key = f(x)\nk 0a0b0c0d\n   = 2233ff", "-=2233ff"],
+    ["a call closed with no = names nothing below it", "name = f(a,\n   b)\n   0a0b0c0d", "-=0a0b0c0d"],
+    ["an = line ends a call left open above it", "T (a,\n   = f(x)\nKey) =\n   0a0b0c0d", "Key)=0a0b0c0d"],
+    [
+      "a line ending in : inside an open parenthesis is a label of its own",
+      "The tag (computed over\nKey:\n   0a0b0c0d\nmore) =\n   2233ff",
+      "Key=0a0b0c0d more)=2233ff",
+    ],
+    [
+      "so is one ending in =, and it starts a statement",
+      "The tag (computed over\nkey =\n   = 0a0b0c0d",
+      "key=0a0b0c0d",
+    ],
+    [
+      "a call closed by = ends the statement it opened",
+      "key = f(a,\n   b) =\n   0a0b0c0d\n   = 2233ff",
+      "key = f(a, b)=0a0b0c0d -=2233ff",
+    ],
+    ["with nothing printed between", "key = f(a,\n   b) =\n   = 2233ff", "-=2233ff"],
+    [
+      "a call closed with no = drops the name a line inside it gave",
+      "name = f(a,\n   Data\n   b)\n   0a0b0c0d",
+      "-=0a0b0c0d",
+    ],
+    [
+      "a line ending in : past a closed call is a label of its own",
+      "name = f(a,\n   b)\nKey:\n   0a0b0c0d",
+      "Key=0a0b0c0d",
+    ],
+    ["a : line inside an open parenthesis ends it", "The tag (computed over\nKey:\nmore) =\n   2233ff", "more)=2233ff"],
+    [
       "a call wrapped past four lines is no call label",
       "f (a,\n   b,\n   c,\n   d,\n   e) =\n   0a0b0c0d",
       "e)=0a0b0c0d",
