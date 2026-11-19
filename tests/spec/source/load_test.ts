@@ -64,6 +64,30 @@ const loadTestXmlProblems = (root: string, file: string, body: string): string =
   return `reads: ${read.doc.sections[0].lines.join(" / ")}`
 }
 
+/**
+ * Loads a contract whose one source, `file` beside it holding `text`, is
+ * declared as RFC `rfc` (or no RFC, at -1) and pinned to `pin` when it is not
+ * null: its problems joined by " | ", or, when it loads, "reads: " and its
+ * first section's last line as the gates read it, from its "It".
+ */
+const loadTestHintProblems = (root: string, file: string, text: string, rfc: i32, pin: string | null): string => {
+  writeFileSync(joinPath(root, `contracts/${file}`), text)
+  const x = loadTestContract(-1)
+  const d = loadTestDecl("x", rfc, null, file)
+  d.sha256 = pin
+  x.sources = [d]
+  const set = sourceLoad(x, joinPath(root, "contracts/c.json"), root)
+  if (set.problems.length > 0) {
+    return set.problems.join(" | ")
+  }
+  const read = sourceFind(set, "x")
+  if (read === null || read.doc.sections.length === 0) {
+    return "reads: nothing"
+  }
+  const lines = read.doc.sections[0].lines
+  return `reads: ${lines[lines.length - 1].substring(lines[lines.length - 1].indexOf("It"))}`
+}
+
 /** The problems of a load, joined by " | ". */
 const loadTestProblems = (c: Contract, contractPath: string, root: string): string =>
   sourceLoad(c, contractPath, root).problems.join(" | ")
@@ -311,6 +335,45 @@ export const main = (): i32 => {
     "an escaped Cyrillic look-alike in an .xml source is refused",
     loadTestXmlProblems(root, "cyr.xml", "It MUS&#x422; work."),
     'source x: contracts/cyr.xml as its reader decoded it: text a reader cannot see as the gates read it: line 2: "MUSТ" reads as MUST but is not spelled in ASCII: write MUST',
+  )
+
+  // A literal line-break hint is dropped from an RFC source, .txt or .xml,
+  // where it cannot change a word; inside a word, or in a source that names
+  // no RFC, it is refused as before.
+  const zw = charsFromCodePoint(0x200b)
+  const wj = charsFromCodePoint(0x2060)
+  const hintTxt = loadTestRfc(7001, `It MUST be 0x0100-${zw}0x01ff.`)
+  const hintXml = `<rfc number="7002">${loadTestXml(`It MUST be 0x0100-${wj}0x01ff.`).substring(5)}`
+  t.eqStr(
+    "a boundary hint in a linked RFC .txt is dropped",
+    loadTestHintProblems(root, "rfc7001.txt", hintTxt, 7001, null),
+    "reads: It MUST be 0x0100-0x01ff.",
+  )
+  t.eqStr(
+    "a boundary hint in a linked RFC .xml is dropped",
+    loadTestHintProblems(root, "rfc7002.xml", hintXml, 7002, null),
+    "reads: It MUST be 0x0100-0x01ff.",
+  )
+  t.eqStr(
+    "a hint inside a word in a linked RFC .xml is refused at its line",
+    loadTestHintProblems(root, "rfc7003.xml", `<rfc number="7003">\n${loadTestXml(`It MU${zw}ST work.`)}`, 7003, null),
+    "source x: contracts/rfc7003.xml: text a reader cannot see as the gates read it: line 2: invisible character U+200B: remove it",
+  )
+  t.eqStr(
+    "a boundary hint in a source that names no RFC is refused",
+    loadTestHintProblems(root, "hint.txt", hintTxt, -1, null),
+    "source x: contracts/hint.txt: text a reader cannot see as the gates read it: line 5: invisible character U+200B: remove it",
+  )
+  t.eqStr(
+    "an RFC source with a dropped hint is pinned by its file's bytes",
+    loadTestHintProblems(root, "rfc7001.txt", hintTxt, 7001, sha256Hex(hintTxt)),
+    "reads: It MUST be 0x0100-0x01ff.",
+  )
+  const dropped = loadTestRfc(7001, "It MUST be 0x0100-0x01ff.")
+  t.eqStr(
+    "an RFC source with a dropped hint is not pinned by the dropped text",
+    loadTestHintProblems(root, "rfc7001.txt", hintTxt, 7001, sha256Hex(dropped)),
+    `source x (contracts/rfc7001.txt) has SHA-256 ${sha256Hex(hintTxt)}, but the contract pins ${sha256Hex(dropped)}: the source changed`,
   )
 
   // Each refusal, with its reason.

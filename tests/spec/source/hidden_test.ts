@@ -1,9 +1,11 @@
 import { regexCompile } from "nish/regex"
 import { Suite } from "nish/testing"
+import { replaceAll } from "nish/text"
 import { charsFromCodePoint, charsName } from "../../../src/spec/contract/chars"
 import { foldTable } from "../../../src/spec/source/fold"
 import {
   hiddenAsciiLetterOf,
+  hiddenDropBreaks,
   hiddenIsInvisible,
   hiddenProblem,
   hiddenText,
@@ -24,6 +26,57 @@ const hiddenTestOne = (text: string): string => {
   const p = hiddenText(text)
   return p.length === 1 ? p[0] : `${p.length} problems: ${p.join(" | ")}`
 }
+
+/** `text` with each `@` the code point `cp` and each `^` a U+0301 combining acute. */
+const hiddenTestHint = (text: string, cp: i32): string => {
+  const out: string[] = []
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i)
+    out.push(c === 0x40 ? charsFromCodePoint(cp) : c === 0x5e ? charsFromCodePoint(0x301) : text.substring(i, i + 1))
+  }
+  return out.join("")
+}
+
+/** What a source's text reads as once its break hints are dropped: the text, or what the scan refuses in it. */
+const hiddenTestDrop = (text: string): string => {
+  const dropped = hiddenDropBreaks(text)
+  const p = hiddenText(dropped)
+  return p.length === 0 ? `clean: ${dropped}` : p.join(" | ")
+}
+
+/**
+ * hiddenDropBreaks's cases, for a hint `@`: a name, a text, and what
+ * hiddenTestDrop makes of it once `@` is U+200B or U+2060 (`#` in the
+ * expected text is that character's name).
+ */
+const hiddenTestDropCases = (): string[][] => [
+  ["after a hyphen, as in RFC 9000", "0x0100-@0x01ff", "clean: 0x0100-0x01ff"],
+  ["before a digit", "(@1)", "clean: (1)"],
+  ["at a line's start", "a\n@MUST", "clean: a\nMUST"],
+  ["at a line's end", "MUST@\nb", "clean: MUST\nb"],
+  ["beside a space", "a @b c@ d", "clean: a b c d"],
+  ["at the text's start and end", "@MUST@", "clean: MUST"],
+  ["a run of hints beside a hyphen", "a-@@b", "clean: a-b"],
+  ["beside a symbol of more than one byte", "a\u2192@b", "clean: a\u2192b"],
+  ["no hint: the text as it is", "It MUST.", "clean: It MUST."],
+  ["between two letters", "  it MU@ST", "line 1: invisible character #: remove it"],
+  ["between two letters, line 3", "a\nb\nMU@ST", "line 3: invisible character #: remove it"],
+  [
+    "a run between two letters",
+    "MU@@ST",
+    "line 1: invisible character #: remove it | line 1: invisible character #: remove it",
+  ],
+  ["between two digits", "0x01@00", "line 1: invisible character #: remove it"],
+  ["between a letter and a digit", "a@1", "line 1: invisible character #: remove it"],
+  ["between a non-ASCII letter and a letter", "\u00e9@x", "line 1: invisible character #: remove it"],
+  ["next to a combining mark", "e^@x", "line 1: invisible character #: remove it"],
+  ["beside U+200C, which stays", "-@\u200c0", "line 1: invisible character U+200C: remove it"],
+  [
+    "a look-alike beside a dropped hint",
+    "-@MUS\u0422",
+    'line 1: "MUS\u0422" reads as MUST but is not spelled in ASCII: write MUST',
+  ],
+]
 
 /** The refusal of invisible characters and of keywords not spelled in ASCII. */
 export const main = (): i32 => {
@@ -252,6 +305,23 @@ export const main = (): i32 => {
       }
     }
     t.eqStr("every folded code point is in a word", outside.join(" "), "")
+  }
+
+  // An RFC's break hints: dropped where they cannot change a word, kept and
+  // refused where they can; nothing else is dropped.
+  for (const cp of [0x200b, 0x2060]) {
+    const name = charsName(cp)
+    for (const c of hiddenTestDropCases()) {
+      t.eqStr(`${name} ${c[0]}`, hiddenTestDrop(hiddenTestHint(c[1], cp)), replaceAll(c[2], "#", name))
+    }
+  }
+  for (const cp of [0x200c, 0x200d, 0x00ad, 0x202e, 0xfeff]) {
+    const name = charsName(cp)
+    t.eqStr(
+      `${name} after a hyphen is not dropped`,
+      hiddenTestDrop(`0x0100-${charsFromCodePoint(cp)}0x01ff`),
+      `line 1: invisible character ${name}: remove it`,
+    )
   }
   return t.done()
 }

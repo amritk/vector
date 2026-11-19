@@ -333,7 +333,7 @@ const hiddenWordAt = (word: Regex, text: string, i: i32): boolean =>
  * @returns the text without its droppable hints
  */
 export const hiddenDropBreaks = (text: string): string => {
-  if (text.indexOf("​") < 0 && text.indexOf("⁠") < 0) {
+  if (text.indexOf("\u200b") < 0 && text.indexOf("\u2060") < 0) {
     return text
   }
   const compiled = regexCompile(`^${hiddenWordClass()}$`, "")
