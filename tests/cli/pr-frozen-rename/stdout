@@ -1,0 +1,11 @@
+spec frozen against main: OK
+
+  ✓ contract contracts/c.json
+  spec contracts/c.json
+  spec specs/s.md
+  spec specs/s.xml
+  implementation src/x.ts
+  generated test/spec/c_test.ts
+
+notes:
+  - passed as a rename: contracts/c.json renames toHex to encodeHex, and the 5 changed files are that rename alone
