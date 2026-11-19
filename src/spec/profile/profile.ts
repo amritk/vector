@@ -360,14 +360,12 @@ class ProfileContext {
   md: ProfileMd | null
   rfcs: ProfileRfcs
   refusals: ProfileRefusal[]
-  /** The refusals of the ts-interface block, also in `refusals`; they are printed first. */
-  ifaceRefusals: Set<ProfileRefusal>
   /**
-   * Whether the ts-interface block was refused, so it declares no function:
-   * a call to an undeclared function is then not refused, since that only
-   * follows from the block's refusal.
+   * The refusals of the ts-interface block, also in `refusals`; they are
+   * printed first. While there is one the block declares no function, so a
+   * call to an undeclared function is not refused: that only follows from it.
    */
-  ifaceRefused: boolean
+  ifaceRefusals: Set<ProfileRefusal>
   /** Each reference's anchor, and the RFC it names (-1 for none). */
   referenced: Map<string, i32>
   mainRfc: i32
@@ -410,7 +408,6 @@ class ProfileContext {
     this.rfcs = rfcs
     this.refusals = []
     this.ifaceRefusals = new Set<ProfileRefusal>()
-    this.ifaceRefused = false
     this.referenced = new Map<string, i32>()
     this.mainRfc = -1
     this.mainKey = null
@@ -1339,7 +1336,6 @@ const profileReadInterface = (c: ProfileContext, code: XmlNode[]): void => {
     for (let i = from; i < c.refusals.length; i++) {
       c.ifaceRefusals.add(c.refusals[i])
     }
-    c.ifaceRefused = true
     return
   }
   const got = r.value
@@ -2484,7 +2480,7 @@ const profileReadRow = (c: ProfileContext, cells: XmlNode[], section: string, tr
   if (pcall !== null) {
     const fn = profileFn(c, pcall.call)
     if (fn === null) {
-      if (!c.ifaceRefused) {
+      if (c.ifaceRefusals.size === 0) {
         profileRefuse(c, callC, `"${pcall.call}" is not a function of the ts-interface block`)
       }
     } else if (fn.module !== null) {
@@ -2755,7 +2751,7 @@ const profileReadProperties = (c: ProfileContext, code: XmlNode[]): void => {
     if (r.isErr()) {
       // A refused interface declares no function, so its calls are unknown.
       const own = r.error.filter(
-        (e: FrontRefusal): boolean => !c.ifaceRefused || !e.message.startsWith("unknown function `"),
+        (e: FrontRefusal): boolean => c.ifaceRefusals.size === 0 || !e.message.startsWith("unknown function `"),
       )
       profileFrontRefuse(c, node, own)
       continue
