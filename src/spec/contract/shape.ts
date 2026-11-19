@@ -534,6 +534,14 @@ const shapeFunctions = (s: ShapeContext): void => {
       if (!vocabHas(sig, p.type)) {
         shapeFail(s, `${pat}.type`, `one of ${sig.join(" ")}`)
       }
+      const form = p.form
+      if (form !== null) {
+        if (form !== "window") {
+          shapeFail(s, `${pat}.form`, `"window", or absent`)
+        } else if (p.type !== "bytes") {
+          shapeFail(s, `${pat}.form`, `absent: a window is a bytes parameter, not ${p.type}`)
+        }
+      }
     }
   }
 }

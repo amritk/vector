@@ -373,6 +373,7 @@ const writeTree = (c: Contract): WriteNode => {
       const p = writeObj()
       writeSet(p, "name", writeStr(f.params[j].name))
       writeSet(p, "type", writeStr(f.params[j].type))
+      writeSetStr(p, "form", f.params[j].form)
       writeOverrides(p, "names", f.params[j].names)
       params.items.push(p)
     }

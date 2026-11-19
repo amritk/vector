@@ -480,6 +480,10 @@
               "type": {
                 "$ref": "#/$defs/paramType"
               },
+              "form": {
+                "enum": ["window"],
+                "description": "Only on a bytes parameter the real function takes as three, (buf: u8[], off: i32, len: i32): the bytes are buf[off, off + len)."
+              },
               "names": {
                 "$ref": "#/$defs/nameOverrides"
               }

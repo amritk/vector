@@ -18,7 +18,7 @@ import {
   literalsSettle,
   literalsSettleVector,
 } from "../../../src/spec/contract/literals"
-import { FnSig, LitKind, Literal, Param, typesIsWords, typesWordsKey } from "../../../src/spec/contract/types"
+import { FnSig, LitKind, Literal, Param, typesIsWindow, typesIsWords, typesWordsKey } from "../../../src/spec/contract/types"
 import { typeIntBase } from "../../../src/spec/contract/typing"
 
 /** A raw kind's name. */
@@ -693,5 +693,12 @@ export const main = (): i32 => {
     litTestVector(ints, "f([11111111], 7)", "[22222222]"),
     "{words32:11111111} {int:7} -> {words32:22222222}",
   )
+  // A parameter's form: only "window" is a window.
+  const wp = new Param()
+  t.ok("a parameter with no form is not a window", !typesIsWindow(wp))
+  wp.form = "window"
+  t.ok("a window form is a window", typesIsWindow(wp))
+  wp.form = "Window"
+  t.ok("another form is not a window", !typesIsWindow(wp))
   return t.done()
 }

@@ -590,3 +590,14 @@ export const typesWordsKind = (digits: i32): LitKind => {
   }
   return digits === 8 ? LitKind.Words32 : LitKind.Words64
 }
+
+/**
+ * Whether the real function takes a parameter as a window, three arguments
+ * `(buf: u8[], off: i32, len: i32)` for one bytes value.
+ * @param p the parameter
+ * @returns true when its form is `window`
+ */
+export const typesIsWindow = (p: Param): boolean => {
+  const form = p.form
+  return form !== null && form === "window"
+}
