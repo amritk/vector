@@ -106,7 +106,7 @@ export const langTableKotlin = (): LangTable => {
   )
   t.moduleForm = "class"
   t.moduleNote =
-    "an object named for the last segment, in a package of the others (Coding Conventions, Names for packages and classes): nish/crypto/hkdf → object Hkdf in package nish.crypto"
+    "an object named for the last segment, in a package of the others (Coding Conventions, Names for packages and classes): nish/crypto/hkdf → object Hkdf in package nish.crypto; a - in a segment becomes _ in the package and starts a word in the object: nish/net-io/quic-packet → object QuicPacket in package nish.net_io"
   t.nameRule =
     "functions and parameters lowerCamelCase: words split at each capital, a digit run stays on the word before it, a two-letter acronym stays in capitals and a longer one is cased like a word (readIOStream → readIOStream, parseHTTPRequest → parseHttpRequest). A name that is a hard keyword takes a name override."
   t.choices.push(
