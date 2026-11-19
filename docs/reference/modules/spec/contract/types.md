@@ -40,6 +40,7 @@ Generated from [src/spec/contract/types.ts](https://github.com/amritk/vector/blo
 - [`typesIsWords`](#typesiswords)
 - [`typesWordsKey`](#typeswordskey)
 - [`typesWordsKind`](#typeswordskind)
+- [`typesIsWindow`](#typesiswindow)
 
 ## Declarations
 
@@ -689,6 +690,16 @@ Starts with no name or type.
 
 ```ts
 new Param(): Param
+```
+
+#### Param.form
+
+How the real function takes it, or null when as one argument of its
+type. `window`: a `bytes` parameter the real function takes as three,
+`(buf: u8[], off: i32, len: i32)`, the bytes being `buf[off, off + len)`.
+
+```ts
+form: string | null
 ```
 
 #### Param.name
@@ -1568,5 +1579,26 @@ function typesWordsKind(digits: i32): LitKind
 <scalar-field name="returns" type="LitKind">
 
 Words16, Words32 or Words64
+
+</scalar-field>
+
+### typesIsWindow
+
+Whether the real function takes a parameter as a window, three arguments
+`(buf: u8[], off: i32, len: i32)` for one bytes value.
+
+```ts
+function typesIsWindow(p: Param): boolean
+```
+
+<scalar-field name="p" type="Param" required>
+
+the parameter
+
+</scalar-field>
+
+<scalar-field name="returns" type="boolean">
+
+true when its form is `window`
 
 </scalar-field>

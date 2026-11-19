@@ -112,7 +112,8 @@ Nish test can hold all but `i8` and `i16`, which Nish lacks, so the emitter
 refuses them; only the Nish test holds word arrays. Add `| null` to `u8[]`,
 a word array or `string`, and to `Secret<u8[]>` as a result only. Give
 word-array cases as vectors: a property over or calling word arrays is
-refused.
+refused. Write `u8[] /* window */` for a `(buf, off, len)` triple: one
+bytes parameter, tested at a nonzero offset, in the Nish test only.
 
 A property may compare the module with another nish module (HKDF with
 HMAC). Declare that module's functions after a second `// module:` line,

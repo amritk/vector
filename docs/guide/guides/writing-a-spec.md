@@ -299,6 +299,28 @@ either way:
   and returns no value (`hexDecode("0") === null`);
 - **an optional input**: as a parameter type, the argument may be absent.
 
+### A window parameter
+
+Some functions take a buffer as three parameters, `(buf, off, len)`, and
+read only `len` bytes from `off`. Declare that as one parameter, with a
+`/* window */` comment after its `u8[]`:
+
+~~~ ts-interface
+// module: nish/compress/checksum
+export const crc32 = (buf: u8[] /* window */): u32
+~~~
+
+The contract holds one `bytes` parameter with `"form": "window"`, and every
+vector and property passes it plain bytes (`crc32("123456789")`). The
+signatures gate checks it against the export's `(u8[], i32, i32)`, in that
+place. The Nish test copies the bytes between guard bytes, three before and
+two after, and passes the offset 3 and their length, so an implementation
+that reads from 0 or past `len` fails. Only the Nish emitter expands a
+window; the others refuse the function, naming the parameter.
+
+Extract refuses `/* window */` after any type but `u8[]`, twice on one
+parameter, and any other comment on an interface parameter.
+
 ### Literals in the contract
 
 Beyond the profile's literals:
