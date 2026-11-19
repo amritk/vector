@@ -25,6 +25,7 @@ Generated from [src/spec/gates/text.ts](https://github.com/amritk/vector/blob/ma
 - [`gateKeywordUses`](#gatekeyworduses)
 - [`gateKeywordName`](#gatekeywordname)
 - [`gateLines`](#gatelines)
+- [`gateQuotePairs`](#gatequotepairs)
 - [`gateTextLines`](#gatetextlines)
 - [`gateIntRounds`](#gateintrounds)
 - [`gateIntLabelCount`](#gateintlabelcount)
@@ -193,6 +194,21 @@ the section's lines
 <scalar-field name="returns" type="string">
 
 the lines, one per line
+
+</scalar-field>
+
+### gateQuotePairs
+
+The quotes a printed string may stand in, as pairs: an opening quote, then
+its closing one.
+
+```ts
+function gateQuotePairs(): string[]
+```
+
+<scalar-field name="returns" type="string[]">
+
+the quotes, opening at each even index and closing after it
 
 </scalar-field>
 
