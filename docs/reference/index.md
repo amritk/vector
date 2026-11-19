@@ -20,7 +20,7 @@ The 3 JSON Schemas in `schemas/`.
 
 <scalar-card title="Modules" icon="phosphor/regular/books" href="#modules">
 
-The 118 source files of `src/`, from their doc comments.
+The 119 source files of `src/`, from their doc comments.
 
 </scalar-card>
 
