@@ -360,6 +360,12 @@ class ProfileContext {
   md: ProfileMd | null
   rfcs: ProfileRfcs
   refusals: ProfileRefusal[]
+  /**
+   * The refusals of the ts-interface block, also in `refusals`; they are
+   * printed first. While there is one the block declares no function, so a
+   * call to an undeclared function is not refused: that only follows from it.
+   */
+  ifaceRefusals: Set<ProfileRefusal>
   /** Each reference's anchor, and the RFC it names (-1 for none). */
   referenced: Map<string, i32>
   mainRfc: i32
@@ -401,6 +407,7 @@ class ProfileContext {
     this.md = md
     this.rfcs = rfcs
     this.refusals = []
+    this.ifaceRefusals = new Set<ProfileRefusal>()
     this.referenced = new Map<string, i32>()
     this.mainRfc = -1
     this.mainKey = null
@@ -1324,7 +1331,11 @@ const profileReadInterface = (c: ProfileContext, code: XmlNode[]): void => {
   const code0 = xmlCodeOf(iface)
   const r = frontParseInterface(code0.text)
   if (r.isErr()) {
+    const from = c.refusals.length
     profileFrontRefuse(c, iface, r.error)
+    for (let i = from; i < c.refusals.length; i++) {
+      c.ifaceRefusals.add(c.refusals[i])
+    }
     return
   }
   const got = r.value
@@ -2469,7 +2480,9 @@ const profileReadRow = (c: ProfileContext, cells: XmlNode[], section: string, tr
   if (pcall !== null) {
     const fn = profileFn(c, pcall.call)
     if (fn === null) {
-      profileRefuse(c, callC, `"${pcall.call}" is not a function of the ts-interface block`)
+      if (c.ifaceRefusals.size === 0) {
+        profileRefuse(c, callC, `"${pcall.call}" is not a function of the ts-interface block`)
+      }
     } else if (fn.module !== null) {
       profileRefuse(
         c,
@@ -2736,7 +2749,11 @@ const profileReadProperties = (c: ProfileContext, code: XmlNode[]): void => {
     const block = xmlCodeOf(node)
     const r = frontParseProperty(block.text, c.functions)
     if (r.isErr()) {
-      profileFrontRefuse(c, node, r.error)
+      // A refused interface declares no function, so its calls are unknown.
+      const own = r.error.filter(
+        (e: FrontRefusal): boolean => c.ifaceRefusals.size === 0 || !e.message.startsWith("unknown function `"),
+      )
+      profileFrontRefuse(c, node, own)
       continue
     }
     const p = r.value
@@ -2960,7 +2977,14 @@ const profilePut = (c: ProfileContext, l: ProfileLocator, key: string, loc: Prof
   l.at.set(key, profileWhereOf(c, loc))
 }
 
-const profileSorted = (c: ProfileContext): Result<ProfileRead, ProfileRefusal[]> => Err(profileSortRefusals(c.refusals))
+/** The refusals: the ts-interface block's first, then the rest, each in XML document order. */
+const profileSorted = (c: ProfileContext): Result<ProfileRead, ProfileRefusal[]> => {
+  const out = profileSortRefusals(c.refusals.filter((r: ProfileRefusal): boolean => c.ifaceRefusals.has(r)))
+  for (const r of profileSortRefusals(c.refusals.filter((r: ProfileRefusal): boolean => !c.ifaceRefusals.has(r)))) {
+    out.push(r)
+  }
+  return Err(out)
+}
 
 /**
  * Reads a contract from a spec under the vector profile.
@@ -2969,7 +2993,7 @@ const profileSorted = (c: ProfileContext): Result<ProfileRead, ProfileRefusal[]>
  * @param xmlPath the spec's path, whose basename names the contract
  * @param md the markdown it was built from, for refusals at its lines; null when unknown
  * @param rfcs the RFCs it may cite; one asked for and absent is recorded in `rfcs.missing`
- * @returns the contract and where each part was read, or every refusal, in XML document order
+ * @returns the contract and where each part was read, or every refusal: the ts-interface block's first, then the rest, each in XML document order
  */
 export const profileRead = (
   doc: XmlDocument,
