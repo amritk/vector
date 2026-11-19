@@ -368,6 +368,14 @@ const fidelityTestTable = (t: Suite): void => {
       `${refused}, as in "X25519${w}"`,
     )
   }
+  // A bracket that is no call label's arguments still names the variant.
+  const bracketed = "   Output (X25519) after 1,000 iterations = 0x2222\n   Output (X448) after 1,000 iterations = 0x5555"
+  fidelityTestRowIs(
+    t,
+    "another variant, in brackets",
+    fidelityTestRow("1", "1.  Rounds", bracketed, "5555", "Output (X448) after 1,000 iterations", 1000),
+    `${refused}, as in "Output (X25519) after 1,000 iterations"`,
+  )
   const grouped = "   After 1,000 iterations = 0x2222\n   After 1,000,000 iterations = 0x3333"
   fidelityTestRowIs(
     t,
@@ -846,6 +854,274 @@ const fidelityTestOnce = (t: Suite): void => {
   }
 }
 
+/** A footer, form feed and header, as `rfcParse` reads page furniture. */
+const fidelityTestBreak = (rfc: string, page: i32): string =>
+  `\nAuthor                        Informational                     [Page ${page}]\n\f\nRFC ${rfc}                      Example Spec                     May 2021\n`
+
+/**
+ * RFC 9001 Appendix A.1's layout: values on `= hex` lines under a statement
+ * that names them, one split across a page break, and a page break between
+ * the client and server blocks.
+ */
+const fidelityTestQuicRfc = (): string =>
+  [
+    "Request for Comments: 9001",
+    "",
+    "1.  Rules",
+    "",
+    "   It MUST derive.",
+    "",
+    "A.1.  Keys",
+    "",
+    "   quic key:  00100e746c7331332071756963206b657900",
+    "",
+    "   initial_secret = HKDF-Extract(initial_salt, cid)",
+    "       = 7db5df06e7a69e432496adedb0085192",
+    "         3595221596ae2ae9fb8115c1e9ed0a44",
+    "",
+    "   client_initial_secret",
+    '       = HKDF-Expand-Label(initial_secret, "client in", "", 32)',
+    "       = c00cf151ca5be075ed0ebfb5c80323c4",
+    fidelityTestBreak("9001", 47),
+    "         2d6b7db67881289af4008f1f6c357aea",
+    "",
+    '   key = HKDF-Expand-Label(client_initial_secret, "quic key", "", 16)',
+    "       = 1f369613dd76d5467730efcbe3b1a22d",
+    fidelityTestBreak("9001", 48),
+    "   server_initial_secret",
+    '       = HKDF-Expand-Label(initial_secret, "server in", "", 32)',
+    "       = 3c199828fd139efd216c155ad844cc81",
+    "         fb82fa8d7446fa7d78be803acdda951b",
+    "",
+    '   key = HKDF-Expand-Label(server_initial_secret, "quic key", "", 16)',
+    "       = cf3a5331653c364c88f0f379b6067e37",
+    "",
+  ].join("\n")
+
+/**
+ * RFC 7914 sections 11 and 12's layout: call labels wrapped over two lines,
+ * one split by a page break, and two blocks split only by one.
+ */
+const fidelityTestScryptRfc = (): string =>
+  [
+    "Request for Comments: 7914",
+    "",
+    "1.  Rules",
+    "",
+    "   It MUST derive.",
+    "",
+    "11.  Test Vectors for PBKDF2 with HMAC-SHA-256",
+    "",
+    '   PBKDF2-HMAC-SHA-256 (P="passwd", S="salt",',
+    "                       c=1, dkLen=64) =",
+    "   55 ac 04 6e 56 e3 08 9f ec 16 91 c2 25 44 b6 05",
+    fidelityTestBreak("7914", 11),
+    '   PBKDF2-HMAC-SHA-256 (P="Password", S="NaCl",',
+    fidelityTestBreak("7914", 12),
+    "                        c=80000, dkLen=64) =",
+    "   4d dc d8 f6 0b 98 be 21 83 0c ee 5e f2 27 01 f9",
+    "",
+    "12.  Test Vectors for scrypt",
+    "",
+    '   scrypt (P="", S="",',
+    "           N=16, r=1, p=1, dklen=64) =",
+    "   77 d6 57 62 38 65 7b 20 3b 19 ca 42 c1 8a 04 97",
+    fidelityTestBreak("7914", 13),
+    '   scrypt (P="password", S="NaCl",',
+    "           N=1024, r=8, p=16, dkLen=64) =",
+    "   fd ba be 1c 9d 34 72 00 78 56 e7 19 0d 01 e9 fe",
+    "",
+    '   scrypt (P="pleaseletmein", S="SodiumChloride",',
+    "           N=16384, r=8, p=1, dkLen=64) =",
+    "   70 23 bd cb 3a fd 73 48 46 1c 06 cd 81 fd 38 eb",
+    "",
+    '   scrypt (P="pleaseletmein", S="SodiumChloride",',
+    "           N=1048576, r=8, p=1, dkLen=64) =",
+    "   21 01 cb 9b 6a 51 1a ae ad db be 09 cf 70 f8 81",
+    "",
+  ].join("\n")
+
+/**
+ * The findings and warnings for one vector of `fn` (a contract function's
+ * JSON) citing section `id` of RFC `num`, whose text is `rfc`: `args` and
+ * `expect` are the clause's literals' JSON.
+ */
+const fidelityTestWrap = (
+  num: string,
+  rfc: string,
+  fn: string,
+  id: string,
+  args: string,
+  expect: string,
+): string[] => {
+  const contract = `{
+  "contract": "c6",
+  "source": {"title": "T", "rfc": ${num}},
+  "target": {"module": "nish/x"},
+  "requirements": [{"id": "R1", "section": "1", "level": "MUST", "quote": "It MUST derive."}],
+  "functions": [${fn}],
+  "clauses": [
+    {"kind": "vector", "id": "W1", "title": "t", "covers": ["R1"], "source": {"cite": {"section": "${id}"}}, "call": "f",
+     "args": [${args}], "expect": ${expect}}
+  ]
+}`
+  const ctx = new CheckContext("contracts/c6.json", ".")
+  ctx.contract = contractParse(contract, "c6").expect("parse")
+  const set = new SourceSet()
+  set.main = `rfc${num}`
+  set.sources.push(new LoadedSource(`rfc${num}`, "r.txt", "r.txt", rfcParse(rfc)))
+  ctx.sources = set
+  const out = gateFidelity(ctx)
+  for (const n of gateWarnings(ctx)) {
+    out.push(n.message)
+  }
+  return out
+}
+
+/**
+ * Values named across wrapped lines and page breaks: RFC 9001's statements
+ * and RFC 7914's call labels. Each row is a name, the section, the args'
+ * JSON, the expected literal's JSON, and the finding wanted ("" for none).
+ */
+const fidelityTestWrapped = (t: Suite): void => {
+  const quic = fidelityTestQuicRfc()
+  const quicFn = `{"name": "f", "params": [{"name": "s", "type": "bytes"}], "returns": "bytes"}`
+  const initial = `{"hex": "7db5df06e7a69e432496adedb00851923595221596ae2ae9fb8115c1e9ed0a44", "label": "initial_secret"}`
+  const client = "c00cf151ca5be075ed0ebfb5c80323c42d6b7db67881289af4008f1f6c357aea"
+  const server = "3c199828fd139efd216c155ad844cc81fb82fa8d7446fa7d78be803acdda951b"
+  const quicRows: string[][] = [
+    ["client secret, split by a page break", initial, `{"hex": "${client}", "label": "client_initial_secret"}`, ""],
+    ["server secret, after a page break", initial, `{"hex": "${server}", "label": "server_initial_secret"}`, ""],
+    [
+      "client secret under the server's name",
+      initial,
+      `{"hex": "${client}", "label": "server_initial_secret"}`,
+      `under "client_initial_secret", not under "server_initial_secret"`,
+    ],
+    ["client secret with no name", initial, `{"hex": "${client}"}`, `under "client_initial_secret": name it`],
+    [
+      "the client's key, printed after the client's secret",
+      `{"hex": "${client}", "label": "client_initial_secret"}`,
+      `{"hex": "1f369613dd76d5467730efcbe3b1a22d", "label": "key"}`,
+      "",
+    ],
+    [
+      "the server's key with the client's secret",
+      `{"hex": "${client}", "label": "client_initial_secret"}`,
+      `{"hex": "cf3a5331653c364c88f0f379b6067e37", "label": "key"}`,
+      `with the 1st of 2 "key", but expect is the 2nd of 2 "key"`,
+    ],
+  ]
+  for (const r of quicRows) {
+    fidelityTestRowIs(t, `9001 A.1: ${r[0]}`, fidelityTestWrap("9001", quic, quicFn, "A.1", r[1], r[2]), r[3])
+  }
+  // "quic key" is a whole label in A.1, not a call label: it pairs with no
+  // test case, so the vector is refused only as one whose string and
+  // repeated key nothing relates.
+  const expandFn = `{"name": "f", "params": [{"name": "s", "type": "bytes"}, {"name": "l", "type": "string"}], "returns": "bytes"}`
+  fidelityTestRowIs(
+    t,
+    "9001 A.1: a string printed as a whole label",
+    fidelityTestWrap(
+      "9001",
+      quic,
+      expandFn,
+      "A.1",
+      `{"hex": "${client}", "label": "client_initial_secret"}, {"str": "quic key"}`,
+      `{"hex": "1f369613dd76d5467730efcbe3b1a22d", "label": "key"}`,
+    ),
+    "nothing pairs a printed string with one of several labelled values",
+  )
+  const scrypt = fidelityTestScryptRfc()
+  const pbkdf2Fn = `{"name": "f", "params": [{"name": "p", "type": "string"}, {"name": "s", "type": "string"},
+    {"name": "c", "type": "i32"}, {"name": "dkLen", "type": "i32"}], "returns": "bytes"}`
+  const scryptFn = `{"name": "f", "params": [{"name": "p", "type": "string"}, {"name": "s", "type": "string"},
+    {"name": "n", "type": "i32"}, {"name": "r", "type": "i32"}, {"name": "q", "type": "i32"}, {"name": "dkLen", "type": "i32"}],
+    "returns": "bytes"}`
+  const one = `{"hex": "55ac046e56e3089fec1691c22544b605", "label": "PBKDF2-HMAC-SHA-256 (P=\\"passwd\\", S=\\"salt\\", c=1, dkLen=64)"}`
+  const two = `{"hex": "4ddcd8f60b98be21830cee5ef22701f9", "label": "PBKDF2-HMAC-SHA-256 (P=\\"Password\\", S=\\"NaCl\\", c=80000, dkLen=64)"}`
+  const other = "they are different test cases"
+  const pbRows: string[][] = [
+    ["case 1 with its own args", `{"str": "passwd"}, {"str": "salt"}, {"int": 1, "label": "c"}, {"int": 64, "label": "dkLen"}`, one, ""],
+    [
+      "case 2, its label split by a page break",
+      `{"str": "Password"}, {"str": "NaCl"}, {"int": 80000, "label": "c"}, {"int": 64, "label": "dkLen"}`,
+      two,
+      "",
+    ],
+    [
+      "case 1 with case 2's count",
+      `{"str": "passwd"}, {"str": "salt"}, {"int": 80000, "label": "c"}, {"int": 64, "label": "dkLen"}`,
+      one,
+      `args[2] c=80000 is printed in the call label "PBKDF2-HMAC-SHA-256 (P="Password", S="NaCl", c=80000, dkLen=64)"`,
+    ],
+    [
+      "case 1 with case 2's salt",
+      `{"str": "passwd"}, {"str": "NaCl"}, {"int": 1, "label": "c"}, {"int": 64, "label": "dkLen"}`,
+      one,
+      other,
+    ],
+    [
+      "case 2 with case 1's password",
+      `{"str": "passwd"}, {"str": "NaCl"}, {"int": 80000, "label": "c"}, {"int": 64, "label": "dkLen"}`,
+      two,
+      other,
+    ],
+  ]
+  for (const r of pbRows) {
+    fidelityTestRowIs(t, `7914 §11: ${r[0]}`, fidelityTestWrap("7914", scrypt, pbkdf2Fn, "11", r[1], r[2]), r[3])
+  }
+  const misnamed = fidelityTestWrap(
+    "7914",
+    scrypt,
+    pbkdf2Fn,
+    "11",
+    `{"str": "passwd"}, {"str": "salt"}, {"int": 1, "label": "c"}, {"int": 64, "label": "dkLen"}`,
+    `{"hex": "4ddcd8f60b98be21830cee5ef22701f9", "label": "PBKDF2-HMAC-SHA-256 (P=\\"passwd\\", S=\\"salt\\", c=1, dkLen=64)"}`,
+  )
+  t.ok(
+    "7914 §11: case 2's value under case 1's label",
+    fidelityTestHas(misnamed, "W1.expect:", `under "PBKDF2-HMAC-SHA-256 (P="Password", S="NaCl", c=80000, dkLen=64)", not under`),
+  )
+  const s1 = `{"hex": "77d6576238657b203b19ca42c18a0497", "label": "scrypt (P=\\"\\", S=\\"\\", N=16, r=1, p=1, dklen=64)"}`
+  const s2 = `{"hex": "fdbabe1c9d3472007856e7190d01e9fe", "label": "scrypt (P=\\"password\\", S=\\"NaCl\\", N=1024, r=8, p=16, dkLen=64)"}`
+  const scRows: string[][] = [
+    [
+      "case 1, a page break before case 2",
+      `{"str": ""}, {"str": ""}, {"int": 16, "label": "N"}, {"int": 1, "label": "r"}, {"int": 1, "label": "p"}, {"int": 64, "label": "dklen"}`,
+      s1,
+      "",
+    ],
+    [
+      "case 2, after a page break",
+      `{"str": "password"}, {"str": "NaCl"}, {"int": 1024, "label": "N"}, {"int": 8, "label": "r"}, {"int": 16, "label": "p"}, {"int": 64, "label": "dkLen"}`,
+      s2,
+      "",
+    ],
+    [
+      "case 2 with case 1's N, across the break",
+      `{"str": "password"}, {"str": "NaCl"}, {"int": 16, "label": "N"}, {"int": 8, "label": "r"}, {"int": 16, "label": "p"}, {"int": 64, "label": "dkLen"}`,
+      s2,
+      `args[2] N=16 is printed in the call label "scrypt (P="", S="", N=16, r=1, p=1, dklen=64)"`,
+    ],
+  ]
+  const please = `{"str": "pleaseletmein"}, {"str": "SodiumChloride"}`
+  const s3 = `{"hex": "7023bdcb3afd7348461c06cd81fd38eb", "label": "scrypt (P=\\"pleaseletmein\\", S=\\"SodiumChloride\\", N=16384, r=8, p=1, dkLen=64)"}`
+  const s4 = `{"hex": "2101cb9b6a511aaeaddbbe09cf70f881", "label": "scrypt (P=\\"pleaseletmein\\", S=\\"SodiumChloride\\", N=1048576, r=8, p=1, dkLen=64)"}`
+  const rest = `{"int": 8, "label": "r"}, {"int": 1, "label": "p"}, {"int": 64, "label": "dkLen"}`
+  scRows.push(["case 3, which differs from case 4 only in N", `${please}, {"int": 16384, "label": "N"}, ${rest}`, s3, ""])
+  scRows.push(["case 4, which differs from case 3 only in N", `${please}, {"int": 1048576, "label": "N"}, ${rest}`, s4, ""])
+  scRows.push([
+    "case 3 with case 4's N",
+    `${please}, {"int": 1048576, "label": "N"}, ${rest}`,
+    s3,
+    `args[2] N=1048576 is printed in the call label "scrypt (P="pleaseletmein", S="SodiumChloride", N=1048576, r=8, p=1, dkLen=64)"`,
+  ])
+  for (const r of scRows) {
+    fidelityTestRowIs(t, `7914 §12: ${r[0]}`, fidelityTestWrap("7914", scrypt, scryptFn, "12", r[1], r[2]), r[3])
+  }
+}
+
 /** The fidelity gate. */
 export const main = (): i32 => {
   const t = new Suite("spec/gates/fidelity")
@@ -945,6 +1221,7 @@ export const main = (): i32 => {
   fidelityTestEmpty(t)
   fidelityTestCases(t)
   fidelityTestOnce(t)
+  fidelityTestWrapped(t)
   t.ok("iterated findings", it.length === 19)
   if (it.length !== 19) {
     console.log(it.join("\n"))

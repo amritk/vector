@@ -666,7 +666,7 @@ const gateInLabel = (b: GateBound, label: string): boolean => {
   if (b.lines !== null) {
     return gateTextLines(rfcNormalize(label), b.text).length > 0
   }
-  return b.num.length > 0 && name !== null && gateIntRounds(rfcNormalize(label), name, b.num).length > 0
+  return name !== null && gateIntRounds(rfcNormalize(label), name, b.num).length > 0
 }
 
 /** An argument, for a message: `args[0] "salt"`, `args[2] c=1`. */
@@ -689,18 +689,15 @@ const gateLabelArgs = (l: GateLits, args: i32): void => {
       e = l.bounds[i]
     }
   }
-  if (e === null || e.of > 1) {
+  if (e === null) {
     return
   }
   const label = e.label
-  if (label === null || label.indexOf("(") < 0) {
+  if (label === null) {
     return
   }
   for (let a = 0; a < args; a++) {
     const b = l.bounds[a]
-    if (b.lines === null && b.num.length === 0) {
-      continue
-    }
     if (gateInLabel(b, label)) {
       b.paired = true
       e.callArgs = true
@@ -708,7 +705,7 @@ const gateLabelArgs = (l: GateLits, args: i32): void => {
     }
     for (const v of l.values) {
       const vl = v.label
-      if (vl !== null && !gateSameLabel(vl, label) && gateInLabel(b, vl)) {
+      if (vl !== null && gateInLabel(b, vl)) {
         gateNote(
           l,
           `${l.id}.${b.at}`,
@@ -1242,10 +1239,14 @@ const gateTruncateLength = (
   )
 }
 
-/** A call label's function, the text before its `(`: `PBKDF2-HMAC-SHA-256` of `PBKDF2-HMAC-SHA-256 (P="passwd", c=1)`. */
-const gateCallHead = (label: string): string => {
+/**
+ * The part of a label that names a variant: for an expected value paired with
+ * its call label's arguments, the function before the `(` (`PBKDF2-HMAC-SHA-256`
+ * of `PBKDF2-HMAC-SHA-256 (P="passwd", c=1)`); otherwise the whole label.
+ */
+const gateCallHead = (b: GateBound, label: string): string => {
   const open = label.indexOf("(")
-  return open < 0 ? label : rfcNormalize(label.substring(0, open))
+  return !b.callArgs || open < 0 ? label : rfcNormalize(label.substring(0, open))
 }
 
 /**
@@ -1278,14 +1279,14 @@ const gateOwnVariant = (l: GateLits, k: Clause, sec: RfcSection): void => {
     const rounds = b.at === "expect" && gateLabelIsCount(k, shown)
     // A call label's arguments name its test case, not its variant: only the
     // function before them is.
-    const head = b.callArgs ? gateCallHead(shown) : shown
+    const head = gateCallHead(b, shown)
     const label = gateLabelUnsized(rounds ? gateLabelUncounted(head) : head)
     const mine = gateDigitRuns(label)
     const shape = gateSkeleton(label)
     const siblings: string[] = []
     const shownAll = [shown]
     for (const p of printed) {
-      const pOwn = b.callArgs ? gateCallHead(p) : p
+      const pOwn = gateCallHead(b, p)
       const q = gateLabelUnsized(rounds ? gateLabelUncounted(pOwn) : pOwn)
       if (gateSkeleton(q) === shape && !gateSameLabel(pOwn, head)) {
         siblings.push(q)
