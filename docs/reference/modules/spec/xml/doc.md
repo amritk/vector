@@ -10,7 +10,8 @@ text each `<xref>` prints when the preptool has not worked it out.
 Refused, beyond what the reader refuses: a root that is not `<rfc>`, an
 anchor used twice, a table inside a table cell, more than 26 appendices,
 xref text worked out past the input's length and XML_MAX_XREF_TEXT, and
-numbered sections holding over XML_MAX_SECTION_LINES lines between them.
+numbered sections holding over XML_MAX_SECTION_LINES lines of text between
+them (the blank line between two blocks is not counted).
 
 Generated from [src/spec/xml/doc.ts](https://github.com/amritk/vector/blob/main/src/spec/xml/doc.ts).
 

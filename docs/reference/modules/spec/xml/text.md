@@ -14,7 +14,9 @@ it (a no-break space included), with the non-breaking hyphen read as "-"
 and zero-width spaces and word joiners dropped (xmlClean).
 
 A section's lines are its blocks: each paragraph one line, each table cell
-one line, each line of a code block one line. A sentence holding a
+one line, each line of a code block one line, and a blank line between two
+blocks, so a reader that ends a paragraph at a blank line (as RFC text is
+read) never runs one block's sentence into the next. A sentence holding a
 `<bcp14>` is recorded as normative at the level its markup names.
 
 Generated from [src/spec/xml/text.ts](https://github.com/amritk/vector/blob/main/src/spec/xml/text.ts).
@@ -478,7 +480,7 @@ t: XmlText
 ### xmlSectionLines
 
 A section's own lines (its subsections left out): each paragraph, table
-cell and line of code one line. The normative sentences in them are
+cell and line of code one line, with a blank line between two blocks. The normative sentences in them are
 recorded on `b`.
 
 ```ts

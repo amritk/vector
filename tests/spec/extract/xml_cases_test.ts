@@ -61,7 +61,7 @@ const xmlCasesTestNorm = (middle: string): string[] => {
 }
 
 /** The lines of the section numbered `id`, or a note that there is none. */
-const xmlCasesTestLines = (d: XmlDocument, id: string): string[] => {
+const xmlCasesTestRawLines = (d: XmlDocument, id: string): string[] => {
   for (const s of d.sections) {
     if (s.id === id) {
       return s.lines
@@ -69,6 +69,10 @@ const xmlCasesTestLines = (d: XmlDocument, id: string): string[] => {
   }
   return [`<no section ${id}>`]
 }
+
+/** The lines of text of the section numbered `id`: the blank line between two blocks left out. */
+const xmlCasesTestLines = (d: XmlDocument, id: string): string[] =>
+  xmlCasesTestRawLines(d, id).filter((l: string): boolean => l.length > 0)
 
 /** The first element named `name`, depth first. */
 const xmlCasesTestFind = (n: XmlNode, name: string): XmlNode | null => {
@@ -107,7 +111,7 @@ const xmlCasesTestNumbering = (t: Suite): void => {
   }
   t.eqLines("middle 1, 2, 2.1; back A, A.1, B; numbered=false hides its subtree", d.sections.map(xmlCasesTestSection), [
     "1 A: 1 | 1",
-    "2 B: 2 | 2 / 21",
+    "2 B: 2 | 2 /  / 21",
     "2.1 B1: 21 | 21",
     "A X:  | ",
     "A.1 X1:  | ",
@@ -209,7 +213,11 @@ const xmlCasesTestSectionBudget = (t: Suite): void => {
   const d = xmlCasesTestParse(t, "100 deep holding 20000 lines", xmlCasesTestDeep(100, 20000))
   if (d !== null) {
     t.ok("100 sections", d.sections.length === 100)
-    t.ok("the outermost holds all 20000 lines", d.sections[0].lines.length === 20000)
+    t.ok(
+      "the outermost holds all 20000 lines of text, a blank line between each two",
+      d.sections[0].lines.filter((l: string): boolean => l.length > 0).length === 20000 &&
+        d.sections[0].lines.length === 39999,
+    )
     t.ok("and none of its own", d.sections[0].ownLines.length === 0)
   }
   t.eqStr(
@@ -719,7 +727,8 @@ const xmlCasesTestLinear = (t: Suite): void => {
     "a table with many cells",
     `<rfc><middle><section><table><tr>${xmlCasesTestRepeat("<td>a</td>", 40000)}</tr></table></section></middle></rfc>`,
   )
-  t.ok("40000 cells, 40000 lines", cells !== null && xmlCasesTestLines(cells, "1").length === 40000)
+  t.ok("40000 cells, 40000 lines of text", cells !== null && xmlCasesTestLines(cells, "1").length === 40000)
+  t.ok("and a blank line between each two", cells !== null && xmlCasesTestRawLines(cells, "1").length === 79999)
   xmlCasesTestFast(t, "a table with many cells", start)
 }
 

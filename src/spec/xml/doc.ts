@@ -7,7 +7,8 @@
  * Refused, beyond what the reader refuses: a root that is not `<rfc>`, an
  * anchor used twice, a table inside a table cell, more than 26 appendices,
  * xref text worked out past the input's length and XML_MAX_XREF_TEXT, and
- * numbered sections holding over XML_MAX_SECTION_LINES lines between them.
+ * numbered sections holding over XML_MAX_SECTION_LINES lines of text between
+ * them (the blank line between two blocks is not counted).
  */
 
 import { hiddenProblem } from "../source/hidden"
@@ -18,7 +19,10 @@ import { XmlLines, XmlNormative, XmlText, XmlXrefInfo, xmlPlainText, xmlSectionL
 /** The xref text worked out may run this many characters past the input's length. */
 const XML_MAX_XREF_TEXT: i32 = 64 * 1024
 
-/** Numbered sections may hold this many lines, each subsection's counted in its parents'. */
+/**
+ * Numbered sections may hold this many lines of text, each subsection's
+ * counted in its parents'; the blank lines between blocks are not counted.
+ */
 const XML_MAX_SECTION_LINES: i32 = 2000000
 
 /** A `<reference>`, and the RFC its seriesInfo names. */
@@ -375,6 +379,10 @@ const xmlDocSections = (c: XmlDocContext): Result<boolean, XmlError> => {
       xmlDocLay(s, all, from, to)
     }
   }
+  const texts: i32[] = [0]
+  for (const l of all) {
+    texts.push(texts[texts.length - 1] + (l.length > 0 ? 1 : 0))
+  }
   let held = 0
   for (const s of c.infos) {
     if (!s.numbered) {
@@ -382,7 +390,7 @@ const xmlDocSections = (c: XmlDocContext): Result<boolean, XmlError> => {
     }
     const a = from.get(s) ?? 0
     const z = to.get(s) ?? 0
-    held = held + (z - a)
+    held = held + (texts[z] - texts[a])
     if (held > XML_MAX_SECTION_LINES) {
       return Err(
         xmlErrorAt(
