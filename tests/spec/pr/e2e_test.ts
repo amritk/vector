@@ -6,6 +6,7 @@
 
 import { Suite } from "nish/testing"
 import { replaceAll } from "nish/text"
+import { mkdirAll } from "../../../src/core/fs"
 import { sha256Hex } from "../../../src/core/hex"
 import { runProcess } from "../../../src/core/process"
 import { gitdiffTop } from "../../../src/spec/pr/gitdiff"
@@ -309,6 +310,98 @@ const e2eTestHyphenModule = (t: Suite, dir: string): Result<boolean, string> => 
   return Ok(true)
 }
 
+/** A compiler stub for a seed: links a test binary that passes, reading no std at all. */
+const E2E_TEST_BLIND_NISH: string = `#!/bin/sh
+printf '#!/bin/sh\\nexit 0\\n' > "$3"
+chmod +x "$3"
+`
+
+/** The copy path's stub: refuses the canary in the copy it sits in, and links a binary that passes. */
+const E2E_TEST_COPY_NISH: string = `#!/bin/sh
+root=$(cd "$(dirname "$0")/.." && pwd)
+if grep -q 'canary' "$root/std/m.ts"; then
+  echo "std/m.ts:9:1: syntax error: canary" >&2
+  exit 1
+fi
+printf '#!/bin/sh\\nexit 0\\n' > "$3"
+chmod +x "$3"
+`
+
+/** A test of nish/m's `lt` that kills every mutant of its comparison. */
+const E2E_TEST_LT: string = `import { lt } from "nish/m"
+
+/** Exits 0 only when lt is less-than. */
+export const main = (): i32 => (lt(1, 2) && !lt(2, 1) && !lt(1, 1) ? 0 : 1)
+`
+
+/** The argv of `spec mutate` on the overlay repository's `root`, with `more` flags. */
+const e2eTestOverlayArgs = (dir: string, root: string, more: string[]): string[] => {
+  const a: string[] = ["spec", "mutate", "--base", "main", "--nish-root", `${dir}/${root}`]
+  for (const m of more) {
+    a.push(m)
+  }
+  a.push("--test")
+  a.push(`${dir}/t.ts`)
+  a.push(`${dir}/c.json`)
+  return a
+}
+
+/**
+ * Roots with no --nish: each slot is a scratch install from the root's seed
+ * with its std/ laid over it. vector's own nish install serves as the seed,
+ * by symlink, so nothing is built: an install root and a checkout with only
+ * build/seed both kill the mutants; a seed that ignores the std/ laid over
+ * it fails the canary; and --nish still copies the checkout instead.
+ */
+const e2eTestOverlay = (t: Suite, dir: string): Result<boolean, string> => {
+  const self = gitdiffTop(".").orReturn()
+  const contract = replaceAll(
+    replaceAll(e2eTestContract(sha256Hex(E2E_TEST_RFC)), '"nish/hex"', '"nish/m"'),
+    '"name": "enc"',
+    '"name": "lt"',
+  )
+  prTestWrite(dir, "c.json", contract).orReturn()
+  prTestWrite(dir, "t.ts", E2E_TEST_LT).orReturn()
+  prTestWrite(dir, ".gitignore", "/install/libexec\n/install/runtime\n/checkout/build/\n").orReturn()
+  for (const root of ["install", "checkout", "blind"]) {
+    prTestWrite(dir, `${root}/std/m.ts`, "/** Less than. */\nexport const lt = (a: i32, b: i32): boolean => b > a\n").orReturn()
+  }
+  for (const part of ["libexec", "runtime"]) {
+    runProcess(["ln", "-s", `${self}/.nish/${part}`, `${dir}/install/${part}`], "", 10000).orReturn()
+    mkdirAll(`${dir}/checkout/build/seed`, 0o755).orReturn()
+    runProcess(["ln", "-s", `${self}/.nish/${part}`, `${dir}/checkout/build/seed/${part}`], "", 10000).orReturn()
+  }
+  prTestWrite(dir, "blind/libexec/nish", E2E_TEST_BLIND_NISH).orReturn()
+  prTestWrite(dir, "blind/bin/nish", E2E_TEST_COPY_NISH).orReturn()
+  runProcess(["chmod", "+x", "--", `${dir}/blind/libexec/nish`, `${dir}/blind/bin/nish`], "", 10000).orReturn()
+  prTestCommit(dir, "base").orReturn()
+  prTestGit(dir, ["checkout", "-q", "-b", "work"]).orReturn()
+  for (const root of ["install", "checkout", "blind"]) {
+    prTestWrite(dir, `${root}/std/m.ts`, "/** Less than. */\nexport const lt = (a: i32, b: i32): boolean => a < b\n").orReturn()
+  }
+  const install = e2eTestRun(dir, e2eTestOverlayArgs(dir, "install", ["--jobs", "2"]))
+  t.ok(
+    `an install root with no --nish builds the mutants from its seed and kills them: ${install}`,
+    install.startsWith("exit 0\nspec mutate std/m.ts against main: OK\n") && install.indexOf("killed") >= 0,
+  )
+  const checkout = e2eTestRun(dir, e2eTestOverlayArgs(dir, "checkout", ["--max", "1"]))
+  t.ok(
+    `a checkout with build/seed and no build/nish builds the mutants with no --nish: ${checkout}`,
+    checkout.startsWith("exit 0\nspec mutate std/m.ts against main: OK\n") && checkout.indexOf("killed") >= 0,
+  )
+  t.eqStr(
+    "a seed whose compiler ignores the std/ laid over it fails the canary",
+    e2eTestRun(dir, e2eTestOverlayArgs(dir, "blind", [])),
+    "exit 2\nvector: spec mutate: the seed's compiler (<repo>/blind/libexec/nish) builds the test even with std/m.ts made unparseable in the std/ laid over it, so it does not read that std: give --nish a compiler built in the checkout\n",
+  )
+  const copied = e2eTestRun(dir, e2eTestOverlayArgs(dir, "blind", ["--nish", "bin/nish"]))
+  t.ok(
+    `--nish copies the checkout and builds with that compiler, not the seed: ${copied}`,
+    copied.startsWith("exit 1\nspec mutate std/m.ts against main: FAILED\n") && copied.indexOf("survivor") >= 0,
+  )
+  return Ok(true)
+}
+
 /** Runs `step` in a fresh repository, then removes it. */
 const e2eTestIn = (t: Suite, prefix: string, step: (t: Suite, dir: string) => Result<boolean, string>): void => {
   const dir = prTestRepo(prefix)
@@ -329,5 +422,6 @@ export const main = (): i32 => {
   e2eTestIn(t, "vector-e2e-frozen-", e2eTestFrozen)
   e2eTestIn(t, "vector-e2e-module-", e2eTestModule)
   e2eTestIn(t, "vector-e2e-hyphen-", e2eTestHyphenModule)
+  e2eTestIn(t, "vector-e2e-overlay-", e2eTestOverlay)
   return t.done()
 }
