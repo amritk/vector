@@ -163,3 +163,17 @@ export const emitTargetWindowRefusal = (f: FnSig, language: string): string | nu
   const what = names.length === 1 ? `${names[0]} is a window` : `${names.join(", ")} are windows`
   return `${f.name}: ${what} (buf, off, len), which is not emitted for ${language} yet; emit the Nish test`
 }
+
+/**
+ * Why a function cannot be tested in a language whose emitter has no out
+ * buffers yet: the function writes its result into `(out, at)` and returns
+ * where it stopped. Only the Nish emitter guards one.
+ *
+ * @param f the function
+ * @param language the language's name, as a message spells it (`Rust`)
+ * @returns the refusal, or null when the function has no out buffer
+ */
+export const emitTargetOutRefusal = (f: FnSig, language: string): string | null =>
+  f.out === null
+    ? null
+    : `${f.name}: its result is an out buffer (out, at) -> end, which is not emitted for ${language} yet; emit the Nish test`

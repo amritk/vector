@@ -2,9 +2,10 @@ import { Suite } from "nish/testing"
 import { makeTempDir } from "../../../src/core/fs"
 import { Sample, SampleTable, checkAddSample } from "../../../src/spec/check"
 import { contractParse } from "../../../src/spec/contract/read"
-import { Contract, LitKind, Literal } from "../../../src/spec/contract/types"
+import { Contract, FnSig, LitKind, Literal } from "../../../src/spec/contract/types"
 import { EmitOptions, emitProgram } from "../../../src/spec/emit/emit"
 import { emitWriteFile } from "../../../src/spec/emit/file"
+import { emitTargetOutRefusal } from "../../../src/spec/emit/target"
 import { runFormat } from "../../../src/spec/run/command"
 import { RunOutcome, runTestFile } from "../../../src/spec/run/run"
 
@@ -112,6 +113,16 @@ const outEmitRun = (c: Contract, dir: string, program: string, bug: string): str
   return out
 }
 
+/** A function `f` with these parameters and this out buffer (JSON, or "" for none), as the contract reads it. */
+const outEmitSig = (params: string, out: string): FnSig => {
+  const c = contractParse(
+    `{"contract": "s", "source": {"title": "T", "rfc": 9999}, "target": {"module": "m"}, "requirements": [],
+      "functions": [{"name": "f", "params": [${params}], "returns": "bytes"${out}}], "clauses": []}`,
+    "s",
+  ).expect("parse a signature")
+  return c.functions[0]
+}
+
 /** The contract emitted for the local module, with P-COPY's samples, or the refusal's lines. */
 const outEmitProgram = (c: Contract): string => {
   const opts = new EmitOptions("0000000000000000000000000000000000000000000000000000000000000000")
@@ -127,6 +138,30 @@ const outEmitProgram = (c: Contract): string => {
 /** Out buffers in the Nish emitter: the guarded write, and each way a write goes wrong. */
 export const main = (): i32 => {
   const t = new Suite("spec/emit out")
+
+  const outs: string[] = [
+    ', "out": {"at": 1, "capacity": "d.length"}',
+    ', "out": {"at": 0, "capacity": "8"}',
+    "",
+    ', "out": {"at": 0, "capacity": "d.length"}',
+  ]
+  const params: string[] = [
+    '{"name": "d", "type": "bytes"}',
+    "",
+    '{"name": "d", "type": "bytes"}',
+    '{"name": "d", "type": "bytes", "form": "window"}',
+  ]
+  const refused =
+    "f: its result is an out buffer (out, at) -> end, which is not emitted for Rust yet; emit the Nish test"
+  const want: string[] = [refused, refused, "", refused]
+  for (let i = 0; i < outs.length; i++) {
+    t.eqStr(`(${params[i]})${outs[i]}`, emitTargetOutRefusal(outEmitSig(params[i], outs[i]), "Rust") ?? "", want[i])
+  }
+  t.contains(
+    "the language is named",
+    emitTargetOutRefusal(outEmitSig("", outs[1]), "Python") ?? "",
+    "not emitted for Python yet",
+  )
 
   const parsed = contractParse(outEmitContract("", ""), "out-emit")
   if (parsed.isErr()) {

@@ -27,7 +27,7 @@ import { TypeEnv, typeCallsIn, typeEnvBind, typeIntBase, typeOf, typeOfInt } fro
 import { vocabFitsInt, vocabIsIntType, vocabIsOptional, vocabValueType } from "../contract/vocab"
 import { EmitOptions, emitClauseFn, emitClauseLines, emitHeaderLines, emitSortedUnique, emitTestName } from "./emit"
 import { EMIT_SLOW_SKIP, emitF64IsFinite, emitLiteralHex, emitQuote } from "./lit"
-import { emitTargetWindowRefusal, emitTargetWordsRefusal } from "./target"
+import { emitTargetOutRefusal, emitTargetWindowRefusal, emitTargetWordsRefusal } from "./target"
 
 /** What emitting one TypeScript test has gathered so far. */
 class EmitTsContext {
@@ -192,6 +192,10 @@ export const emitTsRefusals = (c: Contract): string[] => {
     const window = emitTargetWindowRefusal(f, "TypeScript")
     if (window !== null) {
       out.push(window)
+    }
+    const buffer = emitTargetOutRefusal(f, "TypeScript")
+    if (buffer !== null) {
+      out.push(buffer)
     }
     const why = emitTsNameRefusal(f)
     if (why !== null) {
