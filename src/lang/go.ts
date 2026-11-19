@@ -55,7 +55,7 @@ export const langTableGo = (): LangTable => {
   t.literal("words64", langSpell("[]uint64{0x3320646e61707865, 0x6b20657479622d32}", ""))
   t.moduleForm = "package"
   t.moduleNote =
-    'the neutral path is the import path; the package name is its last segment without underscores (Effective Go, Package names): nish/crypto/hkdf → import "nish/crypto/hkdf", package hkdf'
+    'the neutral path is the import path; the package name is its last segment without underscores (Effective Go, Package names): nish/crypto/hkdf → import "nish/crypto/hkdf", package hkdf; a - in a segment stays in the import path and is dropped from the package name, as an underscore is: nish/net/quic-packet → package quicpacket'
   t.nameRule =
     "MixedCaps: a function is exported, so its first letter is a capital (hkdfExpandSha256 → HkdfExpandSha256); a parameter is unexported (lowerCamel). Words split at each capital and a digit run stays on the word before it (chacha20Poly1305Seal → Chacha20Poly1305Seal). An initialism, one the contract writes in capitals or one in golint's list (ID, URL, HTTP, UTF8, …), is all capitals after the first word (userId → userID, parseHttpRequest → ParseHTTPRequest); HKDF and SHA are not on the list, so they stay Hkdf and Sha. A name override always wins."
   t.choices.push(
