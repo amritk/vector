@@ -1,10 +1,10 @@
 # Using vector: the rules card
 
 This is what an agent needs before it runs vector, stated as rules, traps
-first. It is a digest, not the authority. The [guide](guide/index.md) shows
+first. It is a digest, not the authority: the [guide](guide/index.md) shows
 every command with its output, and the [command-line
-reference](reference/command-line.md) is the normative list of commands, flags
-and exit codes. When this page disagrees with either of them, they win.
+reference](reference/command-line.md) lists the commands, flags and exit
+codes. Where this page disagrees, they win.
 
 vector does two things, and no model is involved in either:
 
@@ -27,14 +27,13 @@ vector does two things, and no model is involved in either:
    that was not `PROVEN`. See
    [Proving a function](guide/guides/proving.md#the-verdicts).
 3. **`diff` exits 2 for `INVALID` and `ERROR`**, not 1 as `verify` does.
-   Like `verify`, it exits 2 for `MISMATCH`, a witness that did not replay.
-   `EQUIVALENT` exits 0, and `DIFFERENT` and `UNDECIDED` exit 1. Do not
+   It also exits 2 for `MISMATCH`. `EQUIVALENT` exits 0, and `DIFFERENT` and `UNDECIDED` exit 1. Do not
    report `UNDECIDED` as equivalent. See
    [Exit codes](guide/guides/exit-codes.md#by-command).
 4. **The proof is over exact rationals, and an `Int` is unbounded there.**
    The emitted code runs in float64. A float64 gate samples boundary, dense
    and random inputs, and anything it finds makes the run `REFUTED`. It
-   samples float64 and proves nothing about it, so prefer inequalities to an
+   proves nothing about float64, so prefer inequalities to an
    exact `==` on `Real`.
 5. **An `Int` `+`, `-` or `*` that may leave ±(2^53−1) is an `Int overflow`,
    and the run is `REFUTED`**, even when every postcondition holds over the
@@ -44,9 +43,9 @@ vector does two things, and no model is involved in either:
 6. **`UNKNOWN` usually means the arithmetic is non-linear.** Multiply
    variables only by literal constants, and restate the clause.
 7. **A trivial `ensures`, one that holds whatever the body does, fails.** So
-   do contradictory `requires`, which make the proof vacuous. Restate a
-   trivial clause as a real constraint on `result`. Remove a contradictory
-   `requires`; never add more to force a proof.
+   do contradictory `requires`, which make the proof vacuous. Restate the
+   clause as a real constraint on `result`. Remove a contradictory
+   `requires`; never add more.
 8. **A hazard is checked on the path the emitted code takes.** An `ite`
    branch, the right side of a short-circuit `and`, `or` or `implies`, and
    each `requires` after the first lean only on what was checked before them.
@@ -71,8 +70,7 @@ vector does two things, and no model is involved in either:
 
 - **Exit codes.** A command exits 0 when the check passed, 1 when it
   refused the input, and 2 when it could not run or on `MISMATCH`, except
-  that `diff` also exits 2 for `INVALID` and `ERROR`. The table for each
-  command is in
+  that `diff` also exits 2 for `INVALID` and `ERROR`. See
   [Exit codes](guide/guides/exit-codes.md#by-command).
 - **z3.** vector finds z3 at `$VECTOR_Z3`, then at `.z3/z3` in the
   checkout the binary was built from, then on `PATH`. See [Finding z3](guide/guides/exit-codes.md#finding-z3).
@@ -91,6 +89,9 @@ vector does two things, and no model is involved in either:
   provenance, coverage, typing, signatures and domain. Every quote must be in
   its cited section, and every MUST or SHALL sentence must be tested or
   excluded. See [The gates](guide/guides/spec-to-contract.md#the-gates).
+- **Module paths.** Two or more segments split by `/`, each
+  `[a-z][a-z0-9_]*(-[a-z0-9][a-z0-9_]*)*` (`nish/net/quic-packet`). See
+  [Modules and names](guide/guides/writing-a-spec.md#modules-and-names).
 - **A spec-first PR** is gated by `spec frozen`, `spec stale`,
   `spec exports` and `spec mutate`, in that order. See
   [Gating a spec-first PR](guide/guides/pr-gates.md#the-workflow-in-order).
@@ -100,8 +101,7 @@ vector does two things, and no model is involved in either:
 - `verify` handles 1 to 4 layered functions over `Real`, `Int` and `Bool`.
   Its expressions are numbers, booleans, variables, unary and binary
   operators, `ite`, and calls.
-- A function calls only the functions layered below it, so there is no
-  recursion.
+- A function calls only those layered below it: no recursion.
 - Strings, arrays, IO, loops, state and data structures do not fit. Offer to
   verify the numeric core alone.
 - The typing gate does not yet check a property that holds or calls word

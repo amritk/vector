@@ -16,6 +16,11 @@ on where words break:
     only at the start of a name or of a part after `_`;
   - `_` separates words and is dropped, as is any other character.
 
+A module path segment may join words with `-` (`quic-packet`). A form that
+stays a path or a file keeps it; a segment that becomes an identifier turns
+it into `_`, Go's package qualifier drops it, and a Pascal form breaks a
+word at it (`QuicPacket`).
+
 A per-language override in the contract always wins over the rule.
 specs/vector-lang-names.md is this module's spec; vector tests itself with
 the test it emits from it.
@@ -32,6 +37,7 @@ Generated from [src/lang/names.ts](https://github.com/amritk/vector/blob/main/sr
 - [`langCamel`](#langcamel)
 - [`langPascal`](#langpascal)
 - [`langPascalSegment`](#langpascalsegment)
+- [`langUnderscored`](#langunderscored)
 - [`langBasename`](#langbasename)
 - [`langPackageClass`](#langpackageclass)
 - [`langGoInitialisms`](#langgoinitialisms)
@@ -205,7 +211,8 @@ how each word is cased
 
 ### langPascalSegment
 
-A module path segment in UpperCamelCase, its `_` dropped.
+A module path segment in UpperCamelCase, a word starting at each `_` or
+`-`, which are dropped.
 
 ```ts
 function langPascalSegment(segment: string): string
@@ -219,7 +226,29 @@ one segment of a module path
 
 <scalar-field name="returns" type="string">
 
-`Chacha20poly1305` for `chacha20poly1305`, `BigInt` for `big_int`
+`Chacha20poly1305` for `chacha20poly1305`, `BigInt` for `big_int`,
+  `QuicPacket` for `quic-packet`
+
+</scalar-field>
+
+### langUnderscored
+
+A module path, or part of one, with each `-` turned into `_`, so a segment
+that joins words with `-` becomes an identifier.
+
+```ts
+function langUnderscored(path: string): string
+```
+
+<scalar-field name="path" type="string" required>
+
+a module path, segment or file
+
+</scalar-field>
+
+<scalar-field name="returns" type="string">
+
+`nish/net/quic_packet` for `nish/net/quic-packet`
 
 </scalar-field>
 
@@ -261,7 +290,7 @@ a module path, such as `nish/crypto/hkdf`
 
 <scalar-field name="returns" type="string">
 
-`nish.crypto.Hkdf`
+`nish.crypto.Hkdf`; `nish.net_io.QuicPacket` for `nish/net-io/quic-packet`
 
 </scalar-field>
 
