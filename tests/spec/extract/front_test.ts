@@ -340,6 +340,8 @@ const frontTestInterface = (t: Suite): void => {
       "`concat` is a ts-property op; give the function another name",
       "concat",
     ],
+    ["export function le32(n: u32): u8[]", "`le32` is a ts-property op; give the function another name", "le32"],
+    ["export function beI64(b: u8[]): i64", "`beI64` is a ts-property op; give the function another name", "beI64"],
   ]
   for (const k of cases) {
     const text = `// module: nish/m\n${k[0]}`
@@ -465,6 +467,15 @@ const frontTestMappings = (t: Suite, fns: FnSig[]): void => {
     ["fill(1, 2) === zeros(3)", "==(fill(1, 2), zeros(3))"],
     ["flipBit(b, 0) === le64(i)", "==(flipBit(b, 0), le64(i))"],
     ["ascii(utf8(t)) !== null", "notNull(ascii(utf8(t)))"],
+    ["le32(i) === be32(i)", "==(le32(i), be32(i))"],
+    ["be64(i) === le16(1)", "==(be64(i), le16(1))"],
+    ["be16(65535) === b", "==(be16(65535), b)"],
+    ["leU16(b) === beU16(b)", "==(leU16(b), beU16(b))"],
+    ["leU32(b) === beU32(b)", "==(leU32(b), beU32(b))"],
+    ["leU64(b) === beU64(b)", "==(leU64(b), beU64(b))"],
+    ["leI32(b) === beI32(le32(i))", "==(leI32(b), beI32(le32(i)))"],
+    ["leI64(b) === beI64(b)", "==(leI64(b), beI64(b))"],
+    ['leU16("ab") === 1', '==(leU16(ascii"ab"), 1)'],
     ["concat(b, b) === b", "==(concat(b, b), b)"],
     ['concat("a", b) === b.concat(b)', '==(concat(ascii"a", b), concat(b, b))'],
     ['"ab".concat("cd") === t.concat(t)', '==(strConcat("ab", "cd"), strConcat(t, t))'],
@@ -510,6 +521,12 @@ const frontTestRefusals = (t: Suite, fns: FnSig[]): void => {
     ["// P!X covers R-X — t\nforall () => true", "`P!X` is not a clause or requirement id", "// P!X"],
     ["// P-X covers R X — t\nforall () => true", "`R X` is not a clause or requirement id", "// P-X"],
     [`${h}exists () => true`, "expected `forall`, got `exists`", "exists"],
+    [
+      `${h}forall (n: u64 /* 0..1 */) => le32(n).length === 4`,
+      "`le32` wants an integer of at most 32 bits, got u64",
+      "n).length",
+    ],
+    [`${h}forall (n: u32 /* 0..1 */) => beU32(n) === n`, "`beU32` wants u8[], got u32", "n) === n"],
     [`${h}forall (b: number /* 0..1 */) => true`, `\`number\` ${FRONT_TEST_FORALL}`, "number"],
     [`${h}forall (n: boolean /* 0..1 */) => true`, `\`boolean\` ${FRONT_TEST_FORALL}`, "boolean"],
     [

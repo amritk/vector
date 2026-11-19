@@ -37,8 +37,10 @@ import {
   vocabIntTypes,
   vocabIsIntType,
   vocabIsJsonSafe,
+  vocabReadOps,
   vocabValueType,
   vocabWordTypes,
+  vocabWriteOps,
 } from "../contract/vocab"
 
 // ── Refusals ───────────────────────────────────────────────────────────────
@@ -651,21 +653,29 @@ const frontSigType = (c: FrontCursor): Result<string, FrontRefusal> => {
 
 // ── ts-interface ───────────────────────────────────────────────────────────
 
-/** Ops written as plain calls: `xor(a, b)`. */
-const frontCallOps = (): string[] => [
-  "xor",
-  "bitAnd",
-  "bitOr",
-  "fill",
-  "zeros",
-  "flipBit",
-  "le64",
-  "unwrap",
-  "utf8",
-  "ascii",
-  "implies",
-  "concat",
-]
+/** Ops written as plain calls: `xor(a, b)`, and every byte-order op. */
+const frontCallOps = (): string[] => {
+  const ops: string[] = [
+    "xor",
+    "bitAnd",
+    "bitOr",
+    "fill",
+    "zeros",
+    "flipBit",
+    "unwrap",
+    "utf8",
+    "ascii",
+    "implies",
+    "concat",
+  ]
+  for (const op of vocabWriteOps()) {
+    ops.push(op)
+  }
+  for (const op of vocabReadOps()) {
+    ops.push(op)
+  }
+  return ops
+}
 
 /** The module of a `<s>module:<s><path><s>` comment value, or null. */
 const frontModuleOf = (value: string): string | null => {
@@ -1898,7 +1908,7 @@ function frontName(p: FrontProp, t: FrontTok): Result<FrontV, FrontRefusal> {
   }
   const op = t.text
   const raw = frontArgs(p).orReturn()
-  const bytesOp = vocabHas(frontBytesOps(), op)
+  const bytesOp = vocabHas(frontBytesOps(), op) || vocabHas(vocabReadOps(), op)
   const args: FrontV[] = []
   for (let k = 0; k < raw.length; k++) {
     args.push(bytesOp || (op === "flipBit" && k === 0) ? frontAsBytes(raw[k]) : raw[k])

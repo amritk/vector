@@ -20,7 +20,19 @@ import { shapeNishModuleFile } from "../contract/shape"
 import { ClauseKind, ExprKind, LitKind, typesIsWindow, typesIsWords } from "../contract/types"
 import { Clause, Contract, Expr, FnSig, Literal } from "../contract/types"
 import { TypeEnv, typeCallsIn, typeEnvBind, typeIntBase, typeOf } from "../contract/typing"
-import { vocabBaseOf, vocabIsIntType, vocabIsOptional, vocabIsWordType, vocabValueType } from "../contract/vocab"
+import {
+  vocabBaseOf,
+  vocabBigEndian,
+  vocabByteWidth,
+  vocabHas,
+  vocabIsIntType,
+  vocabIsOptional,
+  vocabIsWordType,
+  vocabReadOps,
+  vocabReadType,
+  vocabValueType,
+  vocabWriteOps,
+} from "../contract/vocab"
 import { emitHelperDeps, emitHelperNames, emitHelperText } from "./helpers"
 import {
   EMIT_SLOW_SKIP,
@@ -455,8 +467,14 @@ const emitHelperOp = (ctx: EmitContext, e: Expr): string | null => {
     const a = emitArg(ctx, e, 0, null)
     return `${emitUse(ctx, "bitwiseBytes")}(${a}, ${emitArg(ctx, e, 1, null)}, ${bitwise})`
   }
-  if (op === "le64") {
-    return `${emitUse(ctx, "le64")}(${emitArg(ctx, e, 0, null)})`
+  if (vocabHas(vocabWriteOps(), op)) {
+    const n = emitToU64(ctx, e.args[0])
+    return `${emitUse(ctx, "intBytes")}(${n}, ${vocabByteWidth(op)}, ${vocabBigEndian(op)})`
+  }
+  if (vocabHas(vocabReadOps(), op)) {
+    const read = `${emitUse(ctx, "bytesInt")}(u, ${emitArg(ctx, e, 0, null)}, ${vocabByteWidth(op)}, ${vocabBigEndian(op)})`
+    const ty = vocabReadType(op)
+    return ty === "u64" ? read : `${emitToInt(ty)}(${read})`
   }
   if (op === "strConcat") {
     return `\`\${${emitArg(ctx, e, 0, null)}}\${${emitArg(ctx, e, 1, null)}}\``
@@ -479,12 +497,19 @@ const emitHelperOp = (ctx: EmitContext, e: Expr): string | null => {
   return null
 }
 
+/** An integer expression as a u64 of the same bits, which `intBytes` writes. */
+const emitToU64 = (ctx: EmitContext, x: Expr): string => {
+  const t = emitTypeOf(ctx, x)
+  const s = emitExpr(ctx, x, t)
+  return t === "u64" ? s : `toU64(${s})`
+}
+
 /** An operator application. */
 const emitOp = (ctx: EmitContext, e: Expr, want: string | null): string => {
   const op = e.name
   const viaHelper = emitHelperOp(ctx, e)
   if (viaHelper !== null) {
-    return viaHelper
+    return emitConv(viaHelper, emitTypeOf(ctx, e), want)
   }
   if (op === "len" || op === "strLen") {
     return emitConv(`toI32(${emitArg(ctx, e, 0, null)}.length)`, "i32", want)
@@ -591,6 +616,36 @@ const emitHasOp = (e: Expr, op: string): boolean => {
   }
   const body = e.body
   return body !== null && emitHasOp(body, op)
+}
+
+/** Whether `e` reads an integer from bytes anywhere in it. */
+const emitHasRead = (e: Expr): boolean => {
+  for (const op of vocabReadOps()) {
+    if (emitHasOp(e, op)) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * Why a sample of an assertion is undefined, in every language: an `unwrap`
+ * met a null, or a read met the wrong number of bytes. Both record on the
+ * test's unwrap recorder, so the sample fails.
+ *
+ * @param assert the property's assertion
+ * @returns the failure's reason, or null when the assertion neither unwraps nor reads
+ */
+export const emitUndefinedWhy = (assert: Expr): string | null => {
+  const unwraps = emitHasOp(assert, "unwrap")
+  const reads = emitHasRead(assert)
+  if (unwraps && reads) {
+    return "unwrap met a null, or a read met the wrong number of bytes"
+  }
+  if (reads) {
+    return "a read met the wrong number of bytes"
+  }
+  return unwraps ? "unwrap met a null" : null
 }
 
 /**
@@ -895,7 +950,8 @@ const emitProperty = (ctx: EmitContext, k: Clause, samples: Sample[]): string =>
     const v = k.forall[j]
     emitTable(ctx, v.name, v.type, j, samples, out)
   }
-  const usesUnwrap = emitHasOp(assert, "unwrap")
+  const undefinedWhy = emitUndefinedWhy(assert)
+  const usesUnwrap = undefinedWhy !== null
   out.push(`  for (let i: i32 = 0; i < ${count}; i += 1) {`)
   ctx.env = new TypeEnv(ctx.c.functions, true)
   const shown: string[] = []
@@ -920,7 +976,7 @@ const emitProperty = (ctx: EmitContext, k: Clause, samples: Sample[]): string =>
     out.push("    if (u.sawNull || !holds) {")
     out.push(`      let why: string = "the assertion is false";`)
     out.push("      if (u.sawNull) {")
-    out.push(`        why = "unwrap met a null";`)
+    out.push(`        why = ${emitQuote(undefinedWhy ?? "")};`)
     out.push("      }")
     out.push(`      return t.fail(${name}, \`${where}: \${why}\`);`)
   } else {

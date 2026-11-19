@@ -29,7 +29,7 @@ Generated from [src/spec/sample/eval.ts](https://github.com/amritk/vector/blob/m
 
 ### SAMPLE_UNDEFINED
 
-The error an `unwrap(null)` evaluates to.
+The error an `unwrap(null)`, or a read of the wrong number of bytes, evaluates to.
 
 ```ts
 const SAMPLE_UNDEFINED: string = "unwrap of null"

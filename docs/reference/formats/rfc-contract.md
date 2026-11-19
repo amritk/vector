@@ -419,7 +419,7 @@ One or more of:
 - [`literal`](#def-literal)
 - [an object `variant 2`](#def-expr-variant-2)
 - [an object `variant 3`](#def-expr-variant-3)
-- [an object `variant 4`](#def-expr-variant-4): len(bytes)-&gt;i32; concat(bytes,bytes); slice(bytes,from,to) clamped; zeros(n); fill(byte,n); flipBit(bytes,bit); xor/bitAnd/bitOr(bytes,bytes) bytewise, the shorter read as zeros past its end; unwrap(bytes?)-&gt;bytes (a null fails the sample); isNull/notNull(bytes?); + - * % on i32; le64(i32)-&gt;8 bytes; comparisons; == != on i32, bool or bytes/bytes?/null; and/or (2+), not, implies; strLen(string)-&gt;i32; strConcat(string,string); lower/upper(string) (ASCII only); utf8(string)-&gt;bytes; ascii(bytes)-&gt;string? (null when any byte &gt;= 0x80); charAt(string,i32)-&gt;string ("" out of range); unwrap/isNull/notNull also take string?; == != also on string/string?/null.
+- [an object `variant 4`](#def-expr-variant-4): len(bytes)-&gt;i32; concat(bytes,bytes); slice(bytes,from,to) clamped; zeros(n); fill(byte,n); flipBit(bytes,bit); xor/bitAnd/bitOr(bytes,bytes) bytewise, the shorter read as zeros past its end; unwrap(bytes?)-&gt;bytes (a null fails the sample); isNull/notNull(bytes?); + - * % on i32; le16/le32/le64/be16/be32/be64(int)-&gt;2/4/8 bytes, an int no wider than the op, little- or big-endian, two's complement; leU16/leU32/leU64/beU16/beU32/beU64/leI32/leI64/beI32/beI64(bytes)-&gt;that int, exactly 2/4/8 bytes (any other length fails the sample); comparisons; == != on i32, bool or bytes/bytes?/null; and/or (2+), not, implies; strLen(string)-&gt;i32; strConcat(string,string); lower/upper(string) (ASCII only); utf8(string)-&gt;bytes; ascii(bytes)-&gt;string? (null when any byte &gt;= 0x80); charAt(string,i32)-&gt;string ("" out of range); unwrap/isNull/notNull also take string?; == != also on string/string?/null.
 - [an object `variant 5`](#def-expr-variant-5): Names for values, bound in order (each may use the ones before it), scoped over `in`. Only at the top of an assert (or a let's `in`); a name may not shadow a variable or function.
 
 <a id="def-expr-variant-2"></a>
@@ -449,7 +449,7 @@ No other property is allowed.
 
 | Property | Type | Required | Description |
 | --- | --- | --- | --- |
-| `op` | `"len"` \| `"concat"` \| `"slice"` \| `"zeros"` \| `"fill"` \| `"flipBit"` \| `"xor"` \| `"bitAnd"` \| `"bitOr"` \| `"unwrap"` \| `"isNull"` \| `"notNull"` \| `"+"` \| `"-"` \| `"*"` \| `"%"` \| `"le64"` \| `"<"` \| `"<="` \| `">"` \| `">="` \| `"=="` \| `"!="` \| `"and"` \| `"or"` \| `"not"` \| `"implies"` \| `"strLen"` \| `"strConcat"` \| `"lower"` \| `"upper"` \| `"utf8"` \| `"ascii"` \| `"charAt"` | yes |  |
+| `op` | `"len"` \| `"concat"` \| `"slice"` \| `"zeros"` \| `"fill"` \| `"flipBit"` \| `"xor"` \| `"bitAnd"` \| `"bitOr"` \| `"unwrap"` \| `"isNull"` \| `"notNull"` \| `"+"` \| `"-"` \| `"*"` \| `"%"` \| `"le16"` \| `"le32"` \| `"le64"` \| `"be16"` \| `"be32"` \| `"be64"` \| `"leU16"` \| `"leU32"` \| `"leU64"` \| `"beU16"` \| `"beU32"` \| `"beU64"` \| `"leI32"` \| `"leI64"` \| `"beI32"` \| `"beI64"` \| `"<"` \| `"<="` \| `">"` \| `">="` \| `"=="` \| `"!="` \| `"and"` \| `"or"` \| `"not"` \| `"implies"` \| `"strLen"` \| `"strConcat"` \| `"lower"` \| `"upper"` \| `"utf8"` \| `"ascii"` \| `"charAt"` | yes |  |
 | `args` | [`expr`](#def-expr)[] | yes |  |
 
 No other property is allowed.
