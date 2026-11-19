@@ -1,7 +1,8 @@
 /**
  * `spec/pr/mutate` — the mutants of a module's changed lines, and the
  * verdict on how the test met them. A mutant changes one operator, one
- * literal or one statement on a line the change added since the base; the
+ * literal or one statement on a line the change added since the base,
+ * inside a declaration the contract's functions reach (`spec/pr/scope`); the
  * test must kill every one that builds, unless the contract allows a
  * survivor on that line with a reason. The gate also fails when there is
  * nothing to mutate, when no mutant builds, and when the test fails on the
@@ -16,6 +17,7 @@ import { AllowedSurvivor } from "../contract/types"
 import { GitdiffFile, gitdiffTouches } from "./gitdiff"
 import { LEX_STRING, LEX_TEMPLATE, lexTokens } from "./lex"
 import { PrReport } from "./report"
+import { ScopeModule, scopeIn, scopeOwners, scopeReach } from "./scope"
 
 /** Not run yet. */
 export const MUTATE_PENDING: i32 = -1
@@ -365,29 +367,80 @@ export const mutateLine = (text: string, line: i32, kinds: i32[]): MutateMutant[
   return out
 }
 
+/** The mutants of a change, and the changed lines left out as outside the code the contract tests. */
+export class MutateSites {
+  /** The mutants, in the module's order. */
+  mutants: MutateMutant[]
+  /** How many changed lines with a mutant lie outside the code the contract's functions reach. */
+  outside: i32
+  /** The declarations those lines lie in, each once, in the module's order. */
+  owners: string[]
+  /** Why every changed line was mutated, or "" when the scan split the module (scopeReach). */
+  whole: string
+
+  /**
+   * Makes an empty set of sites.
+   *
+   * @param whole why every changed line is mutated, or ""
+   */
+  constructor(whole: string) {
+    this.mutants = []
+    this.outside = 0
+    this.owners = []
+    this.whole = whole
+  }
+}
+
 /**
- * The mutants of a module's lines that a change added. Where code is comes
- * from the lexer (mutateCode), so no mutant lands in a string, a template
- * literal or a comment, however many lines it spans.
+ * The mutants of a module's lines that a change added, inside the
+ * declarations the contract's functions reach (scopeReach). Where code is
+ * comes from the lexer (mutateCode), so no mutant lands in a string, a
+ * template literal or a comment, however many lines it spans.
  *
  * @param text the module now
  * @param changed the module's changes since the base (gitdiffChanged)
- * @returns the mutants, in the module's order, or `Err` naming the line the
- *   lexer cannot read
+ * @param roots the contract's function names
+ * @returns the mutants and the changed lines left out, or `Err` naming the
+ *   line the lexer cannot read
  */
-export const mutateSites = (text: string, changed: GitdiffFile): Result<MutateMutant[], string> => {
-  const out: MutateMutant[] = []
+export const mutateSites = (text: string, changed: GitdiffFile, roots: string[]): Result<MutateSites, string> => {
   const lines = splitLines(text)
   const kinds = mutateCode(text).orReturn()
+  const scope: ScopeModule = scopeReach(text, roots)
+  const out = new MutateSites(scope.whole)
   for (let i = 0; i < lines.length; i++) {
     const n = toI32(i) + 1
     if (gitdiffTouches(changed, n)) {
-      for (const m of mutateLine(lines[i], n, kinds[i])) {
-        out.push(m)
+      const ms = mutateLine(lines[i], n, kinds[i])
+      if (scopeIn(scope, n)) {
+        for (const m of ms) {
+          out.mutants.push(m)
+        }
+      } else if (ms.length > 0) {
+        out.outside = out.outside + 1
+        for (const o of scopeOwners(scope, n)) {
+          if (out.owners.indexOf(o) < 0) {
+            out.owners.push(o)
+          }
+        }
       }
     }
   }
   return Ok(out)
+}
+
+/**
+ * The note on the changed lines a scoped run left unmutated.
+ *
+ * @param s the sites (mutateSites)
+ * @returns the note, or "" when every changed line was in scope
+ */
+export const mutateOutsideNote = (s: MutateSites): string => {
+  if (s.outside === 0) {
+    return ""
+  }
+  const were = s.outside === 1 ? "line outside the tested functions was" : "lines outside the tested functions were"
+  return `${s.outside} changed ${were} not mutated: ${s.owners.join(", ")}`
 }
 
 /**
@@ -447,6 +500,8 @@ const mutateAllowed = (allow: AllowedSurvivor[], file: string, line: i32): Allow
  * @param allow the survivors the contract allows
  * @param baseline why the test fails on the unmutated module, or null when it passes
  * @param dropped mutants made but not run, as `--max` left out
+ * @param outside the note on changed lines outside the tested functions
+ *   (mutateOutsideNote), or ""
  */
 export const mutateJudge = (
   r: PrReport,
@@ -455,13 +510,21 @@ export const mutateJudge = (
   allow: AllowedSurvivor[],
   baseline: string | null,
   dropped: i32,
+  outside: string,
 ): void => {
   if (baseline !== null) {
     r.problems.push(`the test fails on the unmutated module, so it proves nothing: ${baseline}`)
     return
   }
+  if (outside !== "") {
+    r.notes.push(outside)
+  }
   if (mutants.length === 0) {
-    r.problems.push(`no mutants: the change adds no line of ${file} that can be mutated`)
+    r.problems.push(
+      outside === ""
+        ? `no mutants: the change adds no line of ${file} that can be mutated`
+        : `no mutants: no line the change adds to ${file} lies in code the contract's functions reach`,
+    )
     return
   }
   if (dropped > 0) {
