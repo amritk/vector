@@ -12,8 +12,9 @@
  *
  * A section's lines are its blocks: each paragraph one line, each table cell
  * one line, each line of a code block one line, and a blank line between two
- * blocks, so a reader that ends a paragraph at a blank line (as RFC text is
- * read) never runs one block's sentence into the next. A sentence holding a
+ * blocks (two cells that each hold only a printed word are one block), so a
+ * reader that ends a paragraph at a blank line (as RFC text is read) never
+ * runs one block's sentence into the next. A sentence holding a
  * `<bcp14>` is recorded as normative at the level its markup names.
  */
 
@@ -721,10 +722,13 @@ export class XmlLines {
   t: XmlText
   /** The normative sentences found so far, in document order. */
   normative: XmlNormative[]
+  /** Where the lines of code the last xmlSectionLines read are: each an index into its lines. */
+  code: i32[]
   /** Makes a builder. @param t the document's xref texts */
   constructor(t: XmlText) {
     this.t = t
     this.normative = []
+    this.code = []
   }
 }
 
@@ -861,6 +865,24 @@ const xmlBlockBreak = (out: string[]): void => {
   }
 }
 
+/**
+ * Whether a table cell holds only what a printed word does (hex digits, `x`,
+ * `*`, `=`, `,` and spaces). Two such cells side by side are not split by a
+ * blank line, so a vector's words printed one to a cell stay one block; no
+ * sentence can run between them, as every BCP 14 keyword and result verb
+ * holds a letter past `f`.
+ */
+const xmlBareCell = (text: string): boolean => {
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i)
+    const hex = (c >= 48 && c <= 57) || (c >= 97 && c <= 102) || (c >= 65 && c <= 70)
+    if (!hex && c !== 120 && c !== 88 && c !== 42 && c !== 61 && c !== 44 && c !== 32 && c !== 9) {
+      return false
+    }
+  }
+  return text.length > 0
+}
+
 /** A paragraph made of a run of nodes: one line, if it holds any text. */
 const xmlParagraph = (
   b: XmlLines,
@@ -900,10 +922,12 @@ const xmlBlock = (
     let at = 0
     let nl = code.text.indexOf("\n")
     while (nl >= 0) {
+      b.code.push(out.length)
       out.push(code.text.substring(at, nl))
       at = nl + 1
       nl = code.text.indexOf("\n", at)
     }
+    b.code.push(out.length)
     out.push(code.text.substring(at, code.text.length))
     return Ok(true)
   }
@@ -913,11 +937,18 @@ const xmlBlock = (
         xmlBlock(b, c, section, here, out).orReturn()
       }
     }
+    xmlBlockBreak(out)
+    let bare = false
     for (const row of xmlTableRows(n)) {
       for (const cell of row) {
-        xmlBlockBreak(out)
+        const text = xmlPlainText(b.t, cell.node)
+        const next = xmlBareCell(text)
+        if (!bare || !next) {
+          xmlBlockBreak(out)
+        }
+        bare = next
         xmlNormativeIn(b, [cell.node], section, here, out.length).orReturn()
-        out.push(xmlPlainText(b.t, cell.node))
+        out.push(text)
       }
     }
     return Ok(true)
@@ -947,8 +978,9 @@ const xmlBlock = (
 
 /**
  * A section's own lines (its subsections left out): each paragraph, table
- * cell and line of code one line, with a blank line between two blocks. The normative sentences in them are
- * recorded on `b`.
+ * cell and line of code one line, with a blank line between two blocks (but
+ * not between two bare cells, xmlBareCell). The normative sentences in them
+ * are recorded on `b`, and where its lines of code are on `b.code`.
  *
  * @param b the builder
  * @param sec the `<section>`
@@ -957,6 +989,7 @@ const xmlBlock = (
  */
 export const xmlSectionLines = (b: XmlLines, sec: XmlNode, section: string): Result<string[], XmlError> => {
   const out: string[] = []
+  b.code = []
   let k = sec.first
   while (k !== null) {
     if (k.name !== "name" && k.name !== "section") {

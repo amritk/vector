@@ -15,8 +15,9 @@ and zero-width spaces and word joiners dropped (xmlClean).
 
 A section's lines are its blocks: each paragraph one line, each table cell
 one line, each line of a code block one line, and a blank line between two
-blocks, so a reader that ends a paragraph at a blank line (as RFC text is
-read) never runs one block's sentence into the next. A sentence holding a
+blocks (two cells that each hold only a printed word are one block), so a
+reader that ends a paragraph at a blank line (as RFC text is read) never
+runs one block's sentence into the next. A sentence holding a
 `<bcp14>` is recorded as normative at the level its markup names.
 
 Generated from [src/spec/xml/text.ts](https://github.com/amritk/vector/blob/main/src/spec/xml/text.ts).
@@ -461,6 +462,14 @@ the document's xref texts
 
 </scalar-field>
 
+#### XmlLines.code
+
+Where the lines of code the last xmlSectionLines read are: each an index into its lines.
+
+```ts
+code: i32[]
+```
+
 #### XmlLines.normative
 
 The normative sentences found so far, in document order.
@@ -480,8 +489,9 @@ t: XmlText
 ### xmlSectionLines
 
 A section's own lines (its subsections left out): each paragraph, table
-cell and line of code one line, with a blank line between two blocks. The normative sentences in them are
-recorded on `b`.
+cell and line of code one line, with a blank line between two blocks (but
+not between two bare cells, xmlBareCell). The normative sentences in them
+are recorded on `b`, and where its lines of code are on `b.code`.
 
 ```ts
 function xmlSectionLines(

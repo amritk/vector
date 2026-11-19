@@ -35,6 +35,11 @@ export class RfcSection {
    */
   pageBreaks: i32[]
   /**
+   * Which of `lines` are a line of a code block or artwork (each an index),
+   * as an XML source marks them; RFC text marks none.
+   */
+  codeLines: i32[]
+  /**
    * Makes a section.
    *
    * @param id the section number
@@ -48,6 +53,7 @@ export class RfcSection {
     this.lines = lines
     this.ownLines = ownLines
     this.pageBreaks = []
+    this.codeLines = []
   }
 }
 
@@ -453,6 +459,11 @@ export const rfcCaseSection = (sec: RfcSection, n: i32): Result<RfcSection, stri
   for (const b of sec.pageBreaks) {
     if (b >= start && b < end) {
       one.pageBreaks.push(b - start)
+    }
+  }
+  for (const c of sec.codeLines) {
+    if (c >= start && c < end) {
+      one.codeLines.push(c - start)
     }
   }
   return Ok(one)

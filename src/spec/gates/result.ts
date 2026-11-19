@@ -54,12 +54,23 @@ const gateSentenceEnds = (t: string, i: i32): boolean => {
   return (n >= 65 && n <= 90) || n === 0x22 || n === 0x27 || n === 0x28 || n === 0x5b || t.substring(j, j + 3) === "“"
 }
 
-/** A section's prose: its lines without blockquotes, cut into paragraphs (the heading alone first) and sentences. */
+/**
+ * A section's prose: its lines without blockquotes or (as an XML source
+ * marks them) lines of code, cut into paragraphs (the heading alone first)
+ * and sentences.
+ */
 const gateProse = (sec: RfcSection): GateProse => {
   const paras: string[][] = [[], []]
+  const code: boolean[] = []
+  for (let i = 0; i < sec.lines.length; i++) {
+    code.push(false)
+  }
+  for (const i of sec.codeLines) {
+    code[i] = true
+  }
   for (let i = 0; i < sec.lines.length; i++) {
     const raw = sec.lines[i]
-    const l = trim(raw).startsWith(">") ? "" : raw
+    const l = code[i] || trim(raw).startsWith(">") ? "" : raw
     if (i === 0) {
       paras[0].push(l)
     } else if (trim(l).length === 0) {
@@ -306,8 +317,7 @@ const gateOccurrence = (p: GateProse, q: string, at: i32, word: string): string 
       }
       continue
     }
-    const stop = gateSpanAt(p, to - 1)[1]
-    const rest = text.substring(to, last > stop ? last : stop)
+    const rest = text.substring(to, text.length)
     const alt = gateAlternativeEnd(rest)
     if (alt >= 0) {
       why = `offers an alternative right after "${word}" ("${trim(rest.substring(0, alt))}"), so "${word}" is not the whole result`
@@ -317,12 +327,14 @@ const gateOccurrence = (p: GateProse, q: string, at: i32, word: string): string 
       why = `continues past "${word}" ("${word} ${gateNextWord(rest)}"), so "${word}" is a word in a longer phrase, not the stated result (end the clause after it, or follow it with a condition such as "when …")`
       continue
     }
-    const retract = gateWordFind(rest, GATE_RETRACT)
+    const stop = gateSpanAt(p, to - 1)[1]
+    const tail = text.substring(to, last > stop ? last : stop)
+    const retract = gateWordFind(tail, GATE_RETRACT)
     if (retract.length > 0) {
-      why = `retracts "${word}" after stating it ("${rest.substring(retract[0], retract[1])}")`
+      why = `retracts "${word}" after stating it ("${tail.substring(retract[0], retract[1])}")`
       continue
     }
-    const clause = gateClauseOf(rest)
+    const clause = gateClauseOf(tail)
     const hedge = gateWordFind(clause, GATE_HEDGE)
     if (hedge.length > 0) {
       why = `hedges "${word}" after stating it ("${clause.substring(hedge[0], hedge[1])}"), so it is not the result each time`

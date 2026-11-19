@@ -725,10 +725,16 @@ const xmlCasesTestLinear = (t: Suite): void => {
   const cells = xmlCasesTestParse(
     t,
     "a table with many cells",
-    `<rfc><middle><section><table><tr>${xmlCasesTestRepeat("<td>a</td>", 40000)}</tr></table></section></middle></rfc>`,
+    `<rfc><middle><section><table><tr>${xmlCasesTestRepeat("<td>g</td>", 40000)}</tr></table></section></middle></rfc>`,
   )
   t.ok("40000 cells, 40000 lines of text", cells !== null && xmlCasesTestLines(cells, "1").length === 40000)
   t.ok("and a blank line between each two", cells !== null && xmlCasesTestRawLines(cells, "1").length === 79999)
+  const bare = xmlCasesTestParse(
+    t,
+    "a table with many hex cells",
+    `<rfc><middle><section><table><tr>${xmlCasesTestRepeat("<td>a</td>", 40000)}</tr></table></section></middle></rfc>`,
+  )
+  t.ok("40000 hex cells, no blank line between them", bare !== null && xmlCasesTestRawLines(bare, "1").length === 40000)
   xmlCasesTestFast(t, "a table with many cells", start)
 }
 
