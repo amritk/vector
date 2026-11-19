@@ -377,6 +377,21 @@ const xmlDocLay = (
   to.set(s, all.length)
 }
 
+/** The first index of ascending `xs` whose value is at least `v` (xs.length when none), found by halving. */
+const xmlDocFirstAtLeast = (xs: i32[], v: i32): i32 => {
+  let lo = 0
+  let hi = xs.length
+  while (lo < hi) {
+    const mid = lo + ((hi - lo) >> 1)
+    if (xs[mid] < v) {
+      lo = mid + 1
+    } else {
+      hi = mid
+    }
+  }
+  return lo
+}
+
 /** Reads each section's lines, and makes the numbered ones the document's sections. */
 const xmlDocSections = (c: XmlDocContext): Result<boolean, XmlError> => {
   const b = new XmlLines(c.doc.text)
@@ -426,10 +441,8 @@ const xmlDocSections = (c: XmlDocContext): Result<boolean, XmlError> => {
     const name = xmlDocChild(c, s.node, "name")
     const title = name !== null ? xmlPlainText(c.doc.text, name) : ""
     const sec = new RfcSection(s.id, title, all.slice(a, z), s.own)
-    for (const i of code) {
-      if (i >= a && i < z) {
-        sec.codeLines.push(i - a)
-      }
+    for (let k = xmlDocFirstAtLeast(code, a); k < code.length && code[k] < z; k++) {
+      sec.codeLines.push(code[k] - a)
     }
     c.doc.sections.push(sec)
     const anchor = xmlAttr(s.node, "anchor")

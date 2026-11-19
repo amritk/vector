@@ -615,6 +615,9 @@ const xmlCasesTestLastFirst = (d: XmlDocument | null): string => {
   return lines.length > 0 ? lines[0] : ""
 }
 
+/** A section's codeLines, comma-separated. */
+const xmlCasesTestCodeLines = (sec: RfcSection): string => sec.codeLines.map((i: i32): string => `${i}`).join(",")
+
 /** Inputs that took seconds to minutes when a step was quadratic. */
 const xmlCasesTestLinear = (t: Suite): void => {
   let start = Date.now()
@@ -625,6 +628,21 @@ const xmlCasesTestLinear = (t: Suite): void => {
   )
   t.ok("40000 sections", siblings !== null && siblings.sections.length === 40000)
   xmlCasesTestFast(t, "many sibling sections", start)
+
+  start = Date.now()
+  const coded = xmlCasesTestParse(
+    t,
+    "many sections of code",
+    `<rfc><middle>${xmlCasesTestRepeat("<section><t>p</t><sourcecode>a\nb\nc\nd\ne</sourcecode></section>", 40000)}</middle></rfc>`,
+  )
+  t.eqStr(
+    "many sections of code: the first and last each hold only their own lines of code",
+    coded !== null && coded.sections.length === 40000
+      ? `${xmlCasesTestCodeLines(coded.sections[0])} / ${xmlCasesTestCodeLines(coded.sections[39999])}`
+      : "",
+    "2,3,4,5,6 / 2,3,4,5,6",
+  )
+  xmlCasesTestFast(t, "many sections of code", start)
 
   start = Date.now()
   t.ok(
