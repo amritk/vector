@@ -1,0 +1,4 @@
+spec frozen against main: OK
+
+  ✓ contract contracts/a.json
+  spec .refcache/reference.RFC.4648.xml
