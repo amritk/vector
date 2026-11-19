@@ -576,6 +576,16 @@ of matching bytes:
   under `Alice's private key, a` all are, as is a value the cited section
   does not print at all (the 32-byte base point `[09 00 … 00]` against
   §6.1, or §6.1's key cited from §6.2).
+- **Wrapped statements.** A value printed as the last `= <hex>` of a
+  statement takes the statement's name, the text before its first `=`,
+  even where that name stands on a line of its own and a `= f(...)` line
+  comes between: in RFC 9001 Appendix A.1, `client_initial_secret`, then
+  `= HKDF-Expand-Label(initial_secret, "client in", "", 32)`, then
+  `= c00cf151…`, binds as `{"hex": "c00c…", "label":
+  "client_initial_secret"}`, its hex continued across lines and page
+  breaks. A label that wraps (`PBKDF2-HMAC-SHA-256 (P="passwd", S="salt",`
+  above `c=1, dkLen=64) =`, as RFC 7914 §11 prints it) is read as one line
+  and written whole, one space where it wrapped.
 - **Empty values.** A section prints an empty value as a label with nothing
   below it, its length stated as 0 (`MESSAGE (length 0 bytes):`, or
   `octets`). Empty bytes bind only under such a label:
@@ -593,6 +603,13 @@ of matching bytes:
   values from two test cases. A label printed once goes with the round it is
   printed among: RFC 8032 Section 7.1 prints `MESSAGE (length 0 bytes)` once,
   in TEST 1, so it is refused beside TEST 2's `SECRET KEY` and `SIGNATURE`.
+- **Call labels.** A string or integer printed inside the expected
+  value's label, in its `( … )` (`"passwd"`, `c=1` in
+  `PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)`), is one test
+  case with it, and is not read by line or round. One printed in another
+  call label of the section instead (`"NaCl"`, `c=80000` beside case 1's
+  value) is refused: "they are different test cases". Call labels that
+  differ only inside the `( … )` are one variant, named before the `(`.
 - **Named test cases.** Where a section prints several test cases under
   headings (`Test Vector #2:`, a line of its own or followed by text), and a
   label is printed a different number of times than another, the rounds do

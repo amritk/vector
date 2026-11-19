@@ -82,15 +82,16 @@ vector does two things, and no model is involved in either:
   enforced. Their shapes are in [File formats](guide/guides/file-formats.md),
   [spec plan](reference/formats/spec-plan.md) and
   [program](reference/formats/program.md).
-- **The repair loop.** Read `feedback` and `items[]`, and change only what
-  was refuted. Keep every clause that proved. Fix the program, not the spec,
-  unless the spec misread the request. Give up after about four attempts and
-  report the last feedback. Never edit vector to make a proof pass. A
-  `MISMATCH` is a bug in vector: report it, change nothing.
+- **The repair loop.** Read `feedback` and `items[]`; change only what was
+  refuted. Keep every clause that proved. Fix the program, not the spec,
+  unless the spec misread the request. Give up after four tries and report
+  the last feedback. Never edit vector to make a proof pass. A `MISMATCH` is
+  a bug in vector: report it, change nothing.
 - **A contract's gates.** `spec check` runs shape, fidelity, completeness,
-  provenance, coverage, typing, signatures and domain. Every quote must be in
-  its cited section, and every MUST or SHALL sentence must be tested or
-  excluded. See [The gates](guide/guides/spec-to-contract.md#the-gates).
+  provenance, coverage, typing, signatures and domain. Quotes are in their
+  section, MUST and SHALL are tested or excluded, and a value is printed
+  whole under its name, with its call label's args, even wrapped. See
+  [The gates](guide/guides/spec-to-contract.md#the-gates).
 - **A spec-first PR** is gated by `spec frozen`, `spec stale`,
   `spec exports` and `spec mutate`, in that order. See
   [Gating a spec-first PR](guide/guides/pr-gates.md#the-workflow-in-order).

@@ -275,6 +275,8 @@ profile extracts to, run
   - Take the arguments and the expected value from one test case. A label
     printed once goes with the test case it is printed in: RFC 8032 §7.1's
     empty MESSAGE belongs to TEST 1, not to TEST 2's key and signature.
+  - A value wrapped across lines or pages keeps the name before its first
+    `=`. Args printed in a call label's `( … )` go with that label's value.
   - Where a case is printed for several variants, use the row whose number
     is in the function's name.
   - [Writing a spec](../../../docs/guide/guides/writing-a-spec.md)'s "What a
