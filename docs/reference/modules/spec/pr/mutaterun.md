@@ -3,9 +3,11 @@
 # spec/pr/mutaterun
 
 `spec/pr/mutaterun` — runs a test against each mutant of a module, several
-at once. The nish checkout is copied once per job into a scratch directory
-of its own (its .git left behind), so each copy's compiler builds against
-its own std/ holding its own mutant. A mutant runs in two steps, both
+at once. Each job gets a slot of its own: with no `--nish`, a scratch
+install of the root's seed with the root's std/ laid over it (`run`'s
+scratch); with `--nish`, a copy of the whole root (its .git left behind).
+Either way the slot's compiler builds against its own std/ holding its own
+mutant. A mutant runs in two steps, both
 timed: `<nish> <test> --link <bin>` builds the test against it, and a build
 the compiler refuses with an error located in the module or the test makes
 it stillborn, while any other failed build (a crash, a kill, a full disk,
@@ -31,7 +33,7 @@ Generated from [src/spec/pr/mutaterun.ts](https://github.com/amritk/vector/blob/
 
 ### MUTATERUN_COPY_MS
 
-The longest copying a nish checkout may take, in milliseconds.
+The longest making a slot (copying a checkout or an install) may take, in milliseconds.
 
 ```ts
 const MUTATERUN_COPY_MS: i32 = 120000
@@ -72,7 +74,7 @@ new MutateRun(
 
 <scalar-field name="nishRoot" type="string" required>
 
-the nish checkout
+the nish install or checkout
 
 </scalar-field>
 
@@ -84,7 +86,7 @@ the module, from the nish root ("" until the contract names it)
 
 <scalar-field name="nish" type="string" required>
 
-the compiler, from the nish root
+the compiler, from the nish root; "" for the root's seed with its std/ laid over it
 
 </scalar-field>
 
@@ -124,7 +126,7 @@ jobs: i32
 
 #### MutateRun.nish
 
-The compiler, from the nish root, such as bin/nish.
+The compiler, from the nish root, such as build/nish, to copy the checkout; "" to build with the root's seed (runSeedOf) with its std/ laid over it.
 
 ```ts
 nish: string
@@ -132,7 +134,7 @@ nish: string
 
 #### MutateRun.nishRoot
 
-The nish checkout: bin/, std/ and the compiler's own files.
+The nish root: an install, or a checkout (with build/seed, or the compiler `nish` names).
 
 ```ts
 nishRoot: string
@@ -244,7 +246,7 @@ the most mutants to run; 0 or less runs all
 <scalar-field name="returns" type="Result&lt;PrReport, string&gt;">
 
 the report, or `Err` when the contract cannot be read, its target
-  is outside nish, the root is a nish checkout with no compiler built, the
+  is outside nish, the root has no seed (and no `--nish`) or no compiler built, the
   module cannot be lexed, git fails or the runner cannot work
 
 </scalar-field>

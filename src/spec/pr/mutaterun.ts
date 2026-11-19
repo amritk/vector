@@ -24,6 +24,7 @@ import { shapeNishModuleFile } from "../contract/shape"
 import { emitContractFile } from "../emit/file"
 import { EmitPackages } from "../emit/packages"
 import { EmitTarget } from "../emit/target"
+import { runMakeScratchIn, runSeedOf } from "../run/run"
 import { gitdiffChanged, gitdiffPrefix } from "./gitdiff"
 import {
   MUTATE_BUILD_TIMED_OUT,
@@ -38,7 +39,6 @@ import {
   mutatePick,
   mutateSites,
 } from "./mutate"
-import { runMakeScratchIn, runSeedOf } from "../run/run"
 import { PrReport } from "./report"
 
 /** The longest making a slot (copying a checkout or an install) may take, in milliseconds. */
