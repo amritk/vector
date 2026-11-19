@@ -18,24 +18,23 @@ vector does two things, and no model is involved in either:
 ## Traps
 
 1. **Read the exit status, never a piped tail.** `vector … | tail` exits
-   with `tail`'s status, 0. Run it bare, or check `$?` or
-   `PIPESTATUS`.
+   with `tail`'s status, 0. Run it bare or check `$?` or `PIPESTATUS`.
 2. **Only `PROVEN` passes `verify`.** `REFUTED`, `UNKNOWN`, `INVALID` and
    `ERROR` all exit 1. Exit 2 is bad usage, an unreadable file, an `--emit`
    file that cannot be written, or `MISMATCH`: a counterexample that did not
-   replay, a bug in vector and not a refusal. Never present code from a run
-   that was not `PROVEN`. See
+   replay, a vector bug, not a refusal. Never present code from a run
+   not `PROVEN`. See
    [Proving a function](guide/guides/proving.md#the-verdicts).
 3. **`diff` exits 2 for `INVALID` and `ERROR`**, not 1 as `verify` does.
    Like `verify`, it exits 2 for `MISMATCH`, a witness that did not replay.
-   `EQUIVALENT` exits 0, and `DIFFERENT` and `UNDECIDED` exit 1. Do not
+   `EQUIVALENT` exits 0; `DIFFERENT` and `UNDECIDED` exit 1. Do not
    report `UNDECIDED` as equivalent. See
    [Exit codes](guide/guides/exit-codes.md#by-command).
 4. **The proof is over exact rationals, and an `Int` is unbounded there.**
    The emitted code runs in float64. A float64 gate samples boundary, dense
    and random inputs, and anything it finds makes the run `REFUTED`. It
-   samples float64 and proves nothing about it, so prefer inequalities to an
-   exact `==` on `Real`.
+   proves nothing about float64, so prefer inequalities to an exact `==`
+   on `Real`.
 5. **An `Int` `+`, `-` or `*` that may leave ±(2^53−1) is an `Int overflow`,
    and the run is `REFUTED`**, even when every postcondition holds over the
    integers. Write it so no intermediate grows past its operands, such as
@@ -50,10 +49,10 @@ vector does two things, and no model is involved in either:
 8. **A hazard is checked on the path the emitted code takes.** An `ite`
    branch, the right side of a short-circuit `and`, `or` or `implies`, and
    each `requires` after the first lean only on what was checked before them.
-   So `x != 0 and 1 / x > 0` is safe, and `1 / x > 0 and x != 0` is a
+   So `x != 0 and 1 / x > 0` is safe; `1 / x > 0 and x != 0` is a
    division hazard.
-9. **`--emit` writes only on `PROVEN`.** On any other verdict it writes
-   nothing and leaves an existing file alone.
+9. **`--emit` writes only on `PROVEN`.** Otherwise it writes nothing and
+   leaves an existing file alone.
 10. **`spec run` `SATISFIED` is evidence, not proof.** The implementation
    returned the printed vectors and held the properties at their samples.
    `spec mutate` finds the bugs the contract cannot tell from the real
@@ -102,7 +101,7 @@ vector does two things, and no model is involved in either:
   Its expressions are numbers, booleans, variables, unary and binary
   operators, `ite`, and calls.
 - A function calls only those layered below it: no recursion.
-- Strings, arrays, IO, loops, state and data structures do not fit. Offer to
+- Strings, arrays, IO, loops, state and data structures do not fit: offer to
   verify the numeric core alone.
-- Word arrays go in vectors, not properties, for now.
-- `u8[] /* window */` is a `(buf, off, len)`; Nish tests only.
+- Word arrays go in vectors, not properties, yet. `u8[] /* window */` is
+  `(buf, off, len)`, Nish tests only.

@@ -90,8 +90,7 @@ normative:
 {::boilerplate bcp14-tagged}
 ```
 
-The boilerplate is the first paragraph of `# Introduction`. Then add these
-parts.
+The boilerplate is the first paragraph of `# Introduction`. Then add:
 
 **One interface block.** It is the contract's `target` and `functions`, so
 keep it to the module's exports:
@@ -112,16 +111,15 @@ Nish test can hold all but `i8` and `i16`, which Nish lacks, so the emitter
 refuses them; only the Nish test holds word arrays. Add `| null` to `u8[]`,
 a word array or `string`, and to `Secret<u8[]>` as a result only. Give
 word-array cases as vectors: a property over or calling word arrays is
-refused. Write `u8[] /* window */` for a `(buf, off, len)` triple: one
-bytes parameter, tested at a nonzero offset, in the Nish test only.
+refused. `u8[] /* window */` is one bytes parameter for a `(buf, off, len)`,
+tested at a nonzero offset, Nish test only.
 
 A property may compare the module with another nish module (HKDF with
 HMAC). Declare that module's functions after a second `// module:` line,
 below the module under test's own, which declares at least one function;
-they are reference functions, not exports. A reference function only helps
-check the module under test: a vector's Call must name a function of the module
-under test, and a property's assertion must call at least one, so a clause that
-calls only reference functions is refused. A module line is exactly
+they are reference functions, not exports. A vector's Call must name a
+function of the module under test, and a property's assertion must call at
+least one: a clause that calls only reference functions is refused. A module line is exactly
 `// module: nish/<path>`, one module, after the previous signature. A comment of any style or case whose text starts `module:` or
 `module nish/` but is not that (`// Module: …`, `//module nish/…`,
 `/* module: … */`, `/// module: …`, two modules) is refused, and so is a module
@@ -208,8 +206,7 @@ are refused. `specs/rfc5869-hkdf-sha256.md` and
 `specs/rfc8439-chacha20-poly1305.md` are worked examples. The contract records
 the RFC, not the spec, so check it with `spec check contracts/<name>.json`
 (the RFC is read from its recorded file), or name the RFC with
-`--spec rfcs/rfc<N>.txt`. `--spec specs/<name>.xml` names a file the contract
-does not record, and exits 1 (`--spec … is not rfcs/rfc<N>.txt, the main
+`--spec rfcs/rfc<N>.txt`. `--spec specs/<name>.xml` exits 1 (`--spec … is not rfcs/rfc<N>.txt, the main
 source the contract records`). To check that the contract is exactly what the
 profile extracts to, run
 `spec extract specs/<name>.xml -o contracts/<name>.json --check`.
@@ -296,7 +293,7 @@ forall (b: u8[] /* 0..64 */) => {
 ~~~
 ````
 
-Write the spec's definitions as checks over a typed domain:
+Write definitions as checks over a typed domain:
 
 - lengths;
 - bounds written as integer comparisons (Z3 samples both sides of each);
@@ -306,7 +303,7 @@ Write the spec's definitions as checks over a typed domain:
 
 Use the [Properties](../../../docs/guide/guides/writing-a-spec.md#properties)
 section of Writing a spec for the subset: operators, operations,
-`where`, and the forms that are refused. Remember that its semantics are
+`where`, and the forms that are refused. Its semantics are
 vector's, not JavaScript's. For example, `.slice` clamps, `a % 0` is 0, and
 `===` on bytes compares contents.
 
@@ -355,13 +352,11 @@ you pass `--run-sources`: it runs on your machine, as you, with your files and
 network. Only the 30 s timeout kills the command's process group: a command
 that exits quickly can leave background children running, and a process that
 detaches with `setsid` is never contained. With no module yet, `check`
-warns that signatures were not checked. That is expected here: once the
-module exists (step 5), `check --nish-root` or `check --module` checks them
-against it. No other command does.
+warns that signatures were not checked, as expected: once the module exists
+(step 5), `check --nish-root` or `--module` checks them. No other command does.
 
 Commit `specs/<name>.md`, `specs/<name>.xml` and `contracts/<name>.json`
-together. Then show the spec to
-a human for approval. **The reviewer confirms that:**
+together, then show the spec to a human for approval. **The reviewer confirms that:**
 
 - each `ts-property` says what the prose it covers says, no more and no less;
 - each `Untested:` reason is true, and what it says checks the sentence
