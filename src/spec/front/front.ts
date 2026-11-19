@@ -776,6 +776,37 @@ export class FrontInterface {
   }
 }
 
+/**
+ * Reads the comments right after a parameter's type, which say how the real
+ * function takes it: only a `window` block comment, after `u8[]`, is one. A module line
+ * there is left for frontPeek to refuse.
+ */
+function frontParamForm(c: FrontCursor, fn: string, param: Param): Result<boolean, FrontRefusal> {
+  let t = frontRaw(c)
+  while (t.kind === FrontKind.Comment && frontModuleLine(t).orReturn().length === 0) {
+    const at = `\`${fn}(${param.name})\``
+    if (t.lineComment || splitWhitespace(t.value).join(" ") !== "window") {
+      const shown = t.lineComment ? `//${t.value}` : `/*${t.value}*/`
+      return Err(frontRefuse(`${at}: an interface parameter takes only /* window */, not \`${shown}\``, frontAt(t)))
+    }
+    if (param.form !== null) {
+      return Err(frontRefuse(`${at} is already a window; write /* window */ once`, frontAt(t)))
+    }
+    if (param.type !== "bytes") {
+      return Err(
+        frontRefuse(
+          `${at} is ${frontTsTy(param.type)}: /* window */ goes only after u8[], which the real function takes as (buf, off, len)`,
+          frontAt(t),
+        ),
+      )
+    }
+    param.form = "window"
+    frontSkipRaw(c)
+    t = frontRaw(c)
+  }
+  return Ok(true)
+}
+
 function frontInterfaceIn(c: FrontCursor): Result<FrontInterface, FrontRefusal> {
   const head = frontRaw(c)
   const m: string | null = head.kind === FrontKind.Comment && head.lineComment ? frontModuleOf(head.value) : null
@@ -858,6 +889,7 @@ function frontInterfaceIn(c: FrontCursor): Result<FrontInterface, FrontRefusal> 
       const param = new Param()
       param.name = p.text
       param.type = frontSigType(c).orReturn()
+      frontParamForm(c, name.text, param).orReturn()
       sig.params.push(param)
       if (!frontEat(c, ",")) {
         break
