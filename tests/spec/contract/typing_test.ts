@@ -237,10 +237,12 @@ export const main = (): i32 => {
       typingOfWith(`{"op": "${op}", "args": [{"int": ${typingIntJson(litFits[i])}}]}`, "u8"),
       "bytes",
     )
-    t.ok(
+    t.eqStr(
       `${op} refuses ${litPast[i]}`,
-      typingOfWith(`{"op": "${op}", "args": [{"int": ${typingIntJson(litPast[i])}}]}`, "u8").indexOf(`${litPast[i]}`) >=
-        0,
+      typingOfWith(`{"op": "${op}", "args": [{"int": ${typingIntJson(litPast[i])}}]}`, "u8"),
+      op.substring(2) === "64"
+        ? `assert.args[0]: int ${litPast[i]} is outside every integer type`
+        : `assert.args[0]: ${litPast[i]} does not fit ${op}'s ${op.substring(2)} bits`,
     )
   }
   t.eqStr(

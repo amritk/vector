@@ -425,6 +425,7 @@ forall (b: u8[] /* 0..64 */) => {
   exactly that many bytes back as the named integer; any other length
   fails the sample, as `unwrap` of a null does. A wider argument is
   refused: `le32 wants an integer of at most 32 bits, got u64`.
+  These names are operations, so no ts-interface function may take one.
 - **Semantics** are vector's evaluator's, not JavaScript's:
   - `===` on `u8[]` compares contents.
   - `.slice` clamps its bounds.

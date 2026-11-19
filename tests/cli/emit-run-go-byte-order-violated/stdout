@@ -1,0 +1,5 @@
+VIOLATED: byte-order (exit 1)
+  fail  R-WRITE
+  pass  R-READ
+FAIL  [P-WRITE-FIXED] known integers write as known bytes (R-WRITE)
+      sample 1 of 1 (n = -2): the assertion is false

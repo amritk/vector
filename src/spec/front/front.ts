@@ -40,6 +40,7 @@ import {
   vocabReadOps,
   vocabValueType,
   vocabWordTypes,
+  vocabWriteOps,
 } from "../contract/vocab"
 
 // ── Refusals ───────────────────────────────────────────────────────────────
@@ -652,36 +653,29 @@ const frontSigType = (c: FrontCursor): Result<string, FrontRefusal> => {
 
 // ── ts-interface ───────────────────────────────────────────────────────────
 
-/** Ops written as plain calls: `xor(a, b)`. */
-const frontCallOps = (): string[] => [
-  "xor",
-  "bitAnd",
-  "bitOr",
-  "fill",
-  "zeros",
-  "flipBit",
-  "le64",
-  "le16",
-  "le32",
-  "be16",
-  "be32",
-  "be64",
-  "leU16",
-  "leU32",
-  "leU64",
-  "beU16",
-  "beU32",
-  "beU64",
-  "leI32",
-  "leI64",
-  "beI32",
-  "beI64",
-  "unwrap",
-  "utf8",
-  "ascii",
-  "implies",
-  "concat",
-]
+/** Ops written as plain calls: `xor(a, b)`, and every byte-order op. */
+const frontCallOps = (): string[] => {
+  const ops: string[] = [
+    "xor",
+    "bitAnd",
+    "bitOr",
+    "fill",
+    "zeros",
+    "flipBit",
+    "unwrap",
+    "utf8",
+    "ascii",
+    "implies",
+    "concat",
+  ]
+  for (const op of vocabWriteOps()) {
+    ops.push(op)
+  }
+  for (const op of vocabReadOps()) {
+    ops.push(op)
+  }
+  return ops
+}
 
 /** The module of a `<s>module:<s><path><s>` comment value, or null. */
 const frontModuleOf = (value: string): string | null => {
