@@ -364,7 +364,11 @@ const e2eTestOverlay = (t: Suite, dir: string): Result<boolean, string> => {
   prTestWrite(dir, "t.ts", E2E_TEST_LT).orReturn()
   prTestWrite(dir, ".gitignore", "/install/libexec\n/install/runtime\n/checkout/build/\n").orReturn()
   for (const root of ["install", "checkout", "blind"]) {
-    prTestWrite(dir, `${root}/std/m.ts`, "/** Less than. */\nexport const lt = (a: i32, b: i32): boolean => b > a\n").orReturn()
+    prTestWrite(
+      dir,
+      `${root}/std/m.ts`,
+      "/** Less than. */\nexport const lt = (a: i32, b: i32): boolean => b > a\n",
+    ).orReturn()
   }
   for (const part of ["libexec", "runtime"]) {
     runProcess(["ln", "-s", `${self}/.nish/${part}`, `${dir}/install/${part}`], "", 10000).orReturn()
@@ -377,7 +381,11 @@ const e2eTestOverlay = (t: Suite, dir: string): Result<boolean, string> => {
   prTestCommit(dir, "base").orReturn()
   prTestGit(dir, ["checkout", "-q", "-b", "work"]).orReturn()
   for (const root of ["install", "checkout", "blind"]) {
-    prTestWrite(dir, `${root}/std/m.ts`, "/** Less than. */\nexport const lt = (a: i32, b: i32): boolean => a < b\n").orReturn()
+    prTestWrite(
+      dir,
+      `${root}/std/m.ts`,
+      "/** Less than. */\nexport const lt = (a: i32, b: i32): boolean => a < b\n",
+    ).orReturn()
   }
   const install = e2eTestRun(dir, e2eTestOverlayArgs(dir, "install", ["--jobs", "2"]))
   t.ok(

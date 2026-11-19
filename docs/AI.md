@@ -55,8 +55,8 @@ vector does two things, and no model is involved in either:
    leaves an existing file alone.
 10. **`spec run` `SATISFIED` is evidence, not proof.** The implementation
    returned the printed vectors and held the properties at their samples.
-   `spec mutate` finds bugs in the tested functions the contract misses.
-   See [What a pass means](guide/guides/testing.md#what-a-pass-means).
+   `spec mutate`, built on the root's seed, finds bugs in the tested
+   functions the contract misses. See [What a pass means](guide/guides/testing.md#what-a-pass-means).
 11. **Never hand-edit a generated file.** `spec extract` writes
    `contracts/*.json`, `scripts/build-spec.sh` builds `specs/*.xml` from
    `specs/*.md`, and `spec emit` writes the test. Change the source and

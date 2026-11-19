@@ -1,0 +1,1 @@
+vector spec mutate --base main --nish-root tests/cli/pr-mutate-unbuilt-nish/root --nish "" tests/cli/pr-mutate-unbuilt-nish/c.json

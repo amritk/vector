@@ -490,12 +490,14 @@ in a spec-side PR.
 It exits 2 for bad usage, a git error, a z3 failure, or a compiler failure the
 mutant did not cause. Two compiler traps:
 
-- **The compiler must read the copy.** `mutate` builds each mutant in a copy
-  of the root, and first checks (the canary) that the compiler fails on a
-  copy whose module is made unparseable. An installed `bin/nish`, such as
-  `.nish/bin/nish`, is a wrapper that execs another install by absolute path
-  and fails the canary: give `--nish libexec/nish` for an install, or use a
-  real nish checkout.
+- **The compiler must read the slot.** With no `--nish`, each mutant builds
+  in a scratch install: the root's seed (the root itself for an install,
+  `build/seed` for a checkout) with the root's `std/` laid over it. A root
+  with neither exits 2: run `bash scripts/fetch-seed.sh` there (no build
+  needed). First, the canary checks the compiler fails once the module is
+  made unparseable. `--nish <file>` copies the whole root instead; an
+  installed `bin/nish`, such as `.nish/bin/nish`, execs another install by
+  absolute path and fails the canary.
 - **Run it from the repository's top.** Without `--test`, `mutate` emits the
   contract's test as `emit` does, checking the contract with the current
   directory as the repository's top, as CI runs it.
