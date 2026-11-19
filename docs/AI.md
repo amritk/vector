@@ -104,5 +104,5 @@ vector does two things, and no model is involved in either:
 - A function calls only those layered below it: no recursion.
 - Strings, arrays, IO, loops, state and data structures do not fit. Offer to
   verify the numeric core alone.
-- A property may not hold or call word arrays yet: give them as vectors.
+- Word arrays go in vectors, not properties, for now.
 - `u8[] /* window */` is a `(buf, off, len)`; Nish tests only.
