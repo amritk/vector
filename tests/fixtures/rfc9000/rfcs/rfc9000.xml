@@ -1,0 +1,182 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rfc xmlns:xi="http://www.w3.org/2001/XInclude" version="3" category="std" consensus="true" docName="draft-ietf-quic-transport-34" indexInclude="true" ipr="trust200902" number="9000" prepTime="2021-05-27T14:12:39" scripts="Common,Latin" sortRefs="true" submissionType="IETF" symRefs="true" tocDepth="3" tocInclude="true" xml:lang="en">
+  <link href="https://dx.doi.org/10.17487/rfc9000" rel="alternate"/>
+  <link href="urn:issn:2070-1721" rel="alternate"/>
+  <link href="https://datatracker.ietf.org/doc/draft-ietf-quic-transport-34" rel="prev"/>
+  <front>
+    <title abbrev="QUIC Transport Protocol">QUIC: A UDP-Based Multiplexed and Secure Transport</title>
+    <seriesInfo name="RFC" value="9000" stream="IETF"/>
+  </front>
+  <middle>
+    <section anchor="overview" numbered="true" toc="include" removeInRFC="false" pn="section-1">
+      <name slugifiedName="name-overview">Overview</name>
+      <t indent="0" pn="section-1-1">QUIC is a secure general-purpose transport protocol. This
+document defines version 1 of QUIC, which conforms to the version-independent
+properties of QUIC defined in <xref target="QUIC-INVARIANTS" format="default" sectionFormat="of" derivedContent="QUIC-INVARIANTS"/>.</t>
+    </section>
+      <section anchor="iana-error-codes" numbered="true" toc="include" removeInRFC="false" pn="section-22.5">
+        <name slugifiedName="name-quic-transport-error-codes-">QUIC Transport Error Codes Registry</name>
+        <t indent="0" pn="section-22.5-1">IANA has added a registry for "QUIC Transport Error Codes" under a "QUIC"
+heading.</t>
+        <t indent="0" pn="section-22.5-2">The "QUIC Transport Error Codes" registry governs a 62-bit space.  This space is
+split into three ranges that are governed by different policies.  Permanent
+registrations in this registry are assigned using the Specification Required
+policy (<xref section="4.6" sectionFormat="of" target="RFC8126" format="default" derivedLink="https://rfc-editor.org/rfc/rfc8126#section-4.6" derivedContent="RFC8126"/>), except for values between 0x00 and 0x3f (in
+hexadecimal), inclusive, which are assigned using Standards Action or IESG
+Approval as defined in Sections <xref target="RFC8126" section="4.9" sectionFormat="bare" format="default" derivedLink="https://rfc-editor.org/rfc/rfc8126#section-4.9" derivedContent="RFC8126"/> and <xref target="RFC8126" section="4.10" sectionFormat="bare" format="default" derivedLink="https://rfc-editor.org/rfc/rfc8126#section-4.10" derivedContent="RFC8126"/> of <xref target="RFC8126" format="default" sectionFormat="of" derivedContent="RFC8126"/>.</t>
+        <t indent="0" pn="section-22.5-3">In addition to the fields listed in <xref target="iana-provisional" format="default" sectionFormat="of" derivedContent="Section 22.1.1"/>, permanent
+registrations in this registry <bcp14>MUST</bcp14> include the following fields:</t>
+        <dl indent="3" newline="false" spacing="normal" pn="section-22.5-4">
+          <dt pn="section-22.5-4.1">Code:</dt>
+          <dd pn="section-22.5-4.2">
+            <t indent="0" pn="section-22.5-4.2.1">A short mnemonic for the parameter.</t>
+          </dd>
+          <dt pn="section-22.5-4.3">Description:</dt>
+          <dd pn="section-22.5-4.4">
+            <t indent="0" pn="section-22.5-4.4.1">A brief description of the error code semantics, which <bcp14>MAY</bcp14> be a summary if a
+specification reference is provided.</t>
+          </dd>
+        </dl>
+        <t indent="0" pn="section-22.5-5">The initial contents of this registry are shown in <xref target="iana-error-table" format="default" sectionFormat="of" derivedContent="Table 7"/>.</t>
+        <table anchor="iana-error-table" align="center" pn="table-7">
+          <name slugifiedName="name-initial-quic-transport-erro">Initial QUIC Transport Error Codes Registry Entries</name>
+          <thead>
+            <tr>
+              <th align="left" colspan="1" rowspan="1">Value</th>
+              <th align="left" colspan="1" rowspan="1">Code</th>
+              <th align="left" colspan="1" rowspan="1">Description</th>
+              <th align="left" colspan="1" rowspan="1">Specification</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td align="left" colspan="1" rowspan="1">0x00</td>
+              <td align="left" colspan="1" rowspan="1">NO_ERROR</td>
+              <td align="left" colspan="1" rowspan="1">No error</td>
+              <td align="left" colspan="1" rowspan="1">
+                <xref target="error-codes" format="default" sectionFormat="of" derivedContent="Section 20"/></td>
+            </tr>
+            <tr>
+              <td align="left" colspan="1" rowspan="1">0x01</td>
+              <td align="left" colspan="1" rowspan="1">INTERNAL_ERROR</td>
+              <td align="left" colspan="1" rowspan="1">Implementation error</td>
+              <td align="left" colspan="1" rowspan="1">
+                <xref target="error-codes" format="default" sectionFormat="of" derivedContent="Section 20"/></td>
+            </tr>
+            <tr>
+              <td align="left" colspan="1" rowspan="1">0x02</td>
+              <td align="left" colspan="1" rowspan="1">CONNECTION_REFUSED</td>
+              <td align="left" colspan="1" rowspan="1">Server refuses a connection</td>
+              <td align="left" colspan="1" rowspan="1">
+                <xref target="error-codes" format="default" sectionFormat="of" derivedContent="Section 20"/></td>
+            </tr>
+            <tr>
+              <td align="left" colspan="1" rowspan="1">0x03</td>
+              <td align="left" colspan="1" rowspan="1">FLOW_CONTROL_ERROR</td>
+              <td align="left" colspan="1" rowspan="1">Flow control error</td>
+              <td align="left" colspan="1" rowspan="1">
+                <xref target="error-codes" format="default" sectionFormat="of" derivedContent="Section 20"/></td>
+            </tr>
+            <tr>
+              <td align="left" colspan="1" rowspan="1">0x04</td>
+              <td align="left" colspan="1" rowspan="1">STREAM_LIMIT_ERROR</td>
+              <td align="left" colspan="1" rowspan="1">Too many streams opened</td>
+              <td align="left" colspan="1" rowspan="1">
+                <xref target="error-codes" format="default" sectionFormat="of" derivedContent="Section 20"/></td>
+            </tr>
+            <tr>
+              <td align="left" colspan="1" rowspan="1">0x05</td>
+              <td align="left" colspan="1" rowspan="1">STREAM_STATE_ERROR</td>
+              <td align="left" colspan="1" rowspan="1">Frame received in invalid stream state</td>
+              <td align="left" colspan="1" rowspan="1">
+                <xref target="error-codes" format="default" sectionFormat="of" derivedContent="Section 20"/></td>
+            </tr>
+            <tr>
+              <td align="left" colspan="1" rowspan="1">0x06</td>
+              <td align="left" colspan="1" rowspan="1">FINAL_SIZE_ERROR</td>
+              <td align="left" colspan="1" rowspan="1">Change to final size</td>
+              <td align="left" colspan="1" rowspan="1">
+                <xref target="error-codes" format="default" sectionFormat="of" derivedContent="Section 20"/></td>
+            </tr>
+            <tr>
+              <td align="left" colspan="1" rowspan="1">0x07</td>
+              <td align="left" colspan="1" rowspan="1">FRAME_ENCODING_ERROR</td>
+              <td align="left" colspan="1" rowspan="1">Frame encoding error</td>
+              <td align="left" colspan="1" rowspan="1">
+                <xref target="error-codes" format="default" sectionFormat="of" derivedContent="Section 20"/></td>
+            </tr>
+            <tr>
+              <td align="left" colspan="1" rowspan="1">0x08</td>
+              <td align="left" colspan="1" rowspan="1">TRANSPORT_PARAMETER_ERROR</td>
+              <td align="left" colspan="1" rowspan="1">Error in transport parameters</td>
+              <td align="left" colspan="1" rowspan="1">
+                <xref target="error-codes" format="default" sectionFormat="of" derivedContent="Section 20"/></td>
+            </tr>
+            <tr>
+              <td align="left" colspan="1" rowspan="1">0x09</td>
+              <td align="left" colspan="1" rowspan="1">CONNECTION_ID_LIMIT_ERROR</td>
+              <td align="left" colspan="1" rowspan="1">Too many connection IDs received</td>
+              <td align="left" colspan="1" rowspan="1">
+                <xref target="error-codes" format="default" sectionFormat="of" derivedContent="Section 20"/></td>
+            </tr>
+            <tr>
+              <td align="left" colspan="1" rowspan="1">0x0a</td>
+              <td align="left" colspan="1" rowspan="1">PROTOCOL_VIOLATION</td>
+              <td align="left" colspan="1" rowspan="1">Generic protocol violation</td>
+              <td align="left" colspan="1" rowspan="1">
+                <xref target="error-codes" format="default" sectionFormat="of" derivedContent="Section 20"/></td>
+            </tr>
+            <tr>
+              <td align="left" colspan="1" rowspan="1">0x0b</td>
+              <td align="left" colspan="1" rowspan="1">INVALID_TOKEN</td>
+              <td align="left" colspan="1" rowspan="1">Invalid Token received</td>
+              <td align="left" colspan="1" rowspan="1">
+                <xref target="error-codes" format="default" sectionFormat="of" derivedContent="Section 20"/></td>
+            </tr>
+            <tr>
+              <td align="left" colspan="1" rowspan="1">0x0c</td>
+              <td align="left" colspan="1" rowspan="1">APPLICATION_ERROR</td>
+              <td align="left" colspan="1" rowspan="1">Application error</td>
+              <td align="left" colspan="1" rowspan="1">
+                <xref target="error-codes" format="default" sectionFormat="of" derivedContent="Section 20"/></td>
+            </tr>
+            <tr>
+              <td align="left" colspan="1" rowspan="1">0x0d</td>
+              <td align="left" colspan="1" rowspan="1">CRYPTO_BUFFER_EXCEEDED</td>
+              <td align="left" colspan="1" rowspan="1">CRYPTO data buffer overflowed</td>
+              <td align="left" colspan="1" rowspan="1">
+                <xref target="error-codes" format="default" sectionFormat="of" derivedContent="Section 20"/></td>
+            </tr>
+            <tr>
+              <td align="left" colspan="1" rowspan="1">0x0e</td>
+              <td align="left" colspan="1" rowspan="1">KEY_UPDATE_ERROR</td>
+              <td align="left" colspan="1" rowspan="1">Invalid packet protection update</td>
+              <td align="left" colspan="1" rowspan="1">
+                <xref target="error-codes" format="default" sectionFormat="of" derivedContent="Section 20"/></td>
+            </tr>
+            <tr>
+              <td align="left" colspan="1" rowspan="1">0x0f</td>
+              <td align="left" colspan="1" rowspan="1">AEAD_LIMIT_REACHED</td>
+              <td align="left" colspan="1" rowspan="1">Excessive use of packet protection keys</td>
+              <td align="left" colspan="1" rowspan="1">
+                <xref target="error-codes" format="default" sectionFormat="of" derivedContent="Section 20"/></td>
+            </tr>
+            <tr>
+              <td align="left" colspan="1" rowspan="1">0x10</td>
+              <td align="left" colspan="1" rowspan="1">NO_VIABLE_PATH</td>
+              <td align="left" colspan="1" rowspan="1">No viable network path exists</td>
+              <td align="left" colspan="1" rowspan="1">
+                <xref target="error-codes" format="default" sectionFormat="of" derivedContent="Section 20"/></td>
+            </tr>
+            <tr>
+              <td align="left" colspan="1" rowspan="1">0x0100-​0x01ff</td>
+              <td align="left" colspan="1" rowspan="1">CRYPTO_ERROR</td>
+              <td align="left" colspan="1" rowspan="1">TLS alert code</td>
+              <td align="left" colspan="1" rowspan="1">
+                <xref target="error-codes" format="default" sectionFormat="of" derivedContent="Section 20"/></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+  </middle>
+</rfc>
