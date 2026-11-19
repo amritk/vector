@@ -349,19 +349,26 @@ export const base64EncodeInto = (src: u8[] /* window */, dst: u8[] /* out 2 * sr
 The contract leaves the buffer out of the parameters: the function returns
 `bytes`, and its `"out"` holds where the pair goes (`"at"`) and the
 capacity. Every vector and property calls it without the buffer
-(`base64EncodeInto("foobar")`). A capacity is decimal numbers up to 2^20,
-`+`, `*`, parentheses and `<param>.length` of a `u8[]` parameter. Declare
-the result `u8[] | null` when a negative `end` means `null`.
+(`base64EncodeInto("foobar")`). A capacity is decimal numbers up to 2^20
+with no leading zero, `+`, `*`, parentheses nested at most 16 deep, and
+`<param>.length` of a `u8[]` parameter. The contract records it in one
+spelling, single spaces around `+` and `*` and parentheses only where they
+change its meaning, so `(2*src.length)+4` is recorded as
+`2 * src.length + 4`. Declare the result `u8[] | null` when a negative
+`end` means `null`.
 
 The signatures gate checks the export takes `(u8[], i32)` in that place and
 returns `i32`. The Nish test hands it a buffer of the capacity plus ten
 guard bytes, with `at` = 5, and fails a call whose `end` is outside
-`[at, at + capacity]` or that writes a byte outside `[at, end)`. Only the
+`[at, at + capacity]` or that writes a byte outside `[at, end)`. A capacity
+that comes to more than 2^20 on a sample fails that clause before anything
+is allocated. Only the
 Nish emitter writes an out buffer; the others refuse the function.
 
 Extract refuses `/* out CAP */` with no capacity, after any type but
 `u8[]`, twice on one function or on a window, a capacity that reads another
-name, and a result that is not bytes.
+name or is over 2^20 even with every length 0, and a result that is not
+bytes.
 
 ### Literals in the contract
 

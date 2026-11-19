@@ -112,10 +112,9 @@ refuses them; only the Nish test holds word arrays. Add `| null` to `u8[]`,
 a word array or `string`, and to `Secret<u8[]>` as a result only. Give
 word-array cases as vectors: a property over or calling word arrays is
 refused. Nish test only: `u8[] /* window */` is one bytes parameter for a
-`(buf, off, len)`, tested at a nonzero offset; `u8[] /* out CAP */` is an
-`(out, at)` pair the export writes and returns `end` of, so the result is
-`u8[]` (`| null` if `end` < 0). CAP, the bytes after `at`, is numbers, `+`,
-`*`, `()` and `<u8[] param>.length`.
+`(buf, off, len)`, tested at a nonzero offset; `u8[] /* out CAP */` an
+`(out, at) -> end` write, the result `u8[]` (`| null` if `end` < 0). CAP, the
+bytes after `at`, is numbers, `+`, `*`, `()` and `<u8[] param>.length`.
 
 A property may compare the module with another nish module (HKDF with
 HMAC). Declare that module's functions after a second `// module:` line,
@@ -125,7 +124,7 @@ function of the module under test, and a property's assertion must call at
 least one: a clause that calls only reference functions is refused. A module line is exactly
 `// module: nish/<path>`, one module, after the previous signature. A comment of any style or case whose text starts `module:` or
 `module nish/` but is not that (`// Module: …`, `//module nish/…`,
-`/* module: … */`, two modules) is refused, and so is a module
+`/* module: … */`, `/// module: …`, two modules) is refused, and so is a module
 line inside a signature. Other comments, such as `// module-level helper`, are
 skipped:
 
@@ -209,7 +208,8 @@ are refused. `specs/rfc5869-hkdf-sha256.md` and
 `specs/rfc8439-chacha20-poly1305.md` are worked examples. The contract records
 the RFC, not the spec, so check it with `spec check contracts/<name>.json`
 (the RFC is read from its recorded file), or name the RFC with
-`--spec rfcs/rfc<N>.txt`. `--spec specs/<name>.xml` exits 1. To check that the contract is exactly what the
+`--spec rfcs/rfc<N>.txt`. `--spec specs/<name>.xml` exits 1 (`--spec … is not rfcs/rfc<N>.txt, the main
+source the contract records`). To check that the contract is exactly what the
 profile extracts to, run
 `spec extract specs/<name>.xml -o contracts/<name>.json --check`.
 
@@ -303,10 +303,9 @@ Write definitions as checks over a typed domain:
 - tamper rejection;
 - the construction rebuilt from other functions.
 
-Use the [Properties](../../../docs/guide/guides/writing-a-spec.md#properties)
-section of Writing a spec for the subset: operators, operations,
-`where`, and the forms that are refused. Its semantics are
-vector's, not JavaScript's. For example, `.slice` clamps, `a % 0` is 0, and
+Writing a spec's [Properties](../../../docs/guide/guides/writing-a-spec.md#properties)
+gives the subset: operators, operations, `where`, and the refused forms. Its
+semantics are vector's, not JavaScript's: `.slice` clamps, `a % 0` is 0, and
 `===` on bytes compares contents.
 
 **Linked RFCs.** The RFC text must be in `rfcs/`, unmodified. The IETF Trust
@@ -343,7 +342,7 @@ scripts/build-spec.sh specs/<name>.md         # writes specs/<name>.xml
   it exits 0.
 - It runs `check`'s gates: fidelity, completeness, coverage, provenance,
   typing and domain.
-- It fills in every `sha256`, so there is no freeze step to do by hand.
+- It fills in every `sha256`: there is no freeze step by hand.
 - `-o` writes the contract; without it, the contract goes to stdout.
   `--check -o contracts/<name>.json` writes nothing and exits 1 with a diff
   when the committed contract is not what the spec states. A refusal about
@@ -354,7 +353,7 @@ you pass `--run-sources`: it runs on your machine, as you, with your files and
 network. Only the 30 s timeout kills the command's process group: a command
 that exits quickly can leave background children running, and a process that
 detaches with `setsid` is never contained. With no module yet, `check`
-warns that signatures went unchecked: once the module exists
+warns that signatures were not checked, as expected: once the module exists
 (step 5), `check --nish-root` or `--module` checks them. No other command does.
 
 Commit `specs/<name>.md`, `specs/<name>.xml` and `contracts/<name>.json`
@@ -364,7 +363,7 @@ together, then show the spec to a human for approval. **The reviewer confirms th
 - each `Untested:` reason is true, and what it says checks the sentence
   really does.
 
-Nothing after this step may change the spec.
+From here, the spec and contract change only in a PR of their own.
 
 ### 3. Freeze
 
@@ -376,7 +375,7 @@ Run it last, after step 4's `emit` and `stale`, so it sees the whole PR.
 
 - **Exit 0:** the PR is all spec side, and every contract source still hashes
   to its recorded `sha256`.
-- **Exit 1:** one of these:
+- **Exit 1:** any of:
   - the PR also touches implementation files;
   - the spec or a linked RFC changed under the contract;
   - a `sha256` is missing;
@@ -388,8 +387,6 @@ test whose one sha line names a contract in `contracts/` (not a sidecar or a
 symbolic link) or one given counts on the spec side, so a PR changing two
 contracts may name only one of them. `--repo <dir>` names the repository
 (default: the current directory).
-
-From here, the spec and contract change only in a PR of their own.
 
 ### 4. Emit the test, and keep it fresh
 
@@ -425,8 +422,10 @@ test and module, and changes nothing else. Then:
 ./dist/vector spec run contracts/<name>.json --nish-root ../nish [--format markdown]
 ```
 
-`run` re-runs `check`'s gates but signatures, silently (only `check` with
-`--nish-root` or `--module <src.ts>` checks them), then runs the test.
+`check --nish-root` (or `--module <src.ts>`) is the only command that checks
+the declared signatures against the module's exports. `run` re-runs the other
+`check` gates, but not the signature gate, and says nothing about it; then
+it runs the test.
 
 - **Exit 0** is `SATISFIED`: every clause passed.
 - **Exit 1** is `VIOLATED` (a clause failed, shown with its sample) or
@@ -484,8 +483,7 @@ in a spec-side PR.
 - zero mutants, as when no changed line is in reach;
 - every mutant is stillborn or its build ran past its time;
 - over 10% of the builds or tests ran past their time;
-- the test fails on the unmutated module, or the unmutated module does not
-  build because of an error in it.
+- the unmutated module fails the test, or an error in it stops its build.
 
 It exits 2 for bad usage, a git error, a z3 failure, or a compiler failure the
 mutant did not cause. Two compiler traps:
@@ -503,18 +501,12 @@ mutant did not cause. Two compiler traps:
 ### 8. Report
 
 Post the dashboard: `--format markdown` on `check`, `run` and `mutate` gives a
-PR comment. It shows:
-
-- each requirement with its evidence;
-- the exclusions;
-- command sources that were not run;
-- every survivor;
-- any failure, with its sample.
+PR comment. It shows each requirement with its evidence, the exclusions,
+command sources not run, every survivor, and any failure with its sample.
 
 ## Without a PR
 
-To check an existing module against an RFC (nish's std/crypto), do these
-steps:
+To check an existing module against an RFC (nish's std/crypto):
 
 1. Write the spec (step 1). Here you may read the module for its signatures.
 2. Build and extract it (step 2).

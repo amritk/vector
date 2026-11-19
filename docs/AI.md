@@ -1,9 +1,10 @@
 # Using vector: the rules card
 
-What an agent needs before it runs vector, as rules, traps first. It is a
-digest, not the authority: the [guide](guide/index.md) shows every command
-with its output, and the [command-line reference](reference/command-line.md)
-lists the commands, flags and exit codes. Where this page disagrees, they win.
+This is what an agent needs before it runs vector, stated as rules, traps
+first. It is a digest, not the authority: the [guide](guide/index.md) shows
+every command with its output, and the [command-line
+reference](reference/command-line.md) lists the commands, flags and exit
+codes. Where this page disagrees, they win.
 
 vector does two things, and no model is involved in either:
 
@@ -25,9 +26,8 @@ vector does two things, and no model is involved in either:
    not `PROVEN`. See
    [Proving a function](guide/guides/proving.md#the-verdicts).
 3. **`diff` exits 2 for `INVALID` and `ERROR`**, not 1 as `verify` does.
-   Like `verify`, it exits 2 for `MISMATCH`, a witness that did not replay.
-   `EQUIVALENT` exits 0; `DIFFERENT` and `UNDECIDED` exit 1. Do not
-   report `UNDECIDED` as equivalent. See
+   It exits 2 for `MISMATCH` too. `EQUIVALENT` exits 0; `DIFFERENT` and
+   `UNDECIDED` exit 1. Do not report `UNDECIDED` as equivalent. See
    [Exit codes](guide/guides/exit-codes.md#by-command).
 4. **The proof is over exact rationals, and an `Int` is unbounded there.**
    The emitted code runs in float64. A float64 gate samples boundary, dense
@@ -68,8 +68,8 @@ vector does two things, and no model is involved in either:
 ## Rules
 
 - **Exit codes.** A command exits 0 when the check passed, 1 when it
-  refused the input, and 2 when it could not run or on `MISMATCH`, except
-  that `diff` also exits 2 for `INVALID` and `ERROR`. See
+  refused the input, and 2 when it could not run, on `MISMATCH`, and on
+  `diff`'s `INVALID` or `ERROR`. See
   [Exit codes](guide/guides/exit-codes.md#by-command).
 - **z3.** vector finds z3 at `$VECTOR_Z3`, then at `.z3/z3` in the
   checkout the binary was built from, then on `PATH`. See [Finding z3](guide/guides/exit-codes.md#finding-z3).
@@ -80,7 +80,7 @@ vector does two things, and no model is involved in either:
   [spec plan](reference/formats/spec-plan.md) and
   [program](reference/formats/program.md).
 - **The repair loop.** Read `feedback` and `items[]`, and change only what
-  was refuted. Fix the program, not the spec,
+  was refuted. Keep every clause that proved. Fix the program, not the spec,
   unless the spec misread the request. Give up after about four attempts and
   report the last feedback. Never edit vector to make a proof pass. A
   `MISMATCH` is a bug in vector: report it, change nothing.
@@ -97,8 +97,8 @@ vector does two things, and no model is involved in either:
 ## Known limits
 
 - `verify` handles 1 to 4 layered functions over `Real`, `Int` and `Bool`.
-  Its expressions are numbers, booleans, variables, operators, `ite` and
-  calls.
+  Its expressions are numbers, booleans, variables, unary and binary
+  operators, `ite`, and calls.
 - A function calls only those layered below it: no recursion.
 - Strings, arrays, IO, loops, state and data structures do not fit: offer to
   verify the numeric core alone.
