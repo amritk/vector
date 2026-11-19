@@ -1,11 +1,17 @@
 import { Suite } from "nish/testing"
 import { capacityNames, capacityNish, capacityParse, capacityShow } from "../../../src/spec/contract/capacity"
 
-/** `s` written `n` times. */
+/** `s` written `n` times, built by doubling so a long one stays linear. */
 const capTestRepeat = (s: string, n: i32): string => {
   let out = ""
-  for (let i: i32 = 0; i < n; i++) {
-    out = `${out}${s}`
+  let piece = s
+  let k: i32 = n
+  while (k > 0) {
+    if (k % 2 === 1) {
+      out = `${out}${piece}`
+    }
+    piece = `${piece}${piece}`
+    k = k / 2
   }
   return out
 }
@@ -18,6 +24,10 @@ const capTestShow = (text: string): string => {
   }
   return `${capacityShow(e.value)} [${capacityNames(e.value).join(",")}]`
 }
+
+const TOO_MANY: string = "has more than 256 tokens (numbers, names and punctuation)"
+const OVER: string = "is over 1048576 (2^20) even with every length 0"
+const NAN: string = "multiplies 0 by a product past what an f64 holds"
 
 export const main = (): i32 => {
   const t = new Suite("capacity")
@@ -62,18 +72,26 @@ export const main = (): i32 => {
     // parentheses nest at most 16 deep
     [`${capTestRepeat("(", 16)}1${capTestRepeat(")", 16)}`, "1 []"],
     [`${capTestRepeat("(", 17)}1${capTestRepeat(")", 17)}`, "nests parentheses deeper than 16"],
-    [`${capTestRepeat("(", 100000)}1`, "nests parentheses deeper than 16"],
-    ["(1) + (2) + (3)", "1 + 2 + 3 []"],
-    // with every length 0, a capacity is at most 2^20
-    ["1048576 + 0", "1048576 + 0 []"],
-    ["1048576 + 1", "is over 1048576 (2^20) even with every length 0"],
-    ["1048576 * 1", "1048576 * 1 []"],
-    ["1024 * 1024", "1024 * 1024 []"],
-    ["1024 * 1025", "is over 1048576 (2^20) even with every length 0"],
-    ["1048576 * 1048576 * 1048576", "is over 1048576 (2^20) even with every length 0"],
-    ["1048576 * src.length", "1048576 * src.length [src]"],
-    ["1048576 * (src.length + 1)", "1048576 * (src.length + 1) [src]"],
-    ["1048576 * (src.length + 2)", "is over 1048576 (2^20) even with every length 0"],
+    [`${capTestRepeat("(", 100000)}1`, TOO_MANY],
+    // at most 256 tokens, however spaced, so neither depth nor length reaches the stack
+    [`1${capTestRepeat(" + 1", 127)}`, `1${capTestRepeat(" + 1", 127)} []`],
+    [`1${capTestRepeat("+1", 127)}+ 2`, TOO_MANY],
+    [`1${capTestRepeat("+1", 127)}${capTestRepeat(" ", 100000)}`, `1${capTestRepeat(" + 1", 127)} []`],
+    [`1${capTestRepeat(" + 1", 190000)}`, TOO_MANY],
+    [`src.length${capTestRepeat(" + src.length", 63)}`, `src.length${capTestRepeat(" + src.length", 63)} [src]`],
+    [`src.length${capTestRepeat(" + src.length", 64)}`, TOO_MANY],
+    // a product past what an f64 holds is Infinity, and Infinity times 0 is NaN
+    [`1048576${capTestRepeat("*1048576", 49)}`, OVER],
+    [`1048576${capTestRepeat("*1048576", 59)}`, OVER],
+    [`1048576${capTestRepeat("*1048576", 59)}*0`, NAN],
+    [`(1048576${capTestRepeat("*1048576", 59)})*src.length`, NAN],
+    [`(1048576${capTestRepeat("*1048576", 59)}) * (src.length + 0)`, NAN],
+    // left to right, a 0 or a length first keeps the floor 0; a sample's length can still make it Infinity or NaN
+    [`0*1048576${capTestRepeat("*1048576", 59)}`, `0 * 1048576${capTestRepeat(" * 1048576", 59)} []`],
+    [
+      `src.length*1048576${capTestRepeat("*1048576", 59)}*0`,
+      `src.length * 1048576${capTestRepeat(" * 1048576", 59)} * 0 [src]`,
+    ],
   ]
   for (const c of cases) {
     t.eqStr(`capacity \`${c[0]}\``, capTestShow(c[0]), c[1])

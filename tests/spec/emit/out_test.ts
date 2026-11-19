@@ -85,6 +85,10 @@ export const outBig = (d: u8[], out: u8[], at: i32): i32 => {
 
 export const outHuge = (d: u8[], out: u8[], at: i32): i32 => outBig(d, out, at)
 
+export const outInf = (d: u8[], out: u8[], at: i32): i32 => outBig(d, out, at)
+
+export const outNan = (d: u8[], out: u8[], at: i32): i32 => outBig(d, out, at)
+
 export const outWin = (out: u8[], at: i32, n: u32, buf: u8[], off: i32, len: i32): i32 => {
   out[at] = toU8(n & 255)
   for (let i: i32 = 0; i < len; i += 1) {
@@ -144,6 +148,15 @@ const outEmitProgram = (c: Contract): string => {
   checkAddSample(samples, new Sample("P-COPY", [new Literal(LitKind.Hex, "ff00ff00")], "the longest"))
   const p = emitProgram(c, samples, opts)
   return p.isOk() ? p.value : `REFUSED\n${p.error.join("\n")}`
+}
+
+/** `s` written `n` times. */
+const outEmitRepeat = (s: string, n: i32): string => {
+  let out = ""
+  for (let i: i32 = 0; i < n; i++) {
+    out = `${out}${s}`
+  }
+  return out
 }
 
 /** `n` bytes counting up from 0, as hex. */
@@ -281,16 +294,18 @@ export const main = (): i32 => {
 
   // A capacity is computed in f64 and checked against 2^20 before the buffer
   // is made: d.length * d.length * 16 is 2^20 at 256 bytes, over it at 257,
-  // and outHuge's is 2^43 at 2048 bytes, past what an i32 holds.
+  // and outHuge's is 2^43 at 2048 bytes, past what an i32 holds. Sixty
+  // factors of 2^20 are past what an f64 holds: outInf's capacity is
+  // Infinity on a byte, and outNan's, Infinity times 0, is NaN, which only a
+  // check that it is at most 2^20 refuses. With no bytes, both are 0.
+  const inf = `d.length * 1048576${outEmitRepeat(" * 1048576", 59)}`
   const at = outEmitHex(256)
   const past = outEmitHex(257)
   const huge = outEmitHex(2048)
   const big = contractParse(
     outEmitContract(
-      ',\n    {"name": "outBig", "params": [{"name": "d", "type": "bytes"}], "returns": "bytes", "out": {"at": 1, "capacity": "d.length * d.length * 16"}},\n    {"name": "outHuge", "params": [{"name": "d", "type": "bytes"}], "returns": "bytes", "out": {"at": 1, "capacity": "d.length * d.length * d.length * 1024"}}',
-      `\n    {"kind": "vector", "id": "V-BIG-AT", "title": "at 2^20", "covers": ["R-1"], "source": {"cite": {"section": "1"}}, "call": "outBig", "args": [{"hex": "${at}"}], "expect": {"hex": "${at}"}},` +
-        `\n    {"kind": "vector", "id": "V-BIG-PAST", "title": "past 2^20", "covers": ["R-1"], "source": {"cite": {"section": "1"}}, "call": "outBig", "args": [{"hex": "${past}"}], "expect": {"hex": "${past}"}},` +
-        `\n    {"kind": "vector", "id": "V-HUGE", "title": "past i32", "covers": ["R-1"], "source": {"cite": {"section": "1"}}, "call": "outHuge", "args": [{"hex": "${huge}"}], "expect": {"hex": "${huge}"}},`,
+      `,\n    {"name": "outBig", "params": [{"name": "d", "type": "bytes"}], "returns": "bytes", "out": {"at": 1, "capacity": "d.length * d.length * 16"}},\n    {"name": "outHuge", "params": [{"name": "d", "type": "bytes"}], "returns": "bytes", "out": {"at": 1, "capacity": "d.length * d.length * d.length * 1024"}},\n    {"name": "outInf", "params": [{"name": "d", "type": "bytes"}], "returns": "bytes", "out": {"at": 1, "capacity": "${inf}"}},\n    {"name": "outNan", "params": [{"name": "d", "type": "bytes"}], "returns": "bytes", "out": {"at": 1, "capacity": "${inf} * 0"}}`,
+      `\n    {"kind": "vector", "id": "V-BIG-AT", "title": "at 2^20", "covers": ["R-1"], "source": {"cite": {"section": "1"}}, "call": "outBig", "args": [{"hex": "${at}"}], "expect": {"hex": "${at}"}},\n    {"kind": "vector", "id": "V-BIG-PAST", "title": "past 2^20", "covers": ["R-1"], "source": {"cite": {"section": "1"}}, "call": "outBig", "args": [{"hex": "${past}"}], "expect": {"hex": "${past}"}},\n    {"kind": "vector", "id": "V-HUGE", "title": "past i32", "covers": ["R-1"], "source": {"cite": {"section": "1"}}, "call": "outHuge", "args": [{"hex": "${huge}"}], "expect": {"hex": "${huge}"}},\n    {"kind": "vector", "id": "V-INF", "title": "past f64", "covers": ["R-1"], "source": {"cite": {"section": "1"}}, "call": "outInf", "args": [{"hex": "07"}], "expect": {"hex": "07"}},\n    {"kind": "vector", "id": "V-INF-EMPTY", "title": "0", "covers": ["R-1"], "source": {"cite": {"section": "1"}}, "call": "outInf", "args": [{"hex": ""}], "expect": {"hex": ""}},\n    {"kind": "vector", "id": "V-NAN", "title": "not a number", "covers": ["R-1"], "source": {"cite": {"section": "1"}}, "call": "outNan", "args": [{"hex": "07"}], "expect": {"hex": "07"}},\n    {"kind": "vector", "id": "V-NAN-EMPTY", "title": "0", "covers": ["R-1"], "source": {"cite": {"section": "1"}}, "call": "outNan", "args": [{"hex": ""}], "expect": {"hex": ""}},`,
     ),
     "out-emit",
   ).expect("parse the big contract")
@@ -301,10 +316,12 @@ export const main = (): i32 => {
     'const o_cap: i32 = of.cap("outBig", toF64(a_d.length) * toF64(a_d.length) * toF64(16));\n  if (o_cap < 0) {\n    return fillBytes(0, 0);\n  }',
   )
   t.eqStr(
-    "a capacity over 2^20 fails its clause, naming the function",
+    "a capacity not at most 2^20, NaN included, fails its clause, naming the function",
     outEmitRun(big, dir, bigProgram, ""),
-    "VIOLATED\nV-BIG-PAST: outBig's capacity is 1056784 on this sample, over 2^20\n" +
-      "V-HUGE: outHuge's capacity is 8796093022208 on this sample, over 2^20",
+    "VIOLATED\nV-BIG-PAST: outBig's capacity is 1056784 on this sample, not at most 2^20\n" +
+      "V-HUGE: outHuge's capacity is 8796093022208 on this sample, not at most 2^20\n" +
+      "V-INF: outInf's capacity is Infinity on this sample, not at most 2^20\n" +
+      "V-NAN: outNan's capacity is NaN on this sample, not at most 2^20",
   )
   return t.done()
 }

@@ -361,13 +361,14 @@ The signatures gate checks the export takes `(u8[], i32)` in that place and
 returns `i32`. The Nish test hands it a buffer of the capacity plus ten
 guard bytes, with `at` = 5, and fails a call whose `end` is outside
 `[at, at + capacity]` or that writes a byte outside `[at, end)`. A capacity
-that comes to more than 2^20 on a sample fails that clause before anything
-is allocated. Only the
+that is not at most 2^20 on a sample, NaN included, fails that clause
+before anything is allocated. Only the
 Nish emitter writes an out buffer; the others refuse the function.
 
 Extract refuses `/* out CAP */` with no capacity, after any type but
-`u8[]`, twice on one function or on a window, a capacity that reads another
-name or is over 2^20 even with every length 0, and a result that is not
+`u8[]`, twice on one function or on a window, a capacity of more than 256 tokens (numbers, names and punctuation), one
+that reads another name or is over 2^20 even with every length 0, one that
+multiplies 0 by a product past what an f64 holds, and a result that is not
 bytes.
 
 ### Literals in the contract

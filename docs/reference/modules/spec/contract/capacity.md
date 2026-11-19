@@ -81,10 +81,11 @@ text: string
 
 ### capacityParse
 
-Parses a capacity: decimal numbers up to 2^20 with no leading zero, `+`,
-`*`, parentheses nested at most 16 deep and `<param>.length`, `*` binding
-tighter than `+`. A capacity over 2^20 with every length 0 is refused: no
-input could give it a buffer the test can allocate.
+Parses a capacity of at most 256 tokens: decimal numbers up to 2^20
+with no leading zero, `+`, `*`, parentheses nested at most 16 deep and
+`<param>.length`, `*` binding tighter than `+`. A capacity not at most 2^20
+with every length 0 is refused: no input could give it a buffer the test
+can allocate.
 
 ```ts
 function capacityParse(text: string): Result<CapacityExpr, string>
@@ -98,9 +99,10 @@ the capacity as written
 
 <scalar-field name="returns" type="Result&lt;CapacityExpr, string&gt;">
 
-the expression, or why not: `stops at <token>` (`` `-` ``, or
-  `the end`), `nests parentheses deeper than 16`, or `is over 1048576 (2^20)
-  even with every length 0`
+the expression, or why not: `has more than 256 tokens (…)`,
+  `stops at <token>` (`` `-` ``, or `the end`), `nests parentheses deeper
+  than 16`, `multiplies 0 by a product past what an f64 holds`, or `is
+  over 1048576 (2^20) even with every length 0`
 
 </scalar-field>
 

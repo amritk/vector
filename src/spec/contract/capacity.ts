@@ -8,6 +8,12 @@
 /** The largest number a capacity may spell: 2^20. */
 const CAPACITY_MAX_LITERAL: i32 = 1048576
 
+/**
+ * How many tokens a capacity may have, so its tree stays shallow. Tokens, not
+ * characters: every spelling of a capacity has as many or more.
+ */
+const CAPACITY_MAX_TOKENS: i32 = 256
+
 /** How deep a capacity may nest parentheses. */
 const CAPACITY_MAX_DEPTH: i32 = 16
 
@@ -66,12 +72,12 @@ const capacityIsDigit = (c: i32): boolean => c >= 48 && c <= 57
 
 const capacityIsIdentStart = (c: i32): boolean => (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95
 
-/** Splits `text` into numbers, names and one-character punctuation; whitespace separates. */
-const capacityLex = (text: string): string[] => {
+/** Splits `text` into numbers, names and one-character punctuation, whitespace separating, stopping once past `max`. */
+const capacityLex = (text: string, max: i32): string[] => {
   const out: string[] = []
   let i: i32 = 0
   const n: i32 = toI32(text.length)
-  while (i < n) {
+  while (i < n && toI32(out.length) <= max) {
     const c: i32 = toI32(text.charCodeAt(i))
     if (c === 32 || c === 9 || c === 10 || c === 13) {
       i += 1
@@ -207,23 +213,34 @@ const capacityDigits = (t: string): f64 => {
 }
 
 /**
- * Parses a capacity: decimal numbers up to 2^20 with no leading zero, `+`,
- * `*`, parentheses nested at most 16 deep and `<param>.length`, `*` binding
- * tighter than `+`. A capacity over 2^20 with every length 0 is refused: no
- * input could give it a buffer the test can allocate.
+ * Parses a capacity of at most 256 tokens: decimal numbers up to 2^20
+ * with no leading zero, `+`, `*`, parentheses nested at most 16 deep and
+ * `<param>.length`, `*` binding tighter than `+`. A capacity not at most 2^20
+ * with every length 0 is refused: no input could give it a buffer the test
+ * can allocate.
  *
  * @param text the capacity as written
- * @returns the expression, or why not: `stops at <token>` (`` `-` ``, or
- *   `the end`), `nests parentheses deeper than 16`, or `is over 1048576 (2^20)
- *   even with every length 0`
+ * @returns the expression, or why not: `has more than 256 tokens (…)`,
+ *   `stops at <token>` (`` `-` ``, or `the end`), `nests parentheses deeper
+ *   than 16`, `multiplies 0 by a product past what an f64 holds`, or `is
+ *   over 1048576 (2^20) even with every length 0`
  */
 export const capacityParse = (text: string): Result<CapacityExpr, string> => {
-  const c = new CapacityCursor(capacityLex(text))
+  const toks = capacityLex(text, CAPACITY_MAX_TOKENS)
+  if (toI32(toks.length) > CAPACITY_MAX_TOKENS) {
+    return Err(`has more than ${CAPACITY_MAX_TOKENS} tokens (numbers, names and punctuation)`)
+  }
+  const c = new CapacityCursor(toks)
   const e = capacitySum(c).orReturn()
   if (c.pos < c.toks.length) {
     return Err(capacityStop(c))
   }
-  if (capacityFloor(e) > toF64(CAPACITY_MAX_LITERAL)) {
+  const floor = capacityFloor(e)
+  // Infinity times a 0 is NaN, which no comparison holds for, so a NaN floor is refused by name.
+  if (!(floor <= toF64(CAPACITY_MAX_LITERAL)) && !(floor > toF64(CAPACITY_MAX_LITERAL))) {
+    return Err("multiplies 0 by a product past what an f64 holds")
+  }
+  if (!(floor <= toF64(CAPACITY_MAX_LITERAL))) {
     return Err(`is over ${CAPACITY_MAX_LITERAL} (2^20) even with every length 0`)
   }
   return Ok(e)
