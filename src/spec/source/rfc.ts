@@ -342,6 +342,7 @@ const rfcHeaderNumber = (line: string): i32 => {
 const rfcUnpaginatedProblem = (text: string, doc: RfcDocument): string | null => {
   const lines = splitLines(text)
   let header = -1
+  let number = -1
   let heading = -1
   for (let at = 0; at < lines.length; at++) {
     const raw = lines[at]
@@ -349,8 +350,9 @@ const rfcUnpaginatedProblem = (text: string, doc: RfcDocument): string | null =>
     if (rfcIsFooter(l) || rfcIsHeader(l)) {
       return `line ${at + 1} is page furniture (a "[Page N]" footer or a running "RFC N" header), but the text has no form feeds, so its page breaks cannot be placed`
     }
-    if (header < 0 && rfcHeaderNumber(l) >= 0) {
-      header = at
+    if (header < 0) {
+      number = rfcHeaderNumber(l)
+      header = number >= 0 ? at : -1
     }
     if (heading < 0 && rfcHeading(l) !== null) {
       heading = at
@@ -362,8 +364,7 @@ const rfcUnpaginatedProblem = (text: string, doc: RfcDocument): string | null =>
   if (heading >= 0 && heading < header) {
     return `its "Request for Comments: N" header is on line ${header + 1}, after its first section heading on line ${heading + 1}: text without form feeds must give it in its front matter`
   }
-  const raw = lines[header]
-  doc.number = rfcHeaderNumber(raw.endsWith("\r") ? raw.substring(0, raw.length - 1) : raw)
+  doc.number = number
   return null
 }
 
