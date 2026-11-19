@@ -1054,8 +1054,14 @@ const rfcHexText = (r: RfcHexReader, line: string): void => {
   rfcHexFlush(r)
   const t = rfcNormalize(line)
   if (t.startsWith("=")) {
-    // `= f(…)` goes on with the statement above: its name still holds.
+    // `= f(…)` goes on with the statement above: its name still holds, even
+    // where the call wraps.
     r.call = ""
+    if (rfcParenDepth(t) > 0) {
+      r.call = t
+      r.callLine = r.at
+      r.callSpan = 1
+    }
     return
   }
   rfcHexUnvalued(r)
@@ -1063,16 +1069,24 @@ const rfcHexText = (r: RfcHexReader, line: string): void => {
   if (r.call.length > 0) {
     const joined = `${r.call} ${t}`
     const depth = rfcParenDepth(joined)
-    if (depth > 0 && r.callSpan + 1 < RFC_CALL_LINES) {
+    // A line that ends in `:` or `=` and leaves the call open is a label of
+    // its own, not the next line of a parenthesis left open in prose.
+    const own = t.endsWith(":") || t.endsWith("=")
+    if (depth > 0 && !own && r.callSpan + 1 < RFC_CALL_LINES) {
       r.call = joined
       r.callSpan = r.callSpan + 1
       return
     }
     r.call = ""
-    if (depth <= 0 && (joined.endsWith("=") || joined.endsWith(":"))) {
-      r.pending = rfcLabelBefore(joined)
-      r.pendingLine = r.callLine
-      r.stmt = null
+    if (depth <= 0) {
+      if (joined.endsWith("=") || joined.endsWith(":")) {
+        r.pending = rfcLabelBefore(joined)
+        r.pendingLine = r.callLine
+        r.stmt = null
+        return
+      }
+      // A closed call goes on with its statement: `name = f(a,` above `b)`
+      // still names name, and `= f(a,` above `b)` the statement above it.
       return
     }
   }
@@ -1107,10 +1121,12 @@ const rfcHexRead = (sec: RfcSection): RfcHexReader => {
     }
     const continued = rfcContinuedHex(line)
     if (continued !== null) {
-      // `    = 7db5…` prints the value of the statement above it.
+      // `    = 7db5…` prints the value of the statement above it, and a
+      // statement names one value: a second `= <hex>` under it is unnamed.
       rfcHexFlush(r)
       r.pending = r.stmt
       r.pendingLine = r.stmtLine
+      r.stmt = null
       rfcHexStart(r, null, rfcAllDigits(continued))
       r.cur = rfcLower(continued)
       continue

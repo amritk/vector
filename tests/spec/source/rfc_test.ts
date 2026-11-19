@@ -234,7 +234,8 @@ const rfcTestBreak = (page: i32): string =>
 /**
  * RFC 9001 Appendix A.1 as printed: values on `= hex` lines under a
  * statement, one split across a page break, and a break between the client
- * and server blocks.
+ * and server blocks. Then two made-up statements, cut by a page break before
+ * their `= hex` and `= f(...)` lines, one with that call wrapped.
  */
 const rfcTestQuicText = (): string =>
   [
@@ -272,6 +273,16 @@ const rfcTestQuicText = (): string =>
     "",
     '   iv  = HKDF-Expand-Label(server_initial_secret, "quic iv", "", 12)',
     "       = 0ac1493ca1905853b0bba03e",
+    "",
+    '   hp  = HKDF-Expand-Label(server_initial_secret, "quic hp", "", 16)',
+    rfcTestBreak(49),
+    "       = c206b8d9b9f0f37644430b490eeaa314",
+    "",
+    "   client_hp",
+    rfcTestBreak(50),
+    "       = HKDF-Expand-Label(initial_secret,",
+    '                           "quic hp", "", 16)',
+    "       = 9f50449e04a0e810283a1e9933adedd2",
     "",
   ].join("\n")
 
@@ -642,8 +653,10 @@ export const main = (): i32 => {
     ],
     ["key, printed again", "key@31=cf3a5331653c364c88f0f379b6067e37"],
     ["iv, printed again", "iv@34=0ac1493ca1905853b0bba03e"],
+    ["a statement named across a page break from its value", "hp@37=c206b8d9b9f0f37644430b490eeaa314"],
+    ["a name alone above a break, past a wrapped = f(...) line", "client_hp@43=9f50449e04a0e810283a1e9933adedd2"],
   ]
-  t.eqStr("RFC 9001 A.1 prints eight values", `${quic.length}`, `${quicCases.length}`)
+  t.eqStr("RFC 9001 A.1 prints ten values", `${quic.length}`, `${quicCases.length}`)
   for (let i = 0; i < quicCases.length; i++) {
     t.eqStr(quicCases[i][0], i < quic.length ? quic[i] : "", quicCases[i][1])
   }
@@ -683,6 +696,37 @@ export const main = (): i32 => {
     ],
     ["a parenthesis closed on its line is an ordinary label", "f (a, b) =\n   0a0b0c0d", "f (a, b)=0a0b0c0d"],
     ["a wrapped call that ends in prose labels nothing", "see f (a,\n   b) for more\n   0a0b0c0d", "-=0a0b0c0d"],
+    [
+      "a call wrapped over exactly four lines is one",
+      "f (a,\n   b,\n   c,\n   d) =\n   0a0b0c0d",
+      "f (a, b, c, d)=0a0b0c0d",
+    ],
+    ["a wrapped call closed by : is one label", "f (a,\n   b) :\n   0a0b0c0d", "f (a, b)=0a0b0c0d"],
+    ["one closed by neither = nor : labels nothing", "f (a,\n   b) ;\n   0a0b0c0d", "-=0a0b0c0d"],
+    ["a digit-led name is no name", "1x = f(a)\n   = 0a0b0c0d", "-=0a0b0c0d"],
+    ["nor is an underscore-led one", "_x = f(a)\n   = 0a0b0c0d", "-=0a0b0c0d"],
+    ["a digit later in a name is fine", "x1 = f(a)\n   = 0a0b0c0d", "x1=0a0b0c0d"],
+    ["an unnamed = line of bare digits is a number, not hex", "5 * 8\n   = 1000", ""],
+    ["a named one is kept, as n = 1000 on one line is", "n = 25 * 40\n   = 1000", "n=1000"],
+    ["and so is an unnamed one with a hex letter", "5 * 8\n   = 100a", "-=100a"],
+    ["a statement whose call wraps keeps its name", "x = f(a,\n   b)\n   = 0a0b0c0d", "x=0a0b0c0d"],
+    ["so does one whose = f(...) line wraps", "x\n   = f(a,\n   b)\n   = 0a0b0c0d", "x=0a0b0c0d"],
+    [
+      "a statement whose call wraps into a label names only that label's value",
+      "x = f(a,\n   b) =\n   0a0b\n   = 0c0d",
+      "x = f(a, b)=0a0b -=0c0d",
+    ],
+    [
+      "a statement names one value, not the next = line",
+      "x = f(a)\n   = aaaa\n   bbbb\n\n   = cccc",
+      "x=aaaabbbb -=cccc",
+    ],
+    [
+      "a parenthesis open in prose does not swallow a label",
+      "Test vector (informative\n   Key:\n   0a0b0c0d",
+      "Key=0a0b0c0d",
+    ],
+    ["nor one ending in =", "Test vector (informative\n   Key =\n   0a0b0c0d", "Key=0a0b0c0d"],
   ]
   for (const n of neighbours) {
     t.eqStr(n[0], rfcTestBody(n[1]), n[2])
