@@ -47,6 +47,9 @@ const shapeExpect = (t: Suite, from: string, to: string, want: string): void => 
   }
 }
 
+/** BASE's parameter with a `form` of `f`, a JSON value. */
+const shapeForm = (f: string): string => `{"name": "b", "type": "bytes", "form": ${f}}`
+
 /** BASE's expect followed by an `iterate` of `body`. */
 const shapeIter = (body: string): string => `"expect": {"str": "00"}, "iterate": ${body}`
 
@@ -191,7 +194,7 @@ export const main = (): i32 => {
     t,
     `{"cite": {"section": "10"}}`,
     `{"command": "x"}`,
-    "clauses[0].section: the main-source section number printing the args",
+    "clauses[0].section: the section number printing the args, in the main source or the one sectionSource names",
   )
   t.eqStr(
     "a command source with a section passes",
@@ -563,6 +566,39 @@ export const main = (): i32 => {
   ]
   for (let i = 0; i + 2 < neg.length; i += 3) {
     t.eqStr(`refused: ${neg[i + 1]}`, shapeErrorsOf(neg[i], neg[i + 1]).join(" | "), neg[i + 2])
+  }
+
+  // A parameter's form: only "window", only on bytes.
+  const param = `{"name": "b", "type": "bytes"}`
+  t.eqStr("a window on bytes passes", shapeErrorsOf(param, shapeForm(`"window"`)).join(" | "), "")
+  t.eqStr(
+    "a null form does not read",
+    shapeErrorsOf(param, shapeForm("null")).join(" | "),
+    "read: functions[0].params[0].form: a string",
+  )
+  t.eqStr(
+    "another form is refused",
+    shapeErrorsOf(param, shapeForm(`"slice"`)).join(" | "),
+    `functions[0].params[0].form: "window", or absent`,
+  )
+  t.eqStr(
+    "form is matched exactly",
+    shapeErrorsOf(param, shapeForm(`"Window"`)).join(" | "),
+    `functions[0].params[0].form: "window", or absent`,
+  )
+  t.eqStr(
+    "a numeric form does not read",
+    shapeErrorsOf(param, shapeForm("1")).join(" | "),
+    "read: functions[0].params[0].form: a string",
+  )
+  const typed = ["string", "secret-bytes", "bytes?", "u8", "words32"]
+  for (const ty of typed) {
+    shapeExpect(
+      t,
+      param,
+      `{"name": "b", "type": "${ty}", "form": "window"}`,
+      `functions[0].params[0].form: absent: a window is a bytes parameter, not ${ty}`,
+    )
   }
 
   // The helpers.

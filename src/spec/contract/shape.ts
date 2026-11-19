@@ -538,6 +538,14 @@ const shapeFunctions = (s: ShapeContext): void => {
       if (!vocabHas(sig, p.type)) {
         shapeFail(s, `${pat}.type`, `one of ${sig.join(" ")}`)
       }
+      const form = p.form
+      if (form !== null) {
+        if (form !== "window") {
+          shapeFail(s, `${pat}.form`, `"window", or absent`)
+        } else if (p.type !== "bytes") {
+          shapeFail(s, `${pat}.form`, `absent: a window is a bytes parameter, not ${p.type}`)
+        }
+      }
     }
   }
 }
@@ -700,7 +708,11 @@ const shapeIterate = (s: ShapeContext, k: Clause, it: Iterate, at: string): void
 const shapeNeedSection = (s: ShapeContext, k: Clause, at: string): void => {
   const sec = k.section
   if (sec === null || !charsIsSection(sec)) {
-    shapeFail(s, `${at}.section`, "the main-source section number printing the args")
+    shapeFail(
+      s,
+      `${at}.section`,
+      "the section number printing the args, in the main source or the one sectionSource names",
+    )
   }
 }
 
@@ -739,6 +751,13 @@ const shapeVectorSource = (s: ShapeContext, k: Clause, at: string): void => {
       shapeFail(s, `${at}.expect`, "a command source prints bytes (as hex) or a string")
     }
     shapeNeedSection(s, k, at)
+    shapeSourceRef(s, k.sectionSource, `${at}.sectionSource`)
+    const top = s.c.source
+    const main = top.rfc >= 1 ? `rfc${top.rfc}` : top.main ?? ""
+    const own = k.sectionSource
+    if (own !== null && own === main) {
+      shapeFail(s, `${at}.sectionSource`, `"${own}" is the main source; drop "sectionSource"`)
+    }
   } else {
     if (!charsIsSection(src.text)) {
       shapeFail(s, `${at}.source.spec`, "a main-source section number")
@@ -747,6 +766,9 @@ const shapeVectorSource = (s: ShapeContext, k: Clause, at: string): void => {
       shapeFail(s, `${at}.expect`, "a spec source states only null or a bool; cite or compute any other value")
     }
     shapeNeedSection(s, k, at)
+  }
+  if (src.kind !== VectorSourceKind.Command && k.sectionSource !== null) {
+    shapeFail(s, `${at}.sectionSource`, `only a command source's section is in another source; drop "sectionSource"`)
   }
 }
 

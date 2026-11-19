@@ -26,7 +26,7 @@ output: `vector spec check … | tail` exits with `tail`'s status, 0.
 | `spec frozen` | OK | both sides touched, or a source changed | bad usage, a git failure |
 | `spec stale` | OK | stale, or no marker line | bad usage, an unreadable file |
 | `spec exports` | OK | an export the contract does not cover | bad usage (`--nish-root` is required), a git failure |
-| `spec mutate` | OK | a survivor, no mutants, none built, too many timeouts | bad usage, a git failure, a compiler failure the mutant did not cause, a z3 failure |
+| `spec mutate` | OK | a survivor, no mutants (none in the tested code), none built, too many timeouts | bad usage, a git failure, a compiler failure the mutant did not cause, a z3 failure |
 
 [Proving a function](proving.md), [From a spec to a
 contract](spec-to-contract.md), [Testing an implementation](testing.md) and

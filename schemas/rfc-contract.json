@@ -480,6 +480,10 @@
               "type": {
                 "$ref": "#/$defs/paramType"
               },
+              "form": {
+                "enum": ["window"],
+                "description": "Only on a bytes parameter the real function takes as three, (buf: u8[], off: i32, len: i32): the bytes are buf[off, off + len)."
+              },
               "names": {
                 "$ref": "#/$defs/nameOverrides"
               }
@@ -868,7 +872,11 @@
         },
         "section": {
           "$ref": "#/$defs/section",
-          "description": "Only with a command or spec source: the main-source section printing the args."
+          "description": "Only with a command or spec source: the section printing the args, in the main source unless sectionSource names another."
+        },
+        "sectionSource": {
+          "$ref": "#/$defs/id",
+          "description": "Only with a command source: the id of the source section is in (default: the main one). A main-RFC spec's command vector names the spec, whose own section prints its args."
         },
         "call": {
           "type": "string"

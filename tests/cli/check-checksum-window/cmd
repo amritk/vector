@@ -1,0 +1,1 @@
+vector spec check tests/fixtures/checksum-window/contracts/checksum-window.json --nish-root .nish
