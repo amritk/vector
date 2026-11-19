@@ -189,6 +189,16 @@ const e2eTestModule = (t: Suite, dir: string): Result<boolean, string> => {
       "  ✗ survivor std/hex.ts:2 (2:51:int:-1): `export const enc = (b: string): string => b.slice(0)` passes the test: behaviour no requirement pins down\n",
     ].join(""),
   )
+  prTestWrite(
+    dir,
+    "nish/std/hex.ts",
+    `/** Encodes. */\nexport const enc = (b: string): string => b // as it came\n${other}`,
+  ).orReturn()
+  t.eqStr(
+    "mutate refuses a tested function whose changed lines hold no mutant, not claiming they lie outside",
+    e2eTestRun(dir, ["spec", "mutate", "--base", "main", "--nish-root", root, "--test", `${dir}/t.sh`, contract]),
+    "exit 1\nspec mutate std/hex.ts against main: FAILED\n\nnotes:\n  - 1 changed line outside the tested functions was not mutated: other\n\nproblems:\n  ✗ no mutants: no line the change adds to std/hex.ts in code the contract's functions reach can be mutated\n",
+  )
   prTestWrite(dir, "nish/std/hex.ts", `${E2E_TEST_HEX}\n/** New. */\nexport const fresh = (): i32 => 1\n`).orReturn()
   t.eqStr(
     "exports refuses an untested export",

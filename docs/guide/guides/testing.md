@@ -597,4 +597,6 @@ was reasoned about the code itself. Where neither reaches, a bug passes: RFC
 SHA-512 block-size test passes every RFC vector, and only a vector of the
 contract's own at that length, or a property that pins the boundary, catches
 it. Run [`spec mutate`](pr-gates.md#mutate) to list the plausible bugs a
-contract cannot tell from the real code.
+contract cannot tell from the real code. It mutates only the changed lines in
+code the contract's functions reach, those functions and what they name, so a
+helper no tested function calls is noted as not mutated, never as a survivor.

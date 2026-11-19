@@ -335,6 +335,14 @@ The declarations those lines lie in, each once, in the module's order.
 owners: string[]
 ```
 
+#### MutateSites.reached
+
+Whether some changed line, with a mutant or not, lies in code the contract's functions reach.
+
+```ts
+reached: boolean
+```
+
 #### MutateSites.whole
 
 Why every changed line was mutated, or "" when the scan split the module (scopeReach).
@@ -470,6 +478,7 @@ function mutateJudge(
   baseline: string | null,
   dropped: i32,
   outside: string,
+  reached: boolean,
 ): void
 ```
 
@@ -513,5 +522,13 @@ mutants made but not run, as `--max` left out
 
 the note on changed lines outside the tested functions
   (mutateOutsideNote), or ""
+
+</scalar-field>
+
+<scalar-field name="reached" type="boolean" required>
+
+whether some changed line lies in code the contract's
+  functions reach (MutateSites.reached), which picks the refusal when
+  there is no mutant
 
 </scalar-field>

@@ -259,8 +259,9 @@ A module the scan cannot split into named declarations (an export has no name
 it can read, or a contract function is not a top-level declaration there) is
 mutated on every changed line, and a note says why (`every changed line was
 mutated, not only the tested functions: …`). A function the contract cites
-from another module (its `module` is set) is not looked for. A module that
-cannot be lexed is not mutated at all: the command exits 2.
+from another module (its `module` is set to a module other than the target)
+is not looked for. A module that cannot be lexed is not mutated at all: the
+command exits 2.
 
 Start with a change: a redundant bound on line 173 of the module.
 
@@ -399,8 +400,10 @@ in a spec-side PR before the implementation.
 Besides survivors, mutate refuses (exit 1):
 
 - a change that adds no line of the module that can be mutated (`no mutants`),
-  or none in the code the contract's functions reach (`no mutants: no line the
-  change adds to <file> lies in code the contract's functions reach`);
+  none in the code the contract's functions reach (`no mutants: no line the
+  change adds to <file> lies in code the contract's functions reach`), or none
+  there that can be mutated (`no mutants: no line the change adds to <file> in
+  code the contract's functions reach can be mutated`);
 - a test that fails on the unmutated module, since it proves nothing;
 - `every mutant is stillborn or its build ran past its time: none built, so the test met none of them`;
 - `every mutant that built ran its test past its time`: run with fewer

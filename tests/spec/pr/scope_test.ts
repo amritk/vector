@@ -113,6 +113,24 @@ const scopeTestRows = (): ScopeTestRow[] => [
     "1+ 2+",
   ),
   new ScopeTestRow(
+    "a later declarator is named before a colon, a bang, a comma or a semicolon",
+    "export let a = 1, b: i32 = 2\nexport var c = 1, d!: i32\nlet e = 1, g, h\nlet k = 1, m;\nexport const f = (): i32 => b + d + g + m\nconst z = 1\n",
+    ["f"],
+    "1+ 2+ 3+ 4+ 5+ 6-z",
+  ),
+  new ScopeTestRow(
+    "a declaration is named past abstract, const enum and namespace",
+    "abstract class A {\n  x: i32\n}\nconst enum E {\n  X,\n}\nnamespace N {\n  export const y = 1\n}\nexport const f = (): i32 => 1\n",
+    ["f"],
+    "1-A 2-A 3-A 4-E 5-E 6-E 7-N 8-N 9-N 10+",
+  ),
+  new ScopeTestRow(
+    "a re-export of a whole module is not code",
+    'export * from "./x"\nexport const f = (): i32 => 1\n',
+    ["f"],
+    "1-line 1 2+",
+  ),
+  new ScopeTestRow(
     "a declaration is named past declare, async and function's star",
     "export async function f(): i32 {\n  return g()\n}\nexport function* g(): i32 {\n  return 1\n}\ndeclare const h: i32\n",
     ["f"],

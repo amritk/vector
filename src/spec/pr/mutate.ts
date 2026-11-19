@@ -375,6 +375,8 @@ export class MutateSites {
   outside: i32
   /** The declarations those lines lie in, each once, in the module's order. */
   owners: string[]
+  /** Whether some changed line, with a mutant or not, lies in code the contract's functions reach. */
+  reached: boolean
   /** Why every changed line was mutated, or "" when the scan split the module (scopeReach). */
   whole: string
 
@@ -387,6 +389,7 @@ export class MutateSites {
     this.mutants = []
     this.outside = 0
     this.owners = []
+    this.reached = false
     this.whole = whole
   }
 }
@@ -413,6 +416,7 @@ export const mutateSites = (text: string, changed: GitdiffFile, roots: string[])
     if (gitdiffTouches(changed, n)) {
       const ms = mutateLine(lines[i], n, kinds[i])
       if (scopeIn(scope, n)) {
+        out.reached = true
         for (const m of ms) {
           out.mutants.push(m)
         }
@@ -502,6 +506,9 @@ const mutateAllowed = (allow: AllowedSurvivor[], file: string, line: i32): Allow
  * @param dropped mutants made but not run, as `--max` left out
  * @param outside the note on changed lines outside the tested functions
  *   (mutateOutsideNote), or ""
+ * @param reached whether some changed line lies in code the contract's
+ *   functions reach (MutateSites.reached), which picks the refusal when
+ *   there is no mutant
  */
 export const mutateJudge = (
   r: PrReport,
@@ -511,6 +518,7 @@ export const mutateJudge = (
   baseline: string | null,
   dropped: i32,
   outside: string,
+  reached: boolean,
 ): void => {
   if (baseline !== null) {
     r.problems.push(`the test fails on the unmutated module, so it proves nothing: ${baseline}`)
@@ -520,11 +528,15 @@ export const mutateJudge = (
     r.notes.push(outside)
   }
   if (mutants.length === 0) {
-    r.problems.push(
-      outside === ""
-        ? `no mutants: the change adds no line of ${file} that can be mutated`
-        : `no mutants: no line the change adds to ${file} lies in code the contract's functions reach`,
-    )
+    if (outside === "") {
+      r.problems.push(`no mutants: the change adds no line of ${file} that can be mutated`)
+    } else if (reached) {
+      r.problems.push(
+        `no mutants: no line the change adds to ${file} in code the contract's functions reach can be mutated`,
+      )
+    } else {
+      r.problems.push(`no mutants: no line the change adds to ${file} lies in code the contract's functions reach`)
+    }
     return
   }
   if (dropped > 0) {

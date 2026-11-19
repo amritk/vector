@@ -748,7 +748,12 @@ export const mutateCheck = (contractPath: string, base: string, run: MutateRun, 
   const changed = gitdiffChanged(run.nishRoot, base, [`${prefix}${file}`]).orReturn()
   let all: MutateMutant[] = []
   let outside = ""
+  let reached = false
   if (changed.length > 0) {
+    // The roots are the contract's own functions, as shapeTested in
+    // spec/contract/shape.ts takes them: one whose module is set to another
+    // module is a reference the test calls, not code it tests. Keep the two
+    // rules alike.
     const roots: string[] = []
     for (const f of c.functions) {
       const m = f.module
@@ -762,6 +767,7 @@ export const mutateCheck = (contractPath: string, base: string, run: MutateRun, 
     }
     all = sites.value.mutants
     outside = mutateOutsideNote(sites.value)
+    reached = sites.value.reached
     if (sites.value.whole !== "") {
       r.notes.push(`every changed line was mutated, not only the tested functions: ${sites.value.whole}`)
     }
@@ -770,7 +776,7 @@ export const mutateCheck = (contractPath: string, base: string, run: MutateRun, 
   const dropped = toI32(all.length) - toI32(mutants.length)
   const allow = c.allowSurvivors ?? []
   if (mutants.length === 0) {
-    mutateJudge(r, file, mutants, allow, null, dropped, outside)
+    mutateJudge(r, file, mutants, allow, null, dropped, outside, reached)
     return Ok(r)
   }
   if (run.test === "") {
@@ -786,6 +792,6 @@ export const mutateCheck = (contractPath: string, base: string, run: MutateRun, 
     return Err(`the compiler ${compiler} is not an executable file`)
   }
   const baseline = mutateRunAll(run, text, mutants).orReturn()
-  mutateJudge(r, file, mutants, allow, baseline, dropped, outside)
+  mutateJudge(r, file, mutants, allow, baseline, dropped, outside, reached)
   return Ok(r)
 }

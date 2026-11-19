@@ -408,14 +408,14 @@ const mutateTestJudge = (t: Suite): void => {
   const b = new MutateMutant(3, 2, "int", "+1", "  k = 8")
   b.outcome = MUTATE_KILLED
   const r = new PrReport("mutate", "m")
-  mutateJudge(r, "std/m.ts", [a, b], allow, null, 0, "")
+  mutateJudge(r, "std/m.ts", [a, b], allow, null, 0, "", false)
   t.eqStr(
     "an unallowed survivor fails, and an allowance whose line was all killed is stale",
     r.problems.join(" | "),
     "survivor std/m.ts:4 (4:1:delete-statement): `` passes the test: behaviour no requirement pins down | allowSurvivors std/m.ts:3 is stale: the test killed every mutant of that line, so the allowance would only excuse whatever survives there next: remove it, or move it to the line it means",
   )
   const rd = new PrReport("mutate", "t")
-  mutateJudge(rd, "std/m.ts", [b], [], null, 5, "")
+  mutateJudge(rd, "std/m.ts", [b], [], null, 5, "", false)
   t.eqStr("--max reports what it left out", rd.notes.join(" | "), "5 of 6 mutants were not run: --max kept 1")
   t.eqStr(
     "an item per mutant",
@@ -425,7 +425,7 @@ const mutateTestJudge = (t: Suite): void => {
   const s = new MutateMutant(4, 1, "delete-statement", "", "")
   s.outcome = MUTATE_STILLBORN
   const r2 = new PrReport("mutate", "m")
-  mutateJudge(r2, "std/m.ts", [s], allow, null, 0, "")
+  mutateJudge(r2, "std/m.ts", [s], allow, null, 0, "", false)
   t.eqStr(
     "all stillborn fails",
     r2.problems.join(" | "),
@@ -440,7 +440,7 @@ const mutateTestJudge = (t: Suite): void => {
     k.push(m)
   }
   const r6 = new PrReport("mutate", "m")
-  mutateJudge(r6, "std/m.ts", k, [], null, 0, "")
+  mutateJudge(r6, "std/m.ts", k, [], null, 0, "", false)
   t.eqStr(
     "a build timeout within the share is noted",
     `${r6.problems.join(" | ")}||${r6.notes.join(" | ")}`,
@@ -450,7 +450,7 @@ const mutateTestJudge = (t: Suite): void => {
   bt2.outcome = MUTATE_BUILD_TIMED_OUT
   k.push(bt2)
   const r7 = new PrReport("mutate", "m")
-  mutateJudge(r7, "std/m.ts", k, [], null, 0, "")
+  mutateJudge(r7, "std/m.ts", k, [], null, 0, "", false)
   t.eqStr(
     "build timeouts past the share refuse",
     r7.problems.join(" | "),
@@ -470,7 +470,7 @@ const mutateTestJudge = (t: Suite): void => {
   onSeven.line = 7
   onSeven.reason = "r"
   const r8 = new PrReport("mutate", "m")
-  mutateJudge(r8, "std/m.ts", tk, [onSeven], null, 0, "")
+  mutateJudge(r8, "std/m.ts", tk, [onSeven], null, 0, "", false)
   t.eqStr(
     "a test timeout within the share is noted, not killed",
     `${r8.problems.join(" | ")}||${r8.notes.join(" | ")}`,
@@ -480,7 +480,7 @@ const mutateTestJudge = (t: Suite): void => {
   to2.outcome = MUTATE_TIMED_OUT
   tk.push(to2)
   const r9 = new PrReport("mutate", "m")
-  mutateJudge(r9, "std/m.ts", tk, [], null, 0, "")
+  mutateJudge(r9, "std/m.ts", tk, [], null, 0, "", false)
   t.eqStr(
     "test timeouts past the share refuse",
     r9.problems.join(" | "),
@@ -488,31 +488,65 @@ const mutateTestJudge = (t: Suite): void => {
   )
   const p = new MutateMutant(4, 1, "delete-statement", "", "")
   const r3 = new PrReport("mutate", "m")
-  mutateJudge(r3, "std/m.ts", [p], allow, null, 0, "")
+  mutateJudge(r3, "std/m.ts", [p], allow, null, 0, "", false)
   t.eqStr("a mutant not run fails", r3.problems.join(" | "), "mutant 4:1:delete-statement was not run")
   const r4 = new PrReport("mutate", "m")
-  mutateJudge(r4, "std/m.ts", [p], allow, "it exits 1", 0, "")
+  mutateJudge(r4, "std/m.ts", [p], allow, "it exits 1", 0, "", false)
   t.eqStr(
     "a failing baseline fails alone",
     `${r4.problems.join(" | ")}|${r4.items.length}`,
     "the test fails on the unmutated module, so it proves nothing: it exits 1|0",
   )
   const r5 = new PrReport("mutate", "m")
-  mutateJudge(r5, "std/m.ts", [], allow, null, 0, "")
+  mutateJudge(r5, "std/m.ts", [], allow, null, 0, "", false)
   t.eqStr(
     "no mutants fails",
     r5.problems.join(" | "),
     "no mutants: the change adds no line of std/m.ts that can be mutated",
   )
   const rOut = new PrReport("mutate", "m")
-  mutateJudge(rOut, "std/m.ts", [], allow, null, 0, "2 changed lines outside the tested functions were not mutated: f")
+  mutateJudge(
+    rOut,
+    "std/m.ts",
+    [],
+    allow,
+    null,
+    0,
+    "2 changed lines outside the tested functions were not mutated: f",
+    false,
+  )
   t.eqStr(
     "no mutants with lines out of scope fails for the scope, and notes them",
     `${rOut.problems.join(" | ")} || ${rOut.notes.join(" | ")}`,
     "no mutants: no line the change adds to std/m.ts lies in code the contract's functions reach || 2 changed lines outside the tested functions were not mutated: f",
   )
+  const rReached = new PrReport("mutate", "m")
+  mutateJudge(
+    rReached,
+    "std/m.ts",
+    [],
+    allow,
+    null,
+    0,
+    "1 changed line outside the tested functions was not mutated: g",
+    true,
+  )
+  t.eqStr(
+    "no mutants, though a changed line lies in scope, fails for want of a mutant there, not for the scope",
+    `${rReached.problems.join(" | ")} || ${rReached.notes.join(" | ")}`,
+    "no mutants: no line the change adds to std/m.ts in code the contract's functions reach can be mutated || 1 changed line outside the tested functions was not mutated: g",
+  )
   const rIn = new PrReport("mutate", "m")
-  mutateJudge(rIn, "std/m.ts", [b], [], null, 0, "1 changed line outside the tested functions was not mutated: g")
+  mutateJudge(
+    rIn,
+    "std/m.ts",
+    [b],
+    [],
+    null,
+    0,
+    "1 changed line outside the tested functions was not mutated: g",
+    false,
+  )
   t.eqStr(
     "mutants with lines out of scope pass, and note them",
     `${rIn.problems.join(" | ")} || ${rIn.notes.join(" | ")}`,
@@ -541,6 +575,37 @@ const mutateTestJudge = (t: Suite): void => {
     sites.isOk() ? `${sites.value.outside} ${sites.value.owners.join(",")} ${sites.value.whole}` : sites.error,
     "2 a,c ",
   )
+  // Each row: the module, the changed lines, the roots, then what the sites
+  // hold: mutants, lines counted outside, their owners, whether a changed
+  // line lies in scope.
+  const fn = "const a = 1\nconst f = (x: i32): i32 => {\n  // keep\n  const y = x + 1\n  return y\n}\n"
+  const siteRows: string[][] = [
+    ["two changed lines of one unreached declaration name it once", "a", "0 2 f false"],
+    ["an unreached comment is not counted", "a", "0 0  false"],
+    ["an unreached lone } is not counted", "a", "0 0  false"],
+    ["a reached line with no mutant still counts as reached", "f", "0 0  true"],
+    ["a reached comment beside an unreached line", "f", "0 1 a true"],
+    ["a reached line with mutants", "a", "2 0  true"],
+  ]
+  const siteSpans: i32[][] = [
+    [4, 5],
+    [3, 3],
+    [6, 6],
+    [6, 6],
+    [1, 3],
+    [1, 1],
+  ]
+  for (let i = 0; i < siteRows.length; i++) {
+    const row = siteRows[i]
+    const s = mutateSites(fn, mutateTestChanged(siteSpans[i][0], siteSpans[i][1]), [row[1]])
+    t.eqStr(
+      row[0],
+      s.isOk()
+        ? `${s.value.mutants.length} ${s.value.outside} ${s.value.owners.join(",")} ${s.value.reached}`
+        : s.error,
+      row[2],
+    )
+  }
   const whole = mutateSites("const a = 1\nconst b = 2\n", mutateTestChanged(1, 2), ["z"])
   t.eqStr(
     "a root the module does not declare mutates every changed line, saying why",

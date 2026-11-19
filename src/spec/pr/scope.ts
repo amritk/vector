@@ -73,8 +73,8 @@ const scopePunct = (toks: LexToken[], i: i32, to: i32, p: string): boolean =>
 
 /**
  * The names a `const`, `let` or `var` declares from token `i`: the first
- * name, and every name after a top-level comma that a `:`, `=`, `!`, `,` or
- * the end follows. It may take a name too many, never one too few, so the
+ * name, and every name after a top-level comma that a `:`, `=`, `!`, `,`,
+ * `;` or the end follows. It may take a name too many, never one too few, so the
  * gate mutates more, not less. A destructured declarator names nothing, but
  * Nish has no destructuring.
  */
