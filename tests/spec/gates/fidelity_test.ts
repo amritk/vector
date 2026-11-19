@@ -947,7 +947,19 @@ const fidelityTestScryptRfc = (): string =>
  * JSON) citing section `id` of RFC `num`, whose text is `rfc`: `args` and
  * `expect` are the clause's literals' JSON.
  */
-const fidelityTestWrap = (num: string, rfc: string, fn: string, id: string, args: string, expect: string): string[] => {
+const fidelityTestWrap = (num: string, rfc: string, fn: string, id: string, args: string, expect: string): string[] =>
+  fidelityTestWrapCall(num, rfc, fn, "f", id, args, expect)
+
+/** fidelityTestWrap, the vector calling `call` (the name `fn` declares). */
+const fidelityTestWrapCall = (
+  num: string,
+  rfc: string,
+  fn: string,
+  call: string,
+  id: string,
+  args: string,
+  expect: string,
+): string[] => {
   const contract = `{
   "contract": "c6",
   "source": {"title": "T", "rfc": ${num}},
@@ -955,7 +967,7 @@ const fidelityTestWrap = (num: string, rfc: string, fn: string, id: string, args
   "requirements": [{"id": "R1", "section": "1", "level": "MUST", "quote": "It MUST derive."}],
   "functions": [${fn}],
   "clauses": [
-    {"kind": "vector", "id": "W1", "title": "t", "covers": ["R1"], "source": {"cite": {"section": "${id}"}}, "call": "f",
+    {"kind": "vector", "id": "W1", "title": "t", "covers": ["R1"], "source": {"cite": {"section": "${id}"}}, "call": "${call}",
      "args": [${args}], "expect": ${expect}}
   ]
 }`
@@ -1034,7 +1046,6 @@ const fidelityTestWrapped = (t: Suite): void => {
     "returns": "bytes"}`
   const one = `{"hex": "55ac046e56e3089fec1691c22544b605", "label": "PBKDF2-HMAC-SHA-256 (P=\\"passwd\\", S=\\"salt\\", c=1, dkLen=64)"}`
   const two = `{"hex": "4ddcd8f60b98be21830cee5ef22701f9", "label": "PBKDF2-HMAC-SHA-256 (P=\\"Password\\", S=\\"NaCl\\", c=80000, dkLen=64)"}`
-  const other = "they are different test cases"
   const pbRows: string[][] = [
     [
       "case 1 with its own args",
@@ -1058,17 +1069,65 @@ const fidelityTestWrapped = (t: Suite): void => {
       "case 1 with case 2's salt",
       `{"str": "passwd"}, {"str": "NaCl"}, {"int": 1, "label": "c"}, {"int": 64, "label": "dkLen"}`,
       one,
-      other,
+      `W1.args[1]: args[1] "NaCl" is printed in the call label "PBKDF2-HMAC-SHA-256 (P="Password", S="NaCl", c=80000, dkLen=64)" in RFC §11 ("Test Vectors for PBKDF2 with HMAC-SHA-256"), not in "PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)" that the expected value is printed under: they are different test cases`,
     ],
     [
       "case 2 with case 1's password",
       `{"str": "passwd"}, {"str": "NaCl"}, {"int": 80000, "label": "c"}, {"int": 64, "label": "dkLen"}`,
       two,
-      other,
+      `W1.args[0]: args[0] "passwd" is printed in the call label "PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)" in RFC §11 ("Test Vectors for PBKDF2 with HMAC-SHA-256"), not in "PBKDF2-HMAC-SHA-256 (P="Password", S="NaCl", c=80000, dkLen=64)" that the expected value is printed under: they are different test cases`,
     ],
   ]
   for (const r of pbRows) {
     fidelityTestRowIs(t, `7914 §11: ${r[0]}`, fidelityTestWrap("7914", scrypt, pbkdf2Fn, "11", r[1], r[2]), r[3])
+  }
+  // A call label's arguments name its test case, not its variant: under
+  // "PBKDF2-HMAC-SHA-256 (…)" beside "PBKDF2-HMAC-SHA-512 (…)", the function
+  // must still name 256.
+  const variants = [
+    "Request for Comments: 7914",
+    "",
+    "1.  Rules",
+    "",
+    "   It MUST derive.",
+    "",
+    "11.  Test Vectors for PBKDF2",
+    "",
+    '   PBKDF2-HMAC-SHA-256 (P="passwd", S="salt",',
+    "                       c=1, dkLen=64) =",
+    "   55 ac 04 6e 56 e3 08 9f ec 16 91 c2 25 44 b6 05",
+    fidelityTestBreak("7914", 11),
+    '   PBKDF2-HMAC-SHA-512 (P="passwd", S="salt",',
+    "                       c=1, dkLen=64) =",
+    "   86 7f 70 cf 1a de 02 cf f3 75 25 99 a3 a5 3d c4",
+    "",
+  ].join("\n")
+  const passwd = `{"str": "passwd"}, {"str": "salt"}, {"int": 1, "label": "c"}, {"int": 64, "label": "dkLen"}`
+  const sha256 = `{"hex": "55ac046e56e3089fec1691c22544b605", "label": "PBKDF2-HMAC-SHA-256 (P=\\"passwd\\", S=\\"salt\\", c=1, dkLen=64)"}`
+  const sha512 = `{"hex": "867f70cf1ade02cff3752599a3a53dc4", "label": "PBKDF2-HMAC-SHA-512 (P=\\"passwd\\", S=\\"salt\\", c=1, dkLen=64)"}`
+  const variantRows: string[][] = [
+    ["pbkdf2Sha256", sha256, ""],
+    ["pbkdf2Sha512", sha512, ""],
+    [
+      "pbkdf2Sha512",
+      sha256,
+      `W1.expect: the value is printed under "PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)" in RFC §11 ("Test Vectors for PBKDF2"), but pbkdf2Sha512 names 512, as in "PBKDF2-HMAC-SHA-512 (P="passwd", S="salt", c=1, dkLen=64)": a vector uses the value printed for the variant its function computes`,
+    ],
+    [
+      "pbkdf2Sha256",
+      sha512,
+      `W1.expect: the value is printed under "PBKDF2-HMAC-SHA-512 (P="passwd", S="salt", c=1, dkLen=64)" in RFC §11 ("Test Vectors for PBKDF2"), but pbkdf2Sha256 names 256, as in "PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)": a vector uses the value printed for the variant its function computes`,
+    ],
+  ]
+  for (const r of variantRows) {
+    const fn = `{"name": "${r[0]}", "params": [{"name": "p", "type": "string"}, {"name": "s", "type": "string"},
+      {"name": "c", "type": "i32"}, {"name": "dkLen", "type": "i32"}], "returns": "bytes"}`
+    fidelityTestRowIs(
+      t,
+      `7914 §11: ${r[0]} under ${r[1].indexOf("512") >= 0 ? "SHA-512" : "SHA-256"}'s call label`,
+      fidelityTestWrapCall("7914", variants, fn, r[0], "11", passwd, r[1]),
+      r[2],
+    )
   }
   const misnamed = fidelityTestWrap(
     "7914",
