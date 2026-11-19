@@ -2,7 +2,8 @@
 
 A module lands spec-first, in two pull requests. The **spec side** comes
 first: the spec in `specs/`, its contract in `contracts/`, the RFCs it cites in
-`rfcs/` and its generated test in `test/spec/`. A person reads and approves
+`rfcs/`, the `.refcache/` entries for the references it cites, and its
+generated test in `test/spec/`. A person reads and approves
 it. The **implementation** comes second, and four gates hold it to the
 approved contract without a person rereading the spec:
 
