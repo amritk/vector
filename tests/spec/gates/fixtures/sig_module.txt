@@ -37,5 +37,26 @@ export const oneWord = (k: u32[]): u32 => 0
 /** Declared u32 words, exports u16 words. */
 export const halfWords = (k: u16[]): u32[] => []
 
+/** Right: a window, (buf, off, len). */
+export const winRight = (buf: u8[], off: i32, len: i32): u32 => 0
+
+/** Right: two windows around a plain parameter. */
+export const winTwo = (a: u8[], ao: i32, al: i32, n: u32, b: u8[], bo: i32, bl: i32): u32 => 0
+
+/** Declared a window, exports plain bytes. */
+export const winPlain = (k: u8[]): u32 => 0
+
+/** Declared a window, exports an unsigned offset and length. */
+export const winUnsigned = (buf: u8[], off: u32, len: u32): u32 => 0
+
+/** Declared a window, exports the offset and length first. */
+export const winOrder = (off: i32, len: i32, buf: u8[]): u32 => 0
+
+/** Declared a window, exports only an offset. */
+export const winShort = (buf: u8[], off: i32): u32 => 0
+
+/** Declared plain bytes, exports a window. */
+export const winUndeclared = (buf: u8[], off: i32, len: i32): u32 => 0
+
 /** Not a function. */
 export const LIMIT: i32 = 3

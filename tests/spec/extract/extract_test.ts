@@ -2,6 +2,9 @@ import { Suite } from "nish/testing"
 import { replaceAll, split } from "nish/text"
 import { diagPlace } from "../../../src/core/diag"
 import { joinPath, makeTempDir, mkdirAll } from "../../../src/core/fs"
+import { sha256Hex } from "../../../src/core/hex"
+import { runProcess } from "../../../src/core/process"
+import { charsFromCodePoint } from "../../../src/spec/contract/chars"
 import {
   ExtractOutcome,
   extractContract,
@@ -189,6 +192,53 @@ const extractTestDiff = (t: Suite): void => {
   )
 }
 
+/**
+ * A literal line-break hint: dropped from the RFC a spec cites where it
+ * cannot change a word, refused inside a word there, and refused anywhere in
+ * the spec's own XML.
+ */
+const extractTestBreakHints = (t: Suite, readers: SourceReaders): void => {
+  const made = makeTempDir("vector-extract-hint-")
+  if (made.isErr()) {
+    t.fail("a temp dir", made.error)
+    return
+  }
+  const tmp = made.value
+  for (const dir of ["specs", "contracts", "rfcs"]) {
+    mkdirAll(joinPath(tmp, dir), 0o755).expect(dir)
+  }
+  const zw = charsFromCodePoint(0x200b)
+  const specText = readFileSyncOrNull(`${EXTRACT_TEST_MAIN}/specs/mini-frame.xml`) ?? ""
+  const rfcText = readFileSyncOrNull(`${EXTRACT_TEST_MAIN}/rfcs/rfc9990.xml`) ?? ""
+  const spec = joinPath(tmp, "specs/mini-frame.xml")
+  const rfc = joinPath(tmp, "rfcs/rfc9990.xml")
+  const out = extractDefaultContractPath(spec)
+  const intro = "with its length.</t>"
+  writeFileSync(spec, specText)
+  writeFileSync(rfc, replaceAll(rfcText, intro, `with its length (0x00-${zw}0xff).</t>`))
+  const got = extractContract(spec, out, tmp, readers)
+  t.eqStr("a boundary hint in the cited RFC's XML is dropped", extractTestOutcome(got), "ok")
+  t.eqStr(
+    "the contract pins the RFC's bytes, hint and all",
+    got.text.indexOf(sha256Hex(readFileSyncOrNull(rfc) ?? "")) >= 0 ? "pinned" : got.text,
+    "pinned",
+  )
+  writeFileSync(rfc, replaceAll(rfcText, "<bcp14>MAY</bcp14>", `<bcp14>MA${zw}Y</bcp14>`))
+  t.eqStr(
+    "a hint inside a word in the cited RFC's XML is refused at its line",
+    extractTestOutcome(extractContract(spec, out, tmp, readers)),
+    "error source rfc9990: rfcs/rfc9990.xml: text a reader cannot see as the gates read it: line 15: invisible character U+200B: remove it",
+  )
+  writeFileSync(rfc, rfcText)
+  writeFileSync(spec, replaceAll(specText, "in one octet. <xref", `in one octet. -${zw}<xref`))
+  t.contains(
+    "a boundary hint in the spec's own XML is refused",
+    extractTestOutcome(extractContract(spec, out, tmp, readers)),
+    "line 18: invisible character U+200B: remove it",
+  )
+  runProcess(["rm", "-rf", tmp], "", 5000).expect("rm")
+}
+
 /** Extract: the committed contracts, refusals at markdown lines, and the diff `--check` prints. */
 export const main = (): i32 => {
   const t = new Suite("spec/extract extract")
@@ -199,6 +249,7 @@ export const main = (): i32 => {
     extractTestFixtures(t, readers)
     extractTestRefusals(t, readers)
     extractTestTree(t, readers)
+    extractTestBreakHints(t, readers)
   }
   return t.done()
 }

@@ -1,0 +1,246 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "checksum-window",
+  "source": {
+    "title": "A checksum over a window",
+    "main": "checksum-window",
+    "sha256": "eeda40743c353e457f39415b59a7052b391e486beed9386d06323b60be071a46"
+  },
+  "sources": [
+    {
+      "id": "checksum-window",
+      "path": "../specs/checksum-window.xml"
+    }
+  ],
+  "target": {
+    "module": "nish/compress/checksum"
+  },
+  "requirements": [
+    {
+      "id": "R-CRC32",
+      "section": "3",
+      "level": "MUST",
+      "quote": "crc32 MUST return the CRC-32 of the window's bytes, the reflected CRC with polynomial 0xEDB88320 that zlib computes, and only of those bytes."
+    },
+    {
+      "id": "R-ADLER32",
+      "section": "4",
+      "level": "MUST",
+      "quote": "adler32 MUST return the Adler-32 of the window's bytes, as zlib computes it, and only of those bytes."
+    },
+    {
+      "id": "R-ADLER32-UPDATE",
+      "section": "4",
+      "level": "MUST",
+      "quote": "adler32Update MUST return the Adler-32 of the bytes an earlier checksum covered followed by the window's bytes."
+    }
+  ],
+  "exclusions": [],
+  "functions": [
+    {
+      "name": "crc32",
+      "params": [
+        {
+          "name": "buf",
+          "type": "bytes",
+          "form": "window"
+        }
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "adler32",
+      "params": [
+        {
+          "name": "buf",
+          "type": "bytes",
+          "form": "window"
+        }
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "adler32Update",
+      "params": [
+        {
+          "name": "adler",
+          "type": "u32"
+        },
+        {
+          "name": "buf",
+          "type": "bytes",
+          "form": "window"
+        }
+      ],
+      "returns": "u32"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "V1",
+      "title": "the CRC-32 check value",
+      "covers": ["R-CRC32"],
+      "source": {
+        "cite": {
+          "section": "5"
+        }
+      },
+      "call": "crc32",
+      "args": [
+        {
+          "ascii": "123456789"
+        }
+      ],
+      "expect": {
+        "int": 3421780262,
+        "label": "Check"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V2",
+      "title": "no bytes",
+      "covers": ["R-CRC32"],
+      "source": {
+        "cite": {
+          "section": "5"
+        }
+      },
+      "call": "crc32",
+      "args": [
+        {
+          "ascii": ""
+        }
+      ],
+      "expect": {
+        "int": 0,
+        "label": "Zero"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V3",
+      "title": "the Adler-32 of \"Wikipedia\"",
+      "covers": ["R-ADLER32"],
+      "source": {
+        "cite": {
+          "section": "5"
+        }
+      },
+      "call": "adler32",
+      "args": [
+        {
+          "ascii": "Wikipedia"
+        }
+      ],
+      "expect": {
+        "int": 300286872,
+        "label": "Adler"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V4",
+      "title": "no bytes: the initial value",
+      "covers": ["R-ADLER32"],
+      "source": {
+        "cite": {
+          "section": "5"
+        }
+      },
+      "call": "adler32",
+      "args": [
+        {
+          "ascii": ""
+        }
+      ],
+      "expect": {
+        "int": 1,
+        "label": "Initial"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V5",
+      "title": "\"abc\" after \"Wikipedia\"",
+      "covers": ["R-ADLER32-UPDATE"],
+      "source": {
+        "cite": {
+          "section": "5"
+        }
+      },
+      "call": "adler32Update",
+      "args": [
+        {
+          "int": 300286872,
+          "label": "Start"
+        },
+        {
+          "ascii": "abc"
+        }
+      ],
+      "expect": {
+        "int": 519570622,
+        "label": "Continued"
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-ADLER32-SPLIT",
+      "title": "a checksum continued over a second window is the checksum of both",
+      "covers": ["R-ADLER32", "R-ADLER32-UPDATE"],
+      "forall": [
+        {
+          "name": "a",
+          "type": "bytes",
+          "minLen": 0,
+          "maxLen": 32
+        },
+        {
+          "name": "b",
+          "type": "bytes",
+          "minLen": 0,
+          "maxLen": 32
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "adler32Update",
+            "args": [
+              {
+                "call": "adler32",
+                "args": [
+                  {
+                    "var": "a"
+                  }
+                ]
+              },
+              {
+                "var": "b"
+              }
+            ]
+          },
+          {
+            "call": "adler32",
+            "args": [
+              {
+                "op": "concat",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

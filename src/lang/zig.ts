@@ -67,7 +67,7 @@ export const langTableZig = (): LangTable => {
   t.literal("words64", langSpell("&[_]u64{ 0x3320646e61707865, 0x6b20657479622d32 }", ""))
   t.moduleForm = "file"
   t.moduleNote =
-    'a source file is a struct; the neutral path plus .zig, imported under its last segment: nish/crypto/hkdf → nish/crypto/hkdf.zig, const hkdf = @import("nish/crypto/hkdf.zig")'
+    'a source file is a struct; the neutral path plus .zig, imported under its last segment: nish/crypto/hkdf → nish/crypto/hkdf.zig, const hkdf = @import("nish/crypto/hkdf.zig"); a - in a segment stays in the file and becomes _ in the name: nish/net/quic-packet → const quic_packet = @import("nish/net/quic-packet.zig")'
   t.nameRule =
     'functions camelCase and parameters snake_case (Style Guide): words split at each capital, an acronym is a word like any other (parseHTTPRequest → parseHttpRequest, parse_http_request), and a digit run stays on the word before it (chacha20Poly1305Seal → chacha20Poly1305Seal, hkdfExpandSha256 → hkdfExpandSha256). A derived name that is a keyword or a primitive type name (error, type, fn, test, u8, bool) is written @"…" or takes a name override. A name override always wins.'
   t.choices.push(

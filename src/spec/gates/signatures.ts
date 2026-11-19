@@ -9,7 +9,7 @@
 
 import { splitWhitespace } from "nish/text"
 import { CheckContext } from "../check"
-import { Contract, FnSig } from "../contract/types"
+import { Contract, FnSig, typesIsWindow } from "../contract/types"
 import { vocabBaseTypes, vocabIsWordType } from "../contract/vocab"
 import { gateTargets } from "./cite"
 import { gateIssue, gateWarn } from "./note"
@@ -200,7 +200,8 @@ export const gateSignatures = (ctx: CheckContext): string[] => {
     }
     const real = sigs[ri]
     const f = c.functions[c.functions.findIndex((d: FnSig): boolean => d.name === name)]
-    const want = `(${f.params.map((p): string => p.type).join(", ")}) -> ${f.returns}`
+    // A window is one bytes parameter the real function takes as (buf, off, len).
+    const want = `(${f.params.map((p): string => (typesIsWindow(p) ? "bytes, i32, i32" : p.type)).join(", ")}) -> ${f.returns}`
     const got = `(${real.params.map((p: string): string => gateNishType(p)).join(", ")}) -> ${gateNishType(real.returns)}`
     if (want !== got) {
       gateIssue(ctx, out, g, name, `declared ${want}, but ${module} has (${real.params.join(", ")}): ${real.returns}`)

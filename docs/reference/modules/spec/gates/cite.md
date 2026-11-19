@@ -297,7 +297,8 @@ the function, or null
 ### gateArgsAt
 
 Where a vector's args are printed: its cited section, or its `section`
-of the main source when a command or the spec vouches for its result.
+when a command or the spec vouches for its result, in the source
+`sectionSource` names (the main one when it names none).
 
 ```ts
 function gateArgsAt(k: Clause): Citation

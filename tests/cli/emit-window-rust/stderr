@@ -1,0 +1,3 @@
+vector: tests/fixtures/checksum-window/contracts/checksum-window.json: crc32: buf is a window (buf, off, len), which is not emitted for Rust yet; emit the Nish test
+vector: tests/fixtures/checksum-window/contracts/checksum-window.json: adler32: buf is a window (buf, off, len), which is not emitted for Rust yet; emit the Nish test
+vector: tests/fixtures/checksum-window/contracts/checksum-window.json: adler32Update: buf is a window (buf, off, len), which is not emitted for Rust yet; emit the Nish test
