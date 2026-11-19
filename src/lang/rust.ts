@@ -58,7 +58,7 @@ export const langTableRust = (): LangTable => {
   t.literal("words64", langSpell("&[0x3320646e61707865u64, 0x6b20657479622d32u64]", "each word suffixed with its type"))
   t.moduleForm = "crate-path"
   t.moduleNote =
-    "the segments as a path of modules, the root segment the crate (The Rust Reference, Items › Modules): nish/crypto/hkdf → nish::crypto::hkdf"
+    "the segments as a path of modules, the root segment the crate (The Rust Reference, Items › Modules): nish/crypto/hkdf → nish::crypto::hkdf; a - in a segment becomes _: nish/net/quic-packet → nish::net::quic_packet"
   t.nameRule =
     "functions and parameters snake_case (C-CASE): words split at each capital, an acronym is one word (parseHTTPRequest → parse_http_request), and a digit run stays on the word before it (chacha20Poly1305Seal → chacha20_poly1305_seal). A name override always wins; a name that is a keyword (type, match, …) takes one."
   t.choices.push(

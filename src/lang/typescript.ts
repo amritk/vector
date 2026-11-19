@@ -61,7 +61,7 @@ export const langTableTypescript = (): LangTable => {
   t.literal("words64", langSpell("BigUint64Array.of(0x3320646e61707865n, 0x6b20657479622d32n)", ""))
   t.moduleForm = "file"
   t.moduleNote =
-    'an ES module at the neutral path, imported as a namespace named for its last segment: nish/crypto/hkdf → import * as hkdf from "nish/crypto/hkdf", called hkdf.<name>'
+    'an ES module at the neutral path, imported as a namespace named for its last segment: nish/crypto/hkdf → import * as hkdf from "nish/crypto/hkdf", called hkdf.<name>; a - in a segment stays in the path and becomes _ in the namespace: nish/net/quic-packet → import * as quic_packet from "nish/net/quic-packet"'
   t.nameRule =
     "functions and parameters lowerCamelCase, an acronym cased as a whole word (the guide's loadHttpUrl): words split at each capital, a digit run stays on the word before it (parseHTTPRequest → parseHttpRequest, readIOStream → readIoStream, hkdfExpandSha256 → hkdfExpandSha256). A name that is a reserved word takes a name override."
   t.choices.push(

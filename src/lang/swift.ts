@@ -55,7 +55,7 @@ export const langTableSwift = (): LangTable => {
   t.literal("words64", langSpell("[0x3320646e61707865, 0x6b20657479622d32] as [UInt64]", ""))
   t.moduleForm = "module"
   t.moduleNote =
-    "Swift modules do not nest, so one module named by the segments in UpperCamelCase, joined: nish/crypto/hkdf → NishCryptoHkdf"
+    "Swift modules do not nest, so one module named by the segments in UpperCamelCase, joined: nish/crypto/hkdf → NishCryptoHkdf; a - in a segment starts a word: nish/net/quic-packet → NishNetQuicPacket"
   t.nameRule =
     "functions and parameters lowerCamelCase with words as the contract writes them, so an acronym keeps its uniform case (API Design Guidelines): parseHTTPRequest → parseHTTPRequest, hkdfExpandSha256 → hkdfExpandSha256. A name that is a keyword takes a name override (or backticks)."
   t.choices.push(

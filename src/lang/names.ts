@@ -13,6 +13,11 @@
  *     only at the start of a name or of a part after `_`;
  *   - `_` separates words and is dropped, as is any other character.
  *
+ * A module path segment may join words with `-` (`quic-packet`). A form that
+ * stays a path or a file keeps it; a segment that becomes an identifier turns
+ * it into `_`, Go's package qualifier drops it, and a Pascal form breaks a
+ * word at it (`QuicPacket`).
+ *
  * A per-language override in the contract always wins over the rule.
  * specs/vector-lang-names.md is this module's spec; vector tests itself with
  * the test it emits from it.
@@ -177,18 +182,29 @@ export const langPascal = (contractName: string, rule: LangCase): string => {
 }
 
 /**
- * A module path segment in UpperCamelCase, its `_` dropped.
+ * A module path segment in UpperCamelCase, a word starting at each `_` or
+ * `-`, which are dropped.
  *
  * @param segment one segment of a module path
- * @returns `Chacha20poly1305` for `chacha20poly1305`, `BigInt` for `big_int`
+ * @returns `Chacha20poly1305` for `chacha20poly1305`, `BigInt` for `big_int`,
+ *   `QuicPacket` for `quic-packet`
  */
 export const langPascalSegment = (segment: string): string => {
   let out = ""
-  for (const p of split(segment, "_")) {
+  for (const p of split(langUnderscored(segment), "_")) {
     out = out + langUpperFirst(p)
   }
   return out
 }
+
+/**
+ * A module path, or part of one, with each `-` turned into `_`, so a segment
+ * that joins words with `-` becomes an identifier.
+ *
+ * @param path a module path, segment or file
+ * @returns `nish/net/quic_packet` for `nish/net/quic-packet`
+ */
+export const langUnderscored = (path: string): string => split(path, "-").join("_")
 
 /** The index of the last `ch` in `s`, or -1. */
 const langLastIndex = (s: string, ch: i32): i32 => {
@@ -227,10 +243,13 @@ export const langBasename = (path: string): string => {
  * last.
  *
  * @param module a module path, such as `nish/crypto/hkdf`
- * @returns `nish.crypto.Hkdf`
+ * @returns `nish.crypto.Hkdf`; `nish.net_io.QuicPacket` for `nish/net-io/quic-packet`
  */
 export const langPackageClass = (module: string): string => {
   const s = split(module, "/")
+  for (let i = 0; i < s.length - 1; i++) {
+    s[i] = langUnderscored(s[i])
+  }
   s[s.length - 1] = langPascalSegment(s[s.length - 1])
   return s.join(".")
 }
@@ -353,7 +372,7 @@ const langPascalPath = (module: string, sep: string): string => {
  */
 export const langModule = (lang: string, module: string): string => {
   if (lang === "rust" || lang === "cpp") {
-    return split(module, "/").join("::")
+    return split(langUnderscored(module), "/").join("::")
   }
   if (lang === "ruby") {
     return langPascalPath(module, "::")
@@ -371,7 +390,7 @@ export const langModule = (lang: string, module: string): string => {
     return langPackageClass(module)
   }
   if (lang === "python") {
-    return split(module, "/").join(".")
+    return split(langUnderscored(module), "/").join(".")
   }
   if (lang === "php") {
     return langPascalPath(module, "\\")
@@ -406,13 +425,13 @@ export const langQualify = (lang: string, module: string, name: string): string 
   }
   if (lang === "c") {
     const stem = module.endsWith(".h") ? module.substring(0, module.length - 2) : module
-    return `${split(stem, "/").join("_")}_${name}`
+    return `${split(langUnderscored(stem), "/").join("_")}_${name}`
   }
   if (lang === "go") {
-    return `${split(langBasename(module), "_").join("")}.${name}`
+    return `${split(langUnderscored(langBasename(module)), "_").join("")}.${name}`
   }
   if (lang === "zig" || lang === "typescript" || lang === "dart") {
-    return `${langBasename(module)}.${name}`
+    return `${langUnderscored(langBasename(module))}.${name}`
   }
   return `${module}.${name}`
 }

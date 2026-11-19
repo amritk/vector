@@ -73,7 +73,7 @@ export const langTableDart = (): LangTable => {
   )
   t.moduleForm = "file"
   t.moduleNote =
-    "a library file in the package named by the first segment, imported with a prefix named for the last: nish/crypto/hkdf → import 'package:nish/crypto/hkdf.dart' as hkdf, called hkdf.<name>; a one-segment module is the package's main library (nish → package:nish/nish.dart)"
+    "a library file in the package named by the first segment, imported with a prefix named for the last: nish/crypto/hkdf → import 'package:nish/crypto/hkdf.dart' as hkdf, called hkdf.<name>; a one-segment module is the package's main library (nish → package:nish/nish.dart); a - in a segment stays in the URI and becomes _ in the prefix: nish/net/quic-packet → quic_packet.<name>"
   t.nameRule =
     "functions and parameters lowerCamelCase: words split at each capital, a digit run stays on the word before it, a two-letter acronym stays in capitals and a longer one is cased like a word (readIOStream → readIOStream, parseHTTPRequest → parseHttpRequest). A name that is a reserved word takes a name override."
   t.choices.push(
