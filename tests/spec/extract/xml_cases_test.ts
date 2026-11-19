@@ -618,6 +618,35 @@ const xmlCasesTestLastFirst = (d: XmlDocument | null): string => {
 /** A section's codeLines, comma-separated. */
 const xmlCasesTestCodeLines = (sec: RfcSection): string => sec.codeLines.map((i: i32): string => `${i}`).join(",")
 
+/** Each section's id and codeLines, as `id: lines`, joined by ` ; `. */
+const xmlCasesTestAllCode = (d: XmlDocument | null): string =>
+  d === null ? "" : d.sections.map((s: RfcSection): string => `${s.id}: ${xmlCasesTestCodeLines(s)}`).join(" ; ")
+
+/** Where each section's code lines begin and end, at the edges of its range. */
+const xmlCasesTestCodeEdges = (t: Suite): void => {
+  const rows: string[][] = [
+    ["a section that opens with code", "<section><sourcecode>a\nb</sourcecode><t>p</t></section>", "1: 0,1"],
+    [
+      "a subsection that opens with code",
+      "<section><t>p</t><section><sourcecode>a</sourcecode></section></section>",
+      "1: 2 ; 1.1: 0",
+    ],
+    [
+      "code ending in a blank line, then a section that opens with code",
+      "<section><t>p</t><sourcecode>a\n\n</sourcecode></section><section><sourcecode>b</sourcecode></section>",
+      "1: 2,3 ; 2: 0",
+    ],
+    [
+      "code ending in a blank line, then a subsection that opens with code",
+      "<section><sourcecode>a\n\n</sourcecode><section><sourcecode>b</sourcecode></section></section>",
+      "1: 0,1,2 ; 1.1: 0",
+    ],
+  ]
+  for (const r of rows) {
+    t.eqStr(r[0], xmlCasesTestAllCode(xmlCasesTestParse(t, r[0], `<rfc><middle>${r[1]}</middle></rfc>`)), r[2])
+  }
+}
+
 /** Inputs that took seconds to minutes when a step was quadratic. */
 const xmlCasesTestLinear = (t: Suite): void => {
   let start = Date.now()
@@ -785,5 +814,6 @@ export const main = (): i32 => {
   xmlCasesTestAttributes(t)
   xmlCasesTestLineNumbers(t)
   xmlCasesTestLinear(t)
+  xmlCasesTestCodeEdges(t)
   return t.done()
 }
