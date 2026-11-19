@@ -11,7 +11,7 @@ approved contract without a person rereading the spec:
 | [`spec frozen`](#frozen) | a change that edits the spec side and the implementation together, or a contract whose sources changed under it |
 | [`spec stale`](#stale) | a generated test that no longer matches its contract |
 | [`spec exports`](#exports) | a new or changed export its contract does not cover |
-| [`spec mutate`](#mutate) | a plausible bug in the changed lines that the contract's test does not notice |
+| [`spec mutate`](#mutate) | a plausible bug, in the changed lines the contract's functions reach, that its test does not notice |
 
 Every gate exits 0 when it passed, 1 when it refused the change, and 2 for bad
 usage, a file that cannot be read, or a git or tool failure. Each takes
@@ -252,10 +252,12 @@ notes:
   - 1 changed line outside the tested functions was not mutated: other
 ```
 
-A module the scan cannot split into named declarations (it cannot be lexed, an
-export has no name it can read, or a contract function is not a top-level
-declaration there) is mutated on every changed line, and a note says why
-(`every changed line was mutated, not only the tested functions: …`).
+A module the scan cannot split into named declarations (an export has no name
+it can read, or a contract function is not a top-level declaration there) is
+mutated on every changed line, and a note says why (`every changed line was
+mutated, not only the tested functions: …`). A function the contract cites
+from another module (its `module` is set) is not looked for. A module that
+cannot be lexed is not mutated at all: the command exits 2.
 
 Start with a change: a redundant bound on line 173 of the module.
 

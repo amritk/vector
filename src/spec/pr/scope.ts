@@ -75,7 +75,8 @@ const scopePunct = (toks: LexToken[], i: i32, to: i32, p: string): boolean =>
  * The names a `const`, `let` or `var` declares from token `i`: the first
  * name, and every name after a top-level comma that a `:`, `=`, `!`, `,` or
  * the end follows. It may take a name too many, never one too few, so the
- * gate mutates more, not less.
+ * gate mutates more, not less. A destructured declarator names nothing, but
+ * Nish has no destructuring.
  */
 const scopeDeclarators = (toks: LexToken[], i: i32, to: i32): string[] => {
   const names: string[] = []
@@ -170,6 +171,7 @@ const scopeSplit = (toks: LexToken[], spans: LexSpan[], out: ScopeDecl[]): strin
     }
     const first = toks[span.from].line
     const last = scopeLastLine(toks[span.to - 1])
+    // Nish refuses `export default`, so `export default function f` naming only `default` loses nothing.
     if (exported && scopeIdent(toks, at, span.to) === "default") {
       out.push(new ScopeDecl(["default"], first, last, span.from, span.to))
       continue

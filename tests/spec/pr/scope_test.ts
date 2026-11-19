@@ -143,7 +143,7 @@ const scopeTestRows = (): ScopeTestRow[] => [
     "whole: the contract's function g is not a top-level declaration of the module 1+ 2+",
   ),
   new ScopeTestRow(
-    "a module the lexer cannot read mutates every line",
+    "a module the lexer cannot read is whole here, though mutateSites refuses it first",
     'export const f = (): string => "a\n',
     ["f"],
     "whole: the module cannot be lexed: line 1: a string that never closes 1+",

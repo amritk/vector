@@ -127,11 +127,17 @@ const MUTATE_TEST_CONTRACT: string = `{
 }
 `
 
-/** MUTATE_TEST_CONTRACT testing only the functions `names`, its vector calling `call`. */
-const mutateTestContractOn = (names: string[], call: string): string => {
+/**
+ * MUTATE_TEST_CONTRACT testing only the functions `names`, its vector calling
+ * `call`; each of `foreign` is a reference function from nish/other.
+ */
+const mutateTestContractOn = (names: string[], call: string, foreign: string[]): string => {
   const fs: string[] = []
   for (const n of names) {
     fs.push(`{"name": "${n}", "params": [], "returns": "i32"}`)
+  }
+  for (const n of foreign) {
+    fs.push(`{"name": "${n}", "module": "nish/other", "params": [], "returns": "i32"}`)
   }
   const at = MUTATE_TEST_CONTRACT.indexOf('"functions": [')
   const end = MUTATE_TEST_CONTRACT.indexOf('],\n  "allowSurvivors"')
@@ -200,7 +206,7 @@ const mutateTestRepo = (t: Suite): Result<boolean, string> => {
   t.ok("a missing contract is an error", mutateCheck(`${dir}/none.json`, "main", run, 0).isErr())
   prTestWrite(dir, "calm.sh", "exit 0\n").orReturn()
   const calm = new MutateRun(root, "", "bin/nish", `${dir}/calm.sh`, 2, MUTATE_TEST_CALM_MS)
-  prTestWrite(dir, "k.json", mutateTestContractOn(["k"], "k")).orReturn()
+  prTestWrite(dir, "k.json", mutateTestContractOn(["k"], "k", [])).orReturn()
   const k = mutateCheck(`${dir}/k.json`, "main", calm, 0)
   t.eqStr(
     "a contract on k mutates only k's line, and notes the rest",
@@ -215,7 +221,7 @@ const mutateTestRepo = (t: Suite): Result<boolean, string> => {
       "STALE? allowSurvivors std/m.ts:9 matched no survivor this run: no mutant of that line ran, so check it still names the line it means",
     ].join(""),
   )
-  prTestWrite(dir, "old.json", mutateTestContractOn(["old"], "old")).orReturn()
+  prTestWrite(dir, "old.json", mutateTestContractOn(["old"], "old", [])).orReturn()
   const old = mutateCheck(`${dir}/old.json`, "main", calm, 0)
   t.eqStr(
     "a change none of whose lines the contract's functions reach is refused, naming them",
@@ -223,6 +229,35 @@ const mutateTestRepo = (t: Suite): Result<boolean, string> => {
       ? `${old.value.items.join(" | ")} || ${old.value.problems.join(" | ")} || ${old.value.notes.join(" | ")}`
       : old.error,
     " || no mutants: no line the change adds to std/m.ts lies in code the contract's functions reach || 3 changed lines outside the tested functions were not mutated: lt, k, f",
+  )
+  prTestWrite(dir, "ref.json", mutateTestContractOn(["k"], "k", ["hmac"])).orReturn()
+  const ref = mutateCheck(`${dir}/ref.json`, "main", calm, 0)
+  t.eqStr(
+    "a reference function from another module is no root, so the scope still holds",
+    ref.isOk() ? `${ref.value.items.length} || ${ref.value.notes.join(" | ")}` : ref.error,
+    [
+      "2 || 2 changed lines outside the tested functions were not mutated: lt, f | ",
+      "survivor std/m.ts:3 (3:29:int:+1) is allowed: k is a constant the spec leaves open | ",
+      "survivor std/m.ts:3 (3:29:int:-1) is allowed: k is a constant the spec leaves open | ",
+      "STALE? allowSurvivors std/m.ts:9 matched no survivor this run: no mutant of that line ran, so check it still names the line it means",
+    ].join(""),
+  )
+  prTestWrite(dir, "ghost.json", mutateTestContractOn(["k", "ghost"], "k", [])).orReturn()
+  const ghost = mutateCheck(`${dir}/ghost.json`, "main", calm, 0)
+  t.eqStr(
+    "a contract function the module does not declare mutates every changed line, and says why",
+    ghost.isOk()
+      ? `${ghost.value.items.join(" | ")} || ${ghost.value.problems.join(" | ")} || ${ghost.value.notes[0]}`
+      : ghost.error,
+    [
+      "survived std/m.ts:2:50 relational: export const lt = (a: i32, b: i32): boolean => a <= b | ",
+      "survived std/m.ts:3:29 int: export const k = (): i32 => 8 | ",
+      "survived std/m.ts:3:29 int: export const k = (): i32 => 6 | ",
+      "stillborn std/m.ts:5:3 return-null: return null || ",
+      "survivor std/m.ts:2 (2:50:relational): `export const lt = (a: i32, b: i32): boolean => a <= b` passes the test: behaviour no requirement pins down || ",
+      "every changed line was mutated, not only the tested functions: ",
+      "the contract's function ghost is not a top-level declaration of the module",
+    ].join(""),
   )
   prTestCommit(dir, "change").orReturn()
   const none = mutateCheck(`${dir}/c.json`, "work", run, 0)

@@ -751,7 +751,10 @@ export const mutateCheck = (contractPath: string, base: string, run: MutateRun, 
   if (changed.length > 0) {
     const roots: string[] = []
     for (const f of c.functions) {
-      roots.push(f.name)
+      const m = f.module
+      if (m === null || m === c.target.module) {
+        roots.push(f.name)
+      }
     }
     const sites = mutateSites(text, changed[0], roots)
     if (sites.isErr()) {

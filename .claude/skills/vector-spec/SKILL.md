@@ -467,8 +467,9 @@ When `exports` fails, do one of these in a spec-side PR:
 
 It mutates only the module's lines changed since `--base` inside the
 declarations the contract's functions reach (the other changed lines are one
-note), and runs the test against each mutant. A survivor is printed with its `file:line`, its mutated
-line, and *behaviour no requirement pins down*, and the command exits 1. Kill
+note), and runs the test against each mutant. A survivor is printed with its
+`file:line`, its mutated line, and *behaviour no requirement pins down*, and
+the command exits 1. Kill
 the survivor with a property or vector the spec supports. Or, in a spec-side
 PR, allow it with a reason in `contracts/<name>.survivors.json`:
 
