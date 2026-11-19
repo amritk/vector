@@ -217,7 +217,13 @@ export const gateSignatures = (ctx: CheckContext): string[] => {
     const got = `(${real.params.map((p: string): string => gateNishType(p)).join(", ")}) -> ${gateNishType(real.returns)}`
     if (want !== got) {
       const why = o === null ? "" : ` (its /* out */ is the (bytes, i32) pair at ${o.at}, returning end)`
-      gateIssue(ctx, out, g, name, `declared ${want}${why}, but ${module} has (${real.params.join(", ")}): ${real.returns}`)
+      gateIssue(
+        ctx,
+        out,
+        g,
+        name,
+        `declared ${want}${why}, but ${module} has (${real.params.join(", ")}): ${real.returns}`,
+      )
     }
   }
   return out
