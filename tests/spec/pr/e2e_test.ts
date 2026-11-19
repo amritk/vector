@@ -204,6 +204,41 @@ const e2eTestModule = (t: Suite, dir: string): Result<boolean, string> => {
   return Ok(true)
 }
 
+/**
+ * A nish checkout whose std/net/quic-packet.ts the work branch changes: a
+ * module path with a hyphen in a segment maps to the file of that name.
+ */
+const e2eTestHyphenModule = (t: Suite, dir: string): Result<boolean, string> => {
+  const contract = replaceAll(e2eTestContract(sha256Hex(E2E_TEST_RFC)), '"nish/hex"', '"nish/net/quic-packet"')
+  prTestWrite(dir, "nish/std/net/quic-packet.ts", E2E_TEST_HEX).orReturn()
+  prTestWrite(dir, "c.json", contract).orReturn()
+  prTestCommit(dir, "base").orReturn()
+  prTestGit(dir, ["checkout", "-q", "-b", "work"]).orReturn()
+  const root = `${dir}/nish`
+  const c = `${dir}/c.json`
+  t.eqStr(
+    "exports maps nish/net/quic-packet to std/net/quic-packet.ts",
+    e2eTestRun(dir, ["spec", "exports", "--base", "main", "--nish-root", root, c]),
+    "exit 0\nspec exports of std/net/quic-packet.ts against main: OK\n",
+  )
+  t.eqStr(
+    "mutate maps nish/net/quic-packet to std/net/quic-packet.ts",
+    e2eTestRun(dir, ["spec", "mutate", "--base", "main", "--nish-root", root, "--test", `${dir}/t.ts`, c]),
+    "exit 1\nspec mutate std/net/quic-packet.ts against main: FAILED\n\nproblems:\n  ✗ no mutants: the change adds no line of std/net/quic-packet.ts that can be mutated\n",
+  )
+  prTestWrite(
+    dir,
+    "nish/std/net/quic-packet.ts",
+    `${E2E_TEST_HEX}\n/** New. */\nexport const fresh = (): i32 => 1\n`,
+  ).orReturn()
+  t.eqStr(
+    "exports reads the hyphenated file's change",
+    e2eTestRun(dir, ["spec", "exports", "--base", "main", "--nish-root", root, c]),
+    "exit 1\nspec exports of std/net/quic-packet.ts against main: FAILED\n\n  added fresh\n\nproblems:\n  ✗ export fresh is added, but the contract neither tests it nor lists it in outOfScope with a reason\n",
+  )
+  return Ok(true)
+}
+
 /** Runs `step` in a fresh repository, then removes it. */
 const e2eTestIn = (t: Suite, prefix: string, step: (t: Suite, dir: string) => Result<boolean, string>): void => {
   const dir = prTestRepo(prefix)
@@ -223,5 +258,6 @@ export const main = (): i32 => {
   const t = new Suite("spec/pr e2e")
   e2eTestIn(t, "vector-e2e-frozen-", e2eTestFrozen)
   e2eTestIn(t, "vector-e2e-module-", e2eTestModule)
+  e2eTestIn(t, "vector-e2e-hyphen-", e2eTestHyphenModule)
   return t.done()
 }
