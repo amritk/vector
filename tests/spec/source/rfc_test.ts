@@ -1,4 +1,5 @@
 import { Suite } from "nish/testing"
+import { replaceAll } from "nish/text"
 import { charsFromCodePoint } from "../../../src/spec/contract/chars"
 import {
   HexValue,
@@ -309,6 +310,125 @@ const rfcTestScryptText = (): string =>
 const rfcTestWrapped = (text: string, id: string): string[] =>
   rfcHexValues(rfcTestSection(rfcParse(text), id)).map((v: HexValue): string => `${v.label ?? "-"}@${v.line}=${v.hex}`)
 
+/** Lines of an RFC as xml2rfc v3 writes its plain text (rfc9000.txt): a byte-order mark, no form feed, no page furniture. */
+const rfcTestV3Lines = (): string[] => [
+  `${charsFromCodePoint(0xfeff)}`,
+  "",
+  "",
+  "",
+  "Internet Engineering Task Force (IETF)                   J. Iyengar, Ed.",
+  "Request for Comments: 9000                                        Fastly",
+  "Category: Standards Track                                M. Thomson, Ed.",
+  "ISSN: 2070-1721                                                  Mozilla",
+  "                                                                May 2021",
+  "",
+  "",
+  "           QUIC: A UDP-Based Multiplexed and Secure Transport",
+  "",
+  "Table of Contents",
+  "",
+  "   1.  Overview",
+  "     1.1.  Document Structure",
+  "",
+  "1.  Overview",
+  "",
+  "   Endpoints MUST be able to deliver stream data to an application as",
+  "   an ordered byte stream.",
+  "",
+  "1.1.  Document Structure",
+  "",
+  "   This document describes the core QUIC protocol.",
+  "",
+]
+
+/** RFC 9000's shape as xml2rfc v3 writes it. */
+const rfcTestV3Text = (): string => rfcTestV3Lines().join("\n")
+
+/** rfcTestV3Text with `line` inserted before line index `at`. */
+const rfcTestV3With = (at: i32, line: string): string => {
+  const lines = rfcTestV3Lines()
+  const out = lines.slice(0, at)
+  out.push(line)
+  for (const l of lines.slice(at, lines.length)) {
+    out.push(l)
+  }
+  return out.join("\n")
+}
+
+/** A paginated RFC with a value split by a page break, and two blocks split only by one. */
+const rfcTestPagedText = (): string =>
+  [
+    "Request for Comments: 7777                                    Example Inc.",
+    "",
+    "1.  Split",
+    "",
+    "   Key:",
+    "   0a0b",
+    "Author                        Informational                     [Page 1]",
+    "\f",
+    "RFC 7777                      Example Spec                     May 2020",
+    "   0c0d",
+    "",
+    "2.  Blocks",
+    "",
+    "   Key:",
+    "   1111",
+    "Author                        Informational                     [Page 2]",
+    "\f",
+    "RFC 7777                      Example Spec                     May 2020",
+    "   Tag:",
+    "   2222",
+    "",
+  ].join("\n")
+
+/** rfcRead's refusal of unpaginated text whose line `n` is page furniture. */
+const rfcTestFurniture = (n: i32): string =>
+  `r.txt: not an RFC's plain text: line ${n} is page furniture (a "[Page N]" footer or a running "RFC N" header), but the text has no form feeds, so its page breaks cannot be placed`
+
+/** What rfcRead makes of `text`: "RFC N, S sections", or its refusal. */
+const rfcTestRead = (text: string): string => {
+  const r = rfcRead(text, "r.txt")
+  return r.isOk() ? `RFC ${r.value.number}, ${r.value.sections.length} sections` : r.error
+}
+
+/** rfcRead's cases, paginated and unpaginated: a name, a text, and what rfcTestRead makes of it. */
+const rfcTestReadCases = (): string[][] => {
+  const refused = "r.txt: not an RFC's plain text: "
+  const footer = "Iyengar & Thomson            Standards Track                    [Page 1]"
+  const running = "RFC 9000                 QUIC Transport Protocol                May 2021"
+  return [
+    ["paginated, with footers and running headers", rfcTestText(), "RFC 9999, 5 sections"],
+    ["paginated, no header", "1.  Intro\n\f\n", `${refused}it has no "Request for Comments: N" header`],
+    ["unpaginated, shaped like rfc9000.txt", rfcTestV3Text(), "RFC 9000, 2 sections"],
+    ["unpaginated, CRLF line ends", replaceAll(rfcTestV3Text(), "\n", "\r\n"), "RFC 9000, 2 sections"],
+    ["unpaginated, header first", "Request for Comments: 1\n1.  Intro\n", "RFC 1, 1 sections"],
+    ["unpaginated, no header", "1.  Intro\n\n   Text.\n", `${refused}it has no "Request for Comments: N" header`],
+    [
+      "unpaginated, the header only mid-line",
+      "   See Request for Comments: 1\n1.  Intro\n",
+      `${refused}it has no "Request for Comments: N" header`,
+    ],
+    [
+      "unpaginated, a mid-line mention before the header",
+      "   See Request for Comments: 1234\nRequest for Comments: 9000\n1.  Intro\n",
+      "RFC 9000, 1 sections",
+    ],
+    [
+      "unpaginated, a header without a number",
+      "Request for Comments: none\n1.  Intro\n",
+      `${refused}it has no "Request for Comments: N" header`,
+    ],
+    [
+      "unpaginated, the header after the first heading",
+      "1.  Intro\n\nRequest for Comments: 1\n",
+      `${refused}its "Request for Comments: N" header is on line 3, after its first section heading on line 1: text without form feeds must give it in its front matter`,
+    ],
+    ["unpaginated, a [Page N] footer", rfcTestV3With(22, footer), rfcTestFurniture(23)],
+    ["unpaginated, a running header", rfcTestV3With(23, running), rfcTestFurniture(24)],
+    ["unpaginated, a footer before the header", rfcTestV3With(0, footer), rfcTestFurniture(1)],
+  ]
+}
+
 /** Reading an RFC's text: sections, page furniture, quotes and printed hex. */
 export const main = (): i32 => {
   const t = new Suite("spec/source rfc")
@@ -480,13 +600,23 @@ export const main = (): i32 => {
 
   // Reading refuses what is not an RFC, and what hides text.
   t.ok("an RFC reads", rfcRead(rfcTestText(), "r.txt").isOk())
-  const noHeader = rfcRead("1.  Intro\n\f\n", "r.txt")
+  for (const c of rfcTestReadCases()) {
+    t.eqStr(c[0], rfcTestRead(c[1]), c[2])
+  }
+  // A paginated RFC still reads across its page breaks: a value on each side
+  // of one is one value, and two blocks split only by one stay two.
+  const paged = rfcRead(rfcTestPagedText(), "r.txt")
   t.eqStr(
-    "no header",
-    noHeader.isErr() ? noHeader.error : "",
-    'r.txt: not an RFC\'s plain text: it needs a "Request for Comments: N" header and the form feeds of its page breaks',
+    "a value split by a page break reads as one",
+    paged.isOk() ? rfcTestValues(rfcTestSection(paged.value, "1")) : paged.error,
+    "Key=0a0b0c0d",
   )
-  t.ok("no form feed", rfcRead("Request for Comments: 1\n1.  Intro\n", "r.txt").isErr())
+  t.eqStr(
+    "two blocks split only by a page break stay two",
+    paged.isOk() ? rfcTestValues(rfcTestSection(paged.value, "2")) : paged.error,
+    "Key=1111 Tag=2222",
+  )
+  t.ok("the unpaginated text has no page break", rfcTestSection(rfcParse(rfcTestV3Text()), "1").pageBreaks.length === 0)
   const hidden = rfcRead(`${rfcTestText()}\nIt MU${charsFromCodePoint(0x200d)}ST.\n`, "r.txt")
   t.eqStr(
     "hidden text",

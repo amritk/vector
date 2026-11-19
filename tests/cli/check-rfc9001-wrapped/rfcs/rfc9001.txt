@@ -1,3 +1,4 @@
+﻿
 
 
 
@@ -9,13 +10,6 @@ ISSN: 2070-1721                                                    sn3rd
 
 
                         Using TLS to Secure QUIC
-
-
-
-Thomson & Turner                Standards Track                 [Page 1]
-
-RFC 9001                Using TLS to Secure QUIC                May 2021
-
 
 Appendix A.  Sample Packet Protection
 
@@ -52,13 +46,6 @@ A.1.  Keys
 
    client_initial_secret
        = HKDF-Expand-Label(initial_secret, "client in", "", 32)
-
-
-Thomson & Turner                Standards Track                 [Page 2]
-
-RFC 9001                Using TLS to Secure QUIC                May 2021
-
-
        = c00cf151ca5be075ed0ebfb5c80323c4
          2d6b7db67881289af4008f1f6c357aea
 
@@ -70,13 +57,6 @@ RFC 9001                Using TLS to Secure QUIC                May 2021
 
    hp  = HKDF-Expand-Label(client_initial_secret, "quic hp", "", 16)
        = 9f50449e04a0e810283a1e9933adedd2
-
-
-
-Thomson & Turner                Standards Track                 [Page 3]
-
-RFC 9001                Using TLS to Secure QUIC                May 2021
-
 
    The secrets for protecting server packets are:
 
@@ -94,6 +74,3 @@ RFC 9001                Using TLS to Secure QUIC                May 2021
    hp  = HKDF-Expand-Label(server_initial_secret, "quic hp", "", 16)
        = c206b8d9b9f0f37644430b490eeaa314
 
-
-
-Thomson & Turner                Standards Track                 [Page 4]

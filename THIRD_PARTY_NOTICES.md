@@ -270,10 +270,7 @@ unchanged. `tests/cli/check-rfc9001-wrapped/rfcs/rfc9001.txt` is an excerpt of
 RFC 9001, "Using TLS to Secure QUIC" (IETF, © 2021 IETF Trust and the persons
 identified as the document authors), from
 <https://www.rfc-editor.org/rfc/rfc9001.txt>: its first-page header and title,
-and Appendix A to the end of A.1, every line unchanged. That publication is
-unpaginated, so page footers, form feeds and headers in the RFC Editor's
-paginated style were added between its lines, one inside the value
-`client_initial_secret`, as `vector spec check` reads only paginated text.
+and Appendix A to the end of A.1, excerpted unchanged.
 Both are redistributed under the IETF Trust Legal Provisions, §3.c.iii; please
 reproduce this note if possible.
 

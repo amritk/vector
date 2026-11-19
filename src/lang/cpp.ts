@@ -91,7 +91,7 @@ export const langTableCpp = (): LangTable => {
   t.literal("words64", langSpell("std::array<std::uint64_t, 2>{0x3320646e61707865, 0x6b20657479622d32}", ""))
   t.moduleForm = "namespace"
   t.moduleNote =
-    "nested namespaces, one per segment, declared in the header at the neutral path plus .hpp: nish/crypto/hkdf → namespace nish::crypto::hkdf in nish/crypto/hkdf.hpp"
+    "nested namespaces, one per segment, declared in the header at the neutral path plus .hpp: nish/crypto/hkdf → namespace nish::crypto::hkdf in nish/crypto/hkdf.hpp; a - in a segment stays in the header and becomes _ in the namespace: nish/net/quic-packet → nish::net::quic_packet"
   t.nameRule =
     "functions and parameters underscore_style (NL.10), as the standard library is: words split at each capital, an acronym is one word (parseHTTPRequest → parse_http_request), and a digit run stays on the word before it (chacha20Poly1305Seal → chacha20_poly1305_seal). A name override always wins."
   t.choices.push(

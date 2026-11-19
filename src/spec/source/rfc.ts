@@ -12,7 +12,8 @@
  * A heading starts in column 0 ("2.3.  Step 2", "A.1.  Test Case 1",
  * "Appendix A.  Test Vectors"); the table of contents is indented, so it never
  * reads as one. Page furniture (the "[Page N]" footer, the running "RFC NNNN"
- * header, form feeds) is dropped before anything is read.
+ * header, form feeds) is dropped before anything is read; xml2rfc v3's
+ * unpaginated text has none.
  */
 
 import { replaceAll, splitLines, splitWhitespace, trim, trimEnd } from "nish/text"
@@ -311,10 +312,71 @@ export const rfcParse = (text: string): RfcDocument => {
   return doc
 }
 
+/** The `Request for Comments: N` header's N when `line` begins with one; -1 otherwise. */
+const rfcHeaderNumber = (line: string): i32 => {
+  const head = "Request for Comments:"
+  if (!line.startsWith(head)) {
+    return -1
+  }
+  let i = head.length
+  while (i < line.length && rfcIsBlank(line.charCodeAt(i))) {
+    i++
+  }
+  let n = 0
+  let digits = 0
+  while (i < line.length && rfcIsDigit(line.charCodeAt(i)) && digits < 9) {
+    n = n * 10 + (line.charCodeAt(i) - 48)
+    i++
+    digits++
+  }
+  return digits > 0 ? n : -1
+}
+
 /**
- * Reads an RFC's plain text, refusing a text that is not one (no "Request for
- * Comments: N" header, or no form feed) and a text hiding what it says from
- * the gates (hiddenText).
+ * Why unpaginated text (no form feed) is not an RFC's: a line of page
+ * furniture, whose page break could not be placed; no line beginning with the
+ * `Request for Comments: N` header; or that header after the first section
+ * heading, outside the front matter. Null when it is one; then `doc` takes
+ * the header's number.
+ */
+const rfcUnpaginatedProblem = (text: string, doc: RfcDocument): string | null => {
+  const lines = splitLines(text)
+  let header = -1
+  let number = -1
+  let heading = -1
+  for (let at = 0; at < lines.length; at++) {
+    const raw = lines[at]
+    const l = raw.endsWith("\r") ? raw.substring(0, raw.length - 1) : raw
+    if (rfcIsFooter(l) || rfcIsHeader(l)) {
+      return `line ${at + 1} is page furniture (a "[Page N]" footer or a running "RFC N" header), but the text has no form feeds, so its page breaks cannot be placed`
+    }
+    if (header < 0) {
+      number = rfcHeaderNumber(l)
+      header = number >= 0 ? at : -1
+    }
+    if (heading < 0 && rfcHeading(l) !== null) {
+      heading = at
+    }
+  }
+  if (header < 0) {
+    return 'it has no "Request for Comments: N" header'
+  }
+  if (heading >= 0 && heading < header) {
+    return `its "Request for Comments: N" header is on line ${header + 1}, after its first section heading on line ${heading + 1}: text without form feeds must give it in its front matter`
+  }
+  doc.number = number
+  return null
+}
+
+/**
+ * Reads an RFC's plain text, refusing a text that is not one and a text
+ * hiding what it says from the gates (hiddenText). An RFC's plain text is
+ * paginated, as xml2rfc v2 wrote it (form feeds, "[Page N]" footers and
+ * running headers, and a "Request for Comments: N" header), or unpaginated,
+ * as xml2rfc v3 writes it (no form feed, no line of page furniture, and a
+ * line beginning "Request for Comments: N" before the first section heading).
+ * Page furniture without form feeds is neither: its page breaks could not be
+ * placed.
  *
  * @param text the file's text
  * @param file the file's name, for messages
@@ -322,10 +384,16 @@ export const rfcParse = (text: string): RfcDocument => {
  */
 export const rfcRead = (text: string, file: string): Result<RfcDocument, string> => {
   const doc = rfcParse(text)
-  if (doc.number < 0 || text.indexOf("\f") < 0) {
-    return Err(
-      `${file}: not an RFC's plain text: it needs a "Request for Comments: N" header and the form feeds of its page breaks`,
-    )
+  const refused = `${file}: not an RFC's plain text: `
+  if (text.indexOf("\f") >= 0) {
+    if (doc.number < 0) {
+      return Err(`${refused}it has no "Request for Comments: N" header`)
+    }
+  } else {
+    const problem = rfcUnpaginatedProblem(text, doc)
+    if (problem !== null) {
+      return Err(`${refused}${problem}`)
+    }
   }
   const hidden = hiddenProblem(text, file)
   if (hidden !== null) {
