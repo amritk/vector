@@ -314,6 +314,10 @@ const extractComplete = (ctx: ExtractContext, c: Contract, specSha: string): Res
       if (d.rfc < 1) {
         // Lexical, as the old extractor was, so a symlinked specs/ names the spec where the contract sees it.
         d.path = extractRelative(dirLex, extractAbsolute(ctx.xmlPath))
+        // Under an RFC main, `source.sha256` is the RFC's, so the spec's own entry pins the spec.
+        if (mainRfc >= 1) {
+          d.sha256 = specSha
+        }
         continue
       }
       const got = ctx.rfcs.get(d.rfc)

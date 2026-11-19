@@ -696,7 +696,11 @@ const shapeIterate = (s: ShapeContext, k: Clause, it: Iterate, at: string): void
 const shapeNeedSection = (s: ShapeContext, k: Clause, at: string): void => {
   const sec = k.section
   if (sec === null || !charsIsSection(sec)) {
-    shapeFail(s, `${at}.section`, "the section number printing the args")
+    shapeFail(
+      s,
+      `${at}.section`,
+      "the section number printing the args, in the main source or the one sectionSource names",
+    )
   }
 }
 

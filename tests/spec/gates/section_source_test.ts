@@ -161,6 +161,20 @@ const sstShape = (source: string, section: string, sectionSource: string): strin
   return contractShapeErrors(c.value)
 }
 
+/** sstShape, of the same contract with its main source the spec (`source.main`), not an RFC. */
+const sstShapeOwnMain = (source: string, section: string, sectionSource: string): string[] => {
+  const text = replaceAll(
+    sstContract(source, section, sectionSource),
+    `"source": {"title": "T", "rfc": 9995}`,
+    `"source": {"title": "T", "main": "own"}`,
+  )
+  const c = contractParse(text, "own")
+  if (c.isErr()) {
+    return c.error.map((e: string): string => `read: ${e}`)
+  }
+  return contractShapeErrors(c.value)
+}
+
 /** The fidelity rows, completeness, shape and the written form. */
 export const main = (): i32 => {
   const t = new Suite("spec/gates section source")
@@ -197,6 +211,17 @@ export const main = (): i32 => {
       sstShape(SST_COMMAND, `, "section": "10"`, `, "sectionSource": "rfc9995"`),
       `clauses[0].sectionSource: "rfc9995" is the main source; drop "sectionSource"`,
     ),
+  )
+  t.ok(
+    "a command vector naming the main source, which is the spec",
+    sstHas(
+      sstShapeOwnMain(SST_COMMAND, `, "section": "5"`, own),
+      `clauses[0].sectionSource: "own" is the main source; drop "sectionSource"`,
+    ),
+  )
+  t.ok(
+    "a command vector naming a declared source that is not the spec main",
+    !sstHas(sstShapeOwnMain(SST_COMMAND, `, "section": "5"`, `, "sectionSource": "rfc9995"`), "is the main source"),
   )
   t.ok(
     "a cited vector naming a section's source",

@@ -100,11 +100,15 @@ unless a vector's Source is a command (see below).
 - A vector whose Source is a command has its args in the spec's own
   section that holds its table, not in RFC N's section of that number. The
   spec is then declared first among `sources[]` (path
-  `../specs/<name>.xml`), and the vector records it as `"sectionSource":
+  `../specs/<name>.xml`, pinned by its own `sha256`, so `check` refuses a
+  spec edited since extraction), and the vector records it as `"sectionSource":
   "<name>"` beside `"section"`, so `extract` and `check` both look for the
   args there. An arg the section does not print is refused as `not printed
   in <name> §N ("Title")`. The spec's own text still binds nothing:
-  completeness runs over RFC N only.
+  completeness runs over RFC N only. Its id is the spec's name, so a spec
+  named `rfc<N>` for an RFC it cites is refused (`contract "rfc4648" is the
+  source id of RFC4648, which the spec cites; give the spec another
+  docName`).
 - A spec has one such key. A misspelt key, an RFC not under `normative:`,
   and an RFC nothing cites are refused.
 - The RFC may be `.xml` or `.txt`; [`tests/fixtures/rfc-main/`][rfc-main]

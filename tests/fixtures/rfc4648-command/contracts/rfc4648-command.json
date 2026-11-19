@@ -9,7 +9,8 @@
   "sources": [
     {
       "id": "rfc4648-command",
-      "path": "../specs/rfc4648-command.xml"
+      "path": "../specs/rfc4648-command.xml",
+      "sha256": "456bbd661613e92017efae65cf1497e4c9aa9542c92c7d878dce492b497cbd1b"
     },
     {
       "id": "rfc4648",
