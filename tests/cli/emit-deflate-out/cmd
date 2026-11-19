@@ -1,0 +1,1 @@
+vector spec emit tests/fixtures/deflate-out/contracts/deflate-out.json -o dist/emit-deflate-out-golden.ts

@@ -1,0 +1,24 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ base64-out · base64-out (Base 64 written into a caller's buffer) · nish/base64
+ Status: CONTRACT_VALID
+
+ Requirements
+  ○ R-B64-ENCODE  §3 MUST  "base64EncodeInto MUST write the padded base 64 of the window's …"
+      ○ V1  ○ V2  ○ V3
+  ○ R-B64-END  §3 MUST  "base64EncodeInto MUST answer the index just past the last chara…"
+      ○ V1  ○ V2  ○ V3  ○ V4
+
+ Vector sources run
+  · V1: $ python3 -c 'import base64;print(base64.b64encode(b"foobar").hex())'
+  · V2: $ python3 -c 'import base64;print(base64.b64encode(b"fo").hex())'
+  · V3: $ python3 -c 'import base64;print(base64.b64encode(b"f").hex())'
+  · V4: $ python3 -c 'import base64;print(base64.b64encode(b"").hex())'
+
+ Warnings
+  ! clauses: no property clauses: the contract checks only the RFC's own vectors
+  ! V1.source: source command not run (pass --run-sources): the expected value is unverified: $ python3 -c 'import base64;print(base64.b64encode(b"foobar").hex())'
+  ! V2.source: source command not run (pass --run-sources): the expected value is unverified: $ python3 -c 'import base64;print(base64.b64encode(b"fo").hex())'
+  ! V3.source: source command not run (pass --run-sources): the expected value is unverified: $ python3 -c 'import base64;print(base64.b64encode(b"f").hex())'
+  ! V4.source: source command not run (pass --run-sources): the expected value is unverified: $ python3 -c 'import base64;print(base64.b64encode(b"").hex())'
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

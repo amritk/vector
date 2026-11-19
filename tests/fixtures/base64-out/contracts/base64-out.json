@@ -1,0 +1,128 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "base64-out",
+  "source": {
+    "title": "Base 64 written into a caller's buffer",
+    "main": "base64-out",
+    "sha256": "ac139d9c8d66447f15ac66bce3f2af0157c7c248d8f4e7f1027d479896d98720"
+  },
+  "sources": [
+    {
+      "id": "base64-out",
+      "path": "../specs/base64-out.xml"
+    }
+  ],
+  "target": {
+    "module": "nish/base64"
+  },
+  "requirements": [
+    {
+      "id": "R-B64-ENCODE",
+      "section": "3",
+      "level": "MUST",
+      "quote": "base64EncodeInto MUST write the padded base 64 of the window's bytes, in the standard alphabet, and only those characters, from the index it is given."
+    },
+    {
+      "id": "R-B64-END",
+      "section": "3",
+      "level": "MUST",
+      "quote": "base64EncodeInto MUST answer the index just past the last character it wrote."
+    }
+  ],
+  "exclusions": [],
+  "functions": [
+    {
+      "name": "base64EncodeInto",
+      "params": [
+        {
+          "name": "src",
+          "type": "bytes",
+          "form": "window"
+        }
+      ],
+      "returns": "bytes",
+      "out": {
+        "at": 1,
+        "capacity": "2 * src.length + 4"
+      }
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "V1",
+      "title": "whole groups",
+      "covers": ["R-B64-ENCODE", "R-B64-END"],
+      "source": {
+        "command": "python3 -c 'import base64;print(base64.b64encode(b\"foobar\").hex())'"
+      },
+      "section": "5",
+      "call": "base64EncodeInto",
+      "args": [
+        {
+          "ascii": "foobar"
+        }
+      ],
+      "expect": {
+        "ascii": "Zm9vYmFy"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V2",
+      "title": "one pad character",
+      "covers": ["R-B64-ENCODE", "R-B64-END"],
+      "source": {
+        "command": "python3 -c 'import base64;print(base64.b64encode(b\"fo\").hex())'"
+      },
+      "section": "5",
+      "call": "base64EncodeInto",
+      "args": [
+        {
+          "ascii": "fo"
+        }
+      ],
+      "expect": {
+        "ascii": "Zm8="
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V3",
+      "title": "two pad characters",
+      "covers": ["R-B64-ENCODE", "R-B64-END"],
+      "source": {
+        "command": "python3 -c 'import base64;print(base64.b64encode(b\"f\").hex())'"
+      },
+      "section": "5",
+      "call": "base64EncodeInto",
+      "args": [
+        {
+          "ascii": "f"
+        }
+      ],
+      "expect": {
+        "ascii": "Zg=="
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V4",
+      "title": "nothing written: the end is the index",
+      "covers": ["R-B64-END"],
+      "source": {
+        "command": "python3 -c 'import base64;print(base64.b64encode(b\"\").hex())'"
+      },
+      "section": "5",
+      "call": "base64EncodeInto",
+      "args": [
+        {
+          "ascii": ""
+        }
+      ],
+      "expect": {
+        "ascii": ""
+      }
+    }
+  ]
+}
