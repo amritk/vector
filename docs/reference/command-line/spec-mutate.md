@@ -2,7 +2,7 @@
 
 # vector spec mutate
 
-Mutate the changed lines and refuse mutants the test misses.
+Mutate the changed lines the contract's functions reach and refuse mutants the test misses.
 
 ## Usage
 
@@ -28,13 +28,13 @@ the commit the change is against
 
 <scalar-field name="--nish-root" type="&lt;dir&gt;">
 
-a nish checkout: finds the module and the compiler
+a nish install, or a checkout: holds the module and builds the mutants
 
 </scalar-field>
 
 <scalar-field name="--nish" type="&lt;bin&gt;">
 
-the nish compiler, from --nish-root (default: bin/nish)
+a compiler built in the checkout, from --nish-root, to copy the checkout (default: the root's seed with its std/ laid over it)
 
 </scalar-field>
 

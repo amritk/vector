@@ -22,6 +22,13 @@ const SIGNATURES_TEST_C: string = `{
     {"name": "maybeIn", "params": [{"name": "k", "type": "words32"}], "returns": "words32"},
     {"name": "oneWord", "params": [{"name": "k", "type": "words32"}], "returns": "words32"},
     {"name": "halfWords", "params": [{"name": "k", "type": "words32"}], "returns": "words32"},
+    {"name": "winRight", "params": [{"name": "d", "type": "bytes", "form": "window"}], "returns": "u32"},
+    {"name": "winTwo", "params": [{"name": "a", "type": "bytes", "form": "window"}, {"name": "n", "type": "u32"}, {"name": "b", "type": "bytes", "form": "window"}], "returns": "u32"},
+    {"name": "winPlain", "params": [{"name": "d", "type": "bytes", "form": "window"}], "returns": "u32"},
+    {"name": "winUnsigned", "params": [{"name": "d", "type": "bytes", "form": "window"}], "returns": "u32"},
+    {"name": "winOrder", "params": [{"name": "d", "type": "bytes", "form": "window"}], "returns": "u32"},
+    {"name": "winShort", "params": [{"name": "d", "type": "bytes", "form": "window"}], "returns": "u32"},
+    {"name": "winUndeclared", "params": [{"name": "d", "type": "bytes"}], "returns": "u32"},
     {"name": "hmac", "module": "nish/other", "params": [{"name": "a", "type": "bytes"}], "returns": "bytes"}
   ],
   "clauses": []
@@ -76,6 +83,11 @@ export const main = (): i32 => {
     "maybeIn: declared (words32) -> words32, but nish/fixtures/sig_module has (u32[] | null): u32[]",
     "oneWord: declared (words32) -> words32, but nish/fixtures/sig_module has (u32[]): u32",
     "halfWords: declared (words32) -> words32, but nish/fixtures/sig_module has (u16[]): u32[]",
+    "winPlain: declared (bytes, i32, i32) -> u32, but nish/fixtures/sig_module has (u8[]): u32",
+    "winUnsigned: declared (bytes, i32, i32) -> u32, but nish/fixtures/sig_module has (u8[], u32, u32): u32",
+    "winOrder: declared (bytes, i32, i32) -> u32, but nish/fixtures/sig_module has (i32, i32, u8[]): u32",
+    "winShort: declared (bytes, i32, i32) -> u32, but nish/fixtures/sig_module has (u8[], i32): u32",
+    "winUndeclared: declared (bytes) -> u32, but nish/fixtures/sig_module has (u8[], i32, i32): u32",
   ])
   t.eqLines("under a nish root", gateSignatures(signaturesTestCtx(null, "tests/spec/gates/..")), [
     "signatures: cannot read tests/spec/gates/../std/fixtures/sig_module.ts, the source of nish/fixtures/sig_module",

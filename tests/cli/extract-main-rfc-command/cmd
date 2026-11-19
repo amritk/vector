@@ -1,0 +1,1 @@
+vector spec extract tests/fixtures/rfc4648-command/specs/rfc4648-command.xml -o tests/fixtures/rfc4648-command/contracts/rfc4648-command.json --check

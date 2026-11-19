@@ -1,0 +1,1 @@
+vector: tests/fixtures/rfc4648-command/specs/rfc4648.xml:10: contract "rfc4648" is the source id of RFC4648, which the spec cites; give the spec another docName

@@ -18,6 +18,7 @@ import {
   runIsStdPath,
   runJudge,
   runMakeScratch,
+  runMakeScratchIn,
   runNishArgv,
   runNonce,
   runOutcomeName,
@@ -169,7 +170,31 @@ export const main = (): i32 => {
     t.ok("the json report has the status", runFormatJson(r).indexOf(`"status": "SATISFIED"`) > 0)
   }
   t.ok("the scratch install is removed", runDisposeScratch(s).isOk() && !isDirectorySync(s.dir))
+  runTestScratchIn(t, hexText)
   return t.done()
+}
+
+/** runMakeScratchIn fills the directory it is given, and refuses as runMakeScratch does. */
+const runTestScratchIn = (t: Suite, hexText: string): void => {
+  const dir = makeTempDir("vector-run-scratch-in-")
+  if (dir.isErr()) {
+    t.fail("a directory for runMakeScratchIn", dir.error)
+    return
+  }
+  const d = dir.value
+  t.ok(
+    "an override outside std/ is refused in a given directory",
+    runMakeScratchIn(".nish", d, ["bin/nish"], ["x"]).isErr(),
+  )
+  t.ok("a directory with no compiler is no seed in a given directory", runMakeScratchIn("tests", d, [], []).isErr())
+  const made = runMakeScratchIn(".nish", d, ["std/hex.ts"], [hexText])
+  t.ok("a scratch install is made in the given directory", made.isOk() && made.value.dir === d)
+  t.eqStr("its override is in that directory's std", readFileSyncOrNull(`${d}/std/hex.ts`) ?? "", hexText)
+  t.ok(
+    "its compiler is that directory's",
+    made.isOk() && made.value.nish === `${d}/libexec/nish` && isExecutableSync(made.value.nish),
+  )
+  t.ok("the given directory is removed", runRemove(d).isOk() && !isDirectorySync(d))
 }
 
 /** Runs a shell line, failing loudly: test setup only. */

@@ -1,0 +1,1 @@
+vector: tests/fixtures/rfc4648-command/specs/rfc4648-command-unprinted.md:75 (tests/fixtures/rfc4648-command/specs/rfc4648-command-unprinted.xml:95): fidelity: the 3-byte args[0] is not printed in rfc4648-command-unprinted §5 ("Test Vectors")

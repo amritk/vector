@@ -232,7 +232,8 @@ export const gateFunction = (c: Contract, name: string): FnSig | null => {
 
 /**
  * Where a vector's args are printed: its cited section, or its `section`
- * of the main source when a command or the spec vouches for its result.
+ * when a command or the spec vouches for its result, in the source
+ * `sectionSource` names (the main one when it names none).
  *
  * @param k the vector
  * @returns the citation
@@ -244,6 +245,7 @@ export const gateArgsAt = (k: Clause): Citation => {
     return cite
   }
   const at = new Citation()
+  at.source = k.sectionSource
   const sec = k.section
   at.section = sec !== null ? sec : ""
   return at

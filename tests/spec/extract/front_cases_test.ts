@@ -65,6 +65,78 @@ const frontCasesTestModules = (t: Suite): void => {
   }
 }
 
+/** What parsing `text` as an interface gives: its refusal, or each parameter as `name:type[:form]`. */
+const frontCasesTestForms = (text: string): string => {
+  const r = frontParseInterface(text)
+  if (r.isErr()) {
+    return frontCasesTestRefusal(r.error)
+  }
+  const out: string[] = []
+  for (const f of r.value.functions) {
+    for (const p of f.params) {
+      const form = p.form
+      out.push(form === null ? `${p.name}:${p.type}` : `${p.name}:${p.type}:${form}`)
+    }
+  }
+  return out.join(" ")
+}
+
+/** The `/* window *\/` comment after a parameter's type: only after u8[], only that text. */
+const frontCasesTestWindow = (t: Suite): void => {
+  const m = "// module: nish/m\n"
+  const only = "an interface parameter takes only /* window */, not"
+  const after = "/* window */ goes only after u8[], which the real function takes as (buf, off, len)"
+  const cases: string[][] = [
+    ["on u8[]", `${m}export const f = (d: u8[] /* window */): u32`, "d:bytes:window"],
+    ["spaced", `${m}export const f = (d: u8[] /*   window  */): u32`, "d:bytes:window"],
+    ["unspaced", `${m}export const f = (d: u8[] /*window*/): u32`, "d:bytes:window"],
+    ["absent", `${m}export const f = (d: u8[]): u32`, "d:bytes"],
+    [
+      "two windows and a plain parameter",
+      `${m}export const f = (a: u8[] /* window */, n: i32, b: u8[] /* window */): u32`,
+      "a:bytes:window n:i32 b:bytes:window",
+    ],
+    [
+      "on Secret<u8[]>",
+      `${m}export const f = (d: Secret<u8[]> /* window */): u32`,
+      `\`f(d)\` is Secret<u8[]>: ${after} @2:35`,
+    ],
+    [
+      "on u8[] | null",
+      `${m}export const f = (d: u8[] | null /* window */): u32`,
+      `\`f(d)\` is u8[] | null: ${after} @2:34`,
+    ],
+    ["on u32[]", `${m}export const f = (d: u32[] /* window */): u32`, `\`f(d)\` is u32[]: ${after} @2:28`],
+    ["on a scalar", `${m}export const f = (d: i32 /* window */): u32`, `\`f(d)\` is i32: ${after} @2:26`],
+    ["on a string", `${m}export const f = (d: string /* window */): u32`, `\`f(d)\` is string: ${after} @2:29`],
+    [
+      "twice",
+      `${m}export const f = (d: u8[] /* window */ /* window */): u32`,
+      "`f(d)` is already a window; write /* window */ once @2:40",
+    ],
+    ["other text", `${m}export const f = (d: u8[] /* the data */): u32`, `\`f(d)\`: ${only} \`/* the data */\` @2:27`],
+    [
+      "a capitalised window",
+      `${m}export const f = (d: u8[] /* Window */): u32`,
+      `\`f(d)\`: ${only} \`/* Window */\` @2:27`,
+    ],
+    [
+      "more than window",
+      `${m}export const f = (d: u8[] /* window 4 */): u32`,
+      `\`f(d)\`: ${only} \`/* window 4 */\` @2:27`,
+    ],
+    ["a line comment", `${m}export const f = (d: u8[] // window\n): u32`, `\`f(d)\`: ${only} \`// window\` @2:27`],
+    [
+      "a module line there",
+      `${m}export const f = (d: u8[] // module: nish/r\n): u32`,
+      "a module line goes between signatures, on its own line; move it out of this one @2:27",
+    ],
+  ]
+  for (const k of cases) {
+    t.eqStr(`window: ${k[0]}`, frontCasesTestForms(k[1]), k[2])
+  }
+}
+
 /** Columns count UTF-16 units, and string literals are JSON strings. */
 const frontCasesTestLiterals = (t: Suite): void => {
   const fns: FnSig[] = []
@@ -143,6 +215,7 @@ const frontCasesTestSamples = (t: Suite): void => {
 export const main = (): i32 => {
   const t = new Suite("front cases")
   frontCasesTestModules(t)
+  frontCasesTestWindow(t)
   frontCasesTestLiterals(t)
   frontCasesTestSamples(t)
   return t.done()

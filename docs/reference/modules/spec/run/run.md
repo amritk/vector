@@ -26,6 +26,7 @@ Generated from [src/spec/run/run.ts](https://github.com/amritk/vector/blob/main/
 - [`runRemove`](#runremove)
 - [`runDisposeScratch`](#rundisposescratch)
 - [`runMakeScratch`](#runmakescratch)
+- [`runMakeScratchIn`](#runmakescratchin)
 - [`runTest`](#runtest)
 - [`runNishArgv`](#runnishargv)
 - [`runTestFile`](#runtestfile)
@@ -602,6 +603,51 @@ each override's contents, matching `paths`
 <scalar-field name="returns" type="Result&lt;RunScratch, string&gt;">
 
 the install, or `Err` when it could not be made (nothing is left behind)
+
+</scalar-field>
+
+### runMakeScratchIn
+
+Makes a scratch nish install as runMakeScratch does, but in `dir`, which
+the caller made empty and removes: `spec mutate` keeps one per slot under
+a scratch directory of its own.
+
+```ts
+function runMakeScratchIn(
+  nishRoot: string,
+  dir: string,
+  paths: string[],
+  texts: string[],
+): Result<RunScratch, string>
+```
+
+<scalar-field name="nishRoot" type="string" required>
+
+a nish install or checkout
+
+</scalar-field>
+
+<scalar-field name="dir" type="string" required>
+
+the empty directory to fill
+
+</scalar-field>
+
+<scalar-field name="paths" type="string[]" required>
+
+where each override goes, relative and under `std/`
+
+</scalar-field>
+
+<scalar-field name="texts" type="string[]" required>
+
+each override's contents, matching `paths`
+
+</scalar-field>
+
+<scalar-field name="returns" type="Result&lt;RunScratch, string&gt;">
+
+the install, or `Err` when it could not be made (what was written stays in `dir`)
 
 </scalar-field>
 

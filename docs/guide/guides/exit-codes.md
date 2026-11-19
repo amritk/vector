@@ -26,7 +26,7 @@ output: `vector spec check … | tail` exits with `tail`'s status, 0.
 | `spec frozen` | OK | both sides touched, or a source changed | bad usage, a git failure |
 | `spec stale` | OK | stale, or no marker line | bad usage, an unreadable file |
 | `spec exports` | OK | an export the contract does not cover | bad usage (`--nish-root` is required), a git failure |
-| `spec mutate` | OK | a survivor, no mutants, none built, too many timeouts | bad usage, a git failure, a compiler failure the mutant did not cause, a z3 failure |
+| `spec mutate` | OK | a survivor, no mutants (none in the tested code), none built, too many timeouts | bad usage, no seed and no `--nish`, a git failure, a compiler failure the mutant did not cause, a z3 failure |
 
 [Proving a function](proving.md), [From a spec to a
 contract](spec-to-contract.md), [Testing an implementation](testing.md) and
@@ -96,7 +96,8 @@ Solver error: z3 (/bin/false) exited 1 before query 8
   it cannot resolve, or a directory that is not a repository, exits 2 with
   git's own message.
 - **nish**: `run` and `mutate` build the generated test with nish. No nish to
-  build with exits 2; a test that does not build is the `ERROR` verdict
+  build with exits 2, as does a `mutate` root with no seed (`libexec/nish` or
+  `build/seed`) and no `--nish`; a test that does not build is the `ERROR` verdict
   (exit 1) for `run`. `mutate` refuses an unmutated module that does not
   build because of an error in the module (exit 1), and exits 2 when the
   build fails for any other reason.

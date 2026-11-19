@@ -1,0 +1,12 @@
+spec frozen against main: FAILED
+
+  ✓ contract contracts/c.json
+  spec contracts/c.json
+  spec specs/s.md
+  spec specs/s.xml
+  implementation src/x.ts
+  generated test/spec/c_test.ts
+
+problems:
+  ✗ the change touches the spec side (contracts/c.json, specs/s.md, specs/s.xml, test/spec/c_test.ts) and the implementation (src/x.ts): change them in separate PRs
+  ✗ not a rename alone: src/x.ts: line 3 is not the rename alone

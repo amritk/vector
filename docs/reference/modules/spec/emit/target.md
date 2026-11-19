@@ -22,6 +22,7 @@ Generated from [src/spec/emit/target.ts](https://github.com/amritk/vector/blob/m
 - [`emitTargetFlags`](#emittargetflags)
 - [`emitTargetExt`](#emittargetext)
 - [`emitTargetWordsRefusal`](#emittargetwordsrefusal)
+- [`emitTargetWindowRefusal`](#emittargetwindowrefusal)
 
 ## Declarations
 
@@ -207,5 +208,33 @@ the language's name, as a message spells it (`Rust`)
 <scalar-field name="returns" type="string | null">
 
 the refusal, or null when no parameter or result is a word array
+
+</scalar-field>
+
+### emitTargetWindowRefusal
+
+Why a function cannot be tested in a language whose emitter has no windows
+yet: a parameter is a window, which the real function takes as
+`(buf, off, len)`. Only the Nish emitter expands one.
+
+```ts
+function emitTargetWindowRefusal(f: FnSig, language: string): string | null
+```
+
+<scalar-field name="f" type="FnSig" required>
+
+the function
+
+</scalar-field>
+
+<scalar-field name="language" type="string" required>
+
+the language's name, as a message spells it (`Rust`)
+
+</scalar-field>
+
+<scalar-field name="returns" type="string | null">
+
+the refusal, naming every window, or null when no parameter is one
 
 </scalar-field>

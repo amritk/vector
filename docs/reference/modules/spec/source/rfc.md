@@ -15,7 +15,8 @@ extractor proposes, the RFC text disposes.
 A heading starts in column 0 ("2.3.  Step 2", "A.1.  Test Case 1",
 "Appendix A.  Test Vectors"); the table of contents is indented, so it never
 reads as one. Page furniture (the "[Page N]" footer, the running "RFC NNNN"
-header, form feeds) is dropped before anything is read.
+header, form feeds) is dropped before anything is read; xml2rfc v3's
+unpaginated text has none.
 
 Generated from [src/spec/source/rfc.ts](https://github.com/amritk/vector/blob/main/src/spec/source/rfc.ts).
 
@@ -268,9 +269,14 @@ its number and its sections; a section runs to the next heading
 
 ### rfcRead
 
-Reads an RFC's plain text, refusing a text that is not one (no "Request for
-Comments: N" header, or no form feed) and a text hiding what it says from
-the gates (hiddenText).
+Reads an RFC's plain text, refusing a text that is not one and a text
+hiding what it says from the gates (hiddenText). An RFC's plain text is
+paginated, as xml2rfc v2 wrote it (form feeds, "[Page N]" footers and
+running headers, and a "Request for Comments: N" header), or unpaginated,
+as xml2rfc v3 writes it (no form feed, no line of page furniture, and a
+line beginning "Request for Comments: N" before the first section heading).
+Page furniture without form feeds is neither: its page breaks could not be
+placed.
 
 ```ts
 function rfcRead(text: string, file: string): Result<RfcDocument, string>

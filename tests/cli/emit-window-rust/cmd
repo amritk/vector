@@ -1,0 +1,1 @@
+vector spec emit tests/fixtures/checksum-window/contracts/checksum-window.json --lang rust -o dist/emit-window-rust-golden
