@@ -260,7 +260,9 @@ const COMPLETENESS_TEST_PAD: string =
 /**
  * Anchored quotes of another RFC in a spec's own sections: each counts in
  * the one section holding the blockquote anchored with its id, and nowhere
- * else, and the spec's own unquoted sentences are still reported.
+ * else, and the spec's own unquoted sentences are still reported. As for a
+ * main source's quote, a verbatim copy in the same section is covered too:
+ * it adds no words the quote does not hold.
  */
 const completenessTestAqRows = (): CompletenessTestAqRow[] => {
   const lf = `MUST NOT sentence is neither a requirement nor an exclusion: "${COMPLETENESS_TEST_NO_LF}"`
@@ -272,6 +274,7 @@ const completenessTestAqRows = (): CompletenessTestAqRow[] => {
       `§3: MUST NOT sentence is neither a requirement nor an exclusion: "aqEncode MUST NOT add a line feed."`,
     ]),
     new CompletenessTestAqRow("a quote repeated as prose", "aq-prose", "aq-prose", "", "", [`§5: ${lf}`]),
+    new CompletenessTestAqRow("a verbatim copy beside its quote", "aq-copy", "aq-copy", "", "", []),
     new CompletenessTestAqRow("an id no blockquote holds", "aq-two", "aq-two", `"id": "R-PAD"`, `"id": "R-PADS"`, [
       `§4: ${pad}`,
     ]),
@@ -288,6 +291,43 @@ const completenessTestAqRows = (): CompletenessTestAqRow[] => {
       `§4: ${pad}`,
     ]),
   ]
+}
+
+/** Where the main-RFC anchored-quote fixture lives: an RFC 9998 in XML, whose §2 and §3 hold anchored blockquotes. */
+const COMPLETENESS_TEST_MAIN_XML: string = "tests/fixtures/anchored-quote/rfcs/rfc9998.xml"
+
+/**
+ * A main-RFC contract on RFC 9998: R-PAD cites the main RFC's §1, whose
+ * sentence §2 repeats in a blockquote anchored R-PAD, and R-B64 quotes RFC
+ * 4648 §3.2 from `b64` (a source, or "" to cite the main RFC's §3).
+ */
+const completenessTestMain = (b64: string): string => {
+  const cite = b64 === "" ? `"section": "3"` : `"source": "${b64}", "section": "3.2"`
+  return `{
+  "contract": "c6",
+  "source": {"title": "T", "rfc": 9998},
+  "target": {"module": "nish/x"},
+  "requirements": [
+    {"id": "R-PAD", "section": "1", "level": "MUST", "quote": "A sender MUST pad the block."},
+    {"id": "R-B64", ${cite}, "level": "MUST", "quote": "${COMPLETENESS_TEST_PAD}"}
+  ],
+  "exclusions": [],
+  "functions": [{"name": "f", "params": [{"name": "a", "type": "bytes"}], "returns": "bytes"}],
+  "clauses": []
+}`
+}
+
+/** The completeness gate on a main-RFC contract over RFC 9998, read from its fixture file. */
+const completenessTestMainRun = (b64: string): string[] => {
+  const xml = readFileSyncOrNull(COMPLETENESS_TEST_MAIN_XML) ?? ""
+  const doc = xmlRead(xml, COMPLETENESS_TEST_MAIN_XML).expect("xml")
+  const ctx = new CheckContext("contracts/c6.json", ".")
+  ctx.contract = contractParse(completenessTestMain(b64), "c6").expect("parse")
+  const set = new SourceSet()
+  set.main = "rfc9998"
+  set.sources.push(new LoadedSource("rfc9998", COMPLETENESS_TEST_MAIN_XML, COMPLETENESS_TEST_MAIN_XML, doc))
+  ctx.sources = set
+  return gateCompleteness(ctx)
 }
 
 /** A context with a contract and a hand-built source set holding one read RFC. */
@@ -448,6 +488,17 @@ export const main = (): i32 => {
   t.ok("copies findings", copies.length === 2)
   if (copies.length !== 2) {
     console.log(copies.join("\n"))
+  }
+  const again = `§2: MUST sentence is neither a requirement nor an exclusion: "A sender MUST pad the block."`
+  const mainOnly = completenessTestMainRun("")
+  t.ok("a main requirement covers only the section it cites", mainOnly.length === 1 && mainOnly[0] === again)
+  if (!(mainOnly.length === 1 && mainOnly[0] === again)) {
+    console.log(mainOnly.join("\n"))
+  }
+  const mainOther = completenessTestMainRun("rfc4648")
+  t.ok("another RFC's quote counts in a main RFC's section", mainOther.length === 1 && mainOther[0] === again)
+  if (!(mainOther.length === 1 && mainOther[0] === again)) {
+    console.log(mainOther.join("\n"))
   }
   for (const row of completenessTestAqRows()) {
     const got = gateCompleteness(completenessTestAq(row.read, row.file, row.from, row.to))

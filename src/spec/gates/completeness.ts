@@ -7,11 +7,13 @@
  * it would fail. An exclusion's quote must be in its section, and each one is
  * shown as a warning, so a reader sees what was left out.
  *
- * When the main source is a spec's own XML, a requirement anchored on a
- * blockquote that quotes another source (`> … {{Section 3.1 of RFC4648}}`
- * `{: #R-X gi="blockquote"}`) cites that source's section, not the spec's.
- * Its quote still accounts for its words in the one spec section that holds
- * the blockquote anchored with its id, and nowhere else.
+ * When the main source is XML (a spec's own, or an RFC's), a requirement
+ * anchored on a blockquote that quotes another source
+ * (`> … {{Section 3.1 of RFC4648}}` `{: #R-X gi="blockquote"}`) cites that
+ * source's section, not the main one's. Its quote still accounts for its
+ * words in the one main section that holds the blockquote anchored with its
+ * id, and nowhere else. A requirement that cites the main source counts only
+ * in the section it cites, wherever a blockquote with its id stands.
  */
 
 import { jsonStringifyString } from "nish/json"
@@ -111,16 +113,6 @@ const gateQuoteSections = (main: LoadedSource): Map<string, string> => {
   }
   gateQuoteWalk(parsed.value, parsed.value.root, out)
   return out
-}
-
-/** Whether some requirement quotes a source other than the main one. */
-const gateQuotesOthers = (ctx: CheckContext, set: SourceSet): boolean => {
-  for (const r of ctx.contract.requirements) {
-    if (!gateInMain(set, r.source)) {
-      return true
-    }
-  }
-  return false
 }
 
 /** Whether one of the spans, two numbers a span, holds all of [start, end). */
@@ -225,7 +217,7 @@ export const gateCompleteness = (ctx: CheckContext): string[] => {
   if (main === null) {
     return out
   }
-  const placed = gateQuotesOthers(ctx, set) ? gateQuoteSections(main) : new Map<string, string>()
+  const placed = gateQuoteSections(main)
   for (const sec of main.doc.sections) {
     gateSectionComplete(ctx, out, set, placed, sec)
   }

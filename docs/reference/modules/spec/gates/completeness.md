@@ -10,6 +10,14 @@ it is not tested). So a contract cannot pass by leaving out the requirement
 it would fail. An exclusion's quote must be in its section, and each one is
 shown as a warning, so a reader sees what was left out.
 
+When the main source is XML (a spec's own, or an RFC's), a requirement
+anchored on a blockquote that quotes another source
+(`> … {{Section 3.1 of RFC4648}}` `{: #R-X gi="blockquote"}`) cites that
+source's section, not the main one's. Its quote still accounts for its
+words in the one main section that holds the blockquote anchored with its
+id, and nowhere else. A requirement that cites the main source counts only
+in the section it cites, wherever a blockquote with its id stands.
+
 Generated from [src/spec/gates/completeness.ts](https://github.com/amritk/vector/blob/main/src/spec/gates/completeness.ts).
 
 ## Exports
@@ -21,7 +29,8 @@ Generated from [src/spec/gates/completeness.ts](https://github.com/amritk/vector
 ### gateCompleteness
 
 The completeness gate (see the module comment). It reads only the main
-source: a contract quotes other sources for what it needs, not whole.
+source: a contract quotes other sources for what it needs, not whole, and
+a quote of one counts in the main source only where its blockquote stands.
 
 ```ts
 function gateCompleteness(ctx: CheckContext): string[]
