@@ -275,10 +275,18 @@ const completenessTestAqRows = (): CompletenessTestAqRow[] => {
     new CompletenessTestAqRow("an id no blockquote holds", "aq-two", "aq-two", `"id": "R-PAD"`, `"id": "R-PADS"`, [
       `§4: ${pad}`,
     ]),
-    new CompletenessTestAqRow("a quote in another quote's section", "aq-two", "aq-two", COMPLETENESS_TEST_NO_LF, COMPLETENESS_TEST_PAD, [
+    new CompletenessTestAqRow(
+      "a quote in another quote's section",
+      "aq-two",
+      "aq-two",
+      COMPLETENESS_TEST_NO_LF,
+      COMPLETENESS_TEST_PAD,
+      [`§3: ${lf}`],
+    ),
+    new CompletenessTestAqRow("a reread that is not the spec read", "aq-two", "aq-own", "", "", [
       `§3: ${lf}`,
+      `§4: ${pad}`,
     ]),
-    new CompletenessTestAqRow("a reread that is not the spec read", "aq-two", "aq-own", "", "", [`§3: ${lf}`, `§4: ${pad}`]),
   ]
 }
 
