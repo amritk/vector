@@ -1,5 +1,6 @@
 /**
- * `spec/pr/frozen` — a PR changes the spec side (specs/, contracts/, rfcs/)
+ * `spec/pr/frozen` — a PR changes the spec side (specs/, contracts/, rfcs/,
+ * and .refcache/, the kramdown-rfc reference cache a spec's build reads)
  * or the implementation, never both, so a test cannot be loosened to match
  * the code it tests. A path's side is decided by the path, with one
  * exception: a generated test under `test/spec/` is spec side while its one
@@ -20,7 +21,7 @@ import { gitdiffChangedPaths, gitdiffCompare, gitdiffTop } from "./gitdiff"
 import { PrReport } from "./report"
 import { staleShaLines } from "./stale"
 
-/** A path on the spec side: a spec, a contract, or a document a contract quotes. */
+/** A path on the spec side: a spec, a contract, a document a contract quotes, or a reference-cache entry. */
 export const FROZEN_SPEC: i32 = 0
 /** A generated test whose one sha line names a contract in contracts/ or a given one: spec side. */
 export const FROZEN_GENERATED: i32 = 1
@@ -42,7 +43,12 @@ export const FROZEN_SIDECAR_SUFFIX: string = ".survivors.json"
  * @returns FROZEN_SPEC, FROZEN_NEUTRAL or FROZEN_IMPLEMENTATION
  */
 export const frozenPathKind = (path: string): i32 => {
-  if (path.startsWith("specs/") || path.startsWith("contracts/") || path.startsWith("rfcs/")) {
+  if (
+    path.startsWith("specs/") ||
+    path.startsWith("contracts/") ||
+    path.startsWith("rfcs/") ||
+    path.startsWith(".refcache/")
+  ) {
     return FROZEN_SPEC
   }
   if (path.startsWith("docs/") || (path.indexOf("/") < 0 && path.endsWith(".md"))) {
