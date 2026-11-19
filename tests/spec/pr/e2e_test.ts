@@ -185,7 +185,11 @@ const e2eTestHyphenModule = (t: Suite, dir: string): Result<boolean, string> => 
     e2eTestRun(dir, ["spec", "mutate", "--base", "main", "--nish-root", root, "--test", `${dir}/t.ts`, c]),
     "exit 1\nspec mutate std/net/quic-packet.ts against main: FAILED\n\nproblems:\n  ✗ no mutants: the change adds no line of std/net/quic-packet.ts that can be mutated\n",
   )
-  prTestWrite(dir, "nish/std/net/quic-packet.ts", `${E2E_TEST_HEX}\n/** New. */\nexport const fresh = (): i32 => 1\n`).orReturn()
+  prTestWrite(
+    dir,
+    "nish/std/net/quic-packet.ts",
+    `${E2E_TEST_HEX}\n/** New. */\nexport const fresh = (): i32 => 1\n`,
+  ).orReturn()
   t.eqStr(
     "exports reads the hyphenated file's change",
     e2eTestRun(dir, ["spec", "exports", "--base", "main", "--nish-root", root, c]),

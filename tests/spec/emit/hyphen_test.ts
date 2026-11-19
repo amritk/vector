@@ -38,8 +38,16 @@ const hyphenLayout = (): Result<string, string> => {
   if (contract === null || spec === null || rfc === null) {
     return Err("cannot read contracts/example-hex.json or its sources")
   }
-  const nish = replaceAll(replaceAll(contract, '"nish/hex"', `"${HYPHEN_MODULE}"`), "std/hex.ts", "std/net/quic-packet.ts")
-  const app = replaceAll(replaceAll(contract, '"nish/hex"', '"app/net/quic-packet"'), "std/hex.ts", "src/net/quic-packet.ts")
+  const nish = replaceAll(
+    replaceAll(contract, '"nish/hex"', `"${HYPHEN_MODULE}"`),
+    "std/hex.ts",
+    "std/net/quic-packet.ts",
+  )
+  const app = replaceAll(
+    replaceAll(contract, '"nish/hex"', '"app/net/quic-packet"'),
+    "std/hex.ts",
+    "src/net/quic-packet.ts",
+  )
   const files: string[][] = [
     ["contracts/c.json", nish],
     ["contracts/a.json", app],

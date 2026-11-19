@@ -261,7 +261,11 @@ const shapeSection = (s: ShapeContext, v: string, at: string): void => {
 
 const shapeModule = (s: ShapeContext, v: string, at: string): void => {
   if (!charsIsModule(v)) {
-    shapeFail(s, at, "a module path <root>/<segment>/…, each segment [a-z][a-z0-9_]*(-[a-z0-9][a-z0-9_]*)*, words joined by single - (RFC 3986 §3.3)")
+    shapeFail(
+      s,
+      at,
+      "a module path <root>/<segment>/…, each segment [a-z][a-z0-9_]*(-[a-z0-9][a-z0-9_]*)*, words joined by single - (RFC 3986 §3.3)",
+    )
   }
 }
 
