@@ -30,6 +30,7 @@ import {
 } from "../contract/types"
 import { TypeEnv, typeAssignable, typeEnvBind, typeOf, typeOfLiteral } from "../contract/typing"
 import {
+  VOCAB_SECRET_FORM,
   vocabCompareDecimal,
   vocabHas,
   vocabIntMax,
@@ -37,6 +38,7 @@ import {
   vocabIntTypes,
   vocabIsIntType,
   vocabIsJsonSafe,
+  vocabIsSecretOp,
   vocabReadOps,
   vocabValueType,
   vocabWordTypes,
@@ -1553,6 +1555,8 @@ const frontForallVar = (p: FrontProp): Result<ForallVar, FrontRefusal> => {
     type = "bytes"
   } else if (ty.name === "string" || vocabIsIntType(ty.name)) {
     type = ty.name
+  } else if (ty.name.startsWith("Secret<")) {
+    return Err(frontRefuse(`\`${ty.name}\` is not a forall type: ${VOCAB_SECRET_FORM}`, ty.pos))
   } else {
     return Err(
       frontRefuse(
@@ -1904,7 +1908,8 @@ function frontName(p: FrontProp, t: FrontTok): Result<FrontV, FrontRefusal> {
     return frontCall(p, sig, pos)
   }
   if (!vocabHas(frontCallOps(), t.text)) {
-    return Err(frontRefuse(`unknown function \`${t.text}\``, pos))
+    const form = vocabIsSecretOp(t.text) ? `: ${VOCAB_SECRET_FORM}` : ""
+    return Err(frontRefuse(`unknown function \`${t.text}\`${form}`, pos))
   }
   const op = t.text
   const raw = frontArgs(p).orReturn()

@@ -36,6 +36,8 @@ Generated from [src/spec/contract/vocab.ts](https://github.com/amritk/vector/blo
 - [`vocabIsOptional`](#vocabisoptional)
 - [`vocabBaseOf`](#vocabbaseof)
 - [`vocabOutcomeOf`](#vocaboutcomeof)
+- [`VOCAB_SECRET_FORM`](#vocab_secret_form)
+- [`vocabIsSecretOp`](#vocabissecretop)
 - [`vocabValueType`](#vocabvaluetype)
 - [`vocabIsIntType`](#vocabisinttype)
 - [`vocabIsDecimal`](#vocabisdecimal)
@@ -427,6 +429,37 @@ the signature type
 <scalar-field name="returns" type="Outcome">
 
 RefusingReturn or OptionalInput for an optional type, None otherwise
+
+</scalar-field>
+
+<a id="vocab_secret_form"></a>
+
+### VOCAB_SECRET_FORM
+
+How a property reaches a Secret&lt;u8[]&gt; parameter, which every refusal of a Secret form names.
+
+```ts
+const VOCAB_SECRET_FORM: string
+```
+
+### vocabIsSecretOp
+
+Whether a name is one of the Secret ops a test calls for a property, which
+a property itself never writes.
+
+```ts
+function vocabIsSecretOp(name: string): boolean
+```
+
+<scalar-field name="name" type="string" required>
+
+a function name
+
+</scalar-field>
+
+<scalar-field name="returns" type="boolean">
+
+true for secret, expose and wipe
 
 </scalar-field>
 

@@ -18,6 +18,10 @@ const FRONT_TEST_TYPES: string =
   "u8[], string, boolean, i8, i16, i32, i64, u8, u16, u32, u64, f64, Secret<u8[]>, u16[], u32[], u64[], each optionally `| null`"
 const FRONT_TEST_FORALL: string =
   "is not a forall type; use u8[], string or an integer type (i8, i16, i32, i64, u8, u16, u32, u64)"
+const FRONT_TEST_SECRET: string =
+  "a property passes u8[] to a Secret<u8[]> parameter; the test wraps it in secret() and exposes a Secret result"
+const FRONT_TEST_SECRET_TYPE: string =
+  "is not a forall type: a property passes u8[] to a Secret<u8[]> parameter; the test wraps it in secret() and exposes a Secret result"
 const FRONT_TEST_BYTES: string = "a bytes literal is lowercase hex pairs separated by single spaces, like [00 0f]"
 const FRONT_TEST_SLICE: string =
   "a negative `.slice` index counts from the end in TypeScript and clamps to 0 in the contract"
@@ -529,6 +533,12 @@ const frontTestRefusals = (t: Suite, fns: FnSig[]): void => {
     [`${h}forall (n: u32 /* 0..1 */) => beU32(n) === n`, "`beU32` wants u8[], got u32", "n) === n"],
     [`${h}forall (b: number /* 0..1 */) => true`, `\`number\` ${FRONT_TEST_FORALL}`, "number"],
     [`${h}forall (n: boolean /* 0..1 */) => true`, `\`boolean\` ${FRONT_TEST_FORALL}`, "boolean"],
+    [`${h}forall (k: Secret<u8[]> /* 32..32 */) => true`, `\`Secret<u8[]>\` ${FRONT_TEST_SECRET_TYPE}`, "Secret"],
+    [
+      `${h}forall (k: Secret<u8[]> | null /* 0..1 */) => true`,
+      `\`Secret<u8[]> | null\` ${FRONT_TEST_SECRET_TYPE}`,
+      "Secret",
+    ],
     [
       `${h}forall (x: f64 /* 0..1 */) => true`,
       "properties over f64 are not sampled yet; give f64 cases as vectors",
@@ -638,6 +648,11 @@ const frontTestRefusals = (t: Suite, fns: FnSig[]): void => {
     [frontTestProp("b.1", ""), "expected a property name, got `1`", "1"],
     [frontTestProp("y === 0", ""), "unknown identifier `y`", "y"],
     [frontTestProp("foo(b)", ""), "unknown function `foo`", "foo"],
+    [frontTestProp("secret(b) === b", ""), `unknown function \`secret\`: ${FRONT_TEST_SECRET}`, "secret"],
+    [frontTestProp("expose(b) === b", ""), `unknown function \`expose\`: ${FRONT_TEST_SECRET}`, "expose"],
+    [frontTestProp("wipe(b) === b", ""), `unknown function \`wipe\`: ${FRONT_TEST_SECRET}`, "wipe"],
+    [frontTestProp("secrets(b) === b", ""), "unknown function `secrets`", "secrets"],
+    [frontTestProp("Secret(b) === b", ""), "unknown function `Secret`", "Secret"],
     [frontTestProp("b(1)", ""), "`b` is not a function", "b(1)"],
     [frontTestProp("hexEncode(b, b) === t", ""), "`hexEncode` takes 1 argument(s), got 2", "hexEncode"],
     [frontTestProp("hexEncode(t) === t", ""), "`hexEncode` expects u8[], got string", "t) ==="],

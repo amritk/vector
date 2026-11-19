@@ -1,0 +1,1 @@
+vector spec run tests/fixtures/x25519-property/contracts/x25519-property.json --lang python --package fixture=tests/fixtures/x25519/broken/python/fixture

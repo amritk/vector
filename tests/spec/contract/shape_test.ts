@@ -1,6 +1,7 @@
 import { Suite } from "nish/testing"
 import { replaceAll } from "nish/text"
 import { contractLoad, contractLoadFile } from "../../../src/spec/contract/contract"
+import { literalsPrintable } from "../../../src/spec/contract/literals"
 import { contractParse } from "../../../src/spec/contract/read"
 import {
   contractShapeErrors,
@@ -10,6 +11,7 @@ import {
   shapeTestNames,
   shapeTestPrefixes,
 } from "../../../src/spec/contract/shape"
+import { LitKind } from "../../../src/spec/contract/types"
 
 /** A small valid contract; each case below changes one part of it. */
 const BASE: string = `{
@@ -201,6 +203,34 @@ export const main = (): i32 => {
     shapeErrorsOf(`{"cite": {"section": "10"}}`, `{"command": "x"}, "section": "2"`).join("\n"),
     "",
   )
+  // A command's Expected is any literal it prints as one text (spec/gates/run).
+  const cmd = `{"command": "x"}, "section": "2", "call": "enc", "args": [{"hex": "00"}], "expect": `
+  const cmdFrom = `{"cite": {"section": "10"}}, "call": "enc", "args": [{"hex": "00"}], "expect": {"str": "00"}`
+  const printed: string[] = [
+    `{"str": "00"}`,
+    `{"hex": "00"}`,
+    `{"ascii": "a"}`,
+    `{"int": 0}`,
+    `{"int": -1}`,
+    `{"int": "151288809941952652"}`,
+    `{"bool": true}`,
+    `{"bool": false}`,
+    `{"null": true}`,
+  ]
+  for (const e of printed) {
+    t.eqStr(`a command source may expect ${e}`, shapeErrorsOf(cmdFrom, `${cmd}${e}`).join("\n"), "")
+  }
+  const unprinted: string[] = [`{"f64": "1.5"}`, `{"words32": ["00000001"]}`]
+  for (const e of unprinted) {
+    shapeExpect(
+      t,
+      cmdFrom,
+      `${cmd}${e}`,
+      "clauses[0].expect: a command prints bytes (as hex), a string, an integer, a bool or null; an f64 or words has no one printed form",
+    )
+  }
+  t.ok("an f64 is not printable", !literalsPrintable(LitKind.F64))
+  t.ok("an int is printable", literalsPrintable(LitKind.Int))
   shapeExpect(
     t,
     `{"cite": {"section": "10"}}`,

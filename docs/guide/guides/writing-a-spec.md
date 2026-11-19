@@ -140,7 +140,7 @@ where the expected value comes from:
 | `{{Section N of RFCx}}, Test Vector #K` | `cite`, section N of that RFC, `case` `Test Vector #K`: the values must all be printed in that one test case (K from 1, no leading zero; any other text after the section is refused) |
 | `{{Section N of RFCx}}; result {{Section M of RFCx}}` | `spec`, section M, with section N for the args: the inputs are printed in section N and the `null`, `true` or `false` expected value is supported by section M, as [stated](#when-a-section-states-null-true-or-false) or [derived](#when-a-property-derives-the-result). Both are sections of the main RFC, M is not N, both are written as section references (not anchors or code spans), and nothing may follow |
 | `{{anchor}}`, a numbered section of this spec | `spec` for a `null` or `bool` expected value; otherwise `cite`, that section, which must print the value |
-| a single code span, `` `python3 -c '…'` `` | `command`, with the table's section for the args (in a main-RFC spec, the spec's own section, through `sectionSource`); the expected value must be bytes or a string |
+| a single code span, `` `python3 -c '…'` `` | `command`, with the table's section for the args (in a main-RFC spec, the spec's own section, through `sectionSource`); the expected value is bytes (printed as hex), a string, an integer, a bool or `null`, which the command prints as `true`, `false` or `null`; an `f64` or word-array value is refused, as it has no one printed form |
 
 The Call cell is `f(arg, …)`: as many arguments as `f` has parameters, each
 of its parameter's type. The Expected cell must be of `f`'s return type.
@@ -443,6 +443,11 @@ forall (b: u8[] /* 0..64 */) => {
   - `n: i32 /* lo..hi */`: a value in the type's range, for any of `i8` …
     `u64` (`/* -9223372036854775808..9223372036854775807 */` for `i64`).
   - `f64` is not a forall type *yet*.
+  - `Secret<u8[]>` is not a forall type, and a property never calls
+    `secret`, `expose` or `wipe`: a property passes `u8[]` to a
+    `Secret<u8[]>` parameter, and the test wraps it in `secret()` and
+    exposes a `Secret` result, as in `forall (k: u8[] /* 32..32 */) =>
+    x25519(k, base) === x25519Base(k)`.
   - `t: string /* lo..hi CLASS… */`: a length and character classes, from
     `hexdigit`, `HEXDIGIT`, `digit`, `alpha`, `space` and `ascii-printable`.
     `/* lo..hi "chars" */` gives the characters as a JSON string instead.
@@ -688,7 +693,7 @@ Only a requirement the vector covers states a result, and only through its
 own quote. The rule is an allow list and fails closed: a false refusal costs
 a rewording of the requirement's quote, while a false pass would break the
 gate. There is no way around it: a `cite` source is held to the same rule,
-and a `command` source cannot expect `null` or a `bool`.
+while a `command` source that expects `null` or a `bool` is held to what it prints under `--run-sources`.
 
 A vector may cite its inputs and its result to two sections of the main RFC,
 `{{Section 7.1 of RFC8032}}; result {{Section 5.1.7 of RFC8032}}`. The steps
