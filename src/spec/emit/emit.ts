@@ -16,6 +16,7 @@
  */
 
 import { Sample, SampleTable, checkSamplesOf } from "../check"
+import { capacityNish, capacityParse } from "../contract/capacity"
 import { shapeNishModuleFile } from "../contract/shape"
 import { ClauseKind, ExprKind, LitKind, typesIsWindow, typesIsWords } from "../contract/types"
 import { Clause, Contract, Expr, FnSig, Literal } from "../contract/types"
@@ -188,8 +189,21 @@ const emitTakesSecret = (sig: FnSig): boolean => {
 /** Whether `sig` takes a window. */
 const emitTakesWindow = (sig: FnSig): boolean => sig.params.some((p): boolean => typesIsWindow(p))
 
-/** Whether a call of `sig` goes through its `plain_` wrapper: it takes or returns a Secret, or takes a window. */
-const emitWraps = (sig: FnSig): boolean => emitTakesSecret(sig) || emitTakesWindow(sig)
+/**
+ * Whether a call of `sig` goes through its `plain_` wrapper: it takes or
+ * returns a Secret, takes a window, or writes into an out buffer.
+ */
+const emitWraps = (sig: FnSig): boolean => emitTakesSecret(sig) || emitTakesWindow(sig) || sig.out !== null
+
+/** Whether `e` calls a function that writes into an out buffer, so its clause holds an `OutFault`. */
+const emitCallsOut = (ctx: EmitContext, e: Expr): boolean =>
+  typeCallsIn(e).some((n: string): boolean => {
+    const sig = emitFn(ctx, n)
+    return sig !== null && sig.out !== null
+  })
+
+/** Where in an out buffer the function under test is told to write: guard bytes before and after. */
+const EMIT_OUT_AT: i32 = 5
 
 /** How many guard bytes a window's bytes sit after, so its offset is never 0. */
 const EMIT_WINDOW_LEAD: i32 = 3
@@ -202,7 +216,9 @@ const EMIT_WINDOW_TAIL: i32 = 3
  * argument is a fresh copy wrapped with `secret` and wiped after the call,
  * and a secret result is copied out with `expose`, then wiped. A window's
  * bytes are passed as `(buf, off, len)`, between guard bytes (0xa5 before,
- * 0x5a after), so a function that reads from 0 or past `len` sees them.
+ * 0x5a after), so a function that reads from 0 or past `len` sees them. An
+ * out buffer is passed as `(out, at)`: `at` guard bytes, then its capacity,
+ * then as many again, and `OutFault` takes `[at, end)` out of it.
  */
 const emitPlainWrapper = (ctx: EmitContext, sig: FnSig, name: string): string => {
   const secret = emitTakesSecret(sig)
@@ -215,7 +231,14 @@ const emitPlainWrapper = (ctx: EmitContext, sig: FnSig, name: string): string =>
   const args: string[] = []
   const body: string[] = []
   const wipes: string[] = []
+  const o = sig.out
+  if (o !== null) {
+    params.push("of: OutFault")
+  }
   for (const p of sig.params) {
+    if (o !== null && args.length === o.at) {
+      args.push(`o_out, ${EMIT_OUT_AT}`)
+    }
     params.push(`a_${p.name}: ${emitNishType(vocabValueType(p.type))}`)
     if (typesIsWindow(p)) {
       const cat = emitUse(ctx, "concatBytes")
@@ -243,9 +266,14 @@ const emitPlainWrapper = (ctx: EmitContext, sig: FnSig, name: string): string =>
       args.push(`s_${p.name}`)
     }
   }
+  if (o !== null && args.length === o.at) {
+    args.push(`o_out, ${EMIT_OUT_AT}`)
+  }
   const call = `${sig.name}(${args.join(", ")})`
   const ret = vocabValueType(sig.returns)
-  if (emitIsSecret(sig.returns)) {
+  if (o !== null) {
+    emitOutBody(ctx, sig, o.capacity, call, wipes, body)
+  } else if (emitIsSecret(sig.returns)) {
     emitAddOnce(ctx.secretNames, "expose")
     body.push(`  const r: Secret<u8[]>${ret === "bytes?" ? " | null" : ""} = ${call};`)
     for (const w of wipes) {
@@ -273,12 +301,48 @@ const emitPlainWrapper = (ctx: EmitContext, sig: FnSig, name: string): string =>
   if (emitTakesWindow(sig)) {
     how.push("a window is passed as (buf, off, len) between guard bytes")
   }
+  if (o !== null) {
+    how.push("the out buffer is passed as (out, at) between guard bytes, and [at, end) is the result")
+  }
   return [
     `/** ${sig.name} on plain bytes: ${how.join("; ")}. */`,
     `const ${name} = (${params.join(", ")}): ${emitNishType(ret)} => {`,
     body.join("\n"),
     "};",
   ].join("\n")
+}
+
+/**
+ * The tail of an out buffer's wrapper: the buffer filled with guard bytes,
+ * the call, then the result, `null` for a negative end when it may be null,
+ * else what `OutFault` takes out of `[at, end)`.
+ */
+const emitOutBody = (
+  ctx: EmitContext,
+  sig: FnSig,
+  capacity: string,
+  call: string,
+  wipes: string[],
+  body: string[],
+): void => {
+  const fill = emitUse(ctx, "fillBytes")
+  const cap = capacityParse(capacity)
+  if (cap.isErr()) {
+    ctx.errors.push(`${sig.name}: its capacity \`${capacity}\` stops at ${cap.error}`)
+    return
+  }
+  body.push(`  const o_cap: i32 = ${capacityNish(cap.value, "a_")};`)
+  body.push(`  const o_out: u8[] = ${fill}(0xa5, o_cap + ${2 * EMIT_OUT_AT});`)
+  body.push(`  const o_end: i32 = ${call};`)
+  for (const w of wipes) {
+    body.push(w)
+  }
+  if (vocabValueType(sig.returns) === "bytes?") {
+    body.push("  if (o_end < 0) {")
+    body.push("    return null;")
+    body.push("  }")
+  }
+  body.push(`  return of.take("${sig.name}", o_out, ${EMIT_OUT_AT}, o_end, o_cap);`)
 }
 
 /**
@@ -294,6 +358,10 @@ const emitCall = (ctx: EmitContext, sig: FnSig, args: string[]): string => {
   if (ctx.wrapperNames.indexOf(name) < 0) {
     ctx.wrapperNames.push(name)
     ctx.wrapperTexts.push(emitPlainWrapper(ctx, sig, name))
+  }
+  if (sig.out !== null) {
+    emitUse(ctx, "OutFault")
+    return `${name}(of, ${args.join(", ")})`
   }
   return `${name}(${args.join(", ")})`
 }
@@ -732,8 +800,20 @@ const emitVector = (ctx: EmitContext, k: Clause): string => {
     if (it.slow && !ctx.opts.slow) {
       return `const ${emitClauseFn(k)} = (t: Suite): boolean => {\n  t.skip(${name}, "${EMIT_SLOW_SKIP}");\n  return true;\n};`
     }
-    const lines = emitIterateSteps(ctx, k, sig, args, name)
+    const lines: string[] = sig.out === null ? [] : ["  const of: OutFault = new OutFault();"]
+    for (const l of emitIterateSteps(ctx, k, sig, args, name)) {
+      lines.push(l)
+    }
+    if (sig.out !== null) {
+      emitOutFail(lines, "  ", name, "")
+    }
     lines.push(`  return ${emitVectorCheck(ctx, k, sig, expect, name, "it_r")};`)
+    return `const ${emitClauseFn(k)} = (t: Suite): boolean => {\n${lines.join("\n")}\n};`
+  }
+  if (sig.out !== null) {
+    const lines: string[] = ["  const of: OutFault = new OutFault();", `  const o_r = ${emitCall(ctx, sig, args)};`]
+    emitOutFail(lines, "  ", name, "")
+    lines.push(`  return ${emitVectorCheck(ctx, k, sig, expect, name, "o_r")};`)
     return `const ${emitClauseFn(k)} = (t: Suite): boolean => {\n${lines.join("\n")}\n};`
   }
   return `const ${emitClauseFn(k)} = (t: Suite): boolean => ${emitVectorCheck(ctx, k, sig, expect, name, emitCall(ctx, sig, args))};`
@@ -780,6 +860,13 @@ const emitIterateSteps = (ctx: EmitContext, k: Clause, sig: FnSig, args: string[
     emitIterateNull(lines, "  ", name, "it_r", `${it.count} of ${it.count}`, sig.name)
   }
   return lines
+}
+
+/** Fails the clause `name`, after `where`, when an out buffer's write was wrong. */
+const emitOutFail = (lines: string[], pad: string, name: string, where: string): void => {
+  lines.push(`${pad}if (of.why.length > 0) {`)
+  lines.push(`${pad}  return t.fail(${name}, \`${where}\${of.why}\`);`)
+  lines.push(`${pad}}`)
 }
 
 /** Fails the clause `name` when step `step`'s result `v` is null. */
@@ -913,9 +1000,16 @@ const emitProperty = (ctx: EmitContext, k: Clause, samples: Sample[]): string =>
   if (usesUnwrap) {
     out.push("    const u: Unwrap = new Unwrap();")
   }
+  const usesOut = emitCallsOut(ctx, assert)
+  if (usesOut) {
+    out.push("    const of: OutFault = new OutFault();")
+  }
   const body = emitBindings(ctx, assert, "    ", out)
   out.push(`    const holds: boolean = ${emitExpr(ctx, body, null)};`)
   const where = `sample \${i + 1} of ${count} (${shown.join(", ")})`
+  if (usesOut) {
+    emitOutFail(out, "    ", name, `${where}: `)
+  }
   if (usesUnwrap) {
     out.push("    if (u.sawNull || !holds) {")
     out.push(`      let why: string = "the assertion is false";`)
