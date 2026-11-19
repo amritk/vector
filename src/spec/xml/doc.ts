@@ -337,13 +337,19 @@ const xmlDocXrefs = (c: XmlDocContext, inputLength: i32): Result<boolean, XmlErr
   return Ok(true)
 }
 
-/** Appends a section's own lines and then its subsections', recording each one's run. */
+/**
+ * Appends a section's own lines and then its subsections', recording each
+ * one's run, with a blank line between two sections' runs as between blocks.
+ */
 const xmlDocLay = (
   s: XmlSectionInfo,
   all: string[],
   from: Map<XmlSectionInfo, i32>,
   to: Map<XmlSectionInfo, i32>,
 ): void => {
+  if (s.own.length > 0 && all.length > 0 && all[all.length - 1].length > 0) {
+    all.push("")
+  }
   from.set(s, all.length)
   for (const l of s.own) {
     all.push(l)

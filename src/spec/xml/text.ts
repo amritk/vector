@@ -11,7 +11,9 @@
  * and zero-width spaces and word joiners dropped (xmlClean).
  *
  * A section's lines are its blocks: each paragraph one line, each table cell
- * one line, each line of a code block one line. A sentence holding a
+ * one line, each line of a code block one line, and a blank line between two
+ * blocks, so a reader that ends a paragraph at a blank line (as RFC text is
+ * read) never runs one block's sentence into the next. A sentence holding a
  * `<bcp14>` is recorded as normative at the level its markup names.
  */
 
@@ -852,6 +854,13 @@ const xmlNormativeIn = (
   return Ok(true)
 }
 
+/** Starts a block on `out`: a blank line after the block before it, if any. */
+const xmlBlockBreak = (out: string[]): void => {
+  if (out.length > 0 && out[out.length - 1].length > 0) {
+    out.push("")
+  }
+}
+
 /** A paragraph made of a run of nodes: one line, if it holds any text. */
 const xmlParagraph = (
   b: XmlLines,
@@ -864,6 +873,7 @@ const xmlParagraph = (
   if (text.length === 0) {
     return Ok(true)
   }
+  xmlBlockBreak(out)
   xmlNormativeIn(b, nodes, section, anchor, out.length).orReturn()
   out.push(text)
   return Ok(true)
@@ -886,6 +896,7 @@ const xmlBlock = (
   }
   if (n.name === "sourcecode" || n.name === "artwork") {
     const code = xmlCodeOf(n)
+    xmlBlockBreak(out)
     let at = 0
     let nl = code.text.indexOf("\n")
     while (nl >= 0) {
@@ -904,6 +915,7 @@ const xmlBlock = (
     }
     for (const row of xmlTableRows(n)) {
       for (const cell of row) {
+        xmlBlockBreak(out)
         xmlNormativeIn(b, [cell.node], section, here, out.length).orReturn()
         out.push(xmlPlainText(b.t, cell.node))
       }
@@ -935,7 +947,7 @@ const xmlBlock = (
 
 /**
  * A section's own lines (its subsections left out): each paragraph, table
- * cell and line of code one line. The normative sentences in them are
+ * cell and line of code one line, with a blank line between two blocks. The normative sentences in them are
  * recorded on `b`.
  *
  * @param b the builder
