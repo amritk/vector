@@ -1036,7 +1036,7 @@ const fidelityTestWrapped = (t: Suite): void => {
       `{"hex": "${client}", "label": "client_initial_secret"}, {"str": "quic key"}`,
       `{"hex": "1f369613dd76d5467730efcbe3b1a22d", "label": "key"}`,
     ),
-    "nothing pairs a printed string with one of several labelled values",
+    `W1: args[1] "quic key" and expect (one of 2 "key") in RFC §A.1 ("Keys"): nothing pairs a printed string with one of several labelled values: cite the subsection that holds one test case`,
   )
   const scrypt = fidelityTestScryptRfc()
   const pbkdf2Fn = `{"name": "f", "params": [{"name": "p", "type": "string"}, {"name": "s", "type": "string"},
@@ -1129,6 +1129,115 @@ const fidelityTestWrapped = (t: Suite): void => {
       r[2],
     )
   }
+  // The variant is read from the whole label, inside the `( … )` too:
+  // "HMAC (SHA-256, key="Jefe")" names 256 though its head is only "HMAC".
+  // The test case's inputs (the paired key, every named integer) are cut
+  // out, but an unnumbered word such as hash=SHA-512 still names a variant.
+  const hmac = [
+    "Request for Comments: 4231",
+    "",
+    "1.  Rules",
+    "",
+    "   It MUST derive.",
+    "",
+    "4.  Test Vectors",
+    "",
+    '   HMAC (SHA-256, key="Jefe") =',
+    "   5b dc c1 46 bf 60 75 4e 6a 04 24 26 08 95 75 c7",
+    fidelityTestBreak("4231", 4),
+    '   HMAC (SHA-512, key="Jefe") =',
+    "   16 4b 7a 7b fc f8 19 e2 e3 95 fb e7 3b 56 e0 a3",
+    "",
+    "   KDF (hash=SHA-256, c=1) =",
+    "   01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f 10",
+    "",
+    "   KDF (hash=SHA-512, c=1) =",
+    "   11 12 13 14 15 16 17 18 19 1a 1b 1c 1d 1e 1f 20",
+    "",
+    '   SCRYPT (S="a", N=16) =',
+    "   21 22 23 24 25 26 27 28 29 2a 2b 2c 2d 2e 2f 30",
+    "",
+    '   SCRYPT (S="a", N=32) =',
+    "   31 32 33 34 35 36 37 38 39 3a 3b 3c 3d 3e 3f 40",
+    "",
+  ].join("\n")
+  const h256 = `{"hex": "5bdcc146bf60754e6a042426089575c7", "label": "HMAC (SHA-256, key=\\"Jefe\\")"}`
+  const h512 = `{"hex": "164b7a7bfcf819e2e395fbe73b56e0a3", "label": "HMAC (SHA-512, key=\\"Jefe\\")"}`
+  const k256 = `{"hex": "0102030405060708090a0b0c0d0e0f10", "label": "KDF (hash=SHA-256, c=1)"}`
+  const k512 = `{"hex": "1112131415161718191a1b1c1d1e1f20", "label": "KDF (hash=SHA-512, c=1)"}`
+  const n16 = `{"hex": "2122232425262728292a2b2c2d2e2f30", "label": "SCRYPT (S=\\"a\\", N=16)"}`
+  const hmacRows: string[][] = [
+    ["hmacSha256", `{"str": "Jefe"}`, h256, ""],
+    ["hmacSha512", `{"str": "Jefe"}`, h512, ""],
+    [
+      "hmacSha256",
+      `{"str": "Jefe"}`,
+      h512,
+      `W1.expect: the value is printed under "HMAC (SHA-512, key="Jefe")" in RFC §4 ("Test Vectors"), but hmacSha256 names 256, as in "HMAC (SHA-256, key="Jefe")": a vector uses the value printed for the variant its function computes`,
+    ],
+    ["f", `{"str": "Jefe"}`, h256, "nothing in the name f says which variant"],
+    ["kdfSha256", `{"int": 1, "label": "c"}`, k256, ""],
+    [
+      "kdfSha256",
+      `{"int": 1, "label": "c"}`,
+      k512,
+      `W1.expect: the value is printed under "KDF (hash=SHA-512, c=1)" in RFC §4 ("Test Vectors"), but kdfSha256 names 256, as in "KDF (hash=SHA-256, c=1)": a vector uses the value printed for the variant its function computes`,
+    ],
+    ["scrypt", `{"str": "a"}, {"int": 16, "label": "N"}`, n16, ""],
+  ]
+  for (const r of hmacRows) {
+    const params =
+      r[1].indexOf("str") < 0
+        ? `{"name": "c", "type": "i32"}`
+        : r[1].indexOf("int") < 0
+          ? `{"name": "k", "type": "string"}`
+          : `{"name": "s", "type": "string"}, {"name": "n", "type": "i32"}`
+    const fn = `{"name": "${r[0]}", "params": [${params}], "returns": "bytes"}`
+    fidelityTestRowIs(
+      t,
+      `4231 §4: ${r[0]} under ${r[2]}`,
+      fidelityTestWrapCall("4231", hmac, fn, r[0], "4", r[1], r[2]),
+      r[3],
+    )
+  }
+  // An argument printed in other call labels is refused once, however many
+  // print it.
+  const twoFn = `{"name": "hmacSha256", "params": [{"name": "k", "type": "string"}, {"name": "c", "type": "i32"}], "returns": "bytes"}`
+  fidelityTestRowIs(
+    t,
+    "4231 §4: an argument printed in two other call labels",
+    fidelityTestWrapCall("4231", hmac, twoFn, "hmacSha256", "4", `{"str": "Jefe"}, {"int": 1, "label": "c"}`, h256),
+    `W1.args[1]: args[1] c=1 is printed in the call label "KDF (hash=SHA-256, c=1)" in RFC §4 ("Test Vectors"), not in "HMAC (SHA-256, key="Jefe")" that the expected value is printed under: they are different test cases`,
+  )
+  // An unlabelled argument (here a hex printed with no name) names nothing
+  // in a call label, so it is not paired with it: the label's c=16 still
+  // reads as a variant.
+  const counts = [
+    "Request for Comments: 4231",
+    "",
+    "1.  Rules",
+    "",
+    "   It MUST derive.",
+    "",
+    "4.  Test Vectors",
+    "",
+    "   the key",
+    "   = 0a0b0c0d",
+    "",
+    "   KDF (c=16) =",
+    "   01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f 10",
+    "",
+    "   KDF (c=64) =",
+    "   11 12 13 14 15 16 17 18 19 1a 1b 1c 1d 1e 1f 20",
+    "",
+  ].join("\n")
+  const bareFn = `{"name": "kdf", "params": [{"name": "k", "type": "bytes"}], "returns": "bytes"}`
+  const c16 = `{"hex": "0102030405060708090a0b0c0d0e0f10", "label": "KDF (c=16)"}`
+  t.eqStr(
+    "4231 §4: an unlabelled argument against a call label",
+    fidelityTestWrapCall("4231", counts, bareFn, "kdf", "4", `{"hex": "0a0b0c0d"}`, c16).join("|"),
+    'the value is printed under "KDF (c=16)", one of "KDF (c=16)" or "KDF (c=64)" in RFC §4 ("Test Vectors"), and nothing in the name kdf says which variant it computes: not checked that this is its own',
+  )
   const misnamed = fidelityTestWrap(
     "7914",
     scrypt,

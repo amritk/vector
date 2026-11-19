@@ -88,7 +88,7 @@ vector does two things, and no model is involved in either:
 - **A contract's gates.** `spec check` runs shape, fidelity, completeness,
   provenance, coverage, typing, signatures and domain. Quotes are in their
   section, MUST and SHALL are tested or excluded, and a value is whole and
-  named, even wrapped. See [The gates](guide/guides/spec-to-contract.md#the-gates).
+  named. See [The gates](guide/guides/spec-to-contract.md#the-gates).
 - **Module paths.** Two or more `/`-split segments, each
   `[a-z][a-z0-9_]*(-[a-z0-9][a-z0-9_]*)*`. See [Modules and names](guide/guides/writing-a-spec.md#modules-and-names).
 - **A spec-first PR** is gated by `spec frozen`, `spec stale`,

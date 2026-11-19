@@ -1075,6 +1075,11 @@ const rfcHexText = (r: RfcHexReader, line: string): void => {
     if (depth > 0 && !own && r.callSpan + 1 < RFC_CALL_LINES) {
       r.call = joined
       r.callSpan = r.callSpan + 1
+      // Until the call closes, the line still labels a value printed under
+      // it: a parenthesis left open in prose (`The tag (computed over`)
+      // leaves `Ciphertext` the next value's name.
+      r.pending = rfcLabelLine(line)
+      r.pendingLine = r.at
       return
     }
     r.call = ""
@@ -1117,6 +1122,7 @@ const rfcHexRead = (sec: RfcSection): RfcHexReader => {
       }
       rfcHexStart(r, null, false)
       r.cur = `${r.cur}${dump}`
+      r.stmt = null
       continue
     }
     const continued = rfcContinuedHex(line)
@@ -1140,9 +1146,12 @@ const rfcHexRead = (sec: RfcSection): RfcHexReader => {
       if (r.colonOpen) {
         rfcHexFlush(r)
       }
+      // A value printed bare ends the statement above it too: a statement
+      // names only the `= <hex>` line right under it.
       const joined = splitWhitespace(line).join("")
       rfcHexStart(r, null, rfcAllDigits(joined))
       r.cur = `${r.cur}${rfcLower(joined)}`
+      r.stmt = null
       continue
     }
     rfcHexText(r, line)

@@ -660,6 +660,30 @@ export const main = (): i32 => {
   for (let i = 0; i < quicCases.length; i++) {
     t.eqStr(quicCases[i][0], i < quic.length ? quic[i] : "", quicCases[i][1])
   }
+  // A page break inside the wrapped `= f(` line: the call's second line is
+  // on the next page, and the name above still holds.
+  const broken = [
+    "Request for Comments: 9001",
+    "\f",
+    "A.1.  Keys",
+    "",
+    "   client_initial_secret",
+    '       = HKDF-Expand-Label(initial_secret, "client in",',
+    rfcTestBreak(47),
+    '                           "", 32)',
+    "       = c00cf151ca5be075ed0ebfb5c80323c4",
+    "",
+    "   other = HKDF-Expand-Label(initial_secret,",
+    rfcTestBreak(48),
+    '                             "server in", "", 32)',
+    "       = 3c199828fd139efd216c155ad844cc81",
+    "",
+  ].join("\n")
+  t.eqStr(
+    "a page break inside a wrapped = f( line keeps the name",
+    rfcTestWrapped(broken, "A.1").join(" "),
+    "client_initial_secret@2=c00cf151ca5be075ed0ebfb5c80323c4 other@10=3c199828fd139efd216c155ad844cc81",
+  )
   const scrypt = rfcTestWrapped(rfcTestScryptText(), "11")
   const scryptCases: string[][] = [
     [
@@ -687,14 +711,23 @@ export const main = (): i32 => {
     ["nor is one under a line of prose with no =", "the key\n   = 0a0b0c0d", "-=0a0b0c0d"],
     ["a name with a space is no name", "the key = f(x)\n   = 0a0b0c0d", "-=0a0b0c0d"],
     ["a dotted name is one", "ctx.key = f(x)\n   = 0a0b0c0d", "ctx.key=0a0b0c0d"],
+    ["so is a hyphenated one", "client-key = f(x)\n   = 0a0b0c0d", "client-key=0a0b0c0d"],
+    ["but not one with other punctuation", "client+key = f(x)\n   = 0a0b0c0d", "-=0a0b0c0d"],
     ["a blank line, as a page break leaves, does not end it", "key = f(x)\n\n   = 0a0b0c0d", "key=0a0b0c0d"],
     ["a labelled value ends the statement", "key = f(x)\niv:  0e0f\n   = 0a0b0c0d", "iv=0e0f -=0a0b0c0d"],
+    ["so does a bare hex value", "key = f(x)\n   aabbccdd\n   = 2233ff", "-=aabbccdd -=2233ff"],
+    ["and a dump", "key = f(x)\n   0000  aa bb cc dd\n   = 2233ff", "-=aabbccdd -=2233ff"],
     [
       "a call wrapped past four lines is no call label",
       "f (a,\n   b,\n   c,\n   d,\n   e) =\n   0a0b0c0d",
       "e)=0a0b0c0d",
     ],
     ["a parenthesis closed on its line is an ordinary label", "f (a, b) =\n   0a0b0c0d", "f (a, b)=0a0b0c0d"],
+    [
+      "a parenthesis left open in prose leaves the next line a label",
+      "The tag (computed over\nCiphertext\n   0a0b0c0d",
+      "Ciphertext=0a0b0c0d",
+    ],
     ["a wrapped call that ends in prose labels nothing", "see f (a,\n   b) for more\n   0a0b0c0d", "-=0a0b0c0d"],
     [
       "a call wrapped over exactly four lines is one",

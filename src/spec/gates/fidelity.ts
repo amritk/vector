@@ -1239,14 +1239,64 @@ const gateTruncateLength = (
   )
 }
 
+/** A label with one paired string's printing cut out: `"salt"` of `(P="passwd", S="salt")` leaves `S=""`. */
+const gateLabelUnText = (label: string, text: string): string => {
+  const quoted = `"${text}"`
+  const at = label.indexOf(quoted)
+  return at < 0 ? label : `${label.substring(0, at)}""${label.substring(at + quoted.length)}`
+}
+
+/** Whether `c` is a letter, digit or `_`: it runs a name or a number on. */
+const gateNameChar = (c: i32): boolean =>
+  (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95
+
+/**
+ * A call label with each named integer argument's number cut out: `c=1` and
+ * `N=16` of `(P="passwd", c=1, N=16)` leave `c=` and `N=`. A word that is not
+ * all digits (`hash=SHA-256`) is kept.
+ */
+const gateLabelUnNumbered = (label: string): string => {
+  const out: string[] = []
+  let i = 0
+  while (i < label.length) {
+    const c = label.charCodeAt(i)
+    out.push(label.substring(i, i + 1))
+    i = i + 1
+    if (c !== 61 || !gateNameChar(label.charCodeAt(i - 2))) {
+      continue
+    }
+    let e = i
+    while (e < label.length && gateNameChar(label.charCodeAt(e))) {
+      e = e + 1
+    }
+    let digits = e > i
+    for (let k = i; k < e && digits; k++) {
+      digits = label.charCodeAt(k) >= 48 && label.charCodeAt(k) <= 57
+    }
+    if (digits) {
+      i = e
+    }
+  }
+  return out.join("")
+}
+
 /**
  * The part of a label that names a variant: for an expected value paired with
- * its call label's arguments, the function before the `(` (`PBKDF2-HMAC-SHA-256`
- * of `PBKDF2-HMAC-SHA-256 (P="passwd", c=1)`); otherwise the whole label.
+ * its call label's arguments, the label with the test case's inputs cut out
+ * (its paired strings and every named integer), so `HMAC (SHA-256, key="Jefe")`
+ * still names 256 and `c=1` names nothing; otherwise the whole label.
  */
-const gateCallHead = (b: GateBound, label: string): string => {
-  const open = label.indexOf("(")
-  return !b.callArgs || open < 0 ? label : rfcNormalize(label.substring(0, open))
+const gateCallHead = (l: GateLits, b: GateBound, label: string): string => {
+  if (!b.callArgs) {
+    return label
+  }
+  let out = rfcNormalize(label)
+  for (const a of l.bounds) {
+    if (a.paired && a.lines !== null) {
+      out = gateLabelUnText(out, a.text)
+    }
+  }
+  return gateLabelUnNumbered(out)
 }
 
 /**
@@ -1277,16 +1327,16 @@ const gateOwnVariant = (l: GateLits, k: Clause, sec: RfcSection): void => {
     // its count, and the round number of every label beside it, are cut out,
     // and the rest of the label is still its own variant's.
     const rounds = b.at === "expect" && gateLabelIsCount(k, shown)
-    // A call label's arguments name its test case, not its variant: only the
-    // function before them is.
-    const head = gateCallHead(b, shown)
+    // A call label's paired arguments name its test case, not its variant:
+    // the rest of the label, inside the `( … )` too, still names the variant.
+    const head = gateCallHead(l, b, shown)
     const label = gateLabelUnsized(rounds ? gateLabelUncounted(head) : head)
     const mine = gateDigitRuns(label)
     const shape = gateSkeleton(label)
     const siblings: string[] = []
     const shownAll = [shown]
     for (const p of printed) {
-      const pOwn = gateCallHead(b, p)
+      const pOwn = gateCallHead(l, b, p)
       const q = gateLabelUnsized(rounds ? gateLabelUncounted(pOwn) : pOwn)
       if (gateSkeleton(q) === shape && !gateSameLabel(pOwn, head)) {
         siblings.push(q)
