@@ -5,7 +5,14 @@ import { gateStatesResult } from "../../../src/spec/gates/result"
 import { gateParagraphStarts, gateSentenceAt } from "../../../src/spec/gates/text"
 import { gateWordBlocks } from "../../../src/spec/gates/words"
 import { LoadedSource, SourceSet } from "../../../src/spec/source/load"
-import { RfcDocument, RfcSection, rfcNormalize, rfcParse, rfcSection } from "../../../src/spec/source/rfc"
+import {
+  RfcDocument,
+  RfcSection,
+  rfcCaseSection,
+  rfcNormalize,
+  rfcParse,
+  rfcSection,
+} from "../../../src/spec/source/rfc"
 import { xmlRead } from "../../../src/spec/xml/doc"
 
 /** The sentence around the first `needle` in a section's own text, as completeness reads it. */
@@ -221,6 +228,36 @@ const blocksTestWordRows = (t: Suite): void => {
       "1,1",
     ],
     ["a table after a paragraph", `<t>The words:</t><table><tbody><tr>${one}</tr></tbody></table>`, "4"],
+    [
+      "a word marked with a leading *",
+      "<table><tbody><tr><td>00000001</td><td>*00000002</td><td>00000003</td></tr></tbody></table>",
+      "3",
+    ],
+    [
+      "name = word cells, a hex name",
+      "<table><tbody><tr><td>a = 0x0123456789abcdef</td><td>b = 0xfedcba9876543210</td></tr></tbody></table>",
+      "2",
+    ],
+    [
+      "name = word cells, a non-hex name",
+      "<table><tbody><tr><td>k = 0x0123456789abcdef</td><td>m = 0xfedcba9876543210</td></tr></tbody></table>",
+      "2",
+    ],
+    [
+      "a cell of words and a comma is no word cell",
+      "<table><tbody><tr><td>00000001</td><td>00000002,</td><td>00000003</td></tr></tbody></table>",
+      "1,1",
+    ],
+    [
+      "a cell of x = y is no word cell",
+      "<table><tbody><tr><td>00000001</td><td>x = y</td><td>00000002</td></tr></tbody></table>",
+      "1,1",
+    ],
+    [
+      "an empty cell ends the block",
+      "<table><tbody><tr><td>00000001</td><td/><td>00000002</td></tr></tbody></table>",
+      "1,1",
+    ],
   ]
   for (const row of rows) {
     t.eqStr(row[0], blocksTestWords(blocksTestXmlDoc(row[1])), row[2])
@@ -306,6 +343,33 @@ const blocksTestResultRows = (t: Suite): void => {
   }
 }
 
+/**
+ * A test case cut from a section of a spec's own XML keeps where its lines
+ * of code are, so the result read skips them there too.
+ */
+const blocksTestCaseRows = (t: Suite): void => {
+  const doc = blocksTestXmlDoc(
+    "<t>Test Vector #1:</t><sourcecode>or throw\nusually</sourcecode><t>Test Vector #2:</t><t>It MUST return true</t><sourcecode>x</sourcecode>",
+  )
+  const sec: RfcSection | null = doc !== null ? rfcSection(doc, "1") : null
+  if (sec === null) {
+    t.fail("a case section", "no section 1")
+    return
+  }
+  const rows: string[][] = [
+    ["1", "2,3"],
+    ["2", "4"],
+  ]
+  for (const row of rows) {
+    const one = rfcCaseSection(sec, parseInt(row[0]))
+    t.eqStr(
+      `Test Vector #${row[0]}: its lines of code`,
+      one.isOk() ? one.value.codeLines.map((i: i32): string => `${i}`).join(",") : one.error,
+      row[1],
+    )
+  }
+}
+
 /** A sentence vector reads from a spec's text spans no block boundary of its own XML. */
 export const main = (): i32 => {
   const t = new Suite("spec/gates/blocks")
@@ -313,5 +377,6 @@ export const main = (): i32 => {
   blocksTestRfcRows(t)
   blocksTestWordRows(t)
   blocksTestResultRows(t)
+  blocksTestCaseRows(t)
   return t.done()
 }

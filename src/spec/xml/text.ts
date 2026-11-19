@@ -20,6 +20,7 @@
 
 import { trimEnd } from "nish/text"
 import { vocabLevels } from "../contract/vocab"
+import { gateWordBlocks } from "../gates/words"
 import { XmlError, XmlNode, xmlAttr, xmlElements, xmlErrorAt } from "./reader"
 
 /** What an `<xref>` without derivedContent prints, as the document works it out. */
@@ -724,11 +725,14 @@ export class XmlLines {
   normative: XmlNormative[]
   /** Where the lines of code the last xmlSectionLines read are: each an index into its lines. */
   code: i32[]
+  /** Where the blank lines the last xmlSectionLines put between blocks are: each an index into its lines. */
+  breaks: i32[]
   /** Makes a builder. @param t the document's xref texts */
   constructor(t: XmlText) {
     this.t = t
     this.normative = []
     this.code = []
+    this.breaks = []
   }
 }
 
@@ -858,30 +862,23 @@ const xmlNormativeIn = (
   return Ok(true)
 }
 
-/** Starts a block on `out`: a blank line after the block before it, if any. */
-const xmlBlockBreak = (out: string[]): void => {
+/** Starts a block on `out`: a blank line after the block before it, if any, recorded on `b.breaks`. */
+const xmlBlockBreak = (b: XmlLines, out: string[]): void => {
   if (out.length > 0 && out[out.length - 1].length > 0) {
+    b.breaks.push(out.length)
     out.push("")
   }
 }
 
 /**
- * Whether a table cell holds only what a printed word does (hex digits, `x`,
- * `*`, `=`, `,` and spaces). Two such cells side by side are not split by a
- * blank line, so a vector's words printed one to a cell stay one block; no
- * sentence can run between them, as every BCP 14 keyword and result verb
- * holds a letter past `f`.
+ * Whether a table cell is one line of printed words, as gateWordBlocks
+ * reads one: a row of hex words (`0x` or not, one perhaps marked `*`) or
+ * one `name = word` assignment. Two such cells side by side are not split
+ * by a blank line, so a vector's words printed one to a cell stay one
+ * block, as they read before blocks were split; such a line holds no
+ * sentence, so none runs between them.
  */
-const xmlBareCell = (text: string): boolean => {
-  for (let i = 0; i < text.length; i++) {
-    const c = text.charCodeAt(i)
-    const hex = (c >= 48 && c <= 57) || (c >= 97 && c <= 102) || (c >= 65 && c <= 70)
-    if (!hex && c !== 120 && c !== 88 && c !== 42 && c !== 61 && c !== 44 && c !== 32 && c !== 9) {
-      return false
-    }
-  }
-  return text.length > 0
-}
+const xmlBareCell = (text: string): boolean => gateWordBlocks([text], []).length === 1
 
 /** A paragraph made of a run of nodes: one line, if it holds any text. */
 const xmlParagraph = (
@@ -895,7 +892,7 @@ const xmlParagraph = (
   if (text.length === 0) {
     return Ok(true)
   }
-  xmlBlockBreak(out)
+  xmlBlockBreak(b, out)
   xmlNormativeIn(b, nodes, section, anchor, out.length).orReturn()
   out.push(text)
   return Ok(true)
@@ -918,7 +915,7 @@ const xmlBlock = (
   }
   if (n.name === "sourcecode" || n.name === "artwork") {
     const code = xmlCodeOf(n)
-    xmlBlockBreak(out)
+    xmlBlockBreak(b, out)
     let at = 0
     let nl = code.text.indexOf("\n")
     while (nl >= 0) {
@@ -937,14 +934,14 @@ const xmlBlock = (
         xmlBlock(b, c, section, here, out).orReturn()
       }
     }
-    xmlBlockBreak(out)
+    xmlBlockBreak(b, out)
     let bare = false
     for (const row of xmlTableRows(n)) {
       for (const cell of row) {
         const text = xmlPlainText(b.t, cell.node)
         const next = xmlBareCell(text)
         if (!bare || !next) {
-          xmlBlockBreak(out)
+          xmlBlockBreak(b, out)
         }
         bare = next
         xmlNormativeIn(b, [cell.node], section, here, out.length).orReturn()
@@ -980,7 +977,8 @@ const xmlBlock = (
  * A section's own lines (its subsections left out): each paragraph, table
  * cell and line of code one line, with a blank line between two blocks (but
  * not between two bare cells, xmlBareCell). The normative sentences in them
- * are recorded on `b`, and where its lines of code are on `b.code`.
+ * are recorded on `b`, where its lines of code are on `b.code`, and where
+ * those blank lines are on `b.breaks`.
  *
  * @param b the builder
  * @param sec the `<section>`
@@ -990,6 +988,7 @@ const xmlBlock = (
 export const xmlSectionLines = (b: XmlLines, sec: XmlNode, section: string): Result<string[], XmlError> => {
   const out: string[] = []
   b.code = []
+  b.breaks = []
   let k = sec.first
   while (k !== null) {
     if (k.name !== "name" && k.name !== "section") {

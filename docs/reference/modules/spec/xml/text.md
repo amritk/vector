@@ -462,6 +462,14 @@ the document's xref texts
 
 </scalar-field>
 
+#### XmlLines.breaks
+
+Where the blank lines the last xmlSectionLines put between blocks are: each an index into its lines.
+
+```ts
+breaks: i32[]
+```
+
 #### XmlLines.code
 
 Where the lines of code the last xmlSectionLines read are: each an index into its lines.
@@ -491,7 +499,8 @@ t: XmlText
 A section's own lines (its subsections left out): each paragraph, table
 cell and line of code one line, with a blank line between two blocks (but
 not between two bare cells, xmlBareCell). The normative sentences in them
-are recorded on `b`, and where its lines of code are on `b.code`.
+are recorded on `b`, where its lines of code are on `b.code`, and where
+those blank lines are on `b.breaks`.
 
 ```ts
 function xmlSectionLines(

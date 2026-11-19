@@ -40,8 +40,8 @@ const xmlDocTestFixture = (t: Suite): void => {
   t.eqStr("docName", doc.docName ?? "<none>", "draft-test-00")
   t.ok("no number attribute", doc.number === -1)
   t.eqLines("sections", doc.sections.map(xmlDocTestSection), [
-    '1 Intro: The client MUST do X. It SHOULD do Y. | The client MUST do X. It SHOULD do Y. /  / a / b / x /  / y /  / {"a":1}',
-    '1.1 Sub: a / b / x /  / y /  / {"a":1} | a / b / x /  / y /  / {"a":1}',
+    '1 Intro: The client MUST do X. It SHOULD do Y. | The client MUST do X. It SHOULD do Y. /  / a /  / b /  / x /  / y /  / {"a":1}',
+    '1.1 Sub: a /  / b /  / x /  / y /  / {"a":1} | a /  / b /  / x /  / y /  / {"a":1}',
     "2 Other: See Section 2 and Section 2 of [RFC2119]. | See Section 2 and Section 2 of [RFC2119].",
   ])
   t.eqStr("references", doc.references.map((r: XmlRef): string => `${r.anchor}=${r.rfc}`).join(" "), "RFC2119=2119")

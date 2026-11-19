@@ -92,6 +92,7 @@ class XmlSectionInfo {
   back: boolean
   own: string[]
   code: i32[]
+  breaks: i32[]
   subs: XmlSectionInfo[]
   constructor(id: string, node: XmlNode, numbered: boolean, back: boolean) {
     this.id = id
@@ -100,6 +101,7 @@ class XmlSectionInfo {
     this.back = back
     this.own = []
     this.code = []
+    this.breaks = []
     this.subs = []
   }
 }
@@ -351,21 +353,26 @@ const xmlDocLay = (
   s: XmlSectionInfo,
   all: string[],
   code: i32[],
+  breaks: i32[],
   from: Map<XmlSectionInfo, i32>,
   to: Map<XmlSectionInfo, i32>,
 ): void => {
   if (s.own.length > 0 && all.length > 0 && all[all.length - 1].length > 0) {
+    breaks.push(all.length)
     all.push("")
   }
   from.set(s, all.length)
   for (const i of s.code) {
     code.push(all.length + i)
   }
+  for (const i of s.breaks) {
+    breaks.push(all.length + i)
+  }
   for (const l of s.own) {
     all.push(l)
   }
   for (const k of s.subs) {
-    xmlDocLay(k, all, code, from, to)
+    xmlDocLay(k, all, code, breaks, from, to)
   }
   to.set(s, all.length)
 }
@@ -376,27 +383,29 @@ const xmlDocSections = (c: XmlDocContext): Result<boolean, XmlError> => {
   for (const s of c.infos) {
     s.own = xmlSectionLines(b, s.node, s.numbered ? s.id : "").orReturn()
     s.code = b.code
+    s.breaks = b.breaks
   }
   c.doc.normative = b.normative
   const all: string[] = []
   const code: i32[] = []
+  const breaks: i32[] = []
   const from = new Map<XmlSectionInfo, i32>()
   const to = new Map<XmlSectionInfo, i32>()
   for (const s of c.infos) {
     if (!from.has(s)) {
-      xmlDocLay(s, all, code, from, to)
+      xmlDocLay(s, all, code, breaks, from, to)
     }
   }
-  const isCode: boolean[] = []
+  const isBreak: boolean[] = []
   for (let i = 0; i < all.length; i++) {
-    isCode.push(false)
+    isBreak.push(false)
   }
-  for (const i of code) {
-    isCode[i] = true
+  for (const i of breaks) {
+    isBreak[i] = true
   }
   const texts: i32[] = [0]
   for (let i = 0; i < all.length; i++) {
-    texts.push(texts[i] + (all[i].length > 0 || isCode[i] ? 1 : 0))
+    texts.push(texts[i] + (isBreak[i] ? 0 : 1))
   }
   let held = 0
   for (const s of c.infos) {

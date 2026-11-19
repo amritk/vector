@@ -203,6 +203,10 @@ const xmlCasesTestTableInCell = (t: Suite): void => {
 const xmlCasesTestDeep = (depth: i32, lines: i32): string =>
   `<rfc><middle>${xmlCasesTestRepeat("<section>", depth)}${xmlCasesTestRepeat("<t>a</t>", lines)}${xmlCasesTestRepeat("</section>", depth)}</middle></rfc>`
 
+/** Two sections, one inside the other, around a table row of `n` empty cells. */
+const xmlCasesTestEmptyCells = (n: i32): string =>
+  `<rfc><middle><section><section><table><tr>${xmlCasesTestRepeat("<td/>", n)}</tr></table></section></section></middle></rfc>`
+
 /** XML_MAX_SECTION_LINES, counting each subsection's lines in its parents'. */
 const xmlCasesTestSectionBudget = (t: Suite): void => {
   t.eqStr(
@@ -227,6 +231,12 @@ const xmlCasesTestSectionBudget = (t: Suite): void => {
     ),
     "ok",
   )
+  t.eqStr(
+    "empty cells are lines too: 2 deep holding 1000001 of them is over",
+    xmlCasesTestErr(xmlCasesTestEmptyCells(1000001)),
+    "1:0 md=-1 numbered sections hold over 2000000 lines, counting each subsection's in its parents' (XML_MAX_SECTION_LINES)",
+  )
+  t.eqStr("and 1000000 of them is not", xmlCasesTestErr(xmlCasesTestEmptyCells(1000000)), "ok")
 }
 
 /**
@@ -731,10 +741,13 @@ const xmlCasesTestLinear = (t: Suite): void => {
   t.ok("and a blank line between each two", cells !== null && xmlCasesTestRawLines(cells, "1").length === 79999)
   const bare = xmlCasesTestParse(
     t,
-    "a table with many hex cells",
-    `<rfc><middle><section><table><tr>${xmlCasesTestRepeat("<td>a</td>", 40000)}</tr></table></section></middle></rfc>`,
+    "a table with many word cells",
+    `<rfc><middle><section><table><tr>${xmlCasesTestRepeat("<td>0001</td>", 40000)}</tr></table></section></middle></rfc>`,
   )
-  t.ok("40000 hex cells, no blank line between them", bare !== null && xmlCasesTestRawLines(bare, "1").length === 40000)
+  t.ok(
+    "40000 word cells, no blank line between them",
+    bare !== null && xmlCasesTestRawLines(bare, "1").length === 40000,
+  )
   xmlCasesTestFast(t, "a table with many cells", start)
 }
 
