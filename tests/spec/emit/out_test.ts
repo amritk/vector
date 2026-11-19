@@ -52,14 +52,16 @@ const outEmitContract = (extra: string, clause: string): string => `{
  * The module the contract tests: right when `bug` is "", or with one function
  * wrong. outCopy's bugs: "over" returns an end one past its capacity, "under"
  * an end before `at`, "before" writes the byte before `at`, "past" writes the
- * byte at its end, and "byte" flips its first byte's low bit. "null" makes
- * outMaybe always return -1, and "window" makes outWin read from 0, not `off`.
+ * byte at its end, "tail" the last guard byte after its capacity, and "byte"
+ * flips its first byte's low bit. "null" makes outMaybe always return -1, and
+ * "window" makes outWin read from 0, not `off`. outBig and outHuge copy
+ * their bytes, with no bug.
  */
 const outEmitModule = (bug: string): string => `export const outCopy = (d: u8[], out: u8[], at: i32): i32 => {
   for (let i: i32 = 0; i < toI32(d.length); i += 1) {
     out[at + i] = ${bug === "byte" ? "i === 0 ? d[i] ^ toU8(1) : d[i]" : "d[i]"}
   }
-  ${bug === "before" ? "out[at - 1] = toU8(0)" : bug === "past" ? "out[at + toI32(d.length)] = toU8(0)" : ""}
+  ${bug === "before" ? "out[at - 1] = toU8(0)" : bug === "past" ? "out[at + toI32(d.length)] = toU8(0)" : bug === "tail" ? "out[at + toI32(d.length) + 4] = toU8(0)" : ""}
   return ${bug === "over" ? "at + toI32(d.length) + 1" : bug === "under" ? "at - 1" : "at + toI32(d.length)"}
 }
 
@@ -73,6 +75,15 @@ export const outMaybe = (d: u8[], out: u8[], at: i32): i32 => {
   out[at + toI32(d.length)] = toU8(0)
   return at + toI32(d.length) + 1
 }
+
+export const outBig = (d: u8[], out: u8[], at: i32): i32 => {
+  for (let i: i32 = 0; i < toI32(d.length); i += 1) {
+    out[at + i] = d[i]
+  }
+  return at + toI32(d.length)
+}
+
+export const outHuge = (d: u8[], out: u8[], at: i32): i32 => outBig(d, out, at)
 
 export const outWin = (out: u8[], at: i32, n: u32, buf: u8[], off: i32, len: i32): i32 => {
   out[at] = toU8(n & 255)
@@ -135,9 +146,24 @@ const outEmitProgram = (c: Contract): string => {
   return p.isOk() ? p.value : `REFUSED\n${p.error.join("\n")}`
 }
 
+/** `n` bytes counting up from 0, as hex. */
+const outEmitHex = (n: i32): string => {
+  const digits = "0123456789abcdef"
+  let out = ""
+  for (let i: i32 = 0; i < n; i++) {
+    const b: i32 = i % 256
+    out = `${out}${digits.substring(b / 16, b / 16 + 1)}${digits.substring(b % 16, (b % 16) + 1)}`
+  }
+  return out
+}
+
 /** Out buffers in the Nish emitter: the guarded write, and each way a write goes wrong. */
 export const main = (): i32 => {
   const t = new Suite("spec/emit out")
+  if (!isExecutableSync(".nish/libexec/nish")) {
+    t.skip("out buffers in the Nish emitter", "no .nish/ install: run bash scripts/fetch-nish.sh")
+    return t.done()
+  }
 
   const outs: string[] = [
     ', "out": {"at": 1, "capacity": "d.length"}',
@@ -171,7 +197,11 @@ export const main = (): i32 => {
   const c = parsed.value
   const program = outEmitProgram(c)
   t.ok("the program emits", !program.startsWith("REFUSED"))
-  t.contains("the capacity is read from the arguments", program, "const o_cap: i32 = toI32(a_d.length);")
+  t.contains(
+    "the capacity is read from the arguments",
+    program,
+    'const o_cap: i32 = of.cap("outCopy", toF64(a_d.length));',
+  )
   t.contains("the buffer has guard bytes on each side", program, "const o_out: u8[] = fillBytes(0xa5, o_cap + 10);")
   t.contains("the buffer is passed after d", program, "const o_end: i32 = outCopy(a_d, o_out, 5);")
   t.contains(
@@ -214,7 +244,7 @@ export const main = (): i32 => {
 
   const dir = makeTempDir("vector-out-emit-").expect("a scratch directory")
   t.eqStr("the right module satisfies it", outEmitRun(c, dir, program, ""), "SATISFIED")
-  const bugs: string[] = ["over", "under", "before", "past", "byte", "null", "window"]
+  const bugs: string[] = ["over", "under", "before", "past", "tail", "byte", "null", "window"]
   const failed: string[] = [
     "V-COPY: outCopy returned end 9 outside [at, at + capacity] = [5, 8]\n" +
       "V-COPY-EMPTY: outCopy returned end 6 outside [at, at + capacity] = [5, 5]\n" +
@@ -232,6 +262,10 @@ export const main = (): i32 => {
       "V-COPY-EMPTY: outCopy wrote outside [at, end) = [5, 5), at 5\n" +
       "V-COPY-IT: outCopy wrote outside [at, end) = [5, 7), at 7\n" +
       "P-COPY: sample 1 of 2 (len(d) = 0): outCopy wrote outside [at, end) = [5, 5), at 5",
+    "V-COPY: outCopy wrote outside [at, end) = [5, 8), at 12\n" +
+      "V-COPY-EMPTY: outCopy wrote outside [at, end) = [5, 5), at 9\n" +
+      "V-COPY-IT: outCopy wrote outside [at, end) = [5, 7), at 11\n" +
+      "P-COPY: sample 1 of 2 (len(d) = 0): outCopy wrote outside [at, end) = [5, 5), at 9",
     'V-COPY: expected "010203", got "000203"\nV-COPY-IT: expected "0a0b", got "0b0b"\n' +
       "P-COPY: sample 2 of 2 (len(d) = 4): the assertion is false",
     'V-MAYBE: expected "0700", got "null"',
@@ -244,5 +278,33 @@ export const main = (): i32 => {
       `VIOLATED\n${failed[i]}`,
     )
   }
+
+  // A capacity is computed in f64 and checked against 2^20 before the buffer
+  // is made: d.length * d.length * 16 is 2^20 at 256 bytes, over it at 257,
+  // and outHuge's is 2^43 at 2048 bytes, past what an i32 holds.
+  const at = outEmitHex(256)
+  const past = outEmitHex(257)
+  const huge = outEmitHex(2048)
+  const big = contractParse(
+    outEmitContract(
+      ',\n    {"name": "outBig", "params": [{"name": "d", "type": "bytes"}], "returns": "bytes", "out": {"at": 1, "capacity": "d.length * d.length * 16"}},\n    {"name": "outHuge", "params": [{"name": "d", "type": "bytes"}], "returns": "bytes", "out": {"at": 1, "capacity": "d.length * d.length * d.length * 1024"}}',
+      `\n    {"kind": "vector", "id": "V-BIG-AT", "title": "at 2^20", "covers": ["R-1"], "source": {"cite": {"section": "1"}}, "call": "outBig", "args": [{"hex": "${at}"}], "expect": {"hex": "${at}"}},` +
+        `\n    {"kind": "vector", "id": "V-BIG-PAST", "title": "past 2^20", "covers": ["R-1"], "source": {"cite": {"section": "1"}}, "call": "outBig", "args": [{"hex": "${past}"}], "expect": {"hex": "${past}"}},` +
+        `\n    {"kind": "vector", "id": "V-HUGE", "title": "past i32", "covers": ["R-1"], "source": {"cite": {"section": "1"}}, "call": "outHuge", "args": [{"hex": "${huge}"}], "expect": {"hex": "${huge}"}},`,
+    ),
+    "out-emit",
+  ).expect("parse the big contract")
+  const bigProgram = outEmitProgram(big)
+  t.contains(
+    "the capacity is f64 until it is checked",
+    bigProgram,
+    'const o_cap: i32 = of.cap("outBig", toF64(a_d.length) * toF64(a_d.length) * 16.0);\n  if (o_cap < 0) {\n    return fillBytes(0, 0);\n  }',
+  )
+  t.eqStr(
+    "a capacity over 2^20 fails its clause, naming the function",
+    outEmitRun(big, dir, bigProgram, ""),
+    "VIOLATED\nV-BIG-PAST: outBig's capacity is 1056784 on this sample, over 2^20\n" +
+      "V-HUGE: outHuge's capacity is 8796093022208 on this sample, over 2^20",
+  )
   return t.done()
 }

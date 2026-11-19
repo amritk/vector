@@ -566,7 +566,7 @@ const shapeOut = (s: ShapeContext, f: FnSig, out: OutBuffer, at: string): void =
   }
   const e = capacityParse(out.capacity)
   if (e.isErr()) {
-    shapeFail(s, `${at}.capacity`, `a capacity; it stops at ${e.error}`)
+    shapeFail(s, `${at}.capacity`, `a capacity; it ${e.error}`)
     return
   }
   const shown = capacityShow(e.value)

@@ -620,6 +620,17 @@ export const main = (): i32 => {
       "functions[0].out.capacity: a capacity; it stops at `-`",
     ],
     [
+      "a capacity past 2^20",
+      `"returns": "bytes", "out": {"at": 0, "capacity": "1024 * 1025"}}`,
+      "functions[0].out.capacity: a capacity; it is over 1048576 (2^20) even with every length 0",
+    ],
+    ["a capacity at 2^20", `"returns": "bytes", "out": {"at": 0, "capacity": "1024 * 1024 + 0 * b.length"}}`, ""],
+    [
+      "a capacity nested 17 deep",
+      `"returns": "bytes", "out": {"at": 0, "capacity": "(((((((((((((((((8)))))))))))))))))"}}`,
+      "functions[0].out.capacity: a capacity; it nests parentheses deeper than 16",
+    ],
+    [
       "a capacity in another spelling",
       `"returns": "bytes", "out": {"at": 0, "capacity": "2*b.length"}}`,
       `functions[0].out.capacity: "2 * b.length", the one spelling of that capacity`,

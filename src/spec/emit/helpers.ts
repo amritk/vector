@@ -517,9 +517,10 @@ const EMIT_UNWRAP_STR: string = `
  * byte changed before `at` or from `end` on shows.
  */
 const EMIT_OUT_FAULT: string = `/**
- * An out buffer's write, checked without exceptions: the first end outside
- * [at, at + capacity], or byte changed outside [at, end), is recorded, the
- * call stands in as no bytes, and the clause that saw it fails.
+ * An out buffer's write, checked without exceptions: the first capacity over
+ * 2^20, end outside [at, at + capacity], or byte changed outside [at, end),
+ * is recorded, the call stands in as no bytes, and the clause that saw it
+ * fails.
  */
 class OutFault {
   why: string
@@ -532,6 +533,14 @@ class OutFault {
     if (this.why.length === 0) {
       this.why = why
     }
+  }
+
+  cap(fn: string, c: f64): i32 {
+    if (c > 1048576.0) {
+      this.note(\`\${fn}'s capacity is \${c} on this sample, over 2^20\`)
+      return -1
+    }
+    return toI32(c)
   }
 
   take(fn: string, o: u8[], at: i32, end: i32, cap: i32): u8[] {

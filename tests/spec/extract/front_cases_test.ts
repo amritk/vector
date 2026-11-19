@@ -258,6 +258,31 @@ const frontCasesTestOut = (t: Suite): void => {
       `\`f(d)\`: the capacity \`04\` stops at \`04\`; ${cap} @2:27`,
     ],
     [
+      "a sum at 2^20",
+      `${m}export const f = (s: u8[], d: u8[] /* out 1048575 + 1 + s.length */): u8[]`,
+      "(s:bytes) -> bytes out@1=1048575 + 1 + s.length",
+    ],
+    [
+      "a sum past 2^20",
+      `${m}export const f = (s: u8[], d: u8[] /* out 1048576 + 1 + s.length */): u8[]`,
+      `\`f(d)\`: the capacity \`1048576 + 1 + s.length\` is over 1048576 (2^20) even with every length 0; ${cap} @2:36`,
+    ],
+    [
+      "a product past 2^20",
+      `${m}export const f = (d: u8[] /* out 1048576 * 1048576 */): u8[]`,
+      `\`f(d)\`: the capacity \`1048576 * 1048576\` is over 1048576 (2^20) even with every length 0; ${cap} @2:27`,
+    ],
+    [
+      "parentheses 16 deep",
+      `${m}export const f = (d: u8[] /* out ((((((((((((((((8)))))))))))))))) */): u8[]`,
+      "() -> bytes out@0=8",
+    ],
+    [
+      "parentheses 17 deep",
+      `${m}export const f = (d: u8[] /* out (((((((((((((((((8))))))))))))))))) */): u8[]`,
+      `\`f(d)\`: the capacity \`(((((((((((((((((8)))))))))))))))))\` nests parentheses deeper than 16; ${cap} @2:27`,
+    ],
+    [
       "a call",
       `${m}export const f = (s: u8[], d: u8[] /* out max(s.length) */): u8[]`,
       `\`f(d)\`: the capacity \`max(s.length)\` stops at \`(\`; ${cap} @2:36`,

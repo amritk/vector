@@ -857,7 +857,7 @@ const frontOutBuffer = (sig: FnSig, name: string, at: i32, tok: FrontTok): Resul
   if (e.isErr()) {
     return Err(
       frontRefuse(
-        `${where}: the capacity \`${text}\` stops at ${e.error}; a capacity is decimal numbers, +, *, parentheses and <u8[] parameter>.length`,
+        `${where}: the capacity \`${text}\` ${e.error}; a capacity is decimal numbers, +, *, parentheses and <u8[] parameter>.length`,
         frontAt(tok),
       ),
     )

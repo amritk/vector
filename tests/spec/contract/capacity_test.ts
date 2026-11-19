@@ -1,11 +1,20 @@
 import { Suite } from "nish/testing"
 import { capacityNames, capacityNish, capacityParse, capacityShow } from "../../../src/spec/contract/capacity"
 
-/** A capacity in its one spelling, then the names it reads; or `stops at <token>`. */
+/** `s` written `n` times. */
+const capTestRepeat = (s: string, n: i32): string => {
+  let out = ""
+  for (let i: i32 = 0; i < n; i++) {
+    out = `${out}${s}`
+  }
+  return out
+}
+
+/** A capacity in its one spelling, then the names it reads; or why it is refused. */
 const capTestShow = (text: string): string => {
   const e = capacityParse(text)
   if (e.isErr()) {
-    return `stops at ${e.error}`
+    return e.error
   }
   return `${capacityShow(e.value)} [${capacityNames(e.value).join(",")}]`
 }
@@ -50,13 +59,28 @@ export const main = (): i32 => {
     ["f(src)", "stops at `(`"],
     ["()", "stops at `)`"],
     ["2 ** 3", "stops at `*`"],
+    // parentheses nest at most 16 deep
+    [`${capTestRepeat("(", 16)}1${capTestRepeat(")", 16)}`, "1 []"],
+    [`${capTestRepeat("(", 17)}1${capTestRepeat(")", 17)}`, "nests parentheses deeper than 16"],
+    [`${capTestRepeat("(", 100000)}1`, "nests parentheses deeper than 16"],
+    ["(1) + (2) + (3)", "1 + 2 + 3 []"],
+    // with every length 0, a capacity is at most 2^20
+    ["1048576 + 0", "1048576 + 0 []"],
+    ["1048576 + 1", "is over 1048576 (2^20) even with every length 0"],
+    ["1048576 * 1", "1048576 * 1 []"],
+    ["1024 * 1024", "1024 * 1024 []"],
+    ["1024 * 1025", "is over 1048576 (2^20) even with every length 0"],
+    ["1048576 * 1048576 * 1048576", "is over 1048576 (2^20) even with every length 0"],
+    ["1048576 * src.length", "1048576 * src.length [src]"],
+    ["1048576 * (src.length + 1)", "1048576 * (src.length + 1) [src]"],
+    ["1048576 * (src.length + 2)", "is over 1048576 (2^20) even with every length 0"],
   ]
   for (const c of cases) {
     t.eqStr(`capacity \`${c[0]}\``, capTestShow(c[0]), c[1])
   }
   const e = capacityParse("2 * (src.length + 8)")
   if (e.isOk()) {
-    t.eqStr("a capacity in Nish", capacityNish(e.value, "a_"), "2 * (toI32(a_src.length) + 8)")
+    t.eqStr("a capacity in Nish", capacityNish(e.value, "a_"), "2.0 * (toF64(a_src.length) + 8.0)")
   } else {
     t.fail("a capacity in Nish", "did not parse")
   }

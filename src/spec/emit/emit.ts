@@ -328,10 +328,16 @@ const emitOutBody = (
   const fill = emitUse(ctx, "fillBytes")
   const cap = capacityParse(capacity)
   if (cap.isErr()) {
-    ctx.errors.push(`${sig.name}: its capacity \`${capacity}\` stops at ${cap.error}`)
+    ctx.errors.push(`${sig.name}: its capacity \`${capacity}\` ${cap.error}`)
     return
   }
-  body.push(`  const o_cap: i32 = ${capacityNish(cap.value, "a_")};`)
+  body.push(`  const o_cap: i32 = of.cap("${sig.name}", ${capacityNish(cap.value, "a_")});`)
+  body.push("  if (o_cap < 0) {")
+  for (const w of wipes) {
+    body.push(`  ${w}`)
+  }
+  body.push(`    return ${fill}(0, 0);`)
+  body.push("  }")
   body.push(`  const o_out: u8[] = ${fill}(0xa5, o_cap + ${2 * EMIT_OUT_AT});`)
   body.push(`  const o_end: i32 = ${call};`)
   for (const w of wipes) {

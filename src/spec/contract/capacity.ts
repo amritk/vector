@@ -8,6 +8,9 @@
 /** The largest number a capacity may spell: 2^20. */
 const CAPACITY_MAX_LITERAL: i32 = 1048576
 
+/** How deep a capacity may nest parentheses. */
+const CAPACITY_MAX_DEPTH: i32 = 16
+
 /** A number. */
 const CAPACITY_NUM: i32 = 0
 /** `<param>.length`. */
@@ -45,6 +48,8 @@ class CapacityCursor {
   toks: string[]
   /** The next token's index. */
   pos: i32
+  /** How many parentheses are open. */
+  depth: i32
   /**
    * Starts at the first token.
    *
@@ -53,6 +58,7 @@ class CapacityCursor {
   constructor(toks: string[]) {
     this.toks = toks
     this.pos = 0
+    this.depth = 0
   }
 }
 
@@ -90,21 +96,26 @@ const capacityLex = (text: string): string[] => {
 
 const capacityPeek = (c: CapacityCursor): string => (c.pos < c.toks.length ? c.toks[c.pos] : "")
 
-/** The token the parser stopped at, as a refusal names it. */
+/** Where the parser stopped, as a refusal says it: `stops at <token>` or `stops at the end`. */
 const capacityStop = (c: CapacityCursor): string => {
   const t = capacityPeek(c)
-  return t.length === 0 ? "the end" : `\`${t}\``
+  return t.length === 0 ? "stops at the end" : `stops at \`${t}\``
 }
 
 const capacityAtom = (c: CapacityCursor): Result<CapacityExpr, string> => {
   const t = capacityPeek(c)
   if (t === "(") {
+    if (c.depth >= CAPACITY_MAX_DEPTH) {
+      return Err(`nests parentheses deeper than ${CAPACITY_MAX_DEPTH}`)
+    }
     c.pos += 1
+    c.depth += 1
     const e = capacitySum(c).orReturn()
     if (capacityPeek(c) !== ")") {
       return Err(capacityStop(c))
     }
     c.pos += 1
+    c.depth -= 1
     return Ok(e)
   }
   if (t.length === 0) {
@@ -171,13 +182,40 @@ const capacitySum = (c: CapacityCursor): Result<CapacityExpr, string> => {
   return Ok(e)
 }
 
+/** What `e` is with every length 0, in f64 so no product overflows. */
+const capacityFloor = (e: CapacityExpr): f64 => {
+  const l = e.left
+  const r = e.right
+  if (e.kind === CAPACITY_NUM) {
+    return capacityDigits(e.text)
+  }
+  if (e.kind === CAPACITY_LEN || l === null || r === null) {
+    return 0.0
+  }
+  if (e.kind === CAPACITY_ADD) {
+    return capacityFloor(l) + capacityFloor(r)
+  }
+  return capacityFloor(l) * capacityFloor(r)
+}
+
+const capacityDigits = (t: string): f64 => {
+  let v: f64 = 0.0
+  for (let i: i32 = 0; i < toI32(t.length); i++) {
+    v = v * 10.0 + toF64(toI32(t.charCodeAt(i)) - 48)
+  }
+  return v
+}
+
 /**
  * Parses a capacity: decimal numbers up to 2^20 with no leading zero, `+`,
- * `*`, parentheses and `<param>.length`, `*` binding tighter than `+`.
+ * `*`, parentheses nested at most 16 deep and `<param>.length`, `*` binding
+ * tighter than `+`. A capacity over 2^20 with every length 0 is refused: no
+ * input could give it a buffer the test can allocate.
  *
  * @param text the capacity as written
- * @returns the expression, or the token the parser stopped at (`` `-` ``, or
- *   `the end`)
+ * @returns the expression, or why not: `stops at <token>` (`` `-` ``, or
+ *   `the end`), `nests parentheses deeper than 16`, or `is over 1048576 (2^20)
+ *   even with every length 0`
  */
 export const capacityParse = (text: string): Result<CapacityExpr, string> => {
   const c = new CapacityCursor(capacityLex(text))
@@ -185,23 +223,29 @@ export const capacityParse = (text: string): Result<CapacityExpr, string> => {
   if (c.pos < c.toks.length) {
     return Err(capacityStop(c))
   }
+  if (capacityFloor(e) > toF64(CAPACITY_MAX_LITERAL)) {
+    return Err(`is over ${CAPACITY_MAX_LITERAL} (2^20) even with every length 0`)
+  }
   return Ok(e)
 }
 
-const capacityShowIn = (e: CapacityExpr, len: (name: string) => string): string => {
+const capacityShowIn = (e: CapacityExpr, len: (name: string) => string, num: string): string => {
   const l = e.left
   const r = e.right
   if (e.kind === CAPACITY_NUM) {
-    return e.text
+    return `${e.text}${num}`
   }
   if (e.kind === CAPACITY_LEN || l === null || r === null) {
     return len(e.text)
   }
   if (e.kind === CAPACITY_ADD) {
-    return `${capacityShowIn(l, len)} + ${capacityShowIn(r, len)}`
+    return `${capacityShowIn(l, len, num)} + ${capacityShowIn(r, len, num)}`
   }
-  const ls = l.kind === CAPACITY_ADD ? `(${capacityShowIn(l, len)})` : capacityShowIn(l, len)
-  const rs = r.kind === CAPACITY_ADD || r.kind === CAPACITY_MUL ? `(${capacityShowIn(r, len)})` : capacityShowIn(r, len)
+  const ls = l.kind === CAPACITY_ADD ? `(${capacityShowIn(l, len, num)})` : capacityShowIn(l, len, num)
+  const rs =
+    r.kind === CAPACITY_ADD || r.kind === CAPACITY_MUL
+      ? `(${capacityShowIn(r, len, num)})`
+      : capacityShowIn(r, len, num)
   return `${ls} * ${rs}`
 }
 
@@ -212,18 +256,20 @@ const capacityShowIn = (e: CapacityExpr, len: (name: string) => string): string 
  * @param e the expression
  * @returns the text the contract records
  */
-export const capacityShow = (e: CapacityExpr): string => capacityShowIn(e, (name: string): string => `${name}.length`)
+export const capacityShow = (e: CapacityExpr): string =>
+  capacityShowIn(e, (name: string): string => `${name}.length`, "")
 
 /**
- * A capacity as a Nish i32 expression, each `<param>.length` read from
- * `<prefix><param>`.
+ * A capacity as a Nish f64 expression, each `<param>.length` read from
+ * `<prefix><param>`. It is f64 so a long sample cannot overflow it: the test
+ * compares it with 2^20 before it allocates.
  *
  * @param e the expression
  * @param prefix what the generated test names a parameter's local with
  * @returns the Nish expression
  */
 export const capacityNish = (e: CapacityExpr, prefix: string): string =>
-  capacityShowIn(e, (name: string): string => `toI32(${prefix}${name}.length)`)
+  capacityShowIn(e, (name: string): string => `toF64(${prefix}${name}.length)`, ".0")
 
 const capacityNamesIn = (e: CapacityExpr, out: string[]): void => {
   if (e.kind === CAPACITY_LEN) {
