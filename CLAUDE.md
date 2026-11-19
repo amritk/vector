@@ -1,7 +1,7 @@
 # Project rules
 
 vector is written in [Nish](https://github.com/amritk/nish), a static subset
-of TypeScript compiled ahead of time to a native binary, `dist/vector`. The
+of TypeScript compiled to a native binary, `dist/vector`. The
 compiler is pinned in `.nish-version` (read by `scripts/fetch-nish.sh`) and
 lives in `.nish/`; z3 is
 pinned in `scripts/fetch-z3.sh` and lives in `.z3/`. Before writing Nish,
@@ -39,8 +39,7 @@ read `.nish/docs/AI.md` (the language as rules, traps first).
   base, `work` = head), which `{{repo}}` names in `cmd` and `<repo>` in the
   output.
 - `tests/dogfood/` holds vector's tests of itself, emitted from its own specs
-  (`specs/vector-*.md`) with `--package vector=src`. They are generated, so
-  regenerate them; never edit them.
+  (`specs/vector-*.md`) with `--package vector=src`.
 
 ## Writing Nish
 
@@ -94,6 +93,9 @@ headers.** The tests cover a value on each side of a page break, and two
 separate blocks split only by one. A boundary rule tested without that page
 text passes even with the rule removed.
 
+**Every source file a gate reads is pinned by its SHA-256**, with a test that
+an edit after extraction is refused.
+
 **Generated files are regenerated, never edited by hand.** That covers
 `docs/reference/**` and its routes in `scalar.config.json`, `tests/dogfood/**`, `contracts/*.json`
 (extracted from `specs/*.xml`) and `specs/*.xml` and fixture `.xml` (built from
@@ -141,8 +143,8 @@ release is 5 days old.
 The release PR is opened with `GITHUB_TOKEN`, so CI does not run on it;
 close and reopen it to run the checks before merging.
 
-npm publishes through trusted publishing alone: no npm token is stored, in
-GitHub or anywhere else. The trusted publisher for `@amritk/vector` on
+npm publishes through trusted publishing: no npm token is stored
+anywhere. The trusted publisher for `@amritk/vector` on
 npmjs.com names repository `amritk/vector`, workflow file `release.yml` and
 environment `npm`, which is limited to `v*` tags in Settings, Environments.
 
@@ -158,8 +160,8 @@ What changed, and why this way.
 
 - **type**: `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`,
   `ci`, `chore`, `style` or `revert`. `pr-title.yml` checks the PR title,
-  which a squash merge lands. The type is not decoration: release-please
-  reads it to pick the next version (`fix` a patch, `feat` a minor, `!` or a
+  which a squash merge lands. release-please reads the type to pick the next
+  version (`fix` a patch, `feat` a minor, `!` or a
   `BREAKING CHANGE` footer a major, which is a minor before 1.0), and
   `feat`, `fix`, `perf`, `refactor` and `revert` reach the changelog. A
   feature merged as `chore` ships without a bump.
