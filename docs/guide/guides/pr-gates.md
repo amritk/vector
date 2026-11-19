@@ -25,7 +25,7 @@ usage, a file that cannot be read, or a git or tool failure. Each takes
 | --- | --- | --- | --- |
 | 1. write the spec | `specs/<name>.md`, then `bash scripts/build-spec.sh specs/<name>.md` ([Writing a spec](writing-a-spec.md)) | `specs/<name>.xml` written | a warning, or a render failure |
 | 2. extract and check | `vector spec extract specs/<name>.xml -o contracts/<name>.json`, then `vector spec check contracts/<name>.json --run-sources` ([From a spec to a contract](spec-to-contract.md)) | written; `CONTRACT_VALID` | refusals, each at `file:line` |
-| 3. frozen | `vector spec frozen --base origin/main` | one side only, hashes match | both sides (but a rename alone), a changed source |
+| 3. frozen | `vector spec frozen --base origin/main` | one side only, or a rename alone; hashes match | both sides, a changed source |
 | 4. emit and stale | `vector spec emit contracts/<name>.json -o test/spec/<name>.ts`, then `vector spec stale test/spec/<name>.ts contracts/<name>.json` | the test is the contract's | stale, or no marker line |
 | 5. implement and run | `vector spec run contracts/<name>.json --nish-root ../nish` ([Testing an implementation](testing.md)) | `SATISFIED` | `VIOLATED`, `ERROR` or refused |
 | 6. exports | `vector spec exports contracts/<name>.json --nish-root ../nish --base origin/main` | every changed export is tested | an export no clause tests |
@@ -64,7 +64,8 @@ every checked contract that changed drops one function and adds one with the
 same signature (module, parameters, return type and name overrides), and
 every changed file is that rename alone, `frozen` passes and notes
 `passed as a rename: <contract> renames <old> to <new>, and the <n> changed
-files are that rename alone`. A file is the rename alone when it is a regular
+files are that rename alone`, where `<n>` counts every changed path, neutral
+ones too. A file is the rename alone when it is a regular
 file at the fork point and now, with the same mode, did not name `<new>` at
 the fork point, names no `<old>` now, and replacing each whole
 identifier `<old>` with `<new>` in its fork-point text gives its text now,

@@ -331,6 +331,12 @@ const renameTestSigs = (t: Suite): void => {
     "another result",
     `{"name": "g", "module": "nish/m", "params": [{"name": "b", "type": "bytes"}], "returns": "bytes"}`,
     "false",
+    "another function name override",
+    `{"name": "g", "module": "nish/m", "names": {"rust": "g"}, "params": [{"name": "b", "type": "bytes"}], "returns": "string"}`,
+    "false",
+    "another parameter name override",
+    `{"name": "g", "module": "nish/m", "params": [{"name": "b", "type": "bytes", "names": {"rust": "c"}}], "returns": "string"}`,
+    "false",
   ]
   for (let i = 0; i < rows.length; i += 3) {
     const a = renameTestFn(base)
@@ -367,6 +373,7 @@ const renameTestDirect = (t: Suite): Result<boolean, string> => {
   prTestWrite(dir, "contracts/c.json", renameTestContract(xml, "encHex", "decHex", "bytes")).orReturn()
   prTestWrite(dir, "contracts/d.json", renameTestContract(xml, "encHex", "decHex", "bytes")).orReturn()
   prTestWrite(dir, "contracts/e.json", renameTestContract(xml, "fooHex", "decHex", "bytes")).orReturn()
+  prTestWrite(dir, "contracts/f.json", renameTestContract(xml, "hexEncode", "decHex", "bytes")).orReturn()
   prTestWrite(dir, "contracts/b.json", "{\n").orReturn()
   prTestCommit(dir, "base").orReturn()
   prTestGit(dir, ["checkout", "-q", "-b", "work"]).orReturn()
@@ -398,6 +405,18 @@ const renameTestDirect = (t: Suite): Result<boolean, string> => {
     "a new name that is another's old one refuses",
     renameTestWhy(chain),
     "contracts/e.json: no rename: it renames fooHex to encHex, but contracts/c.json renames encHex to hexEncode",
+  )
+  prTestWrite(dir, "contracts/e.json", renameTestContract(xml2, "hexEncode", "decHex", "bytes")).orReturn()
+  t.eqStr(
+    "two old names renamed to one new name refuses",
+    renameTestWhy(renamePairs(top, fork, [c[0], `${top}/contracts/e.json`]).orReturn()),
+    "contracts/e.json: no rename: it renames fooHex to hexEncode, but contracts/c.json renames encHex to hexEncode",
+  )
+  prTestWrite(dir, "contracts/f.json", renameTestContract(xml2, "barHex", "decHex", "bytes")).orReturn()
+  t.eqStr(
+    "an old name that is another's new one refuses",
+    renameTestWhy(renamePairs(top, fork, [c[0], `${top}/contracts/f.json`]).orReturn()),
+    "contracts/f.json: no rename: it renames hexEncode to barHex, but contracts/c.json renames encHex to hexEncode",
   )
   const dec = `,\n    {"name": "decHex", "params": [{"name": "s", "type": "string"}], "returns": "bytes"}`
   const full = renameTestContract(xml2, "hexEncode", "decHex", "bytes")
