@@ -13,9 +13,9 @@ author:
 --- abstract
 
 A fixture, not a specification: CRC-32 and Adler-32 over a window of a
-buffer, as nish's std checksum takes them, from spec to a run of the fixture
-module in tests/fixtures/checksum-window. Each function takes its bytes as
-(buf, off, len), which the interface declares as one bytes parameter.
+buffer, as nish's std checksum takes them, from spec to a run of that
+module. Each function takes its bytes as (buf, off, len), which the
+interface declares as one bytes parameter.
 
 --- middle
 
@@ -23,16 +23,16 @@ module in tests/fixtures/checksum-window. Each function takes its bytes as
 
 {::boilerplate bcp14-tagged}
 
-The module is the fixture checksum of tests/fixtures/checksum-window/fixture,
-run with `--package fixture=tests/fixtures/checksum-window/fixture`. It
-passes each call to nish/compress/checksum. A copy in broken/ reads its
-window from the start of the buffer, which the same contract refuses: the
-emitted test passes every window at a nonzero offset, between guard bytes.
+The module is nish's own nish/compress/checksum, checked and run with
+`--nish-root`. Its tests in tests/spec/emit run the same emitted test
+against copies of it with one window read wrong, which the contract
+refuses: the test passes every window at a nonzero offset, between guard
+bytes.
 
 # Interface
 
 ~~~ ts-interface
-// module: fixture/checksum
+// module: nish/compress/checksum
 export const crc32 = (buf: u8[] /* window */): u32
 export const adler32 = (buf: u8[] /* window */): u32
 export const adler32Update = (adler: u32, buf: u8[] /* window */): u32

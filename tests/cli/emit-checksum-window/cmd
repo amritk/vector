@@ -1,1 +1,1 @@
-vector spec emit tests/fixtures/checksum-window/contracts/checksum-window.json --package fixture=tests/fixtures/checksum-window/fixture -o dist/emit-checksum-window-golden.ts
+vector spec emit tests/fixtures/checksum-window/contracts/checksum-window.json -o dist/emit-checksum-window-golden.ts

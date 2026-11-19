@@ -1,1 +1,0 @@
-vector spec run tests/fixtures/checksum-window/contracts/checksum-window.json --package fixture=tests/fixtures/checksum-window/broken --nish-root .nish

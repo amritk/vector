@@ -313,8 +313,8 @@ export const crc32 = (buf: u8[] /* window */): u32
 The contract holds one `bytes` parameter with `"form": "window"`, and every
 vector and property passes it plain bytes (`crc32("123456789")`). The
 signatures gate checks it against the export's `(u8[], i32, i32)`, in that
-place. The Nish test copies the bytes between guard bytes, three before and
-two after, and passes the offset 3 and their length, so an implementation
+place. The Nish test copies the bytes between guard bytes, three on each
+side, and passes the offset 3 and their length, so an implementation
 that reads from 0 or past `len` fails. Only the Nish emitter expands a
 window; the others refuse the function, naming the parameter.
 

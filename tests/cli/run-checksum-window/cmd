@@ -1,1 +1,1 @@
-vector spec run tests/fixtures/checksum-window/contracts/checksum-window.json --package fixture=tests/fixtures/checksum-window/fixture --nish-root .nish
+vector spec run tests/fixtures/checksum-window/contracts/checksum-window.json --nish-root .nish

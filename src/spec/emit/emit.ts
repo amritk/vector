@@ -185,14 +185,17 @@ const emitTakesSecret = (sig: FnSig): boolean => {
   return secret
 }
 
+/** Whether `sig` takes a window. */
+const emitTakesWindow = (sig: FnSig): boolean => sig.params.some((p): boolean => typesIsWindow(p))
+
 /** Whether a call of `sig` goes through its `plain_` wrapper: it takes or returns a Secret, or takes a window. */
-const emitWraps = (sig: FnSig): boolean => emitTakesSecret(sig) || sig.params.some((p): boolean => typesIsWindow(p))
+const emitWraps = (sig: FnSig): boolean => emitTakesSecret(sig) || emitTakesWindow(sig)
 
 /** How many guard bytes a window's bytes sit after, so its offset is never 0. */
 const EMIT_WINDOW_LEAD: i32 = 3
 
 /** How many guard bytes follow a window's bytes, so a read past its length is seen. */
-const EMIT_WINDOW_TAIL: i32 = 2
+const EMIT_WINDOW_TAIL: i32 = 3
 
 /**
  * `sig.name` on plain bytes. Under nish's rules for a Secret, each secret
@@ -267,7 +270,7 @@ const emitPlainWrapper = (ctx: EmitContext, sig: FnSig, name: string): string =>
   if (secret) {
     how.push("secrets are copied in, wiped after")
   }
-  if (sig.params.some((p): boolean => typesIsWindow(p))) {
+  if (emitTakesWindow(sig)) {
     how.push("a window is passed as (buf, off, len) between guard bytes")
   }
   return [

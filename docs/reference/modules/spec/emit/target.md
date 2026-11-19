@@ -235,6 +235,6 @@ the language's name, as a message spells it (`Rust`)
 
 <scalar-field name="returns" type="string | null">
 
-the refusal, or null when no parameter is a window
+the refusal, naming every window, or null when no parameter is one
 
 </scalar-field>

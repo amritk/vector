@@ -22,8 +22,8 @@
       <?line 13?>
 
 <t>A fixture, not a specification: CRC-32 and Adler-32 over a window of a
-buffer, as nish's std checksum takes them, from spec to a run of the fixture
-module in tests/fixtures/checksum-window. Each function takes its bytes as
+buffer, as nish's std checksum takes them, from spec to a run of that
+module. Each function takes its bytes as
 (buf, off, len), which the interface declares as one bytes parameter.</t>
     </abstract>
   </front>
@@ -39,16 +39,16 @@ described in BCP 14 <xref target="RFC2119"/> <xref target="RFC8174"/> when, and
 appear in all capitals, as shown here.</t>
       <?line -18?>
 
-<t>The module is the fixture checksum of tests/fixtures/checksum-window/fixture,
-run with <tt>--package fixture=tests/fixtures/checksum-window/fixture</tt>. It
-passes each call to nish/compress/checksum. A copy in broken/ reads its
-window from the start of the buffer, which the same contract refuses: the
-emitted test passes every window at a nonzero offset, between guard bytes.</t>
+<t>The module is nish's own nish/compress/checksum, checked and run with
+<tt>--nish-root</tt>. Its tests in tests/spec/emit run the same emitted test
+against copies of it with one window read wrong, which the contract
+refuses: the test passes every window at a nonzero offset, between guard
+bytes.</t>
     </section>
     <section anchor="interface">
       <name>Interface</name>
       <sourcecode type="ts-interface"><![CDATA[
-// module: fixture/checksum
+// module: nish/compress/checksum
 export const crc32 = (buf: u8[] /* window */): u32
 export const adler32 = (buf: u8[] /* window */): u32
 export const adler32Update = (adler: u32, buf: u8[] /* window */): u32
@@ -188,41 +188,41 @@ only.</t>
     </references>
   </back>
   <!-- ##markdown-source:
-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
+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
+ZlyZUDYk+H8Ttqtc8D9wimVLlQ0AAA==
 
 -->
 

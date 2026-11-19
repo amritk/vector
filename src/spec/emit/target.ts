@@ -148,13 +148,18 @@ export const emitTargetWordsRefusal = (f: FnSig, language: string): string | nul
  *
  * @param f the function
  * @param language the language's name, as a message spells it (`Rust`)
- * @returns the refusal, or null when no parameter is a window
+ * @returns the refusal, naming every window, or null when no parameter is one
  */
 export const emitTargetWindowRefusal = (f: FnSig, language: string): string | null => {
+  const names: string[] = []
   for (const p of f.params) {
     if (typesIsWindow(p)) {
-      return `${f.name}: ${p.name} is a window (buf, off, len), which is not emitted for ${language} yet; emit the Nish test`
+      names.push(p.name)
     }
   }
-  return null
+  if (names.length === 0) {
+    return null
+  }
+  const what = names.length === 1 ? `${names[0]} is a window` : `${names.join(", ")} are windows`
+  return `${f.name}: ${what} (buf, off, len), which is not emitted for ${language} yet; emit the Nish test`
 }

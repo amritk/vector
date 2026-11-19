@@ -1,6 +1,0 @@
-VIOLATED: checksum-window (exit 1)
-  fail  R-CRC32
-  pass  R-ADLER32
-  pass  R-ADLER32-UPDATE
-FAIL  [V1] the CRC-32 check value (R-CRC32)
-      expected "3421780262", got "129283310"

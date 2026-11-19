@@ -1,5 +1,5 @@
 ── VECTOR RFC CONTRACT ─────────────────────────────────────────
- checksum-window · checksum-window (A checksum over a window) · fixture/checksum
+ checksum-window · checksum-window (A checksum over a window) · nish/compress/checksum
  Status: CONTRACT_VALID
 
  Requirements

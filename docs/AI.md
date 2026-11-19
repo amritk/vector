@@ -105,5 +105,4 @@ vector does two things, and no model is involved in either:
 - Strings, arrays, IO, loops, state and data structures do not fit. Offer to
   verify the numeric core alone.
 - A property may not hold or call word arrays yet: give them as vectors.
-- Write a `(buf, off, len)` triple as `u8[] /* window */`; only Nish
-  emits it.
+- `u8[] /* window */` is a `(buf, off, len)`; Nish tests only.

@@ -112,6 +112,7 @@ export const main = (): i32 => {
     '{"name": "d", "type": "bytes"}',
     "",
     '{"name": "k", "type": "secret-bytes"}, {"name": "d", "type": "bytes"}',
+    `${win}, {"name": "n", "type": "u32"}, {"name": "e", "type": "bytes", "form": "window"}`,
   ]
   const want: string[] = [
     "f: d is a window (buf, off, len), which is not emitted for Rust yet; emit the Nish test",
@@ -119,6 +120,7 @@ export const main = (): i32 => {
     "",
     "",
     "",
+    "f: d, e are windows (buf, off, len), which is not emitted for Rust yet; emit the Nish test",
   ]
   for (let i = 0; i < params.length; i++) {
     t.eqStr(`(${params[i]})`, emitTargetWindowRefusal(windowEmitSig(params[i], "u32"), "Rust") ?? "", want[i])
@@ -135,7 +137,7 @@ export const main = (): i32 => {
   t.contains(
     "a window sits between guard bytes",
     program,
-    "const w_d: u8[] = concatBytes(concatBytes(fillBytes(0xa5, 3), a_d), fillBytes(0x5a, 2));",
+    "const w_d: u8[] = concatBytes(concatBytes(fillBytes(0xa5, 3), a_d), fillBytes(0x5a, 3));",
   )
   t.contains("and is passed at offset 3 with its length", program, "const r: u32 = windowSum(w_d, 3, a_d.length);")
   t.contains(

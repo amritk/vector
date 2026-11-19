@@ -4,7 +4,7 @@
   "source": {
     "title": "A checksum over a window",
     "main": "checksum-window",
-    "sha256": "692c7825b4d541a1ab282749eeee9dfe96fae9ff1a6819951aab30009502a9ac"
+    "sha256": "eeda40743c353e457f39415b59a7052b391e486beed9386d06323b60be071a46"
   },
   "sources": [
     {
@@ -13,7 +13,7 @@
     }
   ],
   "target": {
-    "module": "fixture/checksum"
+    "module": "nish/compress/checksum"
   },
   "requirements": [
     {
