@@ -1,6 +1,6 @@
 # Using vector: the rules card
 
-This is what an agent needs before it runs vector, stated as rules, traps
+This is what an agent needs before it runs vector, as rules, traps
 first. It is a digest, not the authority: the [guide](guide/index.md) shows
 every command with its output, and the [command-line
 reference](reference/command-line.md) lists the commands, flags and exit
@@ -26,14 +26,13 @@ vector does two things, and no model is involved in either:
    not `PROVEN`. See
    [Proving a function](guide/guides/proving.md#the-verdicts).
 3. **`diff` exits 2 for `INVALID` and `ERROR`**, not 1 as `verify` does.
-   It exits 2 for `MISMATCH` too. `EQUIVALENT` exits 0; `DIFFERENT` and
-   `UNDECIDED` exit 1. Do not report `UNDECIDED` as equivalent. See
+   Like `verify`, it exits 2 for `MISMATCH`, a witness that did not replay.
+   `EQUIVALENT` exits 0; `DIFFERENT` and `UNDECIDED` exit 1. Do not report `UNDECIDED` as equivalent. See
    [Exit codes](guide/guides/exit-codes.md#by-command).
 4. **The proof is over exact rationals, and an `Int` is unbounded there.**
    The emitted code runs in float64. A float64 gate samples boundary, dense
-   and random inputs, and anything it finds makes the run `REFUTED`. It
-   proves nothing about float64, so prefer inequalities to an exact `==`
-   on `Real`.
+   and random inputs; anything it finds makes the run `REFUTED`. It
+   proves nothing about float64: prefer inequalities to `==` on `Real`.
 5. **An `Int` `+`, `-` or `*` that may leave ±(2^53−1) is an `Int overflow`,
    and the run is `REFUTED`**, even when every postcondition holds over the
    integers. Write it so no intermediate grows past its operands, such as
@@ -44,13 +43,13 @@ vector does two things, and no model is involved in either:
 7. **A trivial `ensures`, one that holds whatever the body does, fails.** So
    do contradictory `requires`, which make the proof vacuous. Restate the
    clause as a real constraint on `result`. Remove a contradictory
-   `requires`; never add more.
+   `requires`; add none.
 8. **A hazard is checked on the path the emitted code takes.** An `ite`
    branch, the right side of a short-circuit `and`, `or` or `implies`, and
    each `requires` after the first lean only on what was checked before them.
    So `x != 0 and 1 / x > 0` is safe; `1 / x > 0 and x != 0` is a
    division hazard.
-9. **`--emit` writes only on `PROVEN`.** Otherwise it writes nothing and
+9. **`--emit` writes only on `PROVEN`.** Else it writes nothing and
    leaves an existing file alone.
 10. **`spec run` `SATISFIED` is evidence, not proof.** The implementation
    returned the printed vectors and held the properties at their samples.
@@ -58,8 +57,8 @@ vector does two things, and no model is involved in either:
    See [What a pass means](guide/guides/testing.md#what-a-pass-means).
 11. **Never hand-edit a generated file.** `spec extract` writes
    `contracts/*.json`, `scripts/build-spec.sh` builds `specs/*.xml` from
-   `specs/*.md`, and `spec emit` writes the test. Change the source and
-   rerun the generator.
+   `specs/*.md`, and `spec emit` writes the test. Change the source, rerun
+   the generator.
 12. **`spec frozen` refuses a change that touches both sides**, unless it only
    renames a contracted export. The spec side is `specs/`, `contracts/`,
    `rfcs/`, `.refcache/` and generated tests. Land the spec first, then the code. See

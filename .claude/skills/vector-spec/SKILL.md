@@ -25,7 +25,7 @@ re-extract. You never decide that a quote or a vector is right; extract and
 `check` do, against the cited text. Every gate below is deterministic and fails
 closed: a git error, a missing source, an unreadable diff or a Z3 `unknown` is
 a failure, never a pass. A FAIL is a finding about the implementation (or the
-spec). Show it, and never weaken a clause to pass.
+spec). Show it; never weaken a clause to pass.
 
 Exit codes, for every command: **0** pass, **1** refused (extract's refusals,
 `INVALID`, `VIOLATED`, `ERROR`, a stale test, an unlisted export, a survivor),
@@ -125,7 +125,7 @@ least one: a clause that calls only reference functions is refused. A module lin
 `// module: nish/<path>`, one module, after the previous signature. A comment of any style or case whose text starts `module:` or
 `module nish/` but is not that (`// Module: …`, `//module nish/…`,
 `/* module: … */`, `/// module: …`, two modules) is refused, and so is a module
-line inside a signature. Other comments, such as `// module-level helper`, are
+line inside a signature. Other comments (`// module-level helper`) are
 skipped:
 
 ````
@@ -142,7 +142,7 @@ with the anchor on the next line. `X MUST a. Y MUST b.` under one anchor is
 refused: give each sentence its own anchor. In an unnumbered section, a
 requirement of this spec, an exclusion of an unanchored sentence, and a
 vector table are refused (no section number to record); an RFC quote is
-accepted there.
+accepted.
 
 ```
 hexEncode MUST return exactly two characters per input byte.
@@ -152,9 +152,9 @@ Definition: a hex digit is one of the characters 0-9, a-f and A-F.
 {: #R-DEF-DIGIT}
 ```
 
-**Quotes from an RFC** go in a blockquote. The last line of the blockquote is
-the citation, and the attribute must include `gi="blockquote"`. The quote must
-appear verbatim in that section of the RFC.
+**Quotes from an RFC** go in a blockquote. Its last line is the citation, and
+its attribute must include `gi="blockquote"`. The quote must appear verbatim
+in that section of the RFC.
 
 ```
 > BASE16("f") = "66"
@@ -163,11 +163,11 @@ appear verbatim in that section of the RFC.
 ```
 
 **Exclusions.** Some BCP 14 sentences cannot be observed by a functional
-test: caller obligations, timing, key management. Follow each one directly
+test: caller obligations, timing, key management. Follow each directly
 with an `Untested:` paragraph that gives the reason and, where it exists, what
 checks it instead. That sentence can be a requirement or an unanchored
 paragraph. A requirement followed by `Untested:` becomes an exclusion: no
-vector's Covers and no property may name it.
+vector's Covers or property may name it.
 
 ```
 hexDecode MUST NOT index a table by the value of a digit.
@@ -363,7 +363,7 @@ together, then show the spec to a human for approval. **The reviewer confirms th
 - each `Untested:` reason is true, and what it says checks the sentence
   really does.
 
-From here, the spec and contract change only in a PR of their own.
+Nothing after this step may change the spec.
 
 ### 3. Freeze
 
@@ -387,6 +387,8 @@ test whose one sha line names a contract in `contracts/` (not a sidecar or a
 symbolic link) or one given counts on the spec side, so a PR changing two
 contracts may name only one of them. `--repo <dir>` names the repository
 (default: the current directory).
+
+From here, the spec and contract change only in a PR of their own.
 
 ### 4. Emit the test, and keep it fresh
 
