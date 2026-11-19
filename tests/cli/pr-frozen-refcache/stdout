@@ -1,0 +1,8 @@
+spec frozen against main: FAILED
+
+  ✓ contract contracts/a.json
+  spec .refcache/reference.RFC.4648.xml
+  implementation src/x.ts
+
+problems:
+  ✗ the change touches the spec side (.refcache/reference.RFC.4648.xml) and the implementation (src/x.ts): change them in separate PRs

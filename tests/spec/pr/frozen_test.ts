@@ -468,6 +468,18 @@ export const main = (): i32 => {
   t.eqStr("dots in a name are not a ..", frozenTestInTop("contracts/a..json"), "/r/contracts/a..json")
   t.ok("specs", frozenPathKind("specs/a.md") === FROZEN_SPEC && frozenPathKind("contracts/a.json") === FROZEN_SPEC)
   t.ok("rfcs", frozenPathKind("rfcs/rfc1.txt") === FROZEN_SPEC)
+  const refKinds: string[][] = [
+    [".refcache/reference.RFC.4648.xml", "0"],
+    [".refcache/sub/dir/x.xml", "0"],
+    [".refcache", "3"],
+    [".refcachex/a.xml", "3"],
+    ["refcache/a.xml", "3"],
+    ["src/.refcache/a.xml", "3"],
+    ["docs/.refcache/a.xml", "2"],
+  ]
+  for (const r of refKinds) {
+    t.eqStr(`refcache path ${r[0]}`, `${frozenPathKind(r[0])}`, r[1])
+  }
   t.ok("neutral", frozenPathKind("docs/a/b.md") === FROZEN_NEUTRAL && frozenPathKind("README.md") === FROZEN_NEUTRAL)
   t.ok("nested markdown is implementation", frozenPathKind("src/README.md") === FROZEN_IMPLEMENTATION)
   t.ok("a spec-named file elsewhere is implementation", frozenPathKind("src/specs/a.ts") === FROZEN_IMPLEMENTATION)

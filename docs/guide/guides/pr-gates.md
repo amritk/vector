@@ -39,7 +39,9 @@ to 7 without touching anything on the spec side.
 (committed since the merge base with `<ref>`, staged, unstaged or untracked)
 into a class:
 
-- **spec**: `specs/`, `contracts/` and `rfcs/`;
+- **spec**: `specs/`, `contracts/`, `rfcs/` and `.refcache/` (the
+  kramdown-rfc reference cache a spec's build reads, so a spec lands with the
+  entries for the references it cites);
 - **generated**: a test in `test/spec/` whose one `// vector-contract-sha256:`
   line names a contract in `contracts/` (not a symbolic link) or one given on
   the command line, as that contract is in the work tree. It counts on the
