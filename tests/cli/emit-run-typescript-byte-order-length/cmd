@@ -1,0 +1,1 @@
+vector spec run tests/fixtures/byte-order/contracts/byte-order-length.json --lang typescript --package order=tests/fixtures/byte-order/typescript/order

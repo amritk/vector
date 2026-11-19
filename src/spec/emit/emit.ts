@@ -473,7 +473,7 @@ const emitOp = (ctx: EmitContext, e: Expr, want: string | null): string => {
   const op = e.name
   const viaHelper = emitHelperOp(ctx, e)
   if (viaHelper !== null) {
-    return viaHelper
+    return emitConv(viaHelper, emitTypeOf(ctx, e), want)
   }
   if (op === "len" || op === "strLen") {
     return emitConv(`toI32(${emitArg(ctx, e, 0, null)}.length)`, "i32", want)

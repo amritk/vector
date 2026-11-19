@@ -1,0 +1,7 @@
+VIOLATED: byte-order-length (exit 1)
+  pass  R-WRITE
+  fail  R-READ
+FAIL  [P-SHORT] three bytes read as an i32 are not padded with a zero byte (R-READ)
+      sample 1 of 26 (len(b) = 3): a read met the wrong number of bytes
+FAIL  [P-LONG] five bytes read as a u32 are not cut to four (R-READ)
+      sample 1 of 26 (len(b) = 5): a read met the wrong number of bytes

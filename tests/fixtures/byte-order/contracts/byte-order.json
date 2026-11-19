@@ -283,7 +283,7 @@
     {
       "kind": "property",
       "id": "P-WRITE-FIXED",
-      "title": "known integers write as known bytes",
+      "title": "n = -2, 51966, 305419896, 3735928559 and 18364758544493064720 write as their known bytes",
       "covers": [
         "R-WRITE"
       ],
@@ -556,7 +556,7 @@
     {
       "kind": "property",
       "id": "P-READ-FIXED",
-      "title": "known bytes read as known integers",
+      "title": "known bytes, ff...fe and fe...ff among them, read as known integers",
       "covers": [
         "R-READ"
       ],
@@ -744,6 +744,70 @@
               },
               {
                 "int": -2
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "leI32",
+                "args": [
+                  {
+                    "hex": "feffffff"
+                  }
+                ]
+              },
+              {
+                "int": -2
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "beI64",
+                "args": [
+                  {
+                    "hex": "fffffffffffffffe"
+                  }
+                ]
+              },
+              {
+                "int": -2
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "beI32",
+                "args": [
+                  {
+                    "hex": "80000000"
+                  }
+                ]
+              },
+              {
+                "int": -2147483648
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "leI64",
+                "args": [
+                  {
+                    "hex": "0000000000000080"
+                  }
+                ]
+              },
+              {
+                "int": "-9223372036854775808"
               }
             ]
           },

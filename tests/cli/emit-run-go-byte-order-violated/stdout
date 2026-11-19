@@ -1,5 +1,5 @@
 VIOLATED: byte-order (exit 1)
   fail  R-WRITE
   pass  R-READ
-FAIL  [P-WRITE-FIXED] known integers write as known bytes (R-WRITE)
+FAIL  [P-WRITE-FIXED] n = -2, 51966, 305419896, 3735928559 and 18364758544493064720 write as their known bytes (R-WRITE)
       sample 1 of 1 (n = -2): the assertion is false

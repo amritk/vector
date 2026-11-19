@@ -1,0 +1,21 @@
+VIOLATED: byte-order-read (exit 1)
+  fail  R-WRITE
+  fail  R-READ
+FAIL  [P-VARINT] varint62 is the big-endian u64 with its top 2 bits cleared (R-READ)
+      sample 2 of 26 (len(b) = 8): the assertion is false
+FAIL  [P-READ-LE-I32] readLeI32 reads four bytes little-endian, signed (R-READ)
+      sample 1 of 26 (len(b) = 4): the assertion is false
+FAIL  [P-READ-BE-U16] readBeU16 reads two bytes big-endian (R-READ)
+      sample 1 of 26 (len(b) = 2): the assertion is false
+FAIL  [P-PUT-BE32] putBe32 writes a u32 big-endian (R-WRITE)
+      sample 1 of 29 (n = 17151397): the assertion is false
+FAIL  [P-PUT-LE64] putLe64 writes an i64 little-endian, in two's complement (R-WRITE)
+      sample 1 of 28 (n = 9223372036854775806): the assertion is false
+FAIL  [P-READ-ARG-16] two-byte reads passed to a u16 parameter (R-READ)
+      sample 1 of 29 (n = 39663): the assertion is false
+FAIL  [P-READ-ARG-U32] unsigned four-byte reads passed to a u32 parameter, and signed ones too (R-READ)
+      sample 1 of 29 (n = 3542036866): the assertion is false
+FAIL  [P-READ-ARG-I32] signed four-byte reads passed to an i32 parameter (R-READ)
+      sample 1 of 29 (n = 195084815): the assertion is false
+FAIL  [P-READ-ARG-64] eight-byte reads passed to a u64 and an i64 parameter (R-READ)
+      sample 1 of 29 (n = 5624747936293237507): the assertion is false
