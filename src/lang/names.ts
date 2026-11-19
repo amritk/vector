@@ -402,7 +402,7 @@ export const langModule = (lang: string, module: string): string => {
     const slash = module.indexOf("/")
     const pkg = slash < 0 ? module : module.substring(0, slash)
     const rest = slash < 0 ? module : module.substring(slash + 1, module.length)
-    return `package:${pkg}/${rest}.dart`
+    return `package:${langUnderscored(pkg)}/${rest}.dart`
   }
   return module
 }
