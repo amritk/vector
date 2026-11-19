@@ -488,7 +488,8 @@ A known answer: call(args) == expect. The args are printed in the cited section 
 | `title` | `string` | yes |  |
 | `covers` | [`id`](#def-id)[] | yes | at least 1 items. |
 | `source` | [`vectorSource`](#def-vectorsource) | yes |  |
-| `section` | [`section`](#def-section) | no | Only with a command or spec source: the main-source section printing the args. |
+| `section` | [`section`](#def-section) | no | Only with a command or spec source: the section printing the args, in the main source unless sectionSource names another. |
+| `sectionSource` | [`id`](#def-id) | no | Only with a command source: the id of the source section is in (default: the main one). A main-RFC spec's command vector names the spec, whose own section prints its args. |
 | `call` | `string` | yes |  |
 | `args` | [`literal`](#def-literal)[] | yes |  |
 | `expect` | [`literal`](#def-literal) | yes |  |
