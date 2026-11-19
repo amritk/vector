@@ -36,20 +36,21 @@ import {
   mutatePick,
   mutateSites,
 } from "./mutate"
+import { runMakeScratchIn, runSeedOf } from "../run/run"
 import { PrReport } from "./report"
 
-/** The longest copying a nish checkout may take, in milliseconds. */
+/** The longest making a slot (copying a checkout or an install) may take, in milliseconds. */
 export const MUTATERUN_COPY_MS: i32 = 120000
 /** The least time a mutant's build or run is given, in milliseconds. */
 export const MUTATERUN_MIN_TIMEOUT_MS: i32 = 10000
 
 /** How to run the test against the mutants. */
 export class MutateRun {
-  /** The nish checkout: bin/, std/ and the compiler's own files. */
+  /** The nish root: an install, or a checkout (with build/seed, or the compiler `nish` names). */
   nishRoot: string
   /** The module mutated, from the nish root, such as std/hex.ts. */
   file: string
-  /** The compiler, from the nish root, such as bin/nish. */
+  /** The compiler, from the nish root, such as build/nish, to copy the checkout; "" to build with the root's seed (runSeedOf) with its std/ laid over it. */
   nish: string
   /** The test program, an absolute path; "" to emit it from the contract, as `spec emit` does. */
   test: string
@@ -63,9 +64,9 @@ export class MutateRun {
   /**
    * Makes the settings for a run.
    *
-   * @param nishRoot the nish checkout
+   * @param nishRoot the nish install or checkout
    * @param file the module, from the nish root ("" until the contract names it)
-   * @param nish the compiler, from the nish root
+   * @param nish the compiler, from the nish root; "" for the root's seed with its std/ laid over it
    * @param test the test program, an absolute path; "" to emit it from the contract
    * @param jobs how many mutants run at once; below 1 is 1, above the machine's CPUs is their count
    * @param timeoutMs the time limit per step; 0 or less to derive it from the baseline
@@ -81,9 +82,9 @@ export class MutateRun {
   }
 }
 
-/** One copy of the nish checkout, and what runs in it. */
+/** One slot, a scratch install or a copy of the checkout, and what runs in it. */
 class MutaterunSlot {
-  /** The copy's directory. */
+  /** The slot's directory. */
   dir: string
   /** The running child's pid, or 0 when the slot is idle. */
   pid: i32 = 0
@@ -97,7 +98,7 @@ class MutaterunSlot {
   /**
    * Makes a slot.
    *
-   * @param dir the copy's directory
+   * @param dir the slot's directory
    */
   constructor(dir: string) {
     this.dir = dir
@@ -126,10 +127,13 @@ const mutaterunLogged = (log: string, argv: string[]): string[] => {
   return out
 }
 
+/** The compiler in a slot, from its directory: the scratch install's own, or the checkout's. */
+const mutaterunCompiler = (run: MutateRun): string => (run.nish === "" ? "libexec/nish" : run.nish)
+
 /** The build's argv in a slot. */
 const mutaterunBuildArgv = (run: MutateRun, dir: string): string[] =>
   mutaterunLogged(joinPath(dir, "mutant.log"), [
-    joinPath(dir, run.nish),
+    joinPath(dir, mutaterunCompiler(run)),
     run.test,
     "--link",
     joinPath(dir, "mutant.bin"),
@@ -150,6 +154,20 @@ const mutaterunCopy = (root: string, dest: string): Result<boolean, string> => {
   if (r.status !== 0 || r.timedOut) {
     return Err(`cannot copy ${root} to ${dest}: ${r.stderr}`)
   }
+  return Ok(true)
+}
+
+/**
+ * Makes a slot in `dest`: with no `--nish`, a scratch install, the root's
+ * seed with its std/ laid over it and the module written in it as `text`
+ * (runMakeScratchIn); with one, a copy of the checkout.
+ */
+const mutaterunSlotIn = (run: MutateRun, dest: string, text: string): Result<boolean, string> => {
+  if (run.nish !== "") {
+    return mutaterunCopy(run.nishRoot, dest)
+  }
+  mkdirAll(dest, 0o700).orReturn()
+  runMakeScratchIn(run.nishRoot, dest, [run.file], [text]).orReturn()
   return Ok(true)
 }
 
@@ -220,11 +238,12 @@ const mutaterunBaseline = (run: MutateRun, dir: string, limitMs: i32): Result<Mu
 const MUTATERUN_CANARY: string = "\n)vector mutate canary(\n"
 
 /**
- * Checks that the compiler builds from the copy in `dir`: the module, made
+ * Checks that the compiler builds from the slot in `dir`: the module, made
  * unparseable there, must be refused with an error located in it. A compiler
  * that reads another install's std (an installed wrapper that execs by
- * absolute path, say) builds it anyway, and would let every mutant pass
- * unseen, so that is a tool failure. The module is restored after.
+ * absolute path, or a seed that does not read the std/ laid over it) builds
+ * it anyway, and would let every mutant pass unseen, so that is a tool
+ * failure. The module is restored after.
  */
 const mutaterunCanary = (run: MutateRun, dir: string, text: string, limitMs: i32): Result<boolean, string> => {
   const module = joinPath(dir, run.file)
@@ -235,6 +254,11 @@ const mutaterunCanary = (run: MutateRun, dir: string, text: string, limitMs: i32
   const b = build.orReturn()
   if (b.timedOut) {
     return Err(`the canary build (the module made unparseable) ran past ${limitMs} ms: ${mutaterunLogTail(dir)}`)
+  }
+  if (b.status === 0 && run.nish === "") {
+    return Err(
+      `the seed's compiler (${runSeedOf(run.nishRoot).unwrapOr(run.nishRoot)}/libexec/nish) builds the test even with ${run.file} made unparseable in the std/ laid over it, so it does not read that std: give --nish a compiler built in the checkout`,
+    )
   }
   if (b.status === 0) {
     return Err(
@@ -551,7 +575,7 @@ const mutaterunLoop = (
   return failure.length > 0 ? Err(failure) : Ok(true)
 }
 
-/** Copies the checkout into the slots, runs the baseline, then the mutants. */
+/** Makes the slots, runs the baseline in each and the canary in the first, then the mutants. */
 const mutaterunIn = (
   run: MutateRun,
   scratch: string,
@@ -562,13 +586,13 @@ const mutaterunIn = (
   const n = run.jobs < mutants.length ? run.jobs : toI32(mutants.length)
   for (let i = 0; i < n; i++) {
     const dir = joinPath(scratch, `slot${i}`)
-    mutaterunCopy(run.nishRoot, dir).orReturn()
+    mutaterunSlotIn(run, dir, text).orReturn()
     slots.push(new MutaterunSlot(dir))
   }
   const first = run.timeoutMs > 0 ? run.timeoutMs : MUTATERUN_COPY_MS
   let slowest: i64 = 0
   for (let i = 0; i < slots.length; i++) {
-    const where = i > 0 ? `in copy ${i + 1} of ${slots.length}, ` : ""
+    const where = i > 0 ? `in slot ${i + 1} of ${slots.length}, ` : ""
     const baseline = mutaterunBaseline(run, slots[i].dir, first)
     if (baseline.isErr()) {
       return Err(`${where}${baseline.error}`)
@@ -734,11 +758,23 @@ export const mutateCheck = (contractPath: string, base: string, run: MutateRun, 
   if (text === null) {
     return Err(`${run.nishRoot}/${file} cannot be read: is ${run.nishRoot} the nish checkout?`)
   }
-  const compiler = joinPath(run.nishRoot, run.nish)
-  const status = runProcess(["test", "-f", compiler, "-a", "-x", compiler], "", MUTATERUN_MIN_TIMEOUT_MS).orReturn()
-  const runnable = status.status === 0
+  let compiler = ""
+  let runnable = true
+  if (run.nish === "") {
+    const seed = runSeedOf(run.nishRoot)
+    if (seed.isErr()) {
+      return Err(
+        `${run.nishRoot} has no seed to build mutants with: neither libexec/nish (an install) nor build/seed/libexec/nish (a checkout). Fetch one there with \`bash scripts/fetch-seed.sh\` (no build needed), or give --nish a compiler built in the checkout`,
+      )
+    }
+    compiler = `${seed.value}/libexec/nish`
+  } else {
+    compiler = joinPath(run.nishRoot, run.nish)
+    const status = runProcess(["test", "-f", compiler, "-a", "-x", compiler], "", MUTATERUN_MIN_TIMEOUT_MS).orReturn()
+    runnable = status.status === 0
+  }
   const launcher = run.nish === "bin/nish" || run.nish === "./bin/nish"
-  if ((!runnable || launcher) && mutaterunUnbuilt(run.nishRoot).orReturn()) {
+  if (run.nish !== "" && (!runnable || launcher) && mutaterunUnbuilt(run.nishRoot).orReturn()) {
     const what = runnable ? "is the npm launcher, not a compiler" : "is not an executable file"
     return Err(
       `the compiler ${compiler} ${what}: ${run.nishRoot} is a nish checkout with no build/nish. Build one there with \`bash scripts/fetch-seed.sh && npm run build\`, or \`NISH_BOOTSTRAP=<an installed nish> npm run build\`, then give --nish build/nish`,

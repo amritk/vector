@@ -44,11 +44,19 @@ export class SpecMutateCommand {
       parent,
       "mutate",
       SPEC_MUTATE_ID,
-      "Mutate the changed lines and refuse mutants the test misses",
+      "Mutate the changed lines the contract's functions reach and refuse mutants the test misses",
     )
     this.baseFlag = cli.flag(handle, "--base <ref>", "the commit the change is against")
-    this.nishRootFlag = cli.flag(handle, "--nish-root <dir>", "a nish checkout: finds the module and the compiler")
-    this.nishFlag = cli.flag(handle, "--nish <bin>", "the nish compiler, from --nish-root (default: bin/nish)")
+    this.nishRootFlag = cli.flag(
+      handle,
+      "--nish-root <dir>",
+      "a nish install, or a checkout: holds the module and builds the mutants",
+    )
+    this.nishFlag = cli.flag(
+      handle,
+      "--nish <bin>",
+      "a compiler built in the checkout, from --nish-root, to copy the checkout (default: the root's seed with its std/ laid over it)",
+    )
     this.testFlag = cli.flag(
       handle,
       "--test <file>",
@@ -80,7 +88,9 @@ export class SpecMutateCommand {
     }
     const root = r.value(this.nishRootFlag)
     if (root === null) {
-      return report(usageError("spec mutate: --nish-root <dir> is required: the nish checkout holding the module"))
+      return report(
+        usageError("spec mutate: --nish-root <dir> is required: the nish install or checkout holding the module"),
+      )
     }
     const given = r.value(this.testFlag)
     if (given !== null && given.length === 0) {
@@ -95,7 +105,11 @@ export class SpecMutateCommand {
     if (max < 0) {
       return report(usageError("spec mutate: --max takes a whole number"))
     }
-    const run = new MutateRun(root, "", r.value(this.nishFlag) ?? "bin/nish", test, jobs, 0)
+    const nish = r.value(this.nishFlag)
+    if (nish !== null && nish.length === 0) {
+      return report(usageError("spec mutate: --nish takes a file; leave the flag out to build with the root's seed"))
+    }
+    const run = new MutateRun(root, "", nish ?? "", test, jobs, 0)
     const contract = r.positional(this.contractJsonArg) ?? ""
     return prCliFinish("spec mutate", mutateCheck(contract, base.value, run, max), format.value)
   }

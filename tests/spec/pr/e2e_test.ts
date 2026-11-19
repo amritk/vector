@@ -154,7 +154,19 @@ const e2eTestModule = (t: Suite, dir: string): Result<boolean, string> => {
   )
   t.eqStr(
     "mutate refuses a change with nothing to mutate",
-    e2eTestRun(dir, ["spec", "mutate", "--base", "main", "--nish-root", root, "--test", `${dir}/t.ts`, contract]),
+    e2eTestRun(dir, [
+      "spec",
+      "mutate",
+      "--base",
+      "main",
+      "--nish-root",
+      root,
+      "--nish",
+      "bin/nish",
+      "--test",
+      `${dir}/t.ts`,
+      contract,
+    ]),
     "exit 1\nspec mutate std/hex.ts against main: FAILED\n\nproblems:\n  ✗ no mutants: the change adds no line of std/hex.ts that can be mutated\n",
   )
   t.eqStr(
@@ -169,7 +181,19 @@ const e2eTestModule = (t: Suite, dir: string): Result<boolean, string> => {
   prTestWrite(dir, "nish/std/hex.ts", `${E2E_TEST_HEX}${other}`).orReturn()
   t.eqStr(
     "mutate refuses a change only outside the tested functions, naming what it left",
-    e2eTestRun(dir, ["spec", "mutate", "--base", "main", "--nish-root", root, "--test", `${dir}/t.sh`, contract]),
+    e2eTestRun(dir, [
+      "spec",
+      "mutate",
+      "--base",
+      "main",
+      "--nish-root",
+      root,
+      "--nish",
+      "bin/nish",
+      "--test",
+      `${dir}/t.sh`,
+      contract,
+    ]),
     "exit 1\nspec mutate std/hex.ts against main: FAILED\n\nnotes:\n  - 1 changed line outside the tested functions was not mutated: other\n\nproblems:\n  ✗ no mutants: no line the change adds to std/hex.ts lies in code the contract's functions reach\n",
   )
   prTestWrite(
@@ -179,7 +203,19 @@ const e2eTestModule = (t: Suite, dir: string): Result<boolean, string> => {
   ).orReturn()
   t.eqStr(
     "mutate still runs the tested function's changed line, and notes the other",
-    e2eTestRun(dir, ["spec", "mutate", "--base", "main", "--nish-root", root, "--test", `${dir}/t.sh`, contract]),
+    e2eTestRun(dir, [
+      "spec",
+      "mutate",
+      "--base",
+      "main",
+      "--nish-root",
+      root,
+      "--nish",
+      "bin/nish",
+      "--test",
+      `${dir}/t.sh`,
+      contract,
+    ]),
     [
       "exit 1\nspec mutate std/hex.ts against main: FAILED\n\n",
       "  survived std/hex.ts:2:51 int: export const enc = (b: string): string => b.slice(2)\n",
@@ -196,7 +232,19 @@ const e2eTestModule = (t: Suite, dir: string): Result<boolean, string> => {
   ).orReturn()
   t.eqStr(
     "mutate refuses a tested function whose changed lines hold no mutant, not claiming they lie outside",
-    e2eTestRun(dir, ["spec", "mutate", "--base", "main", "--nish-root", root, "--test", `${dir}/t.sh`, contract]),
+    e2eTestRun(dir, [
+      "spec",
+      "mutate",
+      "--base",
+      "main",
+      "--nish-root",
+      root,
+      "--nish",
+      "bin/nish",
+      "--test",
+      `${dir}/t.sh`,
+      contract,
+    ]),
     "exit 1\nspec mutate std/hex.ts against main: FAILED\n\nnotes:\n  - 1 changed line outside the tested functions was not mutated: other\n\nproblems:\n  ✗ no mutants: no line the change adds to std/hex.ts in code the contract's functions reach can be mutated\n",
   )
   prTestWrite(dir, "nish/std/hex.ts", `${E2E_TEST_HEX}\n/** New. */\nexport const fresh = (): i32 => 1\n`).orReturn()
@@ -233,7 +281,19 @@ const e2eTestHyphenModule = (t: Suite, dir: string): Result<boolean, string> => 
   )
   t.eqStr(
     "mutate maps nish/net/quic-packet to std/net/quic-packet.ts",
-    e2eTestRun(dir, ["spec", "mutate", "--base", "main", "--nish-root", root, "--test", `${dir}/t.ts`, c]),
+    e2eTestRun(dir, [
+      "spec",
+      "mutate",
+      "--base",
+      "main",
+      "--nish-root",
+      root,
+      "--nish",
+      "bin/nish",
+      "--test",
+      `${dir}/t.ts`,
+      c,
+    ]),
     "exit 1\nspec mutate std/net/quic-packet.ts against main: FAILED\n\nproblems:\n  ✗ no mutants: the change adds no line of std/net/quic-packet.ts that can be mutated\n",
   )
   prTestWrite(

@@ -574,21 +574,27 @@ const runFillScratch = (
   return Ok(true)
 }
 
-/**
- * Makes a scratch nish install: a copy of the root's seed (runSeedOf)
- * without its std, the root's own `std/`, and the overrides written over it.
- * `nish run` resolves `nish/…` imports to the std beside its binary, so a
- * test run with the scratch's compiler sees the overridden library and
- * nothing else does. An override reached through a symlink in `std/` is
- * refused; a link on the overridden file itself is replaced, never written
- * through, and every other link is left as it is.
- *
- * @param nishRoot a nish install or checkout
- * @param paths where each override goes, relative and under `std/`
- * @param texts each override's contents, matching `paths`
- * @returns the install, or `Err` when it could not be made (nothing is left behind)
- */
-export const runMakeScratch = (nishRoot: string, paths: string[], texts: string[]): Result<RunScratch, string> => {
+/** Where a scratch install comes from: the root, resolved, and its seed. */
+class RunScratchSource {
+  /** The nish root, resolved. */
+  root: string
+  /** The root's seed (runSeedOf). */
+  seed: string
+
+  /**
+   * Makes a scratch's source.
+   *
+   * @param root the nish root, resolved
+   * @param seed its seed
+   */
+  constructor(root: string, seed: string) {
+    this.root = root
+    this.seed = seed
+  }
+}
+
+/** Checks the overrides and the root, and finds the root's seed, before anything is written. */
+const runScratchSource = (nishRoot: string, paths: string[], texts: string[]): Result<RunScratchSource, string> => {
   if (paths.length !== texts.length) {
     return Err("scratch: the override paths and texts differ in number")
   }
@@ -605,12 +611,54 @@ export const runMakeScratch = (nishRoot: string, paths: string[], texts: string[
   if (!isDirectorySync(joinPath(root, "std"))) {
     return Err(`scratch: ${joinPath(root, "std")} does not exist`)
   }
+  return Ok(new RunScratchSource(root, seed))
+}
+
+/**
+ * Makes a scratch nish install: a copy of the root's seed (runSeedOf)
+ * without its std, the root's own `std/`, and the overrides written over it.
+ * `nish run` resolves `nish/…` imports to the std beside its binary, so a
+ * test run with the scratch's compiler sees the overridden library and
+ * nothing else does. An override reached through a symlink in `std/` is
+ * refused; a link on the overridden file itself is replaced, never written
+ * through, and every other link is left as it is.
+ *
+ * @param nishRoot a nish install or checkout
+ * @param paths where each override goes, relative and under `std/`
+ * @param texts each override's contents, matching `paths`
+ * @returns the install, or `Err` when it could not be made (nothing is left behind)
+ */
+export const runMakeScratch = (nishRoot: string, paths: string[], texts: string[]): Result<RunScratch, string> => {
+  const source = runScratchSource(nishRoot, paths, texts).orReturn()
   const s = new RunScratch(makeTempDir("vector-scratch-").orReturn())
-  const filled = runFillScratch(s, root, seed, paths, texts)
+  const filled = runFillScratch(s, source.root, source.seed, paths, texts)
   if (filled.isErr()) {
     const gone = runDisposeScratch(s)
     return Err(gone.isErr() ? `${filled.error}; ${gone.error}` : filled.error)
   }
+  return Ok(s)
+}
+
+/**
+ * Makes a scratch nish install as runMakeScratch does, but in `dir`, which
+ * the caller made empty and removes: `spec mutate` keeps one per slot under
+ * a scratch directory of its own.
+ *
+ * @param nishRoot a nish install or checkout
+ * @param dir the empty directory to fill
+ * @param paths where each override goes, relative and under `std/`
+ * @param texts each override's contents, matching `paths`
+ * @returns the install, or `Err` when it could not be made (what was written stays in `dir`)
+ */
+export const runMakeScratchIn = (
+  nishRoot: string,
+  dir: string,
+  paths: string[],
+  texts: string[],
+): Result<RunScratch, string> => {
+  const source = runScratchSource(nishRoot, paths, texts).orReturn()
+  const s = new RunScratch(dir)
+  runFillScratch(s, source.root, source.seed, paths, texts).orReturn()
   return Ok(s)
 }
 
