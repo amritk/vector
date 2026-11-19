@@ -422,7 +422,8 @@ const sampleStrOp = (op: string, a: SampleValue[]): Result<SampleValue, string> 
   return Ok(sampleStr(i >= toI64(0) && i < toI64(s.length) ? s.substring(toI32(i), toI32(i) + 1) : ""))
 }
 
-const SAMPLE_BYTES_OPS: string = " len concat slice zeros fill flipBit le16 le32 le64 be16 be32 be64 leU16 leU32 leU64 beU16 beU32 beU64 leI32 leI64 beI32 beI64 ascii xor bitAnd bitOr "
+const SAMPLE_BYTES_OPS: string =
+  " len concat slice zeros fill flipBit le16 le32 le64 be16 be32 be64 leU16 leU32 leU64 beU16 beU32 beU64 leI32 leI64 beI32 beI64 ascii xor bitAnd bitOr "
 const SAMPLE_STR_OPS: string = " strLen strConcat lower upper utf8 charAt "
 
 /** An operator application. */

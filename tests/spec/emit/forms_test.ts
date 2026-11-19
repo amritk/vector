@@ -1,8 +1,8 @@
 import { Suite } from "nish/testing"
 import { CheckContext, Sample, SampleTable, checkAddSample, checkContract, checkPassed } from "../../../src/spec/check"
 import { contractLoadFile } from "../../../src/spec/contract/contract"
-import { Contract, LitKind, Literal } from "../../../src/spec/contract/types"
-import { EmitOptions, emitProgram } from "../../../src/spec/emit/emit"
+import { Contract, Expr, ExprKind, LitKind, Literal } from "../../../src/spec/contract/types"
+import { EmitOptions, emitProgram, emitUndefinedWhy } from "../../../src/spec/emit/emit"
 import { emitContractFile } from "../../../src/spec/emit/file"
 import { EmitPackages } from "../../../src/spec/emit/packages"
 import { EmitTarget } from "../../../src/spec/emit/target"
@@ -17,7 +17,7 @@ const formsStr = (s: string): Literal => new Literal(LitKind.Str, s)
 
 /**
  * Hand-picked samples for every property of the forms contract: a zero
- * divisor, i64 and i32 arithmetic that wraps, a negative le64, equal-length bytes, and
+ * divisor, i64 and i32 arithmetic that wraps, a negative le64, byte order both ways, equal-length bytes, and
  * strings that need escaping, control characters included (no contract can
  * hold one, so only a sample reaches the `\u00XX` escape).
  */
@@ -33,6 +33,9 @@ const formsSamples = (): SampleTable => {
   checkAddSample(t, new Sample("P-WRAP32", [formsInt("65536"), formsInt("65536")], "* wraps to 0"))
   checkAddSample(t, new Sample("P-LE64", [formsInt("-2")], "every byte set"))
   checkAddSample(t, new Sample("P-LE64", [formsInt("2147483647")], "i32's maximum"))
+  checkAddSample(t, new Sample("P-ORDER", [formsInt("-2147483648")], "i32's minimum"))
+  checkAddSample(t, new Sample("P-ORDER", [formsInt("-1")], "every bit set"))
+  checkAddSample(t, new Sample("P-ORDER", [formsInt("305419896")], "four distinct bytes"))
   checkAddSample(t, new Sample("P-BITS", [formsHex("0f"), formsHex("f1")], "by hand"))
   checkAddSample(t, new Sample("P-BITS", [formsHex(""), formsHex("")], "empty"))
   checkAddSample(t, new Sample("P-LET", [formsStr("")], "empty"))
@@ -61,6 +64,28 @@ const formsEmit = (c: Contract): string => {
   return p.isOk() ? p.value : ""
 }
 
+/** The assert of the forms contract's clause `id`. */
+const formsAssert = (c: Contract, id: string): Expr => {
+  for (const k of c.clauses) {
+    const a = k.assert
+    if (k.id === id && a !== null) {
+      return a
+    }
+  }
+  return new Expr(ExprKind.Var, "missing")
+}
+
+/** Why a sample is undefined: an unwrap, a read, both, or neither. */
+const formsUndefinedWhy = (t: Suite, c: Contract): void => {
+  const both = new Expr(ExprKind.Op, "and")
+  both.args = [formsAssert(c, "P-ORDER"), formsAssert(c, "P-UNWRAP-B")]
+  t.eqStr("a read's why", emitUndefinedWhy(formsAssert(c, "P-ORDER")) ?? "", "a read met the wrong number of bytes")
+  t.eqStr("an unwrap's why", emitUndefinedWhy(formsAssert(c, "P-UNWRAP-B")) ?? "", "unwrap met a null")
+  t.eqStr("both", emitUndefinedWhy(both) ?? "", "unwrap met a null, or a read the wrong number of bytes")
+  t.ok("neither", emitUndefinedWhy(formsAssert(c, "P-MOD")) === null)
+  t.ok("a write alone cannot be undefined", emitUndefinedWhy(formsAssert(c, "P-LE64")) === null)
+}
+
 /** The iterate loop: positional steps, a null that names its step, a slow vector skipped unless opts.slow. */
 const formsIterate = (t: Suite, c: Contract, p: string): void => {
   t.contains(
@@ -86,7 +111,7 @@ const formsIterate = (t: Suite, c: Contract, p: string): void => {
 
 /**
  * Checks the text emitted for every form a contract can use — integer
- * remainders, wrapping i32 and i64, le64, bitwise bytes, let and unwrap, nulls,
+ * remainders, wrapping i32 and i64, byte order, bitwise bytes, let and unwrap, nulls,
  * binary64 comparisons, secrets — then compiles and runs it with the pinned
  * nish against tests/spec/emit/fixtures/forms.ts.
  */
@@ -119,8 +144,21 @@ export const main = (): i32 => {
   t.contains("xor is 0", p, "bitwiseBytes(xorB(v_a, v_b), v_b, 0)")
   t.contains("and is 1", p, "bitwiseBytes(v_a, v_b, 1)")
   t.contains("or is 2", p, "bitwiseBytes(v_a, v_a, 2)")
-  t.contains("bytes compare by bytesEq", p, "bytesEq(leBytes(v_x), le64(v_x))")
-  t.contains("le64 shifts an i64", p, "v = v >> toI64(8);")
+  t.contains("bytes compare by bytesEq", p, "bytesEq(leBytes(v_x), intBytes(toU64(v_x), 8, false))")
+
+  // Byte order: one write helper and one read helper, by width and order; a read takes u.
+  t.ok("intBytes is defined once", formsCount(p, "const intBytes = ") === 1)
+  t.ok("bytesInt is defined once", formsCount(p, "const bytesInt = ") === 1)
+  t.contains("be32 of an i32 is its u64 bits", p, "intBytes(toU64(v_x), 4, true)")
+  t.contains("a read is cast to its type", p, "toI32(bytesInt(u, intBytes(toU64(v_x), 4, true), 4, true))")
+  t.contains(
+    "a 16-bit read of a negative literal",
+    p,
+    "toU16(bytesInt(u, intBytes(toU64((-2)), 2, true), 2, false)) === toU16(65279)",
+  )
+  t.contains("a u64 read is not cast", p, "bytesInt(u, intBytes(toU64(idI32(v_x)), 8, false), 8, true)")
+  t.contains("a read fails the sample on a wrong length", p, 'why = "a read met the wrong number of bytes";')
+  formsUndefinedWhy(t, c)
 
   // let, unwrap and nulls.
   t.contains("a let is a const", p, "const v_r: string | null = nonEmpty(v_s);")

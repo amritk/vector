@@ -417,7 +417,14 @@ forall (b: u8[] /* 0..64 */) => {
 - **Members:** `.length`, `.concat`, `.slice`, `.toLowerCase`,
   `.toUpperCase`, `.charAt`.
 - **Operations:** `xor`, `bitAnd`, `bitOr`, `fill`, `zeros`, `flipBit`,
-  `le64`, `unwrap`, `utf8`, `ascii`, `implies` and `concat`.
+  `unwrap`, `utf8`, `ascii`, `implies` and `concat`.
+- **Byte order:** `le16`, `le32`, `le64`, `be16`, `be32` and `be64` write
+  an integer no wider than the op as its 2, 4 or 8 bytes, little- or
+  big-endian, a signed one in two's complement. `leU16`, `leU32`, `leU64`,
+  `beU16`, `beU32`, `beU64`, `leI32`, `leI64`, `beI32` and `beI64` read
+  exactly that many bytes back as the named integer; any other length
+  fails the sample, as `unwrap` of a null does. A wider argument is
+  refused: `le32 wants an integer of at most 32 bits, got u64`.
 - **Semantics** are vector's evaluator's, not JavaScript's:
   - `===` on `u8[]` compares contents.
   - `.slice` clamps its bounds.

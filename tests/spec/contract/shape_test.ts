@@ -483,7 +483,7 @@ export const main = (): i32 => {
     t,
     `"op": "<="`,
     `"op": "=<"`,
-    "clauses[1].assert.op: one of len concat slice zeros fill flipBit xor bitAnd bitOr unwrap isNull notNull + - * % le64 < <= > >= == != and or not implies strLen strConcat lower upper utf8 ascii charAt",
+    "clauses[1].assert.op: one of len concat slice zeros fill flipBit xor bitAnd bitOr unwrap isNull notNull + - * % le16 le32 le64 be16 be32 be64 leU16 leU32 leU64 beU16 beU32 beU64 leI32 leI64 beI32 beI64 < <= > >= == != and or not implies strLen strConcat lower upper utf8 ascii charAt",
   )
 
   // outOfScope and allowSurvivors.

@@ -1,0 +1,5 @@
+VIOLATED: byte-order (exit 1)
+  pass  R-WRITE
+  fail  R-READ
+FAIL  [P-READ-LEN] a 32-bit read of any length holds (R-READ)
+      sample 1 of 28 (len(b) = 0): a read met the wrong number of bytes

@@ -463,6 +463,135 @@
     },
     {
       "kind": "property",
+      "id": "P-ORDER",
+      "title": "P-ORDER holds",
+      "covers": ["R-ALL"],
+      "forall": [
+        {
+          "name": "x",
+          "type": "i32",
+          "min": -2147483648,
+          "max": 2147483647
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "beI32",
+                "args": [
+                  {
+                    "op": "be32",
+                    "args": [
+                      {
+                        "var": "x"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "x"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "leI32",
+                "args": [
+                  {
+                    "op": "slice",
+                    "args": [
+                      {
+                        "op": "le64",
+                        "args": [
+                          {
+                            "var": "x"
+                          }
+                        ]
+                      },
+                      {
+                        "int": 0
+                      },
+                      {
+                        "int": 4
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "x"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "leU16",
+                "args": [
+                  {
+                    "op": "be16",
+                    "args": [
+                      {
+                        "int": -2
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "int": 65279
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "beU64",
+                "args": [
+                  {
+                    "op": "le64",
+                    "args": [
+                      {
+                        "call": "idI32",
+                        "args": [
+                          {
+                            "var": "x"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "beU64",
+                "args": [
+                  {
+                    "op": "le64",
+                    "args": [
+                      {
+                        "var": "x"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
       "id": "P-BITS",
       "title": "P-BITS holds",
       "covers": ["R-ALL"],
