@@ -61,9 +61,9 @@ vector does two things, and no model is involved in either:
    `contracts/*.json`, `scripts/build-spec.sh` builds `specs/*.xml` from
    `specs/*.md`, and `spec emit` writes the test. Change the source and
    rerun the generator.
-12. **`spec frozen` refuses a change that touches both sides.** The spec side
-   is `specs/`, `contracts/`, `rfcs/`, `.refcache/` and generated tests; the
-   rest is the implementation. Land the spec, then the implementation. See
+12. **`spec frozen` refuses a change that touches both sides**, unless it only
+   renames a contracted export. The spec side is `specs/`, `contracts/`,
+   `rfcs/`, `.refcache/` and generated tests. Land the spec first, then the code. See
    [frozen](guide/guides/pr-gates.md#frozen).
 
 ## Rules

@@ -2,7 +2,8 @@
  * `spec/pr/frozen` — a PR changes the spec side (specs/, contracts/, rfcs/,
  * and .refcache/, the kramdown-rfc reference cache a spec's build reads)
  * or the implementation, never both, so a test cannot be loosened to match
- * the code it tests. A path's side is decided by the path, with one
+ * the code it tests; the one exception is a change that is only the rename
+ * of contracted exports on both sides (spec/pr/rename). A path's side is decided by the path, with one
  * exception: a generated test under `test/spec/` is spec side while its one
  * `// vector-contract-sha256:` line names a contract under contracts/ or one
  * given, as its bytes are in the work tree. Only the given contracts (every
@@ -17,7 +18,8 @@ import { sha256Hex } from "../../core/hex"
 import { contractLoadFile } from "../contract/contract"
 import { Contract } from "../contract/types"
 import { sourceDecls, sourceLoad, sourceMainId } from "../source/load"
-import { gitdiffChangedPaths, gitdiffCompare, gitdiffTop } from "./gitdiff"
+import { gitdiffChangedPaths, gitdiffCompare, gitdiffForkPoint, gitdiffTop } from "./gitdiff"
+import { renameCheck } from "./rename"
 import { PrReport } from "./report"
 import { staleShaLines } from "./stale"
 
@@ -277,6 +279,7 @@ export const frozenCheck = (repo: string, base: string, contracts: string[]): Re
   }
   const spec: string[] = []
   const impl: string[] = []
+  const generated: string[] = []
   for (const p of paths) {
     let kind = frozenPathKind(p)
     if (kind === FROZEN_IMPLEMENTATION && p.startsWith(FROZEN_EMITTED_TESTS)) {
@@ -285,6 +288,7 @@ export const frozenCheck = (repo: string, base: string, contracts: string[]): Re
         const named = staleShaLines(text)
         if (named.length === 1 && shas.has(named[0])) {
           kind = FROZEN_GENERATED
+          generated.push(p)
         }
       }
     }
@@ -296,9 +300,23 @@ export const frozenCheck = (repo: string, base: string, contracts: string[]): Re
     }
   }
   if (spec.length > 0 && impl.length > 0) {
-    r.problems.push(
-      `the change touches the spec side (${spec.join(", ")}) and the implementation (${impl.join(", ")}): change them in separate PRs`,
-    )
+    const fork = gitdiffForkPoint(top, base).orReturn()
+    const v = renameCheck(top, fork, paths, files, generated).orReturn()
+    const refusal = v.refusal
+    if (refusal === null && v.pairs.length > 0) {
+      for (const p of v.pairs) {
+        r.notes.push(
+          `passed as a rename: ${p.contract} renames ${p.from} to ${p.to}, and the ${paths.length} changed files are that rename alone`,
+        )
+      }
+    } else {
+      r.problems.push(
+        `the change touches the spec side (${spec.join(", ")}) and the implementation (${impl.join(", ")}): change them in separate PRs`,
+      )
+      if (refusal !== null) {
+        r.problems.push(`not a rename alone: ${refusal}`)
+      }
+    }
   }
   for (const p of contractProblems) {
     r.problems.push(p)
