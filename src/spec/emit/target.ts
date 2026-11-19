@@ -9,7 +9,7 @@
  * so the same file also runs under that framework.
  */
 
-import { FnSig } from "../contract/types"
+import { FnSig, typesIsWindow } from "../contract/types"
 import { vocabBaseOf, vocabIsWordType, vocabLanguages } from "../contract/vocab"
 
 /** A test's language and harness, and whether its slow vectors run. */
@@ -136,6 +136,24 @@ export const emitTargetWordsRefusal = (f: FnSig, language: string): string | nul
   for (const t of types) {
     if (vocabIsWordType(t)) {
       return `${f.name}: word arrays (${t}) are not emitted for ${language} yet; emit the Nish test`
+    }
+  }
+  return null
+}
+
+/**
+ * Why a function cannot be tested in a language whose emitter has no windows
+ * yet: a parameter is a window, which the real function takes as
+ * `(buf, off, len)`. Only the Nish emitter expands one.
+ *
+ * @param f the function
+ * @param language the language's name, as a message spells it (`Rust`)
+ * @returns the refusal, or null when no parameter is a window
+ */
+export const emitTargetWindowRefusal = (f: FnSig, language: string): string | null => {
+  for (const p of f.params) {
+    if (typesIsWindow(p)) {
+      return `${f.name}: ${p.name} is a window (buf, off, len), which is not emitted for ${language} yet; emit the Nish test`
     }
   }
   return null

@@ -18,7 +18,15 @@ import {
   literalsSettle,
   literalsSettleVector,
 } from "../../../src/spec/contract/literals"
-import { FnSig, LitKind, Literal, Param, typesIsWindow, typesIsWords, typesWordsKey } from "../../../src/spec/contract/types"
+import {
+  FnSig,
+  LitKind,
+  Literal,
+  Param,
+  typesIsWindow,
+  typesIsWords,
+  typesWordsKey,
+} from "../../../src/spec/contract/types"
 import { typeIntBase } from "../../../src/spec/contract/typing"
 
 /** A raw kind's name. */
