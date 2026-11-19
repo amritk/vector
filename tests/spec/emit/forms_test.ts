@@ -81,7 +81,7 @@ const formsUndefinedWhy = (t: Suite, c: Contract): void => {
   both.args = [formsAssert(c, "P-ORDER"), formsAssert(c, "P-UNWRAP-B")]
   t.eqStr("a read's why", emitUndefinedWhy(formsAssert(c, "P-ORDER")) ?? "", "a read met the wrong number of bytes")
   t.eqStr("an unwrap's why", emitUndefinedWhy(formsAssert(c, "P-UNWRAP-B")) ?? "", "unwrap met a null")
-  t.eqStr("both", emitUndefinedWhy(both) ?? "", "unwrap met a null, or a read the wrong number of bytes")
+  t.eqStr("both", emitUndefinedWhy(both) ?? "", "unwrap met a null, or a read met the wrong number of bytes")
   t.ok("neither", emitUndefinedWhy(formsAssert(c, "P-MOD")) === null)
   t.ok("a write alone cannot be undefined", emitUndefinedWhy(formsAssert(c, "P-LE64")) === null)
 }

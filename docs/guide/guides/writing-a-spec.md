@@ -424,8 +424,11 @@ forall (b: u8[] /* 0..64 */) => {
   `beU16`, `beU32`, `beU64`, `leI32`, `leI64`, `beI32` and `beI64` read
   exactly that many bytes back as the named integer; any other length
   fails the sample, as `unwrap` of a null does. A wider argument is
-  refused: `le32 wants an integer of at most 32 bits, got u64`.
-  These names are operations, so no ts-interface function may take one.
+  refused: `le32 wants an integer of at most 32 bits, got u64`. An int
+  literal must fit the op's width read as signed or unsigned, so `le16`
+  takes -32768 to 65535. There is no 16-bit signed read. An `leI32` or
+  `beI32` result may be passed where a u32 is wanted. These names are
+  operations, so no ts-interface function may take one.
 - **Semantics** are vector's evaluator's, not JavaScript's:
   - `===` on `u8[]` compares contents.
   - `.slice` clamps its bounds.

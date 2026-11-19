@@ -604,7 +604,7 @@ export const emitUndefinedWhy = (assert: Expr): string | null => {
   const unwraps = emitHasOp(assert, "unwrap")
   const reads = emitHasRead(assert)
   if (unwraps && reads) {
-    return "unwrap met a null, or a read the wrong number of bytes"
+    return "unwrap met a null, or a read met the wrong number of bytes"
   }
   if (reads) {
     return "a read met the wrong number of bytes"

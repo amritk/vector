@@ -339,6 +339,8 @@ const frontTestInterface = (t: Suite): void => {
       "`concat` is a ts-property op; give the function another name",
       "concat",
     ],
+    ["export function le32(n: u32): u8[]", "`le32` is a ts-property op; give the function another name", "le32"],
+    ["export function beI64(b: u8[]): i64", "`beI64` is a ts-property op; give the function another name", "beI64"],
   ]
   for (const k of cases) {
     const text = `// module: nish/m\n${k[0]}`
@@ -483,6 +485,12 @@ const frontTestRefusals = (t: Suite, fns: FnSig[]): void => {
     ["// P!X covers R-X — t\nforall () => true", "`P!X` is not a clause or requirement id", "// P!X"],
     ["// P-X covers R X — t\nforall () => true", "`R X` is not a clause or requirement id", "// P-X"],
     [`${h}exists () => true`, "expected `forall`, got `exists`", "exists"],
+    [
+      `${h}forall (n: u64 /* 0..1 */) => le32(n).length === 4`,
+      "`le32` wants an integer of at most 32 bits, got u64",
+      "n).length",
+    ],
+    [`${h}forall (n: u32 /* 0..1 */) => beU32(n) === n`, "`beU32` wants u8[], got u32", "n) === n"],
     [`${h}forall (b: number /* 0..1 */) => true`, `\`number\` ${FRONT_TEST_FORALL}`, "number"],
     [`${h}forall (n: boolean /* 0..1 */) => true`, `\`boolean\` ${FRONT_TEST_FORALL}`, "boolean"],
     [

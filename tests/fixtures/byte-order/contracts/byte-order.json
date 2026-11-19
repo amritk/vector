@@ -283,7 +283,7 @@
     {
       "kind": "property",
       "id": "P-WRITE-FIXED",
-      "title": "n = -2, 51966, 305419896, 3735928559 and 18364758544493064720 write as their known bytes",
+      "title": "-2, 51966, 305419896, 3735928559 and 18364758544493064720, literals in the assertion, write as their known bytes",
       "covers": [
         "R-WRITE"
       ],

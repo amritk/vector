@@ -127,8 +127,16 @@ export const main = (): i32 => {
   )
   t.eqStr(
     "beU64 of le64 of a u16 zero-extends, then swaps",
-    sampleIntTerm(byteorderOp("beU64", byteorderOp("le64", h)), vars, "u64")?.substring(0, 52) ?? "",
-    "(concat ((_ extract 7 0) ((_ zero_extend 48) v_h)) (",
+    sampleIntTerm(byteorderOp("beU64", byteorderOp("le64", h)), vars, "u64") ?? "",
+    "(concat " +
+      "((_ extract 7 0) ((_ zero_extend 48) v_h)) " +
+      "((_ extract 15 8) ((_ zero_extend 48) v_h)) " +
+      "((_ extract 23 16) ((_ zero_extend 48) v_h)) " +
+      "((_ extract 31 24) ((_ zero_extend 48) v_h)) " +
+      "((_ extract 39 32) ((_ zero_extend 48) v_h)) " +
+      "((_ extract 47 40) ((_ zero_extend 48) v_h)) " +
+      "((_ extract 55 48) ((_ zero_extend 48) v_h)) " +
+      "((_ extract 63 56) ((_ zero_extend 48) v_h)))",
   )
   t.ok(
     "a read of a wider write is outside the skeleton",
