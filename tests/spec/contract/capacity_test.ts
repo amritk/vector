@@ -78,11 +78,19 @@ export const main = (): i32 => {
   for (const c of cases) {
     t.eqStr(`capacity \`${c[0]}\``, capTestShow(c[0]), c[1])
   }
-  const e = capacityParse("2 * (src.length + 8)")
-  if (e.isOk()) {
-    t.eqStr("a capacity in Nish", capacityNish(e.value, "a_"), "2.0 * (toF64(a_src.length) + 8.0)")
-  } else {
-    t.fail("a capacity in Nish", "did not parse")
+  // [capacity, its Nish f64 form]: a bare number too, which `4096.0` would not compile as in i32 mode
+  const nish: string[][] = [
+    ["2 * (src.length + 8)", "toF64(2) * (toF64(a_src.length) + toF64(8))"],
+    ["4096", "toF64(4096)"],
+    ["src.length", "toF64(a_src.length)"],
+  ]
+  for (const n of nish) {
+    const e = capacityParse(n[0])
+    if (e.isOk()) {
+      t.eqStr(`\`${n[0]}\` in Nish`, capacityNish(e.value, "a_"), n[1])
+    } else {
+      t.fail(`\`${n[0]}\` in Nish`, "did not parse")
+    }
   }
   return t.done()
 }

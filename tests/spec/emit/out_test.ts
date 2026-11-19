@@ -298,7 +298,7 @@ export const main = (): i32 => {
   t.contains(
     "the capacity is f64 until it is checked",
     bigProgram,
-    'const o_cap: i32 = of.cap("outBig", toF64(a_d.length) * toF64(a_d.length) * 16.0);\n  if (o_cap < 0) {\n    return fillBytes(0, 0);\n  }',
+    'const o_cap: i32 = of.cap("outBig", toF64(a_d.length) * toF64(a_d.length) * toF64(16));\n  if (o_cap < 0) {\n    return fillBytes(0, 0);\n  }',
   )
   t.eqStr(
     "a capacity over 2^20 fails its clause, naming the function",

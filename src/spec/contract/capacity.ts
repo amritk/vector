@@ -229,11 +229,11 @@ export const capacityParse = (text: string): Result<CapacityExpr, string> => {
   return Ok(e)
 }
 
-const capacityShowIn = (e: CapacityExpr, len: (name: string) => string, num: string): string => {
+const capacityShowIn = (e: CapacityExpr, len: (name: string) => string, num: (text: string) => string): string => {
   const l = e.left
   const r = e.right
   if (e.kind === CAPACITY_NUM) {
-    return `${e.text}${num}`
+    return num(e.text)
   }
   if (e.kind === CAPACITY_LEN || l === null || r === null) {
     return len(e.text)
@@ -257,7 +257,11 @@ const capacityShowIn = (e: CapacityExpr, len: (name: string) => string, num: str
  * @returns the text the contract records
  */
 export const capacityShow = (e: CapacityExpr): string =>
-  capacityShowIn(e, (name: string): string => `${name}.length`, "")
+  capacityShowIn(
+    e,
+    (name: string): string => `${name}.length`,
+    (text: string): string => text,
+  )
 
 /**
  * A capacity as a Nish f64 expression, each `<param>.length` read from
@@ -269,7 +273,11 @@ export const capacityShow = (e: CapacityExpr): string =>
  * @returns the Nish expression
  */
 export const capacityNish = (e: CapacityExpr, prefix: string): string =>
-  capacityShowIn(e, (name: string): string => `toF64(${prefix}${name}.length)`, ".0")
+  capacityShowIn(
+    e,
+    (name: string): string => `toF64(${prefix}${name}.length)`,
+    (text: string): string => `toF64(${text})`,
+  )
 
 const capacityNamesIn = (e: CapacityExpr, out: string[]): void => {
   if (e.kind === CAPACITY_LEN) {

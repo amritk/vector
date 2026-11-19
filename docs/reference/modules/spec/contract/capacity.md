@@ -82,7 +82,9 @@ text: string
 ### capacityParse
 
 Parses a capacity: decimal numbers up to 2^20 with no leading zero, `+`,
-`*`, parentheses and `<param>.length`, `*` binding tighter than `+`.
+`*`, parentheses nested at most 16 deep and `<param>.length`, `*` binding
+tighter than `+`. A capacity over 2^20 with every length 0 is refused: no
+input could give it a buffer the test can allocate.
 
 ```ts
 function capacityParse(text: string): Result<CapacityExpr, string>
@@ -96,8 +98,9 @@ the capacity as written
 
 <scalar-field name="returns" type="Result&lt;CapacityExpr, string&gt;">
 
-the expression, or the token the parser stopped at (`` `-` ``, or
-  `the end`)
+the expression, or why not: `stops at <token>` (`` `-` ``, or
+  `the end`), `nests parentheses deeper than 16`, or `is over 1048576 (2^20)
+  even with every length 0`
 
 </scalar-field>
 
@@ -124,8 +127,9 @@ the text the contract records
 
 ### capacityNish
 
-A capacity as a Nish i32 expression, each `<param>.length` read from
-`<prefix><param>`.
+A capacity as a Nish f64 expression, each `<param>.length` read from
+`<prefix><param>`. It is f64 so a long sample cannot overflow it: the test
+compares it with 2^20 before it allocates.
 
 ```ts
 function capacityNish(e: CapacityExpr, prefix: string): string
