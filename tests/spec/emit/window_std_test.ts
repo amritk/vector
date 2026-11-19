@@ -1,9 +1,9 @@
 import { Suite } from "nish/testing"
-import { EmitPackages } from "../../../src/spec/emit/packages"
+import { Contract } from "../../../src/spec/contract/types"
 import { emitContractFile } from "../../../src/spec/emit/file"
+import { EmitPackages } from "../../../src/spec/emit/packages"
 import { EmitTarget } from "../../../src/spec/emit/target"
 import { RunOutcome, runDisposeScratch, runMakeScratch, runTest } from "../../../src/spec/run/run"
-import { Contract } from "../../../src/spec/contract/types"
 
 /** The checksum-window contract, whose module is nish's own nish/compress/checksum. */
 const WINDOW_STD_CONTRACT: string = "tests/fixtures/checksum-window/contracts/checksum-window.json"
