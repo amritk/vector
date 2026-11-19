@@ -11,6 +11,7 @@ that someone else wrote.
 | RFC 4648, RFC 5869, RFC 7748, RFC 8032, RFC 8439, RFC 8707 | `rfcs/`, excerpts in `contracts/` and `tests/` | IETF Trust Legal Provisions |
 | nish v0.34.0 excerpts | `tests/fixtures/mutate/` | MIT |
 | RFC 7748 excerpt, nish v0.39.0 `std/crypto/x25519.ts` | `tests/fixtures/x25519/` | IETF Trust Legal Provisions; MIT |
+| RFC 9001 and RFC 7914 excerpts | `tests/cli/check-rfc9001-wrapped/`, `tests/cli/check-rfc7914-wrapped/` | IETF Trust Legal Provisions |
 
 ---
 
@@ -257,6 +258,24 @@ Section 5.2 that give the iterated test vectors, excerpted unchanged and
 redistributed under the IETF Trust Legal Provisions. `tests/fixtures/x25519/fixture/x25519.ts` is a copy of nish
 v0.39.0's `std/crypto/x25519.ts`, unchanged below an opening comment that says
 so, under nish's MIT license (the text is in the section above).
+
+### RFC 9001 and RFC 7914 (`tests/cli/check-rfc*-wrapped/`)
+
+`tests/cli/check-rfc7914-wrapped/rfcs/rfc7914.txt` is an excerpt of RFC 7914,
+"The scrypt Password-Based Key Derivation Function" (IETF,
+© 2016 IETF Trust and the persons identified as the document authors), from
+<https://www.rfc-editor.org/rfc/rfc7914.txt>: its first-page header and title,
+and Section 11 with the page footers, form feed and header around it, excerpted
+unchanged. `tests/cli/check-rfc9001-wrapped/rfcs/rfc9001.txt` is an excerpt of
+RFC 9001, "Using TLS to Secure QUIC" (IETF, © 2021 IETF Trust and the persons
+identified as the document authors), from
+<https://www.rfc-editor.org/rfc/rfc9001.txt>: its first-page header and title,
+and Appendix A to the end of A.1, every line unchanged. That publication is
+unpaginated, so page footers, form feeds and headers in the RFC Editor's
+paginated style were added between its lines, one inside the value
+`client_initial_secret`, as `vector spec check` reads only paginated text.
+Both are redistributed under the IETF Trust Legal Provisions, §3.c.iii; please
+reproduce this note if possible.
 
 The rest of `tests/fixtures/` (including `nish-hex/`) and `specs/` was written
 for vector and is under vector's own license.

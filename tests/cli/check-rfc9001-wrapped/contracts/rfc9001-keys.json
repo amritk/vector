@@ -1,0 +1,150 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "rfc9001-keys",
+  "source": {
+    "rfc": 9001,
+    "title": "Using TLS to Secure QUIC",
+    "sha256": "350092dedd4a3b2857dd3f286973ad622987bbef9130e2721b35e0580f2e8e57"
+  },
+  "sources": [
+    {
+      "id": "rfc9001",
+      "rfc": 9001,
+      "file": "rfcs/rfc9001.txt",
+      "sha256": "350092dedd4a3b2857dd3f286973ad622987bbef9130e2721b35e0580f2e8e57"
+    }
+  ],
+  "target": {
+    "module": "nish/quic/keys"
+  },
+  "requirements": [
+    {
+      "id": "R-KEYS",
+      "section": "A.1",
+      "level": "DEFINITION",
+      "quote": "The secrets for protecting client packets are:"
+    }
+  ],
+  "functions": [
+    {
+      "name": "clientSecret",
+      "params": [
+        {
+          "name": "initial",
+          "type": "bytes"
+        }
+      ],
+      "returns": "bytes"
+    },
+    {
+      "name": "serverSecret",
+      "params": [
+        {
+          "name": "initial",
+          "type": "bytes"
+        }
+      ],
+      "returns": "bytes"
+    },
+    {
+      "name": "packetKey",
+      "params": [
+        {
+          "name": "secret",
+          "type": "bytes"
+        }
+      ],
+      "returns": "bytes"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "A.1-CLIENT",
+      "title": "the client's initial secret, named on the line above its call",
+      "covers": ["R-KEYS"],
+      "source": {
+        "cite": {
+          "section": "A.1"
+        }
+      },
+      "call": "clientSecret",
+      "args": [
+        {
+          "hex": "7db5df06e7a69e432496adedb00851923595221596ae2ae9fb8115c1e9ed0a44",
+          "label": "initial_secret"
+        }
+      ],
+      "expect": {
+        "hex": "c00cf151ca5be075ed0ebfb5c80323c42d6b7db67881289af4008f1f6c357aea",
+        "label": "client_initial_secret"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "A.1-SERVER",
+      "title": "the server's initial secret, named on the line above its call",
+      "covers": ["R-KEYS"],
+      "source": {
+        "cite": {
+          "section": "A.1"
+        }
+      },
+      "call": "serverSecret",
+      "args": [
+        {
+          "hex": "7db5df06e7a69e432496adedb00851923595221596ae2ae9fb8115c1e9ed0a44",
+          "label": "initial_secret"
+        }
+      ],
+      "expect": {
+        "hex": "3c199828fd139efd216c155ad844cc81fb82fa8d7446fa7d78be803acdda951b",
+        "label": "server_initial_secret"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "A.1-KEY",
+      "title": "the client's key, from the client's secret",
+      "covers": ["R-KEYS"],
+      "source": {
+        "cite": {
+          "section": "A.1"
+        }
+      },
+      "call": "packetKey",
+      "args": [
+        {
+          "hex": "c00cf151ca5be075ed0ebfb5c80323c42d6b7db67881289af4008f1f6c357aea",
+          "label": "client_initial_secret"
+        }
+      ],
+      "expect": {
+        "hex": "1f369613dd76d5467730efcbe3b1a22d",
+        "label": "key"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "A.1-MISNAMED",
+      "title": "the client's initial secret under the server's name",
+      "covers": ["R-KEYS"],
+      "source": {
+        "cite": {
+          "section": "A.1"
+        }
+      },
+      "call": "clientSecret",
+      "args": [
+        {
+          "hex": "7db5df06e7a69e432496adedb00851923595221596ae2ae9fb8115c1e9ed0a44",
+          "label": "initial_secret"
+        }
+      ],
+      "expect": {
+        "hex": "c00cf151ca5be075ed0ebfb5c80323c42d6b7db67881289af4008f1f6c357aea",
+        "label": "server_initial_secret"
+      }
+    }
+  ]
+}
