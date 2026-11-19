@@ -18,7 +18,7 @@ vector does two things, and no model is involved in either:
 ## Traps
 
 1. **Read the exit status, never a piped tail.** `vector … | tail` exits
-   with `tail`'s status, 0. Run the command bare, or check `$?` or
+   with `tail`'s status, 0. Run it bare, or check `$?` or
    `PIPESTATUS`.
 2. **Only `PROVEN` passes `verify`.** `REFUTED`, `UNKNOWN`, `INVALID` and
    `ERROR` all exit 1. Exit 2 is bad usage, an unreadable file, an `--emit`
@@ -27,13 +27,14 @@ vector does two things, and no model is involved in either:
    that was not `PROVEN`. See
    [Proving a function](guide/guides/proving.md#the-verdicts).
 3. **`diff` exits 2 for `INVALID` and `ERROR`**, not 1 as `verify` does.
-   It also exits 2 for `MISMATCH`. `EQUIVALENT` exits 0, and `DIFFERENT` and `UNDECIDED` exit 1. Do not
+   Like `verify`, it exits 2 for `MISMATCH`, a witness that did not replay.
+   `EQUIVALENT` exits 0, and `DIFFERENT` and `UNDECIDED` exit 1. Do not
    report `UNDECIDED` as equivalent. See
    [Exit codes](guide/guides/exit-codes.md#by-command).
 4. **The proof is over exact rationals, and an `Int` is unbounded there.**
    The emitted code runs in float64. A float64 gate samples boundary, dense
    and random inputs, and anything it finds makes the run `REFUTED`. It
-   proves nothing about float64, so prefer inequalities to an
+   samples float64 and proves nothing about it, so prefer inequalities to an
    exact `==` on `Real`.
 5. **An `Int` `+`, `-` or `*` that may leave ±(2^53−1) is an `Int overflow`,
    and the run is `REFUTED`**, even when every postcondition holds over the
@@ -52,18 +53,18 @@ vector does two things, and no model is involved in either:
    So `x != 0 and 1 / x > 0` is safe, and `1 / x > 0 and x != 0` is a
    division hazard.
 9. **`--emit` writes only on `PROVEN`.** On any other verdict it writes
-   nothing, and it leaves an existing file as it was.
+   nothing and leaves an existing file alone.
 10. **`spec run` `SATISFIED` is evidence, not proof.** The implementation
    returned the printed vectors and held the properties at their samples.
-   Run `spec mutate` to find the bugs the contract cannot tell apart from
-   the real code. See [What a pass means](guide/guides/testing.md#what-a-pass-means).
+   `spec mutate` finds the bugs the contract cannot tell from the real
+   code. See [What a pass means](guide/guides/testing.md#what-a-pass-means).
 11. **Never hand-edit a generated file.** `spec extract` writes
    `contracts/*.json`, `scripts/build-spec.sh` builds `specs/*.xml` from
-   `specs/*.md`, and `spec emit` writes the test. Change the source, and
-   run the generator again.
+   `specs/*.md`, and `spec emit` writes the test. Change the source and
+   rerun the generator.
 12. **`spec frozen` refuses a change that touches both sides.** The spec side
-   is `specs/`, `contracts/`, `rfcs/`, `.refcache/` and generated tests. The other side is
-   the implementation. Land the spec first, then the implementation. See
+   is `specs/`, `contracts/`, `rfcs/`, `.refcache/` and generated tests; the
+   rest is the implementation. Land the spec, then the implementation. See
    [frozen](guide/guides/pr-gates.md#frozen).
 
 ## Rules
@@ -89,9 +90,8 @@ vector does two things, and no model is involved in either:
   provenance, coverage, typing, signatures and domain. Every quote must be in
   its cited section, and every MUST or SHALL sentence must be tested or
   excluded. See [The gates](guide/guides/spec-to-contract.md#the-gates).
-- **Module paths.** Two or more segments split by `/`, each
-  `[a-z][a-z0-9_]*(-[a-z0-9][a-z0-9_]*)*` (`nish/net/quic-packet`). See
-  [Modules and names](guide/guides/writing-a-spec.md#modules-and-names).
+- **Module paths.** Two or more `/`-split segments, each
+  `[a-z][a-z0-9_]*(-[a-z0-9][a-z0-9_]*)*`. See [Modules and names](guide/guides/writing-a-spec.md#modules-and-names).
 - **A spec-first PR** is gated by `spec frozen`, `spec stale`,
   `spec exports` and `spec mutate`, in that order. See
   [Gating a spec-first PR](guide/guides/pr-gates.md#the-workflow-in-order).

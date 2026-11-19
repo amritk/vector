@@ -199,7 +199,9 @@ export const langPascalSegment = (segment: string): string => {
 
 /**
  * A module path, or part of one, with each `-` turned into `_`, so a segment
- * that joins words with `-` becomes an identifier.
+ * that joins words with `-` becomes an identifier. Two siblings that differ
+ * only there, `a-b` and `a_b`, so name the same identifier; no gate refuses
+ * the pair.
  *
  * @param path a module path, segment or file
  * @returns `nish/net/quic_packet` for `nish/net/quic-packet`

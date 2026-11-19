@@ -16,6 +16,10 @@ export const modulePathsAccepted = (): string[] => [
   "nish-x/a",
   "nish/crypto/hkdf",
   "nish/a1_",
+  "nish/a-0",
+  "nish/a-b_",
+  "nish/a0-b",
+  "nish/a_-b",
 ]
 
 /** Module paths the segment grammar refuses: a hyphen at a word's edge, doubled, before `_` or beside a capital. */

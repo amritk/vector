@@ -55,6 +55,13 @@ export const main = (): i32 => {
   const t = new Suite("lang/hyphen")
   t.eqStr("langUnderscored", langUnderscored("nish-x/net/quic-packet"), "nish_x/net/quic_packet")
   t.eqStr("langUnderscored leaves the rest", langUnderscored("nish/a_b"), "nish/a_b")
+  for (const lang of ["rust", "python", "cpp"]) {
+    t.eqStr(
+      `${lang}: nish/x/a-b and nish/x/a_b name the same module`,
+      langModule(lang, "nish/x/a-b"),
+      langModule(lang, "nish/x/a_b"),
+    )
+  }
   t.eqStr("langPascalSegment at a -", langPascalSegment("quic-packet"), "QuicPacket")
   t.eqStr("langPascalSegment at - and _", langPascalSegment("a_b-c1"), "ABC1")
   t.eqStr("langPackageClass", langPackageClass("nish/net-io/quic-packet"), "nish.net_io.QuicPacket")
