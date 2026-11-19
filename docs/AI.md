@@ -1,10 +1,9 @@
 # Using vector: the rules card
 
-This is what an agent needs before it runs vector, stated as rules, traps
-first. It is a digest, not the authority: the [guide](guide/index.md) shows
-every command with its output, and the [command-line
-reference](reference/command-line.md) lists the commands, flags and exit
-codes. Where this page disagrees, they win.
+What an agent needs before it runs vector, as rules, traps first. It is a
+digest, not the authority: the [guide](guide/index.md) shows every command
+with its output, and the [command-line reference](reference/command-line.md)
+lists the commands, flags and exit codes. Where this page disagrees, they win.
 
 vector does two things, and no model is involved in either:
 
@@ -55,8 +54,7 @@ vector does two things, and no model is involved in either:
    leaves an existing file alone.
 10. **`spec run` `SATISFIED` is evidence, not proof.** The implementation
    returned the printed vectors and held the properties at their samples.
-   `spec mutate` finds the bugs the contract cannot tell from the real
-   code. See [What a pass means](guide/guides/testing.md#what-a-pass-means).
+   `spec mutate` finds bugs the contract cannot see. See [What a pass means](guide/guides/testing.md#what-a-pass-means).
 11. **Never hand-edit a generated file.** `spec extract` writes
    `contracts/*.json`, `scripts/build-spec.sh` builds `specs/*.xml` from
    `specs/*.md`, and `spec emit` writes the test. Change the source and
@@ -81,7 +79,7 @@ vector does two things, and no model is involved in either:
   [spec plan](reference/formats/spec-plan.md) and
   [program](reference/formats/program.md).
 - **The repair loop.** Read `feedback` and `items[]`, and change only what
-  was refuted. Keep every clause that proved. Fix the program, not the spec,
+  was refuted. Fix the program, not the spec,
   unless the spec misread the request. Give up after about four attempts and
   report the last feedback. Never edit vector to make a proof pass. A
   `MISMATCH` is a bug in vector: report it, change nothing.
@@ -103,5 +101,6 @@ vector does two things, and no model is involved in either:
 - A function calls only those layered below it: no recursion.
 - Strings, arrays, IO, loops, state and data structures do not fit: offer to
   verify the numeric core alone.
-- Word arrays go in vectors, not properties, yet. `u8[] /* window */` is
-  `(buf, off, len)`, Nish tests only.
+- Word arrays go in vectors, not properties, yet. Nish tests only:
+  `u8[] /* window */` is `(buf, off, len)`, and `u8[] /* out CAP */` an
+  `(out, at) -> end` bytes result.

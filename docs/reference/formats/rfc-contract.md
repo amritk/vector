@@ -248,6 +248,7 @@ No other property is allowed.
 | `module` | [`modulePath`](#def-modulepath) | no | Only for a reference function from another module. |
 | `params` | [object[]](#def-function-params) | yes |  |
 | `returns` | [`returnType`](#def-returntype) | yes |  |
+| `out` | [object](#def-function-out) | no | Only on a function returning bytes or bytes? that the real function writes into a buffer: it takes (out: u8[], at: i32) among its parameters and returns end, an i32, the result being out[at, end). |
 | `names` | [`nameOverrides`](#def-nameoverrides) | no |  |
 
 No other property is allowed.
@@ -262,6 +263,19 @@ No other property is allowed.
 | `type` | [`paramType`](#def-paramtype) | yes |  |
 | `form` | `"window"` | no | Only on a bytes parameter the real function takes as three, (buf: u8[], off: i32, len: i32): the bytes are buf[off, off + len). |
 | `names` | [`nameOverrides`](#def-nameoverrides) | no |  |
+
+No other property is allowed.
+
+<a id="def-function-out"></a>
+
+#### `out`
+
+Only on a function returning bytes or bytes? that the real function writes into a buffer: it takes (out: u8[], at: i32) among its parameters and returns end, an i32, the result being out[at, end).
+
+| Property | Type | Required | Description |
+| --- | --- | --- | --- |
+| `at` | `integer` | yes | Where among the declared params the (out, at) pair goes. at least 0; at most 255. |
+| `capacity` | `string` | yes | How many bytes past at the buffer holds: decimal numbers, +, *, parentheses and &lt;bytes param&gt;.length, spelt with single spaces around + and *, like 2 * src.length + 8. |
 
 No other property is allowed.
 

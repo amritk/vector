@@ -382,6 +382,11 @@
                     "title": "spec/check",
                     "filepath": "docs/reference/modules/spec/check.md"
                   },
+                  "/spec-contract-capacity": {
+                    "type": "page",
+                    "title": "spec/contract/capacity",
+                    "filepath": "docs/reference/modules/spec/contract/capacity.md"
+                  },
                   "/spec-contract-chars": {
                     "type": "page",
                     "title": "spec/contract/chars",

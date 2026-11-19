@@ -111,8 +111,11 @@ Nish test can hold all but `i8` and `i16`, which Nish lacks, so the emitter
 refuses them; only the Nish test holds word arrays. Add `| null` to `u8[]`,
 a word array or `string`, and to `Secret<u8[]>` as a result only. Give
 word-array cases as vectors: a property over or calling word arrays is
-refused. `u8[] /* window */` is one bytes parameter for a `(buf, off, len)`,
-tested at a nonzero offset, Nish test only.
+refused. Nish test only: `u8[] /* window */` is one bytes parameter for a
+`(buf, off, len)`, tested at a nonzero offset; `u8[] /* out CAP */` is an
+`(out, at)` pair the export writes and returns `end` of, so the result is
+`u8[]` (`| null` if `end` < 0). CAP, the bytes after `at`, is numbers, `+`,
+`*`, `()` and `<u8[] param>.length`.
 
 A property may compare the module with another nish module (HKDF with
 HMAC). Declare that module's functions after a second `// module:` line,
@@ -122,7 +125,7 @@ function of the module under test, and a property's assertion must call at
 least one: a clause that calls only reference functions is refused. A module line is exactly
 `// module: nish/<path>`, one module, after the previous signature. A comment of any style or case whose text starts `module:` or
 `module nish/` but is not that (`// Module: …`, `//module nish/…`,
-`/* module: … */`, `/// module: …`, two modules) is refused, and so is a module
+`/* module: … */`, two modules) is refused, and so is a module
 line inside a signature. Other comments, such as `// module-level helper`, are
 skipped:
 
@@ -206,8 +209,7 @@ are refused. `specs/rfc5869-hkdf-sha256.md` and
 `specs/rfc8439-chacha20-poly1305.md` are worked examples. The contract records
 the RFC, not the spec, so check it with `spec check contracts/<name>.json`
 (the RFC is read from its recorded file), or name the RFC with
-`--spec rfcs/rfc<N>.txt`. `--spec specs/<name>.xml` exits 1 (`--spec … is not rfcs/rfc<N>.txt, the main
-source the contract records`). To check that the contract is exactly what the
+`--spec rfcs/rfc<N>.txt`. `--spec specs/<name>.xml` exits 1. To check that the contract is exactly what the
 profile extracts to, run
 `spec extract specs/<name>.xml -o contracts/<name>.json --check`.
 
@@ -423,10 +425,8 @@ test and module, and changes nothing else. Then:
 ./dist/vector spec run contracts/<name>.json --nish-root ../nish [--format markdown]
 ```
 
-`check --nish-root` (or `--module <src.ts>`) is the only command that checks
-the declared signatures against the module's exports. `run` re-runs the other
-`check` gates, but not the signature gate, and says nothing about it; then
-it runs the test.
+`run` re-runs `check`'s gates but signatures, silently (only `check` with
+`--nish-root` or `--module <src.ts>` checks them), then runs the test.
 
 - **Exit 0** is `SATISFIED`: every clause passed.
 - **Exit 1** is `VIOLATED` (a clause failed, shown with its sample) or
