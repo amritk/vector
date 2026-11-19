@@ -1,4 +1,5 @@
 import { Suite } from "nish/testing"
+import { replaceAll } from "nish/text"
 import { runProcess } from "../../../src/core/process"
 import { contractLoad } from "../../../src/spec/contract/contract"
 import { AllowedSurvivor } from "../../../src/spec/contract/types"
@@ -11,11 +12,13 @@ import {
   MUTATE_SURVIVED,
   MUTATE_TIMED_OUT,
   MutateMutant,
+  MutateSites,
   mutateApply,
   mutateCode,
   mutateJudge,
   mutateLine,
   mutateOutcomeName,
+  mutateOutsideNote,
   mutatePick,
   mutateSites,
 } from "../../../src/spec/pr/mutate"
@@ -124,6 +127,19 @@ const MUTATE_TEST_CONTRACT: string = `{
 }
 `
 
+/** MUTATE_TEST_CONTRACT testing only the functions `names`, its vector calling `call`. */
+const mutateTestContractOn = (names: string[], call: string): string => {
+  const fs: string[] = []
+  for (const n of names) {
+    fs.push(`{"name": "${n}", "params": [], "returns": "i32"}`)
+  }
+  const at = MUTATE_TEST_CONTRACT.indexOf('"functions": [')
+  const end = MUTATE_TEST_CONTRACT.indexOf("],\n  \"allowSurvivors\"")
+  const head = MUTATE_TEST_CONTRACT.slice(0, at)
+  const tail = MUTATE_TEST_CONTRACT.slice(end + 2)
+  return replaceAll(`${head}"functions": [${fs.join(", ")}],${tail}`, '"call": "k"', `"call": "${call}"`)
+}
+
 /** A nish checkout whose std/m.ts gains lines, run against the stub compiler. */
 const mutateTestRepo = (t: Suite): Result<boolean, string> => {
   const dir = prTestRepo("vector-mutate-test-").orReturn()
@@ -182,6 +198,28 @@ const mutateTestRepo = (t: Suite): Result<boolean, string> => {
   )
   t.ok("an unknown base is an error", mutateCheck(`${dir}/c.json`, "nope", run, 0).isErr())
   t.ok("a missing contract is an error", mutateCheck(`${dir}/none.json`, "main", run, 0).isErr())
+  prTestWrite(dir, "calm.sh", "exit 0\n").orReturn()
+  const calm = new MutateRun(root, "", "bin/nish", `${dir}/calm.sh`, 2, MUTATE_TEST_CALM_MS)
+  prTestWrite(dir, "k.json", mutateTestContractOn(["k"], "k")).orReturn()
+  const k = mutateCheck(`${dir}/k.json`, "main", calm, 0)
+  t.eqStr(
+    "a contract on k mutates only k's line, and notes the rest",
+    k.isOk() ? `${k.value.items.join(" | ")} || ${k.value.problems.join(" | ")} || ${k.value.notes.join(" | ")}` : k.error,
+    [
+      "survived std/m.ts:3:29 int: export const k = (): i32 => 8 | survived std/m.ts:3:29 int: export const k = (): i32 => 6 ||  || ",
+      "2 changed lines outside the tested functions were not mutated: lt, f | ",
+      "survivor std/m.ts:3 (3:29:int:+1) is allowed: k is a constant the spec leaves open | ",
+      "survivor std/m.ts:3 (3:29:int:-1) is allowed: k is a constant the spec leaves open | ",
+      "STALE? allowSurvivors std/m.ts:9 matched no survivor this run: no mutant of that line ran, so check it still names the line it means",
+    ].join(""),
+  )
+  prTestWrite(dir, "old.json", mutateTestContractOn(["old"], "old")).orReturn()
+  const old = mutateCheck(`${dir}/old.json`, "main", calm, 0)
+  t.eqStr(
+    "a change none of whose lines the contract's functions reach is refused, naming them",
+    old.isOk() ? `${old.value.items.join(" | ")} || ${old.value.problems.join(" | ")} || ${old.value.notes.join(" | ")}` : old.error,
+    " || no mutants: no line the change adds to std/m.ts lies in code the contract's functions reach || 3 changed lines outside the tested functions were not mutated: lt, k, f",
+  )
   prTestCommit(dir, "change").orReturn()
   const none = mutateCheck(`${dir}/c.json`, "work", run, 0)
   t.eqStr(
@@ -426,6 +464,49 @@ const mutateTestJudge = (t: Suite): void => {
     "no mutants fails",
     r5.problems.join(" | "),
     "no mutants: the change adds no line of std/m.ts that can be mutated",
+  )
+  const rOut = new PrReport("mutate", "m")
+  mutateJudge(rOut, "std/m.ts", [], allow, null, 0, "2 changed lines outside the tested functions were not mutated: f")
+  t.eqStr(
+    "no mutants with lines out of scope fails for the scope, and notes them",
+    `${rOut.problems.join(" | ")} || ${rOut.notes.join(" | ")}`,
+    "no mutants: no line the change adds to std/m.ts lies in code the contract's functions reach || 2 changed lines outside the tested functions were not mutated: f",
+  )
+  const rIn = new PrReport("mutate", "m")
+  mutateJudge(rIn, "std/m.ts", [b], [], null, 0, "1 changed line outside the tested functions was not mutated: g")
+  t.eqStr(
+    "mutants with lines out of scope pass, and note them",
+    `${rIn.problems.join(" | ")} || ${rIn.notes.join(" | ")}`,
+    " || 1 changed line outside the tested functions was not mutated: g",
+  )
+  const none = new MutateSites("")
+  const one = new MutateSites("")
+  one.outside = 1
+  one.owners = ["g"]
+  const two = new MutateSites("")
+  two.outside = 3
+  two.owners = ["a", "line 4"]
+  t.eqStr(
+    "the out-of-scope note: none, one line, several",
+    `${mutateOutsideNote(none)}|${mutateOutsideNote(one)}|${mutateOutsideNote(two)}`,
+    "|1 changed line outside the tested functions was not mutated: g|3 changed lines outside the tested functions were not mutated: a, line 4",
+  )
+  t.eqStr(
+    "only changed lines the roots reach are mutated",
+    mutateTestSites("const a = 1\nconst b = 2\nconst c = 3\n", mutateTestChanged(1, 3), ["b"]),
+    "2:11:int:+1=const b = 3 | 2:11:int:-1=const b = 1",
+  )
+  const sites = mutateSites("const a = 1\nconst b = 2\nconst c = 3\n", mutateTestChanged(1, 3), ["b"])
+  t.eqStr(
+    "the lines left out are counted with their declarations",
+    sites.isOk() ? `${sites.value.outside} ${sites.value.owners.join(",")} ${sites.value.whole}` : sites.error,
+    "2 a,c ",
+  )
+  const whole = mutateSites("const a = 1\nconst b = 2\n", mutateTestChanged(1, 2), ["z"])
+  t.eqStr(
+    "a root the module does not declare mutates every changed line, saying why",
+    whole.isOk() ? `${whole.value.mutants.length} ${whole.value.outside} ${whole.value.whole}` : whole.error,
+    "4 0 the contract's function z is not a top-level declaration of the module",
   )
 }
 
