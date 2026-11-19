@@ -958,15 +958,13 @@ const rfcContinuedHex = (line: string): string | null => {
 /**
  * The name a statement gives to the values its `= ` lines print: the text
  * before the first `=` (`initial_secret = HKDF-Extract(…)` names
- * initial_secret), one word of letters, digits, `_`, `-` and `.`; a line with
- * no `=` names them by its label (`client_initial_secret`).
+ * initial_secret), or a line's whole text when it has no `=`
+ * (`client_initial_secret`); null unless that is one word of letters, digits,
+ * `_`, `-` and `.`, led by a letter.
  */
-const rfcStatementName = (t: string, label: string | null): string | null => {
+const rfcStatementName = (t: string): string | null => {
   const eq = t.indexOf("=")
-  if (eq < 0) {
-    return label
-  }
-  const name = trim(t.substring(0, eq))
+  const name = trim(eq < 0 ? t : t.substring(0, eq))
   if (name.length === 0 || !rfcIsAlnum(name.charCodeAt(0)) || rfcIsDigit(name.charCodeAt(0))) {
     return null
   }
@@ -1011,7 +1009,7 @@ const rfcHexText = (r: RfcHexReader, line: string): void => {
   }
   r.pending = rfcLabelLine(line)
   r.pendingLine = r.at
-  r.stmt = rfcStatementName(t, r.pending)
+  r.stmt = rfcStatementName(t)
   r.stmtLine = r.at
   if (rfcParenDepth(t) > 0) {
     r.call = t

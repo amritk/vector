@@ -220,6 +220,95 @@ const rfcTestLines = (body: string): string => {
   return out.join(" ")
 }
 
+/** A footer, form feed and header: the page furniture `rfcParse` drops. */
+const rfcTestBreak = (page: i32): string =>
+  [
+    "",
+    `Thomson & Turner             Standards Track                  [Page ${page}]`,
+    "\f",
+    "RFC 9001                Using TLS to Secure QUIC                May 2021",
+    "",
+  ].join("\n")
+
+/**
+ * RFC 9001 Appendix A.1 as printed: values on `= hex` lines under a
+ * statement, one split across a page break, and a break between the client
+ * and server blocks.
+ */
+const rfcTestQuicText = (): string =>
+  [
+    "Request for Comments: 9001",
+    "\f",
+    "A.1.  Keys",
+    "",
+    "   quic key:  00100e746c7331332071756963206b657900",
+    "",
+    "   initial_secret = HKDF-Extract(initial_salt, cid)",
+    "       = 7db5df06e7a69e432496adedb0085192",
+    "         3595221596ae2ae9fb8115c1e9ed0a44",
+    "",
+    "   client_initial_secret",
+    "       = HKDF-Expand-Label(initial_secret, \"client in\", \"\", 32)",
+    "       = c00cf151ca5be075ed0ebfb5c80323c4",
+    rfcTestBreak(47),
+      "         2d6b7db67881289af4008f1f6c357aea",
+      "",
+      "   key = HKDF-Expand-Label(client_initial_secret, \"quic key\", \"\", 16)",
+      "       = 1f369613dd76d5467730efcbe3b1a22d",
+      "",
+      "   iv  = HKDF-Expand-Label(client_initial_secret, \"quic iv\", \"\", 12)",
+      "       = fa044b2f42a3fd3b46fb255c",
+    rfcTestBreak(48),
+      "   The secrets for protecting server packets are:",
+      "",
+      "   server_initial_secret",
+      "       = HKDF-Expand-Label(initial_secret, \"server in\", \"\", 32)",
+      "       = 3c199828fd139efd216c155ad844cc81",
+      "         fb82fa8d7446fa7d78be803acdda951b",
+      "",
+      "   key = HKDF-Expand-Label(server_initial_secret, \"quic key\", \"\", 16)",
+      "       = cf3a5331653c364c88f0f379b6067e37",
+      "",
+      "   iv  = HKDF-Expand-Label(server_initial_secret, \"quic iv\", \"\", 12)",
+      "       = 0ac1493ca1905853b0bba03e",
+    "",
+  ].join("\n")
+
+/**
+ * RFC 7914 sections 11 and 12 as printed: call labels wrapped over two lines,
+ * one split by a page break, and two blocks split only by one.
+ */
+const rfcTestScryptText = (): string =>
+  [
+    "Request for Comments: 7914",
+    "\f",
+    "11.  Test Vectors for PBKDF2 with HMAC-SHA-256",
+    "",
+    "   PBKDF2-HMAC-SHA-256 (P=\"passwd\", S=\"salt\",",
+    "                       c=1, dkLen=64) =",
+    "   55 ac 04 6e 56 e3 08 9f ec 16 91 c2 25 44 b6 05",
+    rfcTestBreak(11),
+      "   PBKDF2-HMAC-SHA-256 (P=\"Password\", S=\"NaCl\",",
+    rfcTestBreak(12),
+      "                        c=80000, dkLen=64) =",
+      "   4d dc d8 f6 0b 98 be 21 83 0c ee 5e f2 27 01 f9",
+      "",
+      "12.  Test Vectors for scrypt",
+      "",
+      "   scrypt (P=\"\", S=\"\",",
+      "           N=16, r=1, p=1, dklen=64) =",
+      "   77 d6 57 62 38 65 7b 20 3b 19 ca 42 c1 8a 04 97",
+      "",
+      "   scrypt (P=\"password\", S=\"NaCl\",",
+      "           N=1024, r=8, p=16, dkLen=64) =",
+      "   fd ba be 1c 9d 34 72 00 78 56 e7 19 0d 01 e9 fe",
+    "",
+  ].join("\n")
+
+/** The values of section `id` of `text`, each as `label@line=hex`. */
+const rfcTestWrapped = (text: string, id: string): string[] =>
+  rfcHexValues(rfcTestSection(rfcParse(text), id)).map((v: HexValue): string => `${v.label ?? "-"}@${v.line}=${v.hex}`)
+
 /** Reading an RFC's text: sections, page furniture, quotes and printed hex. */
 export const main = (): i32 => {
   const t = new Suite("spec/source rfc")
@@ -404,6 +493,56 @@ export const main = (): i32 => {
     hidden.isErr() ? hidden.error : "",
     "r.txt: text a reader cannot see as the gates read it: line 48: invisible character U+200D: remove it",
   )
+  const quic = rfcTestWrapped(rfcTestQuicText(), "A.1")
+  const quicCases: string[][] = [
+    ["an inline label still reads", "quic key@2=00100e746c7331332071756963206b657900"],
+    ["a statement names the = line below it", "initial_secret@4=7db5df06e7a69e432496adedb00851923595221596ae2ae9fb8115c1e9ed0a44"],
+    [
+      "a name alone names it past an = f(...) line, and across a page break",
+      "client_initial_secret@8=c00cf151ca5be075ed0ebfb5c80323c42d6b7db67881289af4008f1f6c357aea",
+    ],
+    ["key, before the break", "key@16=1f369613dd76d5467730efcbe3b1a22d"],
+    ["iv, before the break", "iv@19=fa044b2f42a3fd3b46fb255c"],
+    ["a block after the break", "server_initial_secret@26=3c199828fd139efd216c155ad844cc81fb82fa8d7446fa7d78be803acdda951b"],
+    ["key, printed again", "key@31=cf3a5331653c364c88f0f379b6067e37"],
+    ["iv, printed again", "iv@34=0ac1493ca1905853b0bba03e"],
+  ]
+  t.eqStr("RFC 9001 A.1 prints eight values", `${quic.length}`, `${quicCases.length}`)
+  for (let i = 0; i < quicCases.length; i++) {
+    t.eqStr(quicCases[i][0], i < quic.length ? quic[i] : "", quicCases[i][1])
+  }
+  const scrypt = rfcTestWrapped(rfcTestScryptText(), "11")
+  const scryptCases: string[][] = [
+    ["a call label wrapped over two lines is one", 'PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)@2=55ac046e56e3089fec1691c22544b605'],
+    [
+      "and so is one wrapped across a page break",
+      'PBKDF2-HMAC-SHA-256 (P="Password", S="NaCl", c=80000, dkLen=64)@8=4ddcd8f60b98be21830cee5ef22701f9',
+    ],
+  ]
+  t.eqStr("RFC 7914 section 11 prints two values", `${scrypt.length}`, `${scryptCases.length}`)
+  for (let i = 0; i < scryptCases.length; i++) {
+    t.eqStr(scryptCases[i][0], i < scrypt.length ? scrypt[i] : "", scryptCases[i][1])
+  }
+  t.eqStr(
+    "scrypt's labels read the same way",
+    rfcTestWrapped(rfcTestScryptText(), "12").join("|"),
+    'scrypt (P="", S="", N=16, r=1, p=1, dklen=64)@2=77d6576238657b203b19ca42c18a0497|scrypt (P="password", S="NaCl", N=1024, r=8, p=16, dkLen=64)@6=fdbabe1c9d347200785' +
+      '6e7190d01e9fe',
+  )
+  const neighbours: string[][] = [
+    ["an = line under a sentence is unnamed", "the value below is the key\n   = 0a0b0c0d", "-=0a0b0c0d"],
+    ["an = line under a sentence with = is unnamed", "so a = b mod p, giving\n   = 0a0b0c0d", "-=0a0b0c0d"],
+    ["nor is one under a line of prose with no =", "the key\n   = 0a0b0c0d", "-=0a0b0c0d"],
+    ["a name with a space is no name", "the key = f(x)\n   = 0a0b0c0d", "-=0a0b0c0d"],
+    ["a dotted name is one", "ctx.key = f(x)\n   = 0a0b0c0d", "ctx.key=0a0b0c0d"],
+    ["a blank line, as a page break leaves, does not end it", "key = f(x)\n\n   = 0a0b0c0d", "key=0a0b0c0d"],
+    ["a call wrapped past four lines is no call label", "f (a,\n   b,\n   c,\n   d,\n   e) =\n   0a0b0c0d", "e)=0a0b0c0d"],
+    ["a parenthesis closed on its line is an ordinary label", "f (a, b) =\n   0a0b0c0d", "f (a, b)=0a0b0c0d"],
+    ["a wrapped call that ends in prose labels nothing", "see f (a,\n   b) for more\n   0a0b0c0d", "-=0a0b0c0d"],
+  ]
+  for (const n of neighbours) {
+    t.eqStr(n[0], rfcTestBody(n[1]), n[2])
+  }
   const many: string[] = []
   for (let i = 0; i < 7; i++) {
     many.push(charsFromCodePoint(0x200b))
