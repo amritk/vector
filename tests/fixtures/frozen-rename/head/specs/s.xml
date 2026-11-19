@@ -1,0 +1,4 @@
+<rfc version="3"><front><title>T</title></front><middle>
+<section anchor="one"><name>One</name>
+<t>encodeHex MUST return the bytes as lowercase hex.</t>
+</section></middle></rfc>

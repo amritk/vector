@@ -449,8 +449,10 @@ export class Clause {
   covers: string[]
   /** A vector's provenance. */
   source: VectorSource | null = null
-  /** The main-source section printing a vector's args. */
+  /** The section printing a vector's args, in the main source unless `sectionSource` names another. */
   section: string | null = null
+  /** The id of the source `section` is in; null for the main one. */
+  sectionSource: string | null = null
   /** The function a vector calls. */
   call: string
   /** A vector's arguments. */

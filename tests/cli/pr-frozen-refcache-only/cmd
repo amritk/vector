@@ -1,0 +1,1 @@
+vector spec frozen --base main --repo {{repo}} contracts/a.json

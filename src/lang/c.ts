@@ -130,7 +130,7 @@ export const langTableC = (): LangTable => {
   )
   t.moduleForm = "header-prefix"
   t.moduleNote =
-    "a header at the neutral path plus .h, and every symbol prefixed by the segments joined with _ (C has one namespace for external names): nish/crypto/hkdf → nish/crypto/hkdf.h, nish_crypto_hkdf_<name>"
+    "a header at the neutral path plus .h, and every symbol prefixed by the segments joined with _ (C has one namespace for external names): nish/crypto/hkdf → nish/crypto/hkdf.h, nish_crypto_hkdf_<name>; a - in a segment stays in the header and becomes _ in the prefix: nish/net/quic-packet → nish/net/quic-packet.h, nish_net_quic_packet_<name>"
   t.nameRule =
     "functions and parameters lower snake_case, a function behind its module prefix: words split at each capital, an acronym is one word (parseHTTPRequest → parse_http_request), and a digit run stays on the word before it (hkdfExpandSha256 → nish_crypto_hkdf_hkdf_expand_sha256). The prefix repeats a segment when the name does; a name override removes the repetition."
   t.choices.push(

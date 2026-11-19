@@ -252,6 +252,7 @@ const writeClause = (c: Clause): WriteNode => {
       writeSet(o, "source", writeVectorSource(source))
     }
     writeSetStr(o, "section", c.section)
+    writeSetStr(o, "sectionSource", c.sectionSource)
     writeSet(o, "call", writeStr(c.call))
     const args = writeArr()
     for (let i = 0; i < c.args.length; i++) {

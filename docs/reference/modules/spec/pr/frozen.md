@@ -2,9 +2,11 @@
 
 # spec/pr/frozen
 
-`spec/pr/frozen` — a PR changes the spec side (specs/, contracts/, rfcs/)
+`spec/pr/frozen` — a PR changes the spec side (specs/, contracts/, rfcs/,
+and .refcache/, the kramdown-rfc reference cache a spec's build reads)
 or the implementation, never both, so a test cannot be loosened to match
-the code it tests. A path's side is decided by the path, with one
+the code it tests; the one exception is a change that is only the rename
+of contracted exports on both sides (spec/pr/rename). A path's side is decided by the path, with one
 exception: a generated test under `test/spec/` is spec side while its one
 `// vector-contract-sha256:` line names a contract under contracts/ or one
 given, as its bytes are in the work tree. Only the given contracts (every
@@ -37,7 +39,7 @@ Generated from [src/spec/pr/frozen.ts](https://github.com/amritk/vector/blob/mai
 
 ### FROZEN_SPEC
 
-A path on the spec side: a spec, a contract, or a document a contract quotes.
+A path on the spec side: a spec, a contract, a document a contract quotes, or a reference-cache entry.
 
 ```ts
 const FROZEN_SPEC: i32 = 0

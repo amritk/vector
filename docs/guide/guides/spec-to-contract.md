@@ -181,7 +181,8 @@ git add specs/example-hex.md specs/example-hex.xml contracts/example-hex.json
 renderings are thrown away). It runs offline: kramdown-rfc reads references
 only from the committed `.refcache/`, `{::include}` is disabled, and xml2rfc
 runs with `--no-network`. A spec that cites a reference not yet in the cache
-fails; run once with `--fetch`, then review and commit the `.refcache/` diff.
+fails; run once with `--fetch`, then review and commit the `.refcache/` diff in the same PR as the spec: `spec frozen`
+counts `.refcache/` as spec side.
 
 - **Warnings are errors.** Any kramdown-rfc `*** ` or `** ` line (an unknown
   front-matter key, a missing reference, bad heading nesting) and any xml2rfc
@@ -489,8 +490,11 @@ a samples line, prose included, so word such a comment another way.
 ## Sources
 
 A contract cites one or more documents. A source is RFC XML v3 (`.xml`) or an
-RFC's plain text (with its `Request for Comments: N` header and form feeds);
-anything else is refused. `.xml` sources are read everywhere a source is: by
+RFC's plain text, paginated (form feeds) or unpaginated (xml2rfc v3: its
+`Request for Comments: N` header begins a line before the first section
+heading, and no page furniture); anything else is refused. In an RFC source,
+a literal zero-width space or word joiner is dropped unless it sits inside a
+word ([Hidden text](writing-a-spec.md#hidden-text)). `.xml` sources are read everywhere a source is: by
 extract, check, emit, run, mutate and frozen.
 
 - **Linked RFCs** (`{"id": "rfc4648", "rfc": 4648}`) are looked up in four

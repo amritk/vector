@@ -61,7 +61,7 @@ export const main = (): i32 => {
     t,
     `"nish/hex"`,
     `"Nish/hex"`,
-    "contract.target.module: a module path <root>/<segment>/…, lowercase [a-z][a-z0-9_]* segments (RFC 3986 §3.3)",
+    "contract.target.module: a module path <root>/<segment>/…, each segment [a-z][a-z0-9_]*(-[a-z0-9][a-z0-9_]*)*, words joined by single - (RFC 3986 §3.3)",
   )
   shapeExpect(
     t,
@@ -191,7 +191,7 @@ export const main = (): i32 => {
     t,
     `{"cite": {"section": "10"}}`,
     `{"command": "x"}`,
-    "clauses[0].section: the main-source section number printing the args",
+    "clauses[0].section: the section number printing the args, in the main source or the one sectionSource names",
   )
   t.eqStr(
     "a command source with a section passes",
@@ -547,7 +547,7 @@ export const main = (): i32 => {
     "requirements[0].quote: a non-empty string",
     `"module": "nish/hex"`,
     `"module": "nish"`,
-    "contract.target.module: a module path <root>/<segment>/…, lowercase [a-z][a-z0-9_]* segments (RFC 3986 §3.3)",
+    "contract.target.module: a module path <root>/<segment>/…, each segment [a-z][a-z0-9_]*(-[a-z0-9][a-z0-9_]*)*, words joined by single - (RFC 3986 §3.3)",
     `"type": "u8"`,
     `"type": "i128"`,
     'read: clauses[1].forall[0].type: an integer type (i8 i16 i32 i64 u8 u16 u32 u64), "f64", "bytes" or "string"',

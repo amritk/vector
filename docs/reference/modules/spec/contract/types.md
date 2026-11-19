@@ -1289,10 +1289,18 @@ samples: i32
 
 #### Clause.section
 
-The main-source section printing a vector's args.
+The section printing a vector's args, in the main source unless `sectionSource` names another.
 
 ```ts
 section: string | null
+```
+
+#### Clause.sectionSource
+
+The id of the source `section` is in; null for the main one.
+
+```ts
+sectionSource: string | null
 ```
 
 #### Clause.source

@@ -341,8 +341,9 @@ true for f64 text
 
 ### charsIsModule
 
-Whether `s` is a module path: two or more `/`-separated segments, each
-`[a-z][a-z0-9_]*`.
+Whether `s` is a module path: two or more `/`-separated segments. A segment
+is words joined by single `-`, `[a-z][a-z0-9_]*(-[a-z0-9][a-z0-9_]*)*`: the
+first word starts with a letter, a later one with a letter or a digit.
 
 ```ts
 function charsIsModule(s: string): boolean
@@ -356,7 +357,7 @@ the text
 
 <scalar-field name="returns" type="boolean">
 
-true for a module path like `nish/crypto/hkdf`
+true for a module path like `nish/crypto/hkdf` or `nish/net/quic-packet`
 
 </scalar-field>
 

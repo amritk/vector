@@ -24,6 +24,7 @@ Generated from [src/spec/source/hidden.ts](https://github.com/amritk/vector/blob
 - [`hiddenWordClass`](#hiddenwordclass)
 - [`hiddenText`](#hiddentext)
 - [`hiddenProblem`](#hiddenproblem)
+- [`hiddenDropBreaks`](#hiddendropbreaks)
 
 ## Declarations
 
@@ -137,5 +138,35 @@ the source's name, which starts the message
 <scalar-field name="returns" type="string | null">
 
 the refusal, or null when the text reads the same to both
+
+</scalar-field>
+
+### hiddenDropBreaks
+
+An RFC source's text with its line-break hints dropped: each run of literal
+zero-width spaces (U+200B) and word joiners (U+2060) that the RFC Editor
+leaves in RFC XML, as in RFC 9000's `0x0100-<U+200B>0x01ff`, where a
+neighbour of the run (the code point before it or after it, or the text's
+start or end) is not a word character (hiddenWordClass). A run between two
+word characters stays, so the scan still refuses `MU<U+200B>ST` at its line:
+a drop can never join two words or change one. No other character is
+dropped, and no newline, so the lines of every later message are the
+file's.
+
+Only for a source that names an RFC; a spec's own XML is scanned as written.
+
+```ts
+function hiddenDropBreaks(text: string): string
+```
+
+<scalar-field name="text" type="string" required>
+
+the source's text
+
+</scalar-field>
+
+<scalar-field name="returns" type="string">
+
+the text without its droppable hints
 
 </scalar-field>
