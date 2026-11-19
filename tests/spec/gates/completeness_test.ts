@@ -286,6 +286,11 @@ const completenessTestAqRows = (): CompletenessTestAqRow[] => {
       COMPLETENESS_TEST_PAD,
       [`§3: ${lf}`],
     ),
+    new CompletenessTestAqRow("a reread with fewer sections than the spec read", "aq-prose", "aq-two", "", "", [
+      `§3: ${lf}`,
+      `§4: ${pad}`,
+      `§5: ${lf}`,
+    ]),
     new CompletenessTestAqRow("a reread that is not the spec read", "aq-two", "aq-own", "", "", [
       `§3: ${lf}`,
       `§4: ${pad}`,
@@ -295,6 +300,9 @@ const completenessTestAqRows = (): CompletenessTestAqRow[] => {
 
 /** Where the main-RFC anchored-quote fixture lives: an RFC 9998 in XML, whose §2 and §3 hold anchored blockquotes. */
 const COMPLETENESS_TEST_MAIN_XML: string = "tests/fixtures/anchored-quote/rfcs/rfc9998.xml"
+
+/** An RFC 9997 in XML whose §1 holds RFC 4648 §3.2 as a paragraph anchored R-B64, not a blockquote. */
+const COMPLETENESS_TEST_PARA_XML: string = "tests/fixtures/anchored-quote/rfcs/rfc9997.xml"
 
 /**
  * A main-RFC contract on RFC 9998: R-PAD cites the main RFC's §1, whose
@@ -317,15 +325,15 @@ const completenessTestMain = (b64: string): string => {
 }`
 }
 
-/** The completeness gate on a main-RFC contract over RFC 9998, read from its fixture file. */
-const completenessTestMainRun = (b64: string): string[] => {
-  const xml = readFileSyncOrNull(COMPLETENESS_TEST_MAIN_XML) ?? ""
-  const doc = xmlRead(xml, COMPLETENESS_TEST_MAIN_XML).expect("xml")
+/** The completeness gate on a main-RFC contract over the RFC in XML at `file`. */
+const completenessTestMainRun = (file: string, b64: string): string[] => {
+  const xml = readFileSyncOrNull(file) ?? ""
+  const doc = xmlRead(xml, file).expect("xml")
   const ctx = new CheckContext("contracts/c6.json", ".")
   ctx.contract = contractParse(completenessTestMain(b64), "c6").expect("parse")
   const set = new SourceSet()
   set.main = "rfc9998"
-  set.sources.push(new LoadedSource("rfc9998", COMPLETENESS_TEST_MAIN_XML, COMPLETENESS_TEST_MAIN_XML, doc))
+  set.sources.push(new LoadedSource("rfc9998", file, file, doc))
   ctx.sources = set
   return gateCompleteness(ctx)
 }
@@ -490,15 +498,21 @@ export const main = (): i32 => {
     console.log(copies.join("\n"))
   }
   const again = `§2: MUST sentence is neither a requirement nor an exclusion: "A sender MUST pad the block."`
-  const mainOnly = completenessTestMainRun("")
+  const mainOnly = completenessTestMainRun(COMPLETENESS_TEST_MAIN_XML, "")
   t.ok("a main requirement covers only the section it cites", mainOnly.length === 1 && mainOnly[0] === again)
   if (!(mainOnly.length === 1 && mainOnly[0] === again)) {
     console.log(mainOnly.join("\n"))
   }
-  const mainOther = completenessTestMainRun("rfc4648")
+  const mainOther = completenessTestMainRun(COMPLETENESS_TEST_MAIN_XML, "rfc4648")
   t.ok("another RFC's quote counts in a main RFC's section", mainOther.length === 1 && mainOther[0] === again)
   if (!(mainOther.length === 1 && mainOther[0] === again)) {
     console.log(mainOther.join("\n"))
+  }
+  const para = completenessTestMainRun(COMPLETENESS_TEST_PARA_XML, "rfc4648")
+  const paraWant = `§1: MUST sentence is neither a requirement nor an exclusion: "${COMPLETENESS_TEST_PAD}"`
+  t.ok("an anchored paragraph is not a blockquote", para.length === 1 && para[0] === paraWant)
+  if (!(para.length === 1 && para[0] === paraWant)) {
+    console.log(para.join("\n"))
   }
   for (const row of completenessTestAqRows()) {
     const got = gateCompleteness(completenessTestAq(row.read, row.file, row.from, row.to))
