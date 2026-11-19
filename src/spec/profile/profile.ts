@@ -2844,7 +2844,19 @@ const profileBuild = (c: ProfileContext, name: string): Contract => {
   }
   out.source = source
   const sources: SourceDecl[] = []
-  if (c.mainRfc < 0) {
+  // A command vector's args are printed in the spec's own section, so a
+  // main-RFC spec with one declares the spec too, and the vector names it.
+  let ownSection = false
+  if (c.mainRfc >= 0) {
+    for (const k of c.vectors) {
+      const ks = k.source
+      if (ks !== null && ks.kind === VectorSourceKind.Command) {
+        k.sectionSource = name
+        ownSection = true
+      }
+    }
+  }
+  if (c.mainRfc < 0 || ownSection) {
     const own = new SourceDecl()
     own.id = name
     own.path = `../specs/${name}.xml`

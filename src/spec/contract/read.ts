@@ -751,6 +751,7 @@ const readClause = (r: ContractReader, v: JsonValue, at: string): Clause | null 
       "covers",
       "source",
       "section",
+      "sectionSource",
       "call",
       "args",
       "expect",
@@ -772,6 +773,7 @@ const readClause = (r: ContractReader, v: JsonValue, at: string): Clause | null 
       c.source = readVectorSource(r, src, `${at}.source`)
     }
     c.section = readString(r, v, "section", at, false)
+    c.sectionSource = readString(r, v, "sectionSource", at, false)
     c.call = readRequiredString(r, v, "call", at)
     const args = readArray(r, v, "args", at, true)
     if (args !== null) {

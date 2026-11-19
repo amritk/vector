@@ -735,6 +735,7 @@ const shapeVectorSource = (s: ShapeContext, k: Clause, at: string): void => {
       shapeFail(s, `${at}.expect`, "a command source prints bytes (as hex) or a string")
     }
     shapeNeedSection(s, k, at)
+    shapeSourceRef(s, k.sectionSource, `${at}.sectionSource`)
   } else {
     if (!charsIsSection(src.text)) {
       shapeFail(s, `${at}.source.spec`, "a main-source section number")
@@ -743,6 +744,9 @@ const shapeVectorSource = (s: ShapeContext, k: Clause, at: string): void => {
       shapeFail(s, `${at}.expect`, "a spec source states only null or a bool; cite or compute any other value")
     }
     shapeNeedSection(s, k, at)
+  }
+  if (src.kind !== VectorSourceKind.Command && k.sectionSource !== null) {
+    shapeFail(s, `${at}.sectionSource`, `only a command source's section is in another source; drop "sectionSource"`)
   }
 }
 
