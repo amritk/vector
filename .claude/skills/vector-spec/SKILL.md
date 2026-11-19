@@ -419,7 +419,9 @@ one that is not what vector emits now.
 ### 5. Implement, then `run`
 
 The implementation PR touches the code and nothing on the spec side
-(`frozen` refuses it otherwise). Then:
+(`frozen` refuses it otherwise). To rename a contracted export, land one PR
+that renames it in the spec `.md`, rebuilt `.xml`, contract, regenerated
+test and module, and changes nothing else. Then:
 
 ```bash
 ./dist/vector spec check contracts/<name>.json --nish-root ../nish
