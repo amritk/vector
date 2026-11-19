@@ -233,12 +233,29 @@ vector: spec exports: --nish-root <dir> is required: the nish checkout holding t
 ## mutate
 
 `spec mutate <contract.json> --nish-root <dir> --base <ref>` makes small
-plausible bugs in the lines the change added to the contract's module (a
-flipped comparison, an integer off by one, `||` for `&&`, a deleted
-statement), builds the test against each mutant in a scratch copy of the
+plausible bugs in the lines the change added to the contract's module, inside
+the code the contract tests (a flipped comparison, an integer off by one,
+`||` for `&&`, a deleted statement), builds the test against each mutant in a scratch copy of the
 checkout, and runs it. A mutant the test fails on is **killed**; one it passes
 on **survived**, and is behaviour no requirement pins down. Every survivor is
 refused unless the contract allows it.
+
+The code the contract tests is the module's top-level declarations its
+`functions` reach: each function's own declaration, and every declaration a
+reached one names (a call, a const, a class or a type), transitively, exported
+or not and whatever `outOfScope` says. Top-level code runs at load, so it is
+always reached. A changed line anywhere else, an import or an untested export,
+gets no mutant, and one note names where they lie:
+
+```text
+notes:
+  - 1 changed line outside the tested functions was not mutated: other
+```
+
+A module the scan cannot split into named declarations (it cannot be lexed, an
+export has no name it can read, or a contract function is not a top-level
+declaration there) is mutated on every changed line, and a note says why
+(`every changed line was mutated, not only the tested functions: …`).
 
 Start with a change: a redundant bound on line 173 of the module.
 
@@ -376,7 +393,9 @@ in a spec-side PR before the implementation.
 
 Besides survivors, mutate refuses (exit 1):
 
-- a change that adds no line of the module that can be mutated (`no mutants`);
+- a change that adds no line of the module that can be mutated (`no mutants`),
+  or none in the code the contract's functions reach (`no mutants: no line the
+  change adds to <file> lies in code the contract's functions reach`);
 - a test that fails on the unmutated module, since it proves nothing;
 - `every mutant is stillborn or its build ran past its time: none built, so the test met none of them`;
 - `every mutant that built ran its test past its time`: run with fewer

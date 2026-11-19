@@ -4,7 +4,8 @@
 
 `spec/pr/mutate` — the mutants of a module's changed lines, and the
 verdict on how the test met them. A mutant changes one operator, one
-literal or one statement on a line the change added since the base; the
+literal or one statement on a line the change added since the base,
+inside a declaration the contract's functions reach (`spec/pr/scope`); the
 test must kill every one that builds, unless the contract allows a
 survivor on that line with a reason. The gate also fails when there is
 nothing to mutate, when no mutant builds, and when the test fails on the
@@ -28,7 +29,9 @@ Generated from [src/spec/pr/mutate.ts](https://github.com/amritk/vector/blob/mai
 - [`mutateOutcomeName`](#mutateoutcomename)
 - [`mutateCode`](#mutatecode)
 - [`mutateLine`](#mutateline)
+- [`MutateSites`](#mutatesites)
 - [`mutateSites`](#mutatesites)
+- [`mutateOutsideNote`](#mutateoutsidenote)
 - [`mutatePick`](#mutatepick)
 - [`mutateApply`](#mutateapply)
 - [`mutateJudge`](#mutatejudge)
@@ -286,17 +289,73 @@ its mutants
 
 </scalar-field>
 
+### MutateSites
+
+The mutants of a change, and the changed lines left out as outside the code the contract tests.
+
+```ts
+class MutateSites
+```
+
+#### new MutateSites
+
+Makes an empty set of sites.
+
+```ts
+new MutateSites(whole: string): MutateSites
+```
+
+<scalar-field name="whole" type="string" required>
+
+why every changed line is mutated, or ""
+
+</scalar-field>
+
+#### MutateSites.mutants
+
+The mutants, in the module's order.
+
+```ts
+mutants: MutateMutant[]
+```
+
+#### MutateSites.outside
+
+How many changed lines with a mutant lie outside the code the contract's functions reach.
+
+```ts
+outside: i32
+```
+
+#### MutateSites.owners
+
+The declarations those lines lie in, each once, in the module's order.
+
+```ts
+owners: string[]
+```
+
+#### MutateSites.whole
+
+Why every changed line was mutated, or "" when the scan split the module (scopeReach).
+
+```ts
+whole: string
+```
+
 ### mutateSites
 
-The mutants of a module's lines that a change added. Where code is comes
-from the lexer (mutateCode), so no mutant lands in a string, a template
-literal or a comment, however many lines it spans.
+The mutants of a module's lines that a change added, inside the
+declarations the contract's functions reach (scopeReach). Where code is
+comes from the lexer (mutateCode), so no mutant lands in a string, a
+template literal or a comment, however many lines it spans.
 
 ```ts
 function mutateSites(
   text: string,
   changed: GitdiffFile,
-): Result<MutateMutant[], string>
+  roots: string[],
+): Result<MutateSites, string>
 ```
 
 <scalar-field name="text" type="string" required>
@@ -311,10 +370,36 @@ the module's changes since the base (gitdiffChanged)
 
 </scalar-field>
 
-<scalar-field name="returns" type="Result&lt;MutateMutant[], string&gt;">
+<scalar-field name="roots" type="string[]" required>
 
-the mutants, in the module's order, or `Err` naming the line the
-  lexer cannot read
+the contract's function names
+
+</scalar-field>
+
+<scalar-field name="returns" type="Result&lt;MutateSites, string&gt;">
+
+the mutants and the changed lines left out, or `Err` naming the
+  line the lexer cannot read
+
+</scalar-field>
+
+### mutateOutsideNote
+
+The note on the changed lines a scoped run left unmutated.
+
+```ts
+function mutateOutsideNote(s: MutateSites): string
+```
+
+<scalar-field name="s" type="MutateSites" required>
+
+the sites (mutateSites)
+
+</scalar-field>
+
+<scalar-field name="returns" type="string">
+
+the note, or "" when every changed line was in scope
 
 </scalar-field>
 
@@ -384,6 +469,7 @@ function mutateJudge(
   allow: AllowedSurvivor[],
   baseline: string | null,
   dropped: i32,
+  outside: string,
 ): void
 ```
 
@@ -420,5 +506,12 @@ why the test fails on the unmutated module, or null when it passes
 <scalar-field name="dropped" type="i32" required>
 
 mutants made but not run, as `--max` left out
+
+</scalar-field>
+
+<scalar-field name="outside" type="string" required>
+
+the note on changed lines outside the tested functions
+  (mutateOutsideNote), or ""
 
 </scalar-field>

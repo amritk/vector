@@ -134,7 +134,7 @@ const mutateTestContractOn = (names: string[], call: string): string => {
     fs.push(`{"name": "${n}", "params": [], "returns": "i32"}`)
   }
   const at = MUTATE_TEST_CONTRACT.indexOf('"functions": [')
-  const end = MUTATE_TEST_CONTRACT.indexOf("],\n  \"allowSurvivors\"")
+  const end = MUTATE_TEST_CONTRACT.indexOf('],\n  "allowSurvivors"')
   const head = MUTATE_TEST_CONTRACT.slice(0, at)
   const tail = MUTATE_TEST_CONTRACT.slice(end + 2)
   return replaceAll(`${head}"functions": [${fs.join(", ")}],${tail}`, '"call": "k"', `"call": "${call}"`)
@@ -204,7 +204,9 @@ const mutateTestRepo = (t: Suite): Result<boolean, string> => {
   const k = mutateCheck(`${dir}/k.json`, "main", calm, 0)
   t.eqStr(
     "a contract on k mutates only k's line, and notes the rest",
-    k.isOk() ? `${k.value.items.join(" | ")} || ${k.value.problems.join(" | ")} || ${k.value.notes.join(" | ")}` : k.error,
+    k.isOk()
+      ? `${k.value.items.join(" | ")} || ${k.value.problems.join(" | ")} || ${k.value.notes.join(" | ")}`
+      : k.error,
     [
       "survived std/m.ts:3:29 int: export const k = (): i32 => 8 | survived std/m.ts:3:29 int: export const k = (): i32 => 6 ||  || ",
       "2 changed lines outside the tested functions were not mutated: lt, f | ",
@@ -217,7 +219,9 @@ const mutateTestRepo = (t: Suite): Result<boolean, string> => {
   const old = mutateCheck(`${dir}/old.json`, "main", calm, 0)
   t.eqStr(
     "a change none of whose lines the contract's functions reach is refused, naming them",
-    old.isOk() ? `${old.value.items.join(" | ")} || ${old.value.problems.join(" | ")} || ${old.value.notes.join(" | ")}` : old.error,
+    old.isOk()
+      ? `${old.value.items.join(" | ")} || ${old.value.problems.join(" | ")} || ${old.value.notes.join(" | ")}`
+      : old.error,
     " || no mutants: no line the change adds to std/m.ts lies in code the contract's functions reach || 3 changed lines outside the tested functions were not mutated: lt, k, f",
   )
   prTestCommit(dir, "change").orReturn()

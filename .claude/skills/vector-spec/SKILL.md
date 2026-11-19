@@ -465,8 +465,9 @@ When `exports` fails, do one of these in a spec-side PR:
   [--jobs N] [--max N] [--format markdown]
 ```
 
-It mutates only the module's lines changed since `--base`, and runs the test
-against each mutant. A survivor is printed with its `file:line`, its mutated
+It mutates only the module's lines changed since `--base` inside the
+declarations the contract's functions reach (the other changed lines are one
+note), and runs the test against each mutant. A survivor is printed with its `file:line`, its mutated
 line, and *behaviour no requirement pins down*, and the command exits 1. Kill
 the survivor with a property or vector the spec supports. Or, in a spec-side
 PR, allow it with a reason in `contracts/<name>.survivors.json`:
@@ -482,7 +483,7 @@ belongs in a spec-side PR.
 
 `mutate` also exits 1 in these cases:
 
-- there are zero mutants;
+- there are zero mutants, as when no changed line is in reach;
 - every mutant is stillborn or its build ran past its time;
 - too many builds or tests (over 10%) ran past their time;
 - the test fails on the unmutated module, or the unmutated module does not

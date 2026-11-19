@@ -172,7 +172,11 @@ const e2eTestModule = (t: Suite, dir: string): Result<boolean, string> => {
     e2eTestRun(dir, ["spec", "mutate", "--base", "main", "--nish-root", root, "--test", `${dir}/t.sh`, contract]),
     "exit 1\nspec mutate std/hex.ts against main: FAILED\n\nnotes:\n  - 1 changed line outside the tested functions was not mutated: other\n\nproblems:\n  ✗ no mutants: no line the change adds to std/hex.ts lies in code the contract's functions reach\n",
   )
-  prTestWrite(dir, "nish/std/hex.ts", `/** Encodes. */\nexport const enc = (b: string): string => b.slice(1)\n${other}`).orReturn()
+  prTestWrite(
+    dir,
+    "nish/std/hex.ts",
+    `/** Encodes. */\nexport const enc = (b: string): string => b.slice(1)\n${other}`,
+  ).orReturn()
   t.eqStr(
     "mutate still runs the tested function's changed line, and notes the other",
     e2eTestRun(dir, ["spec", "mutate", "--base", "main", "--nish-root", root, "--test", `${dir}/t.sh`, contract]),
