@@ -1,0 +1,8 @@
+warning: --run-sources runs 6 shell command(s) from tests/fixtures/command-values/contracts/command-values.json, which is not in /home/user/vector/contracts/.
+They run as you, with sh -c, from the contract's directory, with your environment, files and network. A timeout kills each command's process group, but not a process it detached with setsid. Read them first:
+  [V-WIDE] $ printf 151288809941952652
+  [V-NEG] $ echo -1
+  [V-ZERO] $ printf '0\n\n'
+  [V-TRUE] $ echo true
+  [V-FALSE] $ echo false
+  [V-NULL] $ echo null

@@ -1,0 +1,29 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ command-values-wrong · command-values-wrong (Fixture: command sources that print the wrong integer, bool or null) · fixture/varint
+ Status: INVALID
+
+ Gate failures
+  ✘ provenance V-WIDE.source: source command printed "151288809941952653", the vector expects "151288809941952652": $ printf 151288809941952653
+  ✘ provenance V-NEG.source: source command printed "+1", the vector expects "-1": $ echo +1
+  ✘ provenance V-ZERO.source: source command printed "00", the vector expects "0": $ echo 00
+  ✘ provenance V-TRUE.source: source command printed "True", the vector expects "true": $ python3 -c 'print(True)'
+  ✘ provenance V-FALSE.source: source command printed "false.", the vector expects "false": $ echo false.
+  ✘ provenance V-NULL.source: source command printed "None", the vector expects "null": $ echo None
+
+ Requirements
+  ○ R-READ  §3 MUST  "varintRead MUST return the value an eight-byte varint encodes."
+      ○ V-WIDE  ○ V-NEG  ○ V-ZERO  ○ V-TRUE  ○ V-FALSE  ○ V-NULL
+
+ Vector sources run
+  ✘ V-WIDE: $ printf 151288809941952653 — printed "151288809941952653", the vector expects "151288809941952652"
+  ✘ V-NEG: $ echo +1 — printed "+1", the vector expects "-1"
+  ✘ V-ZERO: $ echo 00 — printed "00", the vector expects "0"
+  ✘ V-TRUE: $ python3 -c 'print(True)' — printed "True", the vector expects "true"
+  ✘ V-FALSE: $ echo false. — printed "false.", the vector expects "false"
+  ✘ V-NULL: $ echo None — printed "None", the vector expects "null"
+
+ Warnings
+  ! clauses: no property clauses: the contract checks only the RFC's own vectors
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

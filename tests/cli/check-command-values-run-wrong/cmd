@@ -1,0 +1,1 @@
+vector spec check tests/fixtures/command-values/contracts/command-values-wrong.json --run-sources
