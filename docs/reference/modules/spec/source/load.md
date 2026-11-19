@@ -7,8 +7,9 @@ read. Each source the contract declares (and the one RFC `source.rfc`
 names, when no `source.main` picks another) is located (sourceCandidate),
 read only if it is spec text (sourceReadConfined), checked against the file
 it records and the SHA-256 it pins, refused if it hides text from the gates
-(hidden), and read into its sections by the reader its extension selects,
-whose decoded text is checked for hidden text again (an XML reader turns
+(hidden; an RFC's line-break hints are dropped first, hiddenDropBreaks),
+and read into its sections by the reader its extension selects, whose
+decoded text is checked for hidden text again (an XML reader turns
 `&#1058;` into a Cyrillic Т the raw bytes never showed).
 Every problem is collected, so one run names them all.
 
