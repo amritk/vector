@@ -308,3 +308,61 @@ export const hiddenProblem = (text: string, name: string): string | null => {
   const more = scan.total > 5 ? ` (and ${scan.total - 5} more)` : ""
   return `${name}: text a reader cannot see as the gates read it: ${scan.spots.join("; ")}${more}`
 }
+
+/** Whether `cp` is a line-break hint an RFC's XML may hold literally: U+200B or U+2060. */
+const hiddenIsBreakHint = (cp: i32): boolean => cp === 0x200b || cp === 0x2060
+
+/** Whether the code point starting at byte `i` is a word character (hiddenWordClass); false off either end. */
+const hiddenWordAt = (word: Regex, text: string, i: i32): boolean =>
+  i >= 0 && i < text.length && word.test(text.substring(i, i + charsSequenceLength(text, i)))
+
+/**
+ * An RFC source's text with its line-break hints dropped: each run of literal
+ * zero-width spaces (U+200B) and word joiners (U+2060) that the RFC Editor
+ * leaves in RFC XML, as in RFC 9000's `0x0100-<U+200B>0x01ff`, where a
+ * neighbour of the run (the code point before it or after it, or the text's
+ * start or end) is not a word character (hiddenWordClass). A run between two
+ * word characters stays, so the scan still refuses `MU<U+200B>ST` at its line:
+ * a drop can never join two words or change one. No other character is
+ * dropped, and no newline, so the lines of every later message are the
+ * file's.
+ *
+ * Only for a source that names an RFC; a spec's own XML is scanned as written.
+ *
+ * @param text the source's text
+ * @returns the text without its droppable hints
+ */
+export const hiddenDropBreaks = (text: string): string => {
+  if (text.indexOf("​") < 0 && text.indexOf("⁠") < 0) {
+    return text
+  }
+  const compiled = regexCompile(`^${hiddenWordClass()}$`, "")
+  if (compiled.isErr()) {
+    return text
+  }
+  const word = compiled.value
+  const out: string[] = []
+  let kept = 0
+  let i = 0
+  while (i < text.length) {
+    if (!hiddenIsBreakHint(charsCodePointAt(text, i))) {
+      i += charsSequenceLength(text, i)
+      continue
+    }
+    let end = i
+    while (end < text.length && hiddenIsBreakHint(charsCodePointAt(text, end))) {
+      end += charsSequenceLength(text, end)
+    }
+    let before = i - 1
+    while (before > 0 && (text.charCodeAt(before) & 0xc0) === 0x80) {
+      before--
+    }
+    if (!hiddenWordAt(word, text, before) || !hiddenWordAt(word, text, end)) {
+      out.push(text.substring(kept, i))
+      kept = end
+    }
+    i = end
+  }
+  out.push(text.substring(kept, text.length))
+  return out.join("")
+}
