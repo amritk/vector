@@ -28,7 +28,7 @@ import {
   profileWhere,
   profileWhereText,
 } from "./profile/profile"
-import { hiddenProblem } from "./source/hidden"
+import { hiddenDropBreaks, hiddenProblem } from "./source/hidden"
 import { SourceReaders, sourceReaderFor, sourceReadersAdd, sourceReadersDefault } from "./source/load"
 import { SourceRead, sourceCandidate, sourceLabel, sourceReadConfined } from "./source/path"
 import { RfcDocument } from "./source/rfc"
@@ -225,11 +225,13 @@ const extractReadRfc = (ctx: ExtractContext, n: i32): Result<ExtractRfc, string>
   if (reader === null) {
     return Err(`source ${decl.id}: no reader is registered for ${label}`)
   }
-  const hidden = hiddenProblem(read.text, label)
+  // An RFC's line-break hints are dropped (hiddenDropBreaks); its pin stays the file's bytes.
+  const text = hiddenDropBreaks(read.text)
+  const hidden = hiddenProblem(text, label)
   if (hidden !== null) {
     return Err(`source ${decl.id}: ${hidden}`)
   }
-  const doc = reader.read(read.text, label)
+  const doc = reader.read(text, label)
   if (doc.isErr()) {
     return Err(`source ${decl.id}: ${doc.error}`)
   }

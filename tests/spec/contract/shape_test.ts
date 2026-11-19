@@ -61,7 +61,7 @@ export const main = (): i32 => {
     t,
     `"nish/hex"`,
     `"Nish/hex"`,
-    "contract.target.module: a module path <root>/<segment>/…, lowercase [a-z][a-z0-9_]* segments (RFC 3986 §3.3)",
+    "contract.target.module: a module path <root>/<segment>/…, each segment [a-z][a-z0-9_]*(-[a-z0-9][a-z0-9_]*)*, words joined by single - (RFC 3986 §3.3)",
   )
   shapeExpect(
     t,
@@ -547,7 +547,7 @@ export const main = (): i32 => {
     "requirements[0].quote: a non-empty string",
     `"module": "nish/hex"`,
     `"module": "nish"`,
-    "contract.target.module: a module path <root>/<segment>/…, lowercase [a-z][a-z0-9_]* segments (RFC 3986 §3.3)",
+    "contract.target.module: a module path <root>/<segment>/…, each segment [a-z][a-z0-9_]*(-[a-z0-9][a-z0-9_]*)*, words joined by single - (RFC 3986 §3.3)",
     `"type": "u8"`,
     `"type": "i128"`,
     'read: clauses[1].forall[0].type: an integer type (i8 i16 i32 i64 u8 u16 u32 u64), "f64", "bytes" or "string"',

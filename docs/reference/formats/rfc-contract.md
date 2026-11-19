@@ -91,9 +91,9 @@ A section number: 2.3, A.1, 4 (an RFC's, or a markdown spec's numbered heading).
 
 ### `modulePath`
 
-A module as a neutral path `<root>/<segment>/…`: lowercase segments separated by `/`, like the segments of a URI path (RFC 3986 §3.3).
+A module as a neutral path `<root>/<segment>/…`: lowercase segments separated by `/`, like the segments of a URI path (RFC 3986 §3.3). A segment is words joined by single `-` (`quic-packet`); a later word may start with a digit (`http1-codec`, `a-1`).
 
-`string`; matches `^[a-z][a-z0-9_]*(?:/[a-z][a-z0-9_]*)+$`.
+`string`; matches `^[a-z][a-z0-9_]*(?:-[a-z0-9][a-z0-9_]*)*(?:/[a-z][a-z0-9_]*(?:-[a-z0-9][a-z0-9_]*)*)+$`.
 
 <a id="def-moduleoverrides"></a>
 

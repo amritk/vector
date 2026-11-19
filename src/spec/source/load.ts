@@ -4,15 +4,16 @@
  * names, when no `source.main` picks another) is located (sourceCandidate),
  * read only if it is spec text (sourceReadConfined), checked against the file
  * it records and the SHA-256 it pins, refused if it hides text from the gates
- * (hidden), and read into its sections by the reader its extension selects,
- * whose decoded text is checked for hidden text again (an XML reader turns
+ * (hidden; an RFC's line-break hints are dropped first, hiddenDropBreaks),
+ * and read into its sections by the reader its extension selects, whose
+ * decoded text is checked for hidden text again (an XML reader turns
  * `&#1058;` into a Cyrillic Т the raw bytes never showed).
  * Every problem is collected, so one run names them all.
  */
 
 import { Contract, SourceDecl } from "../contract/types"
 import { xmlRead } from "../xml/doc"
-import { hiddenProblem } from "./hidden"
+import { hiddenDropBreaks, hiddenProblem } from "./hidden"
 import { SourceRead, sourceCandidate, sourceLabel, sourceReadConfined } from "./path"
 import { RfcDocument, rfcRead } from "./rfc"
 
@@ -305,11 +306,13 @@ const sourceLoadOne = (
       `source ${decl.id}: ${shown} is ${kind}, and no reader is registered for it: readers are registered for ${exts.join(", ")}`,
     )
   }
-  const hidden = hiddenProblem(read.text, shown)
+  // An RFC's line-break hints are dropped (hiddenDropBreaks); its pin stays the file's bytes.
+  const text = decl.rfc >= 1 ? hiddenDropBreaks(read.text) : read.text
+  const hidden = hiddenProblem(text, shown)
   if (hidden !== null) {
     return Err(`source ${decl.id}: ${hidden}`)
   }
-  const doc = reader.read(read.text, shown)
+  const doc = reader.read(text, shown)
   if (doc.isErr()) {
     return Err(`source ${decl.id}: ${doc.error}`)
   }
