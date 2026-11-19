@@ -207,6 +207,81 @@ const COMPLETENESS_TEST_COPIES_XML: string = `<?xml version="1.0" encoding="UTF-
 </rfc>
 `
 
+/** Where the anchored-quote fixture keeps its specs and its contract. */
+const COMPLETENESS_TEST_AQ: string = "tests/fixtures/anchored-quote"
+
+/**
+ * A context on the anchored-quote fixture: the contract extracted from
+ * `aq-two` (R-NO-LF quoting RFC 4648 §3.1, anchored on a blockquote in spec
+ * §3, and R-PAD quoting §3.2 in spec §4), with `edit` applied to its text,
+ * checked against the spec `read`, which the gate rereads from `file`.
+ */
+const completenessTestAq = (read: string, file: string, from: string, to: string): CheckContext => {
+  const path = `${COMPLETENESS_TEST_AQ}/specs/${file}.xml`
+  const xml = readFileSyncOrNull(`${COMPLETENESS_TEST_AQ}/specs/${read}.xml`) ?? ""
+  const text = readFileSyncOrNull(`${COMPLETENESS_TEST_AQ}/contracts/aq-two.json`) ?? ""
+  const at = from === "" ? -1 : text.indexOf(from)
+  const json = at < 0 ? text : `${text.slice(0, at)}${to}${text.slice(at + from.length)}`
+  const ctx = new CheckContext(`${COMPLETENESS_TEST_AQ}/contracts/aq-two.json`, ".")
+  ctx.contract = contractParse(json, "aq-two").expect("parse")
+  const set = new SourceSet()
+  set.main = "aq-two"
+  set.sources.push(new LoadedSource("aq-two", path, path, xmlRead(xml, path).expect("xml")))
+  ctx.sources = set
+  return ctx
+}
+
+/** One anchored-quote row: the spec read and reread, an edit to the contract, and the findings expected. */
+class CompletenessTestAqRow {
+  name: string
+  read: string
+  file: string
+  from: string
+  to: string
+  want: string[]
+  constructor(name: string, read: string, file: string, from: string, to: string, want: string[]) {
+    this.name = name
+    this.read = read
+    this.file = file
+    this.from = from
+    this.to = to
+    this.want = want
+  }
+}
+
+/** RFC 4648 §3.1, as R-NO-LF quotes it. */
+const COMPLETENESS_TEST_NO_LF: string =
+  "Implementations MUST NOT add line feeds to base-encoded data unless the specification referring to this document explicitly directs base encoders to add line feeds after a specific number of characters."
+
+/** RFC 4648 §3.2, as R-PAD quotes it. */
+const COMPLETENESS_TEST_PAD: string =
+  "Implementations MUST include appropriate pad characters at the end of encoded data unless the specification referring to this document explicitly states otherwise."
+
+/**
+ * Anchored quotes of another RFC in a spec's own sections: each counts in
+ * the one section holding the blockquote anchored with its id, and nowhere
+ * else, and the spec's own unquoted sentences are still reported.
+ */
+const completenessTestAqRows = (): CompletenessTestAqRow[] => {
+  const lf = `MUST NOT sentence is neither a requirement nor an exclusion: "${COMPLETENESS_TEST_NO_LF}"`
+  const pad = `MUST sentence is neither a requirement nor an exclusion: "${COMPLETENESS_TEST_PAD}"`
+  return [
+    new CompletenessTestAqRow("two anchored quotes in two sections", "aq-two", "aq-two", "", "", []),
+    new CompletenessTestAqRow("an unanchored quote", "aq-unanchored", "aq-unanchored", "", "", [`§4: ${pad}`]),
+    new CompletenessTestAqRow("the spec's own sentence beside a quote", "aq-own", "aq-own", "", "", [
+      `§3: MUST NOT sentence is neither a requirement nor an exclusion: "aqEncode MUST NOT add a line feed."`,
+    ]),
+    new CompletenessTestAqRow("a quote repeated as prose", "aq-prose", "aq-prose", "", "", [`§5: ${lf}`]),
+    new CompletenessTestAqRow("an id no blockquote holds", "aq-two", "aq-two", `"id": "R-PAD"`, `"id": "R-PADS"`, [
+      `§4: ${pad}`,
+    ]),
+    new CompletenessTestAqRow("a quote in another quote's section", "aq-two", "aq-two", COMPLETENESS_TEST_NO_LF, COMPLETENESS_TEST_PAD, [
+      `§3: ${lf}`,
+    ]),
+    new CompletenessTestAqRow("a reread that is not the spec read", "aq-two", "aq-own", "", "", [`§3: ${lf}`, `§4: ${pad}`]),
+  ]
+}
+
 /** A context with a contract and a hand-built source set holding one read RFC. */
 const completenessTestDoc = (contract: string, file: string, doc: RfcDocument): CheckContext => {
   const ctx = new CheckContext("contracts/c1.json", ".")
@@ -365,6 +440,14 @@ export const main = (): i32 => {
   t.ok("copies findings", copies.length === 2)
   if (copies.length !== 2) {
     console.log(copies.join("\n"))
+  }
+  for (const row of completenessTestAqRows()) {
+    const got = gateCompleteness(completenessTestAq(row.read, row.file, row.from, row.to))
+    const same = got.length === row.want.length && row.want.every((w: string): boolean => got.indexOf(w) >= 0)
+    t.ok(row.name, same)
+    if (!same) {
+      console.log(got.join("\n"))
+    }
   }
   return t.done()
 }
