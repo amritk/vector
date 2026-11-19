@@ -260,6 +260,7 @@ No other property is allowed.
 | --- | --- | --- | --- |
 | `name` | [`ident`](#def-ident) | yes |  |
 | `type` | [`paramType`](#def-paramtype) | yes |  |
+| `form` | `"window"` | no | Only on a bytes parameter the real function takes as three, (buf: u8[], off: i32, len: i32): the bytes are buf[off, off + len). |
 | `names` | [`nameOverrides`](#def-nameoverrides) | no |  |
 
 No other property is allowed.

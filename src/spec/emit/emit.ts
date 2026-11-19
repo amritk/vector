@@ -17,7 +17,7 @@
 
 import { Sample, SampleTable, checkSamplesOf } from "../check"
 import { shapeNishModuleFile } from "../contract/shape"
-import { ClauseKind, ExprKind, LitKind, typesIsWords } from "../contract/types"
+import { ClauseKind, ExprKind, LitKind, typesIsWindow, typesIsWords } from "../contract/types"
 import { Clause, Contract, Expr, FnSig, Literal } from "../contract/types"
 import { TypeEnv, typeCallsIn, typeEnvBind, typeIntBase, typeOf } from "../contract/typing"
 import { vocabBaseOf, vocabIsIntType, vocabIsOptional, vocabIsWordType, vocabValueType } from "../contract/vocab"
@@ -176,22 +176,55 @@ const emitFn = (ctx: EmitContext, name: string): FnSig | null => {
 
 const emitIsSecret = (t: string): boolean => t !== vocabValueType(t)
 
+/** Whether `sig` takes or returns a Secret. */
+const emitTakesSecret = (sig: FnSig): boolean => {
+  let secret = emitIsSecret(sig.returns)
+  for (const p of sig.params) {
+    secret = secret || emitIsSecret(p.type)
+  }
+  return secret
+}
+
+/** Whether `sig` takes a window. */
+const emitTakesWindow = (sig: FnSig): boolean => sig.params.some((p): boolean => typesIsWindow(p))
+
+/** Whether a call of `sig` goes through its `plain_` wrapper: it takes or returns a Secret, or takes a window. */
+const emitWraps = (sig: FnSig): boolean => emitTakesSecret(sig) || emitTakesWindow(sig)
+
+/** How many guard bytes a window's bytes sit after, so its offset is never 0. */
+const EMIT_WINDOW_LEAD: i32 = 3
+
+/** How many guard bytes follow a window's bytes, so a read past its length is seen. */
+const EMIT_WINDOW_TAIL: i32 = 3
+
 /**
- * `sig.name` on plain bytes, under nish's rules for a Secret: each secret
- * argument is a fresh copy wrapped with `secret` and wiped after the call; a
- * secret result is copied out with `expose`, then wiped.
+ * `sig.name` on plain bytes. Under nish's rules for a Secret, each secret
+ * argument is a fresh copy wrapped with `secret` and wiped after the call,
+ * and a secret result is copied out with `expose`, then wiped. A window's
+ * bytes are passed as `(buf, off, len)`, between guard bytes (0xa5 before,
+ * 0x5a after), so a function that reads from 0 or past `len` sees them.
  */
 const emitPlainWrapper = (ctx: EmitContext, sig: FnSig, name: string): string => {
-  emitUse(ctx, "copyBytes")
-  emitAddOnce(ctx.secretNames, "Secret")
-  emitAddOnce(ctx.secretNames, "wipe")
+  const secret = emitTakesSecret(sig)
+  if (secret) {
+    emitUse(ctx, "copyBytes")
+    emitAddOnce(ctx.secretNames, "Secret")
+    emitAddOnce(ctx.secretNames, "wipe")
+  }
   const params: string[] = []
   const args: string[] = []
   const body: string[] = []
   const wipes: string[] = []
   for (const p of sig.params) {
     params.push(`a_${p.name}: ${emitNishType(vocabValueType(p.type))}`)
-    if (!emitIsSecret(p.type)) {
+    if (typesIsWindow(p)) {
+      const cat = emitUse(ctx, "concatBytes")
+      const fill = emitUse(ctx, "fillBytes")
+      const lead = `${fill}(0xa5, ${EMIT_WINDOW_LEAD})`
+      const tail = `${fill}(0x5a, ${EMIT_WINDOW_TAIL})`
+      body.push(`  const w_${p.name}: u8[] = ${cat}(${cat}(${lead}, a_${p.name}), ${tail});`)
+      args.push(`w_${p.name}, ${EMIT_WINDOW_LEAD}, a_${p.name}.length`)
+    } else if (!emitIsSecret(p.type)) {
       args.push(`a_${p.name}`)
     } else {
       emitAddOnce(ctx.secretNames, "secret")
@@ -233,8 +266,15 @@ const emitPlainWrapper = (ctx: EmitContext, sig: FnSig, name: string): string =>
     }
     body.push("  return r;")
   }
+  const how: string[] = []
+  if (secret) {
+    how.push("secrets are copied in, wiped after")
+  }
+  if (emitTakesWindow(sig)) {
+    how.push("a window is passed as (buf, off, len) between guard bytes")
+  }
   return [
-    `/** ${sig.name} on plain bytes: secrets are copied in, wiped after. */`,
+    `/** ${sig.name} on plain bytes: ${how.join("; ")}. */`,
     `const ${name} = (${params.join(", ")}): ${emitNishType(ret)} => {`,
     body.join("\n"),
     "};",
@@ -243,15 +283,11 @@ const emitPlainWrapper = (ctx: EmitContext, sig: FnSig, name: string): string =>
 
 /**
  * A call of a contract function on emitted arguments. One that takes or
- * returns a Secret goes through a `plain_` wrapper, so the rest of the test
- * sees plain bytes.
+ * returns a Secret, or takes a window, goes through a `plain_` wrapper, so
+ * the rest of the test sees one plain bytes value.
  */
 const emitCall = (ctx: EmitContext, sig: FnSig, args: string[]): string => {
-  let secret = emitIsSecret(sig.returns)
-  for (const p of sig.params) {
-    secret = secret || emitIsSecret(p.type)
-  }
-  if (!secret) {
+  if (!emitWraps(sig)) {
     return `${sig.name}(${args.join(", ")})`
   }
   const name = `plain_${sig.name}`
@@ -973,11 +1009,7 @@ export const emitRefusals = (c: Contract, local: string[]): string[] => {
     names.push(f.name)
   }
   for (const f of c.functions) {
-    let secret = emitIsSecret(f.returns)
-    for (const p of f.params) {
-      secret = secret || emitIsSecret(p.type)
-    }
-    if (secret && names.indexOf(`plain_${f.name}`) >= 0) {
+    if (emitWraps(f) && names.indexOf(`plain_${f.name}`) >= 0) {
       out.push(`${f.name}: its wrapper would be plain_${f.name}, which is a contract function's name`)
     }
   }

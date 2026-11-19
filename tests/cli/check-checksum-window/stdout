@@ -1,0 +1,13 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ checksum-window · checksum-window (A checksum over a window) · nish/compress/checksum
+ Status: CONTRACT_VALID
+
+ Requirements
+  ○ R-CRC32  §3 MUST  "crc32 MUST return the CRC-32 of the window's bytes, the reflect…"
+      ○ V1  ○ V2
+  ○ R-ADLER32  §4 MUST  "adler32 MUST return the Adler-32 of the window's bytes, as zlib…"
+      ○ V3  ○ V4  ○ P-ADLER32-SPLIT (33 samples: 9 boundary)
+  ○ R-ADLER32-UPDATE  §4 MUST  "adler32Update MUST return the Adler-32 of the bytes an earlier …"
+      ○ V5  ○ P-ADLER32-SPLIT (33 samples: 9 boundary)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

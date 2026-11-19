@@ -1,0 +1,1 @@
+vector spec emit tests/fixtures/checksum-window/contracts/checksum-window.json --lang go -o dist/emit-window-go-golden

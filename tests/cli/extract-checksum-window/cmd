@@ -1,0 +1,1 @@
+vector spec extract tests/fixtures/checksum-window/specs/checksum-window.xml -o tests/fixtures/checksum-window/contracts/checksum-window.json --check
