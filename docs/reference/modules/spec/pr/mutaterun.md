@@ -204,8 +204,9 @@ the mutants to run, at least one
 
 ### mutateCheck
 
-Mutates the lines a change added to a contract's target module, in the
-nish checkout at `run.nishRoot`, and runs the test against each mutant.
+Mutates the lines a change added to a contract's target module inside
+the declarations its functions reach (scopeReach), in the nish checkout at
+`run.nishRoot`, and runs the test against each mutant.
 
 ```ts
 function mutateCheck(

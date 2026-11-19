@@ -9,7 +9,7 @@
  * so the same file also runs under that framework.
  */
 
-import { FnSig } from "../contract/types"
+import { FnSig, typesIsWindow } from "../contract/types"
 import { vocabBaseOf, vocabIsWordType, vocabLanguages } from "../contract/vocab"
 
 /** A test's language and harness, and whether its slow vectors run. */
@@ -139,4 +139,27 @@ export const emitTargetWordsRefusal = (f: FnSig, language: string): string | nul
     }
   }
   return null
+}
+
+/**
+ * Why a function cannot be tested in a language whose emitter has no windows
+ * yet: a parameter is a window, which the real function takes as
+ * `(buf, off, len)`. Only the Nish emitter expands one.
+ *
+ * @param f the function
+ * @param language the language's name, as a message spells it (`Rust`)
+ * @returns the refusal, naming every window, or null when no parameter is one
+ */
+export const emitTargetWindowRefusal = (f: FnSig, language: string): string | null => {
+  const names: string[] = []
+  for (const p of f.params) {
+    if (typesIsWindow(p)) {
+      names.push(p.name)
+    }
+  }
+  if (names.length === 0) {
+    return null
+  }
+  const what = names.length === 1 ? `${names[0]} is a window` : `${names.join(", ")} are windows`
+  return `${f.name}: ${what} (buf, off, len), which is not emitted for ${language} yet; emit the Nish test`
 }

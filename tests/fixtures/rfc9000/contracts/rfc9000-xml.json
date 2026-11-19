@@ -1,0 +1,86 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "rfc9000-xml",
+  "source": {
+    "rfc": 9000,
+    "title": "QUIC: A UDP-Based Multiplexed and Secure Transport",
+    "sha256": "2d865c90e57a22d2bc3f9e6b8e24a72ef534a00f8e802f0b28d4f5da612a4f24"
+  },
+  "sources": [
+    {
+      "id": "rfc9000",
+      "rfc": 9000,
+      "file": "rfcs/rfc9000.xml",
+      "sha256": "2d865c90e57a22d2bc3f9e6b8e24a72ef534a00f8e802f0b28d4f5da612a4f24"
+    }
+  ],
+  "target": {
+    "module": "nish/quic/varint"
+  },
+  "requirements": [
+    {
+      "id": "R-OVERVIEW",
+      "section": "1",
+      "level": "DEFINITION",
+      "quote": "QUIC is a secure general-purpose transport protocol."
+    }
+  ],
+  "functions": [
+    {
+      "name": "varintEncode",
+      "params": [
+        {
+          "name": "v",
+          "type": "u64"
+        }
+      ],
+      "returns": "bytes"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "property",
+      "id": "P-AT-MOST-EIGHT",
+      "title": "an encoded integer is at most eight bytes",
+      "covers": [
+        "R-OVERVIEW"
+      ],
+      "forall": [
+        {
+          "name": "v",
+          "type": "u64",
+          "min": 0,
+          "max": "4611686018427387903"
+        }
+      ],
+      "assert": {
+        "op": "<=",
+        "args": [
+          {
+            "op": "len",
+            "args": [
+              {
+                "call": "varintEncode",
+                "args": [
+                  {
+                    "var": "v"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "int": 8
+          }
+        ]
+      }
+    }
+  ],
+  "exclusions": [
+    {
+      "section": "2",
+      "quote": "In addition to the fields listed in Section 22.1.1, permanent registrations in this registry MUST include the following fields: Code: A short mnemonic for the parameter.",
+      "reason": "the fixture checks only that the registry's table, with its line-break hint, reads."
+    }
+  ]
+}

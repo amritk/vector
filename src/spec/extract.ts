@@ -28,7 +28,7 @@ import {
   profileWhere,
   profileWhereText,
 } from "./profile/profile"
-import { hiddenProblem } from "./source/hidden"
+import { hiddenDropBreaks, hiddenProblem } from "./source/hidden"
 import { SourceReaders, sourceReaderFor, sourceReadersAdd, sourceReadersDefault } from "./source/load"
 import { SourceRead, sourceCandidate, sourceLabel, sourceReadConfined } from "./source/path"
 import { RfcDocument } from "./source/rfc"
@@ -225,11 +225,13 @@ const extractReadRfc = (ctx: ExtractContext, n: i32): Result<ExtractRfc, string>
   if (reader === null) {
     return Err(`source ${decl.id}: no reader is registered for ${label}`)
   }
-  const hidden = hiddenProblem(read.text, label)
+  // An RFC's line-break hints are dropped (hiddenDropBreaks); its pin stays the file's bytes.
+  const text = hiddenDropBreaks(read.text)
+  const hidden = hiddenProblem(text, label)
   if (hidden !== null) {
     return Err(`source ${decl.id}: ${hidden}`)
   }
-  const doc = reader.read(read.text, label)
+  const doc = reader.read(text, label)
   if (doc.isErr()) {
     return Err(`source ${decl.id}: ${doc.error}`)
   }
@@ -314,6 +316,10 @@ const extractComplete = (ctx: ExtractContext, c: Contract, specSha: string): Res
       if (d.rfc < 1) {
         // Lexical, as the old extractor was, so a symlinked specs/ names the spec where the contract sees it.
         d.path = extractRelative(dirLex, extractAbsolute(ctx.xmlPath))
+        // Under an RFC main, `source.sha256` is the RFC's, so the spec's own entry pins the spec.
+        if (mainRfc >= 1) {
+          d.sha256 = specSha
+        }
         continue
       }
       const got = ctx.rfcs.get(d.rfc)

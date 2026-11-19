@@ -45,7 +45,7 @@ import {
   emitUndefinedWhy,
 } from "./emit"
 import { EMIT_SLOW_SKIP, emitF64IsFinite, emitLiteralHex } from "./lit"
-import { emitTargetWordsRefusal } from "./target"
+import { emitTargetWindowRefusal, emitTargetWordsRefusal } from "./target"
 
 /** What emitting one Go test has gathered so far. */
 class EmitGoContext {
@@ -124,6 +124,10 @@ export const emitGoRefusals = (c: Contract): string[] => {
     const words = emitTargetWordsRefusal(f, "Go")
     if (words !== null) {
       out.push(words)
+    }
+    const window = emitTargetWindowRefusal(f, "Go")
+    if (window !== null) {
+      out.push(window)
     }
     const n = emitGoName(f)
     if (!emitGoIsExported(n)) {

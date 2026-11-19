@@ -1,0 +1,23 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ rfc4648-command · RFC 4648 (Fixture: a command row in a spec whose main source is RFC 4648) · nish/base32
+ Status: CONTRACT_VALID
+
+ Requirements
+  ○ R-B32  §6 DEFINITION  "The Base 32 encoding is designed to represent arbitrary sequenc…"
+      ○ T1
+
+ Vector sources run
+  · T1: $ python3 -c 'import base64,sys;sys.stdout.write(base64.b32encode(b"foo").decode())'
+
+ Not tested, by decision
+  §3.1 "Implementations MUST NOT add line feeds to base-encoded…" — base32Encode writes no line feeds at all
+  §3.2 "Implementations MUST include appropriate pad characters…" — an obligation this fixture does not need to test
+  §3.3 "Implementations MUST reject the encoded data if it cont…" — an obligation on a decoder, which this fixture does not declare
+  §3.5 "These pad bits MUST be set to zero by conforming encode…" — an obligation this fixture does not need to test
+
+ Warnings
+  ! clauses: no property clauses: the contract checks only the RFC's own vectors
+  ! T1.source: source command not run (pass --run-sources): the expected value is unverified: $ python3 -c 'import base64,sys;sys.stdout.write(base64.b32encode(b"foo").decode())'
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

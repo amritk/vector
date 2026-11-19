@@ -2,7 +2,8 @@
 
 A module lands spec-first, in two pull requests. The **spec side** comes
 first: the spec in `specs/`, its contract in `contracts/`, the RFCs it cites in
-`rfcs/` and its generated test in `test/spec/`. A person reads and approves
+`rfcs/`, the `.refcache/` entries for the references it cites, and its
+generated test in `test/spec/`. A person reads and approves
 it. The **implementation** comes second, and four gates hold it to the
 approved contract without a person rereading the spec:
 
@@ -11,7 +12,7 @@ approved contract without a person rereading the spec:
 | [`spec frozen`](#frozen) | a change that edits the spec side and the implementation together, or a contract whose sources changed under it |
 | [`spec stale`](#stale) | a generated test that no longer matches its contract |
 | [`spec exports`](#exports) | a new or changed export its contract does not cover |
-| [`spec mutate`](#mutate) | a plausible bug in the changed lines that the contract's test does not notice |
+| [`spec mutate`](#mutate) | a plausible bug, in the changed lines the contract's functions reach, that its test does not notice |
 
 Every gate exits 0 when it passed, 1 when it refused the change, and 2 for bad
 usage, a file that cannot be read, or a git or tool failure. Each takes
@@ -24,7 +25,7 @@ usage, a file that cannot be read, or a git or tool failure. Each takes
 | --- | --- | --- | --- |
 | 1. write the spec | `specs/<name>.md`, then `bash scripts/build-spec.sh specs/<name>.md` ([Writing a spec](writing-a-spec.md)) | `specs/<name>.xml` written | a warning, or a render failure |
 | 2. extract and check | `vector spec extract specs/<name>.xml -o contracts/<name>.json`, then `vector spec check contracts/<name>.json --run-sources` ([From a spec to a contract](spec-to-contract.md)) | written; `CONTRACT_VALID` | refusals, each at `file:line` |
-| 3. frozen | `vector spec frozen --base origin/main` | one side only, hashes match | both sides, a changed source |
+| 3. frozen | `vector spec frozen --base origin/main` | one side only, or a rename alone; hashes match | both sides, a changed source |
 | 4. emit and stale | `vector spec emit contracts/<name>.json -o test/spec/<name>.ts`, then `vector spec stale test/spec/<name>.ts contracts/<name>.json` | the test is the contract's | stale, or no marker line |
 | 5. implement and run | `vector spec run contracts/<name>.json --nish-root ../nish` ([Testing an implementation](testing.md)) | `SATISFIED` | `VIOLATED`, `ERROR` or refused |
 | 6. exports | `vector spec exports contracts/<name>.json --nish-root ../nish --base origin/main` | every changed export is tested | an export no clause tests |
@@ -39,7 +40,9 @@ to 7 without touching anything on the spec side.
 (committed since the merge base with `<ref>`, staged, unstaged or untracked)
 into a class:
 
-- **spec**: `specs/`, `contracts/` and `rfcs/`;
+- **spec**: `specs/`, `contracts/`, `rfcs/` and `.refcache/` (the
+  kramdown-rfc reference cache a spec's build reads, so a spec lands with the
+  entries for the references it cites);
 - **generated**: a test in `test/spec/` whose one `// vector-contract-sha256:`
   line names a contract in `contracts/` (not a symbolic link) or one given on
   the command line, as that contract is in the work tree. It counts on the
@@ -55,6 +58,29 @@ Only the contracts given are checked and listed: naming one contract of a PR
 that changes two still classes both tests as generated, but reports nothing
 about the other. `--repo <dir>` names the repository when it is not the
 current directory.
+
+One change on both sides passes: renaming an export a contract tests. When
+every checked contract that changed drops one function and adds one with the
+same signature (module, parameters, return type and name overrides), and
+every changed file is that rename alone, `frozen` passes and notes
+`passed as a rename: <contract> renames <old> to <new>, and the <n> changed
+files are that rename alone`, where `<n>` counts every changed path, neutral
+ones too. A file is the rename alone when it is a regular
+file at the fork point and now, with the same mode, did not name `<new>` at
+the fork point, names no `<old>` now, and replacing each whole
+identifier `<old>` with `<new>` in its fork-point text gives its text now,
+line for line. The contract's `"sha256"` values and a generated test's
+`// vector-contract-sha256:` line are exempt, since the rename changes them.
+Anything else (a second rename, two contracts renaming one name two ways, a
+changed signature, an added or deleted file, one extra edit) is refused: the
+report names the first file or contract that is not the rename, after the
+usual both-sides problem:
+
+```text
+problems:
+  ✗ the change touches the spec side (contracts/c.json, specs/s.md, specs/s.xml, test/spec/c_test.ts) and the implementation (src/x.ts): change them in separate PRs
+  ✗ not a rename alone: src/x.ts: line 3 is not the rename alone
+```
 
 ```sh
 ./dist/vector spec frozen --base HEAD
@@ -233,12 +259,32 @@ vector: spec exports: --nish-root <dir> is required: the nish checkout holding t
 ## mutate
 
 `spec mutate <contract.json> --nish-root <dir> --base <ref>` makes small
-plausible bugs in the lines the change added to the contract's module (a
-flipped comparison, an integer off by one, `||` for `&&`, a deleted
-statement), builds the test against each mutant in a scratch copy of the
+plausible bugs in the lines the change added to the contract's module, inside
+the code the contract tests (a flipped comparison, an integer off by one,
+`||` for `&&`, a deleted statement), builds the test against each mutant in a scratch copy of the
 checkout, and runs it. A mutant the test fails on is **killed**; one it passes
 on **survived**, and is behaviour no requirement pins down. Every survivor is
 refused unless the contract allows it.
+
+The code the contract tests is the module's top-level declarations its
+`functions` reach: each function's own declaration, and every declaration a
+reached one names (a call, a const, a class or a type), transitively, exported
+or not and whatever `outOfScope` says. Top-level code runs at load, so it is
+always reached. A changed line anywhere else, an import or an untested export,
+gets no mutant, and one note names where they lie:
+
+```text
+notes:
+  - 1 changed line outside the tested functions was not mutated: other
+```
+
+A module the scan cannot split into named declarations (an export has no name
+it can read, or a contract function is not a top-level declaration there) is
+mutated on every changed line, and a note says why (`every changed line was
+mutated, not only the tested functions: …`). A function the contract cites
+from another module (its `module` is set to a module other than the target)
+is not looked for. A module that cannot be lexed is not mutated at all: the
+command exits 2.
 
 Start with a change: a redundant bound on line 173 of the module.
 
@@ -376,7 +422,11 @@ in a spec-side PR before the implementation.
 
 Besides survivors, mutate refuses (exit 1):
 
-- a change that adds no line of the module that can be mutated (`no mutants`);
+- a change that adds no line of the module that can be mutated (`no mutants`),
+  none in the code the contract's functions reach (`no mutants: no line the
+  change adds to <file> lies in code the contract's functions reach`), or none
+  there that can be mutated (`no mutants: no line the change adds to <file> in
+  code the contract's functions reach can be mutated`);
 - a test that fails on the unmutated module, since it proves nothing;
 - `every mutant is stillborn or its build ran past its time: none built, so the test met none of them`;
 - `every mutant that built ran its test past its time`: run with fewer

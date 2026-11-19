@@ -48,7 +48,7 @@ import {
   emitUndefinedWhy,
 } from "./emit"
 import { EMIT_SLOW_SKIP, emitF64IsFinite, emitLiteralHex } from "./lit"
-import { emitTargetWordsRefusal } from "./target"
+import { emitTargetWindowRefusal, emitTargetWordsRefusal } from "./target"
 
 /** What emitting one Rust test has gathered so far. */
 class EmitRsContext {
@@ -203,6 +203,10 @@ export const emitRsRefusals = (c: Contract): string[] => {
     const words = emitTargetWordsRefusal(f, "Rust")
     if (words !== null) {
       out.push(words)
+    }
+    const window = emitTargetWindowRefusal(f, "Rust")
+    if (window !== null) {
+      out.push(window)
     }
     const why = emitRsNameRefusal(f)
     if (why !== null) {

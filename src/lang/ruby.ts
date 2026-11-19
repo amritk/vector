@@ -85,7 +85,7 @@ export const langTableRuby = (): LangTable => {
   t.literal("words64", langSpell("[0x3320646e61707865, 0x6b20657479622d32]", ""))
   t.moduleForm = "module"
   t.moduleNote =
-    "nested modules, each segment in CamelCase (Style Guide: CamelCase for classes and modules); the file is the neutral path plus .rb: nish/crypto/hkdf → Nish::Crypto::Hkdf in nish/crypto/hkdf.rb"
+    "nested modules, each segment in CamelCase (Style Guide: CamelCase for classes and modules); the file is the neutral path plus .rb: nish/crypto/hkdf → Nish::Crypto::Hkdf in nish/crypto/hkdf.rb; a - in a segment starts a word and stays in the file: nish/net/quic-packet → Nish::Net::QuicPacket in nish/net/quic-packet.rb"
   t.nameRule =
     "methods and parameters snake_case: words split at each capital, an acronym is one word (parseHTTPRequest → parse_http_request), and a digit run stays on the word before it (hkdfExpandSha256 → hkdf_expand_sha256). A name override always wins."
   t.choices.push(

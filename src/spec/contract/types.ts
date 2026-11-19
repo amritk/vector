@@ -241,6 +241,12 @@ export class Param {
   name: string
   /** The parameter's type, like `bytes` or `u32`. */
   type: string
+  /**
+   * How the real function takes it, or null when as one argument of its
+   * type. `window`: a `bytes` parameter the real function takes as three,
+   * `(buf: u8[], off: i32, len: i32)`, the bytes being `buf[off, off + len)`.
+   */
+  form: string | null = null
   /** Per-language overrides of the name. */
   names: NameOverride[] | null = null
   /** Starts with no name or type. */
@@ -449,8 +455,10 @@ export class Clause {
   covers: string[]
   /** A vector's provenance. */
   source: VectorSource | null = null
-  /** The main-source section printing a vector's args. */
+  /** The section printing a vector's args, in the main source unless `sectionSource` names another. */
   section: string | null = null
+  /** The id of the source `section` is in; null for the main one. */
+  sectionSource: string | null = null
   /** The function a vector calls. */
   call: string
   /** A vector's arguments. */
@@ -583,4 +591,15 @@ export const typesWordsKind = (digits: i32): LitKind => {
     return LitKind.Words16
   }
   return digits === 8 ? LitKind.Words32 : LitKind.Words64
+}
+
+/**
+ * Whether the real function takes a parameter as a window, three arguments
+ * `(buf: u8[], off: i32, len: i32)` for one bytes value.
+ * @param p the parameter
+ * @returns true when its form is `window`
+ */
+export const typesIsWindow = (p: Param): boolean => {
+  const form = p.form
+  return form !== null && form === "window"
 }

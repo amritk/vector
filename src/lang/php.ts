@@ -87,7 +87,7 @@ export const langTablePhp = (): LangTable => {
   t.literal("words64", langUnsupported("PHP has no native u64, so a word above PHP_INT_MAX cannot be written"))
   t.moduleForm = "class"
   t.moduleNote =
-    "a final class of static methods, its fully qualified name the segments in PascalCase (PSR-4 autoloads classes, not functions): nish/crypto/hkdf → Nish\\Crypto\\Hkdf"
+    "a final class of static methods, its fully qualified name the segments in PascalCase (PSR-4 autoloads classes, not functions): nish/crypto/hkdf → Nish\\Crypto\\Hkdf; a - in a segment starts a word: nish/net/quic-packet → Nish\\Net\\QuicPacket"
   t.nameRule =
     "methods and parameters camelCase with words as the contract writes them (PSR-1 requires camelCase and leaves acronyms open): parseHTTPRequest → parseHTTPRequest. A name that is a reserved word takes a name override."
   t.choices.push(

@@ -32,6 +32,7 @@ import {
   MutateMutant,
   mutateApply,
   mutateJudge,
+  mutateOutsideNote,
   mutatePick,
   mutateSites,
 } from "./mutate"
@@ -705,8 +706,9 @@ const mutaterunUnbuilt = (root: string): Result<boolean, string> => {
 }
 
 /**
- * Mutates the lines a change added to a contract's target module, in the
- * nish checkout at `run.nishRoot`, and runs the test against each mutant.
+ * Mutates the lines a change added to a contract's target module inside
+ * the declarations its functions reach (scopeReach), in the nish checkout at
+ * `run.nishRoot`, and runs the test against each mutant.
  *
  * @param contractPath the contract file
  * @param base the ref the change is against
@@ -745,18 +747,36 @@ export const mutateCheck = (contractPath: string, base: string, run: MutateRun, 
   const prefix = gitdiffPrefix(run.nishRoot).orReturn()
   const changed = gitdiffChanged(run.nishRoot, base, [`${prefix}${file}`]).orReturn()
   let all: MutateMutant[] = []
+  let outside = ""
+  let reached = false
   if (changed.length > 0) {
-    const sites = mutateSites(text, changed[0])
+    // The roots are the contract's own functions, as shapeTested in
+    // spec/contract/shape.ts takes them: one whose module is set to another
+    // module is a reference the test calls, not code it tests. Keep the two
+    // rules alike.
+    const roots: string[] = []
+    for (const f of c.functions) {
+      const m = f.module
+      if (m === null || m === c.target.module) {
+        roots.push(f.name)
+      }
+    }
+    const sites = mutateSites(text, changed[0], roots)
     if (sites.isErr()) {
       return Err(`${run.nishRoot}/${file} cannot be mutated: ${sites.error}`)
     }
-    all = sites.value
+    all = sites.value.mutants
+    outside = mutateOutsideNote(sites.value)
+    reached = sites.value.reached
+    if (sites.value.whole !== "") {
+      r.notes.push(`every changed line was mutated, not only the tested functions: ${sites.value.whole}`)
+    }
   }
   const mutants = mutatePick(all, max)
   const dropped = toI32(all.length) - toI32(mutants.length)
   const allow = c.allowSurvivors ?? []
   if (mutants.length === 0) {
-    mutateJudge(r, file, mutants, allow, null, dropped)
+    mutateJudge(r, file, mutants, allow, null, dropped, outside, reached)
     return Ok(r)
   }
   if (run.test === "") {
@@ -772,6 +792,6 @@ export const mutateCheck = (contractPath: string, base: string, run: MutateRun, 
     return Err(`the compiler ${compiler} is not an executable file`)
   }
   const baseline = mutateRunAll(run, text, mutants).orReturn()
-  mutateJudge(r, file, mutants, allow, baseline, dropped)
+  mutateJudge(r, file, mutants, allow, baseline, dropped, outside, reached)
   return Ok(r)
 }

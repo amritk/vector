@@ -157,6 +157,18 @@ Word arrays (`u16[]`, `u32[]`, `u64[]`) are emitted for Nish only: another
 language refuses a function that takes or returns one, naming it and the
 word type (exit 1), so emit the Nish test for it.
 
+A segment of a module path may join words with `-`
+(`nish/net/quic-packet`). A file keeps the `-` (`std/net/quic-packet.ts`,
+`<dir>/net/quic-packet.py`), and so does an import path: Nish, TypeScript and
+Go import `nish/net/quic-packet`, and Zig, C and Dart name the file. Where the
+language spells the module in code, the `-` becomes `_` (Python's
+`nish.net.quic_packet`, Rust's and C++'s `nish::net::quic_packet`, C's
+`nish_net_quic_packet_`), or the words join in PascalCase (Java's and Kotlin's
+`nish.net.QuicPacket`, C#'s `Nish.Net.QuicPacket`, Ruby's
+`Nish::Net::QuicPacket`, Swift's `NishNetQuicPacket`). A Go package name drops
+it (`quicpacket.`), and a Dart package name, an identifier, takes `_`
+(`package:nish_x/…`).
+
 `--package <name>=<dir>` places modules the same way, with the language's
 extension: `vector/core/hex` is `<dir>/core/hex.py`, loaded by its path
 relative to the test. A `nish/` module has no Python file of its own, so a
@@ -585,4 +597,6 @@ was reasoned about the code itself. Where neither reaches, a bug passes: RFC
 SHA-512 block-size test passes every RFC vector, and only a vector of the
 contract's own at that length, or a property that pins the boundary, catches
 it. Run [`spec mutate`](pr-gates.md#mutate) to list the plausible bugs a
-contract cannot tell from the real code.
+contract cannot tell from the real code. It mutates only the changed lines in
+code the contract's functions reach, those functions and what they name, so a
+helper no tested function calls is noted as not mutated, never as a survivor.

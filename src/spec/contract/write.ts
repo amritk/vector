@@ -252,6 +252,7 @@ const writeClause = (c: Clause): WriteNode => {
       writeSet(o, "source", writeVectorSource(source))
     }
     writeSetStr(o, "section", c.section)
+    writeSetStr(o, "sectionSource", c.sectionSource)
     writeSet(o, "call", writeStr(c.call))
     const args = writeArr()
     for (let i = 0; i < c.args.length; i++) {
@@ -373,6 +374,7 @@ const writeTree = (c: Contract): WriteNode => {
       const p = writeObj()
       writeSet(p, "name", writeStr(f.params[j].name))
       writeSet(p, "type", writeStr(f.params[j].type))
+      writeSetStr(p, "form", f.params[j].form)
       writeOverrides(p, "names", f.params[j].names)
       params.items.push(p)
     }

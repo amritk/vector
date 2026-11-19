@@ -32,7 +32,8 @@ A contract ([`schemas/rfc-contract.json`][schema], described in
   reason, from the spec's `Out of scope: <export>, <reason>` paragraphs;
   [`spec exports`](pr-gates.md#exports) reports a change to one as a note;
 - **functions**: the implementation's signatures, plus any reference function
-  from another module that a property may call;
+  from another module that a property may call; a `bytes` parameter with
+  `"form": "window"` is one the function takes as `(buf, off, len)`;
 - **clauses**: **vectors** (known answers, each saying where its expected value
   comes from; a literal may carry the label the RFC prints it under, such as
   `After 1,000 iterations` or `MESSAGE (length 0 bytes)`) and **properties** (`forall` a typed domain, `where` restricts
@@ -181,7 +182,8 @@ git add specs/example-hex.md specs/example-hex.xml contracts/example-hex.json
 renderings are thrown away). It runs offline: kramdown-rfc reads references
 only from the committed `.refcache/`, `{::include}` is disabled, and xml2rfc
 runs with `--no-network`. A spec that cites a reference not yet in the cache
-fails; run once with `--fetch`, then review and commit the `.refcache/` diff.
+fails; run once with `--fetch`, then review and commit the `.refcache/` diff in the same PR as the spec: `spec frozen`
+counts `.refcache/` as spec side.
 
 - **Warnings are errors.** Any kramdown-rfc `*** ` or `** ` line (an unknown
   front-matter key, a missing reference, bad heading nesting) and any xml2rfc
@@ -465,8 +467,8 @@ No model is involved in any of them.
 | completeness | any MUST, MUST NOT, SHALL, SHALL NOT or REQUIRED sentence of the main source that is neither inside a requirement's quote nor an exclusion's |
 | provenance | a `spec` source whose section never states the expected `null` or bool (see [When a section states null, true or false](writing-a-spec.md#when-a-section-states-null-true-or-false)); a `command` source that failed under `--run-sources` |
 | coverage | a binding requirement no clause checks; a clause citing a requirement the contract does not state; a property or vector that calls no function under test |
-| typing | an ill-typed call or expression (`bytes?` and `string?` must be `unwrap`ped; `where` may not call the implementation; a `let` may not shadow a name or bind a bare `null`); a property that holds or calls word arrays (*not yet* checked; give them as vectors); an `iterate.next` element of the wrong type for its parameter |
-| signatures | a declared signature that is not the module's export (with `--nish-root` or `--module`) |
+| typing | an ill-typed call or expression (`bytes?` and `string?` must be `unwrap`ped; `where` may not call the implementation; a `let` may not shadow a name or bind a bare `null`); a property that holds or calls word arrays (not allowed *yet*; give them as vectors); an `iterate.next` element of the wrong type for its parameter |
+| signatures | a declared signature that is not the module's export (with `--nish-root` or `--module`); a window parameter the export does not take as `(u8[], i32, i32)`, or one the contract does not declare (see [A window parameter](writing-a-spec.md#a-window-parameter)) |
 | domain | a property whose domain is empty (Z3 says `unsat`: it would pass vacuously) |
 
 Then **Z3 picks the samples**. For every integer comparison in a property it
@@ -489,8 +491,11 @@ a samples line, prose included, so word such a comment another way.
 ## Sources
 
 A contract cites one or more documents. A source is RFC XML v3 (`.xml`) or an
-RFC's plain text (with its `Request for Comments: N` header and form feeds);
-anything else is refused. `.xml` sources are read everywhere a source is: by
+RFC's plain text, paginated (form feeds) or unpaginated (xml2rfc v3: its
+`Request for Comments: N` header begins a line before the first section
+heading, and no page furniture); anything else is refused. In an RFC source,
+a literal zero-width space or word joiner is dropped unless it sits inside a
+word ([Hidden text](writing-a-spec.md#hidden-text)). `.xml` sources are read everywhere a source is: by
 extract, check, emit, run, mutate and frozen.
 
 - **Linked RFCs** (`{"id": "rfc4648", "rfc": 4648}`) are looked up in four

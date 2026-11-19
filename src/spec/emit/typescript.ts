@@ -46,7 +46,7 @@ import {
   emitUndefinedWhy,
 } from "./emit"
 import { EMIT_SLOW_SKIP, emitF64IsFinite, emitLiteralHex, emitQuote } from "./lit"
-import { emitTargetWordsRefusal } from "./target"
+import { emitTargetWindowRefusal, emitTargetWordsRefusal } from "./target"
 
 /** What emitting one TypeScript test has gathered so far. */
 class EmitTsContext {
@@ -207,6 +207,10 @@ export const emitTsRefusals = (c: Contract): string[] => {
     const words = emitTargetWordsRefusal(f, "TypeScript")
     if (words !== null) {
       out.push(words)
+    }
+    const window = emitTargetWindowRefusal(f, "TypeScript")
+    if (window !== null) {
+      out.push(window)
     }
     const why = emitTsNameRefusal(f)
     if (why !== null) {
