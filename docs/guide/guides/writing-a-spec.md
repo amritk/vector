@@ -490,7 +490,9 @@ own XML gets no such drop.
 
 A spec cites an RFC by listing it under `normative:` and writing
 `{{Section N of RFCx}}`. A quoted requirement, an exclusion of a quote, or a
-vector Source can cite it. Each cited RFC becomes a `sources[]` entry.
+vector Source can cite it. Each cited RFC becomes a `sources[]` entry, and
+so does a main-RFC spec with a command row (see [An RFC as the main
+source](#an-rfc-as-the-main-source)).
 
 Its text is looked up in four places, nearest first, the same for every
 command: beside the contract, in `../rfcs/`, in the `rfcs/` of vector's
