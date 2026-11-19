@@ -121,8 +121,46 @@ wrote.</t>
               <tt>python3 -c 'import base64;print(base64.b64encode(b"").hex())'</tt></td>
             <td align="left">nothing written: the end is the index</td>
           </tr>
+          <tr>
+            <td align="left">V5</td>
+            <td align="left">
+              <tt>base64EncodeInto("foo")</tt></td>
+            <td align="left">
+              <tt>"Zm9v"</tt></td>
+            <td align="left">R-B64-ENCODE, R-B64-END</td>
+            <td align="left">
+              <tt>python3 -c 'import base64;print(base64.b64encode(b"foo").hex())'</tt></td>
+            <td align="left">one whole group</td>
+          </tr>
+          <tr>
+            <td align="left">V6</td>
+            <td align="left">
+              <tt>base64EncodeInto("foob")</tt></td>
+            <td align="left">
+              <tt>"Zm9vYg=="</tt></td>
+            <td align="left">R-B64-ENCODE, R-B64-END</td>
+            <td align="left">
+              <tt>python3 -c 'import base64;print(base64.b64encode(b"foob").hex())'</tt></td>
+            <td align="left">a group, then two pad characters</td>
+          </tr>
+          <tr>
+            <td align="left">V7</td>
+            <td align="left">
+              <tt>base64EncodeInto("fooba")</tt></td>
+            <td align="left">
+              <tt>"Zm9vYmE="</tt></td>
+            <td align="left">R-B64-ENCODE, R-B64-END</td>
+            <td align="left">
+              <tt>python3 -c 'import base64;print(base64.b64encode(b"fooba").hex())'</tt></td>
+            <td align="left">a group, then one pad character</td>
+          </tr>
         </tbody>
       </table>
+      <t>These are the seven vectors of RFC 4648, section 10.</t>
+      <sourcecode type="ts-property"><![CDATA[
+// P-LENGTH covers R-B64-END — every 3 bytes, or the 1 or 2 left over, end 4 characters on
+forall (d: u8[] /* 0..64 */) => 3 * base64EncodeInto(d).length === 4 * (d.length + (3 - d.length % 3) % 3)
+]]></sourcecode>
     </section>
   </middle>
   <back>
@@ -157,34 +195,39 @@ wrote.</t>
     </references>
   </back>
   <!-- ##markdown-source:
-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
+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
+DQAA
 
 -->
 

@@ -4,7 +4,7 @@
   "source": {
     "title": "Base 64 written into a caller's buffer",
     "main": "base64-out",
-    "sha256": "ac139d9c8d66447f15ac66bce3f2af0157c7c248d8f4e7f1027d479896d98720"
+    "sha256": "21b451f0f3d2b037150fbcf9acc5df06fbac075f920bdc1e52646310fab2eee4"
   },
   "sources": [
     {
@@ -122,6 +122,156 @@
       ],
       "expect": {
         "ascii": ""
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V5",
+      "title": "one whole group",
+      "covers": ["R-B64-ENCODE", "R-B64-END"],
+      "source": {
+        "command": "python3 -c 'import base64;print(base64.b64encode(b\"foo\").hex())'"
+      },
+      "section": "5",
+      "call": "base64EncodeInto",
+      "args": [
+        {
+          "ascii": "foo"
+        }
+      ],
+      "expect": {
+        "ascii": "Zm9v"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V6",
+      "title": "a group, then two pad characters",
+      "covers": ["R-B64-ENCODE", "R-B64-END"],
+      "source": {
+        "command": "python3 -c 'import base64;print(base64.b64encode(b\"foob\").hex())'"
+      },
+      "section": "5",
+      "call": "base64EncodeInto",
+      "args": [
+        {
+          "ascii": "foob"
+        }
+      ],
+      "expect": {
+        "ascii": "Zm9vYg=="
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V7",
+      "title": "a group, then one pad character",
+      "covers": ["R-B64-ENCODE", "R-B64-END"],
+      "source": {
+        "command": "python3 -c 'import base64;print(base64.b64encode(b\"fooba\").hex())'"
+      },
+      "section": "5",
+      "call": "base64EncodeInto",
+      "args": [
+        {
+          "ascii": "fooba"
+        }
+      ],
+      "expect": {
+        "ascii": "Zm9vYmE="
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-LENGTH",
+      "title": "every 3 bytes, or the 1 or 2 left over, end 4 characters on",
+      "covers": ["R-B64-END"],
+      "forall": [
+        {
+          "name": "d",
+          "type": "bytes",
+          "minLen": 0,
+          "maxLen": 64
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "op": "*",
+            "args": [
+              {
+                "int": 3
+              },
+              {
+                "op": "len",
+                "args": [
+                  {
+                    "call": "base64EncodeInto",
+                    "args": [
+                      {
+                        "var": "d"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "*",
+            "args": [
+              {
+                "int": 4
+              },
+              {
+                "op": "+",
+                "args": [
+                  {
+                    "op": "len",
+                    "args": [
+                      {
+                        "var": "d"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "%",
+                    "args": [
+                      {
+                        "op": "-",
+                        "args": [
+                          {
+                            "int": 3
+                          },
+                          {
+                            "op": "%",
+                            "args": [
+                              {
+                                "op": "len",
+                                "args": [
+                                  {
+                                    "var": "d"
+                                  }
+                                ]
+                              },
+                              {
+                                "int": 3
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "int": 3
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       }
     }
   ]

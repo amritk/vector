@@ -58,3 +58,13 @@ Base 64 is an encoding, not a cipher: it hides nothing.
 | V2 | `base64EncodeInto("fo")` | `"Zm8="` | R-B64-ENCODE, R-B64-END | `python3 -c 'import base64;print(base64.b64encode(b"fo").hex())'` | one pad character |
 | V3 | `base64EncodeInto("f")` | `"Zg=="` | R-B64-ENCODE, R-B64-END | `python3 -c 'import base64;print(base64.b64encode(b"f").hex())'` | two pad characters |
 | V4 | `base64EncodeInto("")` | `""` | R-B64-END | `python3 -c 'import base64;print(base64.b64encode(b"").hex())'` | nothing written: the end is the index |
+| V5 | `base64EncodeInto("foo")` | `"Zm9v"` | R-B64-ENCODE, R-B64-END | `python3 -c 'import base64;print(base64.b64encode(b"foo").hex())'` | one whole group |
+| V6 | `base64EncodeInto("foob")` | `"Zm9vYg=="` | R-B64-ENCODE, R-B64-END | `python3 -c 'import base64;print(base64.b64encode(b"foob").hex())'` | a group, then two pad characters |
+| V7 | `base64EncodeInto("fooba")` | `"Zm9vYmE="` | R-B64-ENCODE, R-B64-END | `python3 -c 'import base64;print(base64.b64encode(b"fooba").hex())'` | a group, then one pad character |
+
+These are the seven vectors of RFC 4648, section 10.
+
+~~~ ts-property
+// P-LENGTH covers R-B64-END — every 3 bytes, or the 1 or 2 left over, end 4 characters on
+forall (d: u8[] /* 0..64 */) => 3 * base64EncodeInto(d).length === 4 * (d.length + (3 - d.length % 3) % 3)
+~~~

@@ -98,9 +98,9 @@ export const main = (): i32 => {
       "    o = o + 4\n  }\n  return o - 1\n}",
     ],
     [
-      "V1: base64EncodeInto wrote outside [at, end) = [5, 8), at 0\nV2: base64EncodeInto returned end 4 outside [at, at + capacity] = [5, 13]\nV3: base64EncodeInto returned end 4 outside [at, at + capacity] = [5, 11]\nV4: base64EncodeInto returned end 0 outside [at, at + capacity] = [5, 9]",
-      "V3: base64EncodeInto wrote outside [at, end) = [5, 9), at 9",
-      "V1: base64EncodeInto wrote outside [at, end) = [5, 12), at 12\nV2: base64EncodeInto wrote outside [at, end) = [5, 8), at 8\nV3: base64EncodeInto wrote outside [at, end) = [5, 8), at 8\nV4: base64EncodeInto returned end 4 outside [at, at + capacity] = [5, 9]",
+      "V1: base64EncodeInto wrote outside [at, end) = [5, 8), at 0\nV2: base64EncodeInto returned end 4 outside [at, at + capacity] = [5, 13]\nV3: base64EncodeInto returned end 4 outside [at, at + capacity] = [5, 11]\nV4: base64EncodeInto returned end 0 outside [at, at + capacity] = [5, 9]\nV5: base64EncodeInto returned end 4 outside [at, at + capacity] = [5, 15]\nV6: base64EncodeInto wrote outside [at, end) = [5, 8), at 0\nV7: base64EncodeInto wrote outside [at, end) = [5, 8), at 0\nP-LENGTH: sample 1 of 29 (len(d) = 1): base64EncodeInto returned end 4 outside [at, at + capacity] = [5, 11]",
+      "V3: base64EncodeInto wrote outside [at, end) = [5, 9), at 9\nV6: base64EncodeInto wrote outside [at, end) = [5, 13), at 13\nP-LENGTH: sample 1 of 29 (len(d) = 1): base64EncodeInto wrote outside [at, end) = [5, 9), at 9",
+      "V1: base64EncodeInto wrote outside [at, end) = [5, 12), at 12\nV2: base64EncodeInto wrote outside [at, end) = [5, 8), at 8\nV3: base64EncodeInto wrote outside [at, end) = [5, 8), at 8\nV4: base64EncodeInto returned end 4 outside [at, at + capacity] = [5, 9]\nV5: base64EncodeInto wrote outside [at, end) = [5, 8), at 8\nV6: base64EncodeInto wrote outside [at, end) = [5, 12), at 12\nV7: base64EncodeInto wrote outside [at, end) = [5, 12), at 12\nP-LENGTH: sample 1 of 29 (len(d) = 1): base64EncodeInto wrote outside [at, end) = [5, 8), at 8",
     ],
   )
   outStdCase(
