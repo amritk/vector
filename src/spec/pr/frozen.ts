@@ -17,7 +17,8 @@ import { sha256Hex } from "../../core/hex"
 import { contractLoadFile } from "../contract/contract"
 import { Contract } from "../contract/types"
 import { sourceDecls, sourceLoad, sourceMainId } from "../source/load"
-import { gitdiffChangedPaths, gitdiffCompare, gitdiffTop } from "./gitdiff"
+import { gitdiffChangedPaths, gitdiffCompare, gitdiffForkPoint, gitdiffTop } from "./gitdiff"
+import { renameCheck } from "./rename"
 import { PrReport } from "./report"
 import { staleShaLines } from "./stale"
 
@@ -277,6 +278,7 @@ export const frozenCheck = (repo: string, base: string, contracts: string[]): Re
   }
   const spec: string[] = []
   const impl: string[] = []
+  const generated: string[] = []
   for (const p of paths) {
     let kind = frozenPathKind(p)
     if (kind === FROZEN_IMPLEMENTATION && p.startsWith(FROZEN_EMITTED_TESTS)) {
@@ -285,6 +287,7 @@ export const frozenCheck = (repo: string, base: string, contracts: string[]): Re
         const named = staleShaLines(text)
         if (named.length === 1 && shas.has(named[0])) {
           kind = FROZEN_GENERATED
+          generated.push(p)
         }
       }
     }
@@ -296,9 +299,21 @@ export const frozenCheck = (repo: string, base: string, contracts: string[]): Re
     }
   }
   if (spec.length > 0 && impl.length > 0) {
-    r.problems.push(
-      `the change touches the spec side (${spec.join(", ")}) and the implementation (${impl.join(", ")}): change them in separate PRs`,
-    )
+    const fork = gitdiffForkPoint(top, base).orReturn()
+    const v = renameCheck(top, fork, paths, files, generated).orReturn()
+    const refusal = v.refusal
+    if (refusal === null && v.pairs.length > 0) {
+      for (const p of v.pairs) {
+        r.notes.push(`rename ${p.contract}: ${p.from} → ${p.to} (${paths.length} files are the rename alone)`)
+      }
+    } else {
+      r.problems.push(
+        `the change touches the spec side (${spec.join(", ")}) and the implementation (${impl.join(", ")}): change them in separate PRs`,
+      )
+      if (refusal !== null) {
+        r.problems.push(`not a rename alone: ${refusal}`)
+      }
+    }
   }
   for (const p of contractProblems) {
     r.problems.push(p)
