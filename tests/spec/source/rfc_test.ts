@@ -527,10 +527,7 @@ export const main = (): i32 => {
     paged.isOk() ? rfcTestValues(rfcTestSection(paged.value, "2")) : paged.error,
     "Key=1111 Tag=2222",
   )
-  t.ok(
-    "the unpaginated text has no page break",
-    rfcTestSection(rfcParse(rfcTestV3Text()), "1").pageBreaks.length === 0,
-  )
+  t.ok("the unpaginated text has no page break", rfcTestSection(rfcParse(rfcTestV3Text()), "1").pageBreaks.length === 0)
   const hidden = rfcRead(`${rfcTestText()}\nIt MU${charsFromCodePoint(0x200d)}ST.\n`, "r.txt")
   t.eqStr(
     "hidden text",
