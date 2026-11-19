@@ -81,7 +81,8 @@ paragraph after it.
 
 The front-matter keyword `vector-main-RFC<N>` makes RFC N the spec's main
 source. The contract then takes the RFC form: `source.rfc` is N,
-`source.sha256` is the RFC's, and the spec is not a `sources[]` entry.
+`source.sha256` is the RFC's, and the spec is not a `sources[]` entry
+unless a vector's Source is a command (see below).
 
 - Completeness runs over the RFC: every `MUST`, `MUST NOT`, `SHALL`,
   `SHALL NOT` and `REQUIRED` sentence of RFC N must be quoted in a
@@ -96,6 +97,18 @@ source. The contract then takes the RFC form: `source.rfc` is N,
   of RFCx}}` with both sections of RFC N, which extracts to `"source":
   {"spec": "M"}, "section": "N"` (see [When a section states `null`, `true`
   or `false`](#when-a-section-states-null-true-or-false)).
+- A vector whose Source is a command has its args in the spec's own
+  section that holds its table, not in RFC N's section of that number. The
+  spec is then declared first among `sources[]` (path
+  `../specs/<name>.xml`, pinned by its own `sha256`, so `check` refuses a
+  spec edited since extraction), and the vector records it as `"sectionSource":
+  "<name>"` beside `"section"`, so `extract` and `check` both look for the
+  args there. An arg the section does not print is refused as `not printed
+  in <name> §N ("Title")`. The spec's own text still binds nothing:
+  completeness runs over RFC N only. Its id is the spec's name, so a spec
+  named `rfc<N>` for an RFC it cites is refused (`contract "rfc4648" is the
+  source id of RFC4648, which the spec cites; give the spec another
+  docName`).
 - A spec has one such key. A misspelt key, an RFC not under `normative:`,
   and an RFC nothing cites are refused.
 - The RFC may be `.xml` or `.txt`; [`tests/fixtures/rfc-main/`][rfc-main]
@@ -127,7 +140,7 @@ where the expected value comes from:
 | `{{Section N of RFCx}}, Test Vector #K` | `cite`, section N of that RFC, `case` `Test Vector #K`: the values must all be printed in that one test case (K from 1, no leading zero; any other text after the section is refused) |
 | `{{Section N of RFCx}}; result {{Section M of RFCx}}` | `spec`, section M, with section N for the args: the inputs are printed in section N and the `null`, `true` or `false` expected value is supported by section M, as [stated](#when-a-section-states-null-true-or-false) or [derived](#when-a-property-derives-the-result). Both are sections of the main RFC, M is not N, both are written as section references (not anchors or code spans), and nothing may follow |
 | `{{anchor}}`, a numbered section of this spec | `spec` for a `null` or `bool` expected value; otherwise `cite`, that section, which must print the value |
-| a single code span, `` `python3 -c '…'` `` | `command`, with the table's section for the args; the expected value must be bytes or a string |
+| a single code span, `` `python3 -c '…'` `` | `command`, with the table's section for the args (in a main-RFC spec, the spec's own section, through `sectionSource`); the expected value must be bytes or a string |
 
 The Call cell is `f(arg, …)`: as many arguments as `f` has parameters, each
 of its parameter's type. The Expected cell must be of `f`'s return type.
@@ -477,7 +490,9 @@ own XML gets no such drop.
 
 A spec cites an RFC by listing it under `normative:` and writing
 `{{Section N of RFCx}}`. A quoted requirement, an exclusion of a quote, or a
-vector Source can cite it. Each cited RFC becomes a `sources[]` entry.
+vector Source can cite it. Each cited RFC becomes a `sources[]` entry, and
+so does a main-RFC spec with a command row (see [An RFC as the main
+source](#an-rfc-as-the-main-source)).
 
 Its text is looked up in four places, nearest first, the same for every
 command: beside the contract, in `../rfcs/`, in the `rfcs/` of vector's

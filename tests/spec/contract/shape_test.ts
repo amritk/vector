@@ -191,7 +191,7 @@ export const main = (): i32 => {
     t,
     `{"cite": {"section": "10"}}`,
     `{"command": "x"}`,
-    "clauses[0].section: the main-source section number printing the args",
+    "clauses[0].section: the section number printing the args, in the main source or the one sectionSource names",
   )
   t.eqStr(
     "a command source with a section passes",
