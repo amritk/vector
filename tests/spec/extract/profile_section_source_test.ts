@@ -133,12 +133,8 @@ export const main = (): i32 => {
       console.log(pssIds(c))
     }
     const v = pssVector(c, k.vector)
-    t.eqStr(`${k.name}: section`, v === null ? "no vector" : (v.section ?? "null"), k.section ?? "null")
-    t.eqStr(
-      `${k.name}: sectionSource`,
-      v === null ? "no vector" : (v.sectionSource ?? "null"),
-      k.sectionSource ?? "null",
-    )
+    t.eqStr(`${k.name}: section`, v === null ? "no vector" : v.section ?? "null", k.section ?? "null")
+    t.eqStr(`${k.name}: sectionSource`, v === null ? "no vector" : v.sectionSource ?? "null", k.sectionSource ?? "null")
   }
   return t.done()
 }

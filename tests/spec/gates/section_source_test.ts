@@ -93,7 +93,13 @@ class SstRow {
 }
 
 const sstRows = (): SstRow[] => [
-  new SstRow("a command vector, args printed in the spec's own section", SST_COMMAND, `, "section": "5"`, `, "sectionSource": "own"`, ""),
+  new SstRow(
+    "a command vector, args printed in the spec's own section",
+    SST_COMMAND,
+    `, "section": "5"`,
+    `, "sectionSource": "own"`,
+    "",
+  ),
   new SstRow(
     "a command vector, args not printed in the spec's own section",
     SST_COMMAND,
@@ -106,9 +112,15 @@ const sstRows = (): SstRow[] => [
     SST_COMMAND,
     `, "section": "5"`,
     "",
-    `V1.args[0]: the 3-byte args[0] is not printed in RFC §5`,
+    "V1.args[0]: the 3-byte args[0] is not printed in RFC §5",
   ),
-  new SstRow("a command vector naming no source: the main one, which prints them", SST_COMMAND, `, "section": "10"`, "", ""),
+  new SstRow(
+    "a command vector naming no source: the main one, which prints them",
+    SST_COMMAND,
+    `, "section": "10"`,
+    "",
+    "",
+  ),
   new SstRow(
     "a command vector at a section the spec does not have",
     SST_COMMAND,
@@ -122,7 +134,7 @@ const sstRows = (): SstRow[] => [
     `{"cite": {"section": "5"}}`,
     "",
     "",
-    `V1.args[0]: the 3-byte args[0] is not printed in RFC §5`,
+    "V1.args[0]: the 3-byte args[0] is not printed in RFC §5",
   ),
 ]
 
