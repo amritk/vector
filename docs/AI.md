@@ -54,7 +54,8 @@ vector does two things, and no model is involved in either:
    leaves an existing file alone.
 10. **`spec run` `SATISFIED` is evidence, not proof.** The implementation
    returned the printed vectors and held the properties at their samples.
-   `spec mutate` finds bugs the contract cannot see. See [What a pass means](guide/guides/testing.md#what-a-pass-means).
+   `spec mutate` finds bugs in the tested functions the contract misses.
+   See [What a pass means](guide/guides/testing.md#what-a-pass-means).
 11. **Never hand-edit a generated file.** `spec extract` writes
    `contracts/*.json`, `scripts/build-spec.sh` builds `specs/*.xml` from
    `specs/*.md`, and `spec emit` writes the test. Change the source and
@@ -96,8 +97,8 @@ vector does two things, and no model is involved in either:
 ## Known limits
 
 - `verify` handles 1 to 4 layered functions over `Real`, `Int` and `Bool`.
-  Its expressions are numbers, booleans, variables, unary and binary
-  operators, `ite`, and calls.
+  Its expressions are numbers, booleans, variables, operators, `ite` and
+  calls.
 - A function calls only those layered below it: no recursion.
 - Strings, arrays, IO, loops, state and data structures do not fit: offer to
   verify the numeric core alone.

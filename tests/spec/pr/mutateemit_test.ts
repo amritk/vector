@@ -64,7 +64,7 @@ const mutateemitTestReady = (d: string): Result<boolean, string> => {
   prTestWrite(d, "c.json", mutateemitTestContract(sha256Hex(MUTATEEMIT_TEST_RFC))).orReturn()
   prTestCommit(d, "base").orReturn()
   prTestGit(d, ["checkout", "-q", "-b", "work"]).orReturn()
-  prTestWrite(d, "nish/std/m.ts", "export const k = (): i32 => 7\n").orReturn()
+  prTestWrite(d, "nish/std/m.ts", "export const k = (): i32 => 7\nexport const id = (x: i32): i32 => x\n").orReturn()
   return Ok(true)
 }
 

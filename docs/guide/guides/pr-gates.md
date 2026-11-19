@@ -12,7 +12,7 @@ approved contract without a person rereading the spec:
 | [`spec frozen`](#frozen) | a change that edits the spec side and the implementation together, or a contract whose sources changed under it |
 | [`spec stale`](#stale) | a generated test that no longer matches its contract |
 | [`spec exports`](#exports) | a new or changed export its contract does not cover |
-| [`spec mutate`](#mutate) | a plausible bug in the changed lines that the contract's test does not notice |
+| [`spec mutate`](#mutate) | a plausible bug, in the changed lines the contract's functions reach, that its test does not notice |
 
 Every gate exits 0 when it passed, 1 when it refused the change, and 2 for bad
 usage, a file that cannot be read, or a git or tool failure. Each takes
@@ -259,12 +259,32 @@ vector: spec exports: --nish-root <dir> is required: the nish checkout holding t
 ## mutate
 
 `spec mutate <contract.json> --nish-root <dir> --base <ref>` makes small
-plausible bugs in the lines the change added to the contract's module (a
-flipped comparison, an integer off by one, `||` for `&&`, a deleted
-statement), builds the test against each mutant in a scratch copy of the
+plausible bugs in the lines the change added to the contract's module, inside
+the code the contract tests (a flipped comparison, an integer off by one,
+`||` for `&&`, a deleted statement), builds the test against each mutant in a scratch copy of the
 checkout, and runs it. A mutant the test fails on is **killed**; one it passes
 on **survived**, and is behaviour no requirement pins down. Every survivor is
 refused unless the contract allows it.
+
+The code the contract tests is the module's top-level declarations its
+`functions` reach: each function's own declaration, and every declaration a
+reached one names (a call, a const, a class or a type), transitively, exported
+or not and whatever `outOfScope` says. Top-level code runs at load, so it is
+always reached. A changed line anywhere else, an import or an untested export,
+gets no mutant, and one note names where they lie:
+
+```text
+notes:
+  - 1 changed line outside the tested functions was not mutated: other
+```
+
+A module the scan cannot split into named declarations (an export has no name
+it can read, or a contract function is not a top-level declaration there) is
+mutated on every changed line, and a note says why (`every changed line was
+mutated, not only the tested functions: …`). A function the contract cites
+from another module (its `module` is set to a module other than the target)
+is not looked for. A module that cannot be lexed is not mutated at all: the
+command exits 2.
 
 Start with a change: a redundant bound on line 173 of the module.
 
@@ -402,7 +422,11 @@ in a spec-side PR before the implementation.
 
 Besides survivors, mutate refuses (exit 1):
 
-- a change that adds no line of the module that can be mutated (`no mutants`);
+- a change that adds no line of the module that can be mutated (`no mutants`),
+  none in the code the contract's functions reach (`no mutants: no line the
+  change adds to <file> lies in code the contract's functions reach`), or none
+  there that can be mutated (`no mutants: no line the change adds to <file> in
+  code the contract's functions reach can be mutated`);
 - a test that fails on the unmutated module, since it proves nothing;
 - `every mutant is stillborn or its build ran past its time: none built, so the test met none of them`;
 - `every mutant that built ran its test past its time`: run with fewer

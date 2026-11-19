@@ -617,6 +617,11 @@
                     "title": "spec/pr/report",
                     "filepath": "docs/reference/modules/spec/pr/report.md"
                   },
+                  "/spec-pr-scope": {
+                    "type": "page",
+                    "title": "spec/pr/scope",
+                    "filepath": "docs/reference/modules/spec/pr/scope.md"
+                  },
                   "/spec-pr-stale": {
                     "type": "page",
                     "title": "spec/pr/stale",

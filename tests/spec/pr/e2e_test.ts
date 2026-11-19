@@ -32,6 +32,20 @@ const e2eTestContract = (sha: string): string => `{
 const E2E_TEST_HEX: string = "/** Encodes. */\nexport const enc = (b: string): string => b\n"
 
 /**
+ * A stub compiler: refuses the canary, and otherwise links a "binary" that
+ * runs the test as a shell script, so every mutant survives.
+ */
+const E2E_TEST_NISH: string = `#!/bin/sh
+root=$(cd "$(dirname "$0")/.." && pwd)
+if grep -q 'canary' "$root/std/hex.ts"; then
+  echo "std/hex.ts:9:1: syntax error: canary" >&2
+  exit 1
+fi
+printf '#!/bin/sh\\ncd "%s" && exec sh "%s"\\n' "$root" "$1" > "$3"
+chmod +x "$3"
+`
+
+/**
  * Runs vector's own `dist/vector`, found from the top of the checkout the
  * test runs in, with `args`, clearing the variables that would point git at
  * another repository: its exit status and standard output, with `dir` shown
@@ -147,6 +161,43 @@ const e2eTestModule = (t: Suite, dir: string): Result<boolean, string> => {
     "mutate fails for a root without the module",
     e2eTestRun(dir, ["spec", "mutate", "--base", "main", "--nish-root", dir, "--test", `${dir}/t.ts`, contract]),
     "exit 2\nvector: spec mutate: <repo>/std/hex.ts cannot be read: is <repo> the nish checkout?\n",
+  )
+  prTestWrite(dir, "nish/bin/nish", E2E_TEST_NISH).orReturn()
+  runProcess(["chmod", "+x", "--", `${root}/bin/nish`], "", 10000).orReturn()
+  prTestWrite(dir, "t.sh", "exit 0\n").orReturn()
+  const other = "export const other = (): i32 => 1 + 2\n"
+  prTestWrite(dir, "nish/std/hex.ts", `${E2E_TEST_HEX}${other}`).orReturn()
+  t.eqStr(
+    "mutate refuses a change only outside the tested functions, naming what it left",
+    e2eTestRun(dir, ["spec", "mutate", "--base", "main", "--nish-root", root, "--test", `${dir}/t.sh`, contract]),
+    "exit 1\nspec mutate std/hex.ts against main: FAILED\n\nnotes:\n  - 1 changed line outside the tested functions was not mutated: other\n\nproblems:\n  ✗ no mutants: no line the change adds to std/hex.ts lies in code the contract's functions reach\n",
+  )
+  prTestWrite(
+    dir,
+    "nish/std/hex.ts",
+    `/** Encodes. */\nexport const enc = (b: string): string => b.slice(1)\n${other}`,
+  ).orReturn()
+  t.eqStr(
+    "mutate still runs the tested function's changed line, and notes the other",
+    e2eTestRun(dir, ["spec", "mutate", "--base", "main", "--nish-root", root, "--test", `${dir}/t.sh`, contract]),
+    [
+      "exit 1\nspec mutate std/hex.ts against main: FAILED\n\n",
+      "  survived std/hex.ts:2:51 int: export const enc = (b: string): string => b.slice(2)\n",
+      "  survived std/hex.ts:2:51 int: export const enc = (b: string): string => b.slice(0)\n\n",
+      "notes:\n  - 1 changed line outside the tested functions was not mutated: other\n\nproblems:\n",
+      "  ✗ survivor std/hex.ts:2 (2:51:int:+1): `export const enc = (b: string): string => b.slice(2)` passes the test: behaviour no requirement pins down\n",
+      "  ✗ survivor std/hex.ts:2 (2:51:int:-1): `export const enc = (b: string): string => b.slice(0)` passes the test: behaviour no requirement pins down\n",
+    ].join(""),
+  )
+  prTestWrite(
+    dir,
+    "nish/std/hex.ts",
+    `/** Encodes. */\nexport const enc = (b: string): string => b // as it came\n${other}`,
+  ).orReturn()
+  t.eqStr(
+    "mutate refuses a tested function whose changed lines hold no mutant, not claiming they lie outside",
+    e2eTestRun(dir, ["spec", "mutate", "--base", "main", "--nish-root", root, "--test", `${dir}/t.sh`, contract]),
+    "exit 1\nspec mutate std/hex.ts against main: FAILED\n\nnotes:\n  - 1 changed line outside the tested functions was not mutated: other\n\nproblems:\n  ✗ no mutants: no line the change adds to std/hex.ts in code the contract's functions reach can be mutated\n",
   )
   prTestWrite(dir, "nish/std/hex.ts", `${E2E_TEST_HEX}\n/** New. */\nexport const fresh = (): i32 => 1\n`).orReturn()
   t.eqStr(
