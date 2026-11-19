@@ -362,7 +362,7 @@ const e2eTestOverlay = (t: Suite, dir: string): Result<boolean, string> => {
   )
   prTestWrite(dir, "c.json", contract).orReturn()
   prTestWrite(dir, "t.ts", E2E_TEST_LT).orReturn()
-  prTestWrite(dir, ".gitignore", "/install/libexec\n/install/runtime\n/checkout/build/\n").orReturn()
+  prTestWrite(dir, ".gitignore", "/install/libexec\n/install/runtime\n/install/build/\n/checkout/build/\n").orReturn()
   for (const root of ["install", "checkout", "blind"]) {
     prTestWrite(
       dir,
@@ -375,26 +375,47 @@ const e2eTestOverlay = (t: Suite, dir: string): Result<boolean, string> => {
     mkdirAll(`${dir}/checkout/build/seed`, 0o755).orReturn()
     runProcess(["ln", "-s", `${self}/.nish/${part}`, `${dir}/checkout/build/seed/${part}`], "", 10000).orReturn()
   }
+  // Blind stubs where a wrong pick would find them: an install's own libexec
+  // wins over a build/seed beside it, and a checkout's build/nish is used
+  // only when --nish names it. Either one used lets the mutants survive.
   prTestWrite(dir, "blind/libexec/nish", E2E_TEST_BLIND_NISH).orReturn()
+  prTestWrite(dir, "install/build/seed/libexec/nish", E2E_TEST_BLIND_NISH).orReturn()
+  prTestWrite(dir, "checkout/build/nish", E2E_TEST_BLIND_NISH).orReturn()
   prTestWrite(dir, "blind/bin/nish", E2E_TEST_COPY_NISH).orReturn()
-  runProcess(["chmod", "+x", "--", `${dir}/blind/libexec/nish`, `${dir}/blind/bin/nish`], "", 10000).orReturn()
+  runProcess(
+    [
+      "chmod",
+      "+x",
+      "--",
+      `${dir}/blind/libexec/nish`,
+      `${dir}/install/build/seed/libexec/nish`,
+      `${dir}/checkout/build/nish`,
+      `${dir}/blind/bin/nish`,
+    ],
+    "",
+    10000,
+  ).orReturn()
   prTestCommit(dir, "base").orReturn()
   prTestGit(dir, ["checkout", "-q", "-b", "work"]).orReturn()
   for (const root of ["install", "checkout", "blind"]) {
     prTestWrite(
       dir,
       `${root}/std/m.ts`,
-      "/** Less than. */\nexport const lt = (a: i32, b: i32): boolean => a < b\n",
+      "/** Less than. */\nexport const lt = (a: i32, b: i32): boolean => a - b < 0\n",
     ).orReturn()
   }
   const install = e2eTestRun(dir, e2eTestOverlayArgs(dir, "install", ["--jobs", "2"]))
   t.ok(
-    `an install root with no --nish builds the mutants from its seed and kills them: ${install}`,
+    `an install root with no --nish builds the mutants from its own libexec, not a build/seed beside it, and kills them: ${install}`,
     install.startsWith("exit 0\nspec mutate std/m.ts against main: OK\n") && install.indexOf("killed") >= 0,
+  )
+  t.ok(
+    `with --jobs 2 there are at least two mutants, so two slots run: ${install}`,
+    install.indexOf("killed", install.indexOf("killed") + 1) > 0,
   )
   const checkout = e2eTestRun(dir, e2eTestOverlayArgs(dir, "checkout", ["--max", "1"]))
   t.ok(
-    `a checkout with build/seed and no build/nish builds the mutants with no --nish: ${checkout}`,
+    `a checkout with build/seed builds the mutants on the seed with no --nish, not on its build/nish: ${checkout}`,
     checkout.startsWith("exit 0\nspec mutate std/m.ts against main: OK\n") && checkout.indexOf("killed") >= 0,
   )
   t.eqStr(
@@ -407,6 +428,13 @@ const e2eTestOverlay = (t: Suite, dir: string): Result<boolean, string> => {
     `--nish copies the checkout and builds with that compiler, not the seed: ${copied}`,
     copied.startsWith("exit 1\nspec mutate std/m.ts against main: FAILED\n") && copied.indexOf("survivor") >= 0,
   )
+  for (const root of ["install", "checkout", "blind"]) {
+    t.eqStr(
+      `the ${root} root's own std/m.ts is never written`,
+      readFileSyncOrNull(`${dir}/${root}/std/m.ts`) ?? "(gone)",
+      "/** Less than. */\nexport const lt = (a: i32, b: i32): boolean => a - b < 0\n",
+    )
+  }
   return Ok(true)
 }
 

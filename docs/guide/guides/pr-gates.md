@@ -296,8 +296,8 @@ sed -i '173s/length < 0 ||/length < 0 || length > 9000 ||/' ../nish/std/crypto/h
 ### The compiler
 
 Each mutant builds in a slot of its own. With no `--nish`, a slot is a
-scratch install: the root's seed with the root's `std/` laid over it, so only
-the seed and `std/` are copied. The seed is the root itself for an install
+scratch install: the seed's files with the root's `std/` laid over them, so a
+checkout's own tree is never copied. The seed is the root itself for an install
 (it has `libexec/nish`, as `../nish` here does), or `build/seed` for a
 checkout. A `git clone` of nish has neither, and mutate says so and stops:
 

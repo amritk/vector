@@ -11,8 +11,8 @@
  * no binary) stops the run, as the tool's failure, not the mutant's; one
  * that runs past its time is counted apart (MUTATE_BUILD_TIMED_OUT); then `<bin>` runs, and
  * a nonzero exit kills it, while running past its time is counted apart
- * (MUTATE_TIMED_OUT), as neither a kill nor a survival. Every copy runs the
- * unmutated baseline first, so a broken copy cannot pass off as a kill. The test is given, not made here: generating it is `verify/emit`'s.
+ * (MUTATE_TIMED_OUT), as neither a kill nor a survival. Every slot runs the
+ * unmutated baseline first, so a broken slot cannot pass off as a kill. The test is given, not made here: generating it is `verify/emit`'s.
  */
 
 import { splitLines, trim } from "nish/text"
@@ -619,14 +619,14 @@ const mutaterunIn = (
 
 /**
  * Runs the test against the unmutated module, then against each mutant,
- * setting each mutant's outcome. The scratch copies are removed after.
+ * setting each mutant's outcome. The slots are removed after.
  *
  * @param run where and how to run the test
  * @param text the module as it is
  * @param mutants the mutants to run, at least one
  * @returns `Ok(null)` when the test passed on the unmutated module and every
  *   mutant was run; `Ok(reason)` when it failed there, and no mutant was run;
- *   `Err` when the scratch copies cannot be made, a step cannot start, or a
+ *   `Err` when the slots cannot be made, a step cannot start, or a
  *   build fails for the tool, not the module
  */
 export const mutateRunAll = (run: MutateRun, text: string, mutants: MutateMutant[]): Result<string | null, string> => {
