@@ -664,7 +664,7 @@ the RFCs it may cite; one asked for and absent is recorded in `rfcs.missing`
 
 <scalar-field name="returns" type="Result&lt;ProfileRead, ProfileRefusal[]&gt;">
 
-the contract and where each part was read, or every refusal: the ts-interface block's first, then the rest, each in XML document order
+the contract and where each part was read, or every refusal: the ts-interface block's first, the block-count refusal at their head, then the rest, each in XML document order
 
 </scalar-field>
 
