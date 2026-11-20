@@ -436,3 +436,8 @@ build and test together, and at least 10 seconds. Mutate exits 2 for bad usage (
 and `VECTOR_NISH_ROOT` is not read), a contract, module or test that cannot be
 read, a git failure, a compiler that fails for a reason the mutant did not
 cause (the check above included), and a z3 failure while it emits the test.
+With `--nish`, it also exits 2 when a directory on the module's path in the
+checkout is a symlink (`the copy of <root>: std is a symlink, which the module
+<file> would write through`), since every mutant would be written through it
+into the checkout. A module that is itself a link is replaced in the copy by a
+file of its own, and what it points at is left alone.

@@ -25,6 +25,7 @@ Generated from [src/spec/run/run.ts](https://github.com/amritk/vector/blob/main/
 - [`runIsStdPath`](#runisstdpath)
 - [`runRemove`](#runremove)
 - [`runDisposeScratch`](#rundisposescratch)
+- [`runWriteInside`](#runwriteinside)
 - [`runMakeScratch`](#runmakescratch)
 - [`runMakeScratchIn`](#runmakescratchin)
 - [`runTest`](#runtest)
@@ -561,6 +562,60 @@ the scratch install
 <scalar-field name="returns" type="Result&lt;boolean, string&gt;">
 
 `Ok(true)`, or `Err` when it could not be removed
+
+</scalar-field>
+
+### runWriteInside
+
+Writes each of `texts` at its path in `paths`, from `dir`, as a regular
+file of its own. A path whose directory is reached through a symlink is
+refused before anything is written; a path that is itself a link is
+unlinked (never what it points at) and created afresh, so no write leaves
+`dir`.
+
+```ts
+function runWriteInside(
+  dir: string,
+  paths: string[],
+  texts: string[],
+  where: string,
+  what: string,
+): Result<boolean, string>
+```
+
+<scalar-field name="dir" type="string" required>
+
+the directory the paths are from, such as a scratch install or a copy of a checkout
+
+</scalar-field>
+
+<scalar-field name="paths" type="string[]" required>
+
+the files to write, each relative to `dir`
+
+</scalar-field>
+
+<scalar-field name="texts" type="string[]" required>
+
+what each file holds
+
+</scalar-field>
+
+<scalar-field name="where" type="string" required>
+
+what `dir` is, for the message, such as "scratch"
+
+</scalar-field>
+
+<scalar-field name="what" type="string" required>
+
+what each file is, for the message, such as "override"
+
+</scalar-field>
+
+<scalar-field name="returns" type="Result&lt;boolean, string&gt;">
+
+`Ok(true)`, or `Err` naming the part of a path that is a symlink, or a file that cannot be written
 
 </scalar-field>
 
