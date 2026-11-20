@@ -107,9 +107,10 @@ The types are those of the table in [Writing a
 spec](../../../docs/guide/guides/writing-a-spec.md#types): `u8[]`, `string`,
 `boolean`, `Secret<u8[]>`, the fixed-width integers `i8` … `i64` and
 `u8` … `u64`, `f64`, and the word arrays `u16[]`, `u32[]` and `u64[]`. A
-Nish test can hold all but `i8` and `i16`, which Nish lacks, so the emitter
-refuses them; only the Nish test holds word arrays. Add `| null` to `u8[]`,
-a word array or `string`, and to `Secret<u8[]>` as a result only. Give
+Nish test holds all but `i8` and `i16`, which the emitter refuses; only
+it holds word arrays. Add `| null` to `u8[]`,
+a word array or `string`, and to `Secret<u8[]>` as a result only; a
+property passes `u8[]` to a `Secret<u8[]>` parameter. Give
 word-array cases as vectors: a property over or calling word arrays is
 refused. `u8[] /* window */` is one bytes parameter for a `(buf, off, len)`,
 tested at a nonzero offset, Nish test only.
@@ -265,8 +266,8 @@ profile extracts to, run
     expected value it is a `spec` source (the covered requirement states it);
     for any other value it is a `cite` of that section, which must print the
     value.
-  - A code span holding a command: the value is its trimmed stdout, so the
-    Expected cell must be bytes or a string.
+  - A code span holding a command: its trimmed stdout, as hex bytes, a
+    string, a decimal int, `true`, `false` or `null` (no f64 or words).
 - **Values from an RFC:**
   - Each one is a *whole* printed value, never a prefix or a tail. A word
     array is a whole printed block, word for word.
@@ -490,12 +491,12 @@ in a spec-side PR.
 It exits 2 for bad usage, a git error, a z3 failure, or a compiler failure the
 mutant did not cause. Two compiler traps:
 
-- **The compiler must read the copy.** `mutate` builds each mutant in a copy
-  of the root, and first checks (the canary) that the compiler fails on a
-  copy whose module is made unparseable. An installed `bin/nish`, such as
-  `.nish/bin/nish`, is a wrapper that execs another install by absolute path
-  and fails the canary: give `--nish libexec/nish` for an install, or use a
-  real nish checkout.
+- **The compiler must read the slot.** With no `--nish`, mutants build on
+  the root's seed (an install itself, or a checkout's `build/seed`) with its
+  `std/` laid over it; with neither, run `bash scripts/fetch-seed.sh` there
+  (no build needed). A canary checks the compiler fails on the module made
+  unparseable. `--nish <file>` copies the whole root; `.nish/bin/nish` execs
+  another install and fails the canary.
 - **Run it from the repository's top.** Without `--test`, `mutate` emits the
   contract's test as `emit` does, checking the contract with the current
   directory as the repository's top, as CI runs it.

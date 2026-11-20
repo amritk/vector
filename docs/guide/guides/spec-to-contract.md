@@ -429,8 +429,10 @@ pass `--run-sources`:
 
 Each command runs as `sh -c` from the contract's directory, under
 `timeout -s KILL`, for at most 30 seconds. Its trimmed stdout must be the
-expected value (bytes as hex, compared case-blind). A timeout, a nonzero exit
-or other output fails the provenance gate.
+expected value's one printed form: bytes as hex (compared case-blind), a
+string as itself, an integer in decimal (`-1`, never `+1`, `01` or `0x1`), and
+`true`, `false` or `null`. A timeout, a nonzero exit or other output fails the
+provenance gate, as `printed "01", the vector expects "1"`.
 
 **`--run-sources` is not a sandbox.** The commands come from the contract, and
 they run as you, with your environment, files and network. `timeout` puts each

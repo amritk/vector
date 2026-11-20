@@ -45,6 +45,7 @@ import {
 } from "../contract/chars"
 import { contractF64Overflows, contractF64Parse } from "../contract/f64"
 import {
+  LITERALS_PRINTABLE,
   RawCall,
   RawLiteral,
   SettledVector,
@@ -52,6 +53,7 @@ import {
   literalsKindOf,
   literalsParse,
   literalsParseCall,
+  literalsPrintable,
   literalsSettleVector,
 } from "../contract/literals"
 import { contractShapeErrors, shapeTestNames, shapeTestPrefixes } from "../contract/shape"
@@ -2680,17 +2682,10 @@ const profileSourceCell = (c: ProfileContext, td: XmlNode, expect: Literal | nul
       profileRefuse(c, td, "Source: a command is a shell command, not blank")
       return null
     }
-    // What a command prints is compared as bytes (hex) or a string.
-    if (expect !== null) {
-      const k = expect.kind
-      if (k !== LitKind.Hex && k !== LitKind.Ascii && k !== LitKind.Concat && k !== LitKind.Str) {
-        profileRefuse(
-          c,
-          td,
-          `Source: a command prints bytes or a string, so its Expected is one, not ${literalsKindOf(expect)}`,
-        )
-        return null
-      }
+    // What a command prints is compared as text (see spec/gates/run).
+    if (expect !== null && !literalsPrintable(expect.kind)) {
+      profileRefuse(c, td, `Source: ${LITERALS_PRINTABLE}, so its Expected is one, not ${literalsKindOf(expect)}`)
+      return null
     }
     const out = new VectorSource(VectorSourceKind.Command)
     out.text = command

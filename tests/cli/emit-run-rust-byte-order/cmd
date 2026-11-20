@@ -1,0 +1,1 @@
+vector spec run tests/fixtures/byte-order/contracts/byte-order.json --lang rust --package vector=tests/fixtures/rust/vector

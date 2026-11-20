@@ -135,6 +135,8 @@ const mutateemitTestHex = (t: Suite): Result<boolean, string> => {
       "main",
       "--nish-root",
       nish,
+      "--nish",
+      "bin/nish",
     ]
     const run = runProcess(argv, "", 120000)
     t.eqStr(

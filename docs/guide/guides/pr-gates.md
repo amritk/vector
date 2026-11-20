@@ -261,8 +261,8 @@ vector: spec exports: --nish-root <dir> is required: the nish checkout holding t
 `spec mutate <contract.json> --nish-root <dir> --base <ref>` makes small
 plausible bugs in the lines the change added to the contract's module, inside
 the code the contract tests (a flipped comparison, an integer off by one,
-`||` for `&&`, a deleted statement), builds the test against each mutant in a scratch copy of the
-checkout, and runs it. A mutant the test fails on is **killed**; one it passes
+`||` for `&&`, a deleted statement), builds the test against each mutant in a scratch slot (see
+[The compiler](#the-compiler)), and runs it. A mutant the test fails on is **killed**; one it passes
 on **survived**, and is behaviour no requirement pins down. Every survivor is
 refused unless the contract allows it.
 
@@ -295,53 +295,47 @@ sed -i '173s/length < 0 ||/length < 0 || length > 9000 ||/' ../nish/std/crypto/h
 
 ### The compiler
 
-Before any mutant, mutate makes the module unparseable in the copy and builds
-the test: if that still builds, the compiler is not reading the copy, and
-every mutant would pass. `--nish` defaults to `bin/nish` in the root, and an
-installed `bin/nish` is a wrapper that execs `libexec/nish` by its absolute
-path, so it fails this check:
+Each mutant builds in a slot of its own. With no `--nish`, a slot is a
+scratch install: the seed's files with the root's `std/` laid over them, so a
+checkout's own tree is never copied. The seed is the root itself for an install
+(it has `libexec/nish`, as `../nish` here does), or `build/seed` for a
+checkout. A `git clone` of nish has neither, and mutate says so and stops:
+
+<!-- illustrative -->
+```sh
+./dist/vector spec mutate contracts/rfc5869-hkdf-sha256.json --nish-root ../nish-clone --base HEAD
+```
+
+```text
+vector: spec mutate: ../nish-clone has no seed to build mutants with: neither libexec/nish (an install) nor build/seed/libexec/nish (a checkout). Fetch one there with `bash scripts/fetch-seed.sh` (no build needed), or give --nish a compiler built in the checkout
+```
+
+Fetching the seed needs no build: `cd ../nish-clone && bash scripts/fetch-seed.sh`.
+
+Before any mutant, mutate makes the module unparseable in a slot and builds
+the test: if that still builds, the compiler is not reading the slot, and
+every mutant would pass. A seed whose compiler ignores the `std/` beside it
+fails this check, and so does a `--nish` that does not read the copy.
+
+`--nish <file>` takes the other path: it copies the whole root into each slot
+and builds with that compiler, relative to the root, such as a `build/nish`
+built in the checkout. An installed `bin/nish` is a wrapper that execs
+`libexec/nish` by its absolute path, so it fails the check:
 
 <!-- exit 2 -->
 ```sh
-./dist/vector spec mutate contracts/rfc5869-hkdf-sha256.json --nish-root ../nish --base HEAD
+./dist/vector spec mutate contracts/rfc5869-hkdf-sha256.json --nish-root ../nish --nish bin/nish --base HEAD
 ```
 
 ```text
 vector: spec mutate: the compiler bin/nish builds the test even with std/crypto/hkdf.ts made unparseable in the copy, so it does not read the copy (an installed wrapper that execs another install by absolute path?): give a --nish that builds from the checkout it sits in
 ```
 
-Give `--nish libexec/nish` for an install. A `git clone` of nish has no
-compiler at all: its `bin/nish` is the npm launcher, and there is no
-`libexec/nish` or `build/seed`. Build one in the checkout, then give
-`--nish build/nish`:
-
-<!-- illustrative -->
-```sh
-cd ../nish
-bash scripts/fetch-seed.sh && npm run build
-# or, with no release download, seed it from a nish you already have:
-NISH_BOOTSTRAP=/path/to/vector/.nish/libexec/nish npm run build
-```
-
-Pointing `--nish` at another install, such as vector's own
-`.nish/libexec/nish`, does not work: it builds from its own install, not the
-copy, and fails the check above. Run against an unbuilt checkout, mutate says
-so and stops:
-
-<!-- illustrative -->
-```sh
-./dist/vector spec mutate contracts/rfc5869-hkdf-sha256.json --nish-root ../nish --nish libexec/nish --base HEAD
-```
-
-```text
-vector: spec mutate: the compiler ../nish/libexec/nish is not an executable file: ../nish is a nish checkout with no build/nish. Build one there with `bash scripts/fetch-seed.sh && npm run build`, or `NISH_BOOTSTRAP=<an installed nish> npm run build`, then give --nish build/nish
-```
-
 ### Survivors
 
 <!-- exit 1 -->
 ```sh
-./dist/vector spec mutate contracts/rfc5869-hkdf-sha256.json --nish-root ../nish --nish libexec/nish --base HEAD --jobs 4
+./dist/vector spec mutate contracts/rfc5869-hkdf-sha256.json --nish-root ../nish --base HEAD --jobs 4
 ```
 
 ```text
@@ -381,7 +375,7 @@ cat > contracts/rfc5869-hkdf-sha256.survivors.json <<'EOF'
 }
 EOF
 ./dist/vector spec extract specs/rfc5869-hkdf-sha256.xml -o contracts/rfc5869-hkdf-sha256.json
-./dist/vector spec mutate contracts/rfc5869-hkdf-sha256.json --nish-root ../nish --nish libexec/nish --base HEAD --jobs 4
+./dist/vector spec mutate contracts/rfc5869-hkdf-sha256.json --nish-root ../nish --base HEAD --jobs 4
 ```
 
 ```text

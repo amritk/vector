@@ -207,6 +207,146 @@ const COMPLETENESS_TEST_COPIES_XML: string = `<?xml version="1.0" encoding="UTF-
 </rfc>
 `
 
+/** Where the anchored-quote fixture keeps its specs and its contract. */
+const COMPLETENESS_TEST_AQ: string = "tests/fixtures/anchored-quote"
+
+/**
+ * A context on the anchored-quote fixture: the contract extracted from
+ * `aq-two` (R-NO-LF quoting RFC 4648 §3.1, anchored on a blockquote in spec
+ * §3, and R-PAD quoting §3.2 in spec §4), with `edit` applied to its text,
+ * checked against the spec `read`, which the gate rereads from `file`.
+ */
+const completenessTestAq = (read: string, file: string, from: string, to: string): CheckContext => {
+  const path = `${COMPLETENESS_TEST_AQ}/specs/${file}.xml`
+  const xml = readFileSyncOrNull(`${COMPLETENESS_TEST_AQ}/specs/${read}.xml`) ?? ""
+  const text = readFileSyncOrNull(`${COMPLETENESS_TEST_AQ}/contracts/aq-two.json`) ?? ""
+  const at = from === "" ? -1 : text.indexOf(from)
+  const json = at < 0 ? text : `${text.slice(0, at)}${to}${text.slice(at + from.length)}`
+  const ctx = new CheckContext(`${COMPLETENESS_TEST_AQ}/contracts/aq-two.json`, ".")
+  ctx.contract = contractParse(json, "aq-two").expect("parse")
+  const set = new SourceSet()
+  set.main = "aq-two"
+  set.sources.push(new LoadedSource("aq-two", path, path, xmlRead(xml, path).expect("xml")))
+  ctx.sources = set
+  return ctx
+}
+
+/** One anchored-quote row: the spec read and reread, an edit to the contract, and the findings expected. */
+class CompletenessTestAqRow {
+  name: string
+  read: string
+  file: string
+  from: string
+  to: string
+  want: string[]
+  constructor(name: string, read: string, file: string, from: string, to: string, want: string[]) {
+    this.name = name
+    this.read = read
+    this.file = file
+    this.from = from
+    this.to = to
+    this.want = want
+  }
+}
+
+/** RFC 4648 §3.1, as R-NO-LF quotes it. */
+const COMPLETENESS_TEST_NO_LF: string =
+  "Implementations MUST NOT add line feeds to base-encoded data unless the specification referring to this document explicitly directs base encoders to add line feeds after a specific number of characters."
+
+/** RFC 4648 §3.2, as R-PAD quotes it. */
+const COMPLETENESS_TEST_PAD: string =
+  "Implementations MUST include appropriate pad characters at the end of encoded data unless the specification referring to this document explicitly states otherwise."
+
+/**
+ * Anchored quotes of another RFC in a spec's own sections: each counts in
+ * the one section holding the blockquote anchored with its id, and nowhere
+ * else, and the spec's own unquoted sentences are still reported. As for a
+ * main source's quote, a verbatim copy in the same section is covered too:
+ * it adds no words the quote does not hold.
+ */
+const completenessTestAqRows = (): CompletenessTestAqRow[] => {
+  const lf = `MUST NOT sentence is neither a requirement nor an exclusion: "${COMPLETENESS_TEST_NO_LF}"`
+  const pad = `MUST sentence is neither a requirement nor an exclusion: "${COMPLETENESS_TEST_PAD}"`
+  return [
+    new CompletenessTestAqRow("two anchored quotes in two sections", "aq-two", "aq-two", "", "", []),
+    new CompletenessTestAqRow("an unanchored quote", "aq-unanchored", "aq-unanchored", "", "", [`§4: ${pad}`]),
+    new CompletenessTestAqRow("two anchored quotes in one section", "aq-one", "aq-one", "", "", []),
+    new CompletenessTestAqRow(
+      "an unanchored quote beside an anchored one",
+      "aq-one-unanchored",
+      "aq-one-unanchored",
+      "",
+      "",
+      [`§3: ${pad}`],
+    ),
+    new CompletenessTestAqRow("the spec's own sentence beside a quote", "aq-own", "aq-own", "", "", [
+      `§3: MUST NOT sentence is neither a requirement nor an exclusion: "aqEncode MUST NOT add a line feed."`,
+    ]),
+    new CompletenessTestAqRow("a quote repeated as prose", "aq-prose", "aq-prose", "", "", [`§5: ${lf}`]),
+    new CompletenessTestAqRow("a verbatim copy beside its quote", "aq-copy", "aq-copy", "", "", []),
+    new CompletenessTestAqRow("an id no blockquote holds", "aq-two", "aq-two", `"id": "R-PAD"`, `"id": "R-PADS"`, [
+      `§4: ${pad}`,
+    ]),
+    new CompletenessTestAqRow(
+      "a quote in another quote's section",
+      "aq-two",
+      "aq-two",
+      COMPLETENESS_TEST_NO_LF,
+      COMPLETENESS_TEST_PAD,
+      [`§3: ${lf}`],
+    ),
+    new CompletenessTestAqRow("a reread with fewer sections than the spec read", "aq-prose", "aq-two", "", "", [
+      `§3: ${lf}`,
+      `§4: ${pad}`,
+      `§5: ${lf}`,
+    ]),
+    new CompletenessTestAqRow("a reread that is not the spec read", "aq-two", "aq-own", "", "", [
+      `§3: ${lf}`,
+      `§4: ${pad}`,
+    ]),
+  ]
+}
+
+/** Where the main-RFC anchored-quote fixture lives: an RFC 9998 in XML, whose §2 and §3 hold anchored blockquotes. */
+const COMPLETENESS_TEST_MAIN_XML: string = "tests/fixtures/anchored-quote/rfcs/rfc9998.xml"
+
+/** An RFC 9997 in XML whose §1 holds RFC 4648 §3.2 as a paragraph anchored R-B64, not a blockquote. */
+const COMPLETENESS_TEST_PARA_XML: string = "tests/fixtures/anchored-quote/rfcs/rfc9997.xml"
+
+/**
+ * A main-RFC contract on RFC 9998: R-PAD cites the main RFC's §1, whose
+ * sentence §2 repeats in a blockquote anchored R-PAD, and R-B64 quotes RFC
+ * 4648 §3.2 from `b64` (a source, or "" to cite the main RFC's §3).
+ */
+const completenessTestMain = (b64: string): string => {
+  const cite = b64 === "" ? `"section": "3"` : `"source": "${b64}", "section": "3.2"`
+  return `{
+  "contract": "c6",
+  "source": {"title": "T", "rfc": 9998},
+  "target": {"module": "nish/x"},
+  "requirements": [
+    {"id": "R-PAD", "section": "1", "level": "MUST", "quote": "A sender MUST pad the block."},
+    {"id": "R-B64", ${cite}, "level": "MUST", "quote": "${COMPLETENESS_TEST_PAD}"}
+  ],
+  "exclusions": [],
+  "functions": [{"name": "f", "params": [{"name": "a", "type": "bytes"}], "returns": "bytes"}],
+  "clauses": []
+}`
+}
+
+/** The completeness gate on a main-RFC contract over the RFC in XML at `file`. */
+const completenessTestMainRun = (file: string, b64: string): string[] => {
+  const xml = readFileSyncOrNull(file) ?? ""
+  const doc = xmlRead(xml, file).expect("xml")
+  const ctx = new CheckContext("contracts/c6.json", ".")
+  ctx.contract = contractParse(completenessTestMain(b64), "c6").expect("parse")
+  const set = new SourceSet()
+  set.main = "rfc9998"
+  set.sources.push(new LoadedSource("rfc9998", file, file, doc))
+  ctx.sources = set
+  return gateCompleteness(ctx)
+}
+
 /** A context with a contract and a hand-built source set holding one read RFC. */
 const completenessTestDoc = (contract: string, file: string, doc: RfcDocument): CheckContext => {
   const ctx = new CheckContext("contracts/c1.json", ".")
@@ -365,6 +505,31 @@ export const main = (): i32 => {
   t.ok("copies findings", copies.length === 2)
   if (copies.length !== 2) {
     console.log(copies.join("\n"))
+  }
+  const again = `§2: MUST sentence is neither a requirement nor an exclusion: "A sender MUST pad the block."`
+  const mainOnly = completenessTestMainRun(COMPLETENESS_TEST_MAIN_XML, "")
+  t.ok("a main requirement covers only the section it cites", mainOnly.length === 1 && mainOnly[0] === again)
+  if (!(mainOnly.length === 1 && mainOnly[0] === again)) {
+    console.log(mainOnly.join("\n"))
+  }
+  const mainOther = completenessTestMainRun(COMPLETENESS_TEST_MAIN_XML, "rfc4648")
+  t.ok("another RFC's quote counts in a main RFC's section", mainOther.length === 1 && mainOther[0] === again)
+  if (!(mainOther.length === 1 && mainOther[0] === again)) {
+    console.log(mainOther.join("\n"))
+  }
+  const para = completenessTestMainRun(COMPLETENESS_TEST_PARA_XML, "rfc4648")
+  const paraWant = `§1: MUST sentence is neither a requirement nor an exclusion: "${COMPLETENESS_TEST_PAD}"`
+  t.ok("an anchored paragraph is not a blockquote", para.length === 1 && para[0] === paraWant)
+  if (!(para.length === 1 && para[0] === paraWant)) {
+    console.log(para.join("\n"))
+  }
+  for (const row of completenessTestAqRows()) {
+    const got = gateCompleteness(completenessTestAq(row.read, row.file, row.from, row.to))
+    const same = got.length === row.want.length && row.want.every((w: string): boolean => got.indexOf(w) >= 0)
+    t.ok(row.name, same)
+    if (!same) {
+      console.log(got.join("\n"))
+    }
   }
   return t.done()
 }

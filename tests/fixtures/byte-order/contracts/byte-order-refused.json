@@ -1,0 +1,352 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "byte-order-refused",
+  "source": {
+    "title": "Integers as Bytes: Properties",
+    "main": "byte-order",
+    "sha256": "48f72e250f8b5d9227a994ae66e7662294240ac46224d262c46783f83db5f9a0"
+  },
+  "sources": [
+    {
+      "id": "byte-order",
+      "path": "../rfcs/byte-order.txt",
+      "sha256": "48f72e250f8b5d9227a994ae66e7662294240ac46224d262c46783f83db5f9a0"
+    }
+  ],
+  "target": {
+    "module": "vector/core/hex"
+  },
+  "requirements": [
+    {
+      "id": "R-WRITE",
+      "section": "1",
+      "level": "MUST",
+      "quote": "An integer written as bytes MUST be written as its two's complement, in the byte order the operation names."
+    },
+    {
+      "id": "R-READ",
+      "section": "2",
+      "level": "MUST",
+      "quote": "Bytes read as an integer MUST be read in the byte order the operation names, as exactly as many bytes as the integer's width."
+    }
+  ],
+  "exclusions": [],
+  "functions": [
+    {
+      "name": "toHex",
+      "params": [
+        {
+          "name": "bytes",
+          "type": "bytes"
+        }
+      ],
+      "returns": "string"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "property",
+      "id": "P-WIDE",
+      "title": "le32 of a u64",
+      "covers": [
+        "R-WRITE"
+      ],
+      "forall": [
+        {
+          "name": "n",
+          "type": "u64",
+          "min": 0,
+          "max": "18446744073709551615"
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "toHex",
+            "args": [
+              {
+                "op": "le32",
+                "args": [
+                  {
+                    "var": "n"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "str": ""
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-WIDE-SIGNED",
+      "title": "be16 of an i32",
+      "covers": [
+        "R-WRITE"
+      ],
+      "forall": [
+        {
+          "name": "n",
+          "type": "i32",
+          "min": 0,
+          "max": 1
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "toHex",
+            "args": [
+              {
+                "op": "be16",
+                "args": [
+                  {
+                    "var": "n"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "str": ""
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-LITERAL",
+      "title": "le16 of 65536",
+      "covers": [
+        "R-WRITE"
+      ],
+      "forall": [
+        {
+          "name": "n",
+          "type": "i16",
+          "min": -32768,
+          "max": 32767
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "toHex",
+            "args": [
+              {
+                "op": "le16",
+                "args": [
+                  {
+                    "int": 65536
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "call": "toHex",
+            "args": [
+              {
+                "op": "le16",
+                "args": [
+                  {
+                    "var": "n"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-LITERAL-NEG",
+      "title": "be32 of -2147483649",
+      "covers": [
+        "R-WRITE"
+      ],
+      "forall": [
+        {
+          "name": "n",
+          "type": "i16",
+          "min": -32768,
+          "max": 32767
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "toHex",
+            "args": [
+              {
+                "op": "be32",
+                "args": [
+                  {
+                    "int": -2147483649
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "call": "toHex",
+            "args": [
+              {
+                "op": "be32",
+                "args": [
+                  {
+                    "var": "n"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-READ-INT",
+      "title": "beU32 of an integer",
+      "covers": [
+        "R-READ"
+      ],
+      "forall": [
+        {
+          "name": "n",
+          "type": "i16",
+          "min": -32768,
+          "max": 32767
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "toHex",
+            "args": [
+              {
+                "op": "le32",
+                "args": [
+                  {
+                    "op": "beU32",
+                    "args": [
+                      {
+                        "var": "n"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "str": ""
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-FITS",
+      "title": "le16 of an i16 and its literal limits",
+      "covers": [
+        "R-WRITE"
+      ],
+      "forall": [
+        {
+          "name": "n",
+          "type": "i16",
+          "min": -32768,
+          "max": 32767
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "leI32",
+                "args": [
+                  {
+                    "op": "le32",
+                    "args": [
+                      {
+                        "var": "n"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "leI32",
+                "args": [
+                  {
+                    "op": "le32",
+                    "args": [
+                      {
+                        "var": "n"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "toHex",
+                "args": [
+                  {
+                    "op": "le16",
+                    "args": [
+                      {
+                        "int": -32768
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "str": "0080"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "toHex",
+                "args": [
+                  {
+                    "op": "le16",
+                    "args": [
+                      {
+                        "int": 65535
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "str": "ffff"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
