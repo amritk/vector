@@ -209,6 +209,32 @@ const profileIfaceCountTestRows = (t: Suite, base: string, rfcs: ProfileRfcs): v
   )
   profileIfaceCountTestRow(
     t,
+    "two blocks, calls both declare",
+    profileIfaceCountTestSpec(t, base, block, "frame", "frame", profileIfaceCountTestBlock("nish/mini/other", "frame")),
+    rfcs,
+    [[second, profileIfaceCountTestCount(2)]],
+  )
+  const independent2 = profileIfaceCountTestSub(
+    t,
+    profileIfaceCountTestSub(
+      t,
+      profileIfaceCountTestSpec(t, base, block, "g", "g", blockG),
+      "/* 256..300 */",
+      "/* 300..256 */",
+    ),
+    "<tt>result = 0100</tt>",
+    "<tt>result = 01zz</tt>",
+  )
+  profileIfaceCountTestRow(t, "two blocks, beside independent refusals", independent2, rfcs, [
+    [second, profileIfaceCountTestCount(2)],
+    ["/* 300..256 */", "the length bounds of `data` (u8[]) must satisfy 0 <= lo <= hi <= 4096"],
+    [
+      "01zz",
+      "Expected: a labelled value is `Label = hex` (lowercase hex pairs with no spaces), `Label = 42` or `Label = 22 × 0b`",
+    ],
+  ])
+  profileIfaceCountTestRow(
+    t,
     "two blocks, the second refused, calls it would declare",
     profileIfaceCountTestSpec(t, base, block, "g", "frame", refusedG),
     rfcs,
