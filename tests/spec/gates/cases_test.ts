@@ -4,7 +4,7 @@ import { contractParse } from "../../../src/spec/contract/read"
 import { gateFidelity } from "../../../src/spec/gates/fidelity"
 import { gateWarnings } from "../../../src/spec/gates/note"
 import { LoadedSource, SourceSet } from "../../../src/spec/source/load"
-import { RfcSection, rfcParse, rfcSection, rfcWithHeading, rfcWithHeadings } from "../../../src/spec/source/rfc"
+import { rfcParse } from "../../../src/spec/source/rfc"
 
 /** A footer, form feed and header, as `rfcParse` reads page furniture. */
 const casesTestBreak = (rfc: string, page: i32): string =>
@@ -102,6 +102,7 @@ const casesTestRfc = (): string =>
     '   With SHA-512, message = "sample":',
     "   n = 5",
     `   s = ${CASES_TEST_S512}`,
+    "   t = 1.5",
     "",
   ].join("\n")
 
@@ -180,6 +181,13 @@ const casesTestRowFirst = (t: Suite, name: string, got: string[], want: string):
   }
 }
 
+/** A case heading of casesTestRfc, for a message. */
+const casesTestHead = (hash: string, m: string): string => `"With ${hash}, message = "${m}":"`
+
+/** The message under every heading of casesTestRfc for `m`, as args[1]. */
+const casesTestAnyOf = (m: string): string =>
+  `args[1] is under ${casesTestHead("SHA-1", m)} or ${casesTestHead("SHA-256", m)} or ${casesTestHead("SHA-512", m)}`
+
 /**
  * Values under RFC 6979's case headings: a value printed above the first
  * heading is every case's, a string printed on a heading is its case's, and
@@ -189,7 +197,8 @@ const casesTestRowFirst = (t: Suite, name: string, got: string[], want: string):
  */
 const casesTestHeadingRows = (t: Suite): void => {
   const x = casesTestHex(CASES_TEST_X, "x")
-  const different = "so they are from different test cases: use the values printed under one case heading"
+  const different =
+    ' in RFC §A.2.5 ("ECDSA, 256 Bits (Prime Field)"), so they are from different test cases: use the values printed under one case heading'
   const rows: string[][] = [
     [
       "the key above the headings, the message and r of SHA-256 sample",
@@ -221,7 +230,7 @@ const casesTestHeadingRows = (t: Suite): void => {
       "A.2.5",
       `${x}, {"str": "sample"}`,
       casesTestHex(CASES_TEST_R256T, "r"),
-      different,
+      `${casesTestAnyOf("sample")}, expect is under ${casesTestHead("SHA-256", "test")}${different}`,
     ],
     [
       'the message "test" and s of SHA-512 sample, split from it only by the page break',
@@ -229,7 +238,7 @@ const casesTestHeadingRows = (t: Suite): void => {
       "A.2.5",
       `${x}, {"str": "test"}`,
       casesTestHex(CASES_TEST_S512, "s"),
-      different,
+      `${casesTestAnyOf("test")}, expect is under ${casesTestHead("SHA-512", "sample")}${different}`,
     ],
     [
       'the message "test" and r of SHA-1 test, just past the page break',
@@ -245,7 +254,15 @@ const casesTestHeadingRows = (t: Suite): void => {
       "A.2.5",
       `${casesTestHex(CASES_TEST_K1, "k")}, {"str": "sample"}`,
       casesTestHex(CASES_TEST_R256, "r"),
-      different,
+      `args[0] is under ${casesTestHead("SHA-1", "sample")}, ${casesTestAnyOf("sample")}, expect is under ${casesTestHead("SHA-256", "sample")}${different}`,
+    ],
+    [
+      "r of SHA-256 sample as an input, s of SHA-512 sample expected",
+      "sign512",
+      "A.2.5",
+      `${casesTestHex(CASES_TEST_R256, "r")}, {"str": "sample"}`,
+      casesTestHex(CASES_TEST_S512, "s"),
+      `args[0] is under ${casesTestHead("SHA-256", "sample")}, ${casesTestAnyOf("sample")}, expect is under ${casesTestHead("SHA-512", "sample")}${different}`,
     ],
     [
       "a call naming another case's variant",
@@ -261,7 +278,8 @@ const casesTestHeadingRows = (t: Suite): void => {
       "A.2.5",
       `${x}, {"str": "sample"}`,
       casesTestHex(CASES_TEST_R256, "r"),
-      "nothing in the name sign says which variant it computes",
+      // Each variant once, though each heads two cases.
+      'the values are printed under the case heading "With SHA-256, message = "sample":", one of "SHA-256" or "SHA-1" or "SHA-512" in RFC §A.2.5 ("ECDSA, 256 Bits (Prime Field)"), and nothing in the name sign says which variant it computes',
     ],
   ]
   for (const r of rows) {
@@ -285,19 +303,33 @@ const casesTestNoHeadingRows = (t: Suite): void => {
     ),
     "nothing pairs a printed string with one of several labelled values",
   )
-  // A labelled number is not placed by line: its rounds pair it, so a string
-  // with it is refused, not placed by the other values alone.
+  // A labelled number is placed by its line, as a hex value is.
+  const nm = `{"name": "n", "type": "i32"}, {"name": "m", "type": "string"}`
+  const s512 = casesTestHex(CASES_TEST_S512, "s")
   casesTestRowIs(
     t,
-    "6979 §A.4: headings, and a number printed under each",
+    "6979 §A.4: headings, and the number under the other heading",
+    casesTestRunWith(nm, "sign512", "A.4", `{"int": 3, "label": "n"}, {"str": "sample"}`, s512),
+    'args[0] is under "With SHA-256, message = "sample":", expect is under "With SHA-512, message = "sample":" in RFC §A.4 ("Counted"), so they are from different test cases',
+  )
+  casesTestRowIs(
+    t,
+    "6979 §A.4: headings, and the number under the same heading",
+    casesTestRunWith(nm, "sign512", "A.4", `{"int": 5, "label": "n"}, {"str": "sample"}`, s512),
+    "",
+  )
+  // A decimal fraction is not placed by line: nothing says whose case it is.
+  casesTestRowIs(
+    t,
+    "6979 §A.4: headings, and a decimal fraction",
     casesTestRunWith(
-      `{"name": "n", "type": "i32"}, {"name": "m", "type": "string"}`,
+      `{"name": "t", "type": "f64"}, {"name": "m", "type": "string"}`,
       "sign512",
       "A.4",
-      `{"int": 3, "label": "n"}, {"str": "sample"}`,
-      casesTestHex(CASES_TEST_S512, "s"),
+      `{"f64": "1.5", "label": "t"}, {"str": "sample"}`,
+      s512,
     ),
-    "nothing pairs a printed string with one of several labelled values",
+    'args[0] in RFC §A.4 ("Counted") is not placed by its line, so nothing says which case heading it is under',
   )
 }
 
@@ -362,6 +394,35 @@ const casesTestQuic = (): string =>
     "",
     "   The sequence 0x0304 decodes to 772.",
     "",
+    "   The sequence 0x0D0E decodes to 3342.",
+    "",
+    "A.2.  Sample Packet Number Encoding Algorithm",
+    "",
+    "   For example, if an endpoint has received an acknowledgment for packet",
+    "   0xabe8b3 and is sending a packet with a number of 0xac5c02, there are",
+    "   29,519 (0x734f) outstanding packet numbers.  In order to represent at",
+    "   least twice this range (59,038 packets, or 0xe69e), 16 bits are",
+    "   required.",
+    "",
+    "   This value 0x0707 decodes to 1799.",
+    "",
+    "A.3.  Names",
+    "",
+    "   The SHA-256 sequence 0x0506 of -5 is 16-bit, as is key_256, and",
+    "   decodes to 1286.",
+    "",
+    "A.4.  Breaks",
+    "",
+    "   The sequence 0x0601 decodes to 1537 (see 0x0602.)",
+    casesTestFurniture("Iyengar & Thomson", "9000", "QUIC Transport", 141),
+    '   The sequence 0x0603 decodes to 1539 as "Out:"',
+    casesTestFurniture("Iyengar & Thomson", "9000", "QUIC Transport", 142),
+    "   The sequence 0x0604 decodes to 1540 as follows:",
+    casesTestFurniture("Iyengar & Thomson", "9000", "QUIC Transport", 143),
+    "   The sequence 0x0605 decodes to 1541, etc.",
+    casesTestFurniture("Iyengar & Thomson", "9000", "QUIC Transport", 144),
+    "   The sequence 0x0606 decodes to 1542.",
+    "",
   ].join("\n")
 
 /**
@@ -424,10 +485,36 @@ const casesTestProseRows = (t: Suite): void => {
     ["a value right after :, which labels it", '{"hex": "0e0f"}', '{"int": 258}', 'name it with "label"'],
     ["unlabelled values in that paragraph", '{"hex": "0102"}', '{"int": 258}', ""],
     ["values after = and :, which label them", '{"hex": "0a0b"}', '{"hex": "0c0d"}', 'name it with "label"'],
+    ["a sequence printed in capitals", '{"hex": "0d0e"}', '{"int": 3342}', ""],
   ]
   for (const r of quicRows) {
     const got = casesTestCheck("9000", quic, quicFn, "decode", "A.1", r[1], r[2])
     casesTestRowFirst(t, `9000 §A.1: ${r[0]}`, got, r[3])
+  }
+  const apart = "are each printed in RFC §"
+  const otherRows: string[][] = [
+    ["A.2", "a value and its count, in one sentence", '{"hex": "734f"}', '{"int": 29519}', ""],
+    [
+      "A.2",
+      "a value, and the next sentence's twice it",
+      '{"hex": "734f"}',
+      '{"int": 59038}',
+      `args[0] 0x734f, expect 59038 ${apart}A.2 ("Sample Packet Number Encoding Algorithm"), but in different examples (a sentence, or its part between semicolons)`,
+    ],
+    ["A.2", "a paragraph's first sentence on this value, the one before's", '{"hex": "e69e"}', '{"int": 1799}', apart],
+    ["A.3", "a number of its own", '{"hex": "0506"}', '{"int": 1286}', ""],
+    ["A.3", "a number inside a name", '{"hex": "0506"}', '{"int": 256}', 'name it with "label"'],
+    ["A.3", "a number after a minus", '{"hex": "0506"}', '{"int": 5}', 'name it with "label"'],
+    ["A.3", "a number before a hyphen", '{"hex": "0506"}', '{"int": 16}', 'name it with "label"'],
+    ["A.4", "a sentence ending .) at a page break, the next page's", '{"hex": "0601"}', '{"int": 1539}', apart],
+    ["A.4", "a sentence ending :\" at a page break, the next page's", '{"hex": "0603"}', '{"int": 1540}', apart],
+    ["A.4", "a sentence ending : at a page break, the next page's", '{"hex": "0604"}', '{"int": 1541}', apart],
+    ["A.4", "a sentence ending etc. at a page break, the next page's", '{"hex": "0605"}', '{"int": 1542}', apart],
+    ["A.4", "values of the sentence after the breaks", '{"hex": "0606"}', '{"int": 1542}', ""],
+  ]
+  for (const r of otherRows) {
+    const got = casesTestCheck("9000", quic, quicFn, "decode", r[0], r[2], r[3])
+    casesTestRowFirst(t, `9000 §${r[0]}: ${r[1]}`, got, r[4])
   }
   // One value is not a test case to pair: a lone number is still unchecked.
   const lone = `{"name": "count", "params": [], "returns": "u64"}`
@@ -439,42 +526,8 @@ const casesTestProseRows = (t: Suite): void => {
   )
 }
 
-/** The case headings rfcWithHeading reads, and the lines it does not. Each row is a line and the words wanted. */
-const casesTestWithRows = (t: Suite): void => {
-  const rows: string[][] = [
-    ['   With SHA-256, message = "sample":', "SHA-256"],
-    ['With SHA-1, message = "test":', "SHA-1"],
-    ['   With SHA-256, message = "sample"', ""],
-    ['   With SHA-256, message = "sam"ple":', ""],
-    ['   With SHA-256, the message = "sample":', ""],
-    ['   With SHA-256 message = "sample":', ""],
-    ['   With, message = "sample":', ""],
-    ['   With SHA-256, message "sample":', ""],
-    ['   with SHA-256, message = "sample":', ""],
-    ["   With this key, the signer computes:", ""],
-  ]
-  for (const r of rows) {
-    t.eqStr(`rfcWithHeading ${r[0]}`, rfcWithHeading(r[0]), r[1])
-  }
-}
-
-/** The section `id` of casesTestRfc. */
-const casesTestSection = (id: string): RfcSection => {
-  const s = rfcSection(rfcParse(casesTestRfc()), id)
-  return s === null ? new RfcSection(id, "missing", [], []) : s
-}
-
 export const main = (): i32 => {
   const t = new Suite("spec/gates/cases")
-  casesTestWithRows(t)
-  const sec = casesTestSection("A.2.5")
-  const heads = rfcWithHeadings(sec)
-  t.eqStr(
-    "rfcWithHeadings: each heading, on each side of the page break",
-    heads.map((h: i32): string => rfcWithHeading(sec.lines[h])).join(" "),
-    "SHA-1 SHA-256 SHA-512 SHA-1 SHA-256 SHA-512",
-  )
-  t.eqStr("rfcWithHeadings: none in a section without", `${rfcWithHeadings(casesTestSection("A.3")).length}`, "0")
   casesTestHeadingRows(t)
   casesTestNoHeadingRows(t)
   casesTestProseRows(t)

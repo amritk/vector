@@ -59,9 +59,11 @@ import {
   gateByteLists,
   gateF64Printed,
   gateIntLabelCount,
+  gateIntLines,
   gateIntRounds,
   gateLines,
   gateQuotePairs,
+  gateSentenceBreaks,
   gateTextLines,
 } from "./text"
 import { GateWordBlock, gateWordBlocks } from "./words"
@@ -531,6 +533,7 @@ const gateNumberCheck = (l: GateLits, lit: Literal, at: string, has: i32[], of: 
   const b = new GateBound(at, label)
   if (lit.kind === LitKind.Int) {
     b.num = lit.text
+    b.shown = gateIntLines(l.lines, label, lit.text).map((k: i32): i32 => gateSecLine(l, k))
   }
   gateRounds(l, b, of, has)
 }
@@ -689,19 +692,27 @@ const gateLitCheck = (l: GateLits, lit: Literal, at: string): void => {
   }
 }
 
-/** Whether a line ends a sentence: its last character is `.`, `:` or `?`. */
+/** Whether a line ends a sentence: its last character is `.` or `:`, before any closing `"` or `)`. */
 const gateEndsSentence = (line: string): boolean => {
   const t = rfcNormalize(line)
-  const c = t.length > 0 ? t.charCodeAt(t.length - 1) : 0
-  return c === 46 || c === 58 || c === 63
+  let e = t.length
+  // 34 is `"` and 41 `)`.
+  while (e > 0 && (t.charCodeAt(e - 1) === 34 || t.charCodeAt(e - 1) === 41)) {
+    e = e - 1
+  }
+  const c = e > 0 ? t.charCodeAt(e - 1) : 0
+  return c === 46 || c === 58
 }
 
 /**
- * The examples a section's prose prints, normalized: each paragraph, split at
- * "; " (RFC 9000 §A.1 prints four sequences and their values in one sentence,
- * a semicolon apart). Blank lines end a paragraph, except around a page
- * break that falls inside a sentence, which the page's furniture pads with
- * blank lines; a sentence that ends at a page break ends its paragraph.
+ * The examples a section's prose prints, normalized: each sentence
+ * (gateSentenceBreaks), with the ones after it that go on about "this
+ * string" or "this value" (RFC 6455 §4.2.2 hashes a key and encodes the
+ * hash in three sentences), split at "; " (RFC 9000 §A.1 prints four
+ * sequences and their values in one sentence, a semicolon apart). Blank
+ * lines end a paragraph, except around a page break that falls inside a
+ * sentence, which the page's furniture pads with blank lines; a sentence
+ * that ends at a page break ends its paragraph.
  */
 const gateProseUnits = (l: GateLits): string[] => {
   const paras: string[] = []
@@ -726,9 +737,26 @@ const gateProseUnits = (l: GateLits): string[] => {
   if (para.length > 0) {
     paras.push(rfcNormalize(para.join(" ")))
   }
-  const out: string[] = []
+  const examples: string[] = []
   for (const p of paras) {
-    for (const part of split(p, "; ")) {
+    const breaks = gateSentenceBreaks(p, [])
+    let start = 0
+    for (let i = 0; i <= breaks.length; i = i + 3) {
+      const end = i < breaks.length ? breaks[i + 1] : p.length
+      const sentence = p.substring(start, end)
+      const lower = asciiLower(sentence)
+      const goesOn = lower.indexOf("this string") >= 0 || lower.indexOf("this value") >= 0
+      if (goesOn && start > 0) {
+        examples[examples.length - 1] = `${examples[examples.length - 1]} ${sentence}`
+      } else {
+        examples.push(sentence)
+      }
+      start = i < breaks.length ? breaks[i + 2] : p.length
+    }
+  }
+  const out: string[] = []
+  for (const e of examples) {
+    for (const part of split(e, "; ")) {
       out.push(part)
     }
   }
@@ -736,25 +764,26 @@ const gateProseUnits = (l: GateLits): string[] => {
 }
 
 /**
- * Whether `w` is printed in `unit` as a word of its own: not inside a longer
- * name, hex or number, and not after `=` or `:`, which label a value.
+ * Whether `w` is printed in `unit` as a token of its own (gateFidSpans),
+ * case ignored: not inside a longer name, hex or number (`SHA-256`, `5.2`),
+ * not beside a `-` (`-5`, `16-bit`), and not after `=` or `:`, which label a
+ * value.
  */
 const gateProseWord = (unit: string, w: string): boolean => {
-  let at = toI32(unit.indexOf(w))
-  while (at >= 0) {
-    const e = at + w.length
-    const before = at > 0 ? unit.charCodeAt(at - 1) : 32
+  const spans = gateFidSpans(unit)
+  for (let i = 0; i + 1 < spans.length; i = i + 2) {
+    const s = spans[i]
+    const e = spans[i + 1]
+    if (asciiLower(unit.substring(s, e)) !== w) {
+      continue
+    }
+    // 45 is `-`, 61 `=` and 58 `:`, right before the value or one space before it.
+    const before = s > 0 ? unit.charCodeAt(s - 1) : 32
     const after = e < unit.length ? unit.charCodeAt(e) : 32
-    const next = e + 1 < unit.length ? unit.charCodeAt(e + 1) : 32
-    // 44 is `,` and 46 `.`: a number goes on past either before a digit.
-    const runsOn = (after === 44 || after === 46) && gateFidDigit(next)
-    // 61 is `=` and 58 `:`, right before the value or one space before it.
-    const mark = before === 32 && at >= 2 ? unit.charCodeAt(at - 2) : before
-    const labelled = mark === 61 || mark === 58
-    if (!gateNameChar(before) && before !== 44 && before !== 46 && !gateNameChar(after) && !runsOn && !labelled) {
+    const mark = before === 32 && s >= 2 ? unit.charCodeAt(s - 2) : before
+    if (before !== 45 && after !== 45 && mark !== 61 && mark !== 58) {
       return true
     }
-    at = toI32(unit.indexOf(w, at + 1))
   }
   return false
 }
@@ -768,7 +797,7 @@ const gateProseHas = (unit: string, lit: Literal): boolean => {
     return unit.indexOf(`"${lit.text}"`) >= 0
   }
   if (lit.kind === LitKind.Hex) {
-    return gateProseWord(asciiLower(unit), `0x${gateLitHex(lit)}`)
+    return gateProseWord(unit, `0x${gateLitHex(lit)}`)
   }
   if (lit.kind === LitKind.Int) {
     return gateProseWord(unit, lit.text) || gateProseWord(unit, gateGrouped(lit.text))
@@ -816,7 +845,7 @@ const gateProseCase = (l: GateLits, lits: Literal[], ats: string[]): void => {
   gateNote(
     l,
     l.id,
-    `${each.join(", ")} are each printed in ${l.inSection}, but in different examples (a paragraph, or its part between semicolons), so nothing pairs them as one test case`,
+    `${each.join(", ")} are each printed in ${l.inSection}, but in different examples (a sentence, or its part between semicolons), so nothing pairs them as one test case`,
     false,
   )
 }
@@ -951,9 +980,9 @@ const gateSecLine = (l: GateLits, k: i32): i32 => {
 
 /**
  * The section lines a bound is printed on, for placing it under a case
- * heading: a text's or paired argument's lines, a hex value's printings that
- * are it, an empty value's printings; null when it is not placed by line (a
- * number, a block of words).
+ * heading: a text's or paired argument's lines, a hex value's or labelled
+ * integer's printings that are it, an empty value's printings; null when it
+ * is not placed by line (a decimal fraction, a block of words).
  */
 const gateBoundSecLines = (l: GateLits, b: GateBound): i32[] | null => {
   if (b.lines !== null || b.paired) {
@@ -1000,22 +1029,30 @@ const gateHeadingText = (l: GateLits, h: i32): string => `"${rfcNormalize(l.sec.
  * (rfcWithHeadings), the values are placed by line: each is under the
  * heading above it, a string on a heading is that case's, and a value
  * printed above the first heading is every case's. One heading must hold
- * every value. Returns false, placing nothing, when a repeated value is not
- * placed by line, so rounds pair it instead.
+ * every value, and a value not placed by line is refused: nothing says
+ * which case it is.
  */
-const gateHeadingCase = (l: GateLits, inSection: string): boolean => {
+const gateHeadingCase = (l: GateLits, inSection: string): void => {
   const placed: GateBound[] = []
   const cases: i32[][] = []
+  const lost: string[] = []
   for (const b of l.bounds) {
     const at = gateBoundSecLines(l, b)
     if (at === null) {
-      if (b.of > 1) {
-        return false
-      }
+      lost.push(b.at)
       continue
     }
     placed.push(b)
     cases.push(gateBoundCases(l, at))
+  }
+  if (lost.length > 0) {
+    gateNote(
+      l,
+      l.id,
+      `${lost.join(", ")} in ${inSection} is not placed by its line, so nothing says which case heading it is under: cite values printed on their own lines`,
+      false,
+    )
+    return
   }
   const shared: i32[] = []
   for (let h = 0; h < l.heads.length; h++) {
@@ -1041,7 +1078,6 @@ const gateHeadingCase = (l: GateLits, inSection: string): boolean => {
   } else if (shared.length === 1) {
     l.chosen = shared[0]
   }
-  return true
 }
 
 /**
@@ -1074,8 +1110,9 @@ const gateOneTestCase = (l: GateLits, args: i32, sec: RfcSection): void => {
   // An expected value its arguments pair with is placed by its printing's
   // label, as they are, not by its round.
   const repeated = l.bounds.filter((b: GateBound): boolean => b.of > 1 && !b.paired && !b.other && !b.callArgs)
-  if (l.heads.length > 0 && gateHeadingCase(l, inSection)) {
+  if (l.heads.length > 0) {
     // Placed under the case headings, by line.
+    gateHeadingCase(l, inSection)
   } else if (texts.length > 0 && repeated.length > 0) {
     // A string is placed by its line and a labelled value by its round;
     // nothing relates the two.
@@ -1737,7 +1774,7 @@ const gateHeadingVariant = (l: GateLits, k: Clause, sec: RfcSection): void => {
   const shownAll = [mine]
   for (const h of l.heads) {
     const w = rfcWithHeading(l.sec.lines[h])
-    if (gateSkeleton(w) === shape && !gateSameLabel(w, mine) && siblings.indexOf(w) < 0) {
+    if (gateSkeleton(w) === shape) {
       siblings.push(w)
       shownAll.push(w)
     }

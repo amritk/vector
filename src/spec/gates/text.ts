@@ -438,6 +438,31 @@ export const gateIntRounds = (lines: string, label: string, n: string): i32[] =>
 }
 
 /**
+ * The lines a label is printed on with the integer `n` after it, for
+ * placing the value by line (under a case heading).
+ *
+ * @param lines the section's lines (gateLines)
+ * @param label the label
+ * @param n the integer, as decimal text
+ * @returns the index in `lines` of each line that carries it; empty when none
+ */
+export const gateIntLines = (lines: string, label: string, n: string): i32[] => {
+  const out: i32[] = []
+  for (const j of gateLabelEnds(lines, label)) {
+    if (gateIntAt(lines, j, n)) {
+      let k = 0
+      for (let i = 0; i < j; i++) {
+        if (lines.charCodeAt(i) === 10) {
+          k = k + 1
+        }
+      }
+      out.push(k)
+    }
+  }
+  return out
+}
+
+/**
  * How many times a label is printed with an integer after it.
  *
  * @param lines the section's lines (gateLines)

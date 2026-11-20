@@ -3,7 +3,7 @@
  Status: INVALID
 
  Gate failures
-  ✘ fidelity A1-MIXED: args[0] 0x9d7f3e7d, expect 15293 are each printed in RFC §A.1 ("Sample Variable-Length Integer Decoding"), but in different examples (a paragraph, or its part between semicolons), so nothing pairs them as one test case
+  ✘ fidelity A1-MIXED: args[0] 0x9d7f3e7d, expect 15293 are each printed in RFC §A.1 ("Sample Variable-Length Integer Decoding"), but in different examples (a sentence, or its part between semicolons), so nothing pairs them as one test case
 
  Requirements
   ○ R-VARINT  §A.1 DEFINITION  "the two-byte sequence 0x7bbd decodes to 15,293"

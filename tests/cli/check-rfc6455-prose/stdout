@@ -3,7 +3,7 @@
  Status: INVALID
 
  Gate failures
-  ✘ fidelity 422-UPGRADE: args[0] "dGhlIHNhbXBsZSBub25jZQ==", expect "websocket" are each printed in RFC §4.2.2 ("Sending the Server's Opening Handshake"), but in different examples (a paragraph, or its part between semicolons), so nothing pairs them as one test case
+  ✘ fidelity 422-UPGRADE: args[0] "dGhlIHNhbXBsZSBub25jZQ==", expect "websocket" are each printed in RFC §4.2.2 ("Sending the Server's Opening Handshake"), but in different examples (a sentence, or its part between semicolons), so nothing pairs them as one test case
 
  Requirements
   ○ R-ACCEPT  §4.2.2 DEFINITION  "This value is then base64-encoded, to give the value "s3pPLMBiT…"

@@ -19,6 +19,8 @@ import {
   rfcSectionText,
   rfcUnvaluedLabels,
   rfcUnvaluedLines,
+  rfcWithHeading,
+  rfcWithHeadings,
 } from "../../../src/spec/source/rfc"
 
 /** A small RFC: a title page, page furniture, numbered sections, an appendix and hex in each shape. */
@@ -451,9 +453,65 @@ const rfcTestReadCases = (): string[][] => {
   ]
 }
 
+/** The case headings rfcWithHeading reads, and the lines it does not. Each row is a line and the words wanted. */
+const rfcTestWithRows = (t: Suite): void => {
+  const rows: string[][] = [
+    ['   With SHA-256, message = "sample":', "SHA-256"],
+    ['With SHA-1, message = "test":', "SHA-1"],
+    ['   With SHA-256, message = "sample"', ""],
+    ['   With SHA-256, message = "sam"ple":', ""],
+    ['   With SHA-256, the message = "sample":', ""],
+    ['   With SHA-256 message = "sample":', ""],
+    ['   With, message = "sample":', ""],
+    ['   With SHA-256, message "sample":', ""],
+    ['   with SHA-256, message = "sample":', ""],
+    ["   With this key, the signer computes:", ""],
+  ]
+  for (const r of rows) {
+    t.eqStr(`rfcWithHeading ${r[0]}`, rfcWithHeading(r[0]), r[1])
+  }
+}
+
+/** Case headings in RFC 6979's layout, one on each side of a page break, then a section without. */
+const rfcTestHeadingsText = (): string =>
+  [
+    "Request for Comments: 6979",
+    "\f",
+    "A.1.  Cases",
+    "",
+    '   With SHA-1, message = "sample":',
+    "   k = 01",
+    '   With SHA-256, message = "sample":',
+    "   k = 02",
+    rfcTestBreak(41),
+    '   With SHA-1, message = "test":',
+    "   k = 03",
+    "",
+    "A.2.  None",
+    "",
+    "   k = 04",
+    "",
+  ].join("\n")
+
+/** rfcWithHeadings: the heading lines of a section, across a page break, and none where there are none. */
+const rfcTestHeadings = (t: Suite): void => {
+  rfcTestWithRows(t)
+  const doc = rfcParse(rfcTestHeadingsText())
+  const sec = rfcTestSection(doc, "A.1")
+  t.eqStr(
+    "rfcWithHeadings: each heading, on each side of the page break",
+    rfcWithHeadings(sec)
+      .map((h: i32): string => rfcWithHeading(sec.lines[h]))
+      .join(" "),
+    "SHA-1 SHA-256 SHA-1",
+  )
+  t.eqStr("rfcWithHeadings: none in a section without", `${rfcWithHeadings(rfcTestSection(doc, "A.2")).length}`, "0")
+}
+
 /** Reading an RFC's text: sections, page furniture, quotes and printed hex. */
 export const main = (): i32 => {
   const t = new Suite("spec/source rfc")
+  rfcTestHeadings(t)
   const doc = rfcParse(rfcTestText())
   t.ok("number", doc.number === 9999)
   t.eqStr(
