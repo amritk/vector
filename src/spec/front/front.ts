@@ -766,7 +766,7 @@ function frontModuleLine(t: FrontTok): Result<string, FrontRefusal> {
 }
 
 const frontNotModule = (m: string): string =>
-  `\`${m}\` is not a module path; write <root>/<path>, lowercase segments split by /`
+  `\`${m}\` is not a module path; write <root>/<segment>/…, each segment [a-z][a-z0-9_]*(-[a-z0-9][a-z0-9_]*)*, words joined by single - (RFC 3986 §3.3)`
 
 /** What a ts-interface block declares: the module under test and its functions. */
 export class FrontInterface {
