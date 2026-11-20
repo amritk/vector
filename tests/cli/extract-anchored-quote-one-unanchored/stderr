@@ -1,0 +1,1 @@
+vector: tests/fixtures/anchored-quote/specs/aq-one-unanchored.md:47 (tests/fixtures/anchored-quote/specs/aq-one-unanchored.xml:62): BCP 14 sentence has no anchor and no Untested: paragraph after it: "Implementations MUST include appropriate pad characters at the end of encoded data unless the specification referring to this document explicitly states otherwise."

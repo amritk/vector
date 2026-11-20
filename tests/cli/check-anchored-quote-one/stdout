@@ -1,0 +1,14 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ aq-one · aq-one (Spec 0001: aq — anchored quotes) · nish/aq
+ Status: CONTRACT_VALID
+
+ Requirements
+  ○ R-NO-LF  rfc4648 §3.1 MUST NOT  "Implementations MUST NOT add line feeds to base-encoded data un…"
+      ○ P-NO-LF (29 samples: 5 boundary)
+  ○ R-PAD  rfc4648 §3.2 MUST  "Implementations MUST include appropriate pad characters at the …"
+      ○ P-PAD (29 samples: 5 boundary)
+
+ Warnings
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run
