@@ -1,0 +1,39 @@
+{
+  "status": "REFUTED",
+  "dashboard": "╔════════════════════════════════════════════════════════════════════╗\n║                        VECTOR — PROOF REPORT                       ║\n╠════════════════════════════════════════════════════════════════════╣\n║ Prompt:  \"verify: tests/fixtures/replay-div/verify.json\"           ║\n║ Attempt: 1/1      Solver: Z3 4.16.0 (native)      Status: REFUTED  ║\n╠════════════════════════════════════════════════════════════════════╣\n║ LAYER 1 · ratio(a: Real, b: Real): Real                            ║\n║   { b == 0 }  a / b                                                ║\n║   { result == a }                                                  ║\n║   ✘ ensures AX2  REFUTED (sat)                                     ║\n║       counterexample: a = 1/2, b = 0 → result = 0                  ║\n║   ✘ division hazard in a / b (e.g. a = 30612, b = 0)               ║\n║   ⚠ guard b == 0 enforced at runtime; proven to hold at every      ║\n║   internal call site                                               ║\n╠════════════════════════════════════════════════════════════════════╣\n║ VERDICT: 2 CONTRACT VIOLATION(S) FOUND — SEE ABOVE                 ║\n║ \"Testing shows the presence of bugs, never their absence.\"         ║\n╚════════════════════════════════════════════════════════════════════╝",
+  "feedback": "Function ratio, ensures AX2 (result == a): REFUTED — counterexample a = 1/2, b = 0 gives result = 0.\nFunction ratio: possible division by zero in a / b (e.g. a = 30612, b = 0) — add a requires clause or an ite guard.",
+  "items": [
+    {
+      "function": "ratio",
+      "axiomId": "AX2",
+      "property": "result == a",
+      "issue": "counterexample",
+      "counterexample": {
+        "inputs": {
+          "a": "1/2",
+          "b": "0"
+        },
+        "result": "0",
+        "replay": "not-replayed",
+        "replayDetail": "a value depends on a division by zero, which z3 leaves unspecified"
+      },
+      "hint": "The postcondition is false for the input shown. Fix the body or tighten a requires clause so it holds for all remaining inputs."
+    },
+    {
+      "function": "ratio",
+      "axiomId": "(division)",
+      "property": "a / b",
+      "issue": "division-hazard",
+      "counterexample": {
+        "inputs": {
+          "a": "30612",
+          "b": "0"
+        },
+        "result": "0",
+        "replay": "confirmed"
+      },
+      "hint": "The denominator may be zero on some reachable path. Add a requires clause (denominator != 0) or guard the division with an ite."
+    }
+  ],
+  "styleWarnings": []
+}

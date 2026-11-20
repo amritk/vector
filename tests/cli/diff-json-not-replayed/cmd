@@ -1,0 +1,1 @@
+vector diff --json tests/fixtures/replay-div/old.json tests/fixtures/replay-div/new.json

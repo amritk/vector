@@ -206,6 +206,14 @@ What replaying `cex` found (`confirmed`, `not-replayed`, `mismatch`); "" when it
 replay: string
 ```
 
+#### FeedbackItem.replayDetail
+
+For a `mismatch`, the first check that differed; for `not-replayed`, why; "" otherwise.
+
+```ts
+replayDetail: string
+```
+
 #### FeedbackItem.withCex
 
 Attaches a counterexample.
@@ -231,7 +239,11 @@ this item, to chain
 Attaches z3's counterexample and what replaying it found.
 
 ```ts
-withReplayedCex(cex: Counterexample, replay: string): FeedbackItem
+withReplayedCex(
+  cex: Counterexample,
+  replay: string,
+  replayDetail: string,
+): FeedbackItem
 ```
 
 <scalar-field name="cex" type="Counterexample" required>
@@ -243,6 +255,12 @@ the counterexample
 <scalar-field name="replay" type="string" required>
 
 the replay's outcome
+
+</scalar-field>
+
+<scalar-field name="replayDetail" type="string" required>
+
+the replay's detail: why it did not confirm
 
 </scalar-field>
 
@@ -535,7 +553,8 @@ depends on the status: PROVEN has `dashboard`, `emittedCode` and
 `styleWarnings`; REFUTED, UNKNOWN and MISMATCH have `dashboard`,
 `feedback`, `items` and `styleWarnings`; INVALID has `errors` and
 `feedback`; ERROR has `message`. A counterexample z3 gave carries
-`replay`: `confirmed`, `not-replayed` or `mismatch`.
+`replay`: `confirmed`, `not-replayed` or `mismatch`, and the last two
+`replayDetail`, why.
 
 ```ts
 function verifyOutcomeJson(outcome: VerifyOutcome): OutJson

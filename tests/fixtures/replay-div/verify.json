@@ -1,0 +1,22 @@
+{
+  "programName": "ratio",
+  "functions": [
+    {
+      "name": "ratio",
+      "layer": 1,
+      "purpose": "Divide a by a zero b.",
+      "params": [
+        { "name": "a", "type": "Real" },
+        { "name": "b", "type": "Real" }
+      ],
+      "returnType": "Real",
+      "requires": [
+        { "axiomId": "AX1", "expr": { "kind": "binop", "op": "==", "left": { "kind": "var", "name": "b" }, "right": { "kind": "num", "value": "0" } } }
+      ],
+      "ensures": [
+        { "axiomId": "AX2", "expr": { "kind": "binop", "op": "==", "left": { "kind": "var", "name": "result" }, "right": { "kind": "var", "name": "a" } } }
+      ],
+      "body": { "kind": "binop", "op": "/", "left": { "kind": "var", "name": "a" }, "right": { "kind": "var", "name": "b" } }
+    }
+  ]
+}

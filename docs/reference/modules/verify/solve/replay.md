@@ -22,6 +22,7 @@ Generated from [src/verify/solve/replay.ts](https://github.com/amritk/vector/blo
 - [`REPLAY_CONFIRMED`](#replay_confirmed)
 - [`REPLAY_NOT_REPLAYED`](#replay_not_replayed)
 - [`REPLAY_MISMATCH`](#replay_mismatch)
+- [`replayJsonPut`](#replayjsonput)
 - [`REPLAY_NARROWED`](#replay_narrowed)
 - [`REPLAY_WIDENED`](#replay_widened)
 - [`REPLAY_VALUE`](#replay_value)
@@ -67,6 +68,40 @@ The input does not do what z3 said: a bug in vector.
 ```ts
 const REPLAY_MISMATCH: string = "mismatch"
 ```
+
+### replayJsonPut
+
+Puts a counterexample's or witness's replay on its `--json` object:
+`replay` when it was replayed, and beside a `not-replayed` or `mismatch`
+one `replayDetail`, why. A `confirmed` one has no detail.
+
+```ts
+function replayJsonPut(obj: OutJson, outcome: string, detail: string): OutJson
+```
+
+<scalar-field name="obj" type="OutJson" required>
+
+the counterexample or witness object
+
+</scalar-field>
+
+<scalar-field name="outcome" type="string" required>
+
+the replay's outcome, "" when it was not replayed
+
+</scalar-field>
+
+<scalar-field name="detail" type="string" required>
+
+the replay's detail
+
+</scalar-field>
+
+<scalar-field name="returns" type="OutJson">
+
+`obj`
+
+</scalar-field>
 
 <a id="replay_narrowed"></a>
 
