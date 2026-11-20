@@ -22,7 +22,7 @@
  */
 
 import { jsonStringifyString } from "nish/json"
-import { asciiLower, split } from "nish/text"
+import { asciiLower } from "nish/text"
 import { toHex, utf8Bytes } from "../../core/hex"
 import { CheckContext, CheckNote } from "../check"
 import { charsTestVector } from "../contract/chars"
@@ -63,7 +63,6 @@ import {
   gateIntRounds,
   gateLines,
   gateQuotePairs,
-  gateSentenceBreaks,
   gateTextLines,
 } from "./text"
 import { GateWordBlock, gateWordBlocks } from "./words"
@@ -146,11 +145,6 @@ class GateLits {
   /** The case heading every value is printed under (gateHeadingCase), or -1. */
   chosen: i32
   /**
-   * Whether every value is printed in the section's prose (gateProseCase):
-   * 0 not, 1 in one example, which pairs them, 2 in different examples.
-   */
-  prose: i32
-  /**
    * @param id the vector's id
    * @param where the section, for messages
    * @param sec the section
@@ -177,7 +171,6 @@ class GateLits {
     this.hint = ""
     this.heads = rfcWithHeadings(sec)
     this.chosen = -1
-    this.prose = 0
   }
 }
 
@@ -282,9 +275,7 @@ const gateHexCheck = (l: GateLits, at: string, hex: string, label: string | null
     }
   }
   if (label === null) {
-    // One prose example pairs a value with the text around it, which is
-    // not a label.
-    if (named.length === 0 || l.prose > 0) {
+    if (named.length === 0) {
       const u = new GateBound(at, null)
       for (const v of whole) {
         u.shown.push(v.line)
@@ -676,207 +667,18 @@ const gateLitCheck = (l: GateLits, lit: Literal, at: string): void => {
   const label = lit.label
   const name = lit.kind === LitKind.Int ? "integer" : "f64"
   if (label === null) {
-    if (l.prose === 0) {
-      gateNote(
-        l,
-        `${l.id}.${at}`,
-        `not checked against the RFC: the ${name} ${lit.text} has no "label" to find it by`,
-        true,
-      )
-    }
+    gateNote(
+      l,
+      `${l.id}.${at}`,
+      `not checked against the RFC: the ${name} ${lit.text} has no "label" to find it by`,
+      true,
+    )
   } else if (lit.kind === LitKind.Int) {
     gateNumberCheck(l, lit, at, gateIntRounds(l.lines, label, lit.text), gateIntLabelCount(l.lines, label))
   } else {
     const printed = gateF64Printed(l.lines, label)
     gateNumberCheck(l, lit, at, gateF64Has(lit, printed), printed.length)
   }
-}
-
-/**
- * Whether a line before a page break clearly goes on into the next page:
- * it ends in a letter, a digit or a comma. Anything else (`.`, `?`, `!`,
- * `:`, a closing bracket or quote) ends the paragraph at the break.
- */
-const gateContinuesSentence = (line: string): boolean => {
-  const t = rfcNormalize(line)
-  const c = t.length > 0 ? t.charCodeAt(t.length - 1) : 0
-  // 44 is `,`.
-  return gateFidDigit(c) || (gateFidLetter(c) && c !== 95) || c === 44
-}
-
-/** Whether a sentence, lowercased, says `phrase` as words of its own (not "this stringent"). */
-const gateSaysPhrase = (lower: string, phrase: string): boolean => {
-  let at = toI32(lower.indexOf(phrase))
-  while (at >= 0) {
-    const after = at + phrase.length < lower.length ? lower.charCodeAt(at + phrase.length) : 32
-    if (!gateFidLetter(after)) {
-      return true
-    }
-    at = toI32(lower.indexOf(phrase, at + 1))
-  }
-  return false
-}
-
-/**
- * The examples a section's prose prints, normalized: each sentence
- * (gateSentenceBreaks), with the ones after it that go on about "this
- * string" or "this value" (RFC 6455 §4.2.2 hashes a key and encodes the
- * hash in three sentences), split at "; " (RFC 9000 §A.1 prints four
- * sequences and their values in one sentence, a semicolon apart). Blank
- * lines end a paragraph, except around a page break after a line that
- * clearly goes on (gateContinuesSentence), which the page's furniture pads
- * with blank lines; any other page break ends its paragraph.
- */
-const gateProseUnits = (l: GateLits): string[] => {
-  const paras: string[] = []
-  const lines = l.sec.lines
-  let para: string[] = []
-  let blank = false
-  let broke = false
-  for (let i = 0; i < lines.length; i++) {
-    broke = broke || l.sec.pageBreaks.indexOf(i) >= 0
-    if (rfcNormalize(lines[i]).length === 0) {
-      blank = true
-      continue
-    }
-    if (blank && para.length > 0 && !(broke && gateContinuesSentence(para[para.length - 1]))) {
-      paras.push(rfcNormalize(para.join(" ")))
-      para = []
-    }
-    para.push(lines[i])
-    blank = false
-    broke = false
-  }
-  if (para.length > 0) {
-    paras.push(rfcNormalize(para.join(" ")))
-  }
-  const examples: string[] = []
-  for (const p of paras) {
-    const breaks = gateSentenceBreaks(p, [])
-    let start = 0
-    for (let i = 0; i <= breaks.length; i = i + 3) {
-      const end = i < breaks.length ? breaks[i + 1] : p.length
-      const sentence = p.substring(start, end)
-      const lower = asciiLower(sentence)
-      const goesOn = gateSaysPhrase(lower, "this string") || gateSaysPhrase(lower, "this value")
-      if (goesOn && start > 0) {
-        examples[examples.length - 1] = `${examples[examples.length - 1]} ${sentence}`
-      } else {
-        examples.push(sentence)
-      }
-      start = i < breaks.length ? breaks[i + 2] : p.length
-    }
-  }
-  const out: string[] = []
-  for (const e of examples) {
-    for (const part of split(e, "; ")) {
-      out.push(part)
-    }
-  }
-  return out
-}
-
-/**
- * Whether `w` is printed in `unit` as a token of its own (gateFidSpans),
- * case ignored: not inside a longer name, hex or number (`SHA-256`, `5.2`),
- * not beside a `-` (`-5`, `16-bit`), and not after `=` or `:`, which label a
- * value.
- */
-/**
- * Whether a value at `s` is printed as a label's value, after `=` or `:`
- * right before it or one space before it (`BASE64("f") = "Zg=="`): a line
- * of a dump, not prose.
- */
-const gateProseLabelled = (unit: string, s: i32): boolean => {
-  const before = s > 0 ? unit.charCodeAt(s - 1) : 32
-  const mark = before === 32 && s >= 2 ? unit.charCodeAt(s - 2) : before
-  // 61 is `=` and 58 `:`.
-  return mark === 61 || mark === 58
-}
-
-const gateProseWord = (unit: string, w: string): boolean => {
-  const spans = gateFidSpans(unit)
-  for (let i = 0; i + 1 < spans.length; i = i + 2) {
-    const s = spans[i]
-    const e = spans[i + 1]
-    if (asciiLower(unit.substring(s, e)) !== w) {
-      continue
-    }
-    // 45 is `-`.
-    const before = s > 0 ? unit.charCodeAt(s - 1) : 32
-    const after = e < unit.length ? unit.charCodeAt(e) : 32
-    if (before !== 45 && after !== 45 && !gateProseLabelled(unit, s)) {
-      return true
-    }
-  }
-  return false
-}
-
-/** Whether a literal is printed in one prose example: a quoted string, a `0x` value, or a whole number, commas between its thousands or not. */
-const gateProseHas = (unit: string, lit: Literal): boolean => {
-  if (lit.kind === LitKind.Str) {
-    const quoted = `"${lit.text}"`
-    let at = toI32(unit.indexOf(quoted))
-    while (at >= 0) {
-      if (!gateProseLabelled(unit, at)) {
-        return true
-      }
-      at = toI32(unit.indexOf(quoted, at + 1))
-    }
-    return false
-  }
-  if (lit.kind === LitKind.Hex) {
-    return gateProseWord(unit, `0x${gateLitHex(lit)}`)
-  }
-  if (lit.kind === LitKind.Int) {
-    return gateProseWord(unit, lit.text) || gateProseWord(unit, gateGrouped(lit.text))
-  }
-  return false
-}
-
-/** Whether one prose example prints every literal. */
-const gateProseHasAll = (unit: string, lits: Literal[]): boolean =>
-  lits.every((lit: Literal): boolean => gateProseHas(unit, lit))
-
-/** A literal for a message: `args[0] "abc"`, `args[0] 0x7bbd`, `expect 15293`. */
-const gateProseText = (lit: Literal, at: string): string => {
-  if (lit.kind === LitKind.Str) {
-    return `${at} ${jsonStringifyString(lit.text)}`
-  }
-  return lit.kind === LitKind.Hex ? `${at} 0x${gateLitHex(lit)}` : `${at} ${lit.text}`
-}
-
-/**
- * Values printed in prose, not under labels or case headings, are one test
- * case when one example prints them all (gateProseUnits), and two test
- * cases' when each is printed but no example holds every one. Either way the
- * text around a value is not its label, and a line does not pair them.
- */
-const gateProseCase = (l: GateLits, lits: Literal[], ats: string[]): void => {
-  if (lits.length < 2) {
-    return
-  }
-  const units = gateProseUnits(l)
-  for (const lit of lits) {
-    if (!units.some((u: string): boolean => gateProseHas(u, lit))) {
-      return
-    }
-  }
-  if (units.some((u: string): boolean => gateProseHasAll(u, lits))) {
-    l.prose = 1
-    return
-  }
-  l.prose = 2
-  const each: string[] = []
-  for (let i = 0; i < lits.length; i++) {
-    each.push(gateProseText(lits[i], ats[i]))
-  }
-  gateNote(
-    l,
-    l.id,
-    `${each.join(", ")} are each printed in ${l.inSection}, but in different examples (a sentence, or its part between semicolons), so nothing pairs them as one test case`,
-    false,
-  )
 }
 
 /** A bound's text, for a message: `args[0] "abc"`. */
@@ -1120,7 +922,7 @@ const gateOneTestCase = (l: GateLits, args: i32, sec: RfcSection): void => {
   // one test case with every other argument, not exempt from the checks.
   // One refused as another case's is not placed again: its refusal says why.
   const texts = l.bounds.filter((b: GateBound): boolean => (b.lines !== null || b.paired) && !b.other)
-  if (texts.length > 1 && l.prose === 0) {
+  if (texts.length > 1) {
     let shared = false
     for (const line of gateBoundPlaces(texts[0])) {
       if (texts.every((b: GateBound): boolean => gateBoundHasLine(b, line))) {
@@ -1929,17 +1731,6 @@ const gateFidelityVector = (ctx: CheckContext, out: string[], set: SourceSet, k:
   const cited = src !== null && src.kind === VectorSourceKind.Cite
   const word = gateResultWord(k.expect)
   const expect = k.expect
-  const lits: Literal[] = []
-  const ats: string[] = []
-  for (let i = 0; i < k.args.length; i++) {
-    lits.push(k.args[i])
-    ats.push(`args[${i}]`)
-  }
-  if (cited && word.length === 0 && expect !== null) {
-    lits.push(expect)
-    ats.push("expect")
-  }
-  gateProseCase(l, lits, ats)
   for (let i = 0; i < k.args.length; i++) {
     gateLitCheck(l, k.args[i], `args[${i}]`)
   }

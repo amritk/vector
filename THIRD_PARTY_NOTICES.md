@@ -12,7 +12,7 @@ that someone else wrote.
 | nish v0.34.0 excerpts | `tests/fixtures/mutate/` | MIT |
 | RFC 7748 excerpt, nish v0.39.0 `std/crypto/x25519.ts` | `tests/fixtures/x25519/` | IETF Trust Legal Provisions; MIT |
 | RFC 9001 and RFC 7914 excerpts | `tests/cli/check-rfc9001-wrapped/`, `tests/cli/check-rfc7914-wrapped/` | IETF Trust Legal Provisions |
-| RFC 6979, RFC 6455 and RFC 9000 excerpts | `tests/cli/check-rfc6979-cases/`, `tests/cli/check-rfc6455-prose/`, `tests/cli/check-rfc9000-prose/` | IETF Trust Legal Provisions |
+| RFC 6979 excerpt | `tests/cli/check-rfc6979-cases/` | IETF Trust Legal Provisions |
 
 ---
 
@@ -275,26 +275,16 @@ and Appendix A to the end of A.1, excerpted unchanged.
 Both are redistributed under the IETF Trust Legal Provisions, §3.c.iii; please
 reproduce this note if possible.
 
-### RFC 6979, RFC 6455 and RFC 9000 (`tests/cli/check-rfc6979-cases/`, `tests/cli/check-rfc*-prose/`)
+### RFC 6979 (`tests/cli/check-rfc6979-cases/`)
 
 `tests/cli/check-rfc6979-cases/rfcs/rfc6979.txt` is an excerpt of RFC 6979,
 "Deterministic Usage of the Digital Signature Algorithm (DSA) and Elliptic
 Curve Digital Signature Algorithm (ECDSA)" (IETF, © 2013 IETF Trust and the
 persons identified as the document authors), from
 <https://www.rfc-editor.org/rfc/rfc6979.txt>: its first-page header and title,
-and Appendix A.2.5 with the page footers, form feeds and headers around it.
-`tests/cli/check-rfc6455-prose/rfcs/rfc6455.txt` is an excerpt of RFC 6455,
-"The WebSocket Protocol" (IETF, © 2011 IETF Trust and the persons identified
-as the document authors), from <https://www.rfc-editor.org/rfc/rfc6455.txt>:
-its first-page header and title, and Section 4.2.2 with the page footers, form
-feeds and headers around it. `tests/cli/check-rfc9000-prose/rfcs/rfc9000.txt`
-is an excerpt of RFC 9000, "QUIC: A UDP-Based Multiplexed and Secure
-Transport" (IETF, © 2021 IETF Trust and the persons identified as the document
-authors), from <https://www.rfc-editor.org/rfc/rfc9000.txt>: its first-page
-header and title, and Appendix A.1 with the note before it (the
-`Appendix A.` heading and its first sentence are left out). All three are
-excerpted unchanged and redistributed under the IETF Trust Legal Provisions,
-§3.c.iii; please reproduce this note if possible.
+and Appendix A.2.5 with the page footers, form feeds and headers around it,
+excerpted unchanged. It is redistributed under the IETF Trust Legal
+Provisions, §3.c.iii; please reproduce this note if possible.
 
 The rest of `tests/fixtures/` (including `nish-hex/`) and `specs/` was written
 for vector and is under vector's own license.

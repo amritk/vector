@@ -751,24 +751,6 @@ of matching bytes:
   line too. A value under the headings that is not placed by its line (a
   decimal fraction, a word block) is refused: nothing says which case it is
   under, so cite values printed on lines of their own.
-- **Prose examples.** Where no label names the values, a vector cited to
-  prose pairs them only when one example prints them all: a sentence, or
-  its part between `; `. A sentence that refers back with "this string" or
-  "this value" continues the example before it in its paragraph. A
-  sentence ends at `.`, `?` or `!`, after any closing `"`, `'` or `)`. A
-  page break ends the paragraph unless the line before it clearly goes on:
-  it ends in a letter, a digit or a comma.
-  RFC 6455 §4.2.2's NOTE prints the key `"dGhlIHNhbXBsZSBub25jZQ=="`, hashes
-  "this string", and base64-encodes "This value" to
-  `"s3pPLMBiTxaQ9kYGzzhZRbK+xOo="`: three sentences, one example, so they
-  pair; that key beside `"websocket"` from another paragraph is refused ("in
-  different examples"). RFC 9000 §A.1 prints its varints in one sentence,
-  split by semicolons: `0x7bbd` pairs with `15,293`
-  (`{"hex": "7bbd"}`, `{"int": 15293}`, the number with or without its
-  commas), not with `494,878,333`. In prose, a string is found in quotes, a
-  hex value as `0x…`, and an integer as a whole number of its own, not in
-  a name (`key_256`, `SHA-256`, `16-bit`); a value after `=` or `:` is
-  labelled, so it needs its label, and two such lines are not one example.
 - **Decimals.** In an RFC, an unnamed run of digit-only lines, or one under a
   name that calls it a number (`Input scalar as a number (base 10):`), is a
   decimal number, not bytes, and is not a value.

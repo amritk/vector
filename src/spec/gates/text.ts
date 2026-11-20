@@ -616,36 +616,11 @@ const gateTerminatorStart = (text: string, start: i32, end: i32): i32 => {
 }
 
 /**
- * Where a run of closing marks after a terminator ends: `"`, `'`, `)` and
- * `”`, in any order.
- *
- * @param text the normalized text
- * @param at the offset just after the terminator
- * @returns the offset after the last closing mark
- */
-const gateClosersEnd = (text: string, at: i32): i32 => {
-  let k = at
-  while (k < text.length) {
-    const c = text.charCodeAt(k)
-    // 34 is `"`, 39 `'`, 41 `)`.
-    if (c === 34 || c === 39 || c === 41) {
-      k = k + 1
-    } else if (text.substring(k, k + 3) === "\u201d") {
-      k = k + 3
-    } else {
-      return k
-    }
-  }
-  return k
-}
-
-/**
  * Where a section's normalized text breaks into sentences, three numbers a
  * break: where the sentence before it stops (at its terminator), where its
  * terminator and any closing quote end, and where the next sentence starts
  * (after any list bullet). A paragraph's end always breaks. Within one, a
- * sentence ends at `.`, `?` or `!` before a space, after any run of closing
- * marks (`"`, `'`, `)`, `”`), except a period
+ * sentence ends at `.`, `?`, `."` or `.”` before a space, except a period
  * that ends an abbreviation (e.g., i.e., etc., vs., cf., Fig., Sec., et
  * al., a.k.a., case ignored): an identifier such as `hexDecode` may start
  * the next sentence. A list item
@@ -665,12 +640,17 @@ export const gateSentenceBreaks = (text: string, paras: i32[]): i32[] => {
       p = p + 1
     }
     const c = text.charCodeAt(i)
-    // 46 is `.`, 63 `?`, 33 `!`, 59 `;`, 58 `:`.
-    if (c === 46 || c === 63 || c === 33 || c === 59 || c === 58) {
-      const k = gateClosersEnd(text, i + 1)
+    // 46 is `.`, 63 `?`, 59 `;`, 58 `:`; 34 is `"`.
+    if (c === 46 || c === 63 || c === 59 || c === 58) {
+      let k = i + 1
+      if (text.charCodeAt(k) === 34) {
+        k = k + 1
+      } else if (text.substring(k, k + 3) === "\u201d") {
+        k = k + 3
+      }
       if (k + 1 < text.length && text.charCodeAt(k) === 32) {
         const bullet = gateBulletLen(text, k + 1)
-        let ends = bullet > 0 || c === 63 || c === 33 || (p < paras.length && paras[p] === k + 1)
+        let ends = bullet > 0 || c === 63 || (p < paras.length && paras[p] === k + 1)
         if (c === 46 && !ends) {
           ends = !gateAbbreviationEnds(text, i)
         }

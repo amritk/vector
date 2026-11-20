@@ -116,30 +116,11 @@ const casesTestRun = (call: string, id: string, args: string, expect: string): s
   casesTestRunWith(`{"name": "x", "type": "bytes"}, {"name": "m", "type": "string"}`, call, id, args, expect)
 
 /** casesTestRun, the function's params' JSON `params`. */
-const casesTestRunWith = (params: string, call: string, id: string, args: string, expect: string): string[] =>
-  casesTestCheck(
-    "6979",
-    casesTestRfc(),
-    `{"name": "${call}", "params": [${params}], "returns": "bytes"}`,
-    call,
-    id,
-    args,
-    expect,
-  )
-
-/** The fidelity gate's findings and warnings for one vector of the function `fn` (its JSON), citing §`id` of RFC `num`, printed as `rfc`. */
-const casesTestCheck = (
-  num: string,
-  rfc: string,
-  fn: string,
-  call: string,
-  id: string,
-  args: string,
-  expect: string,
-): string[] => {
+const casesTestRunWith = (params: string, call: string, id: string, args: string, expect: string): string[] => {
+  const fn = `{"name": "${call}", "params": [${params}], "returns": "bytes"}`
   const contract = `{
   "contract": "c7",
-  "source": {"title": "T", "rfc": ${num}},
+  "source": {"title": "T", "rfc": 6979},
   "target": {"module": "nish/x"},
   "requirements": [{"id": "R1", "section": "1", "level": "MUST", "quote": "It MUST derive."}],
   "functions": [${fn}],
@@ -151,8 +132,8 @@ const casesTestCheck = (
   const ctx = new CheckContext("contracts/c7.json", ".")
   ctx.contract = contractParse(contract, "c7").expect("parse")
   const set = new SourceSet()
-  set.main = `rfc${num}`
-  set.sources.push(new LoadedSource(`rfc${num}`, "r.txt", "r.txt", rfcParse(rfc)))
+  set.main = "rfc6979"
+  set.sources.push(new LoadedSource("rfc6979", "r.txt", "r.txt", rfcParse(casesTestRfc())))
   ctx.sources = set
   const out = gateFidelity(ctx)
   for (const n of gateWarnings(ctx)) {
@@ -167,15 +148,6 @@ const casesTestHex = (hex: string, label: string): string => `{"hex": "${hex}", 
 /** Whether `got` is empty when `want` is, else one message holding `want`. */
 const casesTestRowIs = (t: Suite, name: string, got: string[], want: string): void => {
   const ok = want.length === 0 ? got.length === 0 : got.length === 1 && got[0].indexOf(want) >= 0
-  t.ok(name, ok)
-  if (!ok) {
-    console.log(`${name}:\n${got.join("\n")}`)
-  }
-}
-
-/** Whether `got` is empty when `want` is, else its first message holds `want`. */
-const casesTestRowFirst = (t: Suite, name: string, got: string[], want: string): void => {
-  const ok = want.length === 0 ? got.length === 0 : got.length > 0 && got[0].indexOf(want) >= 0
   t.ok(name, ok)
   if (!ok) {
     console.log(`${name}:\n${got.join("\n")}`)
@@ -334,266 +306,9 @@ const casesTestNoHeadingRows = (t: Suite): void => {
   )
 }
 
-/** A footer, form feed and header of RFC `rfc`, by `author`. */
-const casesTestFurniture = (author: string, rfc: string, title: string, page: i32): string =>
-  `\n${author}                    Standards Track                    [Page ${page}]\n\f\nRFC ${rfc}                   ${title}               December 2011\n`
-
-/**
- * RFC 6455 §4.2.2's NOTE, which a page break splits inside a sentence, then
- * another paragraph that starts the next page after the NOTE's last
- * sentence ends its page.
- */
-const casesTestWs = (): string =>
-  [
-    "Request for Comments: 6455",
-    "",
-    "1.  Rules",
-    "",
-    "   It MUST derive.",
-    "",
-    "4.2.2.  Sending",
-    "",
-    "   NOTE: As an example, if the value of the |Sec-WebSocket-Key| header",
-    '   field in the client\'s handshake were "dGhlIHNhbXBsZSBub25jZQ==", the',
-    '   server would append the string "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"',
-    '   to form the string "dGhlIHNhbXBsZSBub25jZQ==258EAFA5-E914-47DA-95CA-',
-    '   C5AB0DC85B11".  The server would then take the SHA-1 hash of this',
-    casesTestFurniture("Fette & Melnikov", "6455", "The WebSocket Protocol", 23),
-    "   string, giving the value 0xb3 0x7a 0x4f 0x2c 0xc0 0x62 0x4f 0x16 0x90",
-    "   0xf6 0x46 0x06 0xcf 0x38 0x59 0x45 0xb2 0xbe 0xc4 0xea.  This value",
-    "   is then base64-encoded, to give the value",
-    '   "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=", which would be returned in the',
-    "   |Sec-WebSocket-Accept| header field.",
-    casesTestFurniture("Fette & Melnikov", "6455", "The WebSocket Protocol", 24),
-    '   As another example, a key "AQIDBAUGBwgJCgsMDQ4PEA==" gives "other=".',
-    "",
-  ].join("\n")
-
-/**
- * RFC 9000 §A.1's example, four sequences a semicolon apart, which a page
- * break splits inside the third, then a paragraph of labelled values that
- * no sentence ends, and one more.
- */
-const casesTestQuic = (): string =>
-  [
-    "Request for Comments: 9000",
-    "",
-    "1.  Rules",
-    "",
-    "   It MUST derive.",
-    "",
-    "A.1.  Sample Variable-Length Integer Decoding",
-    "",
-    "   For example, the eight-byte sequence 0xc2197c5eff14e88c decodes to",
-    "   the decimal value 151,288,809,941,952,652; the four-byte sequence",
-    "   0x9d7f3e7d decodes to 494,878,333; the two-byte sequence 0x7bbd",
-    casesTestFurniture("Iyengar & Thomson", "9000", "QUIC Transport", 140),
-    "   decodes to 15,293; and the single byte 0x25 decodes to 37 (as does",
-    "   the two-byte sequence 0x4025).",
-    "",
-    "   In = 0x0a0b, and Out: 0x0c0d, after the sequence 0x0102 of 258 with Max:0x0e0f",
-    "",
-    "   The sequence 0x0304 decodes to 772.",
-    "",
-    "   The sequence 0x0D0E decodes to 3342.",
-    "",
-    "A.2.  Sample Packet Number Encoding Algorithm",
-    "",
-    "   For example, if an endpoint has received an acknowledgment for packet",
-    "   0xabe8b3 and is sending a packet with a number of 0xac5c02, there are",
-    "   29,519 (0x734f) outstanding packet numbers.  In order to represent at",
-    "   least twice this range (59,038 packets, or 0xe69e), 16 bits are",
-    "   required.",
-    "",
-    "   This value 0x0707 decodes to 1799.",
-    "",
-    "A.3.  Names",
-    "",
-    "   The SHA-256 sequence 0x0506 of -5 is 16-bit, as is key_256, and",
-    "   decodes to 1286.",
-    "",
-    "A.4.  Breaks",
-    "",
-    "   The sequence 0x0601 decodes to 1537 (see 0x0602.)",
-    casesTestFurniture("Iyengar & Thomson", "9000", "QUIC Transport", 141),
-    '   The sequence 0x0603 decodes to 1539 as "Out:"',
-    casesTestFurniture("Iyengar & Thomson", "9000", "QUIC Transport", 142),
-    "   The sequence 0x0604 decodes to 1540 as follows:",
-    casesTestFurniture("Iyengar & Thomson", "9000", "QUIC Transport", 143),
-    "   The sequence 0x0605 decodes to 1541, etc.",
-    casesTestFurniture("Iyengar & Thomson", "9000", "QUIC Transport", 144),
-    "   The sequence 0x0606 decodes to 1542.",
-    "",
-    "A.5.  Ends",
-    "",
-    "   The sequence 0x0711 decodes to 1809 (see 0x0712.)  It then decodes",
-    "   0x0713 to 1811.  The sequence 0x0721 decodes to 1825 'as 0x0722.'",
-    "   It then decodes 0x0723 to 1827.  The sequence 0x0731 decodes to",
-    "   1841!  It then decodes 0x0733 to 1843.  The sequence 0x0741 decodes",
-    "   to 1857.  This valueless 0x0742 decodes to 1858.",
-    "",
-    "A.6.  Pages",
-    "",
-    "   The sequence 0x0801 decodes to 2049 (see 0x0802)",
-    casesTestFurniture("Iyengar & Thomson", "9000", "QUIC Transport", 145),
-    "   The sequence 0x0803 decodes to 2051 (or 0x0804?)",
-    casesTestFurniture("Iyengar & Thomson", "9000", "QUIC Transport", 146),
-    "   The sequence 0x0805 decodes to 2053!",
-    casesTestFurniture("Iyengar & Thomson", "9000", "QUIC Transport", 147),
-    '   The sequence 0x0807 decodes to 2055 as "0x0808."',
-    casesTestFurniture("Iyengar & Thomson", "9000", "QUIC Transport", 148),
-    "   The sequence 0x0809 decodes to 2057 and,",
-    casesTestFurniture("Iyengar & Thomson", "9000", "QUIC Transport", 149),
-    "   the sequence 0x080a to 2058 and 0x0810",
-    casesTestFurniture("Iyengar & Thomson", "9000", "QUIC Transport", 150),
-    "   to 2064.",
-    "",
-    "A.7.  Dump",
-    "",
-    '   BASE64("f") = "Zg=="',
-    '   BASE64("fo") = "Zm8="',
-    "",
-    '   The string "foo" encodes as "Zm9v".',
-    "",
-    '   Its input = "bar", that is, the string "bar"',
-    '   encodes as "YmFy".',
-    "",
-  ].join("\n")
-
-/**
- * Values printed in one prose example pair, and values from two do not:
- * RFC 6455's NOTE across a page break and RFC 9000's semicolon-separated
- * sequences. Each row is a name, the args' JSON, the expected value's JSON
- * and the message wanted ("" for none).
- */
-const casesTestProseRows = (t: Suite): void => {
-  const ws = casesTestWs()
-  const wsFn = `{"name": "accept", "params": [{"name": "k", "type": "string"}], "returns": "string"}`
-  const wsRows: string[][] = [
-    [
-      "key and accept value, a page break between",
-      '{"str": "dGhlIHNhbXBsZSBub25jZQ=="}',
-      '{"str": "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="}',
-      "",
-    ],
-    ["the paragraph after the page break", '{"str": "AQIDBAUGBwgJCgsMDQ4PEA=="}', '{"str": "other="}', ""],
-    [
-      "NOTE's key, the next paragraph's value",
-      '{"str": "dGhlIHNhbXBsZSBub25jZQ=="}',
-      '{"str": "other="}',
-      "but in different examples",
-    ],
-    [
-      "the next paragraph's key, NOTE's value",
-      '{"str": "AQIDBAUGBwgJCgsMDQ4PEA=="}',
-      '{"str": "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="}',
-      "but in different examples",
-    ],
-    [
-      "a value only part of a quoted string",
-      '{"str": "dGhlIHNhbXBsZSBub25jZQ"}',
-      '{"str": "other="}',
-      "only part of a longer value",
-    ],
-  ]
-  for (const r of wsRows) {
-    casesTestRowIs(t, `6455 §4.2.2: ${r[0]}`, casesTestCheck("6455", ws, wsFn, "accept", "4.2.2", r[1], r[2]), r[3])
-  }
-  const quic = casesTestQuic()
-  const quicFn = `{"name": "decode", "params": [{"name": "b", "type": "bytes"}], "returns": "u64"}`
-  const quicRows: string[][] = [
-    ["eight bytes, commas in the value", '{"hex": "c2197c5eff14e88c"}', '{"int": "151288809941952652"}', ""],
-    ["four bytes", '{"hex": "9d7f3e7d"}', '{"int": 494878333}', ""],
-    ["two bytes, a page break between", '{"hex": "7bbd"}', '{"int": 15293}', ""],
-    ["one byte", '{"hex": "25"}', '{"int": 37}', ""],
-    ["the two bytes in parentheses", '{"hex": "4025"}', '{"int": 37}', ""],
-    ["the next sequence's value", '{"hex": "9d7f3e7d"}', '{"int": 15293}', "but in different examples"],
-    ["the sequence before's value", '{"hex": "7bbd"}', '{"int": 494878333}', "but in different examples"],
-    ["two parts apart", '{"hex": "25"}', '{"int": 15293}', "but in different examples"],
-    ["a number only part of a printed one", '{"hex": "7bbd"}', '{"int": 15}', 'name it with "label"'],
-    ["a number ending a printed one", '{"hex": "c2197c5eff14e88c"}', '{"int": 809941952652}', 'name it with "label"'],
-    ["a value only part of a printed one", '{"hex": "40"}', '{"int": 37}', "is only part of a value"],
-    ["a paragraph after one no sentence ends", '{"hex": "0304"}', '{"int": 772}', ""],
-    ["a value from the paragraph before", '{"hex": "0102"}', '{"int": 772}', "but in different examples"],
-    ["a value after =, which labels it", '{"hex": "0a0b"}', '{"int": 258}', 'name it with "label"'],
-    ["a value after :, which labels it", '{"hex": "0102"}', '{"hex": "0c0d"}', 'name it with "label"'],
-    ["a value right after :, which labels it", '{"hex": "0e0f"}', '{"int": 258}', 'name it with "label"'],
-    ["unlabelled values in that paragraph", '{"hex": "0102"}', '{"int": 258}', ""],
-    ["values after = and :, which label them", '{"hex": "0a0b"}', '{"hex": "0c0d"}', 'name it with "label"'],
-    ["a sequence printed in capitals", '{"hex": "0d0e"}', '{"int": 3342}', ""],
-  ]
-  for (const r of quicRows) {
-    const got = casesTestCheck("9000", quic, quicFn, "decode", "A.1", r[1], r[2])
-    casesTestRowFirst(t, `9000 §A.1: ${r[0]}`, got, r[3])
-  }
-  const apart = "are each printed in RFC §"
-  const otherRows: string[][] = [
-    ["A.2", "a value and its count, in one sentence", '{"hex": "734f"}', '{"int": 29519}', ""],
-    [
-      "A.2",
-      "a value, and the next sentence's twice it",
-      '{"hex": "734f"}',
-      '{"int": 59038}',
-      `args[0] 0x734f, expect 59038 ${apart}A.2 ("Sample Packet Number Encoding Algorithm"), but in different examples (a sentence, or its part between semicolons)`,
-    ],
-    ["A.2", "a paragraph's first sentence on this value, the one before's", '{"hex": "e69e"}', '{"int": 1799}', apart],
-    ["A.3", "a number of its own", '{"hex": "0506"}', '{"int": 1286}', ""],
-    ["A.3", "a number inside a name", '{"hex": "0506"}', '{"int": 256}', 'name it with "label"'],
-    ["A.3", "a number after a minus", '{"hex": "0506"}', '{"int": 5}', 'name it with "label"'],
-    ["A.3", "a number before a hyphen", '{"hex": "0506"}', '{"int": 16}', 'name it with "label"'],
-    ["A.4", "a sentence ending .) at a page break, the next page's", '{"hex": "0601"}', '{"int": 1539}', apart],
-    ["A.4", "a sentence ending :\" at a page break, the next page's", '{"hex": "0603"}', '{"int": 1540}', apart],
-    ["A.4", "a sentence ending : at a page break, the next page's", '{"hex": "0604"}', '{"int": 1541}', apart],
-    ["A.4", "a sentence ending etc. at a page break, the next page's", '{"hex": "0605"}', '{"int": 1542}', apart],
-    ["A.4", "values of the sentence after the breaks", '{"hex": "0606"}', '{"int": 1542}', ""],
-    ["A.5", "a sentence ending .), the next one's", '{"hex": "0711"}', '{"int": 1811}', apart],
-    ["A.5", "the sentence after .)", '{"hex": "0713"}', '{"int": 1811}', ""],
-    ["A.5", "a sentence ending .', the next one's", '{"hex": "0721"}', '{"int": 1827}', apart],
-    ["A.5", "a sentence ending !, the next one's", '{"hex": "0731"}', '{"int": 1843}', apart],
-    ["A.5", "the sentence after !", '{"hex": "0733"}', '{"int": 1843}', ""],
-    ["A.5", "a sentence, the next one's on this valueless", '{"hex": "0741"}', '{"int": 1858}', apart],
-    ["A.6", "a paragraph ending ) at a page break, the next page's", '{"hex": "0801"}', '{"int": 2051}', apart],
-    ["A.6", "a paragraph ending ?) at a page break, the next page's", '{"hex": "0803"}', '{"int": 2053}', apart],
-    ["A.6", "a paragraph ending ! at a page break, the next page's", '{"hex": "0805"}', '{"int": 2055}', apart],
-    ["A.6", "a paragraph ending .\" at a page break, the next page's", '{"hex": "0807"}', '{"int": 2057}', apart],
-    ["A.6", "a sentence going on after , at a page break", '{"hex": "0809"}', '{"int": 2058}', ""],
-    ["A.6", "a sentence going on after a digit at a page break", '{"hex": "0810"}', '{"int": 2064}', ""],
-  ]
-  for (const r of otherRows) {
-    const got = casesTestCheck("9000", quic, quicFn, "decode", r[0], r[2], r[3])
-    casesTestRowFirst(t, `9000 §${r[0]}: ${r[1]}`, got, r[4])
-  }
-  // A string printed after = or : is a dump line's value, not prose: two
-  // lines with no blank between them are not one example.
-  const b64 = `{"name": "b64", "params": [{"name": "s", "type": "string"}], "returns": "string"}`
-  const dumpRows: string[][] = [
-    [
-      "the next line's value",
-      '{"str": "f"}',
-      '{"str": "Zm8="}',
-      'args[0] "f", expect "Zm8=" are each printed in RFC §A.7 ("Dump"), but never on one line together, so nothing pairs them as one test case',
-    ],
-    ["the line's own value", '{"str": "f"}', '{"str": "Zg=="}', ""],
-    ["a string in prose", '{"str": "foo"}', '{"str": "Zm9v"}', ""],
-    ["a string labelled once, then in prose", '{"str": "bar"}', '{"str": "YmFy"}', ""],
-  ]
-  for (const r of dumpRows) {
-    casesTestRowIs(t, `9000 §A.7: ${r[0]}`, casesTestCheck("9000", quic, b64, "b64", "A.7", r[1], r[2]), r[3])
-  }
-  // One value is not a test case to pair: a lone number is still unchecked.
-  const lone = `{"name": "count", "params": [], "returns": "u64"}`
-  casesTestRowIs(
-    t,
-    "9000 §A.1: a lone number pairs with nothing",
-    casesTestCheck("9000", quic, lone, "count", "A.1", "", '{"int": 15293}'),
-    'has no "label" to find it by',
-  )
-}
-
 export const main = (): i32 => {
   const t = new Suite("spec/gates/cases")
   casesTestHeadingRows(t)
   casesTestNoHeadingRows(t)
-  casesTestProseRows(t)
   return t.done()
 }
