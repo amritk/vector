@@ -1,7 +1,7 @@
 # Project rules
 
 vector is written in [Nish](https://github.com/amritk/nish), a static subset
-of TypeScript compiled ahead of time to a native binary, `dist/vector`. The
+of TypeScript compiled to a native binary, `dist/vector`. The
 compiler is pinned in `.nish-version` (read by `scripts/fetch-nish.sh`) and
 lives in `.nish/`; z3 is
 pinned in `scripts/fetch-z3.sh` and lives in `.z3/`. Before writing Nish,
@@ -24,8 +24,8 @@ read `.nish/docs/AI.md` (the language as rules, traps first).
 - `src/index.ts` is the package's entry (`@amritk/vector`, the `nish`
   condition in `package.json`). Its `vectorRun` declares the commands, parses
   the arguments and dispatches; it handles `--help` and `--version`, and
-  everything else is a command's. `src/main.ts` is the binary's entry: it
-  hands the process's arguments to `vectorRun`.
+  everything else is a command's. `src/main.ts`, the binary's entry, hands
+  the process's arguments to `vectorRun`.
 - `src/cli/<command>.ts` exports `register<Command>(cli, parent)`, which
   declares the command's flags and arguments and returns the object whose
   `run(r)` is its handler.
@@ -35,23 +35,21 @@ read `.nish/docs/AI.md` (the language as rules, traps first).
   `tests/cli/<case>/` is a golden case: `cmd` (`vector <args>`), `stdout`,
   an optional `stderr`, and `exit`, checked against `dist/vector`. An
   optional `repo` names a `tests/fixtures/<name>/` with `base/` and `head/`
-  trees: the runner commits them into a throwaway git repository (`main` =
-  base, `work` = head), which `{{repo}}` names in `cmd` and `<repo>` in the
-  output.
+  trees, committed into a throwaway git repository (`main` = base, `work` =
+  head) that `{{repo}}` names in `cmd` and `<repo>` in the output.
 - `tests/dogfood/` holds vector's tests of itself, emitted from its own specs
   (`specs/vector-*.md`) with `--package vector=src`.
 
 ## Writing Nish
 
-- **Function names are unique across the program.** Prefix a module's
-  functions with its name (`jsonMember`, `z3Timeout`), so two modules never
-  collide.
+- **Function names are unique across the program**: prefix a module's
+  functions with its name (`jsonMember`, `z3Timeout`).
 - **Return a `Result`, never throw.** A failure is `Err(message)`; pass it up
   with `.orReturn()`.
 - **Keep state in a context class**, passed to the functions that need it,
   not in module-level mutable variables.
-- **Run the compiler rather than guess.** Whether something compiles, and
-  what it does, `.nish/bin/nish run <file>` answers in seconds.
+- **Run the compiler rather than guess**: `.nish/bin/nish run <file>` says
+  in seconds whether something compiles and what it does.
 - **Every export has a doc comment**: what it is for, `@param` for each
   parameter, and `@returns` when it returns something. The generated
   reference fails on a gap, and its undocumented list only shrinks.
@@ -68,12 +66,12 @@ and `npm run doc-caps` when an agent-facing doc changed. A doc over its cap is
 shortened in place; a cap is never raised or dropped, and CI refuses either.
 **The full gate is CI** (`.github/workflows/ci.yml`, on every push).
 
-**Read a check's exit status, never its piped tail.** `npm run lint | tail`
-reports success when lint fails. Run it bare, or check `$?` / `PIPESTATUS`.
+**Read a check's exit status, never its piped tail**: `npm run lint | tail`
+passes when lint fails. Run it bare, or check `$?` / `PIPESTATUS`.
 
 **A new rule, refusal or flag lands with a test that fails without it.**
-Drive it via `vectorRun` or the binary and assert its effect; a flag
-accepted, or an option set in a unit test, won't do. Test a parser or gate
+Drive it via `vectorRun` or the binary and assert its effect, not a flag
+accepted or an option set in a unit test. Test a parser or gate
 rule's neighbours too (table-driven). Delete or flip each condition you
 add (`<` to `<=`): a surviving mutation needs a failing row. An op every
 emitter implements runs in each language on a broken implementation and on
@@ -88,12 +86,15 @@ toleranced value, or `unwrap` of a `null`, is not `g(args)`.
 
 **A gate rule that reads an RFC's layout (a block, a grid, a dump) is tested
 on text that goes through `rfcParse` with real `[Page N]` footers and `\f`
-headers.** The tests cover a value on each side of a page break, and two
+headers.** Tests cover a value on each side of a page break, and two
 separate blocks split only by one. A pairing rule reads values as the RFC
 prints them, never from the contract, and refuses each look-alike: another
 case, variant, sentence or paragraph.
 
-**Generated files are regenerated, never edited by hand.** That covers
+**Every source file a gate reads is pinned by SHA-256**, with a test that an
+edit after extraction is refused.
+
+**Generated files are regenerated, never edited by hand**:
 `docs/reference/**` and its routes in `scalar.config.json`, `tests/dogfood/**`, `contracts/*.json`
 (extracted from `specs/*.xml`) and `specs/*.xml` and fixture `.xml` (built from
 their `.md` by `scripts/build-spec.sh`). Change the source and rerun the generator.
@@ -138,7 +139,7 @@ Dependabot (`.github/dependabot.yml`) proposes updates to the pin once a
 release is 5 days old.
 
 The release PR is opened with `GITHUB_TOKEN`, so CI does not run on it;
-close and reopen it to run the checks before merging.
+close and reopen it to run the checks.
 
 npm publishes through trusted publishing alone: no npm token is stored
 anywhere. The trusted publisher for `@amritk/vector` on
