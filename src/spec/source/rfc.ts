@@ -489,6 +489,56 @@ export const rfcHasCases = (sec: RfcSection): boolean =>
   sec.ownLines.some((l: string): boolean => rfcCaseHeading(l) > 0)
 
 /**
+ * The words a case heading of RFC 6979 §A.2's form names its case by:
+ * `SHA-256` in `With SHA-256, message = "sample":`. The line, trimmed, is
+ * `With `, words up to the first `, `, one name, ` = `, a double-quoted
+ * string holding no quote, and a closing `:`, which ends it.
+ *
+ * @param line the line
+ * @returns the words, or "" when the line heads no case
+ */
+export const rfcWithHeading = (line: string): string => {
+  const t = trim(line)
+  if (!t.startsWith("With ") || !t.endsWith('":')) {
+    return ""
+  }
+  const comma = t.indexOf(", ")
+  if (comma < 0) {
+    return ""
+  }
+  const words = trim(t.substring(5, comma))
+  const rest = t.substring(comma + 2, t.length - 2)
+  const eq = rest.indexOf(' = "')
+  if (eq <= 0 || rest.substring(0, eq).indexOf(" ") >= 0) {
+    return ""
+  }
+  return rest.substring(eq + 4, rest.length).indexOf('"') >= 0 ? "" : words
+}
+
+/**
+ * Where a section's case headings of RFC 6979 §A.2's form are
+ * (rfcWithHeading): each heads the case below it, up to the next heading or
+ * the section's end, and what is printed above the first belongs to every
+ * case. A section with subsections has none: their headings are theirs,
+ * so a case is read from the subsection that holds it.
+ *
+ * @param sec the section
+ * @returns the index, in its lines, of each heading, in order
+ */
+export const rfcWithHeadings = (sec: RfcSection): i32[] => {
+  const out: i32[] = []
+  if (sec.lines.length > sec.ownLines.length) {
+    return out
+  }
+  for (let i = 0; i < sec.lines.length; i++) {
+    if (rfcWithHeading(sec.lines[i]).length > 0) {
+      out.push(i)
+    }
+  }
+  return out
+}
+
+/**
  * One test case of a section, as a section of its own: the lines from its
  * `Test Vector #N:` heading up to the next heading-shaped line
  * (rfcCaseShaped) or the section's end. It keeps the section's number and title, so a check of the case

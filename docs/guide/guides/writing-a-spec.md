@@ -736,6 +736,23 @@ of matching bytes:
   so is a case the section has no heading for, a heading printed twice, or
   a section with subsections. `spec check` applies the case again, and the
   report shows the source as `§A.3, Test Vector #2`.
+- **Case headings.** RFC 6979 §A.2 heads each test case with a line such
+  as `With SHA-256, message = "sample":` (trimmed: `With `, words up to
+  `, `, one name, ` = `, a quoted string, and a closing `:`). Where a
+  section holds such headings, each value is placed by its line: under the
+  heading above it, up to the next heading or the section's end, across page
+  breaks. A string printed on a heading is that case's (`"sample"`), and a
+  value printed above the first heading (the key pair `x`, `Ux`) belongs to
+  every case, so it pairs with the values under any heading. One case must
+  hold every value: `x`, `"sample"` and the `r` under
+  `With SHA-256, message = "sample":` pair, while that `"sample"` with
+  the `r` under `With SHA-256, message = "test":` is refused ("they are from
+  different test cases"). A labelled integer (`k = 5`) is placed by its
+  line too. A value under the headings that is not placed by its line (a
+  decimal fraction, a word block) is refused: nothing says which case it is
+  under, so cite values printed on lines of their own. A section with
+  subsections reads no headings: cite the subsection (§A.2.5, not §A.2), or
+  a key from one subsection would pair with another's cases.
 - **Decimals.** In an RFC, an unnamed run of digit-only lines, or one under a
   name that calls it a number (`Input scalar as a number (base 10):`), is a
   decimal number, not bytes, and is not a value.

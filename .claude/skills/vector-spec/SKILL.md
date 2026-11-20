@@ -275,7 +275,8 @@ profile extracts to, run
     array is a whole printed block, word for word.
   - Take the args and the expected value from one test case. A label
     printed once goes with its own case (RFC 8032 §7.1's empty MESSAGE:
-    TEST 1), and args in a call label's `( … )` with its value.
+    TEST 1), args in a call label's `( … )` with its value, values under
+    one `With …:` heading (RFC 6979 §A.2) or above all.
   - A wrapped value keeps the name before its first `=`.
   - A case printed per variant: use the row the function's name numbers.
   - [Writing a spec](../../../docs/guide/guides/writing-a-spec.md)'s "What a

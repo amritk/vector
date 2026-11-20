@@ -1,0 +1,1 @@
+vector spec check tests/cli/check-rfc6979-cases/contracts/rfc6979-cases.json --spec tests/cli/check-rfc6979-cases/rfcs/rfc6979.txt

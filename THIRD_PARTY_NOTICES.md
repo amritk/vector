@@ -12,6 +12,7 @@ that someone else wrote.
 | nish v0.34.0 excerpts | `tests/fixtures/mutate/` | MIT |
 | RFC 7748 excerpt, nish v0.39.0 `std/crypto/x25519.ts` | `tests/fixtures/x25519/` | IETF Trust Legal Provisions; MIT |
 | RFC 9001 and RFC 7914 excerpts | `tests/cli/check-rfc9001-wrapped/`, `tests/cli/check-rfc7914-wrapped/` | IETF Trust Legal Provisions |
+| RFC 6979 excerpt | `tests/cli/check-rfc6979-cases/` | IETF Trust Legal Provisions |
 
 ---
 
@@ -273,6 +274,17 @@ identified as the document authors), from
 and Appendix A to the end of A.1, excerpted unchanged.
 Both are redistributed under the IETF Trust Legal Provisions, §3.c.iii; please
 reproduce this note if possible.
+
+### RFC 6979 (`tests/cli/check-rfc6979-cases/`)
+
+`tests/cli/check-rfc6979-cases/rfcs/rfc6979.txt` is an excerpt of RFC 6979,
+"Deterministic Usage of the Digital Signature Algorithm (DSA) and Elliptic
+Curve Digital Signature Algorithm (ECDSA)" (IETF, © 2013 IETF Trust and the
+persons identified as the document authors), from
+<https://www.rfc-editor.org/rfc/rfc6979.txt>: its first-page header and title,
+and Appendix A.2.5 with the page footers, form feeds and headers around it,
+excerpted unchanged. It is redistributed under the IETF Trust Legal
+Provisions, §3.c.iii; please reproduce this note if possible.
 
 The rest of `tests/fixtures/` (including `nish-hex/`) and `specs/` was written
 for vector and is under vector's own license.

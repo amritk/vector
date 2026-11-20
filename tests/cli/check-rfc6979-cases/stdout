@@ -1,0 +1,16 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ rfc6979-cases · RFC 6979 (Deterministic Usage of the Digital Signature Algorithm (DSA) and Elliptic Curve Digital Signature Algorithm (ECDSA)) · nish/x
+ Status: INVALID
+
+ Gate failures
+  ✘ fidelity A25-MIXED: args[1] is under "With SHA-1, message = "sample":" or "With SHA-224, message = "sample":" or "With SHA-256, message = "sample":" or "With SHA-384, message = "sample":" or "With SHA-512, message = "sample":", expect is under "With SHA-256, message = "test":" in RFC §A.2.5 ("ECDSA, 256 Bits (Prime Field)"), so they are from different test cases: use the values printed under one case heading
+
+ Requirements
+  ○ R-P256  §A.2.5 DEFINITION  "With SHA-256, message = "sample":"
+      ○ A25-SAMPLE  ○ A25-MIXED
+
+ Warnings
+  ! clauses: no property clauses: the contract checks only the RFC's own vectors
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run
