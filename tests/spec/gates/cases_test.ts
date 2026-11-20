@@ -114,13 +114,25 @@ const casesTestRun = (call: string, id: string, args: string, expect: string): s
   casesTestRunWith(`{"name": "x", "type": "bytes"}, {"name": "m", "type": "string"}`, call, id, args, expect)
 
 /** casesTestRun, the function's params' JSON `params`. */
-const casesTestRunWith = (params: string, call: string, id: string, args: string, expect: string): string[] => {
+const casesTestRunWith = (params: string, call: string, id: string, args: string, expect: string): string[] =>
+  casesTestCheck("6979", casesTestRfc(), `{"name": "${call}", "params": [${params}], "returns": "bytes"}`, call, id, args, expect)
+
+/** The fidelity gate's findings and warnings for one vector of the function `fn` (its JSON), citing §`id` of RFC `num`, printed as `rfc`. */
+const casesTestCheck = (
+  num: string,
+  rfc: string,
+  fn: string,
+  call: string,
+  id: string,
+  args: string,
+  expect: string,
+): string[] => {
   const contract = `{
   "contract": "c7",
-  "source": {"title": "T", "rfc": 6979},
+  "source": {"title": "T", "rfc": ${num}},
   "target": {"module": "nish/x"},
   "requirements": [{"id": "R1", "section": "1", "level": "MUST", "quote": "It MUST derive."}],
-  "functions": [{"name": "${call}", "params": [${params}], "returns": "bytes"}],
+  "functions": [${fn}],
   "clauses": [
     {"kind": "vector", "id": "W1", "title": "t", "covers": ["R1"], "source": {"cite": {"section": "${id}"}}, "call": "${call}",
      "args": [${args}], "expect": ${expect}}
@@ -129,8 +141,8 @@ const casesTestRunWith = (params: string, call: string, id: string, args: string
   const ctx = new CheckContext("contracts/c7.json", ".")
   ctx.contract = contractParse(contract, "c7").expect("parse")
   const set = new SourceSet()
-  set.main = "rfc6979"
-  set.sources.push(new LoadedSource("rfc6979", "r.txt", "r.txt", rfcParse(casesTestRfc())))
+  set.main = `rfc${num}`
+  set.sources.push(new LoadedSource(`rfc${num}`, "r.txt", "r.txt", rfcParse(rfc)))
   ctx.sources = set
   const out = gateFidelity(ctx)
   for (const n of gateWarnings(ctx)) {
@@ -145,6 +157,15 @@ const casesTestHex = (hex: string, label: string): string => `{"hex": "${hex}", 
 /** Whether `got` is empty when `want` is, else one message holding `want`. */
 const casesTestRowIs = (t: Suite, name: string, got: string[], want: string): void => {
   const ok = want.length === 0 ? got.length === 0 : got.length === 1 && got[0].indexOf(want) >= 0
+  t.ok(name, ok)
+  if (!ok) {
+    console.log(`${name}:\n${got.join("\n")}`)
+  }
+}
+
+/** Whether `got` is empty when `want` is, else its first message holds `want`. */
+const casesTestRowFirst = (t: Suite, name: string, got: string[], want: string): void => {
+  const ok = want.length === 0 ? got.length === 0 : got.length > 0 && got[0].indexOf(want) >= 0
   t.ok(name, ok)
   if (!ok) {
     console.log(`${name}:\n${got.join("\n")}`)
@@ -261,6 +282,124 @@ const casesTestNoHeadingRows = (t: Suite): void => {
   )
 }
 
+/** A footer, form feed and header of RFC `rfc`, by `author`. */
+const casesTestFurniture = (author: string, rfc: string, title: string, page: i32): string =>
+  `\n${author}                    Standards Track                    [Page ${page}]\n\f\nRFC ${rfc}                   ${title}               December 2011\n`
+
+/**
+ * RFC 6455 §4.2.2's NOTE, which a page break splits inside a sentence, then
+ * another paragraph that starts the next page after the NOTE's last
+ * sentence ends its page.
+ */
+const casesTestWs = (): string =>
+  [
+    "Request for Comments: 6455",
+    "",
+    "1.  Rules",
+    "",
+    "   It MUST derive.",
+    "",
+    "4.2.2.  Sending",
+    "",
+    "   NOTE: As an example, if the value of the |Sec-WebSocket-Key| header",
+    '   field in the client\'s handshake were "dGhlIHNhbXBsZSBub25jZQ==", the',
+    '   server would append the string "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"',
+    '   to form the string "dGhlIHNhbXBsZSBub25jZQ==258EAFA5-E914-47DA-95CA-',
+    '   C5AB0DC85B11".  The server would then take the SHA-1 hash of this',
+    casesTestFurniture("Fette & Melnikov", "6455", "The WebSocket Protocol", 23),
+    "   string, giving the value 0xb3 0x7a 0x4f 0x2c 0xc0 0x62 0x4f 0x16 0x90",
+    "   0xf6 0x46 0x06 0xcf 0x38 0x59 0x45 0xb2 0xbe 0xc4 0xea.  This value",
+    "   is then base64-encoded, to give the value",
+    '   "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=", which would be returned in the',
+    "   |Sec-WebSocket-Accept| header field.",
+    casesTestFurniture("Fette & Melnikov", "6455", "The WebSocket Protocol", 24),
+    '   As another example, a key "AQIDBAUGBwgJCgsMDQ4PEA==" gives "other=".',
+    "",
+  ].join("\n")
+
+/**
+ * RFC 9000 §A.1's example, four sequences a semicolon apart, which a page
+ * break splits inside the third, then a paragraph of labelled values that
+ * no sentence ends, and one more.
+ */
+const casesTestQuic = (): string =>
+  [
+    "Request for Comments: 9000",
+    "",
+    "1.  Rules",
+    "",
+    "   It MUST derive.",
+    "",
+    "A.1.  Sample Variable-Length Integer Decoding",
+    "",
+    "   For example, the eight-byte sequence 0xc2197c5eff14e88c decodes to",
+    "   the decimal value 151,288,809,941,952,652; the four-byte sequence",
+    "   0x9d7f3e7d decodes to 494,878,333; the two-byte sequence 0x7bbd",
+    casesTestFurniture("Iyengar & Thomson", "9000", "QUIC Transport", 140),
+    "   decodes to 15,293; and the single byte 0x25 decodes to 37 (as does",
+    "   the two-byte sequence 0x4025).",
+    "",
+    "   In = 0x0a0b, and Out: 0x0c0d, after the sequence 0x0102 of 258 with Max:0x0e0f",
+    "",
+    "   The sequence 0x0304 decodes to 772.",
+    "",
+  ].join("\n")
+
+/**
+ * Values printed in one prose example pair, and values from two do not:
+ * RFC 6455's NOTE across a page break and RFC 9000's semicolon-separated
+ * sequences. Each row is a name, the args' JSON, the expected value's JSON
+ * and the message wanted ("" for none).
+ */
+const casesTestProseRows = (t: Suite): void => {
+  const ws = casesTestWs()
+  const wsFn = `{"name": "accept", "params": [{"name": "k", "type": "string"}], "returns": "string"}`
+  const wsRows: string[][] = [
+    ["key and accept value, a page break between", '{"str": "dGhlIHNhbXBsZSBub25jZQ=="}', '{"str": "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="}', ""],
+    ["the paragraph after the page break", '{"str": "AQIDBAUGBwgJCgsMDQ4PEA=="}', '{"str": "other="}', ""],
+    ["NOTE's key, the next paragraph's value", '{"str": "dGhlIHNhbXBsZSBub25jZQ=="}', '{"str": "other="}', "but in different examples"],
+    ["the next paragraph's key, NOTE's value", '{"str": "AQIDBAUGBwgJCgsMDQ4PEA=="}', '{"str": "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="}', "but in different examples"],
+    ["a value only part of a quoted string", '{"str": "dGhlIHNhbXBsZSBub25jZQ"}', '{"str": "other="}', "only part of a longer value"],
+  ]
+  for (const r of wsRows) {
+    casesTestRowIs(t, `6455 §4.2.2: ${r[0]}`, casesTestCheck("6455", ws, wsFn, "accept", "4.2.2", r[1], r[2]), r[3])
+  }
+  const quic = casesTestQuic()
+  const quicFn = `{"name": "decode", "params": [{"name": "b", "type": "bytes"}], "returns": "u64"}`
+  const quicRows: string[][] = [
+    ["eight bytes, commas in the value", '{"hex": "c2197c5eff14e88c"}', '{"int": "151288809941952652"}', ""],
+    ["four bytes", '{"hex": "9d7f3e7d"}', '{"int": 494878333}', ""],
+    ["two bytes, a page break between", '{"hex": "7bbd"}', '{"int": 15293}', ""],
+    ["one byte", '{"hex": "25"}', '{"int": 37}', ""],
+    ["the two bytes in parentheses", '{"hex": "4025"}', '{"int": 37}', ""],
+    ["the next sequence's value", '{"hex": "9d7f3e7d"}', '{"int": 15293}', "but in different examples"],
+    ["the sequence before's value", '{"hex": "7bbd"}', '{"int": 494878333}', "but in different examples"],
+    ["two parts apart", '{"hex": "25"}', '{"int": 15293}', "but in different examples"],
+    ["a number only part of a printed one", '{"hex": "7bbd"}', '{"int": 15}', "name it with \"label\""],
+    ["a number ending a printed one", '{"hex": "c2197c5eff14e88c"}', '{"int": 809941952652}', "name it with \"label\""],
+    ["a value only part of a printed one", '{"hex": "40"}', '{"int": 37}', "is only part of a value"],
+    ["a paragraph after one no sentence ends", '{"hex": "0304"}', '{"int": 772}', ""],
+    ["a value from the paragraph before", '{"hex": "0102"}', '{"int": 772}', "but in different examples"],
+    ["a value after =, which labels it", '{"hex": "0a0b"}', '{"int": 258}', "name it with \"label\""],
+    ["a value after :, which labels it", '{"hex": "0102"}', '{"hex": "0c0d"}', "name it with \"label\""],
+    ["a value right after :, which labels it", '{"hex": "0e0f"}', '{"int": 258}', "name it with \"label\""],
+    ["unlabelled values in that paragraph", '{"hex": "0102"}', '{"int": 258}', ""],
+    ["values after = and :, which label them", '{"hex": "0a0b"}', '{"hex": "0c0d"}', "name it with \"label\""],
+  ]
+  for (const r of quicRows) {
+    const got = casesTestCheck("9000", quic, quicFn, "decode", "A.1", r[1], r[2])
+    casesTestRowFirst(t, `9000 §A.1: ${r[0]}`, got, r[3])
+  }
+  // One value is not a test case to pair: a lone number is still unchecked.
+  const lone = `{"name": "count", "params": [], "returns": "u64"}`
+  casesTestRowIs(
+    t,
+    "9000 §A.1: a lone number pairs with nothing",
+    casesTestCheck("9000", quic, lone, "count", "A.1", "", '{"int": 15293}'),
+    'has no "label" to find it by',
+  )
+}
+
 /** The case headings rfcWithHeading reads, and the lines it does not. Each row is a line and the words wanted. */
 const casesTestWithRows = (t: Suite): void => {
   const rows: string[][] = [
@@ -299,5 +438,6 @@ export const main = (): i32 => {
   t.eqStr("rfcWithHeadings: none in a section without", `${rfcWithHeadings(casesTestSection("A.3")).length}`, "0")
   casesTestHeadingRows(t)
   casesTestNoHeadingRows(t)
+  casesTestProseRows(t)
   return t.done()
 }

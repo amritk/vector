@@ -1,0 +1,1 @@
+vector spec check tests/cli/check-rfc9000-prose/contracts/rfc9000-prose.json --spec tests/cli/check-rfc9000-prose/rfcs/rfc9000.txt

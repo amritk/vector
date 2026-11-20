@@ -22,7 +22,7 @@
  */
 
 import { jsonStringifyString } from "nish/json"
-import { asciiLower } from "nish/text"
+import { asciiLower, split } from "nish/text"
 import { toHex, utf8Bytes } from "../../core/hex"
 import { CheckContext, CheckNote } from "../check"
 import { charsTestVector } from "../contract/chars"
@@ -144,6 +144,11 @@ class GateLits {
   /** The case heading every value is printed under (gateHeadingCase), or -1. */
   chosen: i32
   /**
+   * Whether every value is printed in the section's prose (gateProseCase):
+   * 0 not, 1 in one example, which pairs them, 2 in different examples.
+   */
+  prose: i32
+  /**
    * @param id the vector's id
    * @param where the section, for messages
    * @param sec the section
@@ -170,6 +175,7 @@ class GateLits {
     this.hint = ""
     this.heads = rfcWithHeadings(sec)
     this.chosen = -1
+    this.prose = 0
   }
 }
 
@@ -274,7 +280,9 @@ const gateHexCheck = (l: GateLits, at: string, hex: string, label: string | null
     }
   }
   if (label === null) {
-    if (named.length === 0) {
+    // One prose example pairs a value with the text around it, which is
+    // not a label.
+    if (named.length === 0 || l.prose > 0) {
       const u = new GateBound(at, null)
       for (const v of whole) {
         u.shown.push(v.line)
@@ -665,18 +673,152 @@ const gateLitCheck = (l: GateLits, lit: Literal, at: string): void => {
   const label = lit.label
   const name = lit.kind === LitKind.Int ? "integer" : "f64"
   if (label === null) {
-    gateNote(
-      l,
-      `${l.id}.${at}`,
-      `not checked against the RFC: the ${name} ${lit.text} has no "label" to find it by`,
-      true,
-    )
+    if (l.prose === 0) {
+      gateNote(
+        l,
+        `${l.id}.${at}`,
+        `not checked against the RFC: the ${name} ${lit.text} has no "label" to find it by`,
+        true,
+      )
+    }
   } else if (lit.kind === LitKind.Int) {
     gateNumberCheck(l, lit, at, gateIntRounds(l.lines, label, lit.text), gateIntLabelCount(l.lines, label))
   } else {
     const printed = gateF64Printed(l.lines, label)
     gateNumberCheck(l, lit, at, gateF64Has(lit, printed), printed.length)
   }
+}
+
+/** Whether a line ends a sentence: its last character is `.`, `:` or `?`. */
+const gateEndsSentence = (line: string): boolean => {
+  const t = rfcNormalize(line)
+  const c = t.length > 0 ? t.charCodeAt(t.length - 1) : 0
+  return c === 46 || c === 58 || c === 63
+}
+
+/**
+ * The examples a section's prose prints, normalized: each paragraph, split at
+ * "; " (RFC 9000 §A.1 prints four sequences and their values in one sentence,
+ * a semicolon apart). Blank lines end a paragraph, except around a page
+ * break that falls inside a sentence, which the page's furniture pads with
+ * blank lines; a sentence that ends at a page break ends its paragraph.
+ */
+const gateProseUnits = (l: GateLits): string[] => {
+  const paras: string[] = []
+  const lines = l.sec.lines
+  let para: string[] = []
+  let blank = false
+  let broke = false
+  for (let i = 0; i < lines.length; i++) {
+    broke = broke || l.sec.pageBreaks.indexOf(i) >= 0
+    if (rfcNormalize(lines[i]).length === 0) {
+      blank = true
+      continue
+    }
+    if (blank && para.length > 0 && !(broke && !gateEndsSentence(para[para.length - 1]))) {
+      paras.push(rfcNormalize(para.join(" ")))
+      para = []
+    }
+    para.push(lines[i])
+    blank = false
+    broke = false
+  }
+  if (para.length > 0) {
+    paras.push(rfcNormalize(para.join(" ")))
+  }
+  const out: string[] = []
+  for (const p of paras) {
+    for (const part of split(p, "; ")) {
+      out.push(part)
+    }
+  }
+  return out
+}
+
+/**
+ * Whether `w` is printed in `unit` as a word of its own: not inside a longer
+ * name, hex or number, and not after `=` or `:`, which label a value.
+ */
+const gateProseWord = (unit: string, w: string): boolean => {
+  let at = toI32(unit.indexOf(w))
+  while (at >= 0) {
+    const e = at + w.length
+    const before = at > 0 ? unit.charCodeAt(at - 1) : 32
+    const after = e < unit.length ? unit.charCodeAt(e) : 32
+    const next = e + 1 < unit.length ? unit.charCodeAt(e + 1) : 32
+    // 44 is `,` and 46 `.`: a number goes on past either before a digit.
+    const runsOn = (after === 44 || after === 46) && gateFidDigit(next)
+    // 61 is `=` and 58 `:`, right before the value or one space before it.
+    const mark = before === 32 && at >= 2 ? unit.charCodeAt(at - 2) : before
+    const labelled = mark === 61 || mark === 58
+    if (!gateNameChar(before) && before !== 44 && before !== 46 && !gateNameChar(after) && !runsOn && !labelled) {
+      return true
+    }
+    at = toI32(unit.indexOf(w, at + 1))
+  }
+  return false
+}
+
+/** Whether a literal is printed in one prose example: a quoted string, a `0x` value, or a whole number, commas between its thousands or not. */
+const gateProseHas = (unit: string, lit: Literal): boolean => {
+  if (lit.text.length === 0) {
+    return false
+  }
+  if (lit.kind === LitKind.Str) {
+    return unit.indexOf(`"${lit.text}"`) >= 0
+  }
+  if (lit.kind === LitKind.Hex) {
+    return gateProseWord(asciiLower(unit), `0x${gateLitHex(lit)}`)
+  }
+  if (lit.kind === LitKind.Int) {
+    return gateProseWord(unit, lit.text) || gateProseWord(unit, gateGrouped(lit.text))
+  }
+  return false
+}
+
+/** Whether one prose example prints every literal. */
+const gateProseHasAll = (unit: string, lits: Literal[]): boolean =>
+  lits.every((lit: Literal): boolean => gateProseHas(unit, lit))
+
+/** A literal for a message: `args[0] "abc"`, `args[0] 0x7bbd`, `expect 15293`. */
+const gateProseText = (lit: Literal, at: string): string => {
+  if (lit.kind === LitKind.Str) {
+    return `${at} ${jsonStringifyString(lit.text)}`
+  }
+  return lit.kind === LitKind.Hex ? `${at} 0x${gateLitHex(lit)}` : `${at} ${lit.text}`
+}
+
+/**
+ * Values printed in prose, not under labels or case headings, are one test
+ * case when one example prints them all (gateProseUnits), and two test
+ * cases' when each is printed but no example holds every one. Either way the
+ * text around a value is not its label, and a line does not pair them.
+ */
+const gateProseCase = (l: GateLits, lits: Literal[], ats: string[]): void => {
+  if (lits.length < 2) {
+    return
+  }
+  const units = gateProseUnits(l)
+  for (const lit of lits) {
+    if (!units.some((u: string): boolean => gateProseHas(u, lit))) {
+      return
+    }
+  }
+  if (units.some((u: string): boolean => gateProseHasAll(u, lits))) {
+    l.prose = 1
+    return
+  }
+  l.prose = 2
+  const each: string[] = []
+  for (let i = 0; i < lits.length; i++) {
+    each.push(gateProseText(lits[i], ats[i]))
+  }
+  gateNote(
+    l,
+    l.id,
+    `${each.join(", ")} are each printed in ${l.inSection}, but in different examples (a paragraph, or its part between semicolons), so nothing pairs them as one test case`,
+    false,
+  )
 }
 
 /** A bound's text, for a message: `args[0] "abc"`. */
@@ -865,9 +1007,6 @@ const gateHeadingCase = (l: GateLits, inSection: string): boolean => {
   const placed: GateBound[] = []
   const cases: i32[][] = []
   for (const b of l.bounds) {
-    if (b.other) {
-      continue
-    }
     const at = gateBoundSecLines(l, b)
     if (at === null) {
       if (b.of > 1) {
@@ -916,7 +1055,7 @@ const gateOneTestCase = (l: GateLits, args: i32, sec: RfcSection): void => {
   // one test case with every other argument, not exempt from the checks.
   // One refused as another case's is not placed again: its refusal says why.
   const texts = l.bounds.filter((b: GateBound): boolean => (b.lines !== null || b.paired) && !b.other)
-  if (texts.length > 1) {
+  if (texts.length > 1 && l.prose === 0) {
     let shared = false
     for (const line of gateBoundPlaces(texts[0])) {
       if (texts.every((b: GateBound): boolean => gateBoundHasLine(b, line))) {
@@ -1710,15 +1849,26 @@ const gateFidelityVector = (ctx: CheckContext, out: string[], set: SourceSet, k:
   if (tc === null && loaded !== null && loaded.doc.number >= 1 && rfcHasCases(whole)) {
     l.hint = `, or name one: {{Section ${at.section} of RFC${loaded.doc.number}}}, Test Vector #N`
   }
-  for (let i = 0; i < k.args.length; i++) {
-    gateLitCheck(l, k.args[i], `args[${i}]`)
-  }
-  const args = l.bounds.length
   // A command or the spec vouches for the expected value instead.
   const src = k.source
   const cited = src !== null && src.kind === VectorSourceKind.Cite
   const word = gateResultWord(k.expect)
   const expect = k.expect
+  const lits: Literal[] = []
+  const ats: string[] = []
+  for (let i = 0; i < k.args.length; i++) {
+    lits.push(k.args[i])
+    ats.push(`args[${i}]`)
+  }
+  if (cited && word.length === 0 && expect !== null) {
+    lits.push(expect)
+    ats.push("expect")
+  }
+  gateProseCase(l, lits, ats)
+  for (let i = 0; i < k.args.length; i++) {
+    gateLitCheck(l, k.args[i], `args[${i}]`)
+  }
+  const args = l.bounds.length
   if (cited && word.length === 0 && expect !== null) {
     gateLitCheck(l, expect, "expect")
   }

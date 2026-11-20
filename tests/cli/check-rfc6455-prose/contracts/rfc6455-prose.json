@@ -1,0 +1,138 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "rfc6455-prose",
+  "source": {
+    "rfc": 6455,
+    "title": "The WebSocket Protocol",
+    "sha256": "3d2e13145abec189a9a49b1d7a3f160f30489cbe5739d5f4a3602a7543dec001"
+  },
+  "sources": [
+    {
+      "id": "rfc6455",
+      "rfc": 6455,
+      "file": "rfcs/rfc6455.txt",
+      "sha256": "3d2e13145abec189a9a49b1d7a3f160f30489cbe5739d5f4a3602a7543dec001"
+    }
+  ],
+  "target": {
+    "module": "nish/x"
+  },
+  "requirements": [
+    {
+      "id": "R-ACCEPT",
+      "section": "4.2.2",
+      "level": "DEFINITION",
+      "quote": "This value is then base64-encoded, to give the value \"s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\", which would be returned in the |Sec-WebSocket-Accept| header field."
+    }
+  ],
+  "exclusions": [
+    {
+      "section": "4.2.2",
+      "quote": "When a client establishes a WebSocket connection to a server, the server MUST complete the following steps to accept the connection and send the server's opening handshake.",
+      "reason": "an obligation this fixture does not need to test"
+    },
+    {
+      "section": "4.2.2",
+      "quote": "If this fails (e.g., the client indicated a host name in the extended client hello \"server_name\" extension that the server does not host), then close the connection; otherwise, all further communication for the connection (including the server's handshake) MUST run through the encrypted tunnel [RFC5246].",
+      "reason": "an obligation this fixture does not need to test"
+    },
+    {
+      "section": "4.2.2",
+      "quote": "If the server does not wish to accept this connection, it MUST return an appropriate HTTP error code (e.g., 403 Forbidden) and abort the WebSocket handshake described in this section.",
+      "reason": "an obligation this fixture does not need to test"
+    },
+    {
+      "section": "4.2.2",
+      "quote": "If this version does not match a version understood by the server, the server MUST abort the WebSocket handshake described in this section and instead send an appropriate HTTP error code (such as 426 Upgrade Required) and a |Sec-WebSocket-Version| header field indicating the version(s) the server is capable of understanding.",
+      "reason": "an obligation this fixture does not need to test"
+    },
+    {
+      "section": "4.2.2",
+      "quote": "If the requested service is not available, the server MUST send an appropriate HTTP error code (such as 404 Not Found) and abort the WebSocket handshake.",
+      "reason": "an obligation this fixture does not need to test"
+    },
+    {
+      "section": "4.2.2",
+      "quote": "The value chosen MUST be derived from the client's handshake, specifically by selecting one of the values from the |Sec-WebSocket-Protocol| field that the server is willing to use for this connection (if any).",
+      "reason": "an obligation this fixture does not need to test"
+    },
+    {
+      "section": "4.2.2",
+      "quote": "The absence of such a field is equivalent to the null value (meaning that if the server does not wish to agree to one of the suggested subprotocols, it MUST NOT send back a |Sec-WebSocket-Protocol| header field in its response).",
+      "reason": "an obligation this fixture does not need to test"
+    },
+    {
+      "section": "4.2.2",
+      "quote": "If the server supports multiple extensions, then the value MUST be derived from the client's handshake, specifically by selecting one or more of the values from the |Sec-WebSocket-Extensions| field.",
+      "reason": "an obligation this fixture does not need to test"
+    },
+    {
+      "section": "4.2.2",
+      "quote": "Extensions not listed by the client MUST NOT be listed.",
+      "reason": "an obligation this fixture does not need to test"
+    },
+    {
+      "section": "4.2.2",
+      "quote": "If the server chooses to accept the incoming connection, it MUST reply with a valid HTTP response indicating the following.",
+      "reason": "an obligation this fixture does not need to test"
+    }
+  ],
+  "functions": [
+    {
+      "name": "accept",
+      "params": [
+        {
+          "name": "key",
+          "type": "string"
+        }
+      ],
+      "returns": "string"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "422-ACCEPT",
+      "title": "the key and the accept value of the NOTE's one example",
+      "covers": [
+        "R-ACCEPT"
+      ],
+      "source": {
+        "cite": {
+          "section": "4.2.2"
+        }
+      },
+      "call": "accept",
+      "args": [
+        {
+          "str": "dGhlIHNhbXBsZSBub25jZQ=="
+        }
+      ],
+      "expect": {
+        "str": "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "422-UPGRADE",
+      "title": "the NOTE's key, with the Upgrade header field's value from step 2",
+      "covers": [
+        "R-ACCEPT"
+      ],
+      "source": {
+        "cite": {
+          "section": "4.2.2"
+        }
+      },
+      "call": "accept",
+      "args": [
+        {
+          "str": "dGhlIHNhbXBsZSBub25jZQ=="
+        }
+      ],
+      "expect": {
+        "str": "websocket"
+      }
+    }
+  ]
+}
