@@ -98,6 +98,7 @@ const casesTestRfc = (): string =>
     '   With SHA-256, message = "sample":',
     "   n = 3",
     `   r = ${CASES_TEST_R256}`,
+    "   n = 3",
     "",
     '   With SHA-512, message = "sample":',
     "   n = 5",
@@ -423,6 +424,40 @@ const casesTestQuic = (): string =>
     casesTestFurniture("Iyengar & Thomson", "9000", "QUIC Transport", 144),
     "   The sequence 0x0606 decodes to 1542.",
     "",
+    "A.5.  Ends",
+    "",
+    "   The sequence 0x0711 decodes to 1809 (see 0x0712.)  It then decodes",
+    "   0x0713 to 1811.  The sequence 0x0721 decodes to 1825 'as 0x0722.'",
+    "   It then decodes 0x0723 to 1827.  The sequence 0x0731 decodes to",
+    "   1841!  It then decodes 0x0733 to 1843.  The sequence 0x0741 decodes",
+    "   to 1857.  This valueless 0x0742 decodes to 1858.",
+    "",
+    "A.6.  Pages",
+    "",
+    "   The sequence 0x0801 decodes to 2049 (see 0x0802)",
+    casesTestFurniture("Iyengar & Thomson", "9000", "QUIC Transport", 145),
+    "   The sequence 0x0803 decodes to 2051 (or 0x0804?)",
+    casesTestFurniture("Iyengar & Thomson", "9000", "QUIC Transport", 146),
+    "   The sequence 0x0805 decodes to 2053!",
+    casesTestFurniture("Iyengar & Thomson", "9000", "QUIC Transport", 147),
+    '   The sequence 0x0807 decodes to 2055 as "0x0808."',
+    casesTestFurniture("Iyengar & Thomson", "9000", "QUIC Transport", 148),
+    "   The sequence 0x0809 decodes to 2057 and,",
+    casesTestFurniture("Iyengar & Thomson", "9000", "QUIC Transport", 149),
+    "   the sequence 0x080a to 2058 and 0x0810",
+    casesTestFurniture("Iyengar & Thomson", "9000", "QUIC Transport", 150),
+    "   to 2064.",
+    "",
+    "A.7.  Dump",
+    "",
+    '   BASE64("f") = "Zg=="',
+    '   BASE64("fo") = "Zm8="',
+    "",
+    '   The string "foo" encodes as "Zm9v".',
+    "",
+    '   Its input = "bar", that is, the string "bar"',
+    '   encodes as "YmFy".',
+    "",
   ].join("\n")
 
 /**
@@ -511,10 +546,39 @@ const casesTestProseRows = (t: Suite): void => {
     ["A.4", "a sentence ending : at a page break, the next page's", '{"hex": "0604"}', '{"int": 1541}', apart],
     ["A.4", "a sentence ending etc. at a page break, the next page's", '{"hex": "0605"}', '{"int": 1542}', apart],
     ["A.4", "values of the sentence after the breaks", '{"hex": "0606"}', '{"int": 1542}', ""],
+    ["A.5", "a sentence ending .), the next one's", '{"hex": "0711"}', '{"int": 1811}', apart],
+    ["A.5", "the sentence after .)", '{"hex": "0713"}', '{"int": 1811}', ""],
+    ["A.5", "a sentence ending .', the next one's", '{"hex": "0721"}', '{"int": 1827}', apart],
+    ["A.5", "a sentence ending !, the next one's", '{"hex": "0731"}', '{"int": 1843}', apart],
+    ["A.5", "the sentence after !", '{"hex": "0733"}', '{"int": 1843}', ""],
+    ["A.5", "a sentence, the next one's on this valueless", '{"hex": "0741"}', '{"int": 1858}', apart],
+    ["A.6", "a paragraph ending ) at a page break, the next page's", '{"hex": "0801"}', '{"int": 2051}', apart],
+    ["A.6", "a paragraph ending ?) at a page break, the next page's", '{"hex": "0803"}', '{"int": 2053}', apart],
+    ["A.6", "a paragraph ending ! at a page break, the next page's", '{"hex": "0805"}', '{"int": 2055}', apart],
+    ["A.6", "a paragraph ending .\" at a page break, the next page's", '{"hex": "0807"}', '{"int": 2057}', apart],
+    ["A.6", "a sentence going on after , at a page break", '{"hex": "0809"}', '{"int": 2058}', ""],
+    ["A.6", "a sentence going on after a digit at a page break", '{"hex": "0810"}', '{"int": 2064}', ""],
   ]
   for (const r of otherRows) {
     const got = casesTestCheck("9000", quic, quicFn, "decode", r[0], r[2], r[3])
     casesTestRowFirst(t, `9000 §${r[0]}: ${r[1]}`, got, r[4])
+  }
+  // A string printed after = or : is a dump line's value, not prose: two
+  // lines with no blank between them are not one example.
+  const b64 = `{"name": "b64", "params": [{"name": "s", "type": "string"}], "returns": "string"}`
+  const dumpRows: string[][] = [
+    [
+      "the next line's value",
+      '{"str": "f"}',
+      '{"str": "Zm8="}',
+      'args[0] "f", expect "Zm8=" are each printed in RFC §A.7 ("Dump"), but never on one line together, so nothing pairs them as one test case',
+    ],
+    ["the line's own value", '{"str": "f"}', '{"str": "Zg=="}', ""],
+    ["a string in prose", '{"str": "foo"}', '{"str": "Zm9v"}', ""],
+    ["a string labelled once, then in prose", '{"str": "bar"}', '{"str": "YmFy"}', ""],
+  ]
+  for (const r of dumpRows) {
+    casesTestRowIs(t, `9000 §A.7: ${r[0]}`, casesTestCheck("9000", quic, b64, "b64", "A.7", r[1], r[2]), r[3])
   }
   // One value is not a test case to pair: a lone number is still unchecked.
   const lone = `{"name": "count", "params": [], "returns": "u64"}`

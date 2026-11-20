@@ -126,6 +126,19 @@ export const main = (): i32 => {
     "5,5,8",
   )
   t.eqStr("a question breaks", textTestNums(gateSentenceBreaks("Why? Because.", [])), "3,4,5")
+  const closers: string[][] = [
+    ["(see 0x0602.) It holds.", "11,13,14"],
+    ["Say 'hi.' Then go.", "7,9,10"],
+    ["Stop! Then go.", "4,5,6"],
+    ["Why?) Then go.", "3,5,6"],
+    ['Say ("hi.") Then go.', "8,11,12"],
+    ["Stop!x Then go.", ""],
+    ["See (a) then go.", ""],
+    ["Go.) then", "2,4,5"],
+  ]
+  for (let i = 0; i < closers.length; i++) {
+    t.eqStr(`closers: ${closers[i][0]}`, textTestNums(gateSentenceBreaks(closers[i][0], [])), closers[i][1])
+  }
   t.eqStr(
     "a closing quote stays with its sentence",
     textTestNums(gateSentenceBreaks('Say "hi." Then go.', [])),

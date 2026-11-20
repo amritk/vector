@@ -692,16 +692,29 @@ const gateLitCheck = (l: GateLits, lit: Literal, at: string): void => {
   }
 }
 
-/** Whether a line ends a sentence: its last character is `.` or `:`, before any closing `"` or `)`. */
-const gateEndsSentence = (line: string): boolean => {
+/**
+ * Whether a line before a page break clearly goes on into the next page:
+ * it ends in a letter, a digit or a comma. Anything else (`.`, `?`, `!`,
+ * `:`, a closing bracket or quote) ends the paragraph at the break.
+ */
+const gateContinuesSentence = (line: string): boolean => {
   const t = rfcNormalize(line)
-  let e = t.length
-  // 34 is `"` and 41 `)`.
-  while (e > 0 && (t.charCodeAt(e - 1) === 34 || t.charCodeAt(e - 1) === 41)) {
-    e = e - 1
+  const c = t.length > 0 ? t.charCodeAt(t.length - 1) : 0
+  // 44 is `,`.
+  return gateFidDigit(c) || (gateFidLetter(c) && c !== 95) || c === 44
+}
+
+/** Whether a sentence, lowercased, says `phrase` as words of its own (not "this stringent"). */
+const gateSaysPhrase = (lower: string, phrase: string): boolean => {
+  let at = toI32(lower.indexOf(phrase))
+  while (at >= 0) {
+    const after = at + phrase.length < lower.length ? lower.charCodeAt(at + phrase.length) : 32
+    if (!gateFidLetter(after)) {
+      return true
+    }
+    at = toI32(lower.indexOf(phrase, at + 1))
   }
-  const c = e > 0 ? t.charCodeAt(e - 1) : 0
-  return c === 46 || c === 58
+  return false
 }
 
 /**
@@ -710,9 +723,9 @@ const gateEndsSentence = (line: string): boolean => {
  * string" or "this value" (RFC 6455 §4.2.2 hashes a key and encodes the
  * hash in three sentences), split at "; " (RFC 9000 §A.1 prints four
  * sequences and their values in one sentence, a semicolon apart). Blank
- * lines end a paragraph, except around a page break that falls inside a
- * sentence, which the page's furniture pads with blank lines; a sentence
- * that ends at a page break ends its paragraph.
+ * lines end a paragraph, except around a page break after a line that
+ * clearly goes on (gateContinuesSentence), which the page's furniture pads
+ * with blank lines; any other page break ends its paragraph.
  */
 const gateProseUnits = (l: GateLits): string[] => {
   const paras: string[] = []
@@ -726,7 +739,7 @@ const gateProseUnits = (l: GateLits): string[] => {
       blank = true
       continue
     }
-    if (blank && para.length > 0 && !(broke && !gateEndsSentence(para[para.length - 1]))) {
+    if (blank && para.length > 0 && !(broke && gateContinuesSentence(para[para.length - 1]))) {
       paras.push(rfcNormalize(para.join(" ")))
       para = []
     }
@@ -745,7 +758,7 @@ const gateProseUnits = (l: GateLits): string[] => {
       const end = i < breaks.length ? breaks[i + 1] : p.length
       const sentence = p.substring(start, end)
       const lower = asciiLower(sentence)
-      const goesOn = lower.indexOf("this string") >= 0 || lower.indexOf("this value") >= 0
+      const goesOn = gateSaysPhrase(lower, "this string") || gateSaysPhrase(lower, "this value")
       if (goesOn && start > 0) {
         examples[examples.length - 1] = `${examples[examples.length - 1]} ${sentence}`
       } else {
@@ -769,6 +782,18 @@ const gateProseUnits = (l: GateLits): string[] => {
  * not beside a `-` (`-5`, `16-bit`), and not after `=` or `:`, which label a
  * value.
  */
+/**
+ * Whether a value at `s` is printed as a label's value, after `=` or `:`
+ * right before it or one space before it (`BASE64("f") = "Zg=="`): a line
+ * of a dump, not prose.
+ */
+const gateProseLabelled = (unit: string, s: i32): boolean => {
+  const before = s > 0 ? unit.charCodeAt(s - 1) : 32
+  const mark = before === 32 && s >= 2 ? unit.charCodeAt(s - 2) : before
+  // 61 is `=` and 58 `:`.
+  return mark === 61 || mark === 58
+}
+
 const gateProseWord = (unit: string, w: string): boolean => {
   const spans = gateFidSpans(unit)
   for (let i = 0; i + 1 < spans.length; i = i + 2) {
@@ -777,11 +802,10 @@ const gateProseWord = (unit: string, w: string): boolean => {
     if (asciiLower(unit.substring(s, e)) !== w) {
       continue
     }
-    // 45 is `-`, 61 `=` and 58 `:`, right before the value or one space before it.
+    // 45 is `-`.
     const before = s > 0 ? unit.charCodeAt(s - 1) : 32
     const after = e < unit.length ? unit.charCodeAt(e) : 32
-    const mark = before === 32 && s >= 2 ? unit.charCodeAt(s - 2) : before
-    if (before !== 45 && after !== 45 && mark !== 61 && mark !== 58) {
+    if (before !== 45 && after !== 45 && !gateProseLabelled(unit, s)) {
       return true
     }
   }
@@ -790,11 +814,16 @@ const gateProseWord = (unit: string, w: string): boolean => {
 
 /** Whether a literal is printed in one prose example: a quoted string, a `0x` value, or a whole number, commas between its thousands or not. */
 const gateProseHas = (unit: string, lit: Literal): boolean => {
-  if (lit.text.length === 0) {
-    return false
-  }
   if (lit.kind === LitKind.Str) {
-    return unit.indexOf(`"${lit.text}"`) >= 0
+    const quoted = `"${lit.text}"`
+    let at = toI32(unit.indexOf(quoted))
+    while (at >= 0) {
+      if (!gateProseLabelled(unit, at)) {
+        return true
+      }
+      at = toI32(unit.indexOf(quoted, at + 1))
+    }
+    return false
   }
   if (lit.kind === LitKind.Hex) {
     return gateProseWord(unit, `0x${gateLitHex(lit)}`)

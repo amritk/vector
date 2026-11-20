@@ -743,8 +743,9 @@ of matching bytes:
   heading above it, up to the next heading or the section's end, across page
   breaks. A string printed on a heading is that case's (`"sample"`), and a
   value printed above the first heading (the key pair `x`, `Ux`) belongs to
-  every case, so it pairs with the values under any heading. One case must hold every value: `x`, `"sample"` and the `r`
-  under `With SHA-256, message = "sample":` pair, while that `"sample"` with
+  every case, so it pairs with the values under any heading. One case must
+  hold every value: `x`, `"sample"` and the `r` under
+  `With SHA-256, message = "sample":` pair, while that `"sample"` with
   the `r` under `With SHA-256, message = "test":` is refused ("they are from
   different test cases"). A labelled integer (`k = 5`) is placed by its
   line too. A value under the headings that is not placed by its line (a
@@ -753,9 +754,10 @@ of matching bytes:
 - **Prose examples.** Where no label names the values, a vector cited to
   prose pairs them only when one example prints them all: a sentence, or
   its part between `; `. A sentence that refers back with "this string" or
-  "this value" continues the example before it in its paragraph. A page
-  break that splits a sentence (the line before it does not end in `.` or
-  `:`, after any closing `"` or `)`) does not end the paragraph.
+  "this value" continues the example before it in its paragraph. A
+  sentence ends at `.`, `?` or `!`, after any closing `"`, `'` or `)`. A
+  page break ends the paragraph unless the line before it clearly goes on:
+  it ends in a letter, a digit or a comma.
   RFC 6455 §4.2.2's NOTE prints the key `"dGhlIHNhbXBsZSBub25jZQ=="`, hashes
   "this string", and base64-encodes "This value" to
   `"s3pPLMBiTxaQ9kYGzzhZRbK+xOo="`: three sentences, one example, so they
@@ -766,7 +768,7 @@ of matching bytes:
   commas), not with `494,878,333`. In prose, a string is found in quotes, a
   hex value as `0x…`, and an integer as a whole number of its own, not in
   a name (`key_256`, `SHA-256`, `16-bit`); a value after `=` or `:` is
-  labelled, so it needs its label.
+  labelled, so it needs its label, and two such lines are not one example.
 - **Decimals.** In an RFC, an unnamed run of digit-only lines, or one under a
   name that calls it a number (`Input scalar as a number (base 10):`), is a
   decimal number, not bytes, and is not a value.

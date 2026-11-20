@@ -463,6 +463,7 @@ const rfcTestWithRows = (t: Suite): void => {
     ['   With SHA-256, the message = "sample":', ""],
     ['   With SHA-256 message = "sample":', ""],
     ['   With, message = "sample":', ""],
+    ['   With  , message = "x":', ""],
     ['   With SHA-256, message "sample":', ""],
     ['   with SHA-256, message = "sample":', ""],
     ["   With this key, the signer computes:", ""],
