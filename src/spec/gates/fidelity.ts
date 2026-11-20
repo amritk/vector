@@ -1726,15 +1726,15 @@ const gateFidelityVector = (ctx: CheckContext, out: string[], set: SourceSet, k:
   if (tc === null && loaded !== null && loaded.doc.number >= 1 && rfcHasCases(whole)) {
     l.hint = `, or name one: {{Section ${at.section} of RFC${loaded.doc.number}}}, Test Vector #N`
   }
+  for (let i = 0; i < k.args.length; i++) {
+    gateLitCheck(l, k.args[i], `args[${i}]`)
+  }
+  const args = l.bounds.length
   // A command or the spec vouches for the expected value instead.
   const src = k.source
   const cited = src !== null && src.kind === VectorSourceKind.Cite
   const word = gateResultWord(k.expect)
   const expect = k.expect
-  for (let i = 0; i < k.args.length; i++) {
-    gateLitCheck(l, k.args[i], `args[${i}]`)
-  }
-  const args = l.bounds.length
   if (cited && word.length === 0 && expect !== null) {
     gateLitCheck(l, expect, "expect")
   }
