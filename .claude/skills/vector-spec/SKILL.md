@@ -276,7 +276,7 @@ profile extracts to, run
     printed once goes with its own case (RFC 8032 §7.1's empty MESSAGE:
     TEST 1), args in a call label's `( … )` with its value, values under
     one `With …:` heading (RFC 6979 §A.2) or above all, and unlabelled
-    prose values from one paragraph or `; ` part.
+    prose values from one sentence or `; ` part.
   - A wrapped value keeps the name before its first `=`.
   - A case printed per variant: use the row the function's name numbers.
   - [Writing a spec](../../../docs/guide/guides/writing-a-spec.md)'s "What a

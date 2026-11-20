@@ -291,7 +291,8 @@ feeds and headers around it. `tests/cli/check-rfc9000-prose/rfcs/rfc9000.txt`
 is an excerpt of RFC 9000, "QUIC: A UDP-Based Multiplexed and Secure
 Transport" (IETF, © 2021 IETF Trust and the persons identified as the document
 authors), from <https://www.rfc-editor.org/rfc/rfc9000.txt>: its first-page
-header and title, and Appendix A.1 with the note before it. All three are
+header and title, and Appendix A.1 with the note before it (the
+`Appendix A.` heading and its first sentence are left out). All three are
 excerpted unchanged and redistributed under the IETF Trust Legal Provisions,
 §3.c.iii; please reproduce this note if possible.
 
