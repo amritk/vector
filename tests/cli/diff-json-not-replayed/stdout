@@ -1,0 +1,50 @@
+{
+  "status": "DIFFERENT",
+  "report": {
+    "solver": "Z3 4.16.0 (native)",
+    "oldProgramName": "ratio",
+    "newProgramName": "ratio",
+    "matched": [
+      {
+        "name": "ratio",
+        "signature": "ratio(a: Real, b: Real): Real",
+        "paramRenames": [],
+        "domainNarrowed": {
+          "status": "none"
+        },
+        "domainWidened": {
+          "status": "none"
+        },
+        "valueDiff": {
+          "status": "witness",
+          "witness": {
+            "inputs": {
+              "a": "10450",
+              "b": "0"
+            },
+            "oldResult": "0",
+            "newResult": "1",
+            "replay": "not-replayed",
+            "replayDetail": "a value depends on a division by zero, which z3 leaves unspecified"
+          }
+        },
+        "status": "DIFFERENT",
+        "equivalent": false,
+        "equivalentOverReals": false,
+        "vacuous": false,
+        "contractChanges": {
+          "requiresAdded": [],
+          "requiresRemoved": [],
+          "ensuresAdded": [],
+          "ensuresRemoved": []
+        }
+      }
+    ],
+    "added": [],
+    "removed": [],
+    "signatureChanged": [],
+    "float64Deltas": [],
+    "float64Unsampled": []
+  },
+  "summary": "── VECTOR DIFF ─────────────────────────────────────────\n old: ratio   new: ratio\n Solver: Z3 4.16.0 (native)\n Status: DIFFERENT\n\n ✘ ratio(a: Real, b: Real): Real — BEHAVIOR DIFFERS\n     value:  at a = 10450, b = 0 → old = 0, new = 1\n\n Review each listed delta against the change you intended —\n the witnesses above are the entire behavioral change.\n (Proven over exact rationals, then compared on sampled float64 inputs;\n  assumes both versions pass vector verify.)"
+}

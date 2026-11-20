@@ -28,7 +28,7 @@ import { typecheckProgram } from "../lang/check"
 import { prettyMath } from "../lang/pretty"
 import { readProgram } from "../lang/read"
 import { SmtEmitter, SmtScope, smtPreamble } from "../smt/script"
-import { REPLAY_MISMATCH, REPLAY_NARROWED, REPLAY_VALUE, REPLAY_WIDENED, replayWitness } from "../solve/replay"
+import { REPLAY_MISMATCH, REPLAY_NARROWED, REPLAY_VALUE, REPLAY_WIDENED, replayUnconfirmed, replayWitness } from "../solve/replay"
 import { Counterexample, signatureOf, solveIsModelRefusal, solverLabel } from "../solve/report"
 
 /** Every shared function provably behaves identically. */
@@ -989,6 +989,9 @@ const diffCheckJson = (c: DiffCheck): OutJson => {
     }
     if (c.replay !== "") {
       w.put("replay", outJsonString(c.replay))
+    }
+    if (replayUnconfirmed(c.replay)) {
+      w.put("replayDetail", outJsonString(c.replayDetail))
     }
     out.put("witness", w)
   }

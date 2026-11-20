@@ -35,7 +35,7 @@ The dashboard's status is `MISMATCH`, its verdict counts the counterexamples tha
 
 `diff` replays its witnesses the same way, through both versions: a witness that does not do what z3 said is diff's `MISMATCH`, which also exits 2. See [Compare two versions](#compare-two-versions).
 
-With `--json`, each counterexample carries `"replay"`: `confirmed`, `mismatch`, or `not-replayed`. `not-replayed` means vector could not evaluate the input exactly: z3 gave a value it cannot read (such as an irrational root), a step overflowed 64 bits, or a value depends on a division by zero, which z3 leaves unspecified. The counterexample is not checked, and the verdict stays what z3 said.
+With `--json`, each counterexample carries `"replay"`: `confirmed`, `mismatch`, or `not-replayed`. `not-replayed` means vector could not evaluate the input exactly: z3 gave a value it cannot read (such as an irrational root), a step overflowed 64 bits, or a value depends on a division by zero, which z3 leaves unspecified. The counterexample is not checked, and the verdict stays what z3 said. A `mismatch` or `not-replayed` counterexample also carries `"replayDetail"`, the replay's reason: the first check that differed, or why the input could not be evaluated (`a value depends on a division by zero, which z3 leaves unspecified`). A `confirmed` one has none.
 
 Files that are not a spec plan and a program are `INVALID`:
 
@@ -201,6 +201,6 @@ A program diffed with itself is `EQUIVALENT`, and exits 0:
 | `ERROR` | z3 failed | 2 |
 | `MISMATCH` | a witness z3 gave does not do what z3 said when replayed through both versions: a bug in vector | 2 |
 
-Unlike `verify`, `diff` exits 2 for `INVALID` and `ERROR`: nothing was compared. Every witness is replayed through both versions exactly, as `verify` replays a counterexample, and one whose versions turn out to agree there is `MISMATCH`; with `--json` each witness carries `"replay"`. `--json` prints the outcome as JSON here too.
+Unlike `verify`, `diff` exits 2 for `INVALID` and `ERROR`: nothing was compared. Every witness is replayed through both versions exactly, as `verify` replays a counterexample, and one whose versions turn out to agree there is `MISMATCH`; with `--json` each witness carries `"replay"`, and a `mismatch` or `not-replayed` one `"replayDetail"` beside it, as in `verify`. `--json` prints the outcome as JSON here too.
 
 The [`vector verify`](../../reference/command-line/verify.md) and [`vector diff`](../../reference/command-line/diff.md) references list every flag.

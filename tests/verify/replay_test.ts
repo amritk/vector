@@ -26,6 +26,7 @@ import {
   replayParseValue,
   replayReport,
   replayValueText,
+  replayUnconfirmed,
   replayWitness,
 } from "../../src/verify/solve/replay"
 import { Counterexample, solveProgram } from "../../src/verify/solve/report"
@@ -758,6 +759,14 @@ const replayDiffMismatch = (t: Suite): void => {
   t.contains("the summary says so", out.summary, "this is a bug in vector, not in your programs")
 }
 
+// Which outcomes --json explains with replayDetail: the two that did not confirm.
+const replayUnconfirmedCases = (t: Suite): void => {
+  t.ok("not-replayed is explained", replayUnconfirmed(REPLAY_NOT_REPLAYED))
+  t.ok("mismatch is explained", replayUnconfirmed(REPLAY_MISMATCH))
+  t.ok("confirmed is not", !replayUnconfirmed(REPLAY_CONFIRMED))
+  t.ok("no replay at all is not", !replayUnconfirmed(""))
+}
+
 export const main = (): i32 => {
   const t = new Suite("verify/replay")
   replayParseCases(t)
@@ -770,5 +779,6 @@ export const main = (): i32 => {
   replayVerifyMismatch(t)
   replayUnreadableHazard(t)
   replayDiffMismatch(t)
+  replayUnconfirmedCases(t)
   return t.done()
 }

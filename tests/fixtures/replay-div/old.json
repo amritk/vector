@@ -1,0 +1,18 @@
+{
+  "programName": "ratio",
+  "functions": [
+    {
+      "name": "ratio",
+      "layer": 1,
+      "purpose": "Divide a by b.",
+      "params": [
+        { "name": "a", "type": "Real" },
+        { "name": "b", "type": "Real" }
+      ],
+      "returnType": "Real",
+      "requires": [],
+      "ensures": [ { "axiomId": "AX1", "expr": { "kind": "binop", "op": ">=", "left": { "kind": "var", "name": "result" }, "right": { "kind": "var", "name": "result" } } } ],
+      "body": { "kind": "binop", "op": "/", "left": { "kind": "var", "name": "a" }, "right": { "kind": "var", "name": "b" } }
+    }
+  ]
+}

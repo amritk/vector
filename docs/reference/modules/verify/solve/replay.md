@@ -22,6 +22,7 @@ Generated from [src/verify/solve/replay.ts](https://github.com/amritk/vector/blo
 - [`REPLAY_CONFIRMED`](#replay_confirmed)
 - [`REPLAY_NOT_REPLAYED`](#replay_not_replayed)
 - [`REPLAY_MISMATCH`](#replay_mismatch)
+- [`replayUnconfirmed`](#replayunconfirmed)
 - [`REPLAY_NARROWED`](#replay_narrowed)
 - [`REPLAY_WIDENED`](#replay_widened)
 - [`REPLAY_VALUE`](#replay_value)
@@ -67,6 +68,27 @@ The input does not do what z3 said: a bug in vector.
 ```ts
 const REPLAY_MISMATCH: string = "mismatch"
 ```
+
+### replayUnconfirmed
+
+Whether a replay outcome is one `--json` explains with `replayDetail`:
+`not-replayed` or `mismatch`, never `confirmed` or "" (not replayed at all).
+
+```ts
+function replayUnconfirmed(outcome: string): boolean
+```
+
+<scalar-field name="outcome" type="string" required>
+
+the replay's outcome
+
+</scalar-field>
+
+<scalar-field name="returns" type="boolean">
+
+whether it did not confirm
+
+</scalar-field>
 
 <a id="replay_narrowed"></a>
 

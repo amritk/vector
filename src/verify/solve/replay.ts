@@ -42,6 +42,16 @@ export const REPLAY_NOT_REPLAYED: string = "not-replayed"
 /** The input does not do what z3 said: a bug in vector. */
 export const REPLAY_MISMATCH: string = "mismatch"
 
+/**
+ * Whether a replay outcome is one `--json` explains with `replayDetail`:
+ * `not-replayed` or `mismatch`, never `confirmed` or "" (not replayed at all).
+ *
+ * @param outcome the replay's outcome
+ * @returns whether it did not confirm
+ */
+export const replayUnconfirmed = (outcome: string): boolean =>
+  outcome === REPLAY_NOT_REPLAYED || outcome === REPLAY_MISMATCH
+
 /** A diff witness of an input the old version accepts and the new rejects. */
 export const REPLAY_NARROWED: i32 = 1
 /** A diff witness of an input the new version accepts and the old rejects. */
