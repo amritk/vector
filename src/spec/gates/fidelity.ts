@@ -49,6 +49,8 @@ import {
   rfcSectionText,
   rfcUnvaluedLabels,
   rfcUnvaluedLines,
+  rfcWithHeading,
+  rfcWithHeadings,
 } from "../source/rfc"
 import { gateArgsAt, gateCitedSection, gatePlace, gateQuoteMissing, gateSources } from "./cite"
 import { gateIssue, gateWarn } from "./note"
@@ -98,7 +100,10 @@ class GateBound {
   call: i32[]
   /** Whether it was refused as printed in another test case's call label (gateLabelArgs), which says why. */
   other: boolean
+  /** For a hex value: the section line of each printing that is it. */
+  shown: i32[]
   constructor(at: string, label: string | null) {
+    this.shown = []
     this.at = at
     this.label = label
     this.num = ""
@@ -134,6 +139,10 @@ class GateLits {
   bounds: GateBound[]
   /** Appended to a refusal that asks for one test case: how to name one of the section's, or "". */
   hint: string
+  /** The section line of each case heading (rfcWithHeadings). */
+  heads: i32[]
+  /** The case heading every value is printed under (gateHeadingCase), or -1. */
+  chosen: i32
   /**
    * @param id the vector's id
    * @param where the section, for messages
@@ -159,6 +168,8 @@ class GateLits {
     this.blocks = gateWordBlocks(sec.lines, sec.pageBreaks)
     this.bounds = []
     this.hint = ""
+    this.heads = rfcWithHeadings(sec)
+    this.chosen = -1
   }
 }
 
@@ -264,7 +275,11 @@ const gateHexCheck = (l: GateLits, at: string, hex: string, label: string | null
   }
   if (label === null) {
     if (named.length === 0) {
-      l.bounds.push(new GateBound(at, null))
+      const u = new GateBound(at, null)
+      for (const v of whole) {
+        u.shown.push(v.line)
+      }
+      l.bounds.push(u)
     } else {
       gateLitFail(
         l,
@@ -293,6 +308,7 @@ const gateHexCheck = (l: GateLits, at: string, hex: string, label: string | null
       if (v.hex === hex) {
         has.push(of)
         b.held.push(v)
+        b.shown.push(v.line)
       }
       b.printed.push(v.line)
       of = of + 1
@@ -777,6 +793,118 @@ const gateLabelArgs = (l: GateLits, args: i32): void => {
   }
 }
 
+/** The index in the section's lines of line `k` of GateLits.lines, which holds no blank line; -1 past its end. */
+const gateSecLine = (l: GateLits, k: i32): i32 => {
+  let n = 0
+  for (let i = 0; i < l.sec.lines.length; i++) {
+    if (rfcNormalize(l.sec.lines[i]).length > 0) {
+      if (n === k) {
+        return i
+      }
+      n = n + 1
+    }
+  }
+  return -1
+}
+
+/**
+ * The section lines a bound is printed on, for placing it under a case
+ * heading: a text's or paired argument's lines, a hex value's printings that
+ * are it, an empty value's printings; null when it is not placed by line (a
+ * number, a block of words).
+ */
+const gateBoundSecLines = (l: GateLits, b: GateBound): i32[] | null => {
+  if (b.lines !== null || b.paired) {
+    return gateBoundPlaces(b).map((k: i32): i32 => gateSecLine(l, k))
+  }
+  if (b.shown.length > 0) {
+    return b.shown
+  }
+  return b.printed.length > 0 ? b.printed : null
+}
+
+/**
+ * The case headings (indices into GateLits.heads) a bound is printed under:
+ * every one when it is printed above the first, which holds for every case.
+ */
+const gateBoundCases = (l: GateLits, places: i32[]): i32[] => {
+  const out: i32[] = []
+  for (const p of places) {
+    let c = -1
+    for (let h = 0; h < l.heads.length; h++) {
+      if (l.heads[h] <= p) {
+        c = h
+      }
+    }
+    if (c < 0) {
+      const all: i32[] = []
+      for (let h = 0; h < l.heads.length; h++) {
+        all.push(h)
+      }
+      return all
+    }
+    if (out.indexOf(c) < 0) {
+      out.push(c)
+    }
+  }
+  return out
+}
+
+/** A case heading, for a message: `"With SHA-256, message = "sample":"`. */
+const gateHeadingText = (l: GateLits, h: i32): string => `"${rfcNormalize(l.sec.lines[l.heads[h]])}"`
+
+/**
+ * In a section split into cases by headings of RFC 6979 §A.2's form
+ * (rfcWithHeadings), the values are placed by line: each is under the
+ * heading above it, a string on a heading is that case's, and a value
+ * printed above the first heading is every case's. One heading must hold
+ * every value. Returns false, placing nothing, when a repeated value is not
+ * placed by line, so rounds pair it instead.
+ */
+const gateHeadingCase = (l: GateLits, inSection: string): boolean => {
+  const placed: GateBound[] = []
+  const cases: i32[][] = []
+  for (const b of l.bounds) {
+    if (b.other) {
+      continue
+    }
+    const at = gateBoundSecLines(l, b)
+    if (at === null) {
+      if (b.of > 1) {
+        return false
+      }
+      continue
+    }
+    placed.push(b)
+    cases.push(gateBoundCases(l, at))
+  }
+  const shared: i32[] = []
+  for (let h = 0; h < l.heads.length; h++) {
+    const hNow = h
+    if (cases.every((c: i32[]): boolean => c.indexOf(hNow) >= 0)) {
+      shared.push(h)
+    }
+  }
+  if (shared.length === 0) {
+    const each: string[] = []
+    for (let i = 0; i < placed.length; i++) {
+      if (cases[i].length < l.heads.length) {
+        const heads = cases[i].map((h: i32): string => gateHeadingText(l, h))
+        each.push(`${placed[i].at} is under ${heads.join(" or ")}`)
+      }
+    }
+    gateNote(
+      l,
+      l.id,
+      `${each.join(", ")} in ${inSection}, so they are from different test cases: use the values printed under one case heading`,
+      false,
+    )
+  } else if (shared.length === 1 && cases.some((c: i32[]): boolean => c.length < l.heads.length)) {
+    l.chosen = shared[0]
+  }
+  return true
+}
+
 /**
  * A cited vector's values are one test case: text printed on one shared line,
  * repeated labels from one round, and the expected value not an input's.
@@ -807,7 +935,9 @@ const gateOneTestCase = (l: GateLits, args: i32, sec: RfcSection): void => {
   // An expected value its arguments pair with is placed by its printing's
   // label, as they are, not by its round.
   const repeated = l.bounds.filter((b: GateBound): boolean => b.of > 1 && !b.paired && !b.other && !b.callArgs)
-  if (texts.length > 0 && repeated.length > 0) {
+  if (l.heads.length > 0 && gateHeadingCase(l, inSection)) {
+    // Placed under the case headings, by line.
+  } else if (texts.length > 0 && repeated.length > 0) {
     // A string is placed by its line and a labelled value by its round;
     // nothing relates the two.
     gateNote(
@@ -1381,6 +1511,103 @@ const gateCallHead = (l: GateLits, b: GateBound, label: string): string => {
 }
 
 /**
+ * Whether a value's own variant (`label`, the label or case heading it is
+ * printed under, as gateDigitRuns reads it) is the one the called function
+ * names, against its siblings' (labels of the same skeleton): another
+ * variant's number in the name is refused, none of them is a warning.
+ * Numbers that run consecutively across them count test cases, not variants.
+ */
+const gateVariantNote = (
+  l: GateLits,
+  k: Clause,
+  at: string,
+  subject: string,
+  label: string,
+  siblings: string[],
+  shownAll: string[],
+  inSection: string,
+): void => {
+  if (siblings.length === 0) {
+    return
+  }
+  const named = gateDigitRuns(k.call)
+  const mine = gateDigitRuns(label)
+  const all = [label]
+  for (const s of siblings) {
+    all.push(s)
+  }
+  const own: string[] = []
+  const theirs: string[] = []
+  const from: string[] = []
+  for (let si = 0; si < siblings.length; si++) {
+    const ds = gateDigitRuns(siblings[si])
+    for (let i = 0; i < ds.length; i++) {
+      const m = i < mine.length ? mine[i] : ""
+      if (ds[i] === m || gateCounts(all, i)) {
+        continue
+      }
+      if (own.indexOf(m) < 0) {
+        own.push(m)
+      }
+      if (theirs.indexOf(ds[i]) < 0) {
+        theirs.push(ds[i])
+        from.push(shownAll[si + 1])
+      }
+    }
+  }
+  if (own.every((d: string): boolean => named.indexOf(d) >= 0)) {
+    return
+  }
+  let other = -1
+  for (let i = 0; i < theirs.length && other < 0; i++) {
+    if (named.indexOf(theirs[i]) >= 0 && own.indexOf(theirs[i]) < 0) {
+      other = i
+    }
+  }
+  if (other >= 0) {
+    gateNote(
+      l,
+      at,
+      `${subject} in ${inSection}, but ${k.call} names ${theirs[other]}, as in "${from[other]}": a vector uses the value printed for the variant its function computes`,
+      false,
+    )
+  } else {
+    gateNote(
+      l,
+      at,
+      `${subject}, one of ${gateQuoted(shownAll)} in ${inSection}, and nothing in the name ${k.call} says which variant it computes: not checked that this is its own`,
+      true,
+    )
+  }
+}
+
+/**
+ * The case heading a vector's values are printed under (gateHeadingCase)
+ * names its variant (`SHA-256` in `With SHA-256, message = "sample":`): it
+ * must be the one the called function names, against the other headings'
+ * (gateVariantNote).
+ */
+const gateHeadingVariant = (l: GateLits, k: Clause, sec: RfcSection): void => {
+  const c = l.chosen
+  if (c < 0) {
+    return
+  }
+  const mine = rfcWithHeading(l.sec.lines[l.heads[c]])
+  const shape = gateSkeleton(mine)
+  const siblings: string[] = []
+  const shownAll = [mine]
+  for (const h of l.heads) {
+    const w = rfcWithHeading(l.sec.lines[h])
+    if (gateSkeleton(w) === shape && !gateSameLabel(w, mine) && siblings.indexOf(w) < 0) {
+      siblings.push(w)
+      shownAll.push(w)
+    }
+  }
+  const subject = `the values are printed under the case heading ${gateHeadingText(l, c)}`
+  gateVariantNote(l, k, k.id, subject, mine, siblings, shownAll, `${l.where} ("${sec.title}")`)
+}
+
+/**
  * A value printed under one of several labels that differ only in a number
  * ("HMAC-SHA-256", "HMAC-SHA-512") must be the variant the called function
  * names: another variant's number in the name is refused, none of them is a
@@ -1397,7 +1624,6 @@ const gateOwnVariant = (l: GateLits, k: Clause, sec: RfcSection): void => {
       printed.push(vl)
     }
   }
-  const named = gateDigitRuns(k.call)
   const inSection = `${l.where} ("${sec.title}")`
   for (const b of l.bounds) {
     const shown = b.label
@@ -1412,7 +1638,6 @@ const gateOwnVariant = (l: GateLits, k: Clause, sec: RfcSection): void => {
     // the rest of the label, inside the `( … )` too, still names the variant.
     const head = gateCallHead(l, b, shown)
     const label = gateLabelUnsized(rounds ? gateLabelUncounted(head) : head)
-    const mine = gateDigitRuns(label)
     const shape = gateSkeleton(label)
     const siblings: string[] = []
     const shownAll = [shown]
@@ -1424,56 +1649,7 @@ const gateOwnVariant = (l: GateLits, k: Clause, sec: RfcSection): void => {
         shownAll.push(p)
       }
     }
-    if (siblings.length === 0) {
-      continue
-    }
-    const all = [label]
-    for (const s of siblings) {
-      all.push(s)
-    }
-    const own: string[] = []
-    const theirs: string[] = []
-    const from: string[] = []
-    for (let si = 0; si < siblings.length; si++) {
-      const ds = gateDigitRuns(siblings[si])
-      for (let i = 0; i < ds.length; i++) {
-        const m = i < mine.length ? mine[i] : ""
-        if (ds[i] === m || gateCounts(all, i)) {
-          continue
-        }
-        if (own.indexOf(m) < 0) {
-          own.push(m)
-        }
-        if (theirs.indexOf(ds[i]) < 0) {
-          theirs.push(ds[i])
-          from.push(shownAll[si + 1])
-        }
-      }
-    }
-    if (own.every((d: string): boolean => named.indexOf(d) >= 0)) {
-      continue
-    }
-    let other = -1
-    for (let i = 0; i < theirs.length && other < 0; i++) {
-      if (named.indexOf(theirs[i]) >= 0 && own.indexOf(theirs[i]) < 0) {
-        other = i
-      }
-    }
-    if (other >= 0) {
-      gateNote(
-        l,
-        `${k.id}.${b.at}`,
-        `the value is printed under "${shown}" in ${inSection}, but ${k.call} names ${theirs[other]}, as in "${from[other]}": a vector uses the value printed for the variant its function computes`,
-        false,
-      )
-    } else {
-      gateNote(
-        l,
-        `${k.id}.${b.at}`,
-        `the value is printed under "${shown}", one of ${gateQuoted(shownAll)} in ${inSection}, and nothing in the name ${k.call} says which variant it computes: not checked that this is its own`,
-        true,
-      )
-    }
+    gateVariantNote(l, k, `${k.id}.${b.at}`, `the value is printed under "${shown}"`, label, siblings, shownAll, inSection)
   }
 }
 
@@ -1549,6 +1725,7 @@ const gateFidelityVector = (ctx: CheckContext, out: string[], set: SourceSet, k:
   gateLabelArgs(l, args)
   gateOneTestCase(l, args, sec)
   gateOwnVariant(l, k, sec)
+  gateHeadingVariant(l, k, sec)
   const it = k.iterate
   if (it !== null) {
     gateIterateCount(ctx, out, k, it, sec, where)
