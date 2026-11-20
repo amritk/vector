@@ -270,6 +270,15 @@ const completenessTestAqRows = (): CompletenessTestAqRow[] => {
   return [
     new CompletenessTestAqRow("two anchored quotes in two sections", "aq-two", "aq-two", "", "", []),
     new CompletenessTestAqRow("an unanchored quote", "aq-unanchored", "aq-unanchored", "", "", [`§4: ${pad}`]),
+    new CompletenessTestAqRow("two anchored quotes in one section", "aq-one", "aq-one", "", "", []),
+    new CompletenessTestAqRow(
+      "an unanchored quote beside an anchored one",
+      "aq-one-unanchored",
+      "aq-one-unanchored",
+      "",
+      "",
+      [`§3: ${pad}`],
+    ),
     new CompletenessTestAqRow("the spec's own sentence beside a quote", "aq-own", "aq-own", "", "", [
       `§3: MUST NOT sentence is neither a requirement nor an exclusion: "aqEncode MUST NOT add a line feed."`,
     ]),
