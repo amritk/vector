@@ -494,6 +494,24 @@
         "returns": {
           "$ref": "#/$defs/returnType"
         },
+        "out": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Only on a function returning bytes or bytes? that the real function writes into a buffer: it takes (out: u8[], at: i32) among its parameters and returns end, an i32, the result being out[at, end).",
+          "properties": {
+            "at": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255,
+              "description": "Where among the declared params the (out, at) pair goes."
+            },
+            "capacity": {
+              "type": "string",
+              "description": "How many bytes past at the buffer holds: decimal numbers, +, *, parentheses and <bytes param>.length, spelt with single spaces around + and *, like 2 * src.length + 8."
+            }
+          },
+          "required": ["at", "capacity"]
+        },
         "names": {
           "$ref": "#/$defs/nameOverrides"
         }

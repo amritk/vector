@@ -1,0 +1,1 @@
+vector spec check tests/fixtures/base64-out/contracts/base64-out.json --nish-root .nish

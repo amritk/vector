@@ -1,0 +1,1 @@
+vector spec emit tests/fixtures/base64-out/contracts/base64-out.json -o dist/emit-base64-out-golden.ts
