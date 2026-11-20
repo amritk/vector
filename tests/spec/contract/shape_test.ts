@@ -12,6 +12,7 @@ import {
   shapeTestPrefixes,
 } from "../../../src/spec/contract/shape"
 import { LitKind } from "../../../src/spec/contract/types"
+import { specTestRepeat } from "../repeat"
 
 /** A small valid contract; each case below changes one part of it. */
 const BASE: string = `{
@@ -655,6 +656,26 @@ export const main = (): i32 => {
       "functions[0].out.capacity: a capacity; it is over 1048576 (2^20) even with every length 0",
     ],
     ["a capacity at 2^20", `"returns": "bytes", "out": {"at": 0, "capacity": "1024 * 1024 + 0 * b.length"}}`, ""],
+    [
+      "a capacity of 255 tokens",
+      `"returns": "bytes", "out": {"at": 0, "capacity": "1${specTestRepeat(" + 1", 127)}"}}`,
+      "",
+    ],
+    [
+      "a capacity of 256 tokens, which no capacity is, so it stops rather than counts",
+      `"returns": "bytes", "out": {"at": 0, "capacity": "1${specTestRepeat(" + 1", 127)} +"}}`,
+      "functions[0].out.capacity: a capacity; it stops at the end",
+    ],
+    [
+      "a capacity of 257 tokens",
+      `"returns": "bytes", "out": {"at": 0, "capacity": "1${specTestRepeat(" + 1", 128)}"}}`,
+      "functions[0].out.capacity: a capacity; it has more than 256 tokens (numbers, names and punctuation)",
+    ],
+    [
+      "0 times a product past f64",
+      `"returns": "bytes", "out": {"at": 0, "capacity": "1048576${specTestRepeat(" * 1048576", 59)} * 0"}}`,
+      "functions[0].out.capacity: a capacity; it multiplies 0 by a product past what an f64 holds",
+    ],
     [
       "a capacity nested 17 deep",
       `"returns": "bytes", "out": {"at": 0, "capacity": "(((((((((((((((((8)))))))))))))))))"}}`,

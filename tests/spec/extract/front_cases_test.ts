@@ -1,6 +1,7 @@
 import { Suite } from "nish/testing"
 import { FnSig } from "../../../src/spec/contract/types"
 import { FrontRefusal, frontParseInterface, frontParseProperty } from "../../../src/spec/front/front"
+import { specTestRepeat } from "../repeat"
 
 /** One refusal as `message @line:col`, or how many there were. */
 const frontCasesTestRefusal = (r: FrontRefusal[]): string =>
@@ -271,6 +272,26 @@ const frontCasesTestOut = (t: Suite): void => {
       "a product past 2^20",
       `${m}export const f = (d: u8[] /* out 1048576 * 1048576 */): u8[]`,
       `\`f(d)\`: the capacity \`1048576 * 1048576\` is over 1048576 (2^20) even with every length 0; ${cap} @2:27`,
+    ],
+    [
+      "255 tokens",
+      `${m}export const f = (d: u8[] /* out 1${specTestRepeat(" + 1", 127)} */): u8[]`,
+      `() -> bytes out@0=1${specTestRepeat(" + 1", 127)}`,
+    ],
+    [
+      "256 tokens, which no capacity is, so it stops rather than counts",
+      `${m}export const f = (d: u8[] /* out 1${specTestRepeat(" + 1", 127)} + */): u8[]`,
+      `\`f(d)\`: the capacity \`1${specTestRepeat(" + 1", 127)} +\` stops at the end; ${cap} @2:27`,
+    ],
+    [
+      "257 tokens",
+      `${m}export const f = (d: u8[] /* out 1${specTestRepeat(" + 1", 128)} */): u8[]`,
+      `\`f(d)\`: the capacity \`1${specTestRepeat(" + 1", 128)}\` has more than 256 tokens (numbers, names and punctuation); ${cap} @2:27`,
+    ],
+    [
+      "0 times a product past f64",
+      `${m}export const f = (d: u8[] /* out 1048576${specTestRepeat(" * 1048576", 59)} * 0 */): u8[]`,
+      `\`f(d)\`: the capacity \`1048576${specTestRepeat(" * 1048576", 59)} * 0\` multiplies 0 by a product past what an f64 holds; ${cap} @2:27`,
     ],
     [
       "parentheses 16 deep",

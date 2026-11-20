@@ -8,6 +8,7 @@ import { emitWriteFile } from "../../../src/spec/emit/file"
 import { emitTargetOutRefusal } from "../../../src/spec/emit/target"
 import { runFormat } from "../../../src/spec/run/command"
 import { RunOutcome, runTestFile } from "../../../src/spec/run/run"
+import { specTestRepeat } from "../repeat"
 
 /**
  * A contract over out buffers: outCopy writes its bytes back (vector, iterated
@@ -150,15 +151,6 @@ const outEmitProgram = (c: Contract): string => {
   return p.isOk() ? p.value : `REFUSED\n${p.error.join("\n")}`
 }
 
-/** `s` written `n` times. */
-const outEmitRepeat = (s: string, n: i32): string => {
-  let out = ""
-  for (let i: i32 = 0; i < n; i++) {
-    out = `${out}${s}`
-  }
-  return out
-}
-
 /** `n` bytes counting up from 0, as hex. */
 const outEmitHex = (n: i32): string => {
   const digits = "0123456789abcdef"
@@ -298,7 +290,7 @@ export const main = (): i32 => {
   // factors of 2^20 are past what an f64 holds: outInf's capacity is
   // Infinity on a byte, and outNan's, Infinity times 0, is NaN, which only a
   // check that it is at most 2^20 refuses. With no bytes, both are 0.
-  const inf = `d.length * 1048576${outEmitRepeat(" * 1048576", 59)}`
+  const inf = `d.length * 1048576${specTestRepeat(" * 1048576", 59)}`
   const at = outEmitHex(256)
   const past = outEmitHex(257)
   const huge = outEmitHex(2048)

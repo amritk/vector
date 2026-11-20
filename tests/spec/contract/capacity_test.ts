@@ -1,20 +1,6 @@
 import { Suite } from "nish/testing"
 import { capacityNames, capacityNish, capacityParse, capacityShow } from "../../../src/spec/contract/capacity"
-
-/** `s` written `n` times, built by doubling so a long one stays linear. */
-const capTestRepeat = (s: string, n: i32): string => {
-  let out = ""
-  let piece = s
-  let k: i32 = n
-  while (k > 0) {
-    if (k % 2 === 1) {
-      out = `${out}${piece}`
-    }
-    piece = `${piece}${piece}`
-    k = k / 2
-  }
-  return out
-}
+import { specTestRepeat } from "../repeat"
 
 /** A capacity in its one spelling, then the names it reads; or why it is refused. */
 const capTestShow = (text: string): string => {
@@ -70,27 +56,30 @@ export const main = (): i32 => {
     ["()", "stops at `)`"],
     ["2 ** 3", "stops at `*`"],
     // parentheses nest at most 16 deep
-    [`${capTestRepeat("(", 16)}1${capTestRepeat(")", 16)}`, "1 []"],
-    [`${capTestRepeat("(", 17)}1${capTestRepeat(")", 17)}`, "nests parentheses deeper than 16"],
-    [`${capTestRepeat("(", 100000)}1`, TOO_MANY],
+    [`${specTestRepeat("(", 16)}1${specTestRepeat(")", 16)}`, "1 []"],
+    [`${specTestRepeat("(", 17)}1${specTestRepeat(")", 17)}`, "nests parentheses deeper than 16"],
+    [`${specTestRepeat("(", 100000)}1`, TOO_MANY],
     // at most 256 tokens, however spaced, so neither depth nor length reaches the stack
-    [`1${capTestRepeat(" + 1", 127)}`, `1${capTestRepeat(" + 1", 127)} []`],
-    [`1${capTestRepeat("+1", 127)}+ 2`, TOO_MANY],
-    [`1${capTestRepeat("+1", 127)}${capTestRepeat(" ", 100000)}`, `1${capTestRepeat(" + 1", 127)} []`],
-    [`1${capTestRepeat(" + 1", 190000)}`, TOO_MANY],
-    [`src.length${capTestRepeat(" + src.length", 63)}`, `src.length${capTestRepeat(" + src.length", 63)} [src]`],
-    [`src.length${capTestRepeat(" + src.length", 64)}`, TOO_MANY],
+    [`1${specTestRepeat(" + 1", 127)}`, `1${specTestRepeat(" + 1", 127)} []`],
+    // 256 tokens: a capacity is an odd count, so 255 and one more stop the parser, not the count
+    [`1${specTestRepeat(" + 1", 127)} +`, "stops at the end"],
+    [`1${specTestRepeat(" + 1", 127)})`, "stops at `)`"],
+    [`1${specTestRepeat("+1", 127)}+ 2`, TOO_MANY],
+    [`1${specTestRepeat("+1", 127)}${specTestRepeat(" ", 100000)}`, `1${specTestRepeat(" + 1", 127)} []`],
+    [`1${specTestRepeat(" + 1", 190000)}`, TOO_MANY],
+    [`src.length${specTestRepeat(" + src.length", 63)}`, `src.length${specTestRepeat(" + src.length", 63)} [src]`],
+    [`src.length${specTestRepeat(" + src.length", 64)}`, TOO_MANY],
     // a product past what an f64 holds is Infinity, and Infinity times 0 is NaN
-    [`1048576${capTestRepeat("*1048576", 49)}`, OVER],
-    [`1048576${capTestRepeat("*1048576", 59)}`, OVER],
-    [`1048576${capTestRepeat("*1048576", 59)}*0`, NAN],
-    [`(1048576${capTestRepeat("*1048576", 59)})*src.length`, NAN],
-    [`(1048576${capTestRepeat("*1048576", 59)}) * (src.length + 0)`, NAN],
+    [`1048576${specTestRepeat("*1048576", 49)}`, OVER],
+    [`1048576${specTestRepeat("*1048576", 59)}`, OVER],
+    [`1048576${specTestRepeat("*1048576", 59)}*0`, NAN],
+    [`(1048576${specTestRepeat("*1048576", 59)})*src.length`, NAN],
+    [`(1048576${specTestRepeat("*1048576", 59)}) * (src.length + 0)`, NAN],
     // left to right, a 0 or a length first keeps the floor 0; a sample's length can still make it Infinity or NaN
-    [`0*1048576${capTestRepeat("*1048576", 59)}`, `0 * 1048576${capTestRepeat(" * 1048576", 59)} []`],
+    [`0*1048576${specTestRepeat("*1048576", 59)}`, `0 * 1048576${specTestRepeat(" * 1048576", 59)} []`],
     [
-      `src.length*1048576${capTestRepeat("*1048576", 59)}*0`,
-      `src.length * 1048576${capTestRepeat(" * 1048576", 59)} * 0 [src]`,
+      `src.length*1048576${specTestRepeat("*1048576", 59)}*0`,
+      `src.length * 1048576${specTestRepeat(" * 1048576", 59)} * 0 [src]`,
     ],
   ]
   for (const c of cases) {
