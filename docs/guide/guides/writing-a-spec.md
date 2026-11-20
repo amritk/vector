@@ -736,6 +736,31 @@ of matching bytes:
   so is a case the section has no heading for, a heading printed twice, or
   a section with subsections. `spec check` applies the case again, and the
   report shows the source as `§A.3, Test Vector #2`.
+- **Case headings.** RFC 6979 §A.2 heads each test case with a line such
+  as `With SHA-256, message = "sample":` (trimmed: `With `, words up to
+  `, `, one name, ` = `, a quoted string, and a closing `:`). Where a
+  section holds such headings, each value is placed by its line: under the
+  heading above it, up to the next heading or the section's end, across page
+  breaks. A string printed on a heading is that case's (`"sample"`), and a
+  value printed above the first heading (the key pair `x`, `Ux`) belongs to
+  every case. One case must hold every value: `x`, `"sample"` and the `r`
+  under `With SHA-256, message = "sample":` pair, while that `"sample"` with
+  the `r` under `With SHA-256, message = "test":` is refused ("they are from
+  different test cases"). Where a value repeated in the section is not
+  placed by its line, the rounds above pair it instead.
+- **Prose examples.** Where no label names the values, a vector cited to
+  prose pairs them only when one example prints them all: a paragraph, or
+  its part between `; `. A page break that splits a sentence (the line
+  before it does not end in `.`, `:` or `?`) does not end the paragraph.
+  RFC 6455 §4.2.2's NOTE prints the key `"dGhlIHNhbXBsZSBub25jZQ=="` and
+  the value `"s3pPLMBiTxaQ9kYGzzhZRbK+xOo="` in one paragraph, so they pair;
+  that key beside `"websocket"` from another paragraph is refused ("in
+  different examples"). RFC 9000 §A.1 prints its varints in one sentence,
+  split by semicolons: `0x7bbd` pairs with `15,293`
+  (`{"hex": "7bbd"}`, `{"int": 15293}`, the number with or without its
+  commas), not with `494,878,333`. In prose, a string is found in quotes, a
+  hex value as `0x…`, and an integer as a whole number of its own; a value
+  after `=` or `:` is labelled, so it needs its label.
 - **Decimals.** In an RFC, an unnamed run of digit-only lines, or one under a
   name that calls it a number (`Input scalar as a number (base 10):`), is a
   decimal number, not bytes, and is not a value.

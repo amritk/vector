@@ -245,10 +245,9 @@ profile extracts to, run
     and is spelled as the section prints it, `0x` and all.
 - **Source** says where the expected value comes from:
   - `{{Section N of RFCx}}`: the value is printed there. Prefer this.
-  - `{{Section N of RFCx}}, Test Vector #K`: the values are all printed in
-    that one case of the section, under its `Test Vector #K:` heading. Use
-    it when a section prints several cases and a plain cite is refused as
-    unclear.
+  - `{{Section N of RFCx}}, Test Vector #K`: the values are all printed
+    under the section's `Test Vector #K:` heading. Use it when a plain cite
+    is refused as unclear.
   - `{{Section N of RFCx}}; result {{Section M of RFCx}}`: for a `null`,
     `true` or `false` result, the inputs are printed in section N and the
     result is supported by section M of the main RFC: a covered requirement
@@ -275,7 +274,9 @@ profile extracts to, run
     array is a whole printed block, word for word.
   - Take the args and the expected value from one test case. A label
     printed once goes with its own case (RFC 8032 §7.1's empty MESSAGE:
-    TEST 1), and args in a call label's `( … )` with its value.
+    TEST 1), args in a call label's `( … )` with its value, values under
+    one `With …:` heading (RFC 6979 §A.2) or above all, and unlabelled
+    prose values from one paragraph or `; ` part.
   - A wrapped value keeps the name before its first `=`.
   - A case printed per variant: use the row the function's name numbers.
   - [Writing a spec](../../../docs/guide/guides/writing-a-spec.md)'s "What a
