@@ -178,7 +178,7 @@ for (const [name, headCaps, status, lines] of BASE_CASES) {
   });
 }
 
-const renameFiles = { "a.md": x(5), "b.md": "y".repeat(5) };
+const renameFiles = { "a.md": x(5), "b.md": "y\ny\ny\ny\n" };
 const mv = (from, to) => (dir) => git(dir, "mv", from, to);
 
 // [name, base caps, the change committed on top, the head's caps, exit status,
@@ -228,6 +228,18 @@ const RENAME_CASES = [
     (dir) => {
       writeFileSync(path.join(dir, "a.md"), x(6));
       mv("b.md", "c.md")(dir);
+    },
+    { "a.md": 10, "c.md": 10 },
+    0,
+    [],
+  ],
+  [
+    "a rename whose content also changed",
+    baseCaps,
+    (dir) => {
+      mv("b.md", "c.md")(dir);
+      writeFileSync(path.join(dir, "c.md"), "y\ny\ny\nz\n");
+      git(dir, "add", "c.md");
     },
     { "a.md": 10, "c.md": 10 },
     0,
