@@ -1,7 +1,7 @@
 # Project rules
 
 vector is written in [Nish](https://github.com/amritk/nish), a static subset
-of TypeScript compiled ahead of time to a native binary, `dist/vector`. The
+of TypeScript compiled to a native binary, `dist/vector`. The
 compiler is pinned in `.nish-version` (read by `scripts/fetch-nish.sh`) and
 lives in `.nish/`; z3 is
 pinned in `scripts/fetch-z3.sh` and lives in `.z3/`. Before writing Nish,
@@ -92,6 +92,9 @@ headers.** The tests cover a value on each side of a page break, and two
 separate blocks split only by one. A pairing rule reads values as the RFC
 prints them, never from the contract, and refuses each look-alike: another
 case, variant, sentence or paragraph.
+
+**Every source file a gate reads is pinned by SHA-256**, with a test that an
+edit after extraction is refused.
 
 **Generated files are regenerated, never edited by hand.** That covers
 `docs/reference/**` and its routes in `scalar.config.json`, `tests/dogfood/**`, `contracts/*.json`
