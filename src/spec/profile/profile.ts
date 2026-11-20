@@ -2776,8 +2776,7 @@ const profileUnknownCascade = (c: ProfileContext, message: string): boolean => {
   if (!message.startsWith(head)) {
     return false
   }
-  const end = message.indexOf("`", head.length)
-  return end > 0 && profileIfaceCascade(c, message.substring(head.length, end))
+  return profileIfaceCascade(c, message.substring(head.length, message.indexOf("`", head.length)))
 }
 
 const profileReadProperties = (c: ProfileContext, code: XmlNode[]): void => {
@@ -3078,7 +3077,7 @@ const profileSorted = (c: ProfileContext): Result<ProfileRead, ProfileRefusal[]>
  * @param xmlPath the spec's path, whose basename names the contract
  * @param md the markdown it was built from, for refusals at its lines; null when unknown
  * @param rfcs the RFCs it may cite; one asked for and absent is recorded in `rfcs.missing`
- * @returns the contract and where each part was read, or every refusal: the ts-interface block's first, then the rest, each in XML document order
+ * @returns the contract and where each part was read, or every refusal: the ts-interface block's first, the block-count refusal at their head, then the rest, each in XML document order
  */
 export const profileRead = (
   doc: XmlDocument,
