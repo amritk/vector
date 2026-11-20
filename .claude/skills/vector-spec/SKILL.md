@@ -266,8 +266,8 @@ profile extracts to, run
     expected value it is a `spec` source (the covered requirement states it);
     for any other value it is a `cite` of that section, which must print the
     value.
-  - A code span holding a command: the value is its trimmed stdout, so
-    Expected is no f64 or words; bytes print as hex.
+  - A code span holding a command: its trimmed stdout, as hex bytes, a
+    string, a decimal int, `true`, `false` or `null` (no f64 or words).
 - **Values from an RFC:**
   - Each one is a *whole* printed value, never a prefix or a tail. A word
     array is a whole printed block of words, word for word.
