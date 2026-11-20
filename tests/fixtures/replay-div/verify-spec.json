@@ -1,0 +1,20 @@
+{
+  "programName": "ratio",
+  "axioms": [
+    { "id": "AX1", "kind": "pre", "statement": "The divisor is zero." },
+    { "id": "AX2", "kind": "post", "statement": "The result is the dividend." }
+  ],
+  "units": [
+    {
+      "name": "ratio",
+      "layer": 1,
+      "purpose": "Divide a by a zero b.",
+      "params": [
+        { "name": "a", "type": "Real" },
+        { "name": "b", "type": "Real" }
+      ],
+      "returnType": "Real",
+      "relevantAxiomIds": ["AX1", "AX2"]
+    }
+  ]
+}

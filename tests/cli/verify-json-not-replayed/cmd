@@ -1,0 +1,1 @@
+vector verify --json tests/fixtures/replay-div/verify-spec.json tests/fixtures/replay-div/verify.json

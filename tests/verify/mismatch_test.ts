@@ -93,7 +93,7 @@ export const main = (): i32 => {
   t.contains("at z3's own witness", honestDiff, "domain: amount = 0 was accepted, now REJECTED")
 
   // With --json, a counterexample or witness that did not replay says why,
-  // in the replay's own words (a confirmed one, in the goldens, has none).
+  // in the replay's own words; a confirmed one has no replayDetail.
   const verifyJson = mismatchRun(vector, fake, real, "s/(f0_amount 0.0)/(f0_amount (- 5.0))/", [
     "verify",
     "--json",
@@ -101,7 +101,19 @@ export const main = (): i32 => {
     "tests/fixtures/unsat.json",
   ])
   t.contains("verify --json marks the mismatch", verifyJson, `"replay": "mismatch",\n`)
-  t.contains("and names the check that differed", verifyJson, `"replayDetail": "requires amount >= 0 is false`)
+  t.contains(
+    "and names the check that differed",
+    verifyJson,
+    `"replayDetail": "requires amount >= 0 is false at the counterexample"\n`,
+  )
+  const honestVerifyJson = mismatchRun(vector, fake, real, "", [
+    "verify",
+    "--json",
+    "tests/fixtures/unsat-spec.json",
+    "tests/fixtures/unsat.json",
+  ])
+  t.contains("unforged, verify --json confirms", honestVerifyJson, `"replay": "confirmed"`)
+  t.ok("with no replayDetail", honestVerifyJson.indexOf("replayDetail") < 0)
   const diffJson = mismatchRun(vector, fake, real, "s/(d1x0_amount 0.0))/(d1x0_amount 5.0))/", [
     "diff",
     "--json",
