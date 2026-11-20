@@ -388,7 +388,8 @@ the words, or "" when the line heads no case
 Where a section's case headings of RFC 6979 §A.2's form are
 (rfcWithHeading): each heads the case below it, up to the next heading or
 the section's end, and what is printed above the first belongs to every
-case.
+case. A section with subsections has none: their headings are theirs,
+so a case is read from the subsection that holds it.
 
 ```ts
 function rfcWithHeadings(sec: RfcSection): i32[]
