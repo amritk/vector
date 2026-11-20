@@ -750,7 +750,9 @@ of matching bytes:
   different test cases"). A labelled integer (`k = 5`) is placed by its
   line too. A value under the headings that is not placed by its line (a
   decimal fraction, a word block) is refused: nothing says which case it is
-  under, so cite values printed on lines of their own.
+  under, so cite values printed on lines of their own. A section with
+  subsections reads no headings: cite the subsection (§A.2.5, not §A.2), or
+  a key from one subsection would pair with another's cases.
 - **Decimals.** In an RFC, an unnamed run of digit-only lines, or one under a
   name that calls it a number (`Input scalar as a number (base 10):`), is a
   decimal number, not bytes, and is not a value.

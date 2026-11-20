@@ -18,12 +18,17 @@ const CASES_TEST_R256: string = "EFD48B2AACB6A8FD1140DD9CD45E81D69D2C877B56AAF99
 const CASES_TEST_S512: string = "2362AB1ADBE2B8ADF9CB9EDAB740EA6049C028114F2460F96554F61FAE3302FE"
 const CASES_TEST_R256T: string = "F1ABB023518351CD71D881567B1EA663ED3EFCF6C5132B354F28D3B0B7D38367"
 const CASES_TEST_R1T: string = "0CBCC86FD6ABD1D99E703E1EC50069EE5C0B4BA4B9AC60E409E8EC5910D81A89"
+/** §A.5's values, printed with no label, one under each heading. */
+const CASES_TEST_BARE1: string = "00112233445566778899AABBCCDDEEFF00112233445566778899AABBCCDDEEFF"
+const CASES_TEST_BARE2: string = "FFEEDDCCBBAA99887766554433221100FFEEDDCCBBAA99887766554433221100"
 
 /**
  * RFC 6979 §A.2.5's layout, cut to the SHA-1, SHA-256 and SHA-512 cases: the
  * key above the case headings, the "sample" cases on one page and the "test"
  * cases on the next, so the last "sample" case and the first "test" case are
- * split only by a page break. A section with no headings follows.
+ * split only by a page break. A section with no headings follows, and a
+ * parent §A.5 whose subsections each hold a key and its cases, split by a
+ * page break.
  */
 const casesTestRfc = (): string =>
   [
@@ -106,6 +111,29 @@ const casesTestRfc = (): string =>
     "   t = 1.5",
     "",
     "   MESSAGE (length 0 bytes):",
+    "",
+    "A.5.  Parent",
+    "",
+    "   Two keys follow.",
+    "",
+    "A.5.1.  First Key",
+    "",
+    `   x = ${CASES_TEST_UX}`,
+    "",
+    '   With SHA-512, message = "test":',
+    `   r = ${CASES_TEST_R1T}`,
+    casesTestBreak("6979", 34),
+    "A.5.2.  Second Key",
+    "",
+    `   x = ${CASES_TEST_X}`,
+    "",
+    '   With SHA-256, message = "sample":',
+    `   r = ${CASES_TEST_R256}`,
+    `     = ${CASES_TEST_BARE1}`,
+    casesTestBreak("6979", 35),
+    '   With SHA-256, message = "test":',
+    `   r = ${CASES_TEST_R256T}`,
+    `     = ${CASES_TEST_BARE2}`,
     "",
   ].join("\n")
 
@@ -339,9 +367,50 @@ const casesTestNoHeadingRows = (t: Suite): void => {
   )
 }
 
+/**
+ * A parent section's own lines hold no case heading, so its subsections'
+ * headings do not pair values across them: each subsection is cited for its
+ * cases. An unlabelled value is placed by its line, as a labelled one is.
+ */
+const casesTestSubsectionRows = (t: Suite): void => {
+  const x = casesTestHex(CASES_TEST_UX, "x")
+  const sample = casesTestHex(CASES_TEST_R256, "r")
+  casesTestRowIs(
+    t,
+    "6979 §A.5: a key from one subsection, r from another",
+    casesTestRun("sign256", "A.5", `${x}, {"str": "test"}`, casesTestHex(CASES_TEST_R256T, "r")),
+    'in RFC §A.5 ("Parent"): nothing pairs a printed string with one of several labelled values: cite the subsection that holds one test case',
+  )
+  casesTestRowIs(
+    t,
+    "6979 §A.5.1: the key and r of one subsection",
+    casesTestRun("sign512", "A.5.1", `${x}, {"str": "test"}`, casesTestHex(CASES_TEST_R1T, "r")),
+    "",
+  )
+  casesTestRowIs(
+    t,
+    "6979 §A.5.2: an unlabelled value under the same heading",
+    casesTestRun("sign256", "A.5.2", `{"hex": "${CASES_TEST_BARE1}"}, {"str": "sample"}`, sample),
+    "",
+  )
+  casesTestRowIs(
+    t,
+    "6979 §A.5.2: an unlabelled value under the other heading",
+    casesTestRun("sign256", "A.5.2", `{"hex": "${CASES_TEST_BARE2}"}, {"str": "sample"}`, sample),
+    'args[0] is under "With SHA-256, message = "test":", args[1] is under "With SHA-256, message = "sample":"',
+  )
+  casesTestRowIs(
+    t,
+    "6979 §A.3: no heading, a key and r of one round",
+    casesTestRunWith(`{"name": "x", "type": "bytes"}`, "sign256", "A.3", casesTestHex(CASES_TEST_X, "x"), sample),
+    "",
+  )
+}
+
 export const main = (): i32 => {
   const t = new Suite("spec/gates/cases")
   casesTestHeadingRows(t)
   casesTestNoHeadingRows(t)
+  casesTestSubsectionRows(t)
   return t.done()
 }

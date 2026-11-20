@@ -519,13 +519,17 @@ export const rfcWithHeading = (line: string): string => {
  * Where a section's case headings of RFC 6979 §A.2's form are
  * (rfcWithHeading): each heads the case below it, up to the next heading or
  * the section's end, and what is printed above the first belongs to every
- * case.
+ * case. A section with subsections has none: their headings are theirs,
+ * so a case is read from the subsection that holds it.
  *
  * @param sec the section
  * @returns the index, in its lines, of each heading, in order
  */
 export const rfcWithHeadings = (sec: RfcSection): i32[] => {
   const out: i32[] = []
+  if (sec.lines.length > sec.ownLines.length) {
+    return out
+  }
   for (let i = 0; i < sec.lines.length; i++) {
     if (rfcWithHeading(sec.lines[i]).length > 0) {
       out.push(i)

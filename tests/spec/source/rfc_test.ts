@@ -475,7 +475,10 @@ const rfcTestWithRows = (t: Suite): void => {
   }
 }
 
-/** Case headings in RFC 6979's layout, one on each side of a page break, then a section without. */
+/**
+ * Case headings in RFC 6979's layout, one on each side of a page break, then
+ * a section without, and a parent whose only heading is its subsection's.
+ */
 const rfcTestHeadingsText = (): string =>
   [
     "Request for Comments: 6979",
@@ -494,9 +497,21 @@ const rfcTestHeadingsText = (): string =>
     "",
     "   k = 04",
     "",
+    "A.3.  Parent",
+    "",
+    "   One key follows.",
+    "",
+    "A.3.1.  Key",
+    "",
+    '   With SHA-1, message = "sample":',
+    "   k = 05",
+    "",
   ].join("\n")
 
-/** rfcWithHeadings: the heading lines of a section, across a page break, and none where there are none. */
+/**
+ * rfcWithHeadings: the heading lines of a section, across a page break; none
+ * where there are none, and none in a parent from its subsection.
+ */
 const rfcTestHeadings = (t: Suite): void => {
   rfcTestWithRows(t)
   const doc = rfcParse(rfcTestHeadingsText())
@@ -509,6 +524,8 @@ const rfcTestHeadings = (t: Suite): void => {
     "SHA-1 SHA-256 SHA-1",
   )
   t.eqStr("rfcWithHeadings: none in a section without", `${rfcWithHeadings(rfcTestSection(doc, "A.2")).length}`, "0")
+  t.eqStr("rfcWithHeadings: none in a parent", `${rfcWithHeadings(rfcTestSection(doc, "A.3")).length}`, "0")
+  t.eqStr("rfcWithHeadings: the subsection's own", `${rfcWithHeadings(rfcTestSection(doc, "A.3.1")).length}`, "1")
 }
 
 /** Reading an RFC's text: sections, page furniture, quotes and printed hex. */
