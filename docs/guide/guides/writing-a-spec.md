@@ -334,6 +334,43 @@ window; the others refuse the function, naming the parameter.
 Extract refuses `/* window */` after any type but `u8[]`, twice on one
 parameter, and any other comment on an interface parameter.
 
+### An out buffer
+
+Some functions write their result into a buffer they are handed, as
+`(out, at)`, and return `end`: the result is `out[at, end)`. Declare the
+buffer as a parameter with `/* out CAP */` after its `u8[]`, where `CAP` is
+how many bytes it needs after `at`, and declare the result as bytes:
+
+~~~ ts-interface
+// module: nish/base64
+export const base64EncodeInto = (src: u8[] /* window */, dst: u8[] /* out 2 * src.length + 4 */): u8[]
+~~~
+
+The contract leaves the buffer out of the parameters: the function returns
+`bytes`, and its `"out"` holds where the pair goes (`"at"`) and the
+capacity. Every vector and property calls it without the buffer
+(`base64EncodeInto("foobar")`). A capacity is decimal numbers up to 2^20
+with no leading zero, `+`, `*`, parentheses nested at most 16 deep, and
+`<param>.length` of a `u8[]` parameter. The contract records it in one
+spelling, single spaces around `+` and `*` and parentheses only where they
+change its meaning, so `(2*src.length)+4` is recorded as
+`2 * src.length + 4`. Declare the result `u8[] | null` when a negative
+`end` means `null`.
+
+The signatures gate checks the export takes `(u8[], i32)` in that place and
+returns `i32`. The Nish test hands it a buffer of the capacity plus ten
+guard bytes, with `at` = 5, and fails a call whose `end` is outside
+`[at, at + capacity]` or that writes a byte outside `[at, end)`. A capacity
+that is not at most 2^20 on a sample, NaN included, fails that clause
+before anything is allocated. Only the
+Nish emitter writes an out buffer; the others refuse the function.
+
+Extract refuses `/* out CAP */` with no capacity, after any type but
+`u8[]`, twice on one function or on a window, a capacity of more than 256 tokens (numbers, names and punctuation), one
+that reads another name or is over 2^20 even with every length 0, one that
+multiplies 0 by a product past what an f64 holds, and a result that is not
+bytes.
+
 ### Literals in the contract
 
 Beyond the profile's literals:

@@ -1,0 +1,4 @@
+SATISFIED: deflate-out (exit 0)
+  pass  R-DEFLATE-STORED
+  pass  R-INFLATE
+  pass  R-INFLATE-TRUNCATED

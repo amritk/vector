@@ -43,7 +43,7 @@ import {
   emitUndefinedWhy,
 } from "./emit"
 import { EMIT_SLOW_SKIP, emitF64IsFinite, emitLiteralHex, emitQuote } from "./lit"
-import { emitTargetWindowRefusal, emitTargetWordsRefusal } from "./target"
+import { emitTargetOutRefusal, emitTargetWindowRefusal, emitTargetWordsRefusal } from "./target"
 
 /** What emitting one Python test has gathered so far. */
 class EmitPyContext {
@@ -201,6 +201,10 @@ export const emitPyRefusals = (c: Contract): string[] => {
     const window = emitTargetWindowRefusal(f, "Python")
     if (window !== null) {
       out.push(window)
+    }
+    const buffer = emitTargetOutRefusal(f, "Python")
+    if (buffer !== null) {
+      out.push(buffer)
     }
     const why = emitPyNameRefusal(f)
     if (why !== null) {

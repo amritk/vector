@@ -49,6 +49,7 @@ export const emitHelperNames = (): string[] => [
   "Unwrap",
   "unwrapStr",
   "bytesInt",
+  "OutFault",
 ]
 
 /**
@@ -492,6 +493,9 @@ const copyBytes = (b: u8[]): u8[] => {
   return out;
 };`
   }
+  if (name === "OutFault") {
+    return EMIT_OUT_FAULT
+  }
   if (name === "Unwrap") {
     const unwrap = `/**
  * \`unwrap\` without exceptions: a null is recorded and stands in as no bytes,
@@ -525,3 +529,53 @@ const EMIT_UNWRAP_STR: string = `
     this.sawNull = true
     return ""
   }`
+
+/**
+ * The check of an out buffer's write: the buffer is filled with 0xa5, so a
+ * byte changed before `at` or from `end` on shows.
+ */
+const EMIT_OUT_FAULT: string = `/**
+ * An out buffer's write, checked without exceptions: the first capacity not
+ * at most 2^20 (NaN included), end outside [at, at + capacity], or byte changed outside [at, end),
+ * is recorded, the call stands in as no bytes, and the clause that saw it
+ * fails.
+ */
+class OutFault {
+  why: string
+
+  constructor() {
+    this.why = ""
+  }
+
+  note(why: string): void {
+    if (this.why.length === 0) {
+      this.why = why
+    }
+  }
+
+  cap(fn: string, c: f64): i32 {
+    if (!(c <= 1048576.0)) {
+      this.note(\`\${fn}'s capacity is \${c} on this sample, not at most 2^20\`)
+      return -1
+    }
+    return toI32(c)
+  }
+
+  take(fn: string, o: u8[], at: i32, end: i32, cap: i32): u8[] {
+    if (end < at || end > at + cap) {
+      this.note(\`\${fn} returned end \${end} outside [at, at + capacity] = [\${at}, \${at + cap}]\`)
+      return []
+    }
+    for (let i: i32 = 0; i < toI32(o.length); i += 1) {
+      if ((i < at || i >= end) && o[i] !== toU8(0xa5)) {
+        this.note(\`\${fn} wrote outside [at, end) = [\${at}, \${end}), at \${i}\`)
+        return []
+      }
+    }
+    const out: u8[] = []
+    for (let i: i32 = at; i < end; i += 1) {
+      out.push(o[i])
+    }
+    return out
+  }
+}`

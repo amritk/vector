@@ -1,0 +1,1 @@
+vector spec extract tests/fixtures/deflate-out/specs/deflate-out.xml -o tests/fixtures/deflate-out/contracts/deflate-out.json --check

@@ -33,7 +33,9 @@ A contract ([`schemas/rfc-contract.json`][schema], described in
   [`spec exports`](pr-gates.md#exports) reports a change to one as a note;
 - **functions**: the implementation's signatures, plus any reference function
   from another module that a property may call; a `bytes` parameter with
-  `"form": "window"` is one the function takes as `(buf, off, len)`;
+  `"form": "window"` is one the function takes as `(buf, off, len)`, and a
+  function with an `"out"` writes its `bytes` result into an `(out, at)` pair
+  and returns `end`;
 - **clauses**: **vectors** (known answers, each saying where its expected value
   comes from; a literal may carry the label the RFC prints it under, such as
   `After 1,000 iterations` or `MESSAGE (length 0 bytes)`) and **properties** (`forall` a typed domain, `where` restricts
@@ -470,7 +472,7 @@ No model is involved in any of them.
 | provenance | a `spec` source whose section never states the expected `null` or bool (see [When a section states null, true or false](writing-a-spec.md#when-a-section-states-null-true-or-false)); a `command` source that failed under `--run-sources` |
 | coverage | a binding requirement no clause checks; a clause citing a requirement the contract does not state; a property or vector that calls no function under test |
 | typing | an ill-typed call or expression (`bytes?` and `string?` must be `unwrap`ped; `where` may not call the implementation; a `let` may not shadow a name or bind a bare `null`); a property that holds or calls word arrays (not allowed *yet*; give them as vectors); an `iterate.next` element of the wrong type for its parameter |
-| signatures | a declared signature that is not the module's export (with `--nish-root` or `--module`); a window parameter the export does not take as `(u8[], i32, i32)`, or one the contract does not declare (see [A window parameter](writing-a-spec.md#a-window-parameter)) |
+| signatures | a declared signature that is not the module's export (with `--nish-root` or `--module`); a window parameter the export does not take as `(u8[], i32, i32)`, or one the contract does not declare (see [A window parameter](writing-a-spec.md#a-window-parameter)); an out buffer the export does not take as `(u8[], i32)` returning `i32` (see [An out buffer](writing-a-spec.md#an-out-buffer)) |
 | domain | a property whose domain is empty (Z3 says `unsat`: it would pass vacuously) |
 
 Then **Z3 picks the samples**. For every integer comparison in a property it
