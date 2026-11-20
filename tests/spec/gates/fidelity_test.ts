@@ -368,6 +368,15 @@ const fidelityTestTable = (t: Suite): void => {
       `${refused}, as in "X25519${w}"`,
     )
   }
+  // A bracket that is no call label's arguments still names the variant.
+  const bracketed =
+    "   Output (X25519) after 1,000 iterations = 0x2222\n   Output (X448) after 1,000 iterations = 0x5555"
+  fidelityTestRowIs(
+    t,
+    "another variant, in brackets",
+    fidelityTestRow("1", "1.  Rounds", bracketed, "5555", "Output (X448) after 1,000 iterations", 1000),
+    `${refused}, as in "Output (X25519) after 1,000 iterations"`,
+  )
   const grouped = "   After 1,000 iterations = 0x2222\n   After 1,000,000 iterations = 0x3333"
   fidelityTestRowIs(
     t,
@@ -846,6 +855,1085 @@ const fidelityTestOnce = (t: Suite): void => {
   }
 }
 
+/** A footer, form feed and header, as `rfcParse` reads page furniture. */
+const fidelityTestBreak = (rfc: string, page: i32): string =>
+  `\nAuthor                        Informational                     [Page ${page}]\n\f\nRFC ${rfc}                      Example Spec                     May 2021\n`
+
+/**
+ * RFC 9001 Appendix A.1's layout: values on `= hex` lines under a statement
+ * that names them, one split across a page break, and a page break between
+ * the client and server blocks.
+ */
+const fidelityTestQuicRfc = (): string =>
+  [
+    "Request for Comments: 9001",
+    "",
+    "1.  Rules",
+    "",
+    "   It MUST derive.",
+    "",
+    "A.1.  Keys",
+    "",
+    "   quic key:  00100e746c7331332071756963206b657900",
+    "",
+    "   initial_secret = HKDF-Extract(initial_salt, cid)",
+    "       = 7db5df06e7a69e432496adedb0085192",
+    "         3595221596ae2ae9fb8115c1e9ed0a44",
+    "",
+    "   client_initial_secret",
+    '       = HKDF-Expand-Label(initial_secret, "client in", "", 32)',
+    "       = c00cf151ca5be075ed0ebfb5c80323c4",
+    fidelityTestBreak("9001", 47),
+    "         2d6b7db67881289af4008f1f6c357aea",
+    "",
+    '   key = HKDF-Expand-Label(client_initial_secret, "quic key", "", 16)',
+    "       = 1f369613dd76d5467730efcbe3b1a22d",
+    fidelityTestBreak("9001", 48),
+    "   server_initial_secret",
+    '       = HKDF-Expand-Label(initial_secret, "server in", "", 32)',
+    "       = 3c199828fd139efd216c155ad844cc81",
+    "         fb82fa8d7446fa7d78be803acdda951b",
+    "",
+    '   key = HKDF-Expand-Label(server_initial_secret, "quic key", "", 16)',
+    "       = cf3a5331653c364c88f0f379b6067e37",
+    "",
+  ].join("\n")
+
+/**
+ * RFC 7914 sections 11 and 12's layout: call labels wrapped over two lines,
+ * one split by a page break, and two blocks split only by one.
+ */
+const fidelityTestScryptRfc = (): string =>
+  [
+    "Request for Comments: 7914",
+    "",
+    "1.  Rules",
+    "",
+    "   It MUST derive.",
+    "",
+    "11.  Test Vectors for PBKDF2 with HMAC-SHA-256",
+    "",
+    '   PBKDF2-HMAC-SHA-256 (P="passwd", S="salt",',
+    "                       c=1, dkLen=64) =",
+    "   55 ac 04 6e 56 e3 08 9f ec 16 91 c2 25 44 b6 05",
+    fidelityTestBreak("7914", 11),
+    '   PBKDF2-HMAC-SHA-256 (P="Password", S="NaCl",',
+    fidelityTestBreak("7914", 12),
+    "                        c=80000, dkLen=64) =",
+    "   4d dc d8 f6 0b 98 be 21 83 0c ee 5e f2 27 01 f9",
+    "",
+    "12.  Test Vectors for scrypt",
+    "",
+    '   scrypt (P="", S="",',
+    "           N=16, r=1, p=1, dklen=64) =",
+    "   77 d6 57 62 38 65 7b 20 3b 19 ca 42 c1 8a 04 97",
+    fidelityTestBreak("7914", 13),
+    '   scrypt (P="password", S="NaCl",',
+    "           N=1024, r=8, p=16, dkLen=64) =",
+    "   fd ba be 1c 9d 34 72 00 78 56 e7 19 0d 01 e9 fe",
+    "",
+    '   scrypt (P="pleaseletmein", S="SodiumChloride",',
+    "           N=16384, r=8, p=1, dkLen=64) =",
+    "   70 23 bd cb 3a fd 73 48 46 1c 06 cd 81 fd 38 eb",
+    "",
+    '   scrypt (P="pleaseletmein", S="SodiumChloride",',
+    "           N=1048576, r=8, p=1, dkLen=64) =",
+    "   21 01 cb 9b 6a 51 1a ae ad db be 09 cf 70 f8 81",
+    "",
+  ].join("\n")
+
+/**
+ * The findings and warnings for one vector of `fn` (a contract function's
+ * JSON) citing section `id` of RFC `num`, whose text is `rfc`: `args` and
+ * `expect` are the clause's literals' JSON.
+ */
+const fidelityTestWrap = (num: string, rfc: string, fn: string, id: string, args: string, expect: string): string[] =>
+  fidelityTestWrapCall(num, rfc, fn, "f", id, args, expect)
+
+/** fidelityTestWrap, the vector calling `call` (the name `fn` declares). */
+const fidelityTestWrapCall = (
+  num: string,
+  rfc: string,
+  fn: string,
+  call: string,
+  id: string,
+  args: string,
+  expect: string,
+): string[] => {
+  const contract = `{
+  "contract": "c6",
+  "source": {"title": "T", "rfc": ${num}},
+  "target": {"module": "nish/x"},
+  "requirements": [{"id": "R1", "section": "1", "level": "MUST", "quote": "It MUST derive."}],
+  "functions": [${fn}],
+  "clauses": [
+    {"kind": "vector", "id": "W1", "title": "t", "covers": ["R1"], "source": {"cite": {"section": "${id}"}}, "call": "${call}",
+     "args": [${args}], "expect": ${expect}}
+  ]
+}`
+  const ctx = new CheckContext("contracts/c6.json", ".")
+  ctx.contract = contractParse(contract, "c6").expect("parse")
+  const set = new SourceSet()
+  set.main = `rfc${num}`
+  set.sources.push(new LoadedSource(`rfc${num}`, "r.txt", "r.txt", rfcParse(rfc)))
+  ctx.sources = set
+  const out = gateFidelity(ctx)
+  for (const n of gateWarnings(ctx)) {
+    out.push(n.message)
+  }
+  return out
+}
+
+/**
+ * RFC 4231 §4 laid out as call labels, each over its own 16-byte value:
+ * label i's bytes run from 16 * (i + 1) up (fidelityTestLabelHex).
+ */
+const fidelityTestLabelRfc = (labels: string[]): string => {
+  const out = ["Request for Comments: 4231", "", "1.  Rules", "", "   It MUST derive.", "", "4.  Test Vectors", ""]
+  for (let i = 0; i < labels.length; i++) {
+    out.push(`   ${labels[i]} =`)
+    out.push(`   ${fidelityTestLabelHex(i, " ")}`)
+    out.push("")
+  }
+  return out.join("\n")
+}
+
+/** A label as a JSON string's body: each `"` escaped. */
+const fidelityTestLabelJson = (label: string): string => {
+  let out = ""
+  for (let i = 0; i < label.length; i++) {
+    const c = label.substring(i, i + 1)
+    out = c === '"' ? `${out}\\"` : `${out}${c}`
+  }
+  return out
+}
+
+/** Label i's value in fidelityTestLabelRfc, its bytes joined by `sep`. */
+const fidelityTestLabelHex = (i: i32, sep: string): string => {
+  const digits = "0123456789abcdef"
+  const bytes: string[] = []
+  for (let j = 0; j < 16; j++) {
+    const v = (i + 1) * 16 + j
+    bytes.push(`${digits.substring(v / 16, v / 16 + 1)}${digits.substring(v % 16, (v % 16) + 1)}`)
+  }
+  return bytes.join(sep)
+}
+
+/**
+ * A paired argument is still one test case with every other argument: it is
+ * placed on its call label's lines, so the others must be printed there too.
+ * Each row is a name, the params' JSON, the args' JSON, the index of the label
+ * the expected value is printed under, and the finding wanted ("" for none).
+ */
+const fidelityTestPairedRows = (t: Suite): void => {
+  const labels = ['KDF (P="passwd", S="salt")', 'KDF (P="Password", S="NaCl")', "Round n=3", "Round n=5"]
+  const rfc = [
+    "Request for Comments: 4231",
+    "",
+    "1.  Rules",
+    "",
+    "   It MUST derive.",
+    "",
+    "4.  Test Vectors",
+    "",
+    `   ${labels[0]} =`,
+    `   ${fidelityTestLabelHex(0, " ")}`,
+    '   The info string "foo" is used here.',
+    fidelityTestBreak("4231", 4),
+    '   KDF (P="Password",',
+    fidelityTestBreak("4231", 5),
+    '        S="NaCl") =',
+    `   ${fidelityTestLabelHex(1, " ")}`,
+    "",
+    `   ${labels[2]} =`,
+    `   ${fidelityTestLabelHex(2, " ")}`,
+    "",
+    `   ${labels[3]} =`,
+    `   ${fidelityTestLabelHex(3, " ")}`,
+    "",
+  ].join("\n")
+  const strs = `{"name": "p", "type": "string"}, {"name": "s", "type": "string"}`
+  const withN = `{"name": "p", "type": "string"}, {"name": "n", "type": "i32"}`
+  const rows: string[][] = [
+    [
+      "one paired and the other printed only in prose",
+      strs,
+      `{"str": "passwd"}, {"str": "foo"}`,
+      "0",
+      `W1: args[0] "passwd", args[1] "foo" are each printed in RFC §4 ("Test Vectors"), but never on one line together`,
+    ],
+    ["both paired on one line", strs, `{"str": "passwd"}, {"str": "salt"}`, "0", ""],
+    [
+      "both paired, the other on the label's continuation line past a page break",
+      strs,
+      `{"str": "Password"}, {"str": "NaCl"}`,
+      "1",
+      "",
+    ],
+    [
+      "one paired and an unpaired labelled integer from another round",
+      withN,
+      `{"str": "passwd"}, {"int": 3, "label": "n"}`,
+      "0",
+      "nothing pairs a printed string with one of several labelled values",
+    ],
+    [
+      "one paired and the other in another case's call label",
+      strs,
+      `{"str": "passwd"}, {"str": "NaCl"}`,
+      "0",
+      `W1.args[1]: args[1] "NaCl" is printed in the call label "KDF (P="Password", S="NaCl")" in RFC §4 ("Test Vectors"), not in "KDF (P="passwd", S="salt")" that the expected value is printed under: they are different test cases`,
+    ],
+  ]
+  for (const r of rows) {
+    const at = parseInt(r[3])
+    const fn = `{"name": "kdf", "params": [${r[1]}], "returns": "bytes"}`
+    const expect = `{"hex": "${fidelityTestLabelHex(at, "")}", "label": "${fidelityTestLabelJson(labels[at])}"}`
+    fidelityTestRowIs(t, `4231 §4: ${r[0]}`, fidelityTestWrapCall("4231", rfc, fn, "kdf", "4", r[2], expect), r[4])
+  }
+}
+
+/**
+ * A paired argument is placed on its call label's own lines, counted as the
+ * section's non-blank lines: a string printed in prose just after the label,
+ * past a blank line before it or a page break inside it, is not on them.
+ * Each row is a name, the params' JSON, the args' JSON, the label's index and
+ * the string the finding names.
+ */
+const fidelityTestPairedPlaces = (t: Suite): void => {
+  const labels = ['KDF ("pw")', 'KDF (P="pass", S="salt")', "KDF (c=7)"]
+  const rfc = [
+    "Request for Comments: 4231",
+    "",
+    "1.  Rules",
+    "",
+    "   It MUST derive.",
+    "",
+    "4.  Test Vectors",
+    "",
+    `   ${labels[0]}: ${fidelityTestLabelHex(0, "")}`,
+    '   The info string "foo" is used here.',
+    "",
+    '   KDF (P="pass",',
+    fidelityTestBreak("4231", 4),
+    '        S="salt") =',
+    `   ${fidelityTestLabelHex(1, " ")}`,
+    '   The info string "bar" is used here.',
+    "",
+    `   ${labels[2]} =`,
+    `   ${fidelityTestLabelHex(2, " ")}`,
+    '   The info string "baz" is used here.',
+    "",
+  ].join("\n")
+  const strs = `{"name": "p", "type": "string"}, {"name": "s", "type": "string"}`
+  const withC = `{"name": "c", "type": "i32"}, {"name": "s", "type": "string"}`
+  const rows: string[][] = [
+    ["a string in prose on the line after a one-line label", strs, `{"str": "pw"}, {"str": "foo"}`, "0", "foo", '"pw"'],
+    [
+      "a string in prose after a label split by a page break",
+      strs,
+      `{"str": "pass"}, {"str": "bar"}`,
+      "1",
+      "bar",
+      '"pass"',
+    ],
+    ["a string in prose beside a paired integer", withC, `{"int": 7, "label": "c"}, {"str": "baz"}`, "2", "baz", "c=7"],
+  ]
+  for (const r of rows) {
+    const at = parseInt(r[3])
+    const fn = `{"name": "kdf", "params": [${r[1]}], "returns": "bytes"}`
+    const expect = `{"hex": "${fidelityTestLabelHex(at, "")}", "label": "${fidelityTestLabelJson(labels[at])}"}`
+    const want = `W1: args[0] ${r[5]}, args[1] "${r[4]}" are each printed in RFC §4 ("Test Vectors"), but never on one line together`
+    fidelityTestRowIs(t, `4231 §4: ${r[0]}`, fidelityTestWrapCall("4231", rfc, fn, "kdf", "4", r[2], expect), want)
+  }
+}
+
+/**
+ * Arguments pair against the label the RFC prints over the expected value,
+ * not the contract's (bound to it ignoring case), and a paired argument is
+ * placed on that printing's lines only: the lines rfcHexRead joined into it.
+ * Each row is a name, the args' JSON, the index of the value expected, the
+ * contract's label, and the finding wanted ("" for none).
+ */
+const fidelityTestPrintedLabel = (t: Suite): void => {
+  const rfc = [
+    "Request for Comments: 4231",
+    "",
+    "1.  Rules",
+    "",
+    "   It MUST derive.",
+    "",
+    "4.  Test Vectors",
+    "",
+    '   PBKDF2 (P="passwd", S="salt", c=1) =',
+    `   ${fidelityTestLabelHex(0, " ")}`,
+    '   The info "foo" is used here.',
+    "",
+    '   scrypt (P="PWORD", S="NaCl",',
+    fidelityTestBreak("4231", 4),
+    "           N=1024) =",
+    `   ${fidelityTestLabelHex(1, " ")}`,
+    '   The password "pword" is shown in lower case.',
+    "",
+    '   Using the inputs "pw3" and "salt3" from above:',
+    "",
+    '   KDF3 (P="pw3", S="NaCl3") =',
+    `   ${fidelityTestLabelHex(2, " ")}`,
+    "",
+    '   KDF (P="a",',
+    fidelityTestBreak("4231", 5),
+    '        S="b") =',
+    `   ${fidelityTestLabelHex(3, " ")}`,
+    "",
+    '   kdf (P="A", S="B") =',
+    `   ${fidelityTestLabelHex(4, " ")}`,
+    "",
+    '   LONG (P="q1",',
+    '         S="q2",',
+    fidelityTestBreak("4231", 6),
+    "         c=3,",
+    "         d=4) =",
+    `   ${fidelityTestLabelHex(5, " ")}`,
+    "",
+    '   WIDE (P="r1",',
+    '         S="r2",',
+    "         c=3,",
+    "         d=4,",
+    "         e=5) =",
+    `   ${fidelityTestLabelHex(6, " ")}`,
+    "",
+  ].join("\n")
+  const never = 'are each printed in RFC §4 ("Test Vectors"), but never on one line together'
+  const pb = 'PBKDF2 (P="passwd", S="salt", c=1)'
+  const lower = 'pbkdf2 (P="passwd", S="salt", c=1)'
+  const sc = 'scrypt (P="PWORD", S="NaCl", N=1024)'
+  const rows: string[][] = [
+    ["the printed label's case", `{"str": "passwd"}, {"str": "salt"}`, "0", pb, ""],
+    [
+      "a prose string beside it",
+      `{"str": "passwd"}, {"str": "foo"}`,
+      "0",
+      pb,
+      `W1: args[0] "passwd", args[1] "foo" ${never}`,
+    ],
+    ["a label differing in case only", `{"str": "passwd"}, {"str": "salt"}`, "0", lower, ""],
+    [
+      "it, beside a prose string",
+      `{"str": "passwd"}, {"str": "foo"}`,
+      "0",
+      lower,
+      `W1: args[0] "passwd", args[1] "foo" ${never}`,
+    ],
+    ["the printed PWORD, across a page break", `{"str": "PWORD"}, {"str": "NaCl"}`, "1", sc, ""],
+    [
+      "a lower-case pword only the contract's label prints",
+      `{"str": "pword"}, {"str": "NaCl"}`,
+      "1",
+      'scrypt (P="pword", S="NaCl", N=1024)',
+      `W1: args[0] "pword", args[1] "NaCl" ${never}`,
+    ],
+    ["both in the label", `{"str": "pw3"}, {"str": "NaCl3"}`, "2", 'KDF3 (P="pw3", S="NaCl3")', ""],
+    [
+      "a paired one also in prose, beside one printed only there",
+      `{"str": "pw3"}, {"str": "salt3"}`,
+      "2",
+      'KDF3 (P="pw3", S="NaCl3")',
+      `W1: args[0] "pw3", args[1] "salt3" ${never}`,
+    ],
+    [
+      "a label printed twice, the printing that holds them",
+      `{"str": "a"}, {"str": "b"}`,
+      "3",
+      'KDF (P="a", S="b")',
+      "",
+    ],
+    [
+      "the other printing, its label in another case",
+      `{"str": "a"}, {"str": "B"}`,
+      "4",
+      'KDF (P="a", S="b")',
+      'W1.args[0]: args[0] "a" is printed in the call label "KDF (P="a", S="b")" in RFC §4 ("Test Vectors"), not in "kdf (P="A", S="B")" that the expected value is printed under: they are different test cases',
+    ],
+    ["the other printing, with its own", `{"str": "A"}, {"str": "B"}`, "4", 'KDF (P="a", S="b")', ""],
+    [
+      "a call label over four lines and a page break",
+      `{"str": "q1"}, {"str": "q2"}`,
+      "5",
+      'LONG (P="q1", S="q2", c=3, d=4)',
+      "",
+    ],
+    [
+      "one over five, which is not one label: its last line names the value",
+      `{"str": "r1"}, {"str": "r2"}`,
+      "6",
+      "e=5)",
+      `W1: args[0] "r1", args[1] "r2" ${never}`,
+    ],
+  ]
+  const fn = `{"name": "kdf", "params": [{"name": "p", "type": "string"}, {"name": "s", "type": "string"}], "returns": "bytes"}`
+  for (const r of rows) {
+    const expect = `{"hex": "${fidelityTestLabelHex(parseInt(r[2]), "")}", "label": "${fidelityTestLabelJson(r[3])}"}`
+    fidelityTestRowIs(t, `4231 §4: ${r[0]}`, fidelityTestWrapCall("4231", rfc, fn, "kdf", "4", r[1], expect), r[4])
+  }
+}
+
+/**
+ * What a call label's variant is, once its test case's inputs are cut out.
+ * Each row is a name, the function called, its params' JSON, the args' JSON,
+ * the index of the label the expected value is printed under, the finding
+ * wanted ("" for none), then the section's labels.
+ */
+const fidelityTestLabels = (t: Suite): void => {
+  const rows: string[][] = [
+    [
+      "a string in single quotes is cut out too",
+      "prfSha256",
+      `{"name": "k", "type": "string"}`,
+      `{"str": "k1"}`,
+      "0",
+      "",
+      "PRF (SHA-256, key='k1')",
+      "PRF (SHA-256, key='k5')",
+    ],
+    [
+      "so is one in curly quotes",
+      "prfSha256",
+      `{"name": "k", "type": "string"}`,
+      `{"str": "k1"}`,
+      "0",
+      "",
+      "PRF (SHA-256, key=\u201ck1\u201d)",
+      "PRF (SHA-256, key=\u201ck5\u201d)",
+    ],
+    [
+      "but a string in no quotes is not cut out",
+      "prfSha256",
+      `{"name": "k", "type": "string"}`,
+      `{"str": "k1"}`,
+      "0",
+      `W1.args[0]: the string "k1" is only part of a longer value in RFC §4 ("Test Vectors")`,
+      "PRF (SHA-256, key=k1)",
+      "PRF (SHA-256, key=k2)",
+    ],
+    [
+      "a number after >= is no named argument's",
+      "cmac128",
+      `{"name": "k", "type": "string"}`,
+      `{"str": "Jefe"}`,
+      "1",
+      `W1.expect: the value is printed under "CMAC (key="Jefe", bits>=256)" in RFC §4 ("Test Vectors"), but cmac128 names 128, as in "CMAC (key="Jefe", bits>=128)"`,
+      'CMAC (key="Jefe", bits>=128)',
+      'CMAC (key="Jefe", bits>=256)',
+    ],
+    [
+      "a word of letters and digits after = is kept",
+      "kdfSha256",
+      `{"name": "k", "type": "string"}`,
+      `{"str": "Jefe"}`,
+      "1",
+      `W1.expect: the value is printed under "KDF (hash=SHA512, key="Jefe")" in RFC §4 ("Test Vectors"), but kdfSha256 names 256, as in "KDF (hash=SHA256, key="Jefe")"`,
+      'KDF (hash=SHA256, key="Jefe")',
+      'KDF (hash=SHA512, key="Jefe")',
+    ],
+    [
+      "a paired string is cut out: two keys are two test cases, not variants",
+      "prfSha256",
+      `{"name": "k", "type": "string"}`,
+      `{"str": "k1"}`,
+      "0",
+      "",
+      'PRF (SHA-256, key="k1")',
+      'PRF (SHA-256, key="k5")',
+    ],
+    [
+      "an unpaired string is not cut out of the other label",
+      "f",
+      `{"name": "k", "type": "string"}, {"name": "s", "type": "string"}`,
+      `{"str": "pepper"}, {"str": "spice"}`,
+      "0",
+      `W1.args[1]: args[1] "spice" is printed in the call label "SALT (SHA-512, key="pepper", s="spice")" in RFC §4 ("Test Vectors"), not in "SALT (SHA-256, key="pepper", s="")" that the expected value is printed under`,
+      'SALT (SHA-256, key="pepper", s="")',
+      'SALT (SHA-512, key="pepper", s="spice")',
+    ],
+    [
+      "a label that differs only in another case's count is no variant",
+      "f",
+      `{"name": "k", "type": "string"}, {"name": "c", "type": "i32"}`,
+      `{"str": "Jefe"}, {"int": 1, "label": "c"}`,
+      "0",
+      `the value is printed under "HKDF (SHA-256, key="Jefe", c=1)", one of "HKDF (SHA-256, key="Jefe", c=1)" or "HKDF (SHA-512, key="Jefe", c=1)" in RFC §4 ("Test Vectors"), and nothing in the name f says which variant it computes`,
+      'HKDF (SHA-256, key="Jefe", c=1)',
+      'HKDF (SHA-256, key="Jefe", c=2)',
+      'HKDF (SHA-512, key="Jefe", c=1)',
+    ],
+    [
+      "a labelled f64 names no call label's argument",
+      "drbgSha256",
+      `{"name": "x", "type": "f64"}`,
+      `{"f64": "1.5", "label": "c"}`,
+      "1",
+      `W1.expect: the value is printed under "DRBG (SHA-512, c=1.5)" in RFC §4 ("Test Vectors"), but drbgSha256 names 256, as in "DRBG (SHA-256, c=1.5)"`,
+      "DRBG (SHA-256, c=1.5)",
+      "DRBG (SHA-512, c=1.5)",
+    ],
+    [
+      "an f64 printed only in another case's label is no paired integer",
+      "drbgSha256",
+      `{"name": "x", "type": "f64"}`,
+      `{"f64": "4.5", "label": "c"}`,
+      "0",
+      `the value is printed under "DRBG (SHA-256, c=1.5)", one of "DRBG (SHA-256, c=1.5)" or "DRBG (SHA-256, c=4.5)" in RFC §4 ("Test Vectors"), and nothing in the name drbgSha256 says which variant it computes`,
+      "DRBG (SHA-256, c=1.5)",
+      "DRBG (SHA-256, c=4.5)",
+    ],
+    [
+      "a number the vector does not bind is the variant's: bits=512 is not sha3_256's",
+      "sha3_256",
+      `{"name": "m", "type": "string"}`,
+      `{"str": "Jefe"}`,
+      "1",
+      `W1.expect: the value is printed under "SHA3 (msg="Jefe", bits=512)" in RFC §4 ("Test Vectors"), but sha3_256 names 256, as in "SHA3 (msg="Jefe", bits=256)"`,
+      'SHA3 (msg="Jefe", bits=256)',
+      'SHA3 (msg="Jefe", bits=512)',
+    ],
+    [
+      "and bits=256 is",
+      "sha3_256",
+      `{"name": "m", "type": "string"}`,
+      `{"str": "Jefe"}`,
+      "0",
+      "",
+      'SHA3 (msg="Jefe", bits=256)',
+      'SHA3 (msg="Jefe", bits=512)',
+    ],
+    [
+      "a string-only pairing leaves an unbound number in the variant",
+      "xof5",
+      `{"name": "m", "type": "string"}`,
+      `{"str": "Jefe"}`,
+      "0",
+      `W1.expect: the value is printed under "XOF (msg="Jefe", d=1)" in RFC §4 ("Test Vectors"), but xof5 names 5, as in "XOF (msg="Jefe", d=5)"`,
+      'XOF (msg="Jefe", d=1)',
+      'XOF (msg="Jefe", d=5)',
+    ],
+    [
+      "and the label that prints it is the function's",
+      "xof5",
+      `{"name": "m", "type": "string"}`,
+      `{"str": "Jefe"}`,
+      "1",
+      "",
+      'XOF (msg="Jefe", d=1)',
+      'XOF (msg="Jefe", d=5)',
+    ],
+    [
+      "a bound c pairs, and c=80000 beside it is another case, not a variant (7914 §11)",
+      "pbkdf2Sha256",
+      `{"name": "p", "type": "string"}, {"name": "c", "type": "i32"}`,
+      `{"str": "passwd"}, {"int": 1, "label": "c"}`,
+      "0",
+      "",
+      'PBKDF2-HMAC-SHA-256 (P="passwd", c=1)',
+      'PBKDF2-HMAC-SHA-256 (P="passwd", c=80000)',
+    ],
+    [
+      "so does c=80000 beside c=1",
+      "pbkdf2Sha256",
+      `{"name": "p", "type": "string"}, {"name": "c", "type": "i32"}`,
+      `{"str": "passwd"}, {"int": 80000, "label": "c"}`,
+      "1",
+      "",
+      'PBKDF2-HMAC-SHA-256 (P="passwd", c=1)',
+      'PBKDF2-HMAC-SHA-256 (P="passwd", c=80000)',
+    ],
+    [
+      "a bound N pairs, and N=1048576 beside it is no variant (7914 §12)",
+      "scrypt",
+      `{"name": "s", "type": "string"}, {"name": "n", "type": "i32"}`,
+      `{"str": "NaCl"}, {"int": 16384, "label": "N"}`,
+      "0",
+      "",
+      'scrypt (S="NaCl", N=16384)',
+      'scrypt (S="NaCl", N=1048576)',
+    ],
+    [
+      "a bound c printed with another value still leaves the variant",
+      "pbkdf2Sha256",
+      `{"name": "p", "type": "string"}, {"name": "c", "type": "i32"}`,
+      `{"str": "passwd"}, {"int": 80000, "label": "c"}`,
+      "1",
+      `W1.expect: the value is printed under "PBKDF2 (SHA-512, P="passwd", c=80000)" in RFC §4 ("Test Vectors"), but pbkdf2Sha256 names 256, as in "PBKDF2 (SHA-256, P="passwd", c=1)"`,
+      'PBKDF2 (SHA-256, P="passwd", c=1)',
+      'PBKDF2 (SHA-512, P="passwd", c=80000)',
+    ],
+    [
+      "only the bound name's number is cut: xc=9 beside a bound c is a variant",
+      "kdf7",
+      `{"name": "p", "type": "string"}, {"name": "c", "type": "i32"}`,
+      `{"str": "p"}, {"int": 1, "label": "c"}`,
+      "1",
+      `W1.expect: the value is printed under "KDF (P="p", xc=9, c=1)" in RFC §4 ("Test Vectors"), but kdf7 names 7, as in "KDF (P="p", xc=7, c=1)"`,
+      'KDF (P="p", xc=7, c=1)',
+      'KDF (P="p", xc=9, c=1)',
+    ],
+    [
+      "only the bound number is cut: xc=9 after a bound c=1 is still the variant's",
+      "kdf7",
+      `{"name": "p", "type": "string"}, {"name": "c", "type": "i32"}`,
+      `{"str": "p"}, {"int": 1, "label": "c"}`,
+      "1",
+      `W1.expect: the value is printed under "KDF (P="p", c=1, xc=9)" in RFC §4 ("Test Vectors"), but kdf7 names 7, as in "KDF (P="p", c=1, xc=7)"`,
+      'KDF (P="p", c=1, xc=7)',
+      'KDF (P="p", c=1, xc=9)',
+    ],
+    [
+      "a bound integer's name can open the label",
+      "scrypt",
+      `{"name": "s", "type": "string"}, {"name": "n", "type": "i32"}`,
+      `{"str": "NaCl"}, {"int": 16384, "label": "N"}`,
+      "0",
+      "",
+      'N=16384 (S="NaCl")',
+      'N=1048576 (S="NaCl")',
+    ],
+  ]
+  for (const r of rows) {
+    const labels = r.slice(6, r.length)
+    const at = parseInt(r[4])
+    const fn = `{"name": "${r[1]}", "params": [${r[2]}], "returns": "bytes"}`
+    const expect = `{"hex": "${fidelityTestLabelHex(at, "")}", "label": "${fidelityTestLabelJson(labels[at])}"}`
+    fidelityTestRowIs(
+      t,
+      `4231 §4: ${r[0]}`,
+      fidelityTestWrapCall("4231", fidelityTestLabelRfc(labels), fn, r[1], "4", r[3], expect),
+      r[5],
+    )
+  }
+  // A labelled f64 is no bound integer: its name stays in the label, so its
+  // value there is the variant's. It is one of two labelled values beside a
+  // paired string, so the one-test-case refusal comes beside that warning.
+  const drbgLabels = ['DRBG (P="p", c=1.5)', 'DRBG (P="p", c=4.5)']
+  const drbg = fidelityTestWrapCall(
+    "4231",
+    fidelityTestLabelRfc(drbgLabels),
+    `{"name": "drbg", "params": [{"name": "p", "type": "string"}, {"name": "x", "type": "f64"}], "returns": "bytes"}`,
+    "drbg",
+    "4",
+    `{"str": "p"}, {"f64": "1.5", "label": "c"}`,
+    `{"hex": "${fidelityTestLabelHex(0, "")}", "label": "${fidelityTestLabelJson(drbgLabels[0])}"}`,
+  )
+  const drbgOk =
+    drbg.length === 2 &&
+    fidelityTestHas(drbg, "the value is printed under", 'or "DRBG (P="p", c=4.5)"') &&
+    fidelityTestHas(drbg, "W1:", "nothing pairs a printed string with one of several labelled values")
+  t.ok("4231 §4: a labelled f64 is no bound integer: its value beside a paired string is the variant's", drbgOk)
+  if (!drbgOk) {
+    console.log(`drbg:\n${drbg.join("\n")}`)
+  }
+  // An integer the vector binds but its call label does not print (c=9, in
+  // "Round c=9") is not the test case's, so its name stays: c=1 and c=4 still
+  // name two variants though the password beside it pairs.
+  const cLabels = ['KDF (P="passwd", c=1)', 'KDF (P="passwd", c=4)', "Round c=9"]
+  const cGot = fidelityTestWrapCall(
+    "4231",
+    fidelityTestLabelRfc(cLabels),
+    `{"name": "kdf", "params": [{"name": "p", "type": "string"}, {"name": "c", "type": "i32"}], "returns": "bytes"}`,
+    "kdf",
+    "4",
+    `{"str": "passwd"}, {"int": 9, "label": "c"}`,
+    `{"hex": "${fidelityTestLabelHex(0, "")}", "label": "${fidelityTestLabelJson(cLabels[0])}"}`,
+  )
+  const cOk =
+    cGot.length === 2 &&
+    fidelityTestHas(
+      cGot,
+      "W1:",
+      `args[0] "passwd" and args[1] (one of 3 "c") in RFC §4 ("Test Vectors"): nothing pairs a printed string with one of several labelled values`,
+    ) &&
+    fidelityTestHas(
+      cGot,
+      "the value is printed under",
+      `"KDF (P="passwd", c=1)", one of "KDF (P="passwd", c=1)" or "KDF (P="passwd", c=4)" in RFC §4 ("Test Vectors"), and nothing in the name kdf says which variant it computes`,
+    )
+  t.ok("4231 §4: an unpaired labelled integer keeps its name in the label while another argument pairs", cOk)
+  if (!cOk) {
+    console.log(`kdf c=9:\n${cGot.join("\n")}`)
+  }
+  // An integer printed in neither call label (only in "Rounds c=1") leaves
+  // the expected value unpaired, so no argument's name is cut from it, and
+  // c=9 and c=4 still name two variants: that warning is each row's only
+  // finding.
+  const kdfLabels = ["KDF (c=9)", "KDF (c=4)", "Rounds c=1"]
+  const kdfExpect = `{"hex": "${fidelityTestLabelHex(0, "")}", "label": "KDF (c=9)"}`
+  const unpaired: string[][] = [
+    [
+      "an integer printed in neither label pairs nothing, so its name is not cut",
+      `{"name": "c", "type": "i32"}`,
+      `{"int": 1, "label": "c"}`,
+    ],
+    [
+      "nor does an unlabelled word array beside it, which has no name to print",
+      `{"name": "w", "type": "words32"}, {"name": "c", "type": "i32"}`,
+      `{"words32": ["0badf00d", "1badf00d", "2badf00d", "3badf00d"]}, {"int": 1, "label": "c"}`,
+    ],
+  ]
+  const kdfRfc = `${fidelityTestLabelRfc(kdfLabels)}\n   Key State\n\n       0badf00d  1badf00d  2badf00d  3badf00d\n`
+  for (const r of unpaired) {
+    const fn = `{"name": "kdf", "params": [${r[1]}], "returns": "bytes"}`
+    const got = fidelityTestWrapCall("4231", kdfRfc, fn, "kdf", "4", r[2], kdfExpect)
+    fidelityTestRowIs(
+      t,
+      `4231 §4: ${r[0]}`,
+      got,
+      `the value is printed under "KDF (c=9)", one of "KDF (c=9)" or "KDF (c=4)" in RFC §4 ("Test Vectors"), and nothing in the name kdf says which variant it computes: not checked that this is its own`,
+    )
+  }
+  // An expected value that is not hex (here the words under "Key State") is
+  // bound to no printing, so nothing pairs with it, and the label the
+  // contract names is the one an argument from a call label is not in.
+  fidelityTestRowIs(
+    t,
+    "4231 §4: an argument from a call label beside an expected word array",
+    fidelityTestWrapCall(
+      "4231",
+      kdfRfc,
+      `{"name": "kdf", "params": [{"name": "c", "type": "i32"}], "returns": "words32"}`,
+      "kdf",
+      "4",
+      `{"int": 9, "label": "c"}`,
+      `{"words32": ["0badf00d", "1badf00d", "2badf00d", "3badf00d"], "label": "Key State"}`,
+    ),
+    `W1.args[0]: args[0] c=9 is printed in the call label "KDF (c=9)" in RFC §4 ("Test Vectors"), not in "Key State" that the expected value is printed under: they are different test cases`,
+  )
+}
+
+/**
+ * Values named across wrapped lines and page breaks: RFC 9001's statements
+ * and RFC 7914's call labels. Each row is a name, the section, the args'
+ * JSON, the expected literal's JSON, and the finding wanted ("" for none).
+ */
+const fidelityTestWrapped = (t: Suite): void => {
+  const quic = fidelityTestQuicRfc()
+  const quicFn = `{"name": "f", "params": [{"name": "s", "type": "bytes"}], "returns": "bytes"}`
+  const initial = `{"hex": "7db5df06e7a69e432496adedb00851923595221596ae2ae9fb8115c1e9ed0a44", "label": "initial_secret"}`
+  const client = "c00cf151ca5be075ed0ebfb5c80323c42d6b7db67881289af4008f1f6c357aea"
+  const server = "3c199828fd139efd216c155ad844cc81fb82fa8d7446fa7d78be803acdda951b"
+  const quicRows: string[][] = [
+    ["client secret, split by a page break", initial, `{"hex": "${client}", "label": "client_initial_secret"}`, ""],
+    ["server secret, after a page break", initial, `{"hex": "${server}", "label": "server_initial_secret"}`, ""],
+    [
+      "client secret under the server's name",
+      initial,
+      `{"hex": "${client}", "label": "server_initial_secret"}`,
+      `under "client_initial_secret", not under "server_initial_secret"`,
+    ],
+    ["client secret with no name", initial, `{"hex": "${client}"}`, `under "client_initial_secret": name it`],
+    [
+      "the client's key, printed after the client's secret",
+      `{"hex": "${client}", "label": "client_initial_secret"}`,
+      `{"hex": "1f369613dd76d5467730efcbe3b1a22d", "label": "key"}`,
+      "",
+    ],
+    [
+      "the server's key with the client's secret",
+      `{"hex": "${client}", "label": "client_initial_secret"}`,
+      `{"hex": "cf3a5331653c364c88f0f379b6067e37", "label": "key"}`,
+      `with the 1st of 2 "key", but expect is the 2nd of 2 "key"`,
+    ],
+  ]
+  for (const r of quicRows) {
+    fidelityTestRowIs(t, `9001 A.1: ${r[0]}`, fidelityTestWrap("9001", quic, quicFn, "A.1", r[1], r[2]), r[3])
+  }
+  // "quic key" is a whole label in A.1, not a call label: it pairs with no
+  // test case, so the vector is refused only as one whose string and
+  // repeated key nothing relates.
+  const expandFn = `{"name": "f", "params": [{"name": "s", "type": "bytes"}, {"name": "l", "type": "string"}], "returns": "bytes"}`
+  fidelityTestRowIs(
+    t,
+    "9001 A.1: a string printed as a whole label",
+    fidelityTestWrap(
+      "9001",
+      quic,
+      expandFn,
+      "A.1",
+      `{"hex": "${client}", "label": "client_initial_secret"}, {"str": "quic key"}`,
+      `{"hex": "1f369613dd76d5467730efcbe3b1a22d", "label": "key"}`,
+    ),
+    `W1: args[1] "quic key" and expect (one of 2 "key") in RFC §A.1 ("Keys"): nothing pairs a printed string with one of several labelled values: cite the subsection that holds one test case`,
+  )
+  const scrypt = fidelityTestScryptRfc()
+  const pbkdf2Fn = `{"name": "f", "params": [{"name": "p", "type": "string"}, {"name": "s", "type": "string"},
+    {"name": "c", "type": "i32"}, {"name": "dkLen", "type": "i32"}], "returns": "bytes"}`
+  const scryptFn = `{"name": "f", "params": [{"name": "p", "type": "string"}, {"name": "s", "type": "string"},
+    {"name": "n", "type": "i32"}, {"name": "r", "type": "i32"}, {"name": "q", "type": "i32"}, {"name": "dkLen", "type": "i32"}],
+    "returns": "bytes"}`
+  const one = `{"hex": "55ac046e56e3089fec1691c22544b605", "label": "PBKDF2-HMAC-SHA-256 (P=\\"passwd\\", S=\\"salt\\", c=1, dkLen=64)"}`
+  const two = `{"hex": "4ddcd8f60b98be21830cee5ef22701f9", "label": "PBKDF2-HMAC-SHA-256 (P=\\"Password\\", S=\\"NaCl\\", c=80000, dkLen=64)"}`
+  const pbRows: string[][] = [
+    [
+      "case 1 with its own args",
+      `{"str": "passwd"}, {"str": "salt"}, {"int": 1, "label": "c"}, {"int": 64, "label": "dkLen"}`,
+      one,
+      "",
+    ],
+    [
+      "case 2, its label split by a page break",
+      `{"str": "Password"}, {"str": "NaCl"}, {"int": 80000, "label": "c"}, {"int": 64, "label": "dkLen"}`,
+      two,
+      "",
+    ],
+    [
+      "case 1 with case 2's count",
+      `{"str": "passwd"}, {"str": "salt"}, {"int": 80000, "label": "c"}, {"int": 64, "label": "dkLen"}`,
+      one,
+      `W1.args[2]: args[2] c=80000 is printed in the call label "PBKDF2-HMAC-SHA-256 (P="Password", S="NaCl", c=80000, dkLen=64)" in RFC §11 ("Test Vectors for PBKDF2 with HMAC-SHA-256"), not in "PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)" that the expected value is printed under`,
+    ],
+    [
+      "case 1 with case 2's salt",
+      `{"str": "passwd"}, {"str": "NaCl"}, {"int": 1, "label": "c"}, {"int": 64, "label": "dkLen"}`,
+      one,
+      `W1.args[1]: args[1] "NaCl" is printed in the call label "PBKDF2-HMAC-SHA-256 (P="Password", S="NaCl", c=80000, dkLen=64)" in RFC §11 ("Test Vectors for PBKDF2 with HMAC-SHA-256"), not in "PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)" that the expected value is printed under: they are different test cases`,
+    ],
+    [
+      "case 2 with case 1's password",
+      `{"str": "passwd"}, {"str": "NaCl"}, {"int": 80000, "label": "c"}, {"int": 64, "label": "dkLen"}`,
+      two,
+      `W1.args[0]: args[0] "passwd" is printed in the call label "PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)" in RFC §11 ("Test Vectors for PBKDF2 with HMAC-SHA-256"), not in "PBKDF2-HMAC-SHA-256 (P="Password", S="NaCl", c=80000, dkLen=64)" that the expected value is printed under: they are different test cases`,
+    ],
+  ]
+  for (const r of pbRows) {
+    fidelityTestRowIs(t, `7914 §11: ${r[0]}`, fidelityTestWrap("7914", scrypt, pbkdf2Fn, "11", r[1], r[2]), r[3])
+  }
+  // A call label's arguments name its test case, not its variant: under
+  // "PBKDF2-HMAC-SHA-256 (…)" beside "PBKDF2-HMAC-SHA-512 (…)", the function
+  // must still name 256.
+  const variants = [
+    "Request for Comments: 7914",
+    "",
+    "1.  Rules",
+    "",
+    "   It MUST derive.",
+    "",
+    "11.  Test Vectors for PBKDF2",
+    "",
+    '   PBKDF2-HMAC-SHA-256 (P="passwd", S="salt",',
+    "                       c=1, dkLen=64) =",
+    "   55 ac 04 6e 56 e3 08 9f ec 16 91 c2 25 44 b6 05",
+    fidelityTestBreak("7914", 11),
+    '   PBKDF2-HMAC-SHA-512 (P="passwd", S="salt",',
+    "                       c=1, dkLen=64) =",
+    "   86 7f 70 cf 1a de 02 cf f3 75 25 99 a3 a5 3d c4",
+    "",
+  ].join("\n")
+  const passwd = `{"str": "passwd"}, {"str": "salt"}, {"int": 1, "label": "c"}, {"int": 64, "label": "dkLen"}`
+  const sha256 = `{"hex": "55ac046e56e3089fec1691c22544b605", "label": "PBKDF2-HMAC-SHA-256 (P=\\"passwd\\", S=\\"salt\\", c=1, dkLen=64)"}`
+  const sha512 = `{"hex": "867f70cf1ade02cff3752599a3a53dc4", "label": "PBKDF2-HMAC-SHA-512 (P=\\"passwd\\", S=\\"salt\\", c=1, dkLen=64)"}`
+  const variantRows: string[][] = [
+    ["pbkdf2Sha256", sha256, ""],
+    ["pbkdf2Sha512", sha512, ""],
+    [
+      "pbkdf2Sha512",
+      sha256,
+      `W1.expect: the value is printed under "PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)" in RFC §11 ("Test Vectors for PBKDF2"), but pbkdf2Sha512 names 512, as in "PBKDF2-HMAC-SHA-512 (P="passwd", S="salt", c=1, dkLen=64)": a vector uses the value printed for the variant its function computes`,
+    ],
+    [
+      "pbkdf2Sha256",
+      sha512,
+      `W1.expect: the value is printed under "PBKDF2-HMAC-SHA-512 (P="passwd", S="salt", c=1, dkLen=64)" in RFC §11 ("Test Vectors for PBKDF2"), but pbkdf2Sha256 names 256, as in "PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)": a vector uses the value printed for the variant its function computes`,
+    ],
+  ]
+  for (const r of variantRows) {
+    const fn = `{"name": "${r[0]}", "params": [{"name": "p", "type": "string"}, {"name": "s", "type": "string"},
+      {"name": "c", "type": "i32"}, {"name": "dkLen", "type": "i32"}], "returns": "bytes"}`
+    fidelityTestRowIs(
+      t,
+      `7914 §11: ${r[0]} under ${r[1].indexOf("512") >= 0 ? "SHA-512" : "SHA-256"}'s call label`,
+      fidelityTestWrapCall("7914", variants, fn, r[0], "11", passwd, r[1]),
+      r[2],
+    )
+  }
+  // The variant is read from the whole label, inside the `( … )` too:
+  // "HMAC (SHA-256, key="Jefe")" names 256 though its head is only "HMAC".
+  // The test case's inputs (the paired key, every named integer) are cut
+  // out, but an unnumbered word such as hash=SHA-512 still names a variant.
+  const hmac = [
+    "Request for Comments: 4231",
+    "",
+    "1.  Rules",
+    "",
+    "   It MUST derive.",
+    "",
+    "4.  Test Vectors",
+    "",
+    '   HMAC (SHA-256, key="Jefe") =',
+    "   5b dc c1 46 bf 60 75 4e 6a 04 24 26 08 95 75 c7",
+    fidelityTestBreak("4231", 4),
+    '   HMAC (SHA-512, key="Jefe") =',
+    "   16 4b 7a 7b fc f8 19 e2 e3 95 fb e7 3b 56 e0 a3",
+    "",
+    "   KDF (hash=SHA-256, c=1) =",
+    "   01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f 10",
+    "",
+    "   KDF (hash=SHA-512, c=1) =",
+    "   11 12 13 14 15 16 17 18 19 1a 1b 1c 1d 1e 1f 20",
+    "",
+    '   SCRYPT (S="a", N=16) =',
+    "   21 22 23 24 25 26 27 28 29 2a 2b 2c 2d 2e 2f 30",
+    "",
+    '   SCRYPT (S="a", N=32) =',
+    "   31 32 33 34 35 36 37 38 39 3a 3b 3c 3d 3e 3f 40",
+    "",
+  ].join("\n")
+  const h256 = `{"hex": "5bdcc146bf60754e6a042426089575c7", "label": "HMAC (SHA-256, key=\\"Jefe\\")"}`
+  const h512 = `{"hex": "164b7a7bfcf819e2e395fbe73b56e0a3", "label": "HMAC (SHA-512, key=\\"Jefe\\")"}`
+  const k256 = `{"hex": "0102030405060708090a0b0c0d0e0f10", "label": "KDF (hash=SHA-256, c=1)"}`
+  const k512 = `{"hex": "1112131415161718191a1b1c1d1e1f20", "label": "KDF (hash=SHA-512, c=1)"}`
+  const n16 = `{"hex": "2122232425262728292a2b2c2d2e2f30", "label": "SCRYPT (S=\\"a\\", N=16)"}`
+  const n32 = `{"hex": "3132333435363738393a3b3c3d3e3f40", "label": "SCRYPT (S=\\"a\\", N=32)"}`
+  const hmacRows: string[][] = [
+    ["hmacSha256", `{"str": "Jefe"}`, h256, ""],
+    ["hmacSha512", `{"str": "Jefe"}`, h512, ""],
+    [
+      "hmacSha256",
+      `{"str": "Jefe"}`,
+      h512,
+      `W1.expect: the value is printed under "HMAC (SHA-512, key="Jefe")" in RFC §4 ("Test Vectors"), but hmacSha256 names 256, as in "HMAC (SHA-256, key="Jefe")": a vector uses the value printed for the variant its function computes`,
+    ],
+    ["f", `{"str": "Jefe"}`, h256, "nothing in the name f says which variant"],
+    ["kdfSha256", `{"int": 1, "label": "c"}`, k256, ""],
+    [
+      "kdfSha256",
+      `{"int": 1, "label": "c"}`,
+      k512,
+      `W1.expect: the value is printed under "KDF (hash=SHA-512, c=1)" in RFC §4 ("Test Vectors"), but kdfSha256 names 256, as in "KDF (hash=SHA-256, c=1)": a vector uses the value printed for the variant its function computes`,
+    ],
+    ["scrypt", `{"str": "a"}, {"int": 16, "label": "N"}`, n16, ""],
+    ["scrypt", `{"str": "a"}, {"int": 32, "label": "N"}`, n32, ""],
+    [
+      "scrypt",
+      `{"str": "a"}, {"int": 32, "label": "N"}`,
+      n16,
+      `W1.args[1]: args[1] N=32 is printed in the call label "SCRYPT (S="a", N=32)" in RFC §4 ("Test Vectors"), not in "SCRYPT (S="a", N=16)" that the expected value is printed under: they are different test cases`,
+    ],
+  ]
+  for (const r of hmacRows) {
+    const params =
+      r[1].indexOf("str") < 0
+        ? `{"name": "c", "type": "i32"}`
+        : r[1].indexOf("int") < 0
+          ? `{"name": "k", "type": "string"}`
+          : `{"name": "s", "type": "string"}, {"name": "n", "type": "i32"}`
+    const fn = `{"name": "${r[0]}", "params": [${params}], "returns": "bytes"}`
+    fidelityTestRowIs(
+      t,
+      `4231 §4: ${r[0]} under ${r[2]}`,
+      fidelityTestWrapCall("4231", hmac, fn, r[0], "4", r[1], r[2]),
+      r[3],
+    )
+  }
+  // An argument printed in other call labels is refused once, however many
+  // print it.
+  const twoFn = `{"name": "hmacSha256", "params": [{"name": "k", "type": "string"}, {"name": "c", "type": "i32"}], "returns": "bytes"}`
+  fidelityTestRowIs(
+    t,
+    "4231 §4: an argument printed in two other call labels",
+    fidelityTestWrapCall("4231", hmac, twoFn, "hmacSha256", "4", `{"str": "Jefe"}, {"int": 1, "label": "c"}`, h256),
+    `W1.args[1]: args[1] c=1 is printed in the call label "KDF (hash=SHA-256, c=1)" in RFC §4 ("Test Vectors"), not in "HMAC (SHA-256, key="Jefe")" that the expected value is printed under: they are different test cases`,
+  )
+  // An unlabelled argument (here a hex printed with no name) names nothing
+  // in a call label, so it is not paired with it: the label's c=16 still
+  // reads as a variant.
+  const counts = [
+    "Request for Comments: 4231",
+    "",
+    "1.  Rules",
+    "",
+    "   It MUST derive.",
+    "",
+    "4.  Test Vectors",
+    "",
+    "   the key",
+    "   = 0a0b0c0d",
+    "",
+    "   KDF (c=16) =",
+    "   01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f 10",
+    "",
+    "   KDF (c=64) =",
+    "   11 12 13 14 15 16 17 18 19 1a 1b 1c 1d 1e 1f 20",
+    "",
+  ].join("\n")
+  const bareFn = `{"name": "kdf", "params": [{"name": "k", "type": "bytes"}], "returns": "bytes"}`
+  const c16 = `{"hex": "0102030405060708090a0b0c0d0e0f10", "label": "KDF (c=16)"}`
+  t.eqStr(
+    "4231 §4: an unlabelled argument against a call label",
+    fidelityTestWrapCall("4231", counts, bareFn, "kdf", "4", `{"hex": "0a0b0c0d"}`, c16).join("|"),
+    'the value is printed under "KDF (c=16)", one of "KDF (c=16)" or "KDF (c=64)" in RFC §4 ("Test Vectors"), and nothing in the name kdf says which variant it computes: not checked that this is its own',
+  )
+  const misnamed = fidelityTestWrap(
+    "7914",
+    scrypt,
+    pbkdf2Fn,
+    "11",
+    `{"str": "passwd"}, {"str": "salt"}, {"int": 1, "label": "c"}, {"int": 64, "label": "dkLen"}`,
+    `{"hex": "4ddcd8f60b98be21830cee5ef22701f9", "label": "PBKDF2-HMAC-SHA-256 (P=\\"passwd\\", S=\\"salt\\", c=1, dkLen=64)"}`,
+  )
+  t.ok(
+    "7914 §11: case 2's value under case 1's label",
+    fidelityTestHas(
+      misnamed,
+      "W1.expect:",
+      `under "PBKDF2-HMAC-SHA-256 (P="Password", S="NaCl", c=80000, dkLen=64)", not under`,
+    ),
+  )
+  const s1 = `{"hex": "77d6576238657b203b19ca42c18a0497", "label": "scrypt (P=\\"\\", S=\\"\\", N=16, r=1, p=1, dklen=64)"}`
+  const s2 = `{"hex": "fdbabe1c9d3472007856e7190d01e9fe", "label": "scrypt (P=\\"password\\", S=\\"NaCl\\", N=1024, r=8, p=16, dkLen=64)"}`
+  const scRows: string[][] = [
+    [
+      "case 1, a page break before case 2",
+      `{"str": ""}, {"str": ""}, {"int": 16, "label": "N"}, {"int": 1, "label": "r"}, {"int": 1, "label": "p"}, {"int": 64, "label": "dklen"}`,
+      s1,
+      "",
+    ],
+    [
+      "case 2, after a page break",
+      `{"str": "password"}, {"str": "NaCl"}, {"int": 1024, "label": "N"}, {"int": 8, "label": "r"}, {"int": 16, "label": "p"}, {"int": 64, "label": "dkLen"}`,
+      s2,
+      "",
+    ],
+    [
+      "case 2 with case 1's N, across the break",
+      `{"str": "password"}, {"str": "NaCl"}, {"int": 16, "label": "N"}, {"int": 8, "label": "r"}, {"int": 16, "label": "p"}, {"int": 64, "label": "dkLen"}`,
+      s2,
+      `W1.args[2]: args[2] N=16 is printed in the call label "scrypt (P="", S="", N=16, r=1, p=1, dklen=64)" in RFC §12 ("Test Vectors for scrypt"), not in "scrypt (P="password", S="NaCl", N=1024, r=8, p=16, dkLen=64)" that the expected value is printed under`,
+    ],
+  ]
+  const please = `{"str": "pleaseletmein"}, {"str": "SodiumChloride"}`
+  const s3 = `{"hex": "7023bdcb3afd7348461c06cd81fd38eb", "label": "scrypt (P=\\"pleaseletmein\\", S=\\"SodiumChloride\\", N=16384, r=8, p=1, dkLen=64)"}`
+  const s4 = `{"hex": "2101cb9b6a511aaeaddbbe09cf70f881", "label": "scrypt (P=\\"pleaseletmein\\", S=\\"SodiumChloride\\", N=1048576, r=8, p=1, dkLen=64)"}`
+  const rest = `{"int": 8, "label": "r"}, {"int": 1, "label": "p"}, {"int": 64, "label": "dkLen"}`
+  scRows.push([
+    "case 3, which differs from case 4 only in N",
+    `${please}, {"int": 16384, "label": "N"}, ${rest}`,
+    s3,
+    "",
+  ])
+  scRows.push([
+    "case 4, which differs from case 3 only in N",
+    `${please}, {"int": 1048576, "label": "N"}, ${rest}`,
+    s4,
+    "",
+  ])
+  scRows.push([
+    "case 3 with case 4's N",
+    `${please}, {"int": 1048576, "label": "N"}, ${rest}`,
+    s3,
+    `W1.args[2]: args[2] N=1048576 is printed in the call label "scrypt (P="pleaseletmein", S="SodiumChloride", N=1048576, r=8, p=1, dkLen=64)" in RFC §12 ("Test Vectors for scrypt"), not in "scrypt (P="pleaseletmein", S="SodiumChloride", N=16384, r=8, p=1, dkLen=64)" that the expected value is printed under`,
+  ])
+  for (const r of scRows) {
+    fidelityTestRowIs(t, `7914 §12: ${r[0]}`, fidelityTestWrap("7914", scrypt, scryptFn, "12", r[1], r[2]), r[3])
+  }
+}
+
 /** The fidelity gate. */
 export const main = (): i32 => {
   const t = new Suite("spec/gates/fidelity")
@@ -945,6 +2033,11 @@ export const main = (): i32 => {
   fidelityTestEmpty(t)
   fidelityTestCases(t)
   fidelityTestOnce(t)
+  fidelityTestWrapped(t)
+  fidelityTestLabels(t)
+  fidelityTestPairedRows(t)
+  fidelityTestPairedPlaces(t)
+  fidelityTestPrintedLabel(t)
   t.ok("iterated findings", it.length === 19)
   if (it.length !== 19) {
     console.log(it.join("\n"))

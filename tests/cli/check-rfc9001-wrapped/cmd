@@ -1,0 +1,1 @@
+vector spec check tests/cli/check-rfc9001-wrapped/contracts/rfc9001-keys.json --spec tests/cli/check-rfc9001-wrapped/rfcs/rfc9001.txt
