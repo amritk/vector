@@ -1,0 +1,16 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ rfc7914-pbkdf2 · RFC 7914 (The scrypt Password-Based Key Derivation Function) · nish/crypto/pbkdf2
+ Status: INVALID
+
+ Gate failures
+  ✘ fidelity 11-MIXED.args[1]: args[1] "NaCl" is printed in the call label "PBKDF2-HMAC-SHA-256 (P="Password", S="NaCl", c=80000, dkLen=64)" in RFC §11 ("Test Vectors for PBKDF2 with HMAC-SHA-256"), not in "PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)" that the expected value is printed under: they are different test cases
+
+ Requirements
+  ○ R-PBKDF2  §11 DEFINITION  "The test vectors below can be used to verify the PBKDF2-HMAC-SH…"
+      ○ 11-ONE  ○ 11-TWO  ○ 11-MIXED
+
+ Warnings
+  ! clauses: no property clauses: the contract checks only the RFC's own vectors
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

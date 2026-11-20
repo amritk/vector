@@ -272,12 +272,12 @@ profile extracts to, run
     string, a decimal int, `true`, `false` or `null` (no f64 or words).
 - **Values from an RFC:**
   - Each one is a *whole* printed value, never a prefix or a tail. A word
-    array is a whole printed block of words, word for word.
-  - Take the arguments and the expected value from one test case. A label
-    printed once goes with the test case it is printed in: RFC 8032 §7.1's
-    empty MESSAGE belongs to TEST 1, not to TEST 2's key and signature.
-  - Where a case is printed for several variants, use the row whose number
-    is in the function's name.
+    array is a whole printed block, word for word.
+  - Take the args and the expected value from one test case. A label
+    printed once goes with its own case (RFC 8032 §7.1's empty MESSAGE:
+    TEST 1), and args in a call label's `( … )` with its value.
+  - A wrapped value keeps the name before its first `=`.
+  - A case printed per variant: use the row the function's name numbers.
   - [Writing a spec](../../../docs/guide/guides/writing-a-spec.md)'s "What a
     printed value is" and "When a section states `null`, `true` or `false`"
     give the full rules.
