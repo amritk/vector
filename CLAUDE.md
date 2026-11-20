@@ -72,27 +72,27 @@ shortened in place; a cap is never raised or dropped, and CI refuses either.
 reports success when lint fails. Run it bare, or check `$?` / `PIPESTATUS`.
 
 **A new rule, refusal or flag lands with a test that fails without it.** A
-golden that only shows a flag is accepted, or a unit test that sets the
+golden showing only that a flag is accepted, or a unit test setting the
 option directly, does not count: drive it through `vectorRun` or the binary
 and assert its effect. For a parser or gate rule, test its neighbours too
-(table-driven), not just the case that motivated it. An op every emitter
-implements runs in each language on a broken implementation and on fixed
-values: round trips pass when both directions are wrong the same way.
+(table-driven); a condition whose deletion fails no test needs a row. An op
+every emitter implements runs in each language on a broken implementation
+and on fixed values: round trips pass when both directions are wrong the
+same way.
 
 **A gate that accepts a value on another clause's word computes it, never
 assumes it.** When a rule takes one clause's printed value as what another
 clause's expression denotes (a sibling vector's result standing in for a
 property's sub-call), evaluate that expression with the sampler's semantics
 and refuse every form it does not compute: a truncated, iterated or
-toleranced value, or `unwrap` of a `null`, is not `g(args)`. Every condition
-such a rule adds lands with a test shown to fail when that condition is
-deleted.
+toleranced value, or `unwrap` of a `null`, is not `g(args)`.
 
 **A gate rule that reads an RFC's layout (a block, a grid, a dump) is tested
 on text that goes through `rfcParse` with real `[Page N]` footers and `\f`
 headers.** The tests cover a value on each side of a page break, and two
-separate blocks split only by one. A boundary rule tested without that page
-text passes even with the rule removed.
+separate blocks split only by one. A pairing rule reads values as the RFC
+prints them, never from the contract, and refuses each look-alike: another
+case, variant, sentence or paragraph.
 
 **Generated files are regenerated, never edited by hand.** That covers
 `docs/reference/**` and its routes in `scalar.config.json`, `tests/dogfood/**`, `contracts/*.json`
