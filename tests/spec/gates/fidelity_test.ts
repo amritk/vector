@@ -1053,7 +1053,7 @@ const fidelityTestLabels = (t: Suite): void => {
       `{"name": "k", "type": "string"}`,
       `{"str": "k1"}`,
       "0",
-      "is only part of a longer value",
+      `W1.args[0]: the string "k1" is only part of a longer value in RFC §4 ("Test Vectors")`,
       "PRF (SHA-256, key=k1)",
       "PRF (SHA-256, key=k2)",
     ],
@@ -1063,7 +1063,7 @@ const fidelityTestLabels = (t: Suite): void => {
       `{"name": "k", "type": "string"}`,
       `{"str": "Jefe"}`,
       "1",
-      "but cmac128 names 128",
+      `W1.expect: the value is printed under "CMAC (key="Jefe", bits>=256)" in RFC §4 ("Test Vectors"), but cmac128 names 128, as in "CMAC (key="Jefe", bits>=128)"`,
       'CMAC (key="Jefe", bits>=128)',
       'CMAC (key="Jefe", bits>=256)',
     ],
@@ -1073,7 +1073,7 @@ const fidelityTestLabels = (t: Suite): void => {
       `{"name": "k", "type": "string"}`,
       `{"str": "Jefe"}`,
       "1",
-      "but kdfSha256 names 256",
+      `W1.expect: the value is printed under "KDF (hash=SHA512, key="Jefe")" in RFC §4 ("Test Vectors"), but kdfSha256 names 256, as in "KDF (hash=SHA256, key="Jefe")"`,
       'KDF (hash=SHA256, key="Jefe")',
       'KDF (hash=SHA512, key="Jefe")',
     ],
@@ -1093,7 +1093,7 @@ const fidelityTestLabels = (t: Suite): void => {
       `{"name": "k", "type": "string"}, {"name": "s", "type": "string"}`,
       `{"str": "pepper"}, {"str": "spice"}`,
       "0",
-      `args[1] "spice" is printed in the call label "SALT (SHA-512, key="pepper", s="spice")"`,
+      `W1.args[1]: args[1] "spice" is printed in the call label "SALT (SHA-512, key="pepper", s="spice")" in RFC §4 ("Test Vectors"), not in "SALT (SHA-256, key="pepper", s="")" that the expected value is printed under`,
       'SALT (SHA-256, key="pepper", s="")',
       'SALT (SHA-512, key="pepper", s="spice")',
     ],
@@ -1103,7 +1103,7 @@ const fidelityTestLabels = (t: Suite): void => {
       `{"name": "k", "type": "string"}, {"name": "c", "type": "i32"}`,
       `{"str": "Jefe"}, {"int": 1, "label": "c"}`,
       "0",
-      `one of "HKDF (SHA-256, key="Jefe", c=1)" or "HKDF (SHA-512, key="Jefe", c=1)" in`,
+      `the value is printed under "HKDF (SHA-256, key="Jefe", c=1)", one of "HKDF (SHA-256, key="Jefe", c=1)" or "HKDF (SHA-512, key="Jefe", c=1)" in RFC §4 ("Test Vectors"), and nothing in the name f says which variant it computes`,
       'HKDF (SHA-256, key="Jefe", c=1)',
       'HKDF (SHA-256, key="Jefe", c=2)',
       'HKDF (SHA-512, key="Jefe", c=1)',
@@ -1114,7 +1114,7 @@ const fidelityTestLabels = (t: Suite): void => {
       `{"name": "x", "type": "f64"}`,
       `{"f64": "1.5", "label": "c"}`,
       "1",
-      "but drbgSha256 names 256",
+      `W1.expect: the value is printed under "DRBG (SHA-512, c=1.5)" in RFC §4 ("Test Vectors"), but drbgSha256 names 256, as in "DRBG (SHA-256, c=1.5)"`,
       "DRBG (SHA-256, c=1.5)",
       "DRBG (SHA-512, c=1.5)",
     ],
@@ -1124,9 +1124,129 @@ const fidelityTestLabels = (t: Suite): void => {
       `{"name": "x", "type": "f64"}`,
       `{"f64": "4.5", "label": "c"}`,
       "0",
-      "nothing in the name drbgSha256 says which variant",
+      `the value is printed under "DRBG (SHA-256, c=1.5)", one of "DRBG (SHA-256, c=1.5)" or "DRBG (SHA-256, c=4.5)" in RFC §4 ("Test Vectors"), and nothing in the name drbgSha256 says which variant it computes`,
       "DRBG (SHA-256, c=1.5)",
       "DRBG (SHA-256, c=4.5)",
+    ],
+    [
+      "a number the vector does not bind is the variant's: bits=512 is not sha3_256's",
+      "sha3_256",
+      `{"name": "m", "type": "string"}`,
+      `{"str": "Jefe"}`,
+      "1",
+      `W1.expect: the value is printed under "SHA3 (msg="Jefe", bits=512)" in RFC §4 ("Test Vectors"), but sha3_256 names 256, as in "SHA3 (msg="Jefe", bits=256)"`,
+      'SHA3 (msg="Jefe", bits=256)',
+      'SHA3 (msg="Jefe", bits=512)',
+    ],
+    [
+      "and bits=256 is",
+      "sha3_256",
+      `{"name": "m", "type": "string"}`,
+      `{"str": "Jefe"}`,
+      "0",
+      "",
+      'SHA3 (msg="Jefe", bits=256)',
+      'SHA3 (msg="Jefe", bits=512)',
+    ],
+    [
+      "a string-only pairing leaves an unbound number in the variant",
+      "xof5",
+      `{"name": "m", "type": "string"}`,
+      `{"str": "Jefe"}`,
+      "0",
+      `W1.expect: the value is printed under "XOF (msg="Jefe", d=1)" in RFC §4 ("Test Vectors"), but xof5 names 5, as in "XOF (msg="Jefe", d=5)"`,
+      'XOF (msg="Jefe", d=1)',
+      'XOF (msg="Jefe", d=5)',
+    ],
+    [
+      "and the label that prints it is the function's",
+      "xof5",
+      `{"name": "m", "type": "string"}`,
+      `{"str": "Jefe"}`,
+      "1",
+      "",
+      'XOF (msg="Jefe", d=1)',
+      'XOF (msg="Jefe", d=5)',
+    ],
+    [
+      "a bound c pairs, and c=80000 beside it is another case, not a variant (7914 §11)",
+      "pbkdf2Sha256",
+      `{"name": "p", "type": "string"}, {"name": "c", "type": "i32"}`,
+      `{"str": "passwd"}, {"int": 1, "label": "c"}`,
+      "0",
+      "",
+      'PBKDF2-HMAC-SHA-256 (P="passwd", c=1)',
+      'PBKDF2-HMAC-SHA-256 (P="passwd", c=80000)',
+    ],
+    [
+      "so does c=80000 beside c=1",
+      "pbkdf2Sha256",
+      `{"name": "p", "type": "string"}, {"name": "c", "type": "i32"}`,
+      `{"str": "passwd"}, {"int": 80000, "label": "c"}`,
+      "1",
+      "",
+      'PBKDF2-HMAC-SHA-256 (P="passwd", c=1)',
+      'PBKDF2-HMAC-SHA-256 (P="passwd", c=80000)',
+    ],
+    [
+      "a bound N pairs, and N=1048576 beside it is no variant (7914 §12)",
+      "scrypt",
+      `{"name": "s", "type": "string"}, {"name": "n", "type": "i32"}`,
+      `{"str": "NaCl"}, {"int": 16384, "label": "N"}`,
+      "0",
+      "",
+      'scrypt (S="NaCl", N=16384)',
+      'scrypt (S="NaCl", N=1048576)',
+    ],
+    [
+      "a bound c printed with another value still leaves the variant",
+      "pbkdf2Sha256",
+      `{"name": "p", "type": "string"}, {"name": "c", "type": "i32"}`,
+      `{"str": "passwd"}, {"int": 80000, "label": "c"}`,
+      "1",
+      `W1.expect: the value is printed under "PBKDF2 (SHA-512, P="passwd", c=80000)" in RFC §4 ("Test Vectors"), but pbkdf2Sha256 names 256, as in "PBKDF2 (SHA-256, P="passwd", c=1)"`,
+      'PBKDF2 (SHA-256, P="passwd", c=1)',
+      'PBKDF2 (SHA-512, P="passwd", c=80000)',
+    ],
+    [
+      "only the bound name's number is cut: xc=9 beside a bound c is a variant",
+      "kdf7",
+      `{"name": "p", "type": "string"}, {"name": "c", "type": "i32"}`,
+      `{"str": "p"}, {"int": 1, "label": "c"}`,
+      "1",
+      `W1.expect: the value is printed under "KDF (P="p", xc=9, c=1)" in RFC §4 ("Test Vectors"), but kdf7 names 7, as in "KDF (P="p", xc=7, c=1)"`,
+      'KDF (P="p", xc=7, c=1)',
+      'KDF (P="p", xc=9, c=1)',
+    ],
+    [
+      "only the bound number is cut: xc=9 after a bound c=1 is still the variant's",
+      "kdf7",
+      `{"name": "p", "type": "string"}, {"name": "c", "type": "i32"}`,
+      `{"str": "p"}, {"int": 1, "label": "c"}`,
+      "1",
+      `W1.expect: the value is printed under "KDF (P="p", c=1, xc=9)" in RFC §4 ("Test Vectors"), but kdf7 names 7, as in "KDF (P="p", c=1, xc=7)"`,
+      'KDF (P="p", c=1, xc=7)',
+      'KDF (P="p", c=1, xc=9)',
+    ],
+    [
+      "a bound integer's name can open the label",
+      "scrypt",
+      `{"name": "s", "type": "string"}, {"name": "n", "type": "i32"}`,
+      `{"str": "NaCl"}, {"int": 16384, "label": "N"}`,
+      "0",
+      "",
+      'N=16384 (S="NaCl")',
+      'N=1048576 (S="NaCl")',
+    ],
+    [
+      "a labelled f64 is no bound integer: its value beside a paired string is the variant's",
+      "drbg",
+      `{"name": "p", "type": "string"}, {"name": "x", "type": "f64"}`,
+      `{"str": "p"}, {"f64": "1.5", "label": "c"}`,
+      "0",
+      `the value is printed under "DRBG (P="p", c=1.5)", one of "DRBG (P="p", c=1.5)" or "DRBG (P="p", c=4.5)" in RFC §4 ("Test Vectors"), and nothing in the name drbg says which variant`,
+      'DRBG (P="p", c=1.5)',
+      'DRBG (P="p", c=4.5)',
     ],
   ]
   for (const r of rows) {
@@ -1140,6 +1260,34 @@ const fidelityTestLabels = (t: Suite): void => {
       fidelityTestWrapCall("4231", fidelityTestLabelRfc(labels), fn, r[1], "4", r[3], expect),
       r[5],
     )
+  }
+  // An integer printed in neither call label (only in "Rounds c=1") leaves
+  // the expected value unpaired, so no argument's name is cut from it, and
+  // c=9 and c=4 still name two variants. Other findings may come beside
+  // that warning, so each row asks only for the variant's.
+  const kdfLabels = ["KDF (c=9)", "KDF (c=4)", "Rounds c=1"]
+  const kdfExpect = `{"hex": "${fidelityTestLabelHex(0, "")}", "label": "KDF (c=9)"}`
+  const unpaired: string[][] = [
+    [
+      "an integer printed in neither label pairs nothing, so its name is not cut",
+      `{"name": "c", "type": "i32"}`,
+      `{"int": 1, "label": "c"}`,
+    ],
+    [
+      "nor does an unlabelled word array beside it, which has no name to print",
+      `{"name": "w", "type": "words32"}, {"name": "c", "type": "i32"}`,
+      `{"words32": ["0badf00d", "1badf00d", "2badf00d", "3badf00d"]}, {"int": 1, "label": "c"}`,
+    ],
+  ]
+  const kdfRfc = `${fidelityTestLabelRfc(kdfLabels)}\n   Key State\n\n       0badf00d  1badf00d  2badf00d  3badf00d\n`
+  for (const r of unpaired) {
+    const fn = `{"name": "kdf", "params": [${r[1]}], "returns": "bytes"}`
+    const got = fidelityTestWrapCall("4231", kdfRfc, fn, "kdf", "4", r[2], kdfExpect)
+    const ok = fidelityTestHas(got, "the value is printed under", 'one of "KDF (c=9)" or "KDF (c=4)"')
+    t.ok(`4231 §4: ${r[0]}`, ok)
+    if (!ok) {
+      console.log(`${r[0]}:\n${got.join("\n")}`)
+    }
   }
 }
 
@@ -1222,7 +1370,7 @@ const fidelityTestWrapped = (t: Suite): void => {
       "case 1 with case 2's count",
       `{"str": "passwd"}, {"str": "salt"}, {"int": 80000, "label": "c"}, {"int": 64, "label": "dkLen"}`,
       one,
-      `args[2] c=80000 is printed in the call label "PBKDF2-HMAC-SHA-256 (P="Password", S="NaCl", c=80000, dkLen=64)"`,
+      `W1.args[2]: args[2] c=80000 is printed in the call label "PBKDF2-HMAC-SHA-256 (P="Password", S="NaCl", c=80000, dkLen=64)" in RFC §11 ("Test Vectors for PBKDF2 with HMAC-SHA-256"), not in "PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)" that the expected value is printed under`,
     ],
     [
       "case 1 with case 2's salt",
@@ -1432,7 +1580,7 @@ const fidelityTestWrapped = (t: Suite): void => {
       "case 2 with case 1's N, across the break",
       `{"str": "password"}, {"str": "NaCl"}, {"int": 16, "label": "N"}, {"int": 8, "label": "r"}, {"int": 16, "label": "p"}, {"int": 64, "label": "dkLen"}`,
       s2,
-      `args[2] N=16 is printed in the call label "scrypt (P="", S="", N=16, r=1, p=1, dklen=64)"`,
+      `W1.args[2]: args[2] N=16 is printed in the call label "scrypt (P="", S="", N=16, r=1, p=1, dklen=64)" in RFC §12 ("Test Vectors for scrypt"), not in "scrypt (P="password", S="NaCl", N=1024, r=8, p=16, dkLen=64)" that the expected value is printed under`,
     ],
   ]
   const please = `{"str": "pleaseletmein"}, {"str": "SodiumChloride"}`
@@ -1455,7 +1603,7 @@ const fidelityTestWrapped = (t: Suite): void => {
     "case 3 with case 4's N",
     `${please}, {"int": 1048576, "label": "N"}, ${rest}`,
     s3,
-    `args[2] N=1048576 is printed in the call label "scrypt (P="pleaseletmein", S="SodiumChloride", N=1048576, r=8, p=1, dkLen=64)"`,
+    `W1.args[2]: args[2] N=1048576 is printed in the call label "scrypt (P="pleaseletmein", S="SodiumChloride", N=1048576, r=8, p=1, dkLen=64)" in RFC §12 ("Test Vectors for scrypt"), not in "scrypt (P="pleaseletmein", S="SodiumChloride", N=16384, r=8, p=1, dkLen=64)" that the expected value is printed under`,
   ])
   for (const r of scRows) {
     fidelityTestRowIs(t, `7914 §12: ${r[0]}`, fidelityTestWrap("7914", scrypt, scryptFn, "12", r[1], r[2]), r[3])

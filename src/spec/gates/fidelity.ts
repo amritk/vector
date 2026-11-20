@@ -1265,30 +1265,30 @@ const gateLabelUnText = (label: string, text: string): string => {
 const gateNameChar = (c: i32): boolean => (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122)
 
 /**
- * A call label with each named integer argument's number cut out: `c=1` and
- * `N=16` of `(P="passwd", c=1, N=16)` leave `c=` and `N=`. A word that is not
- * all digits (`hash=SHA-256`) is kept.
+ * A call label with the number after each name in `names` (the vector's
+ * integer arguments) cut out: with `c` and `N` bound, `c=1` and `N=16` of
+ * `(P="passwd", c=1, N=16, bits=256)` leave `c=` and `N=`, and `bits=256`,
+ * which the vector does not bind, stays part of the variant.
  */
-const gateLabelUnNumbered = (label: string): string => {
+const gateLabelUnNumbered = (label: string, names: string[]): string => {
   const out: string[] = []
   let i = 0
   while (i < label.length) {
     const c = label.charCodeAt(i)
     out.push(label.substring(i, i + 1))
     i = i + 1
-    if (c !== 61 || !gateNameChar(label.charCodeAt(i - 2))) {
+    if (c !== 61) {
       continue
     }
-    let e = i
-    while (e < label.length && gateNameChar(label.charCodeAt(e))) {
-      e = e + 1
+    let s = i - 1
+    while (s > 0 && gateNameChar(label.charCodeAt(s - 1))) {
+      s = s - 1
     }
-    let digits = true
-    for (let k = i; k < e && digits; k++) {
-      digits = label.charCodeAt(k) >= 48 && label.charCodeAt(k) <= 57
+    if (names.indexOf(label.substring(s, i - 1)) < 0) {
+      continue
     }
-    if (digits) {
-      i = e
+    while (i < label.length && gateNameChar(label.charCodeAt(i))) {
+      i = i + 1
     }
   }
   return out.join("")
@@ -1296,21 +1296,31 @@ const gateLabelUnNumbered = (label: string): string => {
 
 /**
  * The part of a label that names a variant: for an expected value paired with
- * its call label's arguments, the label with the test case's inputs cut out
- * (its paired strings and every named integer), so `HMAC (SHA-256, key="Jefe")`
- * still names 256 and `c=1` names nothing; otherwise the whole label.
+ * its call label's arguments, the label with the arguments the vector binds
+ * cut out (each paired string, and the number after each integer argument's
+ * own name), so `HMAC (SHA-256, key="Jefe")` still names 256, a bound `c=1`
+ * names nothing and an unbound `bits=256` still does; otherwise the whole
+ * label.
  */
 const gateCallHead = (l: GateLits, b: GateBound, label: string): string => {
   if (!b.callArgs) {
     return label
   }
   let out = rfcNormalize(label)
+  const names: string[] = []
   for (const a of l.bounds) {
-    if (a.paired && a.lines !== null) {
-      out = gateLabelUnText(out, a.text)
+    const name = a.label
+    if (a.lines !== null) {
+      if (a.paired) {
+        out = gateLabelUnText(out, a.text)
+      }
+    } else if (name !== null && a.num.length > 0) {
+      // An integer the vector binds under a name is an argument wherever
+      // that name is printed, whichever value it prints there.
+      names.push(name)
     }
   }
-  return gateLabelUnNumbered(out)
+  return gateLabelUnNumbered(out, names)
 }
 
 /**

@@ -626,8 +626,8 @@ of matching bytes:
   does not print at all (the 32-byte base point `[09 00 … 00]` against
   §6.1, or §6.1's key cited from §6.2).
 - **Wrapped statements.** A statement names one value: the first
-  `= <hex>` after it and its `= f(...)` lines takes the statement's name,
-  the text before its first `=`, even where that name stands on a line of
+  `= <hex>` line below it, past any `= f(...)` lines, takes the
+  statement's name, the text before its first `=`, even where that name stands on a line of
   its own, the call wraps, or a page break comes between; a second
   `= <hex>` under it is unnamed. In RFC 9001 Appendix A.1, `client_initial_secret`, then
   `= HKDF-Expand-Label(initial_secret, "client in", "", 32)`, then
@@ -659,7 +659,10 @@ of matching bytes:
   case with it, and is not read by line or round. One printed in another
   call label of the section instead (`"NaCl"`, `c=80000` beside case 1's
   value) is refused: "they are different test cases". Call labels that
-  differ only inside the `( … )` are one variant, named before the `(`.
+  differ only in the arguments the vector binds (its strings, and the
+  number after each of its integer arguments' names) are one variant. Any
+  other difference inside the `( … )` names a variant: with only `"Jefe"`
+  bound, `SHA3 (msg="Jefe", bits=512)` is refused for `sha3_256`.
 - **Named test cases.** Where a section prints several test cases under
   headings (`Test Vector #2:`, a line of its own or followed by text), and a
   label is printed a different number of times than another, the rounds do

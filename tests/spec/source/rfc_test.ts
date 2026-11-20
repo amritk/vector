@@ -795,6 +795,13 @@ export const main = (): i32 => {
       "Key=0a0b0c0d",
     ],
     ["nor one ending in =", "Test vector (informative\n   Key =\n   0a0b0c0d", "Key=0a0b0c0d"],
+    [
+      "a value ends a call left open in prose, so a later line does not join it",
+      "The tag (computed over\nCiphertext\n   0a0b0c0d\nmore) =\n   2233ff",
+      "Ciphertext=0a0b0c0d more)=2233ff",
+    ],
+    ["an = line in upper case reads as its bytes", "x = f(a)\n   = 0A0B0C0D", "x=0a0b0c0d"],
+    ["an = line in several groups is one value", "x = f(a)\n   = 0a0b 0c0d", "x=0a0b0c0d"],
   ]
   for (const n of neighbours) {
     t.eqStr(n[0], rfcTestBody(n[1]), n[2])
