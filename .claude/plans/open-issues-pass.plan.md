@@ -50,6 +50,14 @@ stages:
       - id: push-base
         content: Run doc-caps --base against github.event.before on pushes to main in .github/workflows/ci.yml — see Doc caps
         status: pending
+  - id: claude-cap
+    title: "docs(claude): bring CLAUDE.md back under its 8960-byte cap"
+    goal: CLAUDE.md fits its doc cap again, so the check job on main and on every PR passes doc-caps
+    verification: npm run doc-caps && node --test scripts/doc-caps.test.mjs && npm run lint
+    todos:
+      - id: claude-shorten
+        content: Shorten CLAUDE.md in place by at least 69 bytes without dropping any rule, leaving scripts/doc-caps.json untouched — see Claude cap
+        status: pending
 ---
 
 ## Context
@@ -99,6 +107,12 @@ Rename (`doc-caps.mjs:100-104`): with `--base`, a base entry missing from the cu
 Each gets a row in `doc-caps.test.mjs` beside the passing rename. A git failure while reading renames exits 2, like the other unreadable-base cases.
 
 Push (`ci.yml`): the `--base` check runs only on `pull_request`. On `push` to `main`, fetch `github.event.before` and run `npm run doc-caps -- --base "$BEFORE"`, skipping when `before` is all zeros (a new branch). Keep every action pinned to its SHA (the first CI step checks this).
+
+## Claude cap
+
+Owns: `CLAUDE.md`
+
+Added after sign-off (owner's choice, 2026-11-20T20:1xZ). main is red at `d150a60`. #200 (8931 B on its own) and #190 merged 6 minutes apart, and together they left `CLAUDE.md` at 9029 bytes, over its 8960 cap, so `npm run doc-caps` fails `check` on main and on every PR. Shorten it in place by at least 69 bytes, simplifying wording, never moving text into another file and never touching the cap. Every rule stays: say each one in fewer words, or merge two that say the same thing. The version and release text that release-please owns stays as it is. This stage merges first; every other stage updates from main after it.
 
 ## Out of scope
 
