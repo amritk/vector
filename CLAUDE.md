@@ -73,11 +73,11 @@ test, lints and smoke-runs the binary on every push.
 **Read a check's exit status, never its piped tail.** `npm run lint | tail`
 reports success when lint fails. Run it bare, or check `$?` / `PIPESTATUS`.
 
-**A new rule, refusal or flag lands with a test that fails without it.** A
-golden that only shows a flag is accepted, or a unit test that sets the
-option directly, does not count: drive it through `vectorRun` or the binary
-and assert its effect. For a parser or gate rule, test its neighbours too
-(table-driven), not just the case that motivated it.
+**A new rule, refusal or flag lands with a test that fails without it.**
+Drive it via `vectorRun` or the binary and assert its effect; a flag
+accepted, or an option set in a unit test, won't do. Test a parser or gate
+rule's neighbours too (table-driven). Delete or flip each condition you
+add (`<` to `<=`): a surviving mutation needs a failing row.
 
 **A gate that accepts a value on another clause's word computes it, never
 assumes it.** When a rule takes one clause's printed value as what another
