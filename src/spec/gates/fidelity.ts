@@ -40,7 +40,6 @@ import {
 import { SourceSet, sourceFind } from "../source/load"
 import {
   HexValue,
-  RFC_CALL_LINES,
   RfcSection,
   rfcCaseSection,
   rfcHasCases,
@@ -89,6 +88,8 @@ class GateBound {
   printed: i32[]
   /** For a labelled integer: its digits; "" otherwise. */
   num: string
+  /** For a hex value under a label: the printed values it is, under that label as the RFC prints it. */
+  held: HexValue[]
   /** Whether it is printed in the call label its vector's expected value is printed under (gateLabelArgs). */
   paired: boolean
   /** For an expected value: whether arguments are paired with it by its call label. */
@@ -101,6 +102,7 @@ class GateBound {
     this.at = at
     this.label = label
     this.num = ""
+    this.held = []
     this.paired = false
     this.callArgs = false
     this.call = []
@@ -290,6 +292,7 @@ const gateHexCheck = (l: GateLits, at: string, hex: string, label: string | null
     if (vl !== null && gateSameLabel(vl, label)) {
       if (v.hex === hex) {
         has.push(of)
+        b.held.push(v)
       }
       b.printed.push(v.line)
       of = of + 1
@@ -685,58 +688,29 @@ const gateInLabel = (b: GateBound, label: string): boolean => {
 }
 
 /**
- * The lines (of GateLits.lines, which holds no blank line) a call label is
- * printed on, for each printing of it that holds the expected value: from the
- * line that names the value, up to the line that ends the label.
+ * The lines (of GateLits.lines, which holds no blank line) a printed value's
+ * label is printed on: from the line that names it to the line its call label
+ * closes on, which rfcHexRead joined (at most RFC_CALL_LINES).
  */
-const gateCallLines = (l: GateLits, e: GateBound, label: string): i32[] => {
-  const want = rfcNormalize(label)
+const gateLabelLines = (l: GateLits, v: HexValue): i32[] => {
   const out: i32[] = []
-  // A label printed once keeps no rounds (gateRounds): its one printing is it.
-  const at: i32[] = []
-  for (const r of e.has) {
-    if (r < e.printed.length) {
-      at.push(e.printed[r])
+  let k = 0
+  for (let i = 0; i <= v.end && i < l.sec.lines.length; i++) {
+    if (rfcNormalize(l.sec.lines[i]).length === 0) {
+      continue
     }
-  }
-  if (e.printed.length === 1) {
-    at.push(e.printed[0])
-  }
-  for (const line of at) {
-    // GateLits.lines keeps a section line only when it is not blank.
-    let k = 0
-    for (let i = 0; i < line && i < l.sec.lines.length; i++) {
-      if (rfcNormalize(l.sec.lines[i]).length > 0) {
-        k = k + 1
-      }
-    }
-    // The walk ends at the label: its printing starts on that line, and a
-    // call label wraps over at most RFC_CALL_LINES (rfcHexText).
-    const joined: string[] = []
-    for (let i = line; i >= 0 && i < l.sec.lines.length; i++) {
-      const t = rfcNormalize(l.sec.lines[i])
-      if (t.length === 0) {
-        continue
-      }
-      joined.push(t)
+    if (i >= v.line) {
       out.push(k)
-      k = k + 1
-      if (joined.join(" ").indexOf(want) >= 0) {
-        break
-      }
     }
+    k = k + 1
   }
   return out
 }
 
-/** A text or paired bound's lines: where it is printed whole, and its call label's. */
+/** A text or paired bound's lines: a paired one's call label's only, else where it is printed whole. */
 const gateBoundPlaces = (b: GateBound): i32[] => {
   const lines = b.lines
-  const out: i32[] = lines !== null ? lines.slice(0) : []
-  for (const n of b.call) {
-    out.push(n)
-  }
-  return out
+  return b.paired ? b.call : lines !== null ? lines : []
 }
 
 /** An argument, for a message: `args[0] "salt"`, `args[2] c=1`. */
@@ -762,13 +736,29 @@ const gateLabelArgs = (l: GateLits, args: i32): void => {
   if (label === null) {
     return
   }
-  const call = gateCallLines(l, e, label)
+  // Only a hex value is bound to printings; any other names its label.
+  const under: string[] = e.held.length === 0 ? [rfcNormalize(label)] : []
+  for (const v of e.held) {
+    const vl = v.label
+    if (vl !== null) {
+      under.push(rfcNormalize(vl))
+    }
+  }
   for (let a = 0; a < args; a++) {
     const b = l.bounds[a]
-    if (gateInLabel(b, label)) {
-      b.paired = true
-      b.call = call
-      e.callArgs = true
+    // Paired only by the label the RFC prints over the value, and placed on
+    // that printing's lines: the contract's label is bound to it ignoring case.
+    for (const v of e.held) {
+      const vl = v.label
+      if (vl !== null && gateInLabel(b, vl)) {
+        b.paired = true
+        e.callArgs = true
+        for (const n of gateLabelLines(l, v)) {
+          b.call.push(n)
+        }
+      }
+    }
+    if (b.paired) {
       continue
     }
     for (const v of l.values) {
@@ -777,7 +767,7 @@ const gateLabelArgs = (l: GateLits, args: i32): void => {
         gateNote(
           l,
           `${l.id}.${b.at}`,
-          `${gateArgText(b)} is printed in the call label "${rfcNormalize(vl)}" in ${l.inSection}, not in "${rfcNormalize(label)}" that the expected value is printed under: they are different test cases`,
+          `${gateArgText(b)} is printed in the call label "${rfcNormalize(vl)}" in ${l.inSection}, not in ${gateQuoted(under)} that the expected value is printed under: they are different test cases`,
           false,
         )
         b.other = true
@@ -814,7 +804,9 @@ const gateOneTestCase = (l: GateLits, args: i32, sec: RfcSection): void => {
       )
     }
   }
-  const repeated = l.bounds.filter((b: GateBound): boolean => b.of > 1 && !b.paired && !b.other)
+  // An expected value its arguments pair with is placed by its printing's
+  // label, as they are, not by its round.
+  const repeated = l.bounds.filter((b: GateBound): boolean => b.of > 1 && !b.paired && !b.other && !b.callArgs)
   if (texts.length > 0 && repeated.length > 0) {
     // A string is placed by its line and a labelled value by its round;
     // nothing relates the two.
@@ -939,10 +931,9 @@ const gateOnceRound = (l: GateLits, repeated: GateBound[], shared: i32[], inSect
   }
 }
 
-/** Whether a text bound is printed on `line`, or a paired one's call label is. */
+/** Whether a text bound is printed on `line`, or a paired one's call label is: gateBoundPlaces. */
 const gateBoundHasLine = (b: GateBound, line: i32): boolean => {
-  const lines = b.lines
-  return (lines !== null && lines.indexOf(line) >= 0) || b.call.indexOf(line) >= 0
+  return gateBoundPlaces(b).indexOf(line) >= 0
 }
 
 /** A bound's label, or "". */

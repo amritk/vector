@@ -83,6 +83,12 @@ export class HexValue {
    */
   line: i32 = -1
   /**
+   * The index of the last line that name is printed on: the line a call
+   * label wrapped over several lines closes on, `line` otherwise; -1 when it
+   * was not read from a section.
+   */
+  end: i32 = -1
+  /**
    * Makes a value.
    *
    * @param hex the value's lowercase hex
@@ -601,8 +607,12 @@ class RfcHexReader {
   at: i32 = 0
   /** The line `pending` is printed on. */
   pendingLine: i32 = -1
+  /** The last line `pending` is printed on: where a wrapped call label closes. */
+  pendingEnd: i32 = -1
   /** The line that names the current value, or its first line. */
   labelLine: i32 = -1
+  /** The last line the current value's name is printed on. */
+  labelEnd: i32 = -1
   /** The name of the statement a `= <hex>` line continues (`initial_secret = HKDF-Extract(…)`), or null. */
   stmt: string | null = null
   /** The line `stmt` is printed on. */
@@ -673,6 +683,7 @@ const rfcHexFlush = (r: RfcHexReader): void => {
   if (r.cur.length > 0 && !decimal) {
     const v = new HexValue(r.cur, label)
     v.line = r.labelLine
+    v.end = r.labelEnd
     r.values.push(v)
   }
   r.cur = ""
@@ -692,6 +703,7 @@ const rfcHexStart = (r: RfcHexReader, name: string | null, bare: boolean): void 
     }
     r.label = named ? name : r.pending
     r.labelLine = !named && r.pending !== null ? r.pendingLine : r.at
+    r.labelEnd = !named && r.pending !== null ? r.pendingEnd : r.at
     r.bareOnly = bare
     r.pending = null
   } else if (!bare) {
@@ -1091,6 +1103,7 @@ const rfcHexText = (r: RfcHexReader, line: string): void => {
       // leaves `Ciphertext` the next value's name.
       r.pending = rfcLabelLine(line)
       r.pendingLine = r.at
+      r.pendingEnd = r.at
       return
     }
     r.call = ""
@@ -1098,6 +1111,7 @@ const rfcHexText = (r: RfcHexReader, line: string): void => {
       if (joined.endsWith("=") || joined.endsWith(":")) {
         r.pending = rfcLabelBefore(joined)
         r.pendingLine = r.callLine
+        r.pendingEnd = r.at
         r.stmt = null
         return
       }
@@ -1108,6 +1122,7 @@ const rfcHexText = (r: RfcHexReader, line: string): void => {
   }
   r.pending = rfcLabelLine(line)
   r.pendingLine = r.at
+  r.pendingEnd = r.at
   r.stmt = rfcStatementName(t)
   r.stmtLine = r.at
   if (rfcParenDepth(t) > 0) {
@@ -1143,6 +1158,7 @@ const rfcHexRead = (sec: RfcSection): RfcHexReader => {
       rfcHexFlush(r)
       r.pending = r.stmt
       r.pendingLine = r.stmtLine
+      r.pendingEnd = r.stmtLine
       r.stmt = null
       rfcHexStart(r, null, rfcAllDigits(continued))
       r.cur = rfcLower(continued)

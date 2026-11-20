@@ -199,6 +199,16 @@ the name it is printed under, or null
 
 </scalar-field>
 
+#### HexValue.end
+
+The index of the last line that name is printed on: the line a call
+label wrapped over several lines closes on, `line` otherwise; -1 when it
+was not read from a section.
+
+```ts
+end: i32
+```
+
 #### HexValue.hex
 
 Lowercase hex, two digits a byte.

@@ -103,6 +103,17 @@ const rfcTestBody = (body: string): string => {
   return rfcTestValues(rfcTestSection(rfcParse(text), "1"))
 }
 
+/**
+ * The lines each value of a one-section RFC whose body is `body` is named on:
+ * `label@line-end`, where `end` is the line its name closes on, space-separated.
+ */
+const rfcTestEnds = (body: string): string => {
+  const text = `Request for Comments: 1\n\f\n1.  Intro\n\n   ${body}\n`
+  return rfcHexValues(rfcTestSection(rfcParse(text), "1"))
+    .map((v: HexValue): string => `${v.label ?? "-"}@${v.line}-${v.end}`)
+    .join(" ")
+}
+
 /** The labels printed with no value below them in a one-section RFC whose body is `body`, joined by `|`. */
 const rfcTestUnvalued = (body: string): string => {
   const text = `Request for Comments: 1\n\f\n1.  Intro\n\n   ${body}\n`
@@ -805,6 +816,40 @@ export const main = (): i32 => {
   ]
   for (const n of neighbours) {
     t.eqStr(n[0], rfcTestBody(n[1]), n[2])
+  }
+  // Where each value's name closes: the last line of a call label
+  // rfcHexRead joined (four at most, across a page break too), the name's
+  // own line otherwise.
+  const brk = rfcTestBreak(2)
+  const ends: string[][] = [
+    ["a one-line label closes on its line", "Key:\n   0a0b0c0d", "Key@2-2"],
+    ["a call label wrapped over two lines closes on the second", "f (a,\n   b) =\n   0a0b0c0d", "f (a, b)@2-3"],
+    ["one wrapped across a page break closes past it", `f (a,${brk}\n   b) =\n   0a0b0c0d`, "f (a, b)@2-5"],
+    [
+      "one wrapped over four lines closes on the fourth",
+      "f (a,\n   b,\n   c,\n   d) =\n   0a0b0c0d",
+      "f (a, b, c, d)@2-5",
+    ],
+    [
+      "one wrapped over five is named by its last line alone",
+      "f (a,\n   b,\n   c,\n   d,\n   e) =\n   0a0b0c0d",
+      "e)@6-6",
+    ],
+    [
+      "a line inside a call open in prose names a value on its own line",
+      "The tag (computed over\nCiphertext\n   0a0b0c0d",
+      "Ciphertext@3-3",
+    ],
+    ["a statement names its = line from its own line", "x = f(a)\n\n   = 0a0b0c0d", "x@2-2"],
+    [
+      "a call closed by = names from its first line to its last",
+      "key = f(a,\n   b) =\n   0a0b0c0d",
+      "key = f(a, b)@2-3",
+    ],
+    ["an inline label is its value's line", "Key = 0a0b0c0d", "Key@2-2"],
+  ]
+  for (const e of ends) {
+    t.eqStr(e[0], rfcTestEnds(e[1]), e[2])
   }
   const many: string[] = []
   for (let i = 0; i < 7; i++) {

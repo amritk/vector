@@ -710,8 +710,12 @@ of matching bytes:
 - **Call labels.** A string or integer printed inside the expected
   value's label, in its `( … )` (`"passwd"`, `c=1` in
   `PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)`), is one test
-  case with it, placed on the label's own lines rather than by round, and
-  every other argument must be printed there too: beside `"passwd"`, a
+  case with it. The label is read as the RFC prints it over that value, with
+  its case, and over the lines it wraps (at most four); a contract's label
+  that differs only in case still names the value, but `"passwd"` does not
+  pair with a printed `P="PASSWD"`. A paired argument is placed on those
+  lines only, not by round and not where prose prints it again, and every
+  other argument must be printed there too: beside `"passwd"`, a
   string printed only in prose, or one of several `n=` values printed outside
   the label, is refused. One printed in another
   call label of the section instead (`"NaCl"`, `c=80000` beside case 1's

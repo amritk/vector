@@ -1128,16 +1128,152 @@ const fidelityTestPairedPlaces = (t: Suite): void => {
   const strs = `{"name": "p", "type": "string"}, {"name": "s", "type": "string"}`
   const withC = `{"name": "c", "type": "i32"}, {"name": "s", "type": "string"}`
   const rows: string[][] = [
-    ["a string in prose on the line after a one-line label", strs, `{"str": "pw"}, {"str": "foo"}`, "0", "foo"],
-    ["a string in prose after a label split by a page break", strs, `{"str": "pass"}, {"str": "bar"}`, "1", "bar"],
-    ["a string in prose beside a paired integer", withC, `{"int": 7, "label": "c"}, {"str": "baz"}`, "2", "baz"],
+    ["a string in prose on the line after a one-line label", strs, `{"str": "pw"}, {"str": "foo"}`, "0", "foo", '"pw"'],
+    [
+      "a string in prose after a label split by a page break",
+      strs,
+      `{"str": "pass"}, {"str": "bar"}`,
+      "1",
+      "bar",
+      '"pass"',
+    ],
+    ["a string in prose beside a paired integer", withC, `{"int": 7, "label": "c"}, {"str": "baz"}`, "2", "baz", "c=7"],
   ]
   for (const r of rows) {
     const at = parseInt(r[3])
     const fn = `{"name": "kdf", "params": [${r[1]}], "returns": "bytes"}`
     const expect = `{"hex": "${fidelityTestLabelHex(at, "")}", "label": "${fidelityTestLabelJson(labels[at])}"}`
-    const want = `args[1] "${r[4]}" are each printed in RFC §4 ("Test Vectors"), but never on one line together`
+    const want = `W1: args[0] ${r[5]}, args[1] "${r[4]}" are each printed in RFC §4 ("Test Vectors"), but never on one line together`
     fidelityTestRowIs(t, `4231 §4: ${r[0]}`, fidelityTestWrapCall("4231", rfc, fn, "kdf", "4", r[2], expect), want)
+  }
+}
+
+/**
+ * Arguments pair against the label the RFC prints over the expected value,
+ * not the contract's (bound to it ignoring case), and a paired argument is
+ * placed on that printing's lines only: the lines rfcHexRead joined into it.
+ * Each row is a name, the args' JSON, the index of the value expected, the
+ * contract's label, and the finding wanted ("" for none).
+ */
+const fidelityTestPrintedLabel = (t: Suite): void => {
+  const rfc = [
+    "Request for Comments: 4231",
+    "",
+    "1.  Rules",
+    "",
+    "   It MUST derive.",
+    "",
+    "4.  Test Vectors",
+    "",
+    '   PBKDF2 (P="passwd", S="salt", c=1) =',
+    `   ${fidelityTestLabelHex(0, " ")}`,
+    '   The info "foo" is used here.',
+    "",
+    '   scrypt (P="PWORD", S="NaCl",',
+    fidelityTestBreak("4231", 4),
+    "           N=1024) =",
+    `   ${fidelityTestLabelHex(1, " ")}`,
+    '   The password "pword" is shown in lower case.',
+    "",
+    '   Using the inputs "pw3" and "salt3" from above:',
+    "",
+    '   KDF3 (P="pw3", S="NaCl3") =',
+    `   ${fidelityTestLabelHex(2, " ")}`,
+    "",
+    '   KDF (P="a",',
+    fidelityTestBreak("4231", 5),
+    '        S="b") =',
+    `   ${fidelityTestLabelHex(3, " ")}`,
+    "",
+    '   kdf (P="A", S="B") =',
+    `   ${fidelityTestLabelHex(4, " ")}`,
+    "",
+    '   LONG (P="q1",',
+    '         S="q2",',
+    fidelityTestBreak("4231", 6),
+    "         c=3,",
+    "         d=4) =",
+    `   ${fidelityTestLabelHex(5, " ")}`,
+    "",
+    '   WIDE (P="r1",',
+    '         S="r2",',
+    "         c=3,",
+    "         d=4,",
+    "         e=5) =",
+    `   ${fidelityTestLabelHex(6, " ")}`,
+    "",
+  ].join("\n")
+  const never = 'are each printed in RFC §4 ("Test Vectors"), but never on one line together'
+  const pb = 'PBKDF2 (P="passwd", S="salt", c=1)'
+  const lower = 'pbkdf2 (P="passwd", S="salt", c=1)'
+  const sc = 'scrypt (P="PWORD", S="NaCl", N=1024)'
+  const rows: string[][] = [
+    ["the printed label's case", `{"str": "passwd"}, {"str": "salt"}`, "0", pb, ""],
+    [
+      "a prose string beside it",
+      `{"str": "passwd"}, {"str": "foo"}`,
+      "0",
+      pb,
+      `W1: args[0] "passwd", args[1] "foo" ${never}`,
+    ],
+    ["a label differing in case only", `{"str": "passwd"}, {"str": "salt"}`, "0", lower, ""],
+    [
+      "it, beside a prose string",
+      `{"str": "passwd"}, {"str": "foo"}`,
+      "0",
+      lower,
+      `W1: args[0] "passwd", args[1] "foo" ${never}`,
+    ],
+    ["the printed PWORD, across a page break", `{"str": "PWORD"}, {"str": "NaCl"}`, "1", sc, ""],
+    [
+      "a lower-case pword only the contract's label prints",
+      `{"str": "pword"}, {"str": "NaCl"}`,
+      "1",
+      'scrypt (P="pword", S="NaCl", N=1024)',
+      `W1: args[0] "pword", args[1] "NaCl" ${never}`,
+    ],
+    ["both in the label", `{"str": "pw3"}, {"str": "NaCl3"}`, "2", 'KDF3 (P="pw3", S="NaCl3")', ""],
+    [
+      "a paired one also in prose, beside one printed only there",
+      `{"str": "pw3"}, {"str": "salt3"}`,
+      "2",
+      'KDF3 (P="pw3", S="NaCl3")',
+      `W1: args[0] "pw3", args[1] "salt3" ${never}`,
+    ],
+    [
+      "a label printed twice, the printing that holds them",
+      `{"str": "a"}, {"str": "b"}`,
+      "3",
+      'KDF (P="a", S="b")',
+      "",
+    ],
+    [
+      "the other printing, its label in another case",
+      `{"str": "a"}, {"str": "B"}`,
+      "4",
+      'KDF (P="a", S="b")',
+      'W1.args[0]: args[0] "a" is printed in the call label "KDF (P="a", S="b")" in RFC §4 ("Test Vectors"), not in "kdf (P="A", S="B")" that the expected value is printed under: they are different test cases',
+    ],
+    ["the other printing, with its own", `{"str": "A"}, {"str": "B"}`, "4", 'KDF (P="a", S="b")', ""],
+    [
+      "a call label over four lines and a page break",
+      `{"str": "q1"}, {"str": "q2"}`,
+      "5",
+      'LONG (P="q1", S="q2", c=3, d=4)',
+      "",
+    ],
+    [
+      "one over five, which is not one label: its last line names the value",
+      `{"str": "r1"}, {"str": "r2"}`,
+      "6",
+      "e=5)",
+      `W1: args[0] "r1", args[1] "r2" ${never}`,
+    ],
+  ]
+  const fn = `{"name": "kdf", "params": [{"name": "p", "type": "string"}, {"name": "s", "type": "string"}], "returns": "bytes"}`
+  for (const r of rows) {
+    const expect = `{"hex": "${fidelityTestLabelHex(parseInt(r[2]), "")}", "label": "${fidelityTestLabelJson(r[3])}"}`
+    fidelityTestRowIs(t, `4231 §4: ${r[0]}`, fidelityTestWrapCall("4231", rfc, fn, "kdf", "4", r[1], expect), r[4])
   }
 }
 
@@ -1407,15 +1543,26 @@ const fidelityTestLabels = (t: Suite): void => {
     `{"str": "passwd"}, {"int": 9, "label": "c"}`,
     `{"hex": "${fidelityTestLabelHex(0, "")}", "label": "${fidelityTestLabelJson(cLabels[0])}"}`,
   )
-  const cOk = fidelityTestHas(cGot, "the value is printed under", 'or "KDF (P="passwd", c=4)"')
+  const cOk =
+    cGot.length === 2 &&
+    fidelityTestHas(
+      cGot,
+      "W1:",
+      `args[0] "passwd" and args[1] (one of 3 "c") in RFC §4 ("Test Vectors"): nothing pairs a printed string with one of several labelled values`,
+    ) &&
+    fidelityTestHas(
+      cGot,
+      "the value is printed under",
+      `"KDF (P="passwd", c=1)", one of "KDF (P="passwd", c=1)" or "KDF (P="passwd", c=4)" in RFC §4 ("Test Vectors"), and nothing in the name kdf says which variant it computes`,
+    )
   t.ok("4231 §4: an unpaired labelled integer keeps its name in the label while another argument pairs", cOk)
   if (!cOk) {
     console.log(`kdf c=9:\n${cGot.join("\n")}`)
   }
   // An integer printed in neither call label (only in "Rounds c=1") leaves
   // the expected value unpaired, so no argument's name is cut from it, and
-  // c=9 and c=4 still name two variants. Other findings may come beside
-  // that warning, so each row asks only for the variant's.
+  // c=9 and c=4 still name two variants: that warning is each row's only
+  // finding.
   const kdfLabels = ["KDF (c=9)", "KDF (c=4)", "Rounds c=1"]
   const kdfExpect = `{"hex": "${fidelityTestLabelHex(0, "")}", "label": "KDF (c=9)"}`
   const unpaired: string[][] = [
@@ -1434,12 +1581,30 @@ const fidelityTestLabels = (t: Suite): void => {
   for (const r of unpaired) {
     const fn = `{"name": "kdf", "params": [${r[1]}], "returns": "bytes"}`
     const got = fidelityTestWrapCall("4231", kdfRfc, fn, "kdf", "4", r[2], kdfExpect)
-    const ok = fidelityTestHas(got, "the value is printed under", 'one of "KDF (c=9)" or "KDF (c=4)"')
-    t.ok(`4231 §4: ${r[0]}`, ok)
-    if (!ok) {
-      console.log(`${r[0]}:\n${got.join("\n")}`)
-    }
+    fidelityTestRowIs(
+      t,
+      `4231 §4: ${r[0]}`,
+      got,
+      `the value is printed under "KDF (c=9)", one of "KDF (c=9)" or "KDF (c=4)" in RFC §4 ("Test Vectors"), and nothing in the name kdf says which variant it computes: not checked that this is its own`,
+    )
   }
+  // An expected value that is not hex (here the words under "Key State") is
+  // bound to no printing, so nothing pairs with it, and the label the
+  // contract names is the one an argument from a call label is not in.
+  fidelityTestRowIs(
+    t,
+    "4231 §4: an argument from a call label beside an expected word array",
+    fidelityTestWrapCall(
+      "4231",
+      kdfRfc,
+      `{"name": "kdf", "params": [{"name": "c", "type": "i32"}], "returns": "words32"}`,
+      "kdf",
+      "4",
+      `{"int": 9, "label": "c"}`,
+      `{"words32": ["0badf00d", "1badf00d", "2badf00d", "3badf00d"], "label": "Key State"}`,
+    ),
+    `W1.args[0]: args[0] c=9 is printed in the call label "KDF (c=9)" in RFC §4 ("Test Vectors"), not in "Key State" that the expected value is printed under: they are different test cases`,
+  )
 }
 
 /**
@@ -1624,6 +1789,7 @@ const fidelityTestWrapped = (t: Suite): void => {
   const k256 = `{"hex": "0102030405060708090a0b0c0d0e0f10", "label": "KDF (hash=SHA-256, c=1)"}`
   const k512 = `{"hex": "1112131415161718191a1b1c1d1e1f20", "label": "KDF (hash=SHA-512, c=1)"}`
   const n16 = `{"hex": "2122232425262728292a2b2c2d2e2f30", "label": "SCRYPT (S=\\"a\\", N=16)"}`
+  const n32 = `{"hex": "3132333435363738393a3b3c3d3e3f40", "label": "SCRYPT (S=\\"a\\", N=32)"}`
   const hmacRows: string[][] = [
     ["hmacSha256", `{"str": "Jefe"}`, h256, ""],
     ["hmacSha512", `{"str": "Jefe"}`, h512, ""],
@@ -1642,6 +1808,13 @@ const fidelityTestWrapped = (t: Suite): void => {
       `W1.expect: the value is printed under "KDF (hash=SHA-512, c=1)" in RFC §4 ("Test Vectors"), but kdfSha256 names 256, as in "KDF (hash=SHA-256, c=1)": a vector uses the value printed for the variant its function computes`,
     ],
     ["scrypt", `{"str": "a"}, {"int": 16, "label": "N"}`, n16, ""],
+    ["scrypt", `{"str": "a"}, {"int": 32, "label": "N"}`, n32, ""],
+    [
+      "scrypt",
+      `{"str": "a"}, {"int": 32, "label": "N"}`,
+      n16,
+      `W1.args[1]: args[1] N=32 is printed in the call label "SCRYPT (S="a", N=32)" in RFC §4 ("Test Vectors"), not in "SCRYPT (S="a", N=16)" that the expected value is printed under: they are different test cases`,
+    ],
   ]
   for (const r of hmacRows) {
     const params =
@@ -1864,6 +2037,7 @@ export const main = (): i32 => {
   fidelityTestLabels(t)
   fidelityTestPairedRows(t)
   fidelityTestPairedPlaces(t)
+  fidelityTestPrintedLabel(t)
   t.ok("iterated findings", it.length === 19)
   if (it.length !== 19) {
     console.log(it.join("\n"))
