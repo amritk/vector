@@ -816,7 +816,7 @@ const gateSecLine = (l: GateLits, k: i32): i32 => {
  * is not placed by line (a decimal fraction, a block of words).
  */
 const gateBoundSecLines = (l: GateLits, b: GateBound): i32[] | null => {
-  if (b.lines !== null || b.paired) {
+  if (b.lines !== null) {
     return gateBoundPlaces(b).map((k: i32): i32 => gateSecLine(l, k))
   }
   if (b.shown.length > 0) {

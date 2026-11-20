@@ -503,7 +503,7 @@ export const rfcWithHeading = (line: string): string => {
     return ""
   }
   const comma = t.indexOf(", ")
-  if (comma <= 5) {
+  if (comma < 0) {
     return ""
   }
   const words = trim(t.substring(5, comma))

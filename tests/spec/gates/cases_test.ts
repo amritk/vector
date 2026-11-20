@@ -105,6 +105,8 @@ const casesTestRfc = (): string =>
     `   s = ${CASES_TEST_S512}`,
     "   t = 1.5",
     "",
+    "   MESSAGE (length 0 bytes):",
+    "",
   ].join("\n")
 
 /**
@@ -246,6 +248,23 @@ const casesTestHeadingRows = (t: Suite): void => {
       'the values are printed under the case heading "With SHA-256, message = "sample":" in RFC §A.2.5',
     ],
     [
+      "a call naming another variant than the first heading's",
+      "sign256",
+      "A.2.5",
+      `${x}, {"str": "sample"}`,
+      casesTestHex(CASES_TEST_K1, "k"),
+      'the values are printed under the case heading "With SHA-1, message = "sample":" in RFC §A.2.5 ("ECDSA, 256 Bits (Prime Field)"), but sign256 names 256',
+    ],
+    [
+      // Under every "sample" heading: no one case, so no one variant to check.
+      "values under several headings, a call naming none",
+      "sign",
+      "A.2.5",
+      `${x}, {"str": "sample"}`,
+      casesTestHex(CASES_TEST_UX, "Ux"),
+      "",
+    ],
+    [
       "a call naming no variant",
       "sign",
       "A.2.5",
@@ -290,6 +309,20 @@ const casesTestNoHeadingRows = (t: Suite): void => {
     "6979 §A.4: headings, and the number under the same heading",
     casesTestRunWith(nm, "sign512", "A.4", `{"int": 5, "label": "n"}, {"str": "sample"}`, s512),
     "",
+  )
+  // An empty value is placed by its label's line.
+  const empty = `{"hex": "", "label": "MESSAGE (length 0 bytes)"}, {"str": "sample"}`
+  casesTestRowIs(
+    t,
+    "6979 §A.4: headings, and an empty value under the same heading",
+    casesTestRun("sign512", "A.4", empty, s512),
+    "",
+  )
+  casesTestRowIs(
+    t,
+    "6979 §A.4: headings, and an empty value under the other heading",
+    casesTestRun("sign256", "A.4", empty, casesTestHex(CASES_TEST_R256, "r")),
+    'args[0] is under "With SHA-512, message = "sample":"',
   )
   // A decimal fraction is not placed by line: nothing says whose case it is.
   casesTestRowIs(
