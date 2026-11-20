@@ -1,5 +1,5 @@
 import { Suite } from "nish/testing"
-import { split } from "nish/text"
+import { replaceAll } from "nish/text"
 import { ProfileRefusal, ProfileRfcs, profileRead } from "../../../src/spec/profile/profile"
 import { xmlDocParse, xmlRead } from "../../../src/spec/xml/doc"
 
@@ -32,7 +32,7 @@ const profileIfaceCountTestSub = (t: Suite, xml: string, from: string, to: strin
     t.fail("the variant's text is in the fixture", from)
     return xml
   }
-  return split(xml, from).join(to)
+  return replaceAll(xml, from, to)
 }
 
 /** The 1-based line of `xml` that first holds `needle`, or 0. */
@@ -110,7 +110,7 @@ const profileIfaceCountTestRow = (t: Suite, name: string, xml: string, rfcs: Pro
   for (let i = want.length; i < got.length; i++) {
     seen.push(got[i])
   }
-  t.eqStr(name, seen.join("\n"), wanted.join("\n"))
+  t.eqLines(name, seen, wanted)
 }
 
 /** The table: each count of blocks, with calls declared, declared only later, and declared nowhere. */
