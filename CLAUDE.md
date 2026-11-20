@@ -39,8 +39,7 @@ read `.nish/docs/AI.md` (the language as rules, traps first).
   base, `work` = head), which `{{repo}}` names in `cmd` and `<repo>` in the
   output.
 - `tests/dogfood/` holds vector's tests of itself, emitted from its own specs
-  (`specs/vector-*.md`) with `--package vector=src`. They are generated, so
-  regenerate them; never edit them.
+  (`specs/vector-*.md`) with `--package vector=src`.
 
 ## Writing Nish
 
@@ -67,8 +66,7 @@ every area the change touches, `npm run lint`, `npm run tested-exports`, and
 `npm run dogfood` when the emitter, a `specs/vector-*` spec or its module changed,
 and `npm run doc-caps` when an agent-facing doc changed. A doc over its cap is
 shortened in place; a cap is never raised or dropped, and CI refuses either.
-**The full gate is CI** (`.github/workflows/ci.yml`): it builds, runs every
-test, lints and smoke-runs the binary on every push.
+**The full gate is CI** (`.github/workflows/ci.yml`, on every push).
 
 **Read a check's exit status, never its piped tail.** `npm run lint | tail`
 reports success when lint fails. Run it bare, or check `$?` / `PIPESTATUS`.
@@ -77,7 +75,9 @@ reports success when lint fails. Run it bare, or check `$?` / `PIPESTATUS`.
 golden that only shows a flag is accepted, or a unit test that sets the
 option directly, does not count: drive it through `vectorRun` or the binary
 and assert its effect. For a parser or gate rule, test its neighbours too
-(table-driven), not just the case that motivated it.
+(table-driven), not just the case that motivated it. An op every emitter
+implements runs in each language on a broken implementation and on fixed
+values: round trips pass when both directions are wrong the same way.
 
 **A gate that accepts a value on another clause's word computes it, never
 assumes it.** When a rule takes one clause's printed value as what another
@@ -141,8 +141,8 @@ release is 5 days old.
 The release PR is opened with `GITHUB_TOKEN`, so CI does not run on it;
 close and reopen it to run the checks before merging.
 
-npm publishes through trusted publishing alone: no npm token is stored, in
-GitHub or anywhere else. The trusted publisher for `@amritk/vector` on
+npm publishes through trusted publishing alone: no npm token is stored
+anywhere. The trusted publisher for `@amritk/vector` on
 npmjs.com names repository `amritk/vector`, workflow file `release.yml` and
 environment `npm`, which is limited to `v*` tags in Settings, Environments.
 
@@ -158,9 +158,9 @@ What changed, and why this way.
 
 - **type**: `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`,
   `ci`, `chore`, `style` or `revert`. `pr-title.yml` checks the PR title,
-  which a squash merge lands. The type is not decoration: release-please
-  reads it to pick the next version (`fix` a patch, `feat` a minor, `!` or a
-  `BREAKING CHANGE` footer a major, which is a minor before 1.0), and
+  which a squash merge lands. release-please reads it to pick the next
+  version (`fix` a patch, `feat` a minor, `!` or a `BREAKING CHANGE`
+  footer a major, which is a minor before 1.0), and
   `feat`, `fix`, `perf`, `refactor` and `revert` reach the changelog. A
   feature merged as `chore` ships without a bump.
 - **scope** (optional): the area, such as `cli`, `core`, `spec` or a
