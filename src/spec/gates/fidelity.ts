@@ -899,7 +899,7 @@ const gateHeadingCase = (l: GateLits, inSection: string): boolean => {
       `${each.join(", ")} in ${inSection}, so they are from different test cases: use the values printed under one case heading`,
       false,
     )
-  } else if (shared.length === 1 && cases.some((c: i32[]): boolean => c.length < l.heads.length)) {
+  } else if (shared.length === 1) {
     l.chosen = shared[0]
   }
   return true
