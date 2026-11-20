@@ -390,8 +390,7 @@ Where a section's normalized text breaks into sentences, three numbers a
 break: where the sentence before it stops (at its terminator), where its
 terminator and any closing quote end, and where the next sentence starts
 (after any list bullet). A paragraph's end always breaks. Within one, a
-sentence ends at `.`, `?` or `!` before a space, after any run of closing
-marks (`"`, `'`, `)`, `”`), except a period
+sentence ends at `.`, `?`, `."` or `.”` before a space, except a period
 that ends an abbreviation (e.g., i.e., etc., vs., cf., Fig., Sec., et
 al., a.k.a., case ignored): an identifier such as `hexDecode` may start
 the next sentence. A list item
