@@ -370,10 +370,10 @@ class ProfileContext {
   /** The block-count refusal, also in `ifaceRefusals`; empty while there is one block. */
   ifaceCount: Set<ProfileRefusal>
   /**
-   * Whether no ts-interface block was read: there is none, or the first is
-   * refused. Then a call to an undeclared function only follows from that.
+   * Whether the first ts-interface block was read. Until it is (there is none,
+   * or it is refused), a call to an undeclared function only follows from that.
    */
-  ifaceNone: boolean
+  ifaceRead: boolean
   /**
    * The functions a ts-interface block after the first declares: a call to one
    * the first does not declare only follows from the block being duplicated.
@@ -422,7 +422,7 @@ class ProfileContext {
     this.refusals = []
     this.ifaceRefusals = new Set<ProfileRefusal>()
     this.ifaceCount = new Set<ProfileRefusal>()
-    this.ifaceNone = false
+    this.ifaceRead = false
     this.ifaceLater = new Set<string>()
     this.referenced = new Map<string, i32>()
     this.mainRfc = -1
@@ -1344,7 +1344,6 @@ const profileReadInterface = (c: ProfileContext, code: XmlNode[]): void => {
     c.ifaceRefusals.add(count)
   }
   if (interfaces.length === 0) {
-    c.ifaceNone = true
     return
   }
   for (let k = 1; k < interfaces.length; k++) {
@@ -1359,7 +1358,6 @@ const profileReadInterface = (c: ProfileContext, code: XmlNode[]): void => {
   const code0 = xmlCodeOf(iface)
   const r = frontParseInterface(code0.text)
   if (r.isErr()) {
-    c.ifaceNone = true
     const from = c.refusals.length
     profileFrontRefuse(c, iface, r.error)
     for (let i = from; i < c.refusals.length; i++) {
@@ -1369,6 +1367,7 @@ const profileReadInterface = (c: ProfileContext, code: XmlNode[]): void => {
   }
   const got = r.value
   c.functions = got.functions
+  c.ifaceRead = true
   c.module = got.module
   const at = new ProfileLoc(code0.line, code0.mdLine, code0.markLine, "")
   const ifaceLines = split(code0.text, "\n")
@@ -1396,7 +1395,7 @@ const profileReadInterface = (c: ProfileContext, code: XmlNode[]): void => {
  * declare, only follows from the block-count or block refusal: no block was
  * read, or a later block declares it.
  */
-const profileIfaceCascade = (c: ProfileContext, name: string): boolean => c.ifaceNone || c.ifaceLater.has(name)
+const profileIfaceCascade = (c: ProfileContext, name: string): boolean => !c.ifaceRead || c.ifaceLater.has(name)
 
 const profileFn = (c: ProfileContext, name: string): FnSig | null => {
   for (const f of c.functions) {
