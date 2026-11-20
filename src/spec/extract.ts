@@ -41,7 +41,13 @@ export const EXTRACT_SIDECAR_SUFFIX: string = ".survivors.json"
 export class ExtractOutcome {
   /** The canonical contract; "" when there are refusals or errors. */
   text: string
-  /** Why the spec is refused (exit 1), each at a file and line, in XML document order. */
+  /**
+   * Why the spec is refused (exit 1), each at a file and line. The profile's
+   * refusals come with the ts-interface block's first, the block-count
+   * refusal at their head, then the rest in XML document order; the gates'
+   * findings, given only when the profile reads, as extractGateRefusals
+   * orders them.
+   */
   refusals: ProfileRefusal[]
   /** Why nothing could be judged (exit 2): an input that cannot be read. */
   errors: string[]
@@ -487,10 +493,11 @@ const extractGateKeep = (out: ProfileRefusal[], seen: Set<string>, r: ProfileRef
  * A gate that places a finding (a note, gateIssue) is placed by the note's
  * `at` through the locator; a finding no note places is at the spec's root.
  * Each refusal is given once, since two fields of one part can break one
- * rule on one line, and they are sorted in XML document order
- * (profileRefusalPlace), whichever line each prints, and in the gates' order
- * at one place. A finding about
- * allowSurvivors is the sidecar's, so it names that file, after the rest.
+ * rule on one line. They are sorted in XML document order
+ * (profileRefusalPlace), whichever line each prints: at one place, the
+ * findings notes place in the notes' order, then those no note places in the
+ * report's. A finding about allowSurvivors is the sidecar's, so it names that
+ * file, after the rest in the order found.
  *
  * @param report what the gates found
  * @param notes where they placed each finding, and their warnings

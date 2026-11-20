@@ -364,7 +364,7 @@ const frontTestInterface = (t: Suite): void => {
     ["/* module: nish/m */", `${missing} @1:1`],
     [
       "// module: Crypto/hex",
-      "`Crypto/hex` is not a module path; write <root>/<path>, lowercase segments split by / @1:1",
+      "`Crypto/hex` is not a module path; write <root>/<segment>/…, each segment [a-z][a-z0-9_]*(-[a-z0-9][a-z0-9_]*)*, words joined by single - (RFC 3986 §3.3) @1:1",
     ],
   ]
   for (const k of modules) {
@@ -390,7 +390,7 @@ const frontTestModulePaths = (t: Suite): void => {
     t.eqStr(`ts-interface: later module line ${m}`, got, m)
   }
   for (const m of modulePathsRefused()) {
-    const want = `\`${m}\` is not a module path; write <root>/<path>, lowercase segments split by /`
+    const want = `\`${m}\` is not a module path; write <root>/<segment>/…, each segment [a-z][a-z0-9_]*(-[a-z0-9][a-z0-9_]*)*, words joined by single - (RFC 3986 §3.3)`
     const first = frontParseInterface(`// module: ${m}\nexport function f(): i32`)
     t.eqStr(
       `ts-interface: first module line ${m}`,
