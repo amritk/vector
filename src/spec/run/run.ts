@@ -515,11 +515,11 @@ const runCopy = (from: string, to: string): Result<boolean, string> => {
 export const runDisposeScratch = (s: RunScratch): Result<boolean, string> => runRemove(s.dir)
 
 /**
- * Refuses an override whose directory is reached through a symlink: each
- * part of `rel`'s directory that exists must resolve to itself under `base`,
- * so creating or writing below it stays inside the scratch.
+ * Refuses a path whose directory is reached through a symlink: each part of
+ * `rel`'s directory that exists must resolve to itself under `base`, so
+ * creating or writing below it stays inside `base`.
  */
-const runCheckInside = (base: string, rel: string): Result<boolean, string> => {
+const runCheckInside = (base: string, rel: string, where: string, what: string): Result<boolean, string> => {
   let at = rel.indexOf("/")
   while (at >= 0) {
     const full = joinPath(base, rel.substring(0, at))
@@ -528,9 +528,52 @@ const runCheckInside = (base: string, rel: string): Result<boolean, string> => {
     }
     const real = realpathSync(full)
     if (real === null || real !== full) {
-      return Err(`scratch: ${rel.substring(0, at)} is a symlink, which override ${rel} would write through`)
+      return Err(`${where}: ${rel.substring(0, at)} is a symlink, which ${what} ${rel} would write through`)
     }
     at = rel.indexOf("/", at + 1)
+  }
+  return Ok(true)
+}
+
+/**
+ * Writes each of `texts` at its path in `paths`, from `dir`, as a regular
+ * file of its own. A path whose directory is reached through a symlink is
+ * refused before anything is written; a path that is itself a link is
+ * unlinked (never what it points at) and created afresh, so no write leaves
+ * `dir`.
+ *
+ * @param dir the directory the paths are from, such as a scratch install or a copy of a checkout
+ * @param paths the files to write, each relative to `dir`
+ * @param texts what each file holds
+ * @param where what `dir` is, for the message, such as "scratch"
+ * @param what what each file is, for the message, such as "override"
+ * @returns `Ok(true)`, or `Err` naming the part of a path that is a symlink, or a file that cannot be written
+ */
+export const runWriteInside = (
+  dir: string,
+  paths: string[],
+  texts: string[],
+  where: string,
+  what: string,
+): Result<boolean, string> => {
+  const base = realpathSync(dir)
+  if (base === null) {
+    return Err(`cannot resolve ${dir}`)
+  }
+  for (let i = 0; i < paths.length; i++) {
+    runCheckInside(base, paths[i], where, what).orReturn()
+  }
+  for (let i = 0; i < paths.length; i++) {
+    const target = joinPath(base, paths[i])
+    const parent = target.substring(0, target.length - basename(target).length - 1)
+    mkdirAll(parent, 0o755).orReturn()
+    // The file itself may be a link: remove it (never what it points at),
+    // then create the file afresh, refusing to follow anything in its place.
+    unlinkSync(target)
+    const n = createFileExclusiveSync(target, texts[i], 0o644)
+    if (n < 0) {
+      return Err(`cannot write ${target} (errno ${-n})`)
+    }
   }
   return Ok(true)
 }
@@ -554,24 +597,7 @@ const runFillScratch = (
   // std/ is copied with its symlinks kept as links. A link nothing writes
   // through is harmless; an override must not write through one.
   runCopy(joinPath(nishRoot, "std"), joinPath(s.dir, "std")).orReturn()
-  const base = realpathSync(s.dir)
-  if (base === null) {
-    return Err(`cannot resolve ${s.dir}`)
-  }
-  for (let i = 0; i < paths.length; i++) {
-    runCheckInside(base, paths[i]).orReturn()
-    const target = joinPath(base, paths[i])
-    const parent = target.substring(0, target.length - basename(target).length - 1)
-    mkdirAll(parent, 0o755).orReturn()
-    // The file itself may be a link: remove it (never what it points at),
-    // then create the file afresh, refusing to follow anything in its place.
-    unlinkSync(target)
-    const n = createFileExclusiveSync(target, texts[i], 0o644)
-    if (n < 0) {
-      return Err(`cannot write ${target} (errno ${-n})`)
-    }
-  }
-  return Ok(true)
+  return runWriteInside(s.dir, paths, texts, "scratch", "override")
 }
 
 /** Where a scratch install comes from: the root, resolved, and its seed. */

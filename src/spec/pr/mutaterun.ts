@@ -24,7 +24,7 @@ import { shapeNishModuleFile } from "../contract/shape"
 import { emitContractFile } from "../emit/file"
 import { EmitPackages } from "../emit/packages"
 import { EmitTarget } from "../emit/target"
-import { runMakeScratchIn, runSeedOf } from "../run/run"
+import { runMakeScratchIn, runSeedOf, runWriteInside } from "../run/run"
 import { gitdiffChanged, gitdiffPrefix } from "./gitdiff"
 import {
   MUTATE_BUILD_TIMED_OUT,
@@ -162,11 +162,15 @@ const mutaterunCopy = (root: string, dest: string): Result<boolean, string> => {
 /**
  * Makes a slot in `dest`: with no `--nish`, a scratch install, the root's
  * seed with its std/ laid over it and the module written in it as `text`
- * (runMakeScratchIn); with one, a copy of the checkout.
+ * (runMakeScratchIn); with one, a copy of the checkout, its symlinks kept,
+ * with the module written afresh as a regular file. The copy is refused when
+ * a directory on the module's path is a symlink, since the canary and every
+ * mutant would be written through it, into the checkout or past it.
  */
 const mutaterunSlotIn = (run: MutateRun, dest: string, text: string): Result<boolean, string> => {
   if (run.nish !== "") {
-    return mutaterunCopy(run.nishRoot, dest)
+    mutaterunCopy(run.nishRoot, dest).orReturn()
+    return runWriteInside(dest, [run.file], [text], `the copy of ${run.nishRoot}`, "the module")
   }
   mkdirAll(dest, 0o700).orReturn()
   runMakeScratchIn(run.nishRoot, dest, [run.file], [text]).orReturn()
