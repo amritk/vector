@@ -1,6 +1,6 @@
 # Using vector: the rules card
 
-This is what an agent needs before it runs vector, as rules, traps
+What an agent needs before it runs vector, as rules, traps
 first. It is a digest, not the authority: the [guide](guide/index.md) shows
 every command with its output, and the [command-line
 reference](reference/command-line.md) lists the commands, flags and exit
@@ -20,13 +20,13 @@ vector does two things, and no model is involved in either:
 1. **Read the exit status, never a piped tail.** `vector … | tail` exits
    with `tail`'s status, 0. Run it bare or check `$?` or `PIPESTATUS`.
 2. **Only `PROVEN` passes `verify`.** `REFUTED`, `UNKNOWN`, `INVALID` and
-   `ERROR` all exit 1. Exit 2 is bad usage, an unreadable file, an `--emit`
-   file that cannot be written, or `MISMATCH`: a counterexample that did not
-   replay, a vector bug, not a refusal. Never present code from a run
-   not `PROVEN`. See
+   `ERROR` all exit 1. Exit 2 is bad usage, an unreadable file, an unwritable
+   `--emit` file, or `MISMATCH`: a counterexample that did not
+   replay, a vector bug, not a refusal. Never present code a run did
+   not prove. See
    [Proving a function](guide/guides/proving.md#the-verdicts).
 3. **`diff` exits 2 for `INVALID` and `ERROR`**, not 1 as `verify` does.
-   Like `verify`, it exits 2 for `MISMATCH`, a witness that did not replay.
+   So does `MISMATCH`, as for `verify`: a witness that did not replay.
    `EQUIVALENT` exits 0; `DIFFERENT` and `UNDECIDED` exit 1. Do not report `UNDECIDED` as equivalent. See
    [Exit codes](guide/guides/exit-codes.md#by-command).
 4. **The proof is over exact rationals, and an `Int` is unbounded there.**
@@ -39,22 +39,22 @@ vector does two things, and no model is involved in either:
    `low + (high - low)`, or bound the parameters with `requires`. See
    [Int arithmetic runs in float64](guide/guides/proving.md#int-arithmetic-runs-in-float64).
 6. **`UNKNOWN` usually means the arithmetic is non-linear.** Multiply
-   variables only by literal constants, and restate the clause.
+   variables only by literals, and restate the clause.
 7. **A trivial `ensures`, one that holds whatever the body does, fails.** So
    do contradictory `requires`, which make the proof vacuous. Restate the
    clause as a real constraint on `result`. Remove a contradictory
    `requires`; add none.
 8. **A hazard is checked on the path the emitted code takes.** An `ite`
    branch, the right side of a short-circuit `and`, `or` or `implies`, and
-   each `requires` after the first lean only on what was checked before them.
+   each `requires` after the first lean only on the checks before them.
    So `x != 0 and 1 / x > 0` is safe; `1 / x > 0 and x != 0` is a
    division hazard.
-9. **`--emit` writes only on `PROVEN`.** Else it writes nothing and
-   leaves an existing file alone.
+9. **`--emit` writes only on `PROVEN`.** Else it writes nothing, leaving
+   an existing file alone.
 10. **`spec run` `SATISFIED` is evidence, not proof.** The implementation
-   returned the printed vectors and held the properties at their samples.
-   `spec mutate` finds bugs in the tested functions the contract misses.
-   See [What a pass means](guide/guides/testing.md#what-a-pass-means).
+   returned the printed vectors and held each property at its samples.
+   `spec mutate` (no `--nish` on an install or a `build/seed` checkout)
+   finds bugs in the tested functions the contract misses. See [What a pass means](guide/guides/testing.md#what-a-pass-means).
 11. **Never hand-edit a generated file.** `spec extract` writes
    `contracts/*.json`, `scripts/build-spec.sh` builds `specs/*.xml` from
    `specs/*.md`, and `spec emit` writes the test. Change the source, rerun
@@ -71,7 +71,7 @@ vector does two things, and no model is involved in either:
   `diff`'s `INVALID` or `ERROR`. See
   [Exit codes](guide/guides/exit-codes.md#by-command).
 - **z3.** vector finds z3 at `$VECTOR_Z3`, then at `.z3/z3` in the
-  checkout the binary was built from, then on `PATH`. See [Finding z3](guide/guides/exit-codes.md#finding-z3).
+  checkout that built the binary, then on `PATH`. See [Finding z3](guide/guides/exit-codes.md#finding-z3).
 - **The files.** A spec plan holds the axioms and the units, and a program
   holds one expression per unit, with `requires` and `ensures` clauses. Each
   clause is tagged with the axiom it enforces, and every axiom must be
@@ -80,7 +80,7 @@ vector does two things, and no model is involved in either:
   [program](reference/formats/program.md).
 - **The repair loop.** Read `feedback` and `items[]`, and change only what
   was refuted. Keep every clause that proved. Fix the program, not the spec,
-  unless the spec misread the request. Give up after about four attempts and
+  unless the spec misread the request. After about four attempts, stop and
   report the last feedback. Never edit vector to make a proof pass. A
   `MISMATCH` is a bug in vector: report it, change nothing.
 - **A contract's gates.** `spec check` runs shape, fidelity, completeness,

@@ -1,0 +1,3 @@
+SATISFIED: x25519-property (exit 0)
+  pass  R-FUNC
+  pass  R-DH

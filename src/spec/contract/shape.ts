@@ -23,7 +23,7 @@ import {
   charsTestVector,
 } from "./chars"
 import { contractF64Bits, contractF64FromBits, contractF64IsNaN, contractF64Overflows, contractF64Parse } from "./f64"
-import { literalsByteLength } from "./literals"
+import { LITERALS_PRINTABLE, literalsByteLength, literalsPrintable } from "./literals"
 import {
   Clause,
   ClauseKind,
@@ -86,7 +86,8 @@ export const shapeTestNames = (): string[] => [
   "remU64",
   "eqF64Bits",
   "nearUlpsF64",
-  "le64",
+  "intBytes",
+  "bytesInt",
   "strEq",
   "isNullStr",
   "strOrNull",
@@ -780,9 +781,8 @@ const shapeVectorSource = (s: ShapeContext, k: Clause, at: string): void => {
     if (trim(src.text) === "") {
       shapeFail(s, `${at}.source.command`, "a shell command")
     }
-    const printable = ek === LitKind.Hex || ek === LitKind.Ascii || ek === LitKind.Concat || ek === LitKind.Str
-    if (absent || !printable) {
-      shapeFail(s, `${at}.expect`, "a command source prints bytes (as hex) or a string")
+    if (absent || !literalsPrintable(ek)) {
+      shapeFail(s, `${at}.expect`, `${LITERALS_PRINTABLE}; an f64 or words has no one printed form`)
     }
     shapeNeedSection(s, k, at)
     shapeSourceRef(s, k.sectionSource, `${at}.sectionSource`)

@@ -54,12 +54,23 @@ const gateSentenceEnds = (t: string, i: i32): boolean => {
   return (n >= 65 && n <= 90) || n === 0x22 || n === 0x27 || n === 0x28 || n === 0x5b || t.substring(j, j + 3) === "“"
 }
 
-/** A section's prose: its lines without blockquotes, cut into paragraphs (the heading alone first) and sentences. */
+/**
+ * A section's prose: its lines without blockquotes or (as an XML source
+ * marks them) lines of code, cut into paragraphs (the heading alone first)
+ * and sentences.
+ */
 const gateProse = (sec: RfcSection): GateProse => {
   const paras: string[][] = [[], []]
+  const code: boolean[] = []
+  for (let i = 0; i < sec.lines.length; i++) {
+    code.push(false)
+  }
+  for (const i of sec.codeLines) {
+    code[i] = true
+  }
   for (let i = 0; i < sec.lines.length; i++) {
     const raw = sec.lines[i]
-    const l = trim(raw).startsWith(">") ? "" : raw
+    const l = code[i] || trim(raw).startsWith(">") ? "" : raw
     if (i === 0) {
       paras[0].push(l)
     } else if (trim(l).length === 0) {

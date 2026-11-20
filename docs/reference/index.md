@@ -44,7 +44,7 @@ The 120 source files of `src/`, from their doc comments.
 | [`cli/spec-exports`](modules/cli/spec-exports.md) | `vector spec exports`: refuse a new export its contract does not cover. |
 | [`cli/spec-extract`](modules/cli/spec-extract.md) | `vector spec extract`: extract a contract from a kramdown-rfc spec's XML. |
 | [`cli/spec-frozen`](modules/cli/spec-frozen.md) | `vector spec frozen`: refuse a change that edits a frozen contract. |
-| [`cli/spec-mutate`](modules/cli/spec-mutate.md) | `vector spec mutate`: mutate the changed lines and refuse mutants the test misses. |
+| [`cli/spec-mutate`](modules/cli/spec-mutate.md) | `vector spec mutate`: mutate the changed lines of the contract's module and refuse mutants the test misses. |
 | [`cli/spec-run`](modules/cli/spec-run.md) | `vector spec run`: emit a contract's test and run it. |
 | [`cli/spec-stale`](modules/cli/spec-stale.md) | `vector spec stale`: refuse a generated test that no longer matches its contract. |
 | [`cli/verify`](modules/cli/verify.md) | `vector verify`: prove a program meets its spec plan. |

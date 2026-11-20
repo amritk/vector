@@ -23,8 +23,27 @@ import { contractF64Bits, contractF64Parse } from "../contract/f64"
 import { ClauseKind, ExprKind, LitKind } from "../contract/types"
 import { Clause, Contract, Expr, FnSig, Literal } from "../contract/types"
 import { TypeEnv, typeCallsIn, typeEnvBind, typeIntBase, typeOf, typeOfInt } from "../contract/typing"
-import { vocabFitsInt, vocabIsIntType, vocabIsOptional, vocabValueType } from "../contract/vocab"
-import { EmitOptions, emitClauseFn, emitClauseLines, emitHeaderLines, emitSortedUnique, emitTestName } from "./emit"
+import {
+  vocabBigEndian,
+  vocabByteWidth,
+  vocabFitsInt,
+  vocabHas,
+  vocabIsIntType,
+  vocabIsOptional,
+  vocabReadOps,
+  vocabReadType,
+  vocabValueType,
+  vocabWriteOps,
+} from "../contract/vocab"
+import {
+  EmitOptions,
+  emitClauseFn,
+  emitClauseLines,
+  emitHeaderLines,
+  emitSortedUnique,
+  emitTestName,
+  emitUndefinedWhy,
+} from "./emit"
 import { EMIT_SLOW_SKIP, emitF64IsFinite, emitLiteralHex } from "./lit"
 import { emitTargetOutRefusal, emitTargetWindowRefusal, emitTargetWordsRefusal } from "./target"
 
@@ -373,9 +392,20 @@ const emitGoHelperOp = (ctx: EmitGoContext, e: Expr): string | null => {
   if (op === "zeros") {
     return `_fill(int64(0), ${emitGoArg(ctx, e, 0, null)})`
   }
-  const one = ["le64", "utf8", "ascii", "strLen", "lower", "upper"]
-  const oneHelper = ["_le64(", "_utf8(", "_ascii(", "_strLen(", "_shiftCase(", "_shiftCase("]
-  const oneTail = [")", ")", ")", ")", ", 65, 90, 32)", ", 97, 122, -32)"]
+  if (vocabHas(vocabWriteOps(), op)) {
+    const x = e.args[0]
+    const lit = x.lit
+    const natural = lit !== null ? (lit.text.startsWith("-") ? "i64" : "u64") : emitGoTypeOf(ctx, x)
+    return `_intBytes(${emitGoExpr(ctx, x, natural)}, ${vocabByteWidth(op)}, ${vocabBigEndian(op)})`
+  }
+  if (vocabHas(vocabReadOps(), op)) {
+    const read = `_bytesInt(u, ${emitGoArg(ctx, e, 0, null)}, ${vocabByteWidth(op)}, ${vocabBigEndian(op)})`
+    const ty = vocabReadType(op)
+    return ty === "u64" ? read : `${emitGoIntType(ty)}(${read})`
+  }
+  const one = ["utf8", "ascii", "strLen", "lower", "upper"]
+  const oneHelper = ["_utf8(", "_ascii(", "_strLen(", "_shiftCase(", "_shiftCase("]
+  const oneTail = [")", ")", ")", ", 65, 90, 32)", ", 97, 122, -32)"]
   const at = one.indexOf(op)
   if (at >= 0) {
     return `${oneHelper[at]}${emitGoArg(ctx, e, 0, null)}${oneTail[at]}`
@@ -508,25 +538,6 @@ const emitGoBindings = (ctx: EmitGoContext, assert: Expr, indent: string, out: s
     e = body
   }
   return e
-}
-
-/** Whether `e` applies the op `op` anywhere. */
-const emitGoHasOp = (e: Expr, op: string): boolean => {
-  if (e.kind === ExprKind.Op && e.name === op) {
-    return true
-  }
-  for (const a of e.args) {
-    if (emitGoHasOp(a, op)) {
-      return true
-    }
-  }
-  for (const b of e.binds) {
-    if (emitGoHasOp(b.value, op)) {
-      return true
-    }
-  }
-  const body = e.body
-  return body !== null && emitGoHasOp(body, op)
 }
 
 /** The comment above a clause's check: its title and each covered requirement quoted. */
@@ -690,7 +701,8 @@ const emitGoProperty = (ctx: EmitGoContext, k: Clause, samples: Sample[]): strin
     const v = k.forall[j]
     emitGoTable(v.name, v.type, j, samples, out)
   }
-  const usesUnwrap = emitGoHasOp(assert, "unwrap")
+  const undefinedWhy = emitUndefinedWhy(assert)
+  const usesUnwrap = undefinedWhy !== null
   out.push(`\tfor i := 0; i < ${count}; i++ {`)
   ctx.env = new TypeEnv(ctx.c.functions, true)
   const shown: string[] = []
@@ -722,7 +734,7 @@ const emitGoProperty = (ctx: EmitGoContext, k: Clause, samples: Sample[]): strin
     out.push("\t\tif u.saw || !holds {")
     out.push(`\t\t\twhy := "the assertion is false"`)
     out.push("\t\t\tif u.saw {")
-    out.push(`\t\t\t\twhy = "unwrap met a null"`)
+    out.push(`\t\t\t\twhy = ${emitGoQuote(undefinedWhy ?? "")}`)
     out.push("\t\t\t}")
   } else {
     out.push("\t\tif !holds {")
@@ -1090,13 +1102,35 @@ func _bitwise(a []byte, b []byte, k int) []byte {
 	return out
 }
 
-func _le64[T _ints](n T) []byte {
-	u := uint64(n)
-	out := make([]byte, 8)
+// _intBytes is n's w bytes, big-endian when be, a negative n in two's complement.
+func _intBytes[T _ints](n T, w int, be bool) []byte {
+	x := uint64(n)
+	out := make([]byte, w)
 	for i := range out {
-		out[i] = byte(u >> (8 * i))
+		k := i
+		if be {
+			k = w - 1 - i
+		}
+		out[i] = byte(x >> (8 * k))
 	}
 	return out
+}
+
+// _bytesInt is the integer b's w bytes hold; any other length records on u, so the sample fails.
+func _bytesInt(u *_Unwrap, b []byte, w int, be bool) uint64 {
+	if len(b) != w {
+		u.saw = true
+		return 0
+	}
+	var x uint64
+	for i := range b {
+		k := w - 1 - i
+		if be {
+			k = i
+		}
+		x = x<<8 | uint64(b[k])
+	}
+	return x
 }
 
 func _utf8(s string) []byte {

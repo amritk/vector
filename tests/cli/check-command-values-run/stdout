@@ -1,0 +1,21 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ command-values · command-values (Fixture: command sources that print an integer, a bool or null) · fixture/varint
+ Status: CONTRACT_VALID
+
+ Requirements
+  ○ R-READ  §3 MUST  "varintRead MUST return the value an eight-byte varint encodes."
+      ○ V-WIDE  ○ V-NEG  ○ V-ZERO  ○ V-TRUE  ○ V-FALSE  ○ V-NULL
+
+ Vector sources run
+  ✓ V-WIDE: $ printf 151288809941952652
+  ✓ V-NEG: $ echo -1
+  ✓ V-ZERO: $ printf '0\n\n'
+  ✓ V-TRUE: $ echo true
+  ✓ V-FALSE: $ echo false
+  ✓ V-NULL: $ echo null
+
+ Warnings
+  ! clauses: no property clauses: the contract checks only the RFC's own vectors
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

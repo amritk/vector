@@ -32,6 +32,7 @@ import {
 } from "../contract/types"
 import { TypeEnv, typeAssignable, typeEnvBind, typeOf, typeOfLiteral } from "../contract/typing"
 import {
+  VOCAB_SECRET_FORM,
   vocabCompareDecimal,
   vocabHas,
   vocabIntMax,
@@ -39,8 +40,11 @@ import {
   vocabIntTypes,
   vocabIsIntType,
   vocabIsJsonSafe,
+  vocabIsSecretOp,
+  vocabReadOps,
   vocabValueType,
   vocabWordTypes,
+  vocabWriteOps,
 } from "../contract/vocab"
 
 // ── Refusals ───────────────────────────────────────────────────────────────
@@ -653,21 +657,29 @@ const frontSigType = (c: FrontCursor): Result<string, FrontRefusal> => {
 
 // ── ts-interface ───────────────────────────────────────────────────────────
 
-/** Ops written as plain calls: `xor(a, b)`. */
-const frontCallOps = (): string[] => [
-  "xor",
-  "bitAnd",
-  "bitOr",
-  "fill",
-  "zeros",
-  "flipBit",
-  "le64",
-  "unwrap",
-  "utf8",
-  "ascii",
-  "implies",
-  "concat",
-]
+/** Ops written as plain calls: `xor(a, b)`, and every byte-order op. */
+const frontCallOps = (): string[] => {
+  const ops: string[] = [
+    "xor",
+    "bitAnd",
+    "bitOr",
+    "fill",
+    "zeros",
+    "flipBit",
+    "unwrap",
+    "utf8",
+    "ascii",
+    "implies",
+    "concat",
+  ]
+  for (const op of vocabWriteOps()) {
+    ops.push(op)
+  }
+  for (const op of vocabReadOps()) {
+    ops.push(op)
+  }
+  return ops
+}
 
 /** The module of a `<s>module:<s><path><s>` comment value, or null. */
 const frontModuleOf = (value: string): string | null => {
@@ -1640,6 +1652,8 @@ const frontForallVar = (p: FrontProp): Result<ForallVar, FrontRefusal> => {
     type = "bytes"
   } else if (ty.name === "string" || vocabIsIntType(ty.name)) {
     type = ty.name
+  } else if (ty.name.startsWith("Secret<")) {
+    return Err(frontRefuse(`\`${ty.name}\` is not a forall type: ${VOCAB_SECRET_FORM}`, ty.pos))
   } else {
     return Err(
       frontRefuse(
@@ -1991,11 +2005,12 @@ function frontName(p: FrontProp, t: FrontTok): Result<FrontV, FrontRefusal> {
     return frontCall(p, sig, pos)
   }
   if (!vocabHas(frontCallOps(), t.text)) {
-    return Err(frontRefuse(`unknown function \`${t.text}\``, pos))
+    const form = vocabIsSecretOp(t.text) ? `: ${VOCAB_SECRET_FORM}` : ""
+    return Err(frontRefuse(`unknown function \`${t.text}\`${form}`, pos))
   }
   const op = t.text
   const raw = frontArgs(p).orReturn()
-  const bytesOp = vocabHas(frontBytesOps(), op)
+  const bytesOp = vocabHas(frontBytesOps(), op) || vocabHas(vocabReadOps(), op)
   const args: FrontV[] = []
   for (let k = 0; k < raw.length; k++) {
     args.push(bytesOp || (op === "flipBit" && k === 0) ? frontAsBytes(raw[k]) : raw[k])

@@ -1,0 +1,839 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "byte-order",
+  "source": {
+    "title": "Integers as Bytes: Properties",
+    "main": "byte-order",
+    "sha256": "48f72e250f8b5d9227a994ae66e7662294240ac46224d262c46783f83db5f9a0"
+  },
+  "sources": [
+    {
+      "id": "byte-order",
+      "path": "../rfcs/byte-order.txt",
+      "sha256": "48f72e250f8b5d9227a994ae66e7662294240ac46224d262c46783f83db5f9a0"
+    }
+  ],
+  "target": {
+    "module": "vector/core/hex"
+  },
+  "requirements": [
+    {
+      "id": "R-WRITE",
+      "section": "1",
+      "level": "MUST",
+      "quote": "An integer written as bytes MUST be written as its two's complement, in the byte order the operation names."
+    },
+    {
+      "id": "R-READ",
+      "section": "2",
+      "level": "MUST",
+      "quote": "Bytes read as an integer MUST be read in the byte order the operation names, as exactly as many bytes as the integer's width."
+    }
+  ],
+  "exclusions": [],
+  "functions": [
+    {
+      "name": "toHex",
+      "params": [
+        {
+          "name": "bytes",
+          "type": "bytes"
+        }
+      ],
+      "returns": "string"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "property",
+      "id": "P-BE32",
+      "title": "a u32 written big-endian is 4 bytes, and reads back",
+      "covers": [
+        "R-WRITE",
+        "R-READ"
+      ],
+      "forall": [
+        {
+          "name": "n",
+          "type": "u32",
+          "min": 0,
+          "max": 4294967295
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "strLen",
+                "args": [
+                  {
+                    "call": "toHex",
+                    "args": [
+                      {
+                        "op": "be32",
+                        "args": [
+                          {
+                            "var": "n"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "int": 8
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "beU32",
+                "args": [
+                  {
+                    "op": "be32",
+                    "args": [
+                      {
+                        "var": "n"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "n"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-LE-I32",
+      "title": "a negative i32 is written in two's complement",
+      "covers": [
+        "R-WRITE"
+      ],
+      "forall": [
+        {
+          "name": "n",
+          "type": "i32",
+          "min": -2147483648,
+          "max": -1
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "toHex",
+                "args": [
+                  {
+                    "op": "le32",
+                    "args": [
+                      {
+                        "var": "n"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "call": "toHex",
+                "args": [
+                  {
+                    "op": "slice",
+                    "args": [
+                      {
+                        "op": "le64",
+                        "args": [
+                          {
+                            "var": "n"
+                          }
+                        ]
+                      },
+                      {
+                        "int": 0
+                      },
+                      {
+                        "int": 4
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "leI32",
+                "args": [
+                  {
+                    "op": "le32",
+                    "args": [
+                      {
+                        "var": "n"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "n"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-READ-64",
+      "title": "eight bytes read either way write back as they were",
+      "covers": [
+        "R-READ"
+      ],
+      "forall": [
+        {
+          "name": "b",
+          "type": "bytes",
+          "minLen": 8,
+          "maxLen": 8
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "toHex",
+                "args": [
+                  {
+                    "op": "le64",
+                    "args": [
+                      {
+                        "op": "leU64",
+                        "args": [
+                          {
+                            "var": "b"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "call": "toHex",
+                "args": [
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "toHex",
+                "args": [
+                  {
+                    "op": "be64",
+                    "args": [
+                      {
+                        "op": "beI64",
+                        "args": [
+                          {
+                            "var": "b"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "call": "toHex",
+                "args": [
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-WRITE-FIXED",
+      "title": "-2, 51966, 305419896, 3735928559 and 18364758544493064720, literals in the assertion, write as their known bytes",
+      "covers": [
+        "R-WRITE"
+      ],
+      "forall": [
+        {
+          "name": "n",
+          "type": "i32",
+          "min": -2,
+          "max": -2
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "toHex",
+                "args": [
+                  {
+                    "op": "be32",
+                    "args": [
+                      {
+                        "int": 305419896
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "str": "12345678"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "toHex",
+                "args": [
+                  {
+                    "op": "le32",
+                    "args": [
+                      {
+                        "int": 305419896
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "str": "78563412"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "toHex",
+                "args": [
+                  {
+                    "op": "be32",
+                    "args": [
+                      {
+                        "int": 3735928559
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "str": "deadbeef"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "toHex",
+                "args": [
+                  {
+                    "op": "le32",
+                    "args": [
+                      {
+                        "int": 3735928559
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "str": "efbeadde"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "toHex",
+                "args": [
+                  {
+                    "op": "le16",
+                    "args": [
+                      {
+                        "int": -2
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "str": "feff"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "toHex",
+                "args": [
+                  {
+                    "op": "be16",
+                    "args": [
+                      {
+                        "int": -2
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "str": "fffe"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "toHex",
+                "args": [
+                  {
+                    "op": "be16",
+                    "args": [
+                      {
+                        "int": 51966
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "str": "cafe"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "toHex",
+                "args": [
+                  {
+                    "op": "le16",
+                    "args": [
+                      {
+                        "int": 51966
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "str": "feca"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "toHex",
+                "args": [
+                  {
+                    "op": "be64",
+                    "args": [
+                      {
+                        "var": "n"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "str": "fffffffffffffffe"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "toHex",
+                "args": [
+                  {
+                    "op": "le64",
+                    "args": [
+                      {
+                        "var": "n"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "str": "feffffffffffffff"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "toHex",
+                "args": [
+                  {
+                    "op": "be64",
+                    "args": [
+                      {
+                        "int": "18364758544493064720"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "str": "fedcba9876543210"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "toHex",
+                "args": [
+                  {
+                    "op": "le64",
+                    "args": [
+                      {
+                        "int": "18364758544493064720"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "str": "1032547698badcfe"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-READ-FIXED",
+      "title": "known bytes, ff...fe and fe...ff among them, read as known integers",
+      "covers": [
+        "R-READ"
+      ],
+      "forall": [
+        {
+          "name": "b",
+          "type": "bytes",
+          "minLen": 4,
+          "maxLen": 4
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "leU16",
+                "args": [
+                  {
+                    "hex": "0102"
+                  }
+                ]
+              },
+              {
+                "int": 513
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "beU16",
+                "args": [
+                  {
+                    "hex": "0102"
+                  }
+                ]
+              },
+              {
+                "int": 258
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "leU32",
+                "args": [
+                  {
+                    "hex": "efbeadde"
+                  }
+                ]
+              },
+              {
+                "int": 3735928559
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "beU32",
+                "args": [
+                  {
+                    "hex": "deadbeef"
+                  }
+                ]
+              },
+              {
+                "int": 3735928559
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "beU64",
+                "args": [
+                  {
+                    "hex": "ffffffffffffffff"
+                  }
+                ]
+              },
+              {
+                "int": "18446744073709551615"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "beI64",
+                "args": [
+                  {
+                    "hex": "ffffffffffffffff"
+                  }
+                ]
+              },
+              {
+                "int": -1
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "leI32",
+                "args": [
+                  {
+                    "hex": "ffffffff"
+                  }
+                ]
+              },
+              {
+                "int": -1
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "beI32",
+                "args": [
+                  {
+                    "hex": "fffffffe"
+                  }
+                ]
+              },
+              {
+                "int": -2
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "leU64",
+                "args": [
+                  {
+                    "hex": "1032547698badcfe"
+                  }
+                ]
+              },
+              {
+                "int": "18364758544493064720"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "beU64",
+                "args": [
+                  {
+                    "hex": "fedcba9876543210"
+                  }
+                ]
+              },
+              {
+                "int": "18364758544493064720"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "leI64",
+                "args": [
+                  {
+                    "hex": "feffffffffffffff"
+                  }
+                ]
+              },
+              {
+                "int": -2
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "leI32",
+                "args": [
+                  {
+                    "hex": "feffffff"
+                  }
+                ]
+              },
+              {
+                "int": -2
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "beI64",
+                "args": [
+                  {
+                    "hex": "fffffffffffffffe"
+                  }
+                ]
+              },
+              {
+                "int": -2
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "beI32",
+                "args": [
+                  {
+                    "hex": "80000000"
+                  }
+                ]
+              },
+              {
+                "int": -2147483648
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "leI64",
+                "args": [
+                  {
+                    "hex": "0000000000000080"
+                  }
+                ]
+              },
+              {
+                "int": "-9223372036854775808"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "strLen",
+                "args": [
+                  {
+                    "call": "toHex",
+                    "args": [
+                      {
+                        "var": "b"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "int": 8
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

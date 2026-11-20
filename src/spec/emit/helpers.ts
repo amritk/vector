@@ -33,7 +33,7 @@ export const emitHelperNames = (): string[] => [
   "remU64",
   "eqF64Bits",
   "nearUlpsF64",
-  "le64",
+  "intBytes",
   "strEq",
   "isNullStr",
   "strOrNull",
@@ -48,6 +48,7 @@ export const emitHelperNames = (): string[] => [
   "wordsHex64",
   "Unwrap",
   "unwrapStr",
+  "bytesInt",
   "OutFault",
 ]
 
@@ -67,7 +68,7 @@ export const emitHelperDeps = (name: string): string[] => {
   if (name === "flipBit") {
     return ["sliceBytes"]
   }
-  if (name === "unwrapStr") {
+  if (name === "unwrapStr" || name === "bytesInt") {
     return ["Unwrap"]
   }
   if (name === "wordsHex16" || name === "wordsHex32" || name === "wordsHex64") {
@@ -377,16 +378,33 @@ const nearUlpsF64 = (t: Suite, name: string, actual: f64, expected: f64, ulps: i
   return t.fail(name, \`expected \${expected} within \${ulps} ulps, got \${actual}\`);
 };`
   }
-  if (name === "le64") {
-    return `/** \`n\` as 8 little-endian bytes. */
-const le64 = (n: i32): u8[] => {
+  if (name === "intBytes") {
+    return `/** The low \`w\` bytes of \`n\`'s bits, little-endian, or big-endian when \`be\`. */
+const intBytes = (n: u64, w: i32, be: boolean): u8[] => {
   const out: u8[] = [];
-  let v: i64 = toI64(n);
-  for (let i: i32 = 0; i < 8; i += 1) {
-    out.push(toU8(toI32(v & toI64(255))));
-    v = v >> toI64(8);
+  for (let i: i32 = 0; i < w; i += 1) {
+    const k: i32 = be ? w - 1 - i : i;
+    out.push(toU8(n >> toU64(k * 8)));
   }
   return out;
+};`
+  }
+  if (name === "bytesInt") {
+    return `/**
+ * \`b\` as a \`w\`-byte integer, little-endian, or big-endian when \`be\`. Any
+ * other length is recorded on \`u\`, as a null is, and reads as 0.
+ */
+const bytesInt = (u: Unwrap, b: u8[], w: i32, be: boolean): u64 => {
+  if (toI32(b.length) !== w) {
+    u.sawNull = true;
+    return toU64(0);
+  }
+  let v: u64 = toU64(0);
+  for (let i: i32 = 0; i < w; i += 1) {
+    const k: i32 = be ? i : w - 1 - i;
+    v = (v << toU64(8)) | toU64(b[k]);
+  }
+  return v;
 };`
   }
   if (name === "strEq") {

@@ -22,8 +22,26 @@ import { contractF64Bits, contractF64Parse } from "../contract/f64"
 import { ClauseKind, ExprKind, LitKind } from "../contract/types"
 import { Clause, Contract, Expr, FnSig, Literal } from "../contract/types"
 import { TypeEnv, typeCallsIn, typeEnvBind, typeIntBase, typeOf } from "../contract/typing"
-import { vocabIsIntType, vocabIsOptional, vocabValueType } from "../contract/vocab"
-import { EmitOptions, emitClauseFn, emitClauseLines, emitHeaderLines, emitSortedUnique, emitTestName } from "./emit"
+import {
+  vocabBigEndian,
+  vocabByteWidth,
+  vocabHas,
+  vocabIsIntType,
+  vocabIsOptional,
+  vocabReadOps,
+  vocabReadType,
+  vocabValueType,
+  vocabWriteOps,
+} from "../contract/vocab"
+import {
+  EmitOptions,
+  emitClauseFn,
+  emitClauseLines,
+  emitHeaderLines,
+  emitSortedUnique,
+  emitTestName,
+  emitUndefinedWhy,
+} from "./emit"
 import { EMIT_SLOW_SKIP, emitF64IsFinite, emitLiteralHex, emitQuote } from "./lit"
 import { emitTargetOutRefusal, emitTargetWindowRefusal, emitTargetWordsRefusal } from "./target"
 
@@ -317,8 +335,17 @@ const emitPyExpr = (ctx: EmitPyContext, e: Expr, want: string | null): string =>
 /** The ops on bytes and strings, which go through a helper; null for any other op. */
 const emitPyHelperOp = (ctx: EmitPyContext, e: Expr): string | null => {
   const op = e.name
-  const one = ["zeros", "le64", "utf8", "ascii", "strLen"]
-  const oneHelper = ["_fill(0, ", "_le64(", "_utf8(", "_ascii(", "_str_len("]
+  if (vocabHas(vocabWriteOps(), op)) {
+    const order = vocabBigEndian(op) ? "big" : "little"
+    return `_int_bytes(${emitPyArg(ctx, e, 0, null)}, ${vocabByteWidth(op)}, "${order}")`
+  }
+  if (vocabHas(vocabReadOps(), op)) {
+    const order = vocabBigEndian(op) ? "big" : "little"
+    const signed = vocabReadType(op).startsWith("i") ? "True" : "False"
+    return `_bytes_int(u, ${emitPyArg(ctx, e, 0, null)}, ${vocabByteWidth(op)}, "${order}", ${signed})`
+  }
+  const one = ["zeros", "utf8", "ascii", "strLen"]
+  const oneHelper = ["_fill(0, ", "_utf8(", "_ascii(", "_str_len("]
   const at = one.indexOf(op)
   if (at >= 0) {
     return `${oneHelper[at]}${emitPyArg(ctx, e, 0, null)})`
@@ -419,25 +446,6 @@ const emitPyBindings = (ctx: EmitPyContext, assert: Expr, indent: string, out: s
     e = body
   }
   return e
-}
-
-/** Whether `e` applies the op `op` anywhere. */
-const emitPyHasOp = (e: Expr, op: string): boolean => {
-  if (e.kind === ExprKind.Op && e.name === op) {
-    return true
-  }
-  for (const a of e.args) {
-    if (emitPyHasOp(a, op)) {
-      return true
-    }
-  }
-  for (const b of e.binds) {
-    if (emitPyHasOp(b.value, op)) {
-      return true
-    }
-  }
-  const body = e.body
-  return body !== null && emitPyHasOp(body, op)
 }
 
 /** The comment above a clause's check: its title and each covered requirement quoted. */
@@ -591,7 +599,8 @@ const emitPyProperty = (ctx: EmitPyContext, k: Clause, samples: Sample[]): strin
     const v = k.forall[j]
     emitPyTable(v.name, v.type, j, samples, out)
   }
-  const usesUnwrap = emitPyHasOp(assert, "unwrap")
+  const undefinedWhy = emitUndefinedWhy(assert)
+  const usesUnwrap = undefinedWhy !== null
   out.push(`    for i in range(${count}):`)
   ctx.env = new TypeEnv(ctx.c.functions, true)
   const shown: string[] = []
@@ -613,7 +622,7 @@ const emitPyProperty = (ctx: EmitPyContext, k: Clause, samples: Sample[]): strin
   const where = `sample {i + 1} of ${count} (${shown.join(", ")})`
   if (usesUnwrap) {
     out.push("        if u.saw_null or not holds:")
-    out.push(`            why = "unwrap met a null" if u.saw_null else "the assertion is false"`)
+    out.push(`            why = ${emitQuote(undefinedWhy ?? "")} if u.saw_null else "the assertion is false"`)
     out.push(`            return t.fail(${name}, f"${where}: {why}")`)
   } else {
     out.push("        if not holds:")
@@ -861,8 +870,17 @@ def _bitwise(a, b, k):
     return bytes(out)
 
 
-def _le64(n):
-    return (n & 0xFFFFFFFFFFFFFFFF).to_bytes(8, "little")
+def _int_bytes(n, w, order):
+    """n's w bytes in order, a negative n in two's complement."""
+    return (n & ((1 << (w * 8)) - 1)).to_bytes(w, order)
+
+
+def _bytes_int(u, b, w, order, signed):
+    """The integer b's w bytes hold; any other length records on u, so the sample fails."""
+    if len(b) != w:
+        u.saw_null = True
+        return 0
+    return int.from_bytes(b, order, signed=signed)
 
 
 def _utf8(s):

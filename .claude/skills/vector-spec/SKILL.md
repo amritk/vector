@@ -42,7 +42,7 @@ A module lands in two PRs. The first is the **spec side** (`specs/`,
 `contracts/`, `rfcs/`, `.refcache/`, and generated tests in `test/spec/`); the second is the
 **implementation**. `frozen` refuses a PR that touches both, so a test can
 never be loosened in the PR that changes the code it tests. Do the steps in
-this order; each one's command is the gate CI runs.
+order; each one's command is the gate CI runs.
 
 ### 0. Tools
 
@@ -58,7 +58,7 @@ pip install xml2rfc==3.35.0
 
 Write `specs/<name>.md` in kramdown-rfc from the RFC or the request alone.
 **Do not read the implementation**: there may not be one yet, and the spec
-must say what is asked for, not what some code does.
+must say what is asked for, not what code does.
 
 Front matter: `docname: draft-<name>-00`, where `<name>` is the file's
 basename, and a pinned `date: YYYY-MM-DD`. List each RFC you cite under
@@ -107,9 +107,10 @@ The types are those of the table in [Writing a
 spec](../../../docs/guide/guides/writing-a-spec.md#types): `u8[]`, `string`,
 `boolean`, `Secret<u8[]>`, the fixed-width integers `i8` … `i64` and
 `u8` … `u64`, `f64`, and the word arrays `u16[]`, `u32[]` and `u64[]`. A
-Nish test can hold all but `i8` and `i16`, which Nish lacks, so the emitter
-refuses them; only the Nish test holds word arrays. Add `| null` to `u8[]`,
-a word array or `string`, and to `Secret<u8[]>` as a result only. Give
+Nish test holds all but `i8` and `i16`, which the emitter refuses; only
+it holds word arrays. Add `| null` to `u8[]`,
+a word array or `string`, and to `Secret<u8[]>` as a result only; a
+property passes `u8[]` to a `Secret<u8[]>` parameter. Give
 word-array cases as vectors: a property over or calling word arrays is
 refused. Nish test only: `u8[] /* window */` is one bytes parameter for a
 `(buf, off, len)`, tested at a nonzero offset; `u8[] /* out CAP */` an
@@ -153,8 +154,8 @@ Definition: a hex digit is one of the characters 0-9, a-f and A-F.
 ```
 
 **Quotes from an RFC** go in a blockquote. Its last line is the citation, and
-its attribute must include `gi="blockquote"`. The quote must appear verbatim
-in that section of the RFC.
+its attribute must include `gi="blockquote"`. It must be verbatim in that
+section of the RFC.
 
 ```
 > BASE16("f") = "66"
@@ -267,8 +268,8 @@ profile extracts to, run
     expected value it is a `spec` source (the covered requirement states it);
     for any other value it is a `cite` of that section, which must print the
     value.
-  - A code span holding a command: the value is its trimmed stdout, so the
-    Expected cell must be bytes or a string.
+  - A code span holding a command: its trimmed stdout, as hex bytes, a
+    string, a decimal int, `true`, `false` or `null` (no f64 or words).
 - **Values from an RFC:**
   - Each one is a *whole* printed value, never a prefix or a tail. A word
     array is a whole printed block of words, word for word.
@@ -311,8 +312,8 @@ semantics are vector's, not JavaScript's: `.slice` clamps, `a % 0` is 0, and
 **Linked RFCs.** The RFC text must be in `rfcs/`, unmodified. The IETF Trust
 allows copying an RFC whole. Extract's missing-RFC message gives the `curl`
 command, which fetches `rfc<N>.txt`; the `.txt` works for every RFC, and an
-`rfc<N>.xml` is read instead when present. The lookup goes nearest place
-first, the same for every command (beside the contract, `../rfcs/`, the
+`rfc<N>.xml` is read instead when present. Every command looks nearest place
+first (beside the contract, `../rfcs/`, the
 `rfcs/` of vector's install root, the directory above the binary's own, then
 the current directory's `rfcs/`), and at each place `.xml` before `.txt`. A `file` the
 contract already records wins: adding an `.xml` later does not displace a
@@ -338,7 +339,7 @@ scripts/build-spec.sh specs/<name>.md         # writes specs/<name>.xml
 - It lists every refusal at once, each as `file:line`. The file is the XML;
   the line is the `.md` line when the XML carries `<?line?>` marks, otherwise
   the XML line. The line can run late after a table.
-- Repair the **spec**, never the contract. Then rebuild and re-extract until
+- Repair the **spec**, never the contract. Rebuild and re-extract until
   it exits 0.
 - It runs `check`'s gates: fidelity, completeness, coverage, provenance,
   typing and domain.
@@ -381,12 +382,12 @@ Run it last, after step 4's `emit` and `stale`, so it sees the whole PR.
   - a `sha256` is missing;
   - no contract was found.
 
-Its positional arguments are the contracts to check, from the repository's
+Its arguments are the contracts to check, from the repository's
 top; with none, it checks every `contracts/*.json`. Either way, a generated
 test whose one sha line names a contract in `contracts/` (not a sidecar or a
 symbolic link) or one given counts on the spec side, so a PR changing two
 contracts may name only one of them. `--repo <dir>` names the repository
-(default: the current directory).
+(default: `.`).
 
 From here, the spec and contract change only in a PR of their own.
 
@@ -490,12 +491,12 @@ in a spec-side PR.
 It exits 2 for bad usage, a git error, a z3 failure, or a compiler failure the
 mutant did not cause. Two compiler traps:
 
-- **The compiler must read the copy.** `mutate` builds each mutant in a copy
-  of the root, and first checks (the canary) that the compiler fails on a
-  copy whose module is made unparseable. An installed `bin/nish`, such as
-  `.nish/bin/nish`, is a wrapper that execs another install by absolute path
-  and fails the canary: give `--nish libexec/nish` for an install, or use a
-  real nish checkout.
+- **The compiler must read the slot.** With no `--nish`, mutants build on
+  the root's seed (an install itself, or a checkout's `build/seed`) with its
+  `std/` laid over it; with neither, run `bash scripts/fetch-seed.sh` there
+  (no build needed). A canary checks the compiler fails on the module made
+  unparseable. `--nish <file>` copies the whole root; `.nish/bin/nish` execs
+  another install and fails the canary.
 - **Run it from the repository's top.** Without `--test`, `mutate` emits the
   contract's test as `emit` does, checking the contract with the current
   directory as the repository's top, as CI runs it.

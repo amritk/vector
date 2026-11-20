@@ -1,0 +1,21 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ byte-order-refused · byte-order (Integers as Bytes: Properties) · vector/core/hex
+ Status: INVALID
+
+ Gate failures
+  ✘ typing P-WIDE: assert.args[0].args[0].args[0]: le32 wants an integer of at most 32 bits, got u64
+  ✘ typing P-WIDE-SIGNED: assert.args[0].args[0].args[0]: be16 wants an integer of at most 16 bits, got i32
+  ✘ typing P-LITERAL: assert.args[0].args[0].args[0]: 65536 does not fit le16's 16 bits
+  ✘ typing P-LITERAL-NEG: assert.args[0].args[0].args[0]: -2147483649 does not fit be32's 32 bits
+  ✘ typing P-READ-INT: assert.args[0].args[0].args[0].args[0]: beU32 wants bytes, got i16
+
+ Requirements
+  ○ R-WRITE  §1 MUST  "An integer written as bytes MUST be written as its two's comple…"
+      ○ P-WIDE (29 samples: 5 boundary)  ○ P-WIDE-SIGNED (2 samples: 2 boundary)  ○ P-LITERAL (29 samples: 5 boundary)  ○ P-LITERAL-NEG (29 samples: 5 boundary)  ○ P-FITS (30 samples: 6 boundary)
+  ○ R-READ  §2 MUST  "Bytes read as an integer MUST be read in the byte order the ope…"
+      ○ P-READ-INT (29 samples: 5 boundary)
+
+ Warnings
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

@@ -1,0 +1,150 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "block-bounds-deny",
+  "source": {
+    "title": "Block bounds fixture: a result after a property whose title denies.",
+    "main": "block-bounds-deny",
+    "sha256": "fd9282183a0208dbbeeed0b34ee608b2a135e06096a74a3563fa147283fd0bb7"
+  },
+  "sources": [
+    {
+      "id": "block-bounds-deny",
+      "path": "../specs/block-bounds-deny.xml"
+    }
+  ],
+  "target": {
+    "module": "nish/mini"
+  },
+  "requirements": [
+    {
+      "id": "R-VALID",
+      "section": "3",
+      "level": "MUST",
+      "quote": "miniIsValid MUST return false for any text other than an even run of hex digits."
+    },
+    {
+      "id": "R-VALID-YES",
+      "section": "3",
+      "level": "MUST",
+      "quote": "miniIsValid MUST return true for an even run of hex digits."
+    }
+  ],
+  "exclusions": [],
+  "functions": [
+    {
+      "name": "miniEncode",
+      "params": [
+        {
+          "name": "bytes",
+          "type": "bytes"
+        }
+      ],
+      "returns": "string"
+    },
+    {
+      "name": "miniIsValid",
+      "params": [
+        {
+          "name": "text",
+          "type": "string"
+        }
+      ],
+      "returns": "bool"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "V1",
+      "title": "an odd length is not valid",
+      "covers": ["R-VALID"],
+      "source": {
+        "spec": "3"
+      },
+      "section": "4",
+      "call": "miniIsValid",
+      "args": [
+        {
+          "str": "abc"
+        }
+      ],
+      "expect": {
+        "bool": false
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V2",
+      "title": "an even run is valid",
+      "covers": ["R-VALID-YES"],
+      "source": {
+        "spec": "3"
+      },
+      "section": "4",
+      "call": "miniIsValid",
+      "args": [
+        {
+          "str": "ab"
+        }
+      ],
+      "expect": {
+        "bool": true
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-ODD",
+      "title": "a text of odd length is not",
+      "covers": ["R-VALID"],
+      "forall": [
+        {
+          "name": "t",
+          "type": "string",
+          "minLen": 1,
+          "maxLen": 33,
+          "alphabet": ["hexdigit"]
+        }
+      ],
+      "where": {
+        "op": "==",
+        "args": [
+          {
+            "op": "%",
+            "args": [
+              {
+                "op": "strLen",
+                "args": [
+                  {
+                    "var": "t"
+                  }
+                ]
+              },
+              {
+                "int": 2
+              }
+            ]
+          },
+          {
+            "int": 1
+          }
+        ]
+      },
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "miniIsValid",
+            "args": [
+              {
+                "var": "t"
+              }
+            ]
+          },
+          {
+            "bool": false
+          }
+        ]
+      }
+    }
+  ]
+}

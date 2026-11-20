@@ -4,6 +4,7 @@ import { joinPath, makeTempDir } from "../../../src/core/fs"
 import { runProcess } from "../../../src/core/process"
 import { CheckContext, CheckSourceRun } from "../../../src/spec/check"
 import { contractParse } from "../../../src/spec/contract/read"
+import { Contract } from "../../../src/spec/contract/types"
 import { gateRunArgv, gateRunCommands, gateRunJudge, gateRunSources } from "../../../src/spec/gates/run"
 
 /** A contract whose vectors' expected values come from commands. */
@@ -28,6 +29,45 @@ const RUN_TEST_C: string = `{
      "expect": {"hex": "00"}}
   ]
 }`
+
+/** A contract whose command sources expect each kind a command prints as text. */
+const RUN_TEST_VALUES: string = `{
+  "contract": "c2",
+  "source": {"title": "T", "rfc": 9999},
+  "target": {"module": "nish/x"},
+  "requirements": [{"id": "R1", "section": "2", "level": "MUST", "quote": "Q"}],
+  "functions": [{"name": "u", "params": [], "returns": "u64"}, {"name": "i", "params": [], "returns": "i64"},
+    {"name": "b", "params": [], "returns": "bool"}, {"name": "n", "params": [], "returns": "bytes?"}],
+  "clauses": [
+    {"kind": "vector", "id": "V-WIDE", "title": "t", "covers": ["R1"], "section": "2",
+     "source": {"command": "x"}, "call": "u", "args": [], "expect": {"int": "151288809941952652"}},
+    {"kind": "vector", "id": "V-MAX", "title": "t", "covers": ["R1"], "section": "2",
+     "source": {"command": "x"}, "call": "u", "args": [], "expect": {"int": "18446744073709551615"}},
+    {"kind": "vector", "id": "V-NEG", "title": "t", "covers": ["R1"], "section": "2",
+     "source": {"command": "x"}, "call": "i", "args": [], "expect": {"int": -1}},
+    {"kind": "vector", "id": "V-ZERO", "title": "t", "covers": ["R1"], "section": "2",
+     "source": {"command": "x"}, "call": "u", "args": [], "expect": {"int": 0}},
+    {"kind": "vector", "id": "V-TEN", "title": "t", "covers": ["R1"], "section": "2",
+     "source": {"command": "x"}, "call": "u", "args": [], "expect": {"int": 10}},
+    {"kind": "vector", "id": "V-FALSE", "title": "t", "covers": ["R1"], "section": "2",
+     "source": {"command": "x"}, "call": "b", "args": [], "expect": {"bool": false}},
+    {"kind": "vector", "id": "V-TRUE", "title": "t", "covers": ["R1"], "section": "2",
+     "source": {"command": "x"}, "call": "b", "args": [], "expect": {"bool": true}},
+    {"kind": "vector", "id": "V-NULL", "title": "t", "covers": ["R1"], "section": "2",
+     "source": {"command": "x"}, "call": "n", "args": [], "expect": {"null": true}}
+  ]
+}`
+
+/** How the gate judges `out` printed for the clause `id` of RUN_TEST_VALUES: pass, or its detail. */
+const runTestValue = (c: Contract, id: string, out: string): string => {
+  for (const k of c.clauses) {
+    if (k.id === id) {
+      const r = gateRunJudge(k, 0, out, "", false, 5)
+      return r.outcome === "pass" ? "pass" : r.detail
+    }
+  }
+  return `no clause ${id}`
+}
 
 /** A context holding the test contract, as if it were in `dir`. */
 const runTestCtx = (dir: string): CheckContext => {
@@ -117,6 +157,40 @@ export const main = (): i32 => {
     5,
   ).detail
   t.ok("a long output is cut", long.startsWith('printed "01234') && long.indexOf('...", the vector') > 0)
+
+  // Each kind is compared with its one canonical text, exactly.
+  const values = contractParse(RUN_TEST_VALUES, "c2").expect("parse")
+  const judged: string[][] = [
+    ["V-WIDE", "151288809941952652\n", "pass"],
+    ["V-WIDE", "151288809941952653", 'printed "151288809941952653", the vector expects "151288809941952652"'],
+    ["V-WIDE", "+151288809941952652", 'printed "+151288809941952652", the vector expects "151288809941952652"'],
+    ["V-WIDE", "151288809941952652 ok", 'printed "151288809941952652 ok", the vector expects "151288809941952652"'],
+    ["V-MAX", "18446744073709551615", "pass"],
+    ["V-MAX", "-1", 'printed "-1", the vector expects "18446744073709551615"'],
+    ["V-NEG", " -1 ", "pass"],
+    ["V-NEG", "18446744073709551615", 'printed "18446744073709551615", the vector expects "-1"'],
+    ["V-ZERO", "0", "pass"],
+    ["V-ZERO", "00", 'printed "00", the vector expects "0"'],
+    ["V-ZERO", "-0", 'printed "-0", the vector expects "0"'],
+    ["V-TEN", "10", "pass"],
+    ["V-TEN", "010", 'printed "010", the vector expects "10"'],
+    ["V-TEN", "+10", 'printed "+10", the vector expects "10"'],
+    ["V-TEN", "10.0", 'printed "10.0", the vector expects "10"'],
+    ["V-TEN", "0xa", 'printed "0xa", the vector expects "10"'],
+    ["V-FALSE", "false\n", "pass"],
+    ["V-FALSE", "False", 'printed "False", the vector expects "false"'],
+    ["V-FALSE", "0", 'printed "0", the vector expects "false"'],
+    ["V-TRUE", "true", "pass"],
+    ["V-TRUE", "True", 'printed "True", the vector expects "true"'],
+    ["V-TRUE", "TRUE", 'printed "TRUE", the vector expects "true"'],
+    ["V-NULL", "null", "pass"],
+    ["V-NULL", "None", 'printed "None", the vector expects "null"'],
+    ["V-NULL", "", 'printed "", the vector expects "null"'],
+    ["V-NULL", "NULL", 'printed "NULL", the vector expects "null"'],
+  ]
+  for (const j of judged) {
+    t.eqStr(`${j[0]} printing "${trim(j[1])}"`, runTestValue(values, j[0], j[1]), j[2])
+  }
 
   runProcess(["rm", "-rf", dir], "", 5000).expect("rm")
   return t.done()

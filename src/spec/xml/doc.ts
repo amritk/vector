@@ -7,7 +7,8 @@
  * Refused, beyond what the reader refuses: a root that is not `<rfc>`, an
  * anchor used twice, a table inside a table cell, more than 26 appendices,
  * xref text worked out past the input's length and XML_MAX_XREF_TEXT, and
- * numbered sections holding over XML_MAX_SECTION_LINES lines between them.
+ * numbered sections holding over XML_MAX_SECTION_LINES lines between them
+ * (the blank line put between two blocks is not counted).
  */
 
 import { hiddenProblem } from "../source/hidden"
@@ -18,7 +19,10 @@ import { XmlLines, XmlNormative, XmlText, XmlXrefInfo, xmlPlainText, xmlSectionL
 /** The xref text worked out may run this many characters past the input's length. */
 const XML_MAX_XREF_TEXT: i32 = 64 * 1024
 
-/** Numbered sections may hold this many lines, each subsection's counted in its parents'. */
+/**
+ * Numbered sections may hold this many lines, each subsection's counted in
+ * its parents'; the blank lines put between blocks are not counted.
+ */
 const XML_MAX_SECTION_LINES: i32 = 2000000
 
 /** A `<reference>`, and the RFC its seriesInfo names. */
@@ -87,6 +91,8 @@ class XmlSectionInfo {
   numbered: boolean
   back: boolean
   own: string[]
+  code: i32[]
+  breaks: i32[]
   subs: XmlSectionInfo[]
   constructor(id: string, node: XmlNode, numbered: boolean, back: boolean) {
     this.id = id
@@ -94,6 +100,8 @@ class XmlSectionInfo {
     this.numbered = numbered
     this.back = back
     this.own = []
+    this.code = []
+    this.breaks = []
     this.subs = []
   }
 }
@@ -337,21 +345,51 @@ const xmlDocXrefs = (c: XmlDocContext, inputLength: i32): Result<boolean, XmlErr
   return Ok(true)
 }
 
-/** Appends a section's own lines and then its subsections', recording each one's run. */
+/**
+ * Appends a section's own lines and then its subsections', recording each
+ * one's run, with a blank line between two sections' runs as between blocks.
+ */
 const xmlDocLay = (
   s: XmlSectionInfo,
   all: string[],
+  code: i32[],
+  breaks: i32[],
   from: Map<XmlSectionInfo, i32>,
   to: Map<XmlSectionInfo, i32>,
 ): void => {
+  if (s.own.length > 0 && all.length > 0 && all[all.length - 1].length > 0) {
+    breaks.push(all.length)
+    all.push("")
+  }
   from.set(s, all.length)
+  for (const i of s.code) {
+    code.push(all.length + i)
+  }
+  for (const i of s.breaks) {
+    breaks.push(all.length + i)
+  }
   for (const l of s.own) {
     all.push(l)
   }
   for (const k of s.subs) {
-    xmlDocLay(k, all, from, to)
+    xmlDocLay(k, all, code, breaks, from, to)
   }
   to.set(s, all.length)
+}
+
+/** The first index of ascending `xs` whose value is at least `v` (xs.length when none), found by halving. */
+const xmlDocFirstAtLeast = (xs: i32[], v: i32): i32 => {
+  let lo = 0
+  let hi = xs.length
+  while (lo < hi) {
+    const mid = lo + ((hi - lo) >> 1)
+    if (xs[mid] < v) {
+      lo = mid + 1
+    } else {
+      hi = mid
+    }
+  }
+  return lo
 }
 
 /** Reads each section's lines, and makes the numbered ones the document's sections. */
@@ -359,15 +397,30 @@ const xmlDocSections = (c: XmlDocContext): Result<boolean, XmlError> => {
   const b = new XmlLines(c.doc.text)
   for (const s of c.infos) {
     s.own = xmlSectionLines(b, s.node, s.numbered ? s.id : "").orReturn()
+    s.code = b.code
+    s.breaks = b.breaks
   }
   c.doc.normative = b.normative
   const all: string[] = []
+  const code: i32[] = []
+  const breaks: i32[] = []
   const from = new Map<XmlSectionInfo, i32>()
   const to = new Map<XmlSectionInfo, i32>()
   for (const s of c.infos) {
     if (!from.has(s)) {
-      xmlDocLay(s, all, from, to)
+      xmlDocLay(s, all, code, breaks, from, to)
     }
+  }
+  const isBreak: boolean[] = []
+  for (let i = 0; i < all.length; i++) {
+    isBreak.push(false)
+  }
+  for (const i of breaks) {
+    isBreak[i] = true
+  }
+  const texts: i32[] = [0]
+  for (let i = 0; i < all.length; i++) {
+    texts.push(texts[i] + (isBreak[i] ? 0 : 1))
   }
   let held = 0
   for (const s of c.infos) {
@@ -376,7 +429,7 @@ const xmlDocSections = (c: XmlDocContext): Result<boolean, XmlError> => {
     }
     const a = from.get(s) ?? 0
     const z = to.get(s) ?? 0
-    held = held + (z - a)
+    held = held + (texts[z] - texts[a])
     if (held > XML_MAX_SECTION_LINES) {
       return Err(
         xmlErrorAt(
@@ -387,7 +440,11 @@ const xmlDocSections = (c: XmlDocContext): Result<boolean, XmlError> => {
     }
     const name = xmlDocChild(c, s.node, "name")
     const title = name !== null ? xmlPlainText(c.doc.text, name) : ""
-    c.doc.sections.push(new RfcSection(s.id, title, all.slice(a, z), s.own))
+    const sec = new RfcSection(s.id, title, all.slice(a, z), s.own)
+    for (let k = xmlDocFirstAtLeast(code, a); k < code.length && code[k] < z; k++) {
+      sec.codeLines.push(code[k] - a)
+    }
+    c.doc.sections.push(sec)
     const anchor = xmlAttr(s.node, "anchor")
     if (anchor !== null) {
       c.doc.sectionByAnchor.set(anchor, s.id)

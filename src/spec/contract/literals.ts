@@ -1054,6 +1054,27 @@ export const literalsByteLength = (lit: Literal): i64 => {
   return (digits / 2) * toI64(lit.repeat < 0 ? 1 : lit.repeat)
 }
 
+/** What a command source's Expected may be: the kinds `spec/gates/run` compares with its output. */
+export const LITERALS_PRINTABLE: string = "a command prints bytes (as hex), a string, an integer, a bool or null"
+
+/**
+ * Whether a command source may expect a literal of this kind: bytes, a
+ * string, an integer, a bool or null, each with one canonical text that
+ * `spec/gates/run` compares with what the command printed. An f64 has no one
+ * text, and words are bytes printed in groups.
+ *
+ * @param k the literal's kind
+ * @returns whether a command's output is compared with it
+ */
+export const literalsPrintable = (k: LitKind): boolean =>
+  k === LitKind.Hex ||
+  k === LitKind.Ascii ||
+  k === LitKind.Concat ||
+  k === LitKind.Str ||
+  k === LitKind.Int ||
+  k === LitKind.Bool ||
+  k === LitKind.Null
+
 /**
  * What a literal is, as a refusal names it: "an int", "bytes", "null", ...
  *

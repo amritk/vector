@@ -87,6 +87,15 @@ its lines up to its first subsection
 
 </scalar-field>
 
+#### RfcSection.codeLines
+
+Which of `lines` are a line of a code block or artwork (each an index),
+as an XML source marks them; RFC text marks none.
+
+```ts
+codeLines: i32[]
+```
+
 #### RfcSection.id
 
 "2.3", "A.1", or "A" for an appendix.

@@ -25,8 +25,28 @@ import { contractF64Bits, contractF64Parse } from "../contract/f64"
 import { ClauseKind, ExprKind, LitKind } from "../contract/types"
 import { Clause, Contract, Expr, FnSig, Literal } from "../contract/types"
 import { TypeEnv, typeCallsIn, typeEnvBind, typeIntBase, typeOf, typeOfInt } from "../contract/typing"
-import { vocabBaseOf, vocabFitsInt, vocabIsIntType, vocabIsOptional, vocabValueType } from "../contract/vocab"
-import { EmitOptions, emitClauseFn, emitClauseLines, emitHeaderLines, emitSortedUnique, emitTestName } from "./emit"
+import {
+  vocabBaseOf,
+  vocabBigEndian,
+  vocabByteWidth,
+  vocabFitsInt,
+  vocabHas,
+  vocabIsIntType,
+  vocabIsOptional,
+  vocabReadOps,
+  vocabReadType,
+  vocabValueType,
+  vocabWriteOps,
+} from "../contract/vocab"
+import {
+  EmitOptions,
+  emitClauseFn,
+  emitClauseLines,
+  emitHeaderLines,
+  emitSortedUnique,
+  emitTestName,
+  emitUndefinedWhy,
+} from "./emit"
 import { EMIT_SLOW_SKIP, emitF64IsFinite, emitLiteralHex } from "./lit"
 import { emitTargetOutRefusal, emitTargetWindowRefusal, emitTargetWordsRefusal } from "./target"
 
@@ -441,8 +461,13 @@ const emitRsHelperOp = (ctx: EmitRsContext, e: Expr): string | null => {
   if (op === "zeros") {
     return `_fill(0, ${emitRsWide(ctx, e.args[0])})`
   }
-  if (op === "le64") {
-    return `_le64(${emitRsWide(ctx, e.args[0])})`
+  if (vocabHas(vocabWriteOps(), op)) {
+    return `_int_bytes(${emitRsWide(ctx, e.args[0])}, ${vocabByteWidth(op)}, ${vocabBigEndian(op)})`
+  }
+  if (vocabHas(vocabReadOps(), op)) {
+    const read = `_bytes_int(&u, ${emitRsRef(ctx, e.args[0])}, ${vocabByteWidth(op)}, ${vocabBigEndian(op)})`
+    const ty = vocabReadType(op)
+    return ty === "u64" ? read : `(${read} as ${ty})`
   }
   const one = ["utf8", "ascii", "strLen", "lower", "upper"]
   const oneHelper = ["_utf8(", "_ascii(", "_str_len(", "_shift_case(", "_shift_case("]
@@ -564,25 +589,6 @@ const emitRsBindings = (ctx: EmitRsContext, assert: Expr, indent: string, out: s
     e = body
   }
   return e
-}
-
-/** Whether `e` applies the op `op` anywhere. */
-const emitRsHasOp = (e: Expr, op: string): boolean => {
-  if (e.kind === ExprKind.Op && e.name === op) {
-    return true
-  }
-  for (const a of e.args) {
-    if (emitRsHasOp(a, op)) {
-      return true
-    }
-  }
-  for (const b of e.binds) {
-    if (emitRsHasOp(b.value, op)) {
-      return true
-    }
-  }
-  const body = e.body
-  return body !== null && emitRsHasOp(body, op)
 }
 
 /** The comment above a clause's check: its title and each covered requirement quoted. */
@@ -779,7 +785,8 @@ const emitRsProperty = (ctx: EmitRsContext, k: Clause, samples: Sample[]): strin
     const v = k.forall[j]
     emitRsTable(v.name, v.type, j, samples, out)
   }
-  const usesUnwrap = emitRsHasOp(assert, "unwrap")
+  const undefinedWhy = emitUndefinedWhy(assert)
+  const usesUnwrap = undefinedWhy !== null
   out.push(`    for i in 0..${count} {`)
   ctx.env = new TypeEnv(ctx.c.functions, true)
   const shown: string[] = []
@@ -809,7 +816,9 @@ const emitRsProperty = (ctx: EmitRsContext, k: Clause, samples: Sample[]): strin
   const whereArgs = `i + 1, ${shownArgs.join(", ")}`
   if (usesUnwrap) {
     out.push("        if u.saw_null() || !holds {")
-    out.push(`            let why = if u.saw_null() { "unwrap met a null" } else { "the assertion is false" };`)
+    out.push(
+      `            let why = if u.saw_null() { ${emitRsQuote(undefinedWhy ?? "")} } else { "the assertion is false" };`,
+    )
   } else {
     out.push("        if !holds {")
     out.push(`            let why = "the assertion is false";`)
@@ -1063,8 +1072,19 @@ fn _bitwise(a: &[u8], b: &[u8], k: u8) -> Vec<u8> {
         .collect()
 }
 
-fn _le64(n: i128) -> Vec<u8> {
-    (n as u64).to_le_bytes().to_vec()
+/// n's w bytes, big-endian when be, a negative n in two's complement.
+fn _int_bytes(n: i128, w: usize, be: bool) -> Vec<u8> {
+    let x = n as u128;
+    (0..w).map(|i| (x >> (8 * if be { w - 1 - i } else { i })) as u8).collect()
+}
+
+/// The integer b's w bytes hold; any other length records on u, so the sample fails.
+fn _bytes_int(u: &Unwrap, b: &[u8], w: usize, be: bool) -> u64 {
+    if b.len() != w {
+        u.saw.set(true);
+        return 0;
+    }
+    (0..w).fold(0u64, |x, i| x << 8 | b[if be { i } else { w - 1 - i }] as u64)
 }
 
 fn _utf8(s: &str) -> Vec<u8> {
