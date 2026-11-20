@@ -55,7 +55,7 @@ vector does two things, and no model is involved in either:
    returned the printed vectors and held each property at its samples.
    `spec mutate` (no `--nish` on an install or a `build/seed` checkout)
    finds bugs in the tested functions the contract misses; it exits 1 if
-   no changed line is in them. See [What a pass means](guide/guides/testing.md#what-a-pass-means).
+   no changed line in them can be mutated. See [What a pass means](guide/guides/testing.md#what-a-pass-means).
 11. **Never hand-edit a generated file.** `spec extract` writes
    `contracts/*.json`, `scripts/build-spec.sh` builds `specs/*.xml` from
    `specs/*.md`, and `spec emit` writes the test. Change the source, rerun

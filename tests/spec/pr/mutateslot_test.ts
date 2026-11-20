@@ -8,11 +8,17 @@ import { runWriteInside } from "../../../src/spec/run/run"
 import { prTestCommit, prTestGit, prTestRemove, prTestRepo, prTestWrite } from "./repo"
 
 /**
- * A stub compiler: refuses a module holding the canary, and otherwise links
- * a "binary" that runs the test as a shell script from the root.
+ * A stub compiler: fails with no error located when the slot's module is a
+ * symlink (so the copy must hold a file of its own), refuses a module holding
+ * the canary, and otherwise links a "binary" that runs the test as a shell
+ * script from the root.
  */
 const MUTATESLOT_TEST_NISH: string = `#!/bin/sh
 root=$(cd "$(dirname "$0")/.." && pwd)
+if [ -L "$root/std/m.ts" ]; then
+  echo "the slot's module is a symlink" >&2
+  exit 3
+fi
 if grep -rq 'canary' "$root/std"; then
   printf '%s/std/m.ts:1:1: error: refused\\n1 error\\n' "$root" >&2
   exit 1
