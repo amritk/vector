@@ -101,7 +101,7 @@ class GateBound {
   call: i32[]
   /** Whether it was refused as printed in another test case's call label (gateLabelArgs), which says why. */
   other: boolean
-  /** For a hex value: the section line of each printing that is it. */
+  /** For a hex value or labelled integer: the section line of each printing that is it. */
   shown: i32[]
   constructor(at: string, label: string | null) {
     this.shown = []
@@ -811,7 +811,7 @@ const gateSecLine = (l: GateLits, k: i32): i32 => {
 
 /**
  * The section lines a bound is printed on, for placing it under a case
- * heading: a text's or paired argument's lines, a hex value's or labelled
+ * heading: a text's lines (a paired one's call label's), a hex value's or labelled
  * integer's printings that are it, an empty value's printings; null when it
  * is not placed by line (a decimal fraction, a block of words).
  */
