@@ -1020,6 +1020,128 @@ const fidelityTestLabelHex = (i: i32, sep: string): string => {
 }
 
 /**
+ * A paired argument is still one test case with every other argument: it is
+ * placed on its call label's lines, so the others must be printed there too.
+ * Each row is a name, the params' JSON, the args' JSON, the index of the label
+ * the expected value is printed under, and the finding wanted ("" for none).
+ */
+const fidelityTestPairedRows = (t: Suite): void => {
+  const labels = ['KDF (P="passwd", S="salt")', 'KDF (P="Password", S="NaCl")', "Round n=3", "Round n=5"]
+  const rfc = [
+    "Request for Comments: 4231",
+    "",
+    "1.  Rules",
+    "",
+    "   It MUST derive.",
+    "",
+    "4.  Test Vectors",
+    "",
+    `   ${labels[0]} =`,
+    `   ${fidelityTestLabelHex(0, " ")}`,
+    '   The info string "foo" is used here.',
+    fidelityTestBreak("4231", 4),
+    '   KDF (P="Password",',
+    fidelityTestBreak("4231", 5),
+    '        S="NaCl") =',
+    `   ${fidelityTestLabelHex(1, " ")}`,
+    "",
+    `   ${labels[2]} =`,
+    `   ${fidelityTestLabelHex(2, " ")}`,
+    "",
+    `   ${labels[3]} =`,
+    `   ${fidelityTestLabelHex(3, " ")}`,
+    "",
+  ].join("\n")
+  const strs = `{"name": "p", "type": "string"}, {"name": "s", "type": "string"}`
+  const withN = `{"name": "p", "type": "string"}, {"name": "n", "type": "i32"}`
+  const rows: string[][] = [
+    [
+      "one paired and the other printed only in prose",
+      strs,
+      `{"str": "passwd"}, {"str": "foo"}`,
+      "0",
+      `W1: args[0] "passwd", args[1] "foo" are each printed in RFC §4 ("Test Vectors"), but never on one line together`,
+    ],
+    ["both paired on one line", strs, `{"str": "passwd"}, {"str": "salt"}`, "0", ""],
+    [
+      "both paired, the other on the label's continuation line past a page break",
+      strs,
+      `{"str": "Password"}, {"str": "NaCl"}`,
+      "1",
+      "",
+    ],
+    [
+      "one paired and an unpaired labelled integer from another round",
+      withN,
+      `{"str": "passwd"}, {"int": 3, "label": "n"}`,
+      "0",
+      "nothing pairs a printed string with one of several labelled values",
+    ],
+    [
+      "one paired and the other in another case's call label",
+      strs,
+      `{"str": "passwd"}, {"str": "NaCl"}`,
+      "0",
+      `W1.args[1]: args[1] "NaCl" is printed in the call label "KDF (P="Password", S="NaCl")" in RFC §4 ("Test Vectors"), not in "KDF (P="passwd", S="salt")" that the expected value is printed under: they are different test cases`,
+    ],
+  ]
+  for (const r of rows) {
+    const at = parseInt(r[3])
+    const fn = `{"name": "kdf", "params": [${r[1]}], "returns": "bytes"}`
+    const expect = `{"hex": "${fidelityTestLabelHex(at, "")}", "label": "${fidelityTestLabelJson(labels[at])}"}`
+    fidelityTestRowIs(t, `4231 §4: ${r[0]}`, fidelityTestWrapCall("4231", rfc, fn, "kdf", "4", r[2], expect), r[4])
+  }
+}
+
+/**
+ * A paired argument is placed on its call label's own lines, counted as the
+ * section's non-blank lines: a string printed in prose just after the label,
+ * past a blank line before it or a page break inside it, is not on them.
+ * Each row is a name, the params' JSON, the args' JSON, the label's index and
+ * the string the finding names.
+ */
+const fidelityTestPairedPlaces = (t: Suite): void => {
+  const labels = ['KDF ("pw")', 'KDF (P="pass", S="salt")', "KDF (c=7)"]
+  const rfc = [
+    "Request for Comments: 4231",
+    "",
+    "1.  Rules",
+    "",
+    "   It MUST derive.",
+    "",
+    "4.  Test Vectors",
+    "",
+    `   ${labels[0]}: ${fidelityTestLabelHex(0, "")}`,
+    '   The info string "foo" is used here.',
+    "",
+    '   KDF (P="pass",',
+    fidelityTestBreak("4231", 4),
+    '        S="salt") =',
+    `   ${fidelityTestLabelHex(1, " ")}`,
+    '   The info string "bar" is used here.',
+    "",
+    `   ${labels[2]} =`,
+    `   ${fidelityTestLabelHex(2, " ")}`,
+    '   The info string "baz" is used here.',
+    "",
+  ].join("\n")
+  const strs = `{"name": "p", "type": "string"}, {"name": "s", "type": "string"}`
+  const withC = `{"name": "c", "type": "i32"}, {"name": "s", "type": "string"}`
+  const rows: string[][] = [
+    ["a string in prose on the line after a one-line label", strs, `{"str": "pw"}, {"str": "foo"}`, "0", "foo"],
+    ["a string in prose after a label split by a page break", strs, `{"str": "pass"}, {"str": "bar"}`, "1", "bar"],
+    ["a string in prose beside a paired integer", withC, `{"int": 7, "label": "c"}, {"str": "baz"}`, "2", "baz"],
+  ]
+  for (const r of rows) {
+    const at = parseInt(r[3])
+    const fn = `{"name": "kdf", "params": [${r[1]}], "returns": "bytes"}`
+    const expect = `{"hex": "${fidelityTestLabelHex(at, "")}", "label": "${fidelityTestLabelJson(labels[at])}"}`
+    const want = `args[1] "${r[4]}" are each printed in RFC §4 ("Test Vectors"), but never on one line together`
+    fidelityTestRowIs(t, `4231 §4: ${r[0]}`, fidelityTestWrapCall("4231", rfc, fn, "kdf", "4", r[2], expect), want)
+  }
+}
+
+/**
  * What a call label's variant is, once its test case's inputs are cut out.
  * Each row is a name, the function called, its params' JSON, the args' JSON,
  * the index of the label the expected value is printed under, the finding
@@ -1238,16 +1360,6 @@ const fidelityTestLabels = (t: Suite): void => {
       'N=16384 (S="NaCl")',
       'N=1048576 (S="NaCl")',
     ],
-    [
-      "a labelled f64 is no bound integer: its value beside a paired string is the variant's",
-      "drbg",
-      `{"name": "p", "type": "string"}, {"name": "x", "type": "f64"}`,
-      `{"str": "p"}, {"f64": "1.5", "label": "c"}`,
-      "0",
-      `the value is printed under "DRBG (P="p", c=1.5)", one of "DRBG (P="p", c=1.5)" or "DRBG (P="p", c=4.5)" in RFC §4 ("Test Vectors"), and nothing in the name drbg says which variant`,
-      'DRBG (P="p", c=1.5)',
-      'DRBG (P="p", c=4.5)',
-    ],
   ]
   for (const r of rows) {
     const labels = r.slice(6, r.length)
@@ -1260,6 +1372,45 @@ const fidelityTestLabels = (t: Suite): void => {
       fidelityTestWrapCall("4231", fidelityTestLabelRfc(labels), fn, r[1], "4", r[3], expect),
       r[5],
     )
+  }
+  // A labelled f64 is no bound integer: its name stays in the label, so its
+  // value there is the variant's. It is one of two labelled values beside a
+  // paired string, so the one-test-case refusal comes beside that warning.
+  const drbgLabels = ['DRBG (P="p", c=1.5)', 'DRBG (P="p", c=4.5)']
+  const drbg = fidelityTestWrapCall(
+    "4231",
+    fidelityTestLabelRfc(drbgLabels),
+    `{"name": "drbg", "params": [{"name": "p", "type": "string"}, {"name": "x", "type": "f64"}], "returns": "bytes"}`,
+    "drbg",
+    "4",
+    `{"str": "p"}, {"f64": "1.5", "label": "c"}`,
+    `{"hex": "${fidelityTestLabelHex(0, "")}", "label": "${fidelityTestLabelJson(drbgLabels[0])}"}`,
+  )
+  const drbgOk =
+    drbg.length === 2 &&
+    fidelityTestHas(drbg, "the value is printed under", 'or "DRBG (P="p", c=4.5)"') &&
+    fidelityTestHas(drbg, "W1:", "nothing pairs a printed string with one of several labelled values")
+  t.ok("4231 §4: a labelled f64 is no bound integer: its value beside a paired string is the variant's", drbgOk)
+  if (!drbgOk) {
+    console.log(`drbg:\n${drbg.join("\n")}`)
+  }
+  // An integer the vector binds but its call label does not print (c=9, in
+  // "Round c=9") is not the test case's, so its name stays: c=1 and c=4 still
+  // name two variants though the password beside it pairs.
+  const cLabels = ['KDF (P="passwd", c=1)', 'KDF (P="passwd", c=4)', "Round c=9"]
+  const cGot = fidelityTestWrapCall(
+    "4231",
+    fidelityTestLabelRfc(cLabels),
+    `{"name": "kdf", "params": [{"name": "p", "type": "string"}, {"name": "c", "type": "i32"}], "returns": "bytes"}`,
+    "kdf",
+    "4",
+    `{"str": "passwd"}, {"int": 9, "label": "c"}`,
+    `{"hex": "${fidelityTestLabelHex(0, "")}", "label": "${fidelityTestLabelJson(cLabels[0])}"}`,
+  )
+  const cOk = fidelityTestHas(cGot, "the value is printed under", 'or "KDF (P="passwd", c=4)"')
+  t.ok("4231 §4: an unpaired labelled integer keeps its name in the label while another argument pairs", cOk)
+  if (!cOk) {
+    console.log(`kdf c=9:\n${cGot.join("\n")}`)
   }
   // An integer printed in neither call label (only in "Rounds c=1") leaves
   // the expected value unpaired, so no argument's name is cut from it, and
@@ -1711,6 +1862,8 @@ export const main = (): i32 => {
   fidelityTestOnce(t)
   fidelityTestWrapped(t)
   fidelityTestLabels(t)
+  fidelityTestPairedRows(t)
+  fidelityTestPairedPlaces(t)
   t.ok("iterated findings", it.length === 19)
   if (it.length !== 19) {
     console.log(it.join("\n"))

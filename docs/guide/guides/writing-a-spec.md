@@ -643,8 +643,9 @@ of matching bytes:
   §6.1, or §6.1's key cited from §6.2).
 - **Wrapped statements.** A statement names one value: the first
   `= <hex>` line below it, past any `= f(...)` lines, takes the
-  statement's name, the text before its first `=`, even where that name stands on a line of
-  its own, the call wraps, or a page break comes between; a second
+  statement's name, the text before its first `=` (one word of letters,
+  digits, `_`, `-` and `.`, starting with a letter), even where that name
+  stands on a line of its own, the call wraps, or a page break comes between; a second
   `= <hex>` under it is unnamed. In RFC 9001 Appendix A.1, `client_initial_secret`, then
   `= HKDF-Expand-Label(initial_secret, "client in", "", 32)`, then
   `= c00cf151…`, binds as `{"hex": "c00c…", "label":
@@ -672,11 +673,15 @@ of matching bytes:
 - **Call labels.** A string or integer printed inside the expected
   value's label, in its `( … )` (`"passwd"`, `c=1` in
   `PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)`), is one test
-  case with it, and is not read by line or round. One printed in another
+  case with it, placed on the label's own lines rather than by round, and
+  every other argument must be printed there too: beside `"passwd"`, a
+  string printed only in prose, or one of several `n=` values printed outside
+  the label, is refused. One printed in another
   call label of the section instead (`"NaCl"`, `c=80000` beside case 1's
   value) is refused: "they are different test cases". Call labels that
   differ only in the arguments the vector binds (its strings, and the
-  number after each of its integer arguments' names) are one variant. Any
+  number after each of its integer arguments' names that a call label
+  prints) are one variant. Any
   other difference inside the `( … )` names a variant: with only `"Jefe"`
   bound, `SHA3 (msg="Jefe", bits=512)` is refused for `sha3_256`.
 - **Named test cases.** Where a section prints several test cases under

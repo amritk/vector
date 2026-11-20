@@ -37,6 +37,7 @@ Generated from [src/spec/source/rfc.ts](https://github.com/amritk/vector/blob/ma
 - [`rfcHexValues`](#rfchexvalues)
 - [`rfcUnvaluedLabels`](#rfcunvaluedlabels)
 - [`rfcUnvaluedLines`](#rfcunvaluedlines)
+- [`RFC_CALL_LINES`](#rfc_call_lines)
 - [`rfcHexPrinted`](#rfchexprinted)
 - [`rfcQuoteProblem`](#rfcquoteproblem)
 
@@ -523,6 +524,16 @@ the section
 each name's index in the section's lines, in the same order
 
 </scalar-field>
+
+<a id="rfc_call_lines"></a>
+
+### RFC_CALL_LINES
+
+The most lines a call label may wrap over.
+
+```ts
+const RFC_CALL_LINES: i32 = 4
+```
 
 ### rfcHexPrinted
 

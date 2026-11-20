@@ -40,6 +40,7 @@ import {
 import { SourceSet, sourceFind } from "../source/load"
 import {
   HexValue,
+  RFC_CALL_LINES,
   RfcSection,
   rfcCaseSection,
   rfcHasCases,
@@ -92,12 +93,18 @@ class GateBound {
   paired: boolean
   /** For an expected value: whether arguments are paired with it by its call label. */
   callArgs: boolean
+  /** For a paired argument: the lines (of GateLits.lines) its call label is printed on. */
+  call: i32[]
+  /** Whether it was refused as printed in another test case's call label (gateLabelArgs), which says why. */
+  other: boolean
   constructor(at: string, label: string | null) {
     this.at = at
     this.label = label
     this.num = ""
     this.paired = false
     this.callArgs = false
+    this.call = []
+    this.other = false
     this.of = 0
     this.has = []
     this.printed = []
@@ -677,6 +684,61 @@ const gateInLabel = (b: GateBound, label: string): boolean => {
   return name !== null && gateIntRounds(rfcNormalize(label), name, b.num).length > 0
 }
 
+/**
+ * The lines (of GateLits.lines, which holds no blank line) a call label is
+ * printed on, for each printing of it that holds the expected value: from the
+ * line that names the value, up to the line that ends the label.
+ */
+const gateCallLines = (l: GateLits, e: GateBound, label: string): i32[] => {
+  const want = rfcNormalize(label)
+  const out: i32[] = []
+  // A label printed once keeps no rounds (gateRounds): its one printing is it.
+  const at: i32[] = []
+  for (const r of e.has) {
+    if (r < e.printed.length) {
+      at.push(e.printed[r])
+    }
+  }
+  if (e.printed.length === 1) {
+    at.push(e.printed[0])
+  }
+  for (const line of at) {
+    // GateLits.lines keeps a section line only when it is not blank.
+    let k = 0
+    for (let i = 0; i < line && i < l.sec.lines.length; i++) {
+      if (rfcNormalize(l.sec.lines[i]).length > 0) {
+        k = k + 1
+      }
+    }
+    // The walk ends at the label: its printing starts on that line, and a
+    // call label wraps over at most RFC_CALL_LINES (rfcHexText).
+    const joined: string[] = []
+    for (let i = line; i >= 0 && i < l.sec.lines.length; i++) {
+      const t = rfcNormalize(l.sec.lines[i])
+      if (t.length === 0) {
+        continue
+      }
+      joined.push(t)
+      out.push(k)
+      k = k + 1
+      if (joined.join(" ").indexOf(want) >= 0) {
+        break
+      }
+    }
+  }
+  return out
+}
+
+/** A text or paired bound's lines: where it is printed whole, and its call label's. */
+const gateBoundPlaces = (b: GateBound): i32[] => {
+  const lines = b.lines
+  const out: i32[] = lines !== null ? lines.slice(0) : []
+  for (const n of b.call) {
+    out.push(n)
+  }
+  return out
+}
+
 /** An argument, for a message: `args[0] "salt"`, `args[2] c=1`. */
 const gateArgText = (b: GateBound): string => {
   const name = b.label
@@ -700,10 +762,12 @@ const gateLabelArgs = (l: GateLits, args: i32): void => {
   if (label === null) {
     return
   }
+  const call = gateCallLines(l, e, label)
   for (let a = 0; a < args; a++) {
     const b = l.bounds[a]
     if (gateInLabel(b, label)) {
       b.paired = true
+      b.call = call
       e.callArgs = true
       continue
     }
@@ -716,6 +780,7 @@ const gateLabelArgs = (l: GateLits, args: i32): void => {
           `${gateArgText(b)} is printed in the call label "${rfcNormalize(vl)}" in ${l.inSection}, not in "${rfcNormalize(label)}" that the expected value is printed under: they are different test cases`,
           false,
         )
+        b.other = true
         break
       }
     }
@@ -729,34 +794,34 @@ const gateLabelArgs = (l: GateLits, args: i32): void => {
 const gateOneTestCase = (l: GateLits, args: i32, sec: RfcSection): void => {
   const id = l.id
   const inSection = `${l.where} ("${sec.title}")`
-  const texts = l.bounds.filter((b: GateBound): boolean => b.lines !== null && !b.paired)
+  // A paired argument is placed by its call label's lines, so it is still
+  // one test case with every other argument, not exempt from the checks.
+  // One refused as another case's is not placed again: its refusal says why.
+  const texts = l.bounds.filter((b: GateBound): boolean => (b.lines !== null || b.paired) && !b.other)
   if (texts.length > 1) {
-    const first = texts[0].lines
     let shared = false
-    if (first !== null) {
-      for (const line of first) {
-        if (texts.every((b: GateBound): boolean => gateBoundHasLine(b, line))) {
-          shared = true
-        }
+    for (const line of gateBoundPlaces(texts[0])) {
+      if (texts.every((b: GateBound): boolean => gateBoundHasLine(b, line))) {
+        shared = true
       }
     }
     if (!shared) {
       gateNote(
         l,
         id,
-        `${texts.map(gateBoundText).join(", ")} are each printed in ${inSection}, but never on one line together, so nothing pairs them as one test case`,
+        `${texts.map(gateArgText).join(", ")} are each printed in ${inSection}, but never on one line together, so nothing pairs them as one test case`,
         false,
       )
     }
   }
-  const repeated = l.bounds.filter((b: GateBound): boolean => b.of > 1 && !b.paired)
+  const repeated = l.bounds.filter((b: GateBound): boolean => b.of > 1 && !b.paired && !b.other)
   if (texts.length > 0 && repeated.length > 0) {
     // A string is placed by its line and a labelled value by its round;
     // nothing relates the two.
     gateNote(
       l,
       id,
-      `${texts.map(gateBoundText).join(", ")} and ${repeated.map(gateBoundRound).join(", ")} in ${inSection}: nothing pairs a printed string with one of several labelled values: cite the subsection that holds one test case`,
+      `${texts.map(gateArgText).join(", ")} and ${repeated.map(gateBoundRound).join(", ")} in ${inSection}: nothing pairs a printed string with one of several labelled values: cite the subsection that holds one test case`,
       false,
     )
   } else if (repeated.length > 1 && repeated.some((b: GateBound): boolean => b.of !== repeated[0].of)) {
@@ -874,10 +939,10 @@ const gateOnceRound = (l: GateLits, repeated: GateBound[], shared: i32[], inSect
   }
 }
 
-/** Whether a text bound is printed on `line`. */
+/** Whether a text bound is printed on `line`, or a paired one's call label is. */
 const gateBoundHasLine = (b: GateBound, line: i32): boolean => {
   const lines = b.lines
-  return lines !== null && lines.indexOf(line) >= 0
+  return (lines !== null && lines.indexOf(line) >= 0) || b.call.indexOf(line) >= 0
 }
 
 /** A bound's label, or "". */
@@ -1314,9 +1379,10 @@ const gateCallHead = (l: GateLits, b: GateBound, label: string): string => {
       if (a.paired) {
         out = gateLabelUnText(out, a.text)
       }
-    } else if (name !== null && a.num.length > 0) {
-      // An integer the vector binds under a name is an argument wherever
-      // that name is printed, whichever value it prints there.
+    } else if ((a.paired || a.other) && name !== null) {
+      // An integer the vector binds and a call label prints (its own, or
+      // another case's) is an argument wherever that name is printed,
+      // whichever value it prints there.
       names.push(name)
     }
   }

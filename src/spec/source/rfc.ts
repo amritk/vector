@@ -1023,7 +1023,7 @@ const rfcParenDepth = (t: string): i32 => {
 }
 
 /** The most lines a call label may wrap over. */
-const RFC_CALL_LINES: i32 = 4
+export const RFC_CALL_LINES: i32 = 4
 
 /** The hex after the `=` a line starts with (`    = 7db5df06…`), its blanks dropped; null when the line is not one. */
 const rfcContinuedHex = (line: string): string | null => {
