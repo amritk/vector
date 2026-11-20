@@ -107,9 +107,10 @@ The types are those of the table in [Writing a
 spec](../../../docs/guide/guides/writing-a-spec.md#types): `u8[]`, `string`,
 `boolean`, `Secret<u8[]>`, the fixed-width integers `i8` … `i64` and
 `u8` … `u64`, `f64`, and the word arrays `u16[]`, `u32[]` and `u64[]`. A
-Nish test can hold all but `i8` and `i16`, which Nish lacks, so the emitter
-refuses them; only the Nish test holds word arrays. Add `| null` to `u8[]`,
-a word array or `string`, and to `Secret<u8[]>` as a result only. Give
+Nish test holds all but `i8` and `i16`, which the emitter refuses; only
+it holds word arrays. Add `| null` to `u8[]`,
+a word array or `string`, and to `Secret<u8[]>` as a result only; a
+property passes `u8[]` to a `Secret<u8[]>` parameter. Give
 word-array cases as vectors: a property over or calling word arrays is
 refused. `u8[] /* window */` is one bytes parameter for a `(buf, off, len)`,
 tested at a nonzero offset, Nish test only.
@@ -265,8 +266,8 @@ profile extracts to, run
     expected value it is a `spec` source (the covered requirement states it);
     for any other value it is a `cite` of that section, which must print the
     value.
-  - A code span holding a command: the value is its trimmed stdout, so the
-    Expected cell must be bytes or a string.
+  - A code span holding a command: its trimmed stdout, as hex bytes, a
+    string, a decimal int, `true`, `false` or `null` (no f64 or words).
 - **Values from an RFC:**
   - Each one is a *whole* printed value, never a prefix or a tail. A word
     array is a whole printed block of words, word for word.

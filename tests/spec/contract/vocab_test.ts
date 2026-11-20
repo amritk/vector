@@ -6,6 +6,7 @@ import { typesWordsKey, typesWordsKind } from "../../../src/spec/contract/types"
 import {
   Outcome,
   VOCAB_JSON_SAFE_MAX,
+  VOCAB_SECRET_FORM,
   vocabBaseOf,
   vocabBaseTypes,
   vocabBigEndian,
@@ -21,6 +22,7 @@ import {
   vocabIsIntType,
   vocabIsJsonSafe,
   vocabIsOptional,
+  vocabIsSecretOp,
   vocabIsWordType,
   vocabLanguages,
   vocabLevels,
@@ -108,6 +110,13 @@ export const main = (): i32 => {
   t.eqStr("base of u8?", vocabBaseOf("u8?"), "u8")
   t.eqStr("base of bytes", vocabBaseOf("bytes"), "bytes")
   t.eqStr("secret-bytes is bytes", vocabValueType("secret-bytes?"), "bytes?")
+  for (const op of ["secret", "expose", "wipe"]) {
+    t.ok(`${op} is a Secret op`, vocabIsSecretOp(op))
+  }
+  for (const op of ["secrets", "Secret", "unwrap", ""]) {
+    t.ok(`"${op}" is not a Secret op`, !vocabIsSecretOp(op))
+  }
+  t.ok("the Secret form names both directions", VOCAB_SECRET_FORM.indexOf("wraps it in secret()") > 0)
   t.ok("bytes? return outcome", vocabOutcomeOf(true, "bytes?") === Outcome.RefusingReturn)
   t.ok(
     "param outcomes",

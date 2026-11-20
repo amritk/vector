@@ -127,6 +127,18 @@ export const main = (): i32 => {
   // Errors.
   t.eqStr("an unknown variable", typingOf(`{"var": "z"}`, true), `assert: unknown variable "z"`)
   t.eqStr("an unknown function", typingOf(`{"call": "nope", "args": []}`, true), `assert: unknown function "nope"`)
+  const secretForm =
+    "a property passes u8[] to a Secret<u8[]> parameter; the test wraps it in secret() and exposes a Secret result"
+  const secretCalls: string[][] = [
+    ["secret", `assert: unknown function "secret": ${secretForm}`],
+    ["expose", `assert: unknown function "expose": ${secretForm}`],
+    ["wipe", `assert: unknown function "wipe": ${secretForm}`],
+    ["secrets", `assert: unknown function "secrets"`],
+    ["Secret", `assert: unknown function "Secret"`],
+  ]
+  for (const k of secretCalls) {
+    t.eqStr(`a call of ${k[0]}`, typingOf(`{"call": "${k[0]}", "args": [{"var": "b"}]}`, true), k[1])
+  }
   t.eqStr("an unknown operator", typingOf(`{"op": "pow", "args": []}`, true), `assert: unknown operator "pow"`)
   t.eqStr("arity of a call", typingOf(`{"call": "enc", "args": []}`, true), "assert: enc takes 1 argument(s), got 0")
   t.eqStr("arity of an op", typingOf(`{"op": "not", "args": []}`, true), "assert: not takes 1 argument(s), got 0")

@@ -320,6 +320,19 @@ export const vocabOutcomeOf = (isReturn: boolean, t: string): Outcome => {
   return isReturn ? Outcome.RefusingReturn : Outcome.OptionalInput
 }
 
+/** How a property reaches a Secret<u8[]> parameter, which every refusal of a Secret form names. */
+export const VOCAB_SECRET_FORM: string =
+  "a property passes u8[] to a Secret<u8[]> parameter; the test wraps it in secret() and exposes a Secret result"
+
+/**
+ * Whether a name is one of the Secret ops a test calls for a property, which
+ * a property itself never writes.
+ *
+ * @param name a function name
+ * @returns true for secret, expose and wipe
+ */
+export const vocabIsSecretOp = (name: string): boolean => name === "secret" || name === "expose" || name === "wipe"
+
 /**
  * The type a value of a signature type has once it is read: secret bytes are
  * bytes to a test, which only compares them.

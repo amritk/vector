@@ -606,7 +606,7 @@ No other property is allowed.
 
 ### `vectorSource`
 
-Where the expected value comes from: printed in a cited section; the stdout of a command (run under --run-sources); or, for an expected null or bool, a section that states it.
+Where the expected value comes from: printed in a cited section; the stdout of a command (run under --run-sources), which prints bytes as hex, a string, an integer in decimal, or true, false or null; or, for an expected null or bool, a section that states it.
 
 One or more of:
 

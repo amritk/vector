@@ -8,12 +8,14 @@
 import { ExprKind, LitKind, typesIsWords, typesWordsKey } from "./types"
 import { Expr, FnSig, Literal } from "./types"
 import {
+  VOCAB_SECRET_FORM,
   vocabBaseOf,
   vocabByteWidth,
   vocabFitsInt,
   vocabHas,
   vocabIsIntType,
   vocabIsOptional,
+  vocabIsSecretOp,
   vocabReadOps,
   vocabReadType,
   vocabValueType,
@@ -256,7 +258,8 @@ const typingCall = (e: Expr, env: TypeEnv, at: string, errors: string[]): string
   }
   const sig = typingFn(env, e.name)
   if (sig === null) {
-    errors.push(`${at}: unknown function "${e.name}"`)
+    const form = vocabIsSecretOp(e.name) ? `: ${VOCAB_SECRET_FORM}` : ""
+    errors.push(`${at}: unknown function "${e.name}"${form}`)
     return null
   }
   if (e.args.length !== sig.params.length) {
