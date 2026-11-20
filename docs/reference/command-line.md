@@ -25,7 +25,7 @@ vector -v, --version | -h, --help
 | [`vector spec frozen`](command-line/spec-frozen.md) | Refuse a change that edits a frozen contract |
 | [`vector spec stale`](command-line/spec-stale.md) | Refuse a generated test that no longer matches its contract |
 | [`vector spec exports`](command-line/spec-exports.md) | Refuse a new export its contract does not cover |
-| [`vector spec mutate`](command-line/spec-mutate.md) | Mutate the changed lines and refuse mutants the test misses |
+| [`vector spec mutate`](command-line/spec-mutate.md) | Mutate the changed lines the contract's functions reach and refuse mutants the test misses |
 
 ## Global flags
 

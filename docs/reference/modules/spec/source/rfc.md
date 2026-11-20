@@ -37,6 +37,7 @@ Generated from [src/spec/source/rfc.ts](https://github.com/amritk/vector/blob/ma
 - [`rfcHexValues`](#rfchexvalues)
 - [`rfcUnvaluedLabels`](#rfcunvaluedlabels)
 - [`rfcUnvaluedLines`](#rfcunvaluedlines)
+- [`RFC_CALL_LINES`](#rfc_call_lines)
 - [`rfcHexPrinted`](#rfchexprinted)
 - [`rfcQuoteProblem`](#rfcquoteproblem)
 
@@ -86,6 +87,15 @@ the section's lines, its subsections' included
 its lines up to its first subsection
 
 </scalar-field>
+
+#### RfcSection.codeLines
+
+Which of `lines` are a line of a code block or artwork (each an index),
+as an XML source marks them; RFC text marks none.
+
+```ts
+codeLines: i32[]
+```
 
 #### RfcSection.id
 
@@ -188,6 +198,16 @@ the value's lowercase hex
 the name it is printed under, or null
 
 </scalar-field>
+
+#### HexValue.end
+
+The index of the last line that name is printed on: the line a call
+label wrapped over several lines closes on, `line` otherwise; -1 when it
+was not read from a section.
+
+```ts
+end: i32
+```
 
 #### HexValue.hex
 
@@ -514,6 +534,16 @@ the section
 each name's index in the section's lines, in the same order
 
 </scalar-field>
+
+<a id="rfc_call_lines"></a>
+
+### RFC_CALL_LINES
+
+The most lines a call label may wrap over.
+
+```ts
+const RFC_CALL_LINES: i32 = 4
+```
 
 ### rfcHexPrinted
 

@@ -6,8 +6,11 @@ import { typesWordsKey, typesWordsKind } from "../../../src/spec/contract/types"
 import {
   Outcome,
   VOCAB_JSON_SAFE_MAX,
+  VOCAB_SECRET_FORM,
   vocabBaseOf,
   vocabBaseTypes,
+  vocabBigEndian,
+  vocabByteWidth,
   vocabCompareDecimal,
   vocabFitsInt,
   vocabHas,
@@ -19,16 +22,20 @@ import {
   vocabIsIntType,
   vocabIsJsonSafe,
   vocabIsOptional,
+  vocabIsSecretOp,
   vocabIsWordType,
   vocabLanguages,
   vocabLevels,
   vocabLiteralKinds,
   vocabOps,
   vocabOutcomeOf,
+  vocabReadOps,
+  vocabReadType,
   vocabSigTypes,
   vocabValueType,
   vocabWordDigits,
   vocabWordTypes,
+  vocabWriteOps,
 } from "../../../src/spec/contract/vocab"
 
 /** The strings of a JSON array. */
@@ -103,6 +110,13 @@ export const main = (): i32 => {
   t.eqStr("base of u8?", vocabBaseOf("u8?"), "u8")
   t.eqStr("base of bytes", vocabBaseOf("bytes"), "bytes")
   t.eqStr("secret-bytes is bytes", vocabValueType("secret-bytes?"), "bytes?")
+  for (const op of ["secret", "expose", "wipe"]) {
+    t.ok(`${op} is a Secret op`, vocabIsSecretOp(op))
+  }
+  for (const op of ["secrets", "Secret", "unwrap", ""]) {
+    t.ok(`"${op}" is not a Secret op`, !vocabIsSecretOp(op))
+  }
+  t.ok("the Secret form names both directions", VOCAB_SECRET_FORM.indexOf("wraps it in secret()") > 0)
   t.ok("bytes? return outcome", vocabOutcomeOf(true, "bytes?") === Outcome.RefusingReturn)
   t.ok(
     "param outcomes",
@@ -165,5 +179,29 @@ export const main = (): i32 => {
     )
   }
   t.ok("8-digit words are not 4-digit words", !charsIsWordList(["11111111"], 4))
+
+  // The byte-order ops: each write and read op is an op, with its width, order and read type.
+  const writes = ["le16", "le32", "le64", "be16", "be32", "be64"]
+  const writeWidth: i32[] = [2, 4, 8, 2, 4, 8]
+  t.eqStr("the write ops", vocabWriteOps().join(" "), writes.join(" "))
+  for (let i = 0; i < writes.length; i++) {
+    const op = writes[i]
+    t.ok(`${op} is an op`, vocabHas(vocabOps(), op))
+    t.ok(`${op} writes ${writeWidth[i]} bytes`, vocabByteWidth(op) === writeWidth[i])
+    t.ok(`${op} is ${i >= 3 ? "big" : "little"}-endian`, vocabBigEndian(op) === i >= 3)
+  }
+  const reads = ["leU16", "leU32", "leU64", "beU16", "beU32", "beU64", "leI32", "leI64", "beI32", "beI64"]
+  const readType = ["u16", "u32", "u64", "u16", "u32", "u64", "i32", "i64", "i32", "i64"]
+  const readWidth: i32[] = [2, 4, 8, 2, 4, 8, 4, 8, 4, 8]
+  const readBig = [false, false, false, true, true, true, false, false, true, true]
+  t.eqStr("the read ops", vocabReadOps().join(" "), reads.join(" "))
+  for (let i = 0; i < reads.length; i++) {
+    const op = reads[i]
+    t.ok(`${op} is an op`, vocabHas(vocabOps(), op))
+    t.eqStr(`${op} reads a ${readType[i]}`, vocabReadType(op), readType[i])
+    t.ok(`${op} reads ${readWidth[i]} bytes`, vocabByteWidth(op) === readWidth[i])
+    t.ok(`${op}'s order`, vocabBigEndian(op) === readBig[i])
+  }
+  t.ok("no 16-bit signed read", !vocabHas(vocabOps(), "leI16") && !vocabHas(vocabOps(), "beI16"))
   return t.done()
 }

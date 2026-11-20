@@ -144,7 +144,22 @@ export const vocabOps = (): string[] => [
   "-",
   "*",
   "%",
+  "le16",
+  "le32",
   "le64",
+  "be16",
+  "be32",
+  "be64",
+  "leU16",
+  "leU32",
+  "leU64",
+  "beU16",
+  "beU32",
+  "beU64",
+  "leI32",
+  "leI64",
+  "beI32",
+  "beI64",
   "<",
   "<=",
   ">",
@@ -163,6 +178,57 @@ export const vocabOps = (): string[] => [
   "ascii",
   "charAt",
 ]
+
+/**
+ * The ops that write an integer as its bytes: le16 to be64, each the low
+ * 2, 4 or 8 bytes of its two's complement, little- or big-endian.
+ *
+ * @returns the write ops
+ */
+export const vocabWriteOps = (): string[] => ["le16", "le32", "le64", "be16", "be32", "be64"]
+
+/**
+ * The ops that read exactly 2, 4 or 8 bytes back as an integer: leU16 to
+ * beI64. There is no 16-bit signed read.
+ *
+ * @returns the read ops
+ */
+export const vocabReadOps = (): string[] => [
+  "leU16",
+  "leU32",
+  "leU64",
+  "beU16",
+  "beU32",
+  "beU64",
+  "leI32",
+  "leI64",
+  "beI32",
+  "beI64",
+]
+
+/**
+ * How many bytes a write or read op takes: 2, 4 or 8.
+ *
+ * @param op a write or read op
+ * @returns its width in bytes
+ */
+export const vocabByteWidth = (op: string): i32 => parseInt(op.substring(op.length - 2)) >> 3
+
+/**
+ * Whether a write or read op is big-endian.
+ *
+ * @param op a write or read op
+ * @returns true for the `be` ops
+ */
+export const vocabBigEndian = (op: string): boolean => op.startsWith("be")
+
+/**
+ * The integer type a read op gives: `beU32` gives u32.
+ *
+ * @param op a read op
+ * @returns its integer type
+ */
+export const vocabReadType = (op: string): string => `${op.substring(2, 3) === "U" ? "u" : "i"}${op.substring(3)}`
 
 /**
  * The requirement levels: the BCP 14 keywords, and DEFINITION.
@@ -253,6 +319,19 @@ export const vocabOutcomeOf = (isReturn: boolean, t: string): Outcome => {
   }
   return isReturn ? Outcome.RefusingReturn : Outcome.OptionalInput
 }
+
+/** How a property reaches a Secret<u8[]> parameter, which every refusal of a Secret form names. */
+export const VOCAB_SECRET_FORM: string =
+  "a property passes u8[] to a Secret<u8[]> parameter; the test wraps it in secret() and exposes a Secret result"
+
+/**
+ * Whether a name is one of the Secret ops a test calls for a property, which
+ * a property itself never writes.
+ *
+ * @param name a function name
+ * @returns true for secret, expose and wipe
+ */
+export const vocabIsSecretOp = (name: string): boolean => name === "secret" || name === "expose" || name === "wipe"
 
 /**
  * The type a value of a signature type has once it is read: secret bytes are

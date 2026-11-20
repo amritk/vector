@@ -1,0 +1,2 @@
+vector: tests/fixtures/base64-out/contracts/base64-out.json: base64EncodeInto: src is a window (buf, off, len), which is not emitted for Go yet; emit the Nish test
+vector: tests/fixtures/base64-out/contracts/base64-out.json: base64EncodeInto: its result is an out buffer (out, at) -> end, which is not emitted for Go yet; emit the Nish test

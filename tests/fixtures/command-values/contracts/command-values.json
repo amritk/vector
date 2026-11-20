@@ -1,0 +1,185 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "command-values",
+  "source": {
+    "title": "Fixture: command sources that print an integer, a bool or null",
+    "main": "command-values",
+    "sha256": "eb65aced5535cb7e72b265430fd1885cbb9c3c7b91cf8d389a357f2f27272e9f"
+  },
+  "sources": [
+    {
+      "id": "command-values",
+      "path": "../specs/command-values.xml"
+    }
+  ],
+  "target": {
+    "module": "fixture/varint"
+  },
+  "requirements": [
+    {
+      "id": "R-READ",
+      "section": "3",
+      "level": "MUST",
+      "quote": "varintRead MUST return the value an eight-byte varint encodes."
+    }
+  ],
+  "exclusions": [],
+  "functions": [
+    {
+      "name": "varintRead",
+      "params": [
+        {
+          "name": "b",
+          "type": "bytes"
+        }
+      ],
+      "returns": "u64"
+    },
+    {
+      "name": "varintSigned",
+      "params": [
+        {
+          "name": "b",
+          "type": "bytes"
+        }
+      ],
+      "returns": "i64"
+    },
+    {
+      "name": "varintMinimal",
+      "params": [
+        {
+          "name": "b",
+          "type": "bytes"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "varintFind",
+      "params": [
+        {
+          "name": "b",
+          "type": "bytes"
+        }
+      ],
+      "returns": "i32?"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "V-WIDE",
+      "title": "an integer above 2^53",
+      "covers": ["R-READ"],
+      "source": {
+        "command": "printf 151288809941952652"
+      },
+      "section": "4",
+      "call": "varintRead",
+      "args": [
+        {
+          "hex": "c2197c5eff14e88c"
+        }
+      ],
+      "expect": {
+        "int": "151288809941952652"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-NEG",
+      "title": "a negative integer",
+      "covers": ["R-READ"],
+      "source": {
+        "command": "echo -1"
+      },
+      "section": "4",
+      "call": "varintSigned",
+      "args": [
+        {
+          "hex": "ff"
+        }
+      ],
+      "expect": {
+        "int": -1
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-ZERO",
+      "title": "zero, the output trimmed",
+      "covers": ["R-READ"],
+      "source": {
+        "command": "printf '0\\n\\n'"
+      },
+      "section": "4",
+      "call": "varintSigned",
+      "args": [
+        {
+          "hex": "00"
+        }
+      ],
+      "expect": {
+        "int": 0
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-TRUE",
+      "title": "a bool",
+      "covers": ["R-READ"],
+      "source": {
+        "command": "echo true"
+      },
+      "section": "4",
+      "call": "varintMinimal",
+      "args": [
+        {
+          "hex": "25"
+        }
+      ],
+      "expect": {
+        "bool": true
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-FALSE",
+      "title": "the other bool",
+      "covers": ["R-READ"],
+      "source": {
+        "command": "echo false"
+      },
+      "section": "4",
+      "call": "varintMinimal",
+      "args": [
+        {
+          "hex": "4025"
+        }
+      ],
+      "expect": {
+        "bool": false
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-NULL",
+      "title": "null",
+      "covers": ["R-READ"],
+      "source": {
+        "command": "echo null"
+      },
+      "section": "4",
+      "call": "varintFind",
+      "args": [
+        {
+          "hex": "01"
+        }
+      ],
+      "expect": {
+        "null": true
+      }
+    }
+  ]
+}

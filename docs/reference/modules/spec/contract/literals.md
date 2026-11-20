@@ -36,6 +36,8 @@ Generated from [src/spec/contract/literals.ts](https://github.com/amritk/vector/
 - [`literalsParseCall`](#literalsparsecall)
 - [`literalsParse`](#literalsparse)
 - [`literalsByteLength`](#literalsbytelength)
+- [`LITERALS_PRINTABLE`](#literals_printable)
+- [`literalsPrintable`](#literalsprintable)
 - [`literalsKindOf`](#literalskindof)
 - [`literalsQuote`](#literalsquote)
 - [`literalsSettle`](#literalssettle)
@@ -526,6 +528,39 @@ the literal
 <scalar-field name="returns" type="i64">
 
 the byte count, or -1 when the literal is not bytes
+
+</scalar-field>
+
+<a id="literals_printable"></a>
+
+### LITERALS_PRINTABLE
+
+What a command source's Expected may be: the kinds `spec/gates/run` compares with its output.
+
+```ts
+const LITERALS_PRINTABLE: string
+```
+
+### literalsPrintable
+
+Whether a command source may expect a literal of this kind: bytes, a
+string, an integer, a bool or null, each with one canonical text that
+`spec/gates/run` compares with what the command printed. An f64 has no one
+text, and words are bytes printed in groups.
+
+```ts
+function literalsPrintable(k: LitKind): boolean
+```
+
+<scalar-field name="k" type="LitKind" required>
+
+the literal's kind
+
+</scalar-field>
+
+<scalar-field name="returns" type="boolean">
+
+whether a command's output is compared with it
 
 </scalar-field>
 

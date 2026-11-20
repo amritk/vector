@@ -20,7 +20,7 @@ The 3 JSON Schemas in `schemas/`.
 
 <scalar-card title="Modules" icon="phosphor/regular/books" href="#modules">
 
-The 118 source files of `src/`, from their doc comments.
+The 120 source files of `src/`, from their doc comments.
 
 </scalar-card>
 
@@ -44,7 +44,7 @@ The 118 source files of `src/`, from their doc comments.
 | [`cli/spec-exports`](modules/cli/spec-exports.md) | `vector spec exports`: refuse a new export its contract does not cover. |
 | [`cli/spec-extract`](modules/cli/spec-extract.md) | `vector spec extract`: extract a contract from a kramdown-rfc spec's XML. |
 | [`cli/spec-frozen`](modules/cli/spec-frozen.md) | `vector spec frozen`: refuse a change that edits a frozen contract. |
-| [`cli/spec-mutate`](modules/cli/spec-mutate.md) | `vector spec mutate`: mutate the changed lines and refuse mutants the test misses. |
+| [`cli/spec-mutate`](modules/cli/spec-mutate.md) | `vector spec mutate`: mutate the changed lines of the contract's module and refuse mutants the test misses. |
 | [`cli/spec-run`](modules/cli/spec-run.md) | `vector spec run`: emit a contract's test and run it. |
 | [`cli/spec-stale`](modules/cli/spec-stale.md) | `vector spec stale`: refuse a generated test that no longer matches its contract. |
 | [`cli/verify`](modules/cli/verify.md) | `vector verify`: prove a program meets its spec plan. |
@@ -75,6 +75,7 @@ The 118 source files of `src/`, from their doc comments.
 | [`lang/zig`](modules/lang/zig.md) | the Zig table: how Zig writes each construct of the contract vocabulary, and what it drops. |
 | [`main`](modules/main.md) | the binary's entry point. |
 | [`spec/check`](modules/spec/check.md) | the pipeline every contract goes through: an ordered registry of gates, each a top-level function that reads the contract and returns its findings. |
+| [`spec/contract/capacity`](modules/spec/contract/capacity.md) | The capacity of an out buffer: how many bytes a function that writes its result into `(out, at)` may write after `at`. |
 | [`spec/contract/chars`](modules/spec/contract/chars.md) | the character-level checks a contract's text needs: UTF-8 decoding one code point at a time, control characters, and the patterns its ids, sections and numbers are written in. |
 | [`spec/contract/contract`](modules/spec/contract/contract.md) | the entry to a contract: read its JSON, check its values, and hand back the model of `spec/contract/types`. |
 | [`spec/contract/f64`](modules/spec/contract/f64.md) | a contract's f64 values: the text a literal is written in, and the binary64 encoding (IEEE 754-2019 §3.4) it reads as. |
@@ -121,6 +122,7 @@ The 118 source files of `src/`, from their doc comments.
 | [`spec/pr/mutaterun`](modules/spec/pr/mutaterun.md) | runs a test against each mutant of a module, several at once. |
 | [`spec/pr/rename`](modules/spec/pr/rename.md) | the one change that may touch both sides of a frozen contract: renaming the functions it tests, and nothing else. |
 | [`spec/pr/report`](modules/spec/pr/report.md) | what a PR gate found, and how it prints: as text, as markdown for a PR comment, or as JSON. |
+| [`spec/pr/scope`](modules/spec/pr/scope.md) | the code a contract tests: the module's top-level declarations its functions reach. |
 | [`spec/pr/stale`](modules/spec/pr/stale.md) | whether a generated test was emitted from the contract as it is now: its header comment's one `// vector-contract-sha256: <hex>` line must name the SHA-256 of the contract file's bytes. |
 | [`spec/profile/profile`](modules/spec/profile/profile.md) | the vector profile: what an RFC XML v3 spec, built by kramdown-rfc and `xml2rfc --v2v3`, must say for vector to read a contract from it, and the reading. |
 | [`spec/report/common`](modules/spec/report/common.md) | what every format of the check's report shares: the status, the findings placed where they are, the warnings shown, and how a citation, a requirement's evidence and a long text are written. |

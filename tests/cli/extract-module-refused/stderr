@@ -1,2 +1,2 @@
-vector: tests/fixtures/module-refused/module-refused.xml:46:1: `nish/net/Quic-packet` is not a module path; write <root>/<path>, lowercase segments split by /
+vector: tests/fixtures/module-refused/module-refused.xml:46:1: `nish/net/Quic-packet` is not a module path; write <root>/<segment>/…, each segment [a-z][a-z0-9_]*(-[a-z0-9][a-z0-9_]*)*, words joined by single - (RFC 3986 §3.3)
 vector: tests/fixtures/module-refused/module-refused.xml:77: R-RFC-VECTORS is not in Section 10 of RFC4648: "The base 16 encoding of "f" is "66"."

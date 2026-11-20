@@ -23,6 +23,7 @@ Generated from [src/spec/emit/target.ts](https://github.com/amritk/vector/blob/m
 - [`emitTargetExt`](#emittargetext)
 - [`emitTargetWordsRefusal`](#emittargetwordsrefusal)
 - [`emitTargetWindowRefusal`](#emittargetwindowrefusal)
+- [`emitTargetOutRefusal`](#emittargetoutrefusal)
 
 ## Declarations
 
@@ -236,5 +237,33 @@ the language's name, as a message spells it (`Rust`)
 <scalar-field name="returns" type="string | null">
 
 the refusal, naming every window, or null when no parameter is one
+
+</scalar-field>
+
+### emitTargetOutRefusal
+
+Why a function cannot be tested in a language whose emitter has no out
+buffers yet: the function writes its result into `(out, at)` and returns
+where it stopped. Only the Nish emitter guards one.
+
+```ts
+function emitTargetOutRefusal(f: FnSig, language: string): string | null
+```
+
+<scalar-field name="f" type="FnSig" required>
+
+the function
+
+</scalar-field>
+
+<scalar-field name="language" type="string" required>
+
+the language's name, as a message spells it (`Rust`)
+
+</scalar-field>
+
+<scalar-field name="returns" type="string | null">
+
+the refusal, or null when the function has no out buffer
 
 </scalar-field>

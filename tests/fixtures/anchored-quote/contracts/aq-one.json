@@ -1,0 +1,142 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "aq-one",
+  "source": {
+    "title": "Spec 0001: aq — anchored quotes",
+    "main": "aq-one",
+    "sha256": "ba655390b8d4a9f39bf3c3f3120e766b990dd02a4611612dee9490a53c9484b8"
+  },
+  "sources": [
+    {
+      "id": "aq-one",
+      "path": "../specs/aq-one.xml"
+    },
+    {
+      "id": "rfc4648",
+      "rfc": 4648,
+      "path": "../rfcs/rfc4648.txt",
+      "file": "rfcs/rfc4648.txt",
+      "sha256": "84e14418f795d503be5f34bf23ce4ebaa119e9ec7c9f667d8caeb111385b178f"
+    }
+  ],
+  "target": {
+    "module": "nish/aq"
+  },
+  "requirements": [
+    {
+      "id": "R-NO-LF",
+      "source": "rfc4648",
+      "section": "3.1",
+      "level": "MUST NOT",
+      "quote": "Implementations MUST NOT add line feeds to base-encoded data unless the specification referring to this document explicitly directs base encoders to add line feeds after a specific number of characters."
+    },
+    {
+      "id": "R-PAD",
+      "source": "rfc4648",
+      "section": "3.2",
+      "level": "MUST",
+      "quote": "Implementations MUST include appropriate pad characters at the end of encoded data unless the specification referring to this document explicitly states otherwise."
+    }
+  ],
+  "exclusions": [],
+  "functions": [
+    {
+      "name": "aqEncode",
+      "params": [
+        {
+          "name": "bytes",
+          "type": "bytes"
+        }
+      ],
+      "returns": "string"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "property",
+      "id": "P-NO-LF",
+      "title": "no line feed",
+      "covers": ["R-NO-LF"],
+      "forall": [
+        {
+          "name": "b",
+          "type": "bytes",
+          "minLen": 0,
+          "maxLen": 64
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "op": "%",
+            "args": [
+              {
+                "op": "strLen",
+                "args": [
+                  {
+                    "call": "aqEncode",
+                    "args": [
+                      {
+                        "var": "b"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "int": 4
+              }
+            ]
+          },
+          {
+            "int": 0
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-PAD",
+      "title": "a whole number of quanta",
+      "covers": ["R-PAD"],
+      "forall": [
+        {
+          "name": "b",
+          "type": "bytes",
+          "minLen": 0,
+          "maxLen": 64
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "op": "%",
+            "args": [
+              {
+                "op": "strLen",
+                "args": [
+                  {
+                    "call": "aqEncode",
+                    "args": [
+                      {
+                        "var": "b"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "int": 4
+              }
+            ]
+          },
+          {
+            "int": 0
+          }
+        ]
+      }
+    }
+  ]
+}

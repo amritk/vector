@@ -35,6 +35,7 @@ import {
   LitKind,
   Literal,
   NameOverride,
+  OutBuffer,
   OutOfScope,
   Param,
   Requirement,
@@ -527,6 +528,23 @@ const readExclusions = (r: ContractReader, root: JsonValue, c: Contract): void =
   c.exclusions = out
 }
 
+/** A function's `out` buffer; null when it is absent or refused. */
+const readOut = (r: ContractReader, o: JsonValue, at: string): OutBuffer | null => {
+  const v = r.doc.get(o, "out")
+  if (r.doc.kind(v) === JSON_VALUE_NONE) {
+    return null
+  }
+  const oat = `${at}.out`
+  if (!readObject(r, v, oat, ["at", "capacity"])) {
+    return null
+  }
+  const b = new OutBuffer()
+  const n = readCount(r, v, "at", oat, 0, 255, true)
+  b.at = n < 0 ? 0 : toI32(n)
+  b.capacity = readRequiredString(r, v, "capacity", oat)
+  return b
+}
+
 const readFunctions = (r: ContractReader, root: JsonValue, c: Contract): void => {
   const items = readArray(r, root, "functions", "contract", true)
   if (items === null) {
@@ -534,11 +552,12 @@ const readFunctions = (r: ContractReader, root: JsonValue, c: Contract): void =>
   }
   for (let i = 0; i < items.length; i++) {
     const at = `functions[${i}]`
-    if (readObject(r, items[i], at, ["name", "module", "params", "returns", "names"])) {
+    if (readObject(r, items[i], at, ["name", "module", "params", "returns", "out", "names"])) {
       const f = new FnSig()
       f.name = readRequiredString(r, items[i], "name", at)
       f.module = readString(r, items[i], "module", at, false)
       f.returns = readRequiredString(r, items[i], "returns", at)
+      f.out = readOut(r, items[i], at)
       f.names = readOverrides(r, items[i], "names", at)
       const params = readArray(r, items[i], "params", at, true)
       if (params !== null) {

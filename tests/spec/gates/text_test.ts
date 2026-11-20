@@ -12,6 +12,7 @@ import {
   gateKeywordUses,
   gateLines,
   gateParagraphStarts,
+  gateQuotePairs,
   gateSentenceAt,
   gateSentenceBreaks,
   gateSentenceSpan,
@@ -49,6 +50,7 @@ export const main = (): i32 => {
   )
   t.eqStr("a value ending a line after =", textTestNums(gateTextLines(lines, "SHA-256")), "0")
   t.eqStr("a quoted value", textTestNums(gateTextLines(lines, "Zg==")), "3")
+  t.eqStr("the quotes, in pairs", gateQuotePairs().join(" "), "\" \" ' ' \u201c \u201d \u2018 \u2019 ` `")
   t.eqStr("not a part of a value", textTestNums(gateTextLines(lines, "Zg")), "")
   t.eqStr("a value wrapped across lines", textTestNums(gateTextLines("a =\nx y\nz", "x y z")), "1,2")
 

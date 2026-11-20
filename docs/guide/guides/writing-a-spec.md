@@ -140,7 +140,7 @@ where the expected value comes from:
 | `{{Section N of RFCx}}, Test Vector #K` | `cite`, section N of that RFC, `case` `Test Vector #K`: the values must all be printed in that one test case (K from 1, no leading zero; any other text after the section is refused) |
 | `{{Section N of RFCx}}; result {{Section M of RFCx}}` | `spec`, section M, with section N for the args: the inputs are printed in section N and the `null`, `true` or `false` expected value is supported by section M, as [stated](#when-a-section-states-null-true-or-false) or [derived](#when-a-property-derives-the-result). Both are sections of the main RFC, M is not N, both are written as section references (not anchors or code spans), and nothing may follow |
 | `{{anchor}}`, a numbered section of this spec | `spec` for a `null` or `bool` expected value; otherwise `cite`, that section, which must print the value |
-| a single code span, `` `python3 -c '…'` `` | `command`, with the table's section for the args (in a main-RFC spec, the spec's own section, through `sectionSource`); the expected value must be bytes or a string |
+| a single code span, `` `python3 -c '…'` `` | `command`, with the table's section for the args (in a main-RFC spec, the spec's own section, through `sectionSource`); the expected value is bytes (printed as hex), a string, an integer, a bool or `null`, which the command prints as `true`, `false` or `null`; an `f64` or word-array value is refused, as it has no one printed form |
 
 The Call cell is `f(arg, …)`: as many arguments as `f` has parameters, each
 of its parameter's type. The Expected cell must be of `f`'s return type.
@@ -334,6 +334,43 @@ window; the others refuse the function, naming the parameter.
 Extract refuses `/* window */` after any type but `u8[]`, twice on one
 parameter, and any other comment on an interface parameter.
 
+### An out buffer
+
+Some functions write their result into a buffer they are handed, as
+`(out, at)`, and return `end`: the result is `out[at, end)`. Declare the
+buffer as a parameter with `/* out CAP */` after its `u8[]`, where `CAP` is
+how many bytes it needs after `at`, and declare the result as bytes:
+
+~~~ ts-interface
+// module: nish/base64
+export const base64EncodeInto = (src: u8[] /* window */, dst: u8[] /* out 2 * src.length + 4 */): u8[]
+~~~
+
+The contract leaves the buffer out of the parameters: the function returns
+`bytes`, and its `"out"` holds where the pair goes (`"at"`) and the
+capacity. Every vector and property calls it without the buffer
+(`base64EncodeInto("foobar")`). A capacity is decimal numbers up to 2^20
+with no leading zero, `+`, `*`, parentheses nested at most 16 deep, and
+`<param>.length` of a `u8[]` parameter. The contract records it in one
+spelling, single spaces around `+` and `*` and parentheses only where they
+change its meaning, so `(2*src.length)+4` is recorded as
+`2 * src.length + 4`. Declare the result `u8[] | null` when a negative
+`end` means `null`.
+
+The signatures gate checks the export takes `(u8[], i32)` in that place and
+returns `i32`. The Nish test hands it a buffer of the capacity plus ten
+guard bytes, with `at` = 5, and fails a call whose `end` is outside
+`[at, at + capacity]` or that writes a byte outside `[at, end)`. A capacity
+that is not at most 2^20 on a sample, NaN included, fails that clause
+before anything is allocated. Only the
+Nish emitter writes an out buffer; the others refuse the function.
+
+Extract refuses `/* out CAP */` with no capacity, after any type but
+`u8[]`, twice on one function or on a window, a capacity of more than 256 tokens (numbers, names and punctuation), one
+that reads another name or is over 2^20 even with every length 0, one that
+multiplies 0 by a product past what an f64 holds, and a result that is not
+bytes.
+
 ### Literals in the contract
 
 Beyond the profile's literals:
@@ -443,6 +480,11 @@ forall (b: u8[] /* 0..64 */) => {
   - `n: i32 /* lo..hi */`: a value in the type's range, for any of `i8` …
     `u64` (`/* -9223372036854775808..9223372036854775807 */` for `i64`).
   - `f64` is not a forall type *yet*.
+  - `Secret<u8[]>` is not a forall type, and a property never calls
+    `secret`, `expose` or `wipe`: a property passes `u8[]` to a
+    `Secret<u8[]>` parameter, and the test wraps it in `secret()` and
+    exposes a `Secret` result, as in `forall (k: u8[] /* 32..32 */) =>
+    x25519(k, base) === x25519Base(k)`.
   - `t: string /* lo..hi CLASS… */`: a length and character classes, from
     `hexdigit`, `HEXDIGIT`, `digit`, `alpha`, `space` and `ascii-printable`.
     `/* lo..hi "chars" */` gives the characters as a JSON string instead.
@@ -454,7 +496,18 @@ forall (b: u8[] /* 0..64 */) => {
 - **Members:** `.length`, `.concat`, `.slice`, `.toLowerCase`,
   `.toUpperCase`, `.charAt`.
 - **Operations:** `xor`, `bitAnd`, `bitOr`, `fill`, `zeros`, `flipBit`,
-  `le64`, `unwrap`, `utf8`, `ascii`, `implies` and `concat`.
+  `unwrap`, `utf8`, `ascii`, `implies` and `concat`.
+- **Byte order:** `le16`, `le32`, `le64`, `be16`, `be32` and `be64` write
+  an integer no wider than the op as its 2, 4 or 8 bytes, little- or
+  big-endian, a signed one in two's complement. `leU16`, `leU32`, `leU64`,
+  `beU16`, `beU32`, `beU64`, `leI32`, `leI64`, `beI32` and `beI64` read
+  exactly that many bytes back as the named integer; any other length
+  fails the sample, as `unwrap` of a null does. A wider argument is
+  refused: `le32 wants an integer of at most 32 bits, got u64`. An int
+  literal must fit the op's width read as signed or unsigned, so `le16`
+  takes -32768 to 65535. There is no 16-bit signed read. An `leI32` or
+  `beI32` result may be passed where a u32 is wanted. These names are
+  operations, so no ts-interface function may take one.
 - **Semantics** are vector's evaluator's, not JavaScript's:
   - `===` on `u8[]` compares contents.
   - `.slice` clamps its bounds.
@@ -559,7 +612,7 @@ Every vector says where its expected value comes from (`source`):
 | `source` | The expected value is | Checked by |
 |---|---|---|
 | `{"cite": {"section": "A.1"}}` (`"source"` optional; `"case": "Test Vector #2"` optional) | printed in that section, with the args, as one test case; with `case`, in that test case of the section (see [What a printed value is](#what-a-printed-value-is)) | fidelity |
-| `{"command": "…"}`, with `"section"` for the args | the command's trimmed stdout (lowercase hex for bytes) | `spec check --run-sources` only; otherwise reported as not run, never as passed. A timeout, a nonzero exit or other output fails. See [Running the source commands](spec-to-contract.md#running-the-source-commands) |
+| `{"command": "…"}`, with `"section"` for the args | the command's trimmed stdout (lowercase hex for bytes; decimal for an integer; `true`, `false` or `null`) | `spec check --run-sources` only; otherwise reported as not run, never as passed. A timeout, a nonzero exit or other output fails. See [Running the source commands](spec-to-contract.md#running-the-source-commands) |
 | `{"spec": "4.2"}`, with `"section"` for the args | `null` or a `bool` that section states | provenance: a requirement the vector covers, cited to that section, must state `null`, `true` or `false` as the result, by [the rule below](#when-a-section-states-null-true-or-false) |
 
 A vector whose inputs and result are cited apart, `{{Section 7.1 of RFC8032}}; result {{Section 5.1.7 of RFC8032}}`, is a `spec` source of the result's section with the inputs' `"section"`: `{"spec": "5.1.7"}, "section": "7.1"`. Fidelity checks the inputs against section 7.1; provenance checks the result against section 5.1.7, by the stated rule or, failing that, [the derived rule](#when-a-property-derives-the-result). The report shows its evidence as `vector, §7.1, result §5.1.7`.
@@ -625,6 +678,18 @@ of matching bytes:
   under `Alice's private key, a` all are, as is a value the cited section
   does not print at all (the 32-byte base point `[09 00 … 00]` against
   §6.1, or §6.1's key cited from §6.2).
+- **Wrapped statements.** A statement names one value: the first
+  `= <hex>` line below it, past any `= f(...)` lines, takes the
+  statement's name, the text before its first `=` (one word of letters,
+  digits, `_`, `-` and `.`, starting with a letter), even where that name
+  stands on a line of its own, the call wraps, or a page break comes between; a second
+  `= <hex>` under it is unnamed. In RFC 9001 Appendix A.1, `client_initial_secret`, then
+  `= HKDF-Expand-Label(initial_secret, "client in", "", 32)`, then
+  `= c00cf151…`, binds as `{"hex": "c00c…", "label":
+  "client_initial_secret"}`, its hex continued across lines and page
+  breaks. A label that wraps (`PBKDF2-HMAC-SHA-256 (P="passwd", S="salt",`
+  above `c=1, dkLen=64) =`, as RFC 7914 §11 prints it) is read as one line
+  and written whole, one space where it wrapped.
 - **Empty values.** A section prints an empty value as a label with nothing
   below it, its length stated as 0 (`MESSAGE (length 0 bytes):`, or
   `octets`). Empty bytes bind only under such a label:
@@ -642,6 +707,24 @@ of matching bytes:
   values from two test cases. A label printed once goes with the round it is
   printed among: RFC 8032 Section 7.1 prints `MESSAGE (length 0 bytes)` once,
   in TEST 1, so it is refused beside TEST 2's `SECRET KEY` and `SIGNATURE`.
+- **Call labels.** A string or integer printed inside the expected
+  value's label, in its `( … )` (`"passwd"`, `c=1` in
+  `PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)`), is one test
+  case with it. The label is read as the RFC prints it over that value, with
+  its case, and over the lines it wraps (at most four); a contract's label
+  that differs only in case still names the value, but `"passwd"` does not
+  pair with a printed `P="PASSWD"`. A paired argument is placed on those
+  lines only, not by round and not where prose prints it again, and every
+  other argument must be printed there too: beside `"passwd"`, a
+  string printed only in prose, or one of several `n=` values printed outside
+  the label, is refused. One printed in another
+  call label of the section instead (`"NaCl"`, `c=80000` beside case 1's
+  value) is refused: "they are different test cases". Call labels that
+  differ only in the arguments the vector binds (its strings, and the
+  number after each of its integer arguments' names that a call label
+  prints) are one variant. Any
+  other difference inside the `( … )` names a variant: with only `"Jefe"`
+  bound, `SHA3 (msg="Jefe", bits=512)` is refused for `sha3_256`.
 - **Named test cases.** Where a section prints several test cases under
   headings (`Test Vector #2:`, a line of its own or followed by text), and a
   label is printed a different number of times than another, the rounds do
@@ -677,7 +760,7 @@ Only a requirement the vector covers states a result, and only through its
 own quote. The rule is an allow list and fails closed: a false refusal costs
 a rewording of the requirement's quote, while a false pass would break the
 gate. There is no way around it: a `cite` source is held to the same rule,
-and a `command` source cannot expect `null` or a `bool`.
+while a `command` source that expects `null` or a `bool` is held to what it prints under `--run-sources`.
 
 A vector may cite its inputs and its result to two sections of the main RFC,
 `{{Section 7.1 of RFC8032}}; result {{Section 5.1.7 of RFC8032}}`. The steps

@@ -1,0 +1,1 @@
+vector: spec mutate: tests/cli/pr-mutate-unbuilt-nish/root has no seed to build mutants with: neither libexec/nish (an install) nor build/seed/libexec/nish (a checkout). Fetch one there with `bash scripts/fetch-seed.sh` (no build needed), or give --nish a compiler built in the checkout

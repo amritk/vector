@@ -1,0 +1,125 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "block-bounds-retract",
+  "source": {
+    "title": "Block bounds fixture: a result before a property whose title reads as a retraction.",
+    "main": "block-bounds-retract",
+    "sha256": "f1a26ea243756eb835d180ba1a2e762a61c123d8301edadd6a4a166df8ee5c19"
+  },
+  "sources": [
+    {
+      "id": "block-bounds-retract",
+      "path": "../specs/block-bounds-retract.xml"
+    }
+  ],
+  "target": {
+    "module": "nish/mini"
+  },
+  "requirements": [
+    {
+      "id": "R-VALID",
+      "section": "3",
+      "level": "MUST",
+      "quote": "miniIsValid MUST return false for any text other than an even run of hex digits."
+    }
+  ],
+  "exclusions": [],
+  "functions": [
+    {
+      "name": "miniEncode",
+      "params": [
+        {
+          "name": "bytes",
+          "type": "bytes"
+        }
+      ],
+      "returns": "string"
+    },
+    {
+      "name": "miniIsValid",
+      "params": [
+        {
+          "name": "text",
+          "type": "string"
+        }
+      ],
+      "returns": "bool"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "V1",
+      "title": "an odd length is not valid",
+      "covers": ["R-VALID"],
+      "source": {
+        "spec": "3"
+      },
+      "section": "4",
+      "call": "miniIsValid",
+      "args": [
+        {
+          "str": "abc"
+        }
+      ],
+      "expect": {
+        "bool": false
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-ODD",
+      "title": "a text of odd length is not",
+      "covers": ["R-VALID"],
+      "forall": [
+        {
+          "name": "t",
+          "type": "string",
+          "minLen": 1,
+          "maxLen": 33,
+          "alphabet": ["hexdigit"]
+        }
+      ],
+      "where": {
+        "op": "==",
+        "args": [
+          {
+            "op": "%",
+            "args": [
+              {
+                "op": "strLen",
+                "args": [
+                  {
+                    "var": "t"
+                  }
+                ]
+              },
+              {
+                "int": 2
+              }
+            ]
+          },
+          {
+            "int": 1
+          }
+        ]
+      },
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "miniIsValid",
+            "args": [
+              {
+                "var": "t"
+              }
+            ]
+          },
+          {
+            "bool": false
+          }
+        ]
+      }
+    }
+  ]
+}

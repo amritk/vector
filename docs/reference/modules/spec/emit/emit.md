@@ -24,6 +24,7 @@ Generated from [src/spec/emit/emit.ts](https://github.com/amritk/vector/blob/mai
 - [`EmitOptions`](#emitoptions)
 - [`emitSortedUnique`](#emitsortedunique)
 - [`emitNishType`](#emitnishtype)
+- [`emitUndefinedWhy`](#emitundefinedwhy)
 - [`emitTestName`](#emittestname)
 - [`emitClauseFn`](#emitclausefn)
 - [`emitWrap`](#emitwrap)
@@ -133,6 +134,28 @@ a value type (`bytes`, `string?`, `u32`, …)
 <scalar-field name="returns" type="string">
 
 the Nish type
+
+</scalar-field>
+
+### emitUndefinedWhy
+
+Why a sample of an assertion is undefined, in every language: an `unwrap`
+met a null, or a read met the wrong number of bytes. Both record on the
+test's unwrap recorder, so the sample fails.
+
+```ts
+function emitUndefinedWhy(assert: Expr): string | null
+```
+
+<scalar-field name="assert" type="Expr" required>
+
+the property's assertion
+
+</scalar-field>
+
+<scalar-field name="returns" type="string | null">
+
+the failure's reason, or null when the assertion neither unwraps nor reads
 
 </scalar-field>
 

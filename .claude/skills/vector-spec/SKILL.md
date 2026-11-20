@@ -25,7 +25,7 @@ re-extract. You never decide that a quote or a vector is right; extract and
 `check` do, against the cited text. Every gate below is deterministic and fails
 closed: a git error, a missing source, an unreadable diff or a Z3 `unknown` is
 a failure, never a pass. A FAIL is a finding about the implementation (or the
-spec). Show it, and never weaken a clause to pass.
+spec). Show it; never weaken a clause to pass.
 
 Exit codes, for every command: **0** pass, **1** refused (extract's refusals,
 `INVALID`, `VIOLATED`, `ERROR`, a stale test, an unlisted export, a survivor),
@@ -42,7 +42,7 @@ A module lands in two PRs. The first is the **spec side** (`specs/`,
 `contracts/`, `rfcs/`, `.refcache/`, and generated tests in `test/spec/`); the second is the
 **implementation**. `frozen` refuses a PR that touches both, so a test can
 never be loosened in the PR that changes the code it tests. Do the steps in
-this order; each one's command is the gate CI runs.
+order; each one's command is the gate CI runs.
 
 ### 0. Tools
 
@@ -58,7 +58,7 @@ pip install xml2rfc==3.35.0
 
 Write `specs/<name>.md` in kramdown-rfc from the RFC or the request alone.
 **Do not read the implementation**: there may not be one yet, and the spec
-must say what is asked for, not what some code does.
+must say what is asked for, not what code does.
 
 Front matter: `docname: draft-<name>-00`, where `<name>` is the file's
 basename, and a pinned `date: YYYY-MM-DD`. List each RFC you cite under
@@ -107,12 +107,15 @@ The types are those of the table in [Writing a
 spec](../../../docs/guide/guides/writing-a-spec.md#types): `u8[]`, `string`,
 `boolean`, `Secret<u8[]>`, the fixed-width integers `i8` … `i64` and
 `u8` … `u64`, `f64`, and the word arrays `u16[]`, `u32[]` and `u64[]`. A
-Nish test can hold all but `i8` and `i16`, which Nish lacks, so the emitter
-refuses them; only the Nish test holds word arrays. Add `| null` to `u8[]`,
-a word array or `string`, and to `Secret<u8[]>` as a result only. Give
+Nish test holds all but `i8` and `i16`, which the emitter refuses; only
+it holds word arrays. Add `| null` to `u8[]`,
+a word array or `string`, and to `Secret<u8[]>` as a result only; a
+property passes `u8[]` to a `Secret<u8[]>` parameter. Give
 word-array cases as vectors: a property over or calling word arrays is
-refused. `u8[] /* window */` is one bytes parameter for a `(buf, off, len)`,
-tested at a nonzero offset, Nish test only.
+refused. Nish test only: `u8[] /* window */` is one bytes parameter for a
+`(buf, off, len)`, tested at a nonzero offset; `u8[] /* out CAP */` an
+`(out, at) -> end` write, the result `u8[]` (`| null` if `end` < 0). CAP, the
+bytes after `at`, is numbers, `+`, `*`, `()` and `<u8[] param>.length`.
 
 A property may compare the module with another nish module (HKDF with
 HMAC). Declare that module's functions after a second `// module:` line,
@@ -123,7 +126,7 @@ least one: a clause that calls only reference functions is refused. A module lin
 `// module: nish/<path>`, one module, after the previous signature. A comment of any style or case whose text starts `module:` or
 `module nish/` but is not that (`// Module: …`, `//module nish/…`,
 `/* module: … */`, `/// module: …`, two modules) is refused, and so is a module
-line inside a signature. Other comments, such as `// module-level helper`, are
+line inside a signature. Other comments (`// module-level helper`) are
 skipped:
 
 ````
@@ -140,7 +143,7 @@ with the anchor on the next line. `X MUST a. Y MUST b.` under one anchor is
 refused: give each sentence its own anchor. In an unnumbered section, a
 requirement of this spec, an exclusion of an unanchored sentence, and a
 vector table are refused (no section number to record); an RFC quote is
-accepted there.
+accepted.
 
 ```
 hexEncode MUST return exactly two characters per input byte.
@@ -150,9 +153,9 @@ Definition: a hex digit is one of the characters 0-9, a-f and A-F.
 {: #R-DEF-DIGIT}
 ```
 
-**Quotes from an RFC** go in a blockquote. The last line of the blockquote is
-the citation, and the attribute must include `gi="blockquote"`. The quote must
-appear verbatim in that section of the RFC.
+**Quotes from an RFC** go in a blockquote. Its last line is the citation, and
+its attribute must include `gi="blockquote"`. It must be verbatim in that
+section of the RFC.
 
 ```
 > BASE16("f") = "66"
@@ -161,11 +164,11 @@ appear verbatim in that section of the RFC.
 ```
 
 **Exclusions.** Some BCP 14 sentences cannot be observed by a functional
-test: caller obligations, timing, key management. Follow each one directly
+test: caller obligations, timing, key management. Follow each directly
 with an `Untested:` paragraph that gives the reason and, where it exists, what
 checks it instead. That sentence can be a requirement or an unanchored
 paragraph. A requirement followed by `Untested:` becomes an exclusion: no
-vector's Covers and no property may name it.
+vector's Covers or property may name it.
 
 ```
 hexDecode MUST NOT index a table by the value of a digit.
@@ -265,16 +268,16 @@ profile extracts to, run
     expected value it is a `spec` source (the covered requirement states it);
     for any other value it is a `cite` of that section, which must print the
     value.
-  - A code span holding a command: the value is its trimmed stdout, so the
-    Expected cell must be bytes or a string.
+  - A code span holding a command: its trimmed stdout, as hex bytes, a
+    string, a decimal int, `true`, `false` or `null` (no f64 or words).
 - **Values from an RFC:**
   - Each one is a *whole* printed value, never a prefix or a tail. A word
-    array is a whole printed block of words, word for word.
-  - Take the arguments and the expected value from one test case. A label
-    printed once goes with the test case it is printed in: RFC 8032 §7.1's
-    empty MESSAGE belongs to TEST 1, not to TEST 2's key and signature.
-  - Where a case is printed for several variants, use the row whose number
-    is in the function's name.
+    array is a whole printed block, word for word.
+  - Take the args and the expected value from one test case. A label
+    printed once goes with its own case (RFC 8032 §7.1's empty MESSAGE:
+    TEST 1), and args in a call label's `( … )` with its value.
+  - A wrapped value keeps the name before its first `=`.
+  - A case printed per variant: use the row the function's name numbers.
   - [Writing a spec](../../../docs/guide/guides/writing-a-spec.md)'s "What a
     printed value is" and "When a section states `null`, `true` or `false`"
     give the full rules.
@@ -301,17 +304,16 @@ Write definitions as checks over a typed domain:
 - tamper rejection;
 - the construction rebuilt from other functions.
 
-Use the [Properties](../../../docs/guide/guides/writing-a-spec.md#properties)
-section of Writing a spec for the subset: operators, operations,
-`where`, and the forms that are refused. Its semantics are
-vector's, not JavaScript's. For example, `.slice` clamps, `a % 0` is 0, and
+Writing a spec's [Properties](../../../docs/guide/guides/writing-a-spec.md#properties)
+gives the subset: operators, operations, `where`, and the refused forms. Its
+semantics are vector's, not JavaScript's: `.slice` clamps, `a % 0` is 0, and
 `===` on bytes compares contents.
 
 **Linked RFCs.** The RFC text must be in `rfcs/`, unmodified. The IETF Trust
 allows copying an RFC whole. Extract's missing-RFC message gives the `curl`
 command, which fetches `rfc<N>.txt`; the `.txt` works for every RFC, and an
-`rfc<N>.xml` is read instead when present. The lookup goes nearest place
-first, the same for every command (beside the contract, `../rfcs/`, the
+`rfc<N>.xml` is read instead when present. Every command looks nearest place
+first (beside the contract, `../rfcs/`, the
 `rfcs/` of vector's install root, the directory above the binary's own, then
 the current directory's `rfcs/`), and at each place `.xml` before `.txt`. A `file` the
 contract already records wins: adding an `.xml` later does not displace a
@@ -337,11 +339,11 @@ scripts/build-spec.sh specs/<name>.md         # writes specs/<name>.xml
 - It lists every refusal at once, each as `file:line`. The file is the XML;
   the line is the `.md` line when the XML carries `<?line?>` marks, otherwise
   the XML line. The line can run late after a table.
-- Repair the **spec**, never the contract. Then rebuild and re-extract until
+- Repair the **spec**, never the contract. Rebuild and re-extract until
   it exits 0.
 - It runs `check`'s gates: fidelity, completeness, coverage, provenance,
   typing and domain.
-- It fills in every `sha256`, so there is no freeze step to do by hand.
+- It fills in every `sha256`: there is no freeze step by hand.
 - `-o` writes the contract; without it, the contract goes to stdout.
   `--check -o contracts/<name>.json` writes nothing and exits 1 with a diff
   when the committed contract is not what the spec states. A refusal about
@@ -374,18 +376,18 @@ Run it last, after step 4's `emit` and `stale`, so it sees the whole PR.
 
 - **Exit 0:** the PR is all spec side, and every contract source still hashes
   to its recorded `sha256`.
-- **Exit 1:** one of these:
+- **Exit 1:** any of:
   - the PR also touches implementation files;
   - the spec or a linked RFC changed under the contract;
   - a `sha256` is missing;
   - no contract was found.
 
-Its positional arguments are the contracts to check, from the repository's
+Its arguments are the contracts to check, from the repository's
 top; with none, it checks every `contracts/*.json`. Either way, a generated
 test whose one sha line names a contract in `contracts/` (not a sidecar or a
 symbolic link) or one given counts on the spec side, so a PR changing two
 contracts may name only one of them. `--repo <dir>` names the repository
-(default: the current directory).
+(default: `.`).
 
 From here, the spec and contract change only in a PR of their own.
 
@@ -463,38 +465,38 @@ When `exports` fails, do one of these in a spec-side PR:
   [--jobs N] [--max N] [--format markdown]
 ```
 
-It mutates only the module's lines changed since `--base`, and runs the test
-against each mutant. A survivor is printed with its `file:line`, its mutated
-line, and *behaviour no requirement pins down*, and the command exits 1. Kill
-the survivor with a property or vector the spec supports. Or, in a spec-side
-PR, allow it with a reason in `contracts/<name>.survivors.json`:
+It mutates the module's lines changed since `--base` in code the contract's
+functions reach (the rest are one note) and runs the test on each mutant. A
+survivor is printed with its `file:line`, its mutated line, and *behaviour no
+requirement pins down*, and it exits 1. Kill the survivor with a property or
+vector the spec supports. Or, in a spec-side PR, allow it with a reason in
+`contracts/<name>.survivors.json`:
 
 ```json
 { "allowSurvivors": [{ "file": "std/hex.ts", "line": 42, "reason": "…" }] }
 ```
 
-Then re-extract, which merges that file in verbatim. Re-run `emit`, `stale`
-and `frozen` too (`frozen` skips `*.survivors.json` sidecars), because the contract's bytes changed. Survivors are usually
-found by the implementation PR's `mutate` run, but the allow-list still
-belongs in a spec-side PR.
+Re-extract, which merges it in verbatim, then re-run `emit`, `stale` and
+`frozen` (which skips `*.survivors.json`): the contract's bytes changed.
+Survivors usually surface in the implementation PR, but the allow-list belongs
+in a spec-side PR.
 
 `mutate` also exits 1 in these cases:
 
-- there are zero mutants;
+- zero mutants, as when no changed line is in reach;
 - every mutant is stillborn or its build ran past its time;
-- too many builds or tests (over 10%) ran past their time;
-- the test fails on the unmutated module, or the unmutated module does not
-  build because of an error in it.
+- over 10% of the builds or tests ran past their time;
+- the unmutated module fails the test, or an error in it stops its build.
 
 It exits 2 for bad usage, a git error, a z3 failure, or a compiler failure the
 mutant did not cause. Two compiler traps:
 
-- **The compiler must read the copy.** `mutate` builds each mutant in a copy
-  of the root, and first checks (the canary) that the compiler fails on a
-  copy whose module is made unparseable. An installed `bin/nish`, such as
-  `.nish/bin/nish`, is a wrapper that execs another install by absolute path
-  and fails the canary: give `--nish libexec/nish` for an install, or use a
-  real nish checkout.
+- **The compiler must read the slot.** With no `--nish`, mutants build on
+  the root's seed (an install itself, or a checkout's `build/seed`) with its
+  `std/` laid over it; with neither, run `bash scripts/fetch-seed.sh` there
+  (no build needed). A canary checks the compiler fails on the module made
+  unparseable. `--nish <file>` copies the whole root; `.nish/bin/nish` execs
+  another install and fails the canary.
 - **Run it from the repository's top.** Without `--test`, `mutate` emits the
   contract's test as `emit` does, checking the contract with the current
   directory as the repository's top, as CI runs it.
@@ -502,18 +504,12 @@ mutant did not cause. Two compiler traps:
 ### 8. Report
 
 Post the dashboard: `--format markdown` on `check`, `run` and `mutate` gives a
-PR comment. It shows:
-
-- each requirement with its evidence;
-- the exclusions;
-- command sources that were not run;
-- every survivor;
-- any failure, with its sample.
+PR comment. It shows each requirement with its evidence, the exclusions,
+command sources not run, every survivor, and any failure with its sample.
 
 ## Without a PR
 
-To check an existing module against an RFC (nish's std/crypto), do these
-steps:
+To check an existing module against an RFC (nish's std/crypto):
 
 1. Write the spec (step 1). Here you may read the module for its signatures.
 2. Build and extract it (step 2).

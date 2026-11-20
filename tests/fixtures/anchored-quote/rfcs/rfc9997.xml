@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rfc number="9997" docName="draft-aq-para-00" category="std" ipr="trust200902" version="3">
+<front><title>An anchored paragraph in a main RFC</title></front>
+<middle>
+<section anchor="base"><name>Base</name>
+<t anchor="R-B64">Implementations MUST include appropriate pad characters at the end of encoded data unless the specification referring to this document explicitly states otherwise.</t>
+</section>
+</middle>
+</rfc>

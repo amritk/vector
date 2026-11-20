@@ -2,7 +2,7 @@
 
 # cli/spec-mutate
 
-`cli/spec-mutate` — `vector spec mutate`: mutate the changed lines and refuse mutants the test misses.
+`cli/spec-mutate` — `vector spec mutate`: mutate the changed lines of the contract's module and refuse mutants the test misses.
 
 The change's lines in the contract's target module are mutated, and the
 test must kill every mutant that builds (`spec/pr/mutate`, run by

@@ -15,8 +15,9 @@ import { dirname } from "../../core/fs"
 import { toHex } from "../../core/hex"
 import { runProcess } from "../../core/process"
 import { CheckContext, CheckSourceRun } from "../check"
-import { Clause, ClauseKind, Contract, VectorSourceKind } from "../contract/types"
-import { SampleKind, sampleLiteral } from "../sample/eval"
+import { Clause, ClauseKind, Contract, Literal, VectorSourceKind } from "../contract/types"
+import { SampleKind, SampleValue, sampleLiteral } from "../sample/eval"
+import { sampleIntText } from "../sample/ints"
 
 /** How much longer than the command's own limit the outer limit is, for `timeout` itself to exit. */
 const GATE_RUN_SLACK_MS: i32 = 5000
@@ -56,6 +57,22 @@ const gateRunLastLine = (s: string): string => {
 }
 
 /**
+ * The one text a command must print for a value that is not bytes: a string
+ * as it is, an integer in decimal (no `+`, no leading zero, `-` only when
+ * negative), `true` or `false`, or `null`.
+ */
+const gateRunText = (lit: Literal, v: SampleValue): string => {
+  if (v.kind === SampleKind.Int) {
+    // A literal above i64's range is held wrapped; its text is unsigned.
+    return sampleIntText(v.n, lit.text.startsWith("-") ? "i64" : "u64")
+  }
+  if (v.kind === SampleKind.Bool) {
+    return v.flag ? "true" : "false"
+  }
+  return v.kind === SampleKind.Null ? "null" : v.text
+}
+
+/**
  * Judges what a source command did against the value its vector expects.
  *
  * @param k the vector clause
@@ -92,7 +109,7 @@ export const gateRunJudge = (
     return new CheckSourceRun(k.id, command, "fail", `the expected value cannot be read: ${v.error}`)
   }
   const bytes = v.value.kind === SampleKind.Bytes
-  const want = bytes ? toHex(v.value.bytes) : v.value.text
+  const want = bytes ? toHex(v.value.bytes) : gateRunText(e, v.value)
   const printed = trim(stdout)
   // Hex is compared case-blind; nothing else is.
   const got = bytes ? asciiLower(printed) : printed

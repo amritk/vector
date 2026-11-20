@@ -58,5 +58,32 @@ export const winShort = (buf: u8[], off: i32): u32 => 0
 /** Declared plain bytes, exports a window. */
 export const winUndeclared = (buf: u8[], off: i32, len: i32): u32 => 0
 
+/** Right: an out buffer after a window, before a plain parameter. */
+export const outRight = (src: u8[], off: i32, len: i32, out: u8[], at: i32, level: i32): i32 => 0
+
+/** Right: an out buffer first, the result optional. */
+export const outFirst = (out: u8[], at: i32, n: u32): i32 => 0
+
+/** Right: an out buffer last. */
+export const outLast = (k: u8[], out: u8[], at: i32): i32 => 0
+
+/** Declared an out buffer, returns the bytes. */
+export const outBytes = (k: u8[], out: u8[], at: i32): u8[] => []
+
+/** Declared an out buffer, returns an unsigned end. */
+export const outUnsignedEnd = (k: u8[], out: u8[], at: i32): u32 => 0
+
+/** Declared an out buffer, takes no at. */
+export const outNoAt = (k: u8[], out: u8[]): i32 => 0
+
+/** Declared an out buffer last, takes it first. */
+export const outMoved = (out: u8[], at: i32, k: u8[]): i32 => 0
+
+/** Declared an out buffer, takes an unsigned at. */
+export const outUnsignedAt = (k: u8[], out: u8[], at: u32): i32 => 0
+
+/** Declared plain bytes, writes into an out buffer. */
+export const outUndeclared = (k: u8[], out: u8[], at: i32): i32 => 0
+
 /** Not a function. */
 export const LIMIT: i32 = 3
