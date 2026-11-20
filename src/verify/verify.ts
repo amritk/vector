@@ -15,7 +15,7 @@ import { Program } from "./lang/ast"
 import { checkAxiomTraceability, checkSpecProgramConsistency, typecheckProgram } from "./lang/check"
 import { readProgram, readSpecPlan } from "./lang/read"
 import { StyleWarning, collectStyleWarnings } from "./lang/style"
-import { REPLAY_MISMATCH, replayReport, replayUnconfirmed } from "./solve/replay"
+import { REPLAY_MISMATCH, replayJsonPut, replayReport } from "./solve/replay"
 import { CLAUSE_PROVEN, CLAUSE_REFUTED, Counterexample, VerifyReport, solveProgram } from "./solve/report"
 
 /** Every proven clause holds, over the reals and in float64. */
@@ -523,12 +523,7 @@ export const verifyOutcomeJson = (outcome: VerifyOutcome): OutJson => {
         .put("issue", outJsonString(it.issue))
       if (it.hasCex) {
         const cex = counterexampleJson(it.cex)
-        if (it.replay !== "") {
-          cex.put("replay", outJsonString(it.replay))
-        }
-        if (replayUnconfirmed(it.replay)) {
-          cex.put("replayDetail", outJsonString(it.replayDetail))
-        }
+        replayJsonPut(cex, it.replay, it.replayDetail)
         item.put("counterexample", cex)
       }
       items.add(item.put("hint", outJsonString(it.hint)))

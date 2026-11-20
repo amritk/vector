@@ -1,6 +1,7 @@
 import { Suite } from "nish/testing"
 import { diffExitCode } from "../../src/cli/diff"
 import { verifyExitCode } from "../../src/cli/verify"
+import { outJsonObject, outJsonRender } from "../../src/verify/emit/outjson"
 import {
   CHECK_WITNESS,
   DIFF_MISMATCH,
@@ -23,10 +24,10 @@ import {
   replayClause,
   replayEvaluate,
   replayHazard,
+  replayJsonPut,
   replayParseValue,
   replayReport,
   replayValueText,
-  replayUnconfirmed,
   replayWitness,
 } from "../../src/verify/solve/replay"
 import { Counterexample, solveProgram } from "../../src/verify/solve/report"
@@ -760,11 +761,18 @@ const replayDiffMismatch = (t: Suite): void => {
 }
 
 // Which outcomes --json explains with replayDetail: the two that did not confirm.
-const replayUnconfirmedCases = (t: Suite): void => {
-  t.ok("not-replayed is explained", replayUnconfirmed(REPLAY_NOT_REPLAYED))
-  t.ok("mismatch is explained", replayUnconfirmed(REPLAY_MISMATCH))
-  t.ok("confirmed is not", !replayUnconfirmed(REPLAY_CONFIRMED))
-  t.ok("no replay at all is not", !replayUnconfirmed(""))
+const replayJsonCases = (t: Suite): void => {
+  const rows: string[][] = [
+    [REPLAY_NOT_REPLAYED, "why", '{\n  "replay": "not-replayed",\n  "replayDetail": "why"\n}'],
+    [REPLAY_MISMATCH, "differs", '{\n  "replay": "mismatch",\n  "replayDetail": "differs"\n}'],
+    [REPLAY_CONFIRMED, "", '{\n  "replay": "confirmed"\n}'],
+    [REPLAY_CONFIRMED, "stray", '{\n  "replay": "confirmed"\n}'],
+    ["", "", "{}"],
+  ]
+  for (let i = 0; i < rows.length; i++) {
+    const got = outJsonRender(replayJsonPut(outJsonObject(), rows[i][0], rows[i][1]))
+    t.eqStr(`replayJsonPut "${rows[i][0]}"`, got, rows[i][2])
+  }
 }
 
 export const main = (): i32 => {
@@ -779,6 +787,6 @@ export const main = (): i32 => {
   replayVerifyMismatch(t)
   replayUnreadableHazard(t)
   replayDiffMismatch(t)
-  replayUnconfirmedCases(t)
+  replayJsonCases(t)
   return t.done()
 }

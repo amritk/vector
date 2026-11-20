@@ -22,7 +22,7 @@ Generated from [src/verify/solve/replay.ts](https://github.com/amritk/vector/blo
 - [`REPLAY_CONFIRMED`](#replay_confirmed)
 - [`REPLAY_NOT_REPLAYED`](#replay_not_replayed)
 - [`REPLAY_MISMATCH`](#replay_mismatch)
-- [`replayUnconfirmed`](#replayunconfirmed)
+- [`replayJsonPut`](#replayjsonput)
 - [`REPLAY_NARROWED`](#replay_narrowed)
 - [`REPLAY_WIDENED`](#replay_widened)
 - [`REPLAY_VALUE`](#replay_value)
@@ -69,24 +69,37 @@ The input does not do what z3 said: a bug in vector.
 const REPLAY_MISMATCH: string = "mismatch"
 ```
 
-### replayUnconfirmed
+### replayJsonPut
 
-Whether a replay outcome is one `--json` explains with `replayDetail`:
-`not-replayed` or `mismatch`, never `confirmed` or "" (not replayed at all).
+Puts a counterexample's or witness's replay on its `--json` object:
+`replay` when it was replayed, and beside a `not-replayed` or `mismatch`
+one `replayDetail`, why. A `confirmed` one has no detail.
 
 ```ts
-function replayUnconfirmed(outcome: string): boolean
+function replayJsonPut(obj: OutJson, outcome: string, detail: string): OutJson
 ```
 
-<scalar-field name="outcome" type="string" required>
+<scalar-field name="obj" type="OutJson" required>
 
-the replay's outcome
+the counterexample or witness object
 
 </scalar-field>
 
-<scalar-field name="returns" type="boolean">
+<scalar-field name="outcome" type="string" required>
 
-whether it did not confirm
+the replay's outcome, "" when it was not replayed
+
+</scalar-field>
+
+<scalar-field name="detail" type="string" required>
+
+the replay's detail
+
+</scalar-field>
+
+<scalar-field name="returns" type="OutJson">
+
+`obj`
 
 </scalar-field>
 

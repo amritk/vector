@@ -16,6 +16,7 @@
 import { trim } from "nish/text"
 import { Sexp, parseSexp } from "../../core/smt"
 import { VOCAB_JSON_SAFE_MAX } from "../../spec/contract/vocab"
+import { OutJson, outJsonString } from "../emit/outjson"
 import {
   EXPR_BINOP,
   EXPR_BOOL,
@@ -43,14 +44,24 @@ export const REPLAY_NOT_REPLAYED: string = "not-replayed"
 export const REPLAY_MISMATCH: string = "mismatch"
 
 /**
- * Whether a replay outcome is one `--json` explains with `replayDetail`:
- * `not-replayed` or `mismatch`, never `confirmed` or "" (not replayed at all).
+ * Puts a counterexample's or witness's replay on its `--json` object:
+ * `replay` when it was replayed, and beside a `not-replayed` or `mismatch`
+ * one `replayDetail`, why. A `confirmed` one has no detail.
  *
- * @param outcome the replay's outcome
- * @returns whether it did not confirm
+ * @param obj the counterexample or witness object
+ * @param outcome the replay's outcome, "" when it was not replayed
+ * @param detail the replay's detail
+ * @returns `obj`
  */
-export const replayUnconfirmed = (outcome: string): boolean =>
-  outcome === REPLAY_NOT_REPLAYED || outcome === REPLAY_MISMATCH
+export const replayJsonPut = (obj: OutJson, outcome: string, detail: string): OutJson => {
+  if (outcome !== "") {
+    obj.put("replay", outJsonString(outcome))
+  }
+  if (outcome === REPLAY_NOT_REPLAYED || outcome === REPLAY_MISMATCH) {
+    obj.put("replayDetail", outJsonString(detail))
+  }
+  return obj
+}
 
 /** A diff witness of an input the old version accepts and the new rejects. */
 export const REPLAY_NARROWED: i32 = 1
