@@ -242,6 +242,11 @@ export const main = (): i32 => {
     "const o_end: i32 = outKeyed(s_k, a_d, o_out, 5);\n  wipe(s_k);\n  return of.take(",
   )
   t.contains(
+    "a secret is wiped on the early return too, at the if's indent",
+    both,
+    "  if (o_cap < 0) {\n    wipe(s_k);\n    return fillBytes(0, 0);\n  }\n  const o_out",
+  )
+  t.contains(
     "the wrapper gives both reasons",
     both,
     "/** outKeyed on plain bytes: secrets are copied in, wiped after; the out buffer is passed as (out, at) between guard bytes, and [at, end) is the result. */",
