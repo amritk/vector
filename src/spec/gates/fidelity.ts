@@ -1788,7 +1788,16 @@ const gateOwnVariant = (l: GateLits, k: Clause, sec: RfcSection): void => {
         shownAll.push(p)
       }
     }
-    gateVariantNote(l, k, `${k.id}.${b.at}`, `the value is printed under "${shown}"`, label, siblings, shownAll, inSection)
+    gateVariantNote(
+      l,
+      k,
+      `${k.id}.${b.at}`,
+      `the value is printed under "${shown}"`,
+      label,
+      siblings,
+      shownAll,
+      inSection,
+    )
   }
 }
 

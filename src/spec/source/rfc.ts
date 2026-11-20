@@ -499,7 +499,7 @@ export const rfcHasCases = (sec: RfcSection): boolean =>
  */
 export const rfcWithHeading = (line: string): string => {
   const t = trim(line)
-  if (!t.startsWith("With ") || !t.endsWith("\":")) {
+  if (!t.startsWith("With ") || !t.endsWith('":')) {
     return ""
   }
   const comma = t.indexOf(", ")
@@ -508,11 +508,11 @@ export const rfcWithHeading = (line: string): string => {
   }
   const words = trim(t.substring(5, comma))
   const rest = t.substring(comma + 2, t.length - 2)
-  const eq = rest.indexOf(" = \"")
+  const eq = rest.indexOf(' = "')
   if (words.length === 0 || eq <= 0 || rest.substring(0, eq).indexOf(" ") >= 0) {
     return ""
   }
-  return rest.substring(eq + 4, rest.length).indexOf("\"") >= 0 ? "" : words
+  return rest.substring(eq + 4, rest.length).indexOf('"') >= 0 ? "" : words
 }
 
 /**

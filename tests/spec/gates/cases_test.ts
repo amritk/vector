@@ -115,7 +115,15 @@ const casesTestRun = (call: string, id: string, args: string, expect: string): s
 
 /** casesTestRun, the function's params' JSON `params`. */
 const casesTestRunWith = (params: string, call: string, id: string, args: string, expect: string): string[] =>
-  casesTestCheck("6979", casesTestRfc(), `{"name": "${call}", "params": [${params}], "returns": "bytes"}`, call, id, args, expect)
+  casesTestCheck(
+    "6979",
+    casesTestRfc(),
+    `{"name": "${call}", "params": [${params}], "returns": "bytes"}`,
+    call,
+    id,
+    args,
+    expect,
+  )
 
 /** The fidelity gate's findings and warnings for one vector of the function `fn` (its JSON), citing §`id` of RFC `num`, printed as `rfc`. */
 const casesTestCheck = (
@@ -269,7 +277,12 @@ const casesTestNoHeadingRows = (t: Suite): void => {
   casesTestRowIs(
     t,
     "6979 §A.3: no heading, a string and a repeated label",
-    casesTestRun("sign256", "A.3", `${casesTestHex(CASES_TEST_X, "x")}, {"str": "sample"}`, casesTestHex(CASES_TEST_R256, "r")),
+    casesTestRun(
+      "sign256",
+      "A.3",
+      `${casesTestHex(CASES_TEST_X, "x")}, {"str": "sample"}`,
+      casesTestHex(CASES_TEST_R256, "r"),
+    ),
     "nothing pairs a printed string with one of several labelled values",
   )
   // A labelled number is not placed by line: its rounds pair it, so a string
@@ -277,7 +290,13 @@ const casesTestNoHeadingRows = (t: Suite): void => {
   casesTestRowIs(
     t,
     "6979 §A.4: headings, and a number printed under each",
-    casesTestRunWith(`{"name": "n", "type": "i32"}, {"name": "m", "type": "string"}`, "sign512", "A.4", `{"int": 3, "label": "n"}, {"str": "sample"}`, casesTestHex(CASES_TEST_S512, "s")),
+    casesTestRunWith(
+      `{"name": "n", "type": "i32"}, {"name": "m", "type": "string"}`,
+      "sign512",
+      "A.4",
+      `{"int": 3, "label": "n"}, {"str": "sample"}`,
+      casesTestHex(CASES_TEST_S512, "s"),
+    ),
     "nothing pairs a printed string with one of several labelled values",
   )
 }
@@ -355,11 +374,31 @@ const casesTestProseRows = (t: Suite): void => {
   const ws = casesTestWs()
   const wsFn = `{"name": "accept", "params": [{"name": "k", "type": "string"}], "returns": "string"}`
   const wsRows: string[][] = [
-    ["key and accept value, a page break between", '{"str": "dGhlIHNhbXBsZSBub25jZQ=="}', '{"str": "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="}', ""],
+    [
+      "key and accept value, a page break between",
+      '{"str": "dGhlIHNhbXBsZSBub25jZQ=="}',
+      '{"str": "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="}',
+      "",
+    ],
     ["the paragraph after the page break", '{"str": "AQIDBAUGBwgJCgsMDQ4PEA=="}', '{"str": "other="}', ""],
-    ["NOTE's key, the next paragraph's value", '{"str": "dGhlIHNhbXBsZSBub25jZQ=="}', '{"str": "other="}', "but in different examples"],
-    ["the next paragraph's key, NOTE's value", '{"str": "AQIDBAUGBwgJCgsMDQ4PEA=="}', '{"str": "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="}', "but in different examples"],
-    ["a value only part of a quoted string", '{"str": "dGhlIHNhbXBsZSBub25jZQ"}', '{"str": "other="}', "only part of a longer value"],
+    [
+      "NOTE's key, the next paragraph's value",
+      '{"str": "dGhlIHNhbXBsZSBub25jZQ=="}',
+      '{"str": "other="}',
+      "but in different examples",
+    ],
+    [
+      "the next paragraph's key, NOTE's value",
+      '{"str": "AQIDBAUGBwgJCgsMDQ4PEA=="}',
+      '{"str": "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="}',
+      "but in different examples",
+    ],
+    [
+      "a value only part of a quoted string",
+      '{"str": "dGhlIHNhbXBsZSBub25jZQ"}',
+      '{"str": "other="}',
+      "only part of a longer value",
+    ],
   ]
   for (const r of wsRows) {
     casesTestRowIs(t, `6455 §4.2.2: ${r[0]}`, casesTestCheck("6455", ws, wsFn, "accept", "4.2.2", r[1], r[2]), r[3])
@@ -375,16 +414,16 @@ const casesTestProseRows = (t: Suite): void => {
     ["the next sequence's value", '{"hex": "9d7f3e7d"}', '{"int": 15293}', "but in different examples"],
     ["the sequence before's value", '{"hex": "7bbd"}', '{"int": 494878333}', "but in different examples"],
     ["two parts apart", '{"hex": "25"}', '{"int": 15293}', "but in different examples"],
-    ["a number only part of a printed one", '{"hex": "7bbd"}', '{"int": 15}', "name it with \"label\""],
-    ["a number ending a printed one", '{"hex": "c2197c5eff14e88c"}', '{"int": 809941952652}', "name it with \"label\""],
+    ["a number only part of a printed one", '{"hex": "7bbd"}', '{"int": 15}', 'name it with "label"'],
+    ["a number ending a printed one", '{"hex": "c2197c5eff14e88c"}', '{"int": 809941952652}', 'name it with "label"'],
     ["a value only part of a printed one", '{"hex": "40"}', '{"int": 37}', "is only part of a value"],
     ["a paragraph after one no sentence ends", '{"hex": "0304"}', '{"int": 772}', ""],
     ["a value from the paragraph before", '{"hex": "0102"}', '{"int": 772}', "but in different examples"],
-    ["a value after =, which labels it", '{"hex": "0a0b"}', '{"int": 258}', "name it with \"label\""],
-    ["a value after :, which labels it", '{"hex": "0102"}', '{"hex": "0c0d"}', "name it with \"label\""],
-    ["a value right after :, which labels it", '{"hex": "0e0f"}', '{"int": 258}', "name it with \"label\""],
+    ["a value after =, which labels it", '{"hex": "0a0b"}', '{"int": 258}', 'name it with "label"'],
+    ["a value after :, which labels it", '{"hex": "0102"}', '{"hex": "0c0d"}', 'name it with "label"'],
+    ["a value right after :, which labels it", '{"hex": "0e0f"}', '{"int": 258}', 'name it with "label"'],
     ["unlabelled values in that paragraph", '{"hex": "0102"}', '{"int": 258}', ""],
-    ["values after = and :, which label them", '{"hex": "0a0b"}', '{"hex": "0c0d"}', "name it with \"label\""],
+    ["values after = and :, which label them", '{"hex": "0a0b"}', '{"hex": "0c0d"}', 'name it with "label"'],
   ]
   for (const r of quicRows) {
     const got = casesTestCheck("9000", quic, quicFn, "decode", "A.1", r[1], r[2])
