@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/amritk/vector/compare/v0.6.0...v0.6.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **spec:** refuse an unknown call after one only a later ts-interface block declares ([#210](https://github.com/amritk/vector/issues/210)) ([e6b4b97](https://github.com/amritk/vector/commit/e6b4b975663273a562f7a8c7df7787300859a4ed))
+
 ## [0.6.0](https://github.com/amritk/vector/compare/v0.5.0...v0.6.0) (2026-11-20)
 
 
