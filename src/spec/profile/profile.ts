@@ -379,6 +379,8 @@ class ProfileContext {
    * the first does not declare only follows from the block being duplicated.
    */
   ifaceLater: Set<string>
+  /** The functions those later blocks declare, as they declare them. */
+  ifaceLaterFns: FnSig[]
   /** Each reference's anchor, and the RFC it names (-1 for none). */
   referenced: Map<string, i32>
   mainRfc: i32
@@ -424,6 +426,7 @@ class ProfileContext {
     this.ifaceCount = new Set<ProfileRefusal>()
     this.ifaceRead = false
     this.ifaceLater = new Set<string>()
+    this.ifaceLaterFns = []
     this.referenced = new Map<string, i32>()
     this.mainRfc = -1
     this.mainKey = null
@@ -1351,6 +1354,7 @@ const profileReadInterface = (c: ProfileContext, code: XmlNode[]): void => {
     if (later.isOk()) {
       for (const f of later.value.functions) {
         c.ifaceLater.add(f.name)
+        c.ifaceLaterFns.push(f)
       }
     }
   }
@@ -2786,8 +2790,26 @@ const profileReadProperties = (c: ProfileContext, code: XmlNode[]): void => {
     const block = xmlCodeOf(node)
     const r = frontParseProperty(block.text, c.functions)
     if (r.isErr()) {
-      // A call unknown only for the interface's refusal is not refused.
-      const own = r.error.filter((e: FrontRefusal): boolean => !profileUnknownCascade(c, e.message))
+      // A call unknown only for the interface's refusal is not refused. A call
+      // to what only a later block declares stops the parse, so parse again
+      // with those in view, for what else the property gets wrong.
+      let errors = r.error
+      if (
+        c.ifaceRead &&
+        c.ifaceLaterFns.length > 0 &&
+        errors.some((e: FrontRefusal): boolean => profileUnknownCascade(c, e.message))
+      ) {
+        const fns: FnSig[] = []
+        for (const f of c.functions) {
+          fns.push(f)
+        }
+        for (const f of c.ifaceLaterFns) {
+          fns.push(f)
+        }
+        const again = frontParseProperty(block.text, fns)
+        errors = again.isErr() ? again.error : []
+      }
+      const own = errors.filter((e: FrontRefusal): boolean => !profileUnknownCascade(c, e.message))
       profileFrontRefuse(c, node, own)
       continue
     }

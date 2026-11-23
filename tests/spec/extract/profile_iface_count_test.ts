@@ -207,6 +207,26 @@ const profileIfaceCountTestRows = (t: Suite, base: string, rfcs: ProfileRfcs): v
       ["<tt>h(data = 00)", `"h" is not a function of the ts-interface block`],
     ],
   )
+  // A property's parse stops at its first unknown call: one only the second
+  // block declares does not hide one that no block declares, after it or before.
+  const pairs: string[][] = [
+    ["g then h", "g(data) === null && h(data) === null", "unknown function `h`"],
+    ["h then g", "h(data) === null && g(data) === null", "unknown function `h`"],
+    ["g then frame", "g(data) === null && frame(data) === null", ""],
+  ]
+  for (const pair of pairs) {
+    const xml = profileIfaceCountTestSub(
+      t,
+      profileIfaceCountTestSpec(t, base, block, "frame", "frame", blockG),
+      "=> frame(data) === null",
+      `=> ${pair[1]}`,
+    )
+    const want: string[][] = [[second, profileIfaceCountTestCount(2)]]
+    if (pair[2].length > 0) {
+      want.push([`=> ${pair[1]}`, pair[2]])
+    }
+    profileIfaceCountTestRow(t, `two blocks, a property calling ${pair[0]}`, xml, rfcs, want)
+  }
   profileIfaceCountTestRow(
     t,
     "two blocks, calls both declare",
