@@ -62,7 +62,9 @@ read `.nish/docs/AI.md` (the language as rules, traps first).
 Locally, before pushing: `npm run build`, `node tests/run.mjs <filter>` for
 every area the change touches, `npm run lint`, `npm run tested-exports`, and
 `npm run dogfood` when the emitter, a `specs/vector-*` spec or its module changed,
-and `npm run doc-caps` when an agent-facing doc changed. A doc over its cap is
+`npm run doc-caps` when an agent-facing doc changed, and
+`node scripts/gen-reference.mjs --check` when an export's doc comment changed.
+A doc over its cap is
 shortened in place; a cap is never raised or dropped, and CI refuses either.
 **The full gate is CI** (`.github/workflows/ci.yml`, on every push).
 
@@ -110,7 +112,7 @@ the docs, `.claude/`, `CLAUDE.md` and source comments for the old location.
 
 ## Releasing
 
-Releases are cut by [release-please](https://github.com/googleapis/release-please),
+Releases are cut by release-please,
 through the reusable workflows in [amritk/workflows](https://github.com/amritk/workflows)
 that `.github/workflows/release.yml` calls, pinned by commit:
 
