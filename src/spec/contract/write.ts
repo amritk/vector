@@ -380,6 +380,13 @@ const writeTree = (c: Contract): WriteNode => {
     }
     writeSet(o, "params", params)
     writeSet(o, "returns", writeStr(f.returns))
+    const out = f.out
+    if (out !== null) {
+      const b = writeObj()
+      writeSet(b, "at", writeRaw(`${out.at}`))
+      writeSet(b, "capacity", writeStr(out.capacity))
+      writeSet(o, "out", b)
+    }
     writeOverrides(o, "names", f.names)
     fns.items.push(o)
   }

@@ -1,0 +1,1 @@
+vector spec run tests/fixtures/deflate-out/contracts/deflate-out.json --nish-root .nish

@@ -27,7 +27,7 @@ import { diffOutcomeJson, diffPrograms } from "./verify/equiv/diff"
 import { verifyOutcomeJson, verifySpecAndProgram } from "./verify/verify"
 
 /** The version `vector --version` prints; kept equal to package.json's. */
-export const VECTOR_VERSION: string = "0.5.0" // x-release-please-version
+export const VECTOR_VERSION: string = "0.6.0" // x-release-please-version
 
 /** Where docs/AI.md is read when the binary's checkout does not hold it. */
 const VECTOR_AI_DOC_URL: string = "https://github.com/amritk/vector/blob/main/docs/AI.md"

@@ -24,6 +24,7 @@ Generated from [src/spec/contract/types.ts](https://github.com/amritk/vector/blo
 - [`Requirement`](#requirement)
 - [`Exclusion`](#exclusion)
 - [`Param`](#param)
+- [`OutBuffer`](#outbuffer)
 - [`FnSig`](#fnsig)
 - [`Citation`](#citation)
 - [`VectorSourceKind`](#vectorsourcekind)
@@ -726,6 +727,40 @@ The parameter's type, like `bytes` or `u32`.
 type: string
 ```
 
+### OutBuffer
+
+A result the real function writes into a buffer it is handed: the real
+function takes `(out: u8[], at: i32)` and returns `end`, the result being
+`out[at, end)`.
+
+```ts
+class OutBuffer
+```
+
+#### new OutBuffer
+
+Starts at index 0 with no capacity.
+
+```ts
+new OutBuffer(): OutBuffer
+```
+
+#### OutBuffer.at
+
+Where among the declared parameters the `(out, at)` pair goes.
+
+```ts
+at: i32
+```
+
+#### OutBuffer.capacity
+
+The bytes the buffer holds after `at`, as a capacity expression like `2 * src.length + 8`.
+
+```ts
+capacity: string
+```
+
 ### FnSig
 
 A function under test: its name and signature.
@@ -764,6 +799,14 @@ Per-language overrides of the name.
 
 ```ts
 names: NameOverride[] | null
+```
+
+#### FnSig.out
+
+The buffer the real function writes its `bytes` result into; null when it returns it.
+
+```ts
+out: OutBuffer | null
 ```
 
 #### FnSig.params

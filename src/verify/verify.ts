@@ -15,7 +15,7 @@ import { Program } from "./lang/ast"
 import { checkAxiomTraceability, checkSpecProgramConsistency, typecheckProgram } from "./lang/check"
 import { readProgram, readSpecPlan } from "./lang/read"
 import { StyleWarning, collectStyleWarnings } from "./lang/style"
-import { REPLAY_MISMATCH, replayReport } from "./solve/replay"
+import { REPLAY_MISMATCH, replayJsonPut, replayReport } from "./solve/replay"
 import { CLAUSE_PROVEN, CLAUSE_REFUTED, Counterexample, VerifyReport, solveProgram } from "./solve/report"
 
 /** Every proven clause holds, over the reals and in float64. */
@@ -49,6 +49,8 @@ export class FeedbackItem {
   hint: string
   /** What replaying `cex` found (`confirmed`, `not-replayed`, `mismatch`); "" when it was not z3's. */
   replay: string
+  /** For a `mismatch`, the first check that differed; for `not-replayed`, why; "" otherwise. */
+  replayDetail: string
 
   /**
    * Makes an item with no counterexample.
@@ -68,6 +70,7 @@ export class FeedbackItem {
     this.cex = new Counterexample("")
     this.hint = hint
     this.replay = ""
+    this.replayDetail = ""
   }
 
   /**
@@ -87,10 +90,12 @@ export class FeedbackItem {
    *
    * @param cex the counterexample
    * @param replay the replay's outcome
+   * @param replayDetail the replay's detail: why it did not confirm
    * @returns this item, to chain
    */
-  withReplayedCex(cex: Counterexample, replay: string): FeedbackItem {
+  withReplayedCex(cex: Counterexample, replay: string, replayDetail: string): FeedbackItem {
     this.replay = replay
+    this.replayDetail = replayDetail
     return this.withCex(cex)
   }
 }
@@ -185,7 +190,7 @@ export const collectFeedbackItems = (report: VerifyReport): FeedbackItem[] => {
             v.pretty,
             "counterexample",
             "The postcondition is false for the input shown. Fix the body or tighten a requires clause so it holds for all remaining inputs.",
-          ).withReplayedCex(v.cex, v.replay),
+          ).withReplayedCex(v.cex, v.replay, v.replayDetail),
         )
       } else if (v.status !== CLAUSE_PROVEN) {
         items.push(
@@ -207,7 +212,7 @@ export const collectFeedbackItems = (report: VerifyReport): FeedbackItem[] => {
         "division-hazard",
         "The denominator may be zero on some reachable path. Add a requires clause (denominator != 0) or guard the division with an ite.",
       )
-      items.push(h.hasCex ? item.withReplayedCex(h.cex, h.replay) : item)
+      items.push(h.hasCex ? item.withReplayedCex(h.cex, h.replay, h.replayDetail) : item)
     }
     for (const h of fn.pres) {
       const item = new FeedbackItem(
@@ -217,7 +222,7 @@ export const collectFeedbackItems = (report: VerifyReport): FeedbackItem[] => {
         "precondition-hazard",
         `The call to ${h.callee} can violate its precondition (${h.pretty}) for the arguments shown. Strengthen this function's requires, or guard the call with an ite, so the callee is only reached where its precondition holds.`,
       )
-      items.push(h.hasCex ? item.withReplayedCex(h.cex, h.replay) : item)
+      items.push(h.hasCex ? item.withReplayedCex(h.cex, h.replay, h.replayDetail) : item)
     }
     for (const h of fn.ranges) {
       const item = new FeedbackItem(
@@ -227,7 +232,7 @@ export const collectFeedbackItems = (report: VerifyReport): FeedbackItem[] => {
         "range-hazard",
         "An Int is a float64 in the emitted code, exact only within ±(2^53−1), and this value can leave that range for the input shown. Rewrite it so no intermediate grows past its operands (low + (high - low) * k, not (low + high) * k), or bound the parameters with requires clauses.",
       )
-      items.push(h.hasCex ? item.withReplayedCex(h.cex, h.replay) : item)
+      items.push(h.hasCex ? item.withReplayedCex(h.cex, h.replay, h.replayDetail) : item)
     }
   }
   for (const c of report.conformance) {
@@ -490,7 +495,8 @@ const verifyStyleJson = (warnings: StyleWarning[]): OutJson => {
  * `styleWarnings`; REFUTED, UNKNOWN and MISMATCH have `dashboard`,
  * `feedback`, `items` and `styleWarnings`; INVALID has `errors` and
  * `feedback`; ERROR has `message`. A counterexample z3 gave carries
- * `replay`: `confirmed`, `not-replayed` or `mismatch`.
+ * `replay`: `confirmed`, `not-replayed` or `mismatch`, and the last two
+ * `replayDetail`, why.
  *
  * @param outcome the outcome
  * @returns the JSON object
@@ -517,9 +523,7 @@ export const verifyOutcomeJson = (outcome: VerifyOutcome): OutJson => {
         .put("issue", outJsonString(it.issue))
       if (it.hasCex) {
         const cex = counterexampleJson(it.cex)
-        if (it.replay !== "") {
-          cex.put("replay", outJsonString(it.replay))
-        }
+        replayJsonPut(cex, it.replay, it.replayDetail)
         item.put("counterexample", cex)
       }
       items.add(item.put("hint", outJsonString(it.hint)))

@@ -208,9 +208,17 @@ export const gateLines = (lines: string[]): string => {
 /** The quotes a printed string may stand in, opening and closing. */
 const GATE_QUOTES: string = "\"|\"|'|'|\u201c|\u201d|\u2018|\u2019|`|`"
 
+/**
+ * The quotes a printed string may stand in, as pairs: an opening quote, then
+ * its closing one.
+ *
+ * @returns the quotes, opening at each even index and closing after it
+ */
+export const gateQuotePairs = (): string[] => split(GATE_QUOTES, "|")
+
 /** Whether `value` at `p..e` of `lines` is printed whole there. */
 const gateWhole = (lines: string, p: i32, e: i32): boolean => {
-  const quotes = split(GATE_QUOTES, "|")
+  const quotes = gateQuotePairs()
   for (let q = 0; q < quotes.length; q += 2) {
     const open = quotes[q]
     const close = quotes[q + 1]
@@ -425,6 +433,31 @@ export const gateIntRounds = (lines: string, label: string, n: string): i32[] =>
       out.push(round)
     }
     round = round + 1
+  }
+  return out
+}
+
+/**
+ * The lines a label is printed on with the integer `n` after it, for
+ * placing the value by line (under a case heading).
+ *
+ * @param lines the section's lines (gateLines)
+ * @param label the label
+ * @param n the integer, as decimal text
+ * @returns the index in `lines` of each line that carries it; empty when none
+ */
+export const gateIntLines = (lines: string, label: string, n: string): i32[] => {
+  const out: i32[] = []
+  for (const j of gateLabelEnds(lines, label)) {
+    if (gateIntAt(lines, j, n)) {
+      let k = 0
+      for (let i = 0; i < j; i++) {
+        if (lines.charCodeAt(i) === 10) {
+          k = k + 1
+        }
+      }
+      out.push(k)
+    }
   }
   return out
 }

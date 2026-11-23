@@ -92,6 +92,37 @@ export const main = (): i32 => {
   t.ok("unforged, diff differs: exit 1", honestDiff.startsWith("exit 1\n"))
   t.contains("at z3's own witness", honestDiff, "domain: amount = 0 was accepted, now REJECTED")
 
+  // With --json, a counterexample or witness that did not replay says why,
+  // in the replay's own words; a confirmed one has no replayDetail.
+  const verifyJson = mismatchRun(vector, fake, real, "s/(f0_amount 0.0)/(f0_amount (- 5.0))/", [
+    "verify",
+    "--json",
+    "tests/fixtures/unsat-spec.json",
+    "tests/fixtures/unsat.json",
+  ])
+  t.contains("verify --json marks the mismatch", verifyJson, `"replay": "mismatch",\n`)
+  t.contains(
+    "and names the check that differed",
+    verifyJson,
+    `"replayDetail": "requires amount >= 0 is false at the counterexample"\n`,
+  )
+  const honestVerifyJson = mismatchRun(vector, fake, real, "", [
+    "verify",
+    "--json",
+    "tests/fixtures/unsat-spec.json",
+    "tests/fixtures/unsat.json",
+  ])
+  t.contains("unforged, verify --json confirms", honestVerifyJson, `"replay": "confirmed"`)
+  t.ok("with no replayDetail", honestVerifyJson.indexOf("replayDetail") < 0)
+  const diffJson = mismatchRun(vector, fake, real, "s/(d1x0_amount 0.0))/(d1x0_amount 5.0))/", [
+    "diff",
+    "--json",
+    "tests/fixtures/currency.json",
+    "tests/cli/diff-different/new.json",
+  ])
+  t.contains("diff --json marks the mismatch", diffJson, `"replay": "mismatch",\n`)
+  t.contains("and names the check that differed", diffJson, `"replayDetail": "the new version accepts the witness"`)
+
   t.ok("the temporary directory is removed", runProcess(["rm", "-rf", "--", dir.value], "", 10000).isOk())
   return t.done()
 }

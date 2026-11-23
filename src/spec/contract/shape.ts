@@ -7,6 +7,7 @@
  */
 
 import { trim } from "nish/text"
+import { capacityNames, capacityParse, capacityShow } from "./capacity"
 import {
   charsFirstControl,
   charsHasLetter,
@@ -22,7 +23,7 @@ import {
   charsTestVector,
 } from "./chars"
 import { contractF64Bits, contractF64FromBits, contractF64IsNaN, contractF64Overflows, contractF64Parse } from "./f64"
-import { literalsByteLength } from "./literals"
+import { LITERALS_PRINTABLE, literalsByteLength, literalsPrintable } from "./literals"
 import {
   Clause,
   ClauseKind,
@@ -35,6 +36,7 @@ import {
   LitKind,
   Literal,
   NameOverride,
+  OutBuffer,
   Tolerance,
   Truncate,
   VectorSourceKind,
@@ -84,7 +86,8 @@ export const shapeTestNames = (): string[] => [
   "remU64",
   "eqF64Bits",
   "nearUlpsF64",
-  "le64",
+  "intBytes",
+  "bytesInt",
   "strEq",
   "isNullStr",
   "strOrNull",
@@ -547,6 +550,38 @@ const shapeFunctions = (s: ShapeContext): void => {
         }
       }
     }
+    const out = f.out
+    if (out !== null) {
+      shapeOut(s, f, out, `${at}.out`)
+    }
+  }
+}
+
+/** An out buffer: where its pair goes, a bytes result, and a capacity in its one spelling over bytes lengths. */
+const shapeOut = (s: ShapeContext, f: FnSig, out: OutBuffer, at: string): void => {
+  if (out.at < 0 || out.at > toI32(f.params.length)) {
+    shapeFail(s, `${at}.at`, `an index in 0..${f.params.length}, where among the parameters the (out, at) pair goes`)
+  }
+  if (f.returns !== "bytes" && f.returns !== "bytes?") {
+    shapeFail(s, `${at}`, `absent: an out buffer's function returns bytes or bytes?, not ${f.returns}`)
+  }
+  const e = capacityParse(out.capacity)
+  if (e.isErr()) {
+    shapeFail(s, `${at}.capacity`, `a capacity; it ${e.error}`)
+    return
+  }
+  const shown = capacityShow(e.value)
+  if (shown !== out.capacity) {
+    shapeFail(s, `${at}.capacity`, `"${shown}", the one spelling of that capacity`)
+  }
+  for (const n of capacityNames(e.value)) {
+    let found = false
+    for (const p of f.params) {
+      found = found || (p.name === n && p.type === "bytes")
+    }
+    if (!found) {
+      shapeFail(s, `${at}.capacity`, `reads ${n}.length, but ${n} is not a bytes parameter of ${f.name}`)
+    }
   }
 }
 
@@ -746,9 +781,8 @@ const shapeVectorSource = (s: ShapeContext, k: Clause, at: string): void => {
     if (trim(src.text) === "") {
       shapeFail(s, `${at}.source.command`, "a shell command")
     }
-    const printable = ek === LitKind.Hex || ek === LitKind.Ascii || ek === LitKind.Concat || ek === LitKind.Str
-    if (absent || !printable) {
-      shapeFail(s, `${at}.expect`, "a command source prints bytes (as hex) or a string")
+    if (absent || !literalsPrintable(ek)) {
+      shapeFail(s, `${at}.expect`, `${LITERALS_PRINTABLE}; an f64 or words has no one printed form`)
     }
     shapeNeedSection(s, k, at)
     shapeSourceRef(s, k.sectionSource, `${at}.sectionSource`)

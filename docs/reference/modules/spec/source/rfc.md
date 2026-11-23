@@ -30,6 +30,8 @@ Generated from [src/spec/source/rfc.ts](https://github.com/amritk/vector/blob/ma
 - [`rfcRead`](#rfcread)
 - [`rfcSection`](#rfcsection)
 - [`rfcHasCases`](#rfchascases)
+- [`rfcWithHeading`](#rfcwithheading)
+- [`rfcWithHeadings`](#rfcwithheadings)
 - [`rfcCaseSection`](#rfccasesection)
 - [`rfcSectionText`](#rfcsectiontext)
 - [`rfcQuoteIn`](#rfcquotein)
@@ -37,6 +39,7 @@ Generated from [src/spec/source/rfc.ts](https://github.com/amritk/vector/blob/ma
 - [`rfcHexValues`](#rfchexvalues)
 - [`rfcUnvaluedLabels`](#rfcunvaluedlabels)
 - [`rfcUnvaluedLines`](#rfcunvaluedlines)
+- [`RFC_CALL_LINES`](#rfc_call_lines)
 - [`rfcHexPrinted`](#rfchexprinted)
 - [`rfcQuoteProblem`](#rfcquoteproblem)
 
@@ -86,6 +89,15 @@ the section's lines, its subsections' included
 its lines up to its first subsection
 
 </scalar-field>
+
+#### RfcSection.codeLines
+
+Which of `lines` are a line of a code block or artwork (each an index),
+as an XML source marks them; RFC text marks none.
+
+```ts
+codeLines: i32[]
+```
 
 #### RfcSection.id
 
@@ -188,6 +200,16 @@ the value's lowercase hex
 the name it is printed under, or null
 
 </scalar-field>
+
+#### HexValue.end
+
+The index of the last line that name is printed on: the line a call
+label wrapped over several lines closes on, `line` otherwise; -1 when it
+was not read from a section.
+
+```ts
+end: i32
+```
 
 #### HexValue.hex
 
@@ -335,6 +357,53 @@ the section
 <scalar-field name="returns" type="boolean">
 
 true when one of its own lines heads a test case
+
+</scalar-field>
+
+### rfcWithHeading
+
+The words a case heading of RFC 6979 §A.2's form names its case by:
+`SHA-256` in `With SHA-256, message = "sample":`. The line, trimmed, is
+`With `, words up to the first `, `, one name, ` = `, a double-quoted
+string holding no quote, and a closing `:`, which ends it.
+
+```ts
+function rfcWithHeading(line: string): string
+```
+
+<scalar-field name="line" type="string" required>
+
+the line
+
+</scalar-field>
+
+<scalar-field name="returns" type="string">
+
+the words, or "" when the line heads no case
+
+</scalar-field>
+
+### rfcWithHeadings
+
+Where a section's case headings of RFC 6979 §A.2's form are
+(rfcWithHeading): each heads the case below it, up to the next heading or
+the section's end, and what is printed above the first belongs to every
+case. A section with subsections has none: their headings are theirs,
+so a case is read from the subsection that holds it.
+
+```ts
+function rfcWithHeadings(sec: RfcSection): i32[]
+```
+
+<scalar-field name="sec" type="RfcSection" required>
+
+the section
+
+</scalar-field>
+
+<scalar-field name="returns" type="i32[]">
+
+the index, in its lines, of each heading, in order
 
 </scalar-field>
 
@@ -514,6 +583,16 @@ the section
 each name's index in the section's lines, in the same order
 
 </scalar-field>
+
+<a id="rfc_call_lines"></a>
+
+### RFC_CALL_LINES
+
+The most lines a call label may wrap over.
+
+```ts
+const RFC_CALL_LINES: i32 = 4
+```
 
 ### rfcHexPrinted
 

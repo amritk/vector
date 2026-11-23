@@ -14,6 +14,7 @@
 import { JSON_VALUE_STRING } from "nish/json-value"
 import { asciiLower, replaceAll, split, splitWhitespace, trim } from "nish/text"
 import { newJsonDocument, parseJson } from "../../core/json"
+import { capacityNames, capacityParse, capacityShow } from "../contract/capacity"
 import { charsIsId, charsIsModule, charsIsStringText, charsSequenceLength } from "../contract/chars"
 import { SHAPE_MAX_LEN, shapeAlphabetClasses } from "../contract/shape"
 import {
@@ -26,10 +27,12 @@ import {
   LetBinding,
   LitKind,
   Literal,
+  OutBuffer,
   Param,
 } from "../contract/types"
 import { TypeEnv, typeAssignable, typeEnvBind, typeOf, typeOfLiteral } from "../contract/typing"
 import {
+  VOCAB_SECRET_FORM,
   vocabCompareDecimal,
   vocabHas,
   vocabIntMax,
@@ -37,8 +40,11 @@ import {
   vocabIntTypes,
   vocabIsIntType,
   vocabIsJsonSafe,
+  vocabIsSecretOp,
+  vocabReadOps,
   vocabValueType,
   vocabWordTypes,
+  vocabWriteOps,
 } from "../contract/vocab"
 
 // ── Refusals ───────────────────────────────────────────────────────────────
@@ -651,21 +657,29 @@ const frontSigType = (c: FrontCursor): Result<string, FrontRefusal> => {
 
 // ── ts-interface ───────────────────────────────────────────────────────────
 
-/** Ops written as plain calls: `xor(a, b)`. */
-const frontCallOps = (): string[] => [
-  "xor",
-  "bitAnd",
-  "bitOr",
-  "fill",
-  "zeros",
-  "flipBit",
-  "le64",
-  "unwrap",
-  "utf8",
-  "ascii",
-  "implies",
-  "concat",
-]
+/** Ops written as plain calls: `xor(a, b)`, and every byte-order op. */
+const frontCallOps = (): string[] => {
+  const ops: string[] = [
+    "xor",
+    "bitAnd",
+    "bitOr",
+    "fill",
+    "zeros",
+    "flipBit",
+    "unwrap",
+    "utf8",
+    "ascii",
+    "implies",
+    "concat",
+  ]
+  for (const op of vocabWriteOps()) {
+    ops.push(op)
+  }
+  for (const op of vocabReadOps()) {
+    ops.push(op)
+  }
+  return ops
+}
 
 /** The module of a `<s>module:<s><path><s>` comment value, or null. */
 const frontModuleOf = (value: string): string | null => {
@@ -752,7 +766,7 @@ function frontModuleLine(t: FrontTok): Result<string, FrontRefusal> {
 }
 
 const frontNotModule = (m: string): string =>
-  `\`${m}\` is not a module path; write <root>/<path>, lowercase segments split by /`
+  `\`${m}\` is not a module path; write <root>/<segment>/…, each segment [a-z][a-z0-9_]*(-[a-z0-9][a-z0-9_]*)*, words joined by single - (RFC 3986 §3.3)`
 
 /** What a ts-interface block declares: the module under test and its functions. */
 export class FrontInterface {
@@ -778,33 +792,106 @@ export class FrontInterface {
 
 /**
  * Reads the comments right after a parameter's type, which say how the real
- * function takes it: only a `window` block comment, after `u8[]`, is one. A module line
- * there is left for frontPeek to refuse.
+ * function takes it: a `window` block comment, after `u8[]`, is one, and an
+ * `out CAP` block comment, after `u8[]`, makes it the buffer the result is
+ * written into. A module line there is left for frontPeek to refuse.
+ *
+ * @returns the `out` comment, or null when the parameter is not an out buffer
  */
-function frontParamForm(c: FrontCursor, fn: string, param: Param): Result<boolean, FrontRefusal> {
+function frontParamForm(c: FrontCursor, fn: string, param: Param): Result<FrontTok | null, FrontRefusal> {
+  let out: FrontTok | null = null
   let t = frontRaw(c)
   while (t.kind === FrontKind.Comment && frontModuleLine(t).orReturn().length === 0) {
     const at = `\`${fn}(${param.name})\``
-    if (t.lineComment || splitWhitespace(t.value).join(" ") !== "window") {
+    const words = splitWhitespace(t.value)
+    const isOut = !t.lineComment && words.length !== 0 && words[0] === "out"
+    if (t.lineComment || (words.join(" ") !== "window" && !isOut)) {
       const shown = t.lineComment ? `//${t.value}` : `/*${t.value}*/`
-      return Err(frontRefuse(`${at}: an interface parameter takes only /* window */, not \`${shown}\``, frontAt(t)))
-    }
-    if (param.form !== null) {
-      return Err(frontRefuse(`${at} is already a window; write /* window */ once`, frontAt(t)))
-    }
-    if (param.type !== "bytes") {
       return Err(
         frontRefuse(
-          `${at} is ${frontTsTy(param.type)}: /* window */ goes only after u8[], which the real function takes as (buf, off, len)`,
+          `${at}: an interface parameter takes only /* window */ or /* out CAP */, not \`${shown}\``,
           frontAt(t),
         ),
       )
     }
-    param.form = "window"
+    const what = isOut ? "/* out CAP */" : "/* window */"
+    if (isOut && out !== null) {
+      return Err(frontRefuse(`${at} is already an out buffer; write /* out CAP */ once`, frontAt(t)))
+    }
+    if (!isOut && param.form !== null) {
+      return Err(frontRefuse(`${at} is already a window; write /* window */ once`, frontAt(t)))
+    }
+    if ((isOut && param.form !== null) || (!isOut && out !== null)) {
+      return Err(frontRefuse(`${at} cannot be both a window and an out buffer`, frontAt(t)))
+    }
+    if (param.type !== "bytes") {
+      const takes = isOut ? "(out, at) and writes the result into" : "(buf, off, len)"
+      return Err(
+        frontRefuse(
+          `${at} is ${frontTsTy(param.type)}: ${what} goes only after u8[], which the real function takes as ${takes}`,
+          frontAt(t),
+        ),
+      )
+    }
+    if (isOut) {
+      if (words.length === 1) {
+        return Err(
+          frontRefuse(`${at}: /* out */ needs its capacity, like /* out 2 * ${param.name}.length + 8 */`, frontAt(t)),
+        )
+      }
+      out = t
+    } else {
+      param.form = "window"
+    }
     frontSkipRaw(c)
     t = frontRaw(c)
   }
-  return Ok(true)
+  return Ok(out)
+}
+
+/**
+ * Checks a function's out buffer once its parameters and result are read:
+ * the result is bytes, and the capacity parses and reads only the lengths of
+ * its bytes parameters.
+ */
+const frontOutBuffer = (sig: FnSig, name: string, at: i32, tok: FrontTok): Result<OutBuffer, FrontRefusal> => {
+  const where = `\`${sig.name}(${name})\``
+  if (sig.returns !== "bytes" && sig.returns !== "bytes?") {
+    return Err(
+      frontRefuse(
+        `${where} is an out buffer, so \`${sig.name}\` returns the bytes written into it: declare u8[] or u8[] | null, not ${frontTsTy(sig.returns)}`,
+        frontAt(tok),
+      ),
+    )
+  }
+  const text = trim(trim(tok.value).slice(3))
+  const e = capacityParse(text)
+  if (e.isErr()) {
+    return Err(
+      frontRefuse(
+        `${where}: the capacity \`${text}\` ${e.error}; a capacity is decimal numbers, +, *, parentheses and <u8[] parameter>.length`,
+        frontAt(tok),
+      ),
+    )
+  }
+  for (const n of capacityNames(e.value)) {
+    let found = false
+    for (const p of sig.params) {
+      found = found || (p.name === n && p.type === "bytes")
+    }
+    if (!found) {
+      return Err(
+        frontRefuse(
+          `${where}: the capacity reads \`${n}.length\`, but \`${n}\` is not a u8[] parameter of \`${sig.name}\``,
+          frontAt(tok),
+        ),
+      )
+    }
+  }
+  const b = new OutBuffer()
+  b.at = at
+  b.capacity = capacityShow(e.value)
+  return Ok(b)
 }
 
 function frontInterfaceIn(c: FrontCursor): Result<FrontInterface, FrontRefusal> {
@@ -878,6 +965,9 @@ function frontInterfaceIn(c: FrontCursor): Result<FrontInterface, FrontRefusal> 
     frontExpect(c, "(").orReturn()
     const sig = new FnSig()
     sig.name = name.text
+    let outTok: FrontTok | null = null
+    let outName = ""
+    let outAt: i32 = 0
     while (!frontIs(c, ")")) {
       const p = frontIdent(c, "a parameter name").orReturn()
       for (const q of sig.params) {
@@ -885,12 +975,28 @@ function frontInterfaceIn(c: FrontCursor): Result<FrontInterface, FrontRefusal> 
           return Err(frontRefuse(`\`${name.text}\` has two parameters named \`${p.text}\``, frontAt(p)))
         }
       }
+      if (outTok !== null && outName === p.text) {
+        return Err(frontRefuse(`\`${name.text}\` has two parameters named \`${p.text}\``, frontAt(p)))
+      }
       frontExpect(c, ":").orReturn()
       const param = new Param()
       param.name = p.text
       param.type = frontSigType(c).orReturn()
-      frontParamForm(c, name.text, param).orReturn()
-      sig.params.push(param)
+      const o = frontParamForm(c, name.text, param).orReturn()
+      if (o === null) {
+        sig.params.push(param)
+      } else if (outTok !== null) {
+        return Err(
+          frontRefuse(
+            `\`${name.text}\` already writes into \`${outName}\`; a function has at most one /* out CAP */ buffer`,
+            frontAt(o),
+          ),
+        )
+      } else {
+        outTok = o
+        outName = p.text
+        outAt = toI32(sig.params.length)
+      }
       if (!frontEat(c, ",")) {
         break
       }
@@ -898,6 +1004,9 @@ function frontInterfaceIn(c: FrontCursor): Result<FrontInterface, FrontRefusal> 
     frontExpect(c, ")").orReturn()
     frontExpect(c, ":").orReturn()
     sig.returns = frontSigType(c).orReturn()
+    if (outTok !== null) {
+      sig.out = frontOutBuffer(sig, outName, outAt, outTok).orReturn()
+    }
     // Look past comments without reading them: a `// module:` line may follow.
     const body = frontLook(c)
     if (body.text === "=>" || body.text === "{") {
@@ -1543,6 +1652,8 @@ const frontForallVar = (p: FrontProp): Result<ForallVar, FrontRefusal> => {
     type = "bytes"
   } else if (ty.name === "string" || vocabIsIntType(ty.name)) {
     type = ty.name
+  } else if (ty.name.startsWith("Secret<")) {
+    return Err(frontRefuse(`\`${ty.name}\` is not a forall type: ${VOCAB_SECRET_FORM}`, ty.pos))
   } else {
     return Err(
       frontRefuse(
@@ -1894,11 +2005,12 @@ function frontName(p: FrontProp, t: FrontTok): Result<FrontV, FrontRefusal> {
     return frontCall(p, sig, pos)
   }
   if (!vocabHas(frontCallOps(), t.text)) {
-    return Err(frontRefuse(`unknown function \`${t.text}\``, pos))
+    const form = vocabIsSecretOp(t.text) ? `: ${VOCAB_SECRET_FORM}` : ""
+    return Err(frontRefuse(`unknown function \`${t.text}\`${form}`, pos))
   }
   const op = t.text
   const raw = frontArgs(p).orReturn()
-  const bytesOp = vocabHas(frontBytesOps(), op)
+  const bytesOp = vocabHas(frontBytesOps(), op) || vocabHas(vocabReadOps(), op)
   const args: FrontV[] = []
   for (let k = 0; k < raw.length; k++) {
     args.push(bytesOp || (op === "flipBit" && k === 0) ? frontAsBytes(raw[k]) : raw[k])

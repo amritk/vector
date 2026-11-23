@@ -1,0 +1,1 @@
+vector spec extract tests/fixtures/anchored-quote/specs/aq-one.xml -o tests/fixtures/anchored-quote/contracts/aq-one.json --check

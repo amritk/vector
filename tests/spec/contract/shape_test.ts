@@ -1,6 +1,7 @@
 import { Suite } from "nish/testing"
 import { replaceAll } from "nish/text"
 import { contractLoad, contractLoadFile } from "../../../src/spec/contract/contract"
+import { literalsPrintable } from "../../../src/spec/contract/literals"
 import { contractParse } from "../../../src/spec/contract/read"
 import {
   contractShapeErrors,
@@ -10,6 +11,8 @@ import {
   shapeTestNames,
   shapeTestPrefixes,
 } from "../../../src/spec/contract/shape"
+import { LitKind } from "../../../src/spec/contract/types"
+import { specTestRepeat } from "../repeat"
 
 /** A small valid contract; each case below changes one part of it. */
 const BASE: string = `{
@@ -201,6 +204,34 @@ export const main = (): i32 => {
     shapeErrorsOf(`{"cite": {"section": "10"}}`, `{"command": "x"}, "section": "2"`).join("\n"),
     "",
   )
+  // A command's Expected is any literal it prints as one text (spec/gates/run).
+  const cmd = `{"command": "x"}, "section": "2", "call": "enc", "args": [{"hex": "00"}], "expect": `
+  const cmdFrom = `{"cite": {"section": "10"}}, "call": "enc", "args": [{"hex": "00"}], "expect": {"str": "00"}`
+  const printed: string[] = [
+    `{"str": "00"}`,
+    `{"hex": "00"}`,
+    `{"ascii": "a"}`,
+    `{"int": 0}`,
+    `{"int": -1}`,
+    `{"int": "151288809941952652"}`,
+    `{"bool": true}`,
+    `{"bool": false}`,
+    `{"null": true}`,
+  ]
+  for (const e of printed) {
+    t.eqStr(`a command source may expect ${e}`, shapeErrorsOf(cmdFrom, `${cmd}${e}`).join("\n"), "")
+  }
+  const unprinted: string[] = [`{"f64": "1.5"}`, `{"words32": ["00000001"]}`]
+  for (const e of unprinted) {
+    shapeExpect(
+      t,
+      cmdFrom,
+      `${cmd}${e}`,
+      "clauses[0].expect: a command prints bytes (as hex), a string, an integer, a bool or null; an f64 or words has no one printed form",
+    )
+  }
+  t.ok("an f64 is not printable", !literalsPrintable(LitKind.F64))
+  t.ok("an int is printable", literalsPrintable(LitKind.Int))
   shapeExpect(
     t,
     `{"cite": {"section": "10"}}`,
@@ -486,7 +517,7 @@ export const main = (): i32 => {
     t,
     `"op": "<="`,
     `"op": "=<"`,
-    "clauses[1].assert.op: one of len concat slice zeros fill flipBit xor bitAnd bitOr unwrap isNull notNull + - * % le64 < <= > >= == != and or not implies strLen strConcat lower upper utf8 ascii charAt",
+    "clauses[1].assert.op: one of len concat slice zeros fill flipBit xor bitAnd bitOr unwrap isNull notNull + - * % le16 le32 le64 be16 be32 be64 leU16 leU32 leU64 beU16 beU32 beU64 leI32 leI64 beI32 beI64 < <= > >= == != and or not implies strLen strConcat lower upper utf8 ascii charAt",
   )
 
   // outOfScope and allowSurvivors.
@@ -567,6 +598,114 @@ export const main = (): i32 => {
   for (let i = 0; i + 2 < neg.length; i += 3) {
     t.eqStr(`refused: ${neg[i + 1]}`, shapeErrorsOf(neg[i], neg[i + 1]).join(" | "), neg[i + 2])
   }
+
+  // An out buffer: at in 0..params, a bytes result, a capacity in its one spelling over bytes lengths.
+  const ret = `"returns": "string"}`
+  const outs: string[][] = [
+    ["a fixed capacity", `"returns": "bytes", "out": {"at": 0, "capacity": "4096"}}`, ""],
+    ["after the parameter", `"returns": "bytes?", "out": {"at": 1, "capacity": "2 * b.length + 8"}}`, ""],
+    [
+      "past the parameters",
+      `"returns": "bytes", "out": {"at": 2, "capacity": "8"}}`,
+      "functions[0].out.at: an index in 0..1, where among the parameters the (out, at) pair goes",
+    ],
+    [
+      "a negative at",
+      `"returns": "bytes", "out": {"at": -1, "capacity": "8"}}`,
+      "read: functions[0].out.at: an integer in 0..255",
+    ],
+    [
+      "a fractional at",
+      `"returns": "bytes", "out": {"at": 0.5, "capacity": "8"}}`,
+      "read: functions[0].out.at: an integer in 0..255",
+    ],
+    [
+      "a missing at",
+      `"returns": "bytes", "out": {"capacity": "8"}}`,
+      "read: functions[0].out.at: missing; an integer in 0..255",
+    ],
+    [
+      "a missing capacity",
+      `"returns": "bytes", "out": {"at": 0}}`,
+      "read: functions[0].out.capacity: missing; a string",
+    ],
+    [
+      "another field",
+      `"returns": "bytes", "out": {"at": 0, "capacity": "8", "end": 1}}`,
+      `read: functions[0].out: unknown field "end"`,
+    ],
+    ["not an object", `"returns": "bytes", "out": 8}`, "read: functions[0].out: an object"],
+    [
+      "a string result",
+      `"returns": "string", "out": {"at": 0, "capacity": "8"}}`,
+      "functions[0].out: absent: an out buffer's function returns bytes or bytes?, not string",
+    ],
+    [
+      "a scalar result",
+      `"returns": "i32", "out": {"at": 0, "capacity": "8"}}`,
+      "functions[0].out: absent: an out buffer's function returns bytes or bytes?, not i32",
+    ],
+    [
+      "a capacity it stops in",
+      `"returns": "bytes", "out": {"at": 0, "capacity": "b.length - 1"}}`,
+      "functions[0].out.capacity: a capacity; it stops at `-`",
+    ],
+    [
+      "a capacity past 2^20",
+      `"returns": "bytes", "out": {"at": 0, "capacity": "1024 * 1025"}}`,
+      "functions[0].out.capacity: a capacity; it is over 1048576 (2^20) even with every length 0",
+    ],
+    ["a capacity at 2^20", `"returns": "bytes", "out": {"at": 0, "capacity": "1024 * 1024 + 0 * b.length"}}`, ""],
+    [
+      "a capacity of 255 tokens",
+      `"returns": "bytes", "out": {"at": 0, "capacity": "1${specTestRepeat(" + 1", 127)}"}}`,
+      "",
+    ],
+    [
+      "a capacity of 256 tokens, which no capacity is, so it stops rather than counts",
+      `"returns": "bytes", "out": {"at": 0, "capacity": "1${specTestRepeat(" + 1", 127)} +"}}`,
+      "functions[0].out.capacity: a capacity; it stops at the end",
+    ],
+    [
+      "a capacity of 257 tokens",
+      `"returns": "bytes", "out": {"at": 0, "capacity": "1${specTestRepeat(" + 1", 128)}"}}`,
+      "functions[0].out.capacity: a capacity; it has more than 256 tokens (numbers, names and punctuation)",
+    ],
+    [
+      "0 times a product past f64",
+      `"returns": "bytes", "out": {"at": 0, "capacity": "1048576${specTestRepeat(" * 1048576", 59)} * 0"}}`,
+      "functions[0].out.capacity: a capacity; it multiplies 0 by a product past what an f64 holds",
+    ],
+    [
+      "a capacity nested 17 deep",
+      `"returns": "bytes", "out": {"at": 0, "capacity": "(((((((((((((((((8)))))))))))))))))"}}`,
+      "functions[0].out.capacity: a capacity; it nests parentheses deeper than 16",
+    ],
+    [
+      "a capacity in another spelling",
+      `"returns": "bytes", "out": {"at": 0, "capacity": "2*b.length"}}`,
+      `functions[0].out.capacity: "2 * b.length", the one spelling of that capacity`,
+    ],
+    [
+      "redundant parentheses",
+      `"returns": "bytes", "out": {"at": 0, "capacity": "(8)"}}`,
+      `functions[0].out.capacity: "8", the one spelling of that capacity`,
+    ],
+    [
+      "an undeclared name",
+      `"returns": "bytes", "out": {"at": 0, "capacity": "c.length"}}`,
+      "functions[0].out.capacity: reads c.length, but c is not a bytes parameter of enc",
+    ],
+  ]
+  for (const k of outs) {
+    t.eqStr(`out: ${k[0]}`, shapeErrorsOf(ret, k[1]).join(" | "), k[2])
+  }
+  shapeExpect(
+    t,
+    `{"name": "b", "type": "bytes"}], "returns": "string"}`,
+    `{"name": "b", "type": "u8"}], "returns": "bytes", "out": {"at": 0, "capacity": "b.length"}}`,
+    "functions[0].out.capacity: reads b.length, but b is not a bytes parameter of enc",
+  )
 
   // A parameter's form: only "window", only on bytes.
   const param = `{"name": "b", "type": "bytes"}`

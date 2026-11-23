@@ -1,0 +1,5 @@
+VIOLATED: x25519-property (exit 1)
+  fail  R-FUNC
+  pass  R-DH
+FAIL  [P-BASE] the base point's u-coordinate is 9 (R-FUNC)
+      sample 1 of 8 (len(a) = 32): the assertion is false

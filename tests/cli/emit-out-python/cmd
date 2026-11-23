@@ -1,0 +1,1 @@
+vector spec emit tests/fixtures/base64-out/contracts/base64-out.json --lang python -o dist/emit-out-python-golden

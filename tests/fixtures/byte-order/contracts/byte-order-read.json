@@ -1,0 +1,716 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "byte-order-read",
+  "source": {
+    "title": "Integers as Bytes: Properties",
+    "main": "byte-order",
+    "sha256": "48f72e250f8b5d9227a994ae66e7662294240ac46224d262c46783f83db5f9a0"
+  },
+  "sources": [
+    {
+      "id": "byte-order",
+      "path": "../rfcs/byte-order.txt",
+      "sha256": "48f72e250f8b5d9227a994ae66e7662294240ac46224d262c46783f83db5f9a0"
+    }
+  ],
+  "target": {
+    "module": "order/read"
+  },
+  "requirements": [
+    {
+      "id": "R-WRITE",
+      "section": "1",
+      "level": "MUST",
+      "quote": "An integer written as bytes MUST be written as its two's complement, in the byte order the operation names."
+    },
+    {
+      "id": "R-READ",
+      "section": "2",
+      "level": "MUST",
+      "quote": "Bytes read as an integer MUST be read in the byte order the operation names, as exactly as many bytes as the integer's width."
+    }
+  ],
+  "exclusions": [],
+  "functions": [
+    {
+      "name": "varint62",
+      "params": [
+        {
+          "name": "b",
+          "type": "bytes"
+        }
+      ],
+      "returns": "u64"
+    },
+    {
+      "name": "readLeI32",
+      "params": [
+        {
+          "name": "b",
+          "type": "bytes"
+        }
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "readBeU16",
+      "params": [
+        {
+          "name": "b",
+          "type": "bytes"
+        }
+      ],
+      "returns": "u16"
+    },
+    {
+      "name": "putBe32",
+      "params": [
+        {
+          "name": "n",
+          "type": "u32"
+        }
+      ],
+      "returns": "bytes"
+    },
+    {
+      "name": "putLe64",
+      "params": [
+        {
+          "name": "n",
+          "type": "i64"
+        }
+      ],
+      "returns": "bytes"
+    },
+    {
+      "name": "idU16",
+      "params": [
+        {
+          "name": "n",
+          "type": "u16"
+        }
+      ],
+      "returns": "u16"
+    },
+    {
+      "name": "idU32",
+      "params": [
+        {
+          "name": "n",
+          "type": "u32"
+        }
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "idI32",
+      "params": [
+        {
+          "name": "n",
+          "type": "i32"
+        }
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "idU64",
+      "params": [
+        {
+          "name": "n",
+          "type": "u64"
+        }
+      ],
+      "returns": "u64"
+    },
+    {
+      "name": "idI64",
+      "params": [
+        {
+          "name": "n",
+          "type": "i64"
+        }
+      ],
+      "returns": "i64"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "property",
+      "id": "P-VARINT",
+      "title": "varint62 is the big-endian u64 with its top 2 bits cleared",
+      "covers": [
+        "R-READ"
+      ],
+      "forall": [
+        {
+          "name": "b",
+          "type": "bytes",
+          "minLen": 8,
+          "maxLen": 8
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "varint62",
+            "args": [
+              {
+                "var": "b"
+              }
+            ]
+          },
+          {
+            "op": "%",
+            "args": [
+              {
+                "op": "beU64",
+                "args": [
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "int": "4611686018427387904"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-READ-LE-I32",
+      "title": "readLeI32 reads four bytes little-endian, signed",
+      "covers": [
+        "R-READ"
+      ],
+      "forall": [
+        {
+          "name": "b",
+          "type": "bytes",
+          "minLen": 4,
+          "maxLen": 4
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "readLeI32",
+            "args": [
+              {
+                "var": "b"
+              }
+            ]
+          },
+          {
+            "op": "leI32",
+            "args": [
+              {
+                "var": "b"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-READ-BE-U16",
+      "title": "readBeU16 reads two bytes big-endian",
+      "covers": [
+        "R-READ"
+      ],
+      "forall": [
+        {
+          "name": "b",
+          "type": "bytes",
+          "minLen": 2,
+          "maxLen": 2
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "readBeU16",
+            "args": [
+              {
+                "var": "b"
+              }
+            ]
+          },
+          {
+            "op": "beU16",
+            "args": [
+              {
+                "var": "b"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-PUT-BE32",
+      "title": "putBe32 writes a u32 big-endian",
+      "covers": [
+        "R-WRITE"
+      ],
+      "forall": [
+        {
+          "name": "n",
+          "type": "u32",
+          "min": 0,
+          "max": 4294967295
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "putBe32",
+            "args": [
+              {
+                "var": "n"
+              }
+            ]
+          },
+          {
+            "op": "be32",
+            "args": [
+              {
+                "var": "n"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-PUT-LE64",
+      "title": "putLe64 writes an i64 little-endian, in two's complement",
+      "covers": [
+        "R-WRITE"
+      ],
+      "forall": [
+        {
+          "name": "n",
+          "type": "i64",
+          "min": "-9223372036854775808",
+          "max": "9223372036854775807"
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "putLe64",
+            "args": [
+              {
+                "var": "n"
+              }
+            ]
+          },
+          {
+            "op": "le64",
+            "args": [
+              {
+                "var": "n"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-READ-ARG-16",
+      "title": "two-byte reads passed to a u16 parameter",
+      "covers": [
+        "R-READ"
+      ],
+      "forall": [
+        {
+          "name": "n",
+          "type": "u16",
+          "min": 0,
+          "max": 65535
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "idU16",
+                "args": [
+                  {
+                    "op": "leU16",
+                    "args": [
+                      {
+                        "op": "le16",
+                        "args": [
+                          {
+                            "var": "n"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "n"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "idU16",
+                "args": [
+                  {
+                    "op": "beU16",
+                    "args": [
+                      {
+                        "op": "be16",
+                        "args": [
+                          {
+                            "var": "n"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "n"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-READ-ARG-U32",
+      "title": "unsigned four-byte reads passed to a u32 parameter, and signed ones too",
+      "covers": [
+        "R-READ"
+      ],
+      "forall": [
+        {
+          "name": "n",
+          "type": "u32",
+          "min": 0,
+          "max": 4294967295
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "idU32",
+                "args": [
+                  {
+                    "op": "leU32",
+                    "args": [
+                      {
+                        "op": "le32",
+                        "args": [
+                          {
+                            "var": "n"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "n"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "idU32",
+                "args": [
+                  {
+                    "op": "beU32",
+                    "args": [
+                      {
+                        "op": "be32",
+                        "args": [
+                          {
+                            "var": "n"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "n"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "idU32",
+                "args": [
+                  {
+                    "op": "leI32",
+                    "args": [
+                      {
+                        "op": "le32",
+                        "args": [
+                          {
+                            "var": "n"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "n"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "idU32",
+                "args": [
+                  {
+                    "op": "beI32",
+                    "args": [
+                      {
+                        "op": "be32",
+                        "args": [
+                          {
+                            "var": "n"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "n"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-READ-ARG-I32",
+      "title": "signed four-byte reads passed to an i32 parameter",
+      "covers": [
+        "R-READ"
+      ],
+      "forall": [
+        {
+          "name": "n",
+          "type": "i32",
+          "min": -2147483648,
+          "max": 2147483647
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "idI32",
+                "args": [
+                  {
+                    "op": "leI32",
+                    "args": [
+                      {
+                        "op": "le32",
+                        "args": [
+                          {
+                            "var": "n"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "n"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "idI32",
+                "args": [
+                  {
+                    "op": "beI32",
+                    "args": [
+                      {
+                        "op": "be32",
+                        "args": [
+                          {
+                            "var": "n"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "n"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-READ-ARG-64",
+      "title": "eight-byte reads passed to a u64 and an i64 parameter",
+      "covers": [
+        "R-READ"
+      ],
+      "forall": [
+        {
+          "name": "n",
+          "type": "i64",
+          "min": "-9223372036854775808",
+          "max": "9223372036854775807"
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "idI64",
+                "args": [
+                  {
+                    "op": "leI64",
+                    "args": [
+                      {
+                        "op": "le64",
+                        "args": [
+                          {
+                            "var": "n"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "n"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "idI64",
+                "args": [
+                  {
+                    "op": "beI64",
+                    "args": [
+                      {
+                        "op": "be64",
+                        "args": [
+                          {
+                            "var": "n"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "n"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "idU64",
+                "args": [
+                  {
+                    "op": "leU64",
+                    "args": [
+                      {
+                        "op": "le64",
+                        "args": [
+                          {
+                            "var": "n"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "call": "idU64",
+                "args": [
+                  {
+                    "op": "beU64",
+                    "args": [
+                      {
+                        "op": "be64",
+                        "args": [
+                          {
+                            "var": "n"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

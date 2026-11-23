@@ -201,10 +201,29 @@ export const gateSignatures = (ctx: CheckContext): string[] => {
     const real = sigs[ri]
     const f = c.functions[c.functions.findIndex((d: FnSig): boolean => d.name === name)]
     // A window is one bytes parameter the real function takes as (buf, off, len).
-    const want = `(${f.params.map((p): string => (typesIsWindow(p) ? "bytes, i32, i32" : p.type)).join(", ")}) -> ${f.returns}`
+    // An out buffer is an (out, at) pair the real function writes into, returning end.
+    const o = f.out
+    const types: string[] = []
+    for (let i: i32 = 0; i <= toI32(f.params.length); i++) {
+      if (o !== null && o.at === i) {
+        types.push("bytes, i32")
+      }
+      if (i < toI32(f.params.length)) {
+        const p = f.params[i]
+        types.push(typesIsWindow(p) ? "bytes, i32, i32" : p.type)
+      }
+    }
+    const want = `(${types.join(", ")}) -> ${o === null ? f.returns : "i32"}`
     const got = `(${real.params.map((p: string): string => gateNishType(p)).join(", ")}) -> ${gateNishType(real.returns)}`
     if (want !== got) {
-      gateIssue(ctx, out, g, name, `declared ${want}, but ${module} has (${real.params.join(", ")}): ${real.returns}`)
+      const why = o === null ? "" : ` (its /* out */ is the (bytes, i32) pair at ${o.at}, returning end)`
+      gateIssue(
+        ctx,
+        out,
+        g,
+        name,
+        `declared ${want}${why}, but ${module} has (${real.params.join(", ")}): ${real.returns}`,
+      )
     }
   }
   return out

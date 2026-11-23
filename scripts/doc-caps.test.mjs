@@ -178,6 +178,161 @@ for (const [name, headCaps, status, lines] of BASE_CASES) {
   });
 }
 
+const renameFiles = { "a.md": x(5), "b.md": "y\ny\ny\ny\n" };
+const mv = (from, to) => (dir) => git(dir, "mv", from, to);
+
+// [name, base caps, the change committed on top, the head's caps, exit status,
+// the lines stderr must contain]
+const RENAME_CASES = [
+  [
+    "a rename that keeps its cap",
+    baseCaps,
+    mv("b.md", "c.md"),
+    { "a.md": 10, "c.md": 10 },
+    0,
+    [],
+  ],
+  [
+    "a rename that lowers its cap",
+    baseCaps,
+    mv("b.md", "c.md"),
+    { "a.md": 10, "c.md": 9 },
+    0,
+    [],
+  ],
+  [
+    "a rename into a new directory",
+    baseCaps,
+    (dir) => {
+      mkdirSync(path.join(dir, "d"));
+      git(dir, "mv", "b.md", "d/b.md");
+    },
+    { "a.md": 10, "d/b.md": 10 },
+    0,
+    [],
+  ],
+  [
+    "two renames",
+    baseCaps,
+    (dir) => {
+      mv("a.md", "e.md")(dir);
+      mv("b.md", "f.md")(dir);
+    },
+    { "e.md": 10, "f.md": 10 },
+    0,
+    [],
+  ],
+  [
+    "a rename after a modified file",
+    baseCaps,
+    (dir) => {
+      writeFileSync(path.join(dir, "a.md"), x(6));
+      mv("b.md", "c.md")(dir);
+    },
+    { "a.md": 10, "c.md": 10 },
+    0,
+    [],
+  ],
+  [
+    "a rename whose content also changed",
+    baseCaps,
+    (dir) => {
+      mv("b.md", "c.md")(dir);
+      writeFileSync(path.join(dir, "c.md"), "y\ny\ny\nz\n");
+      git(dir, "add", "c.md");
+    },
+    { "a.md": 10, "c.md": 10 },
+    0,
+    [],
+  ],
+  [
+    "a rename that raises its cap",
+    baseCaps,
+    mv("b.md", "c.md"),
+    { "a.md": 10, "c.md": 11 },
+    1,
+    ["b.md: renamed to c.md, whose cap of 11 bytes is higher than its 10 at"],
+  ],
+  [
+    "a rename whose new path has no cap",
+    baseCaps,
+    mv("b.md", "c.md"),
+    { "a.md": 10 },
+    1,
+    ["b.md: renamed to c.md, which has no cap", "was removed", advice],
+  ],
+  [
+    "a rename to a path the base already capped",
+    { ...baseCaps, "c.md": 10 },
+    mv("b.md", "c.md"),
+    { "a.md": 10, "c.md": 10 },
+    1,
+    ["b.md: renamed to c.md, which was already capped at", "was removed"],
+  ],
+  [
+    "a file deleted outright",
+    baseCaps,
+    (dir) => git(dir, "rm", "-q", "b.md"),
+    { "a.md": 10 },
+    1,
+    ["b.md: its cap of 10 bytes at", "was removed", advice],
+  ],
+  [
+    "an entry removed while its file stays",
+    baseCaps,
+    () => {},
+    { "a.md": 10 },
+    1,
+    ["b.md: its cap of 10 bytes at", "was removed"],
+  ],
+  [
+    "a rename beside an entry removed without one",
+    baseCaps,
+    mv("b.md", "c.md"),
+    { "c.md": 10 },
+    1,
+    ["a.md: its cap of 10 bytes at"],
+  ],
+];
+
+for (const [name, before, change, headCaps, status, lines] of RENAME_CASES) {
+  test(`--base: ${name}`, (t) => {
+    const dir = repo(t, renameFiles, before);
+    const sha = commit(dir);
+    change(dir);
+    writeFileSync(
+      path.join(dir, "scripts/doc-caps.json"),
+      JSON.stringify(headCaps),
+    );
+    commit(dir);
+    const r = run(dir, "--base", sha);
+    assert.equal(r.status, status, r.stderr);
+    for (const l of lines) assert.ok(r.stderr.includes(l), r.stderr);
+    if (status === 0) assert.equal(r.stderr, "");
+    else assert.ok(!r.stderr.includes("c.md:"), r.stderr);
+  });
+}
+
+test("--base: a git failure while reading renames exits 2", (t) => {
+  const dir = repo(t, renameFiles, baseCaps);
+  const sha = commit(dir);
+  mv("b.md", "c.md")(dir);
+  writeFileSync(
+    path.join(dir, "scripts/doc-caps.json"),
+    JSON.stringify({ "a.md": 10, "c.md": 10 }),
+  );
+  commit(dir);
+  // Delete HEAD's tree, so the base still names a commit but no diff can be read.
+  const tree = execFileSync("git", ["rev-parse", "HEAD^{tree}"], {
+    cwd: dir,
+    encoding: "utf8",
+  }).trim();
+  rmSync(path.join(dir, ".git/objects", tree.slice(0, 2), tree.slice(2)));
+  const r = run(dir, "--base", sha);
+  assert.equal(r.status, 2, r.stderr);
+  assert.ok(r.stderr.includes("cannot read the renames"), r.stderr);
+});
+
 test("--base: a base without the caps file has no previous caps", (t) => {
   const dir = repo(t, files, baseCaps);
   rmSync(path.join(dir, "scripts/doc-caps.json"));

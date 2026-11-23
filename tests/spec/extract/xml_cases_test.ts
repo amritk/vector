@@ -61,7 +61,7 @@ const xmlCasesTestNorm = (middle: string): string[] => {
 }
 
 /** The lines of the section numbered `id`, or a note that there is none. */
-const xmlCasesTestLines = (d: XmlDocument, id: string): string[] => {
+const xmlCasesTestRawLines = (d: XmlDocument, id: string): string[] => {
   for (const s of d.sections) {
     if (s.id === id) {
       return s.lines
@@ -69,6 +69,10 @@ const xmlCasesTestLines = (d: XmlDocument, id: string): string[] => {
   }
   return [`<no section ${id}>`]
 }
+
+/** The lines of text of the section numbered `id`: the blank line between two blocks left out. */
+const xmlCasesTestLines = (d: XmlDocument, id: string): string[] =>
+  xmlCasesTestRawLines(d, id).filter((l: string): boolean => l.length > 0)
 
 /** The first element named `name`, depth first. */
 const xmlCasesTestFind = (n: XmlNode, name: string): XmlNode | null => {
@@ -107,7 +111,7 @@ const xmlCasesTestNumbering = (t: Suite): void => {
   }
   t.eqLines("middle 1, 2, 2.1; back A, A.1, B; numbered=false hides its subtree", d.sections.map(xmlCasesTestSection), [
     "1 A: 1 | 1",
-    "2 B: 2 | 2 / 21",
+    "2 B: 2 | 2 /  / 21",
     "2.1 B1: 21 | 21",
     "A X:  | ",
     "A.1 X1:  | ",
@@ -199,6 +203,10 @@ const xmlCasesTestTableInCell = (t: Suite): void => {
 const xmlCasesTestDeep = (depth: i32, lines: i32): string =>
   `<rfc><middle>${xmlCasesTestRepeat("<section>", depth)}${xmlCasesTestRepeat("<t>a</t>", lines)}${xmlCasesTestRepeat("</section>", depth)}</middle></rfc>`
 
+/** Two sections, one inside the other, around a table row of `n` empty cells. */
+const xmlCasesTestEmptyCells = (n: i32): string =>
+  `<rfc><middle><section><section><table><tr>${xmlCasesTestRepeat("<td/>", n)}</tr></table></section></section></middle></rfc>`
+
 /** XML_MAX_SECTION_LINES, counting each subsection's lines in its parents'. */
 const xmlCasesTestSectionBudget = (t: Suite): void => {
   t.eqStr(
@@ -209,7 +217,11 @@ const xmlCasesTestSectionBudget = (t: Suite): void => {
   const d = xmlCasesTestParse(t, "100 deep holding 20000 lines", xmlCasesTestDeep(100, 20000))
   if (d !== null) {
     t.ok("100 sections", d.sections.length === 100)
-    t.ok("the outermost holds all 20000 lines", d.sections[0].lines.length === 20000)
+    t.ok(
+      "the outermost holds all 20000 lines of text, a blank line between each two",
+      d.sections[0].lines.filter((l: string): boolean => l.length > 0).length === 20000 &&
+        d.sections[0].lines.length === 39999,
+    )
     t.ok("and none of its own", d.sections[0].ownLines.length === 0)
   }
   t.eqStr(
@@ -219,6 +231,12 @@ const xmlCasesTestSectionBudget = (t: Suite): void => {
     ),
     "ok",
   )
+  t.eqStr(
+    "empty cells are lines too: 2 deep holding 1000001 of them is over",
+    xmlCasesTestErr(xmlCasesTestEmptyCells(1000001)),
+    "1:0 md=-1 numbered sections hold over 2000000 lines, counting each subsection's in its parents' (XML_MAX_SECTION_LINES)",
+  )
+  t.eqStr("and 1000000 of them is not", xmlCasesTestErr(xmlCasesTestEmptyCells(1000000)), "ok")
 }
 
 /**
@@ -597,6 +615,38 @@ const xmlCasesTestLastFirst = (d: XmlDocument | null): string => {
   return lines.length > 0 ? lines[0] : ""
 }
 
+/** A section's codeLines, comma-separated. */
+const xmlCasesTestCodeLines = (sec: RfcSection): string => sec.codeLines.map((i: i32): string => `${i}`).join(",")
+
+/** Each section's id and codeLines, as `id: lines`, joined by ` ; `. */
+const xmlCasesTestAllCode = (d: XmlDocument | null): string =>
+  d === null ? "" : d.sections.map((s: RfcSection): string => `${s.id}: ${xmlCasesTestCodeLines(s)}`).join(" ; ")
+
+/** Where each section's code lines begin and end, at the edges of its range. */
+const xmlCasesTestCodeEdges = (t: Suite): void => {
+  const rows: string[][] = [
+    ["a section that opens with code", "<section><sourcecode>a\nb</sourcecode><t>p</t></section>", "1: 0,1"],
+    [
+      "a subsection that opens with code",
+      "<section><t>p</t><section><sourcecode>a</sourcecode></section></section>",
+      "1: 2 ; 1.1: 0",
+    ],
+    [
+      "code ending in a blank line, then a section that opens with code",
+      "<section><t>p</t><sourcecode>a\n\n</sourcecode></section><section><sourcecode>b</sourcecode></section>",
+      "1: 2,3 ; 2: 0",
+    ],
+    [
+      "code ending in a blank line, then a subsection that opens with code",
+      "<section><sourcecode>a\n\n</sourcecode><section><sourcecode>b</sourcecode></section></section>",
+      "1: 0,1,2 ; 1.1: 0",
+    ],
+  ]
+  for (const r of rows) {
+    t.eqStr(r[0], xmlCasesTestAllCode(xmlCasesTestParse(t, r[0], `<rfc><middle>${r[1]}</middle></rfc>`)), r[2])
+  }
+}
+
 /** Inputs that took seconds to minutes when a step was quadratic. */
 const xmlCasesTestLinear = (t: Suite): void => {
   let start = Date.now()
@@ -607,6 +657,21 @@ const xmlCasesTestLinear = (t: Suite): void => {
   )
   t.ok("40000 sections", siblings !== null && siblings.sections.length === 40000)
   xmlCasesTestFast(t, "many sibling sections", start)
+
+  start = Date.now()
+  const coded = xmlCasesTestParse(
+    t,
+    "many sections of code",
+    `<rfc><middle>${xmlCasesTestRepeat("<section><t>p</t><sourcecode>a\nb\nc\nd\ne</sourcecode></section>", 40000)}</middle></rfc>`,
+  )
+  t.eqStr(
+    "many sections of code: the first and last each hold only their own lines of code",
+    coded !== null && coded.sections.length === 40000
+      ? `${xmlCasesTestCodeLines(coded.sections[0])} / ${xmlCasesTestCodeLines(coded.sections[39999])}`
+      : "",
+    "2,3,4,5,6 / 2,3,4,5,6",
+  )
+  xmlCasesTestFast(t, "many sections of code", start)
 
   start = Date.now()
   t.ok(
@@ -717,9 +782,19 @@ const xmlCasesTestLinear = (t: Suite): void => {
   const cells = xmlCasesTestParse(
     t,
     "a table with many cells",
-    `<rfc><middle><section><table><tr>${xmlCasesTestRepeat("<td>a</td>", 40000)}</tr></table></section></middle></rfc>`,
+    `<rfc><middle><section><table><tr>${xmlCasesTestRepeat("<td>g</td>", 40000)}</tr></table></section></middle></rfc>`,
   )
-  t.ok("40000 cells, 40000 lines", cells !== null && xmlCasesTestLines(cells, "1").length === 40000)
+  t.ok("40000 cells, 40000 lines of text", cells !== null && xmlCasesTestLines(cells, "1").length === 40000)
+  t.ok("and a blank line between each two", cells !== null && xmlCasesTestRawLines(cells, "1").length === 79999)
+  const bare = xmlCasesTestParse(
+    t,
+    "a table with many word cells",
+    `<rfc><middle><section><table><tr>${xmlCasesTestRepeat("<td>0001</td>", 40000)}</tr></table></section></middle></rfc>`,
+  )
+  t.ok(
+    "40000 word cells, no blank line between them",
+    bare !== null && xmlCasesTestRawLines(bare, "1").length === 40000,
+  )
   xmlCasesTestFast(t, "a table with many cells", start)
 }
 
@@ -739,5 +814,6 @@ export const main = (): i32 => {
   xmlCasesTestAttributes(t)
   xmlCasesTestLineNumbers(t)
   xmlCasesTestLinear(t)
+  xmlCasesTestCodeEdges(t)
   return t.done()
 }

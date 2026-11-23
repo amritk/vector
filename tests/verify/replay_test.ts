@@ -1,6 +1,7 @@
 import { Suite } from "nish/testing"
 import { diffExitCode } from "../../src/cli/diff"
 import { verifyExitCode } from "../../src/cli/verify"
+import { outJsonObject, outJsonRender } from "../../src/verify/emit/outjson"
 import {
   CHECK_WITNESS,
   DIFF_MISMATCH,
@@ -23,6 +24,7 @@ import {
   replayClause,
   replayEvaluate,
   replayHazard,
+  replayJsonPut,
   replayParseValue,
   replayReport,
   replayValueText,
@@ -758,6 +760,21 @@ const replayDiffMismatch = (t: Suite): void => {
   t.contains("the summary says so", out.summary, "this is a bug in vector, not in your programs")
 }
 
+// Which outcomes --json explains with replayDetail: the two that did not confirm.
+const replayJsonCases = (t: Suite): void => {
+  const rows: string[][] = [
+    [REPLAY_NOT_REPLAYED, "why", '{\n  "replay": "not-replayed",\n  "replayDetail": "why"\n}'],
+    [REPLAY_MISMATCH, "differs", '{\n  "replay": "mismatch",\n  "replayDetail": "differs"\n}'],
+    [REPLAY_CONFIRMED, "", '{\n  "replay": "confirmed"\n}'],
+    [REPLAY_CONFIRMED, "stray", '{\n  "replay": "confirmed"\n}'],
+    ["", "", "{}"],
+  ]
+  for (let i = 0; i < rows.length; i++) {
+    const got = outJsonRender(replayJsonPut(outJsonObject(), rows[i][0], rows[i][1]))
+    t.eqStr(`replayJsonPut "${rows[i][0]}"`, got, rows[i][2])
+  }
+}
+
 export const main = (): i32 => {
   const t = new Suite("verify/replay")
   replayParseCases(t)
@@ -770,5 +787,6 @@ export const main = (): i32 => {
   replayVerifyMismatch(t)
   replayUnreadableHazard(t)
   replayDiffMismatch(t)
+  replayJsonCases(t)
   return t.done()
 }

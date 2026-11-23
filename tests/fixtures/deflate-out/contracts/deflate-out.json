@@ -1,0 +1,242 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "deflate-out",
+  "source": {
+    "title": "Raw DEFLATE written into a caller's buffer",
+    "main": "deflate-out",
+    "sha256": "df285aae4580abb4f31e2c74092dce0eaed4121670bb2045391c1e4cd2238ac5"
+  },
+  "sources": [
+    {
+      "id": "deflate-out",
+      "path": "../specs/deflate-out.xml"
+    }
+  ],
+  "target": {
+    "module": "nish/compress/deflate"
+  },
+  "requirements": [
+    {
+      "id": "R-DEFLATE-STORED",
+      "section": "3",
+      "level": "MUST",
+      "quote": "deflateCompress MUST write a raw DEFLATE stream of the window's bytes, and at level 0 that stream MUST be stored blocks."
+    },
+    {
+      "id": "R-INFLATE",
+      "section": "4",
+      "level": "MUST",
+      "quote": "deflateDecompress MUST write the bytes a raw DEFLATE stream holds, and only those bytes."
+    },
+    {
+      "id": "R-INFLATE-TRUNCATED",
+      "section": "4",
+      "level": "MUST",
+      "quote": "deflateDecompress MUST return null for a stream that ends before its last block does."
+    }
+  ],
+  "exclusions": [],
+  "functions": [
+    {
+      "name": "deflateCompress",
+      "params": [
+        {
+          "name": "src",
+          "type": "bytes",
+          "form": "window"
+        },
+        {
+          "name": "level",
+          "type": "i32"
+        }
+      ],
+      "returns": "bytes",
+      "out": {
+        "at": 1,
+        "capacity": "2 * src.length + 18"
+      }
+    },
+    {
+      "name": "deflateDecompress",
+      "params": [
+        {
+          "name": "src",
+          "type": "bytes",
+          "form": "window"
+        },
+        {
+          "name": "limit",
+          "type": "i32"
+        }
+      ],
+      "returns": "bytes?",
+      "out": {
+        "at": 1,
+        "capacity": "4096"
+      }
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "V1",
+      "title": "one stored block",
+      "covers": ["R-DEFLATE-STORED"],
+      "source": {
+        "command": "python3 -c 'import zlib;c=zlib.compressobj(0,zlib.DEFLATED,-15);print((c.compress(b\"hello\")+c.flush()).hex())'"
+      },
+      "section": "7",
+      "call": "deflateCompress",
+      "args": [
+        {
+          "ascii": "hello"
+        },
+        {
+          "int": 0,
+          "label": "Level"
+        }
+      ],
+      "expect": {
+        "hex": "010500faff68656c6c6f"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V2",
+      "title": "zlib's fixed-Huffman stream",
+      "covers": ["R-INFLATE"],
+      "source": {
+        "command": "python3 -c 'import zlib;print(zlib.decompress(bytes.fromhex(\"cb48cdc9c957c8402701\"),-15).hex())'"
+      },
+      "section": "7",
+      "call": "deflateDecompress",
+      "args": [
+        {
+          "hex": "cb48cdc9c957c8402701"
+        },
+        {
+          "int": 4096,
+          "label": "Limit"
+        }
+      ],
+      "expect": {
+        "ascii": "hello hello hello hello"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V3",
+      "title": "a stored block",
+      "covers": ["R-INFLATE"],
+      "source": {
+        "command": "python3 -c 'import zlib;print(zlib.decompress(bytes.fromhex(\"010500faff68656c6c6f\"),-15).hex())'"
+      },
+      "section": "7",
+      "call": "deflateDecompress",
+      "args": [
+        {
+          "hex": "010500faff68656c6c6f"
+        },
+        {
+          "int": 4096,
+          "label": "Limit"
+        }
+      ],
+      "expect": {
+        "ascii": "hello"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V4",
+      "title": "a stream cut short",
+      "covers": ["R-INFLATE-TRUNCATED"],
+      "source": {
+        "spec": "4"
+      },
+      "section": "7",
+      "call": "deflateDecompress",
+      "args": [
+        {
+          "hex": "cb48"
+        },
+        {
+          "int": 4096,
+          "label": "Limit"
+        }
+      ],
+      "expect": {
+        "null": true
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-ROUND-TRIP",
+      "title": "what deflateCompress writes, deflateDecompress reads back",
+      "covers": ["R-INFLATE"],
+      "forall": [
+        {
+          "name": "d",
+          "type": "bytes",
+          "minLen": 0,
+          "maxLen": 64
+        }
+      ],
+      "assert": {
+        "let": [
+          {
+            "name": "e",
+            "value": {
+              "call": "deflateDecompress",
+              "args": [
+                {
+                  "call": "deflateCompress",
+                  "args": [
+                    {
+                      "var": "d"
+                    },
+                    {
+                      "int": 6
+                    }
+                  ]
+                },
+                {
+                  "int": 4096
+                }
+              ]
+            }
+          }
+        ],
+        "in": {
+          "op": "and",
+          "args": [
+            {
+              "op": "notNull",
+              "args": [
+                {
+                  "var": "e"
+                }
+              ]
+            },
+            {
+              "op": "==",
+              "args": [
+                {
+                  "op": "unwrap",
+                  "args": [
+                    {
+                      "var": "e"
+                    }
+                  ]
+                },
+                {
+                  "var": "d"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

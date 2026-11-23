@@ -25,8 +25,10 @@ Generated from [src/spec/gates/text.ts](https://github.com/amritk/vector/blob/ma
 - [`gateKeywordUses`](#gatekeyworduses)
 - [`gateKeywordName`](#gatekeywordname)
 - [`gateLines`](#gatelines)
+- [`gateQuotePairs`](#gatequotepairs)
 - [`gateTextLines`](#gatetextlines)
 - [`gateIntRounds`](#gateintrounds)
+- [`gateIntLines`](#gateintlines)
 - [`gateIntLabelCount`](#gateintlabelcount)
 - [`gateF64Printed`](#gatef64printed)
 - [`gateParagraphStarts`](#gateparagraphstarts)
@@ -196,6 +198,21 @@ the lines, one per line
 
 </scalar-field>
 
+### gateQuotePairs
+
+The quotes a printed string may stand in, as pairs: an opening quote, then
+its closing one.
+
+```ts
+function gateQuotePairs(): string[]
+```
+
+<scalar-field name="returns" type="string[]">
+
+the quotes, opening at each even index and closing after it
+
+</scalar-field>
+
 ### gateTextLines
 
 The lines on which a value is printed whole: in quotes, as a whole line,
@@ -256,6 +273,39 @@ the integer, as decimal text
 <scalar-field name="returns" type="i32[]">
 
 the printings that carry it; empty when none
+
+</scalar-field>
+
+### gateIntLines
+
+The lines a label is printed on with the integer `n` after it, for
+placing the value by line (under a case heading).
+
+```ts
+function gateIntLines(lines: string, label: string, n: string): i32[]
+```
+
+<scalar-field name="lines" type="string" required>
+
+the section's lines (gateLines)
+
+</scalar-field>
+
+<scalar-field name="label" type="string" required>
+
+the label
+
+</scalar-field>
+
+<scalar-field name="n" type="string" required>
+
+the integer, as decimal text
+
+</scalar-field>
+
+<scalar-field name="returns" type="i32[]">
+
+the index in `lines` of each line that carries it; empty when none
 
 </scalar-field>
 

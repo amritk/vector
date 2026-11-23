@@ -3,7 +3,7 @@
  Status: INVALID
 
  Gate failures
-  ✘ fidelity sources: source spec: check-hidden-xml/spec.xml as its reader decoded it: text a reader cannot see as the gates read it: line 3: "MUSТ" reads as MUST but is not spelled in ASCII: write MUST, so nothing citing it can be checked
+  ✘ fidelity sources: source spec: check-hidden-xml/spec.xml as its reader decoded it: text a reader cannot see as the gates read it: line 4: "MUSТ" reads as MUST but is not spelled in ASCII: write MUST, so nothing citing it can be checked
 
  Requirements
   ○ R-EMPTY  §1 MUST  "nameOk MUST return true for the empty name, ""."

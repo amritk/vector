@@ -387,7 +387,7 @@ const rfcProfilesTestModules = (t: Suite, base: string, rfcs: ProfileRfcs): void
     [
       "a module that is not a module path",
       `${iface}\n// module: Std/len\nexport function len(data: u8[]): i32`,
-      "`Std/len` is not a module path; write <root>/<path>, lowercase segments split by /",
+      "`Std/len` is not a module path; write <root>/<segment>/…, each segment [a-z][a-z0-9_]*(-[a-z0-9][a-z0-9_]*)*, words joined by single - (RFC 3986 §3.3)",
     ],
     [
       "a module line in a block comment",

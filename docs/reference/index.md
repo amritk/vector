@@ -20,7 +20,7 @@ The 3 JSON Schemas in `schemas/`.
 
 <scalar-card title="Modules" icon="phosphor/regular/books" href="#modules">
 
-The 119 source files of `src/`, from their doc comments.
+The 120 source files of `src/`, from their doc comments.
 
 </scalar-card>
 
@@ -75,6 +75,7 @@ The 119 source files of `src/`, from their doc comments.
 | [`lang/zig`](modules/lang/zig.md) | the Zig table: how Zig writes each construct of the contract vocabulary, and what it drops. |
 | [`main`](modules/main.md) | the binary's entry point. |
 | [`spec/check`](modules/spec/check.md) | the pipeline every contract goes through: an ordered registry of gates, each a top-level function that reads the contract and returns its findings. |
+| [`spec/contract/capacity`](modules/spec/contract/capacity.md) | The capacity of an out buffer: how many bytes a function that writes its result into `(out, at)` may write after `at`. |
 | [`spec/contract/chars`](modules/spec/contract/chars.md) | the character-level checks a contract's text needs: UTF-8 decoding one code point at a time, control characters, and the patterns its ids, sections and numbers are written in. |
 | [`spec/contract/contract`](modules/spec/contract/contract.md) | the entry to a contract: read its JSON, check its values, and hand back the model of `spec/contract/types`. |
 | [`spec/contract/f64`](modules/spec/contract/f64.md) | a contract's f64 values: the text a literal is written in, and the binary64 encoding (IEEE 754-2019 §3.4) it reads as. |

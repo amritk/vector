@@ -1,0 +1,23 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ deflate-out · deflate-out (Raw DEFLATE written into a caller's buffer) · nish/compress/deflate
+ Status: CONTRACT_VALID
+
+ Requirements
+  ○ R-DEFLATE-STORED  §3 MUST  "deflateCompress MUST write a raw DEFLATE stream of the window's…"
+      ○ V1
+  ○ R-INFLATE  §4 MUST  "deflateDecompress MUST write the bytes a raw DEFLATE stream hol…"
+      ○ V2  ○ V3  ○ P-ROUND-TRIP (29 samples: 5 boundary)
+  ○ R-INFLATE-TRUNCATED  §4 MUST  "deflateDecompress MUST return null for a stream that ends befor…"
+      ○ V4
+
+ Vector sources run
+  · V1: $ python3 -c 'import zlib;c=zlib.compressobj(0,zlib.DEFLATED,-15);print((c.compress(b"hello")+c.flush()).hex())'
+  · V2: $ python3 -c 'import zlib;print(zlib.decompress(bytes.fromhex("cb48cdc9c957c8402701"),-15).hex())'
+  · V3: $ python3 -c 'import zlib;print(zlib.decompress(bytes.fromhex("010500faff68656c6c6f"),-15).hex())'
+
+ Warnings
+  ! V1.source: source command not run (pass --run-sources): the expected value is unverified: $ python3 -c 'import zlib;c=zlib.compressobj(0,zlib.DEFLATED,-15);print((c.compress(b"hello")+c.flush()).hex())'
+  ! V2.source: source command not run (pass --run-sources): the expected value is unverified: $ python3 -c 'import zlib;print(zlib.decompress(bytes.fromhex("cb48cdc9c957c8402701"),-15).hex())'
+  ! V3.source: source command not run (pass --run-sources): the expected value is unverified: $ python3 -c 'import zlib;print(zlib.decompress(bytes.fromhex("010500faff68656c6c6f"),-15).hex())'
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

@@ -169,7 +169,7 @@ const profileIfaceRefusedTestOrder = (t: Suite, base: string, rfcs: ProfileRfcs)
     "the independent refusals, after the interface's",
     got.join("\n"),
     [
-      `${profileIfaceRefusedTestLine(badQuote, "// module: Std/len")} \`Std/len\` is not a module path; write <root>/<path>, lowercase segments split by /`,
+      `${profileIfaceRefusedTestLine(badQuote, "// module: Std/len")} \`Std/len\` is not a module path; write <root>/<segment>/…, each segment [a-z][a-z0-9_]*(-[a-z0-9][a-z0-9_]*)*, words joined by single - (RFC 3986 §3.3)`,
       `${profileIfaceRefusedTestLine(badQuote, `<blockquote anchor="R-PREFIX">`)} R-PREFIX is not in Section 2 of RFC9990: "A sender MUST prefix every frame with its length in one octet."`,
       `${profileIfaceRefusedTestLine(badQuote, "/* 300..256 */")} the length bounds of \`data\` (u8[]) must satisfy 0 <= lo <= hi <= 4096`,
       `${profileIfaceRefusedTestLine(badQuote, "01zz")} Expected: a labelled value is \`Label = hex\` (lowercase hex pairs with no spaces), \`Label = 42\` or \`Label = 22 × 0b\``,

@@ -7,11 +7,13 @@ import {
   gateByteLists,
   gateF64Printed,
   gateIntLabelCount,
+  gateIntLines,
   gateIntRounds,
   gateKeywordName,
   gateKeywordUses,
   gateLines,
   gateParagraphStarts,
+  gateQuotePairs,
   gateSentenceAt,
   gateSentenceBreaks,
   gateSentenceSpan,
@@ -49,6 +51,7 @@ export const main = (): i32 => {
   )
   t.eqStr("a value ending a line after =", textTestNums(gateTextLines(lines, "SHA-256")), "0")
   t.eqStr("a quoted value", textTestNums(gateTextLines(lines, "Zg==")), "3")
+  t.eqStr("the quotes, in pairs", gateQuotePairs().join(" "), "\" \" ' ' \u201c \u201d \u2018 \u2019 ` `")
   t.eqStr("not a part of a value", textTestNums(gateTextLines(lines, "Zg")), "")
   t.eqStr("a value wrapped across lines", textTestNums(gateTextLines("a =\nx y\nz", "x y z")), "1,2")
 
@@ -59,6 +62,15 @@ export const main = (): i32 => {
   t.eqStr("not a range", textTestNums(gateIntRounds("L = 4-5", "L", "4")), "")
   t.eqStr("rounds count printings", textTestNums(gateIntRounds("c = 1\nc = 2\nc = 1", "c", "1")), "0,2")
   t.ok("a label's count", gateIntLabelCount("c = 1\nc = 2\nxc = 3", "c") === 2)
+  const intLines: string[][] = [
+    ["c = 1\nc = 2\nxc = 1\nc = 1", "1", "0,3"],
+    ["c = 1\nc = 2", "2", "1"],
+    ["c = 12\nc = 1.5\nc: 1", "1", "2"],
+    ["xc = 1\nd = 1", "1", ""],
+  ]
+  for (const r of intLines) {
+    t.eqStr(`gateIntLines ${r[0]} = ${r[1]}`, textTestNums(gateIntLines(r[0], "c", r[1])), r[2])
+  }
   t.eqStr("f64s as printed", gateF64Printed("x = 1.5\nx: -0\nx NaN\nx = 1.5.2", "x").join("|"), "1.5|-0|NaN")
   t.eqStr("the sentence around an offset", gateSentenceAt("One. It MUST hold. Two.", [], 8), "It MUST hold.")
   t.eqStr("a sentence's breaks", textTestNums(gateSentenceBreaks("One. It MUST hold. Two.", [])), "3,4,5,17,18,19")

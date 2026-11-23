@@ -1,0 +1,16 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ rfc9001-keys · RFC 9001 (Using TLS to Secure QUIC) · nish/quic/keys
+ Status: INVALID
+
+ Gate failures
+  ✘ fidelity A.1-MISNAMED.expect: the value is printed in RFC §A.1 ("Keys") under "client_initial_secret", not under "server_initial_secret"
+
+ Requirements
+  ○ R-KEYS  §A.1 DEFINITION  "The secrets for protecting client packets are:"
+      ○ A.1-CLIENT  ○ A.1-SERVER  ○ A.1-KEY  ○ A.1-MISNAMED
+
+ Warnings
+  ! clauses: no property clauses: the contract checks only the RFC's own vectors
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

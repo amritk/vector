@@ -69,19 +69,19 @@ jobs:
       - name: The doc-caps check tests itself
         run: node --test scripts/doc-caps.test.mjs
 
-      # A pull request is also checked against its base: a cap may be lowered
-      # or added, never raised or dropped.
-      - name: Fetch the pull request's base
-        if: github.event_name == 'pull_request'
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: git fetch --no-tags --depth=1 origin "$BASE_SHA"
-
+      # A pull request is also checked against its base, and a push to main
+      # against the commit main was at before it: a cap may be lowered or added,
+      # never raised or dropped. A push that creates the branch has no before.
       - name: No doc cap was raised or dropped since the base
-        if: github.event_name == 'pull_request'
+        if: >-
+          github.event_name == 'pull_request' ||
+          (github.event_name == 'push' &&
+          github.event.before != '0000000000000000000000000000000000000000')
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: npm run doc-caps -- --base "$BASE_SHA"
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          npm run doc-caps -- --base "$BASE_SHA"
 
       - name: Cache the pinned nish and z3
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

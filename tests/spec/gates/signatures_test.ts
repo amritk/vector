@@ -29,6 +29,15 @@ const SIGNATURES_TEST_C: string = `{
     {"name": "winOrder", "params": [{"name": "d", "type": "bytes", "form": "window"}], "returns": "u32"},
     {"name": "winShort", "params": [{"name": "d", "type": "bytes", "form": "window"}], "returns": "u32"},
     {"name": "winUndeclared", "params": [{"name": "d", "type": "bytes"}], "returns": "u32"},
+    {"name": "outRight", "params": [{"name": "s", "type": "bytes", "form": "window"}, {"name": "level", "type": "i32"}], "returns": "bytes", "out": {"at": 1, "capacity": "64"}},
+    {"name": "outFirst", "params": [{"name": "n", "type": "u32"}], "returns": "bytes?", "out": {"at": 0, "capacity": "8"}},
+    {"name": "outLast", "params": [{"name": "k", "type": "bytes"}], "returns": "bytes", "out": {"at": 1, "capacity": "k.length"}},
+    {"name": "outBytes", "params": [{"name": "k", "type": "bytes"}], "returns": "bytes", "out": {"at": 1, "capacity": "k.length"}},
+    {"name": "outUnsignedEnd", "params": [{"name": "k", "type": "bytes"}], "returns": "bytes", "out": {"at": 1, "capacity": "k.length"}},
+    {"name": "outNoAt", "params": [{"name": "k", "type": "bytes"}], "returns": "bytes", "out": {"at": 1, "capacity": "k.length"}},
+    {"name": "outMoved", "params": [{"name": "k", "type": "bytes"}], "returns": "bytes", "out": {"at": 1, "capacity": "k.length"}},
+    {"name": "outUnsignedAt", "params": [{"name": "k", "type": "bytes"}], "returns": "bytes", "out": {"at": 1, "capacity": "k.length"}},
+    {"name": "outUndeclared", "params": [{"name": "k", "type": "bytes"}, {"name": "o", "type": "bytes"}, {"name": "at", "type": "i32"}], "returns": "bytes"},
     {"name": "hmac", "module": "nish/other", "params": [{"name": "a", "type": "bytes"}], "returns": "bytes"}
   ],
   "clauses": []
@@ -88,6 +97,12 @@ export const main = (): i32 => {
     "winOrder: declared (bytes, i32, i32) -> u32, but nish/fixtures/sig_module has (i32, i32, u8[]): u32",
     "winShort: declared (bytes, i32, i32) -> u32, but nish/fixtures/sig_module has (u8[], i32): u32",
     "winUndeclared: declared (bytes) -> u32, but nish/fixtures/sig_module has (u8[], i32, i32): u32",
+    "outBytes: declared (bytes, bytes, i32) -> i32 (its /* out */ is the (bytes, i32) pair at 1, returning end), but nish/fixtures/sig_module has (u8[], u8[], i32): u8[]",
+    "outUnsignedEnd: declared (bytes, bytes, i32) -> i32 (its /* out */ is the (bytes, i32) pair at 1, returning end), but nish/fixtures/sig_module has (u8[], u8[], i32): u32",
+    "outNoAt: declared (bytes, bytes, i32) -> i32 (its /* out */ is the (bytes, i32) pair at 1, returning end), but nish/fixtures/sig_module has (u8[], u8[]): i32",
+    "outMoved: declared (bytes, bytes, i32) -> i32 (its /* out */ is the (bytes, i32) pair at 1, returning end), but nish/fixtures/sig_module has (u8[], i32, u8[]): i32",
+    "outUnsignedAt: declared (bytes, bytes, i32) -> i32 (its /* out */ is the (bytes, i32) pair at 1, returning end), but nish/fixtures/sig_module has (u8[], u8[], u32): i32",
+    "outUndeclared: declared (bytes, bytes, i32) -> bytes, but nish/fixtures/sig_module has (u8[], u8[], i32): i32",
   ])
   t.eqLines("under a nish root", gateSignatures(signaturesTestCtx(null, "tests/spec/gates/..")), [
     "signatures: cannot read tests/spec/gates/../std/fixtures/sig_module.ts, the source of nish/fixtures/sig_module",

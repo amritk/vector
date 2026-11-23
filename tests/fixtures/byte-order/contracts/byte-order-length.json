@@ -1,0 +1,198 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "byte-order-length",
+  "source": {
+    "title": "Integers as Bytes: Properties",
+    "main": "byte-order",
+    "sha256": "48f72e250f8b5d9227a994ae66e7662294240ac46224d262c46783f83db5f9a0"
+  },
+  "sources": [
+    {
+      "id": "byte-order",
+      "path": "../rfcs/byte-order.txt",
+      "sha256": "48f72e250f8b5d9227a994ae66e7662294240ac46224d262c46783f83db5f9a0"
+    }
+  ],
+  "target": {
+    "module": "order/read"
+  },
+  "requirements": [
+    {
+      "id": "R-WRITE",
+      "section": "1",
+      "level": "MUST",
+      "quote": "An integer written as bytes MUST be written as its two's complement, in the byte order the operation names."
+    },
+    {
+      "id": "R-READ",
+      "section": "2",
+      "level": "MUST",
+      "quote": "Bytes read as an integer MUST be read in the byte order the operation names, as exactly as many bytes as the integer's width."
+    }
+  ],
+  "exclusions": [],
+  "functions": [
+    {
+      "name": "readLeI32",
+      "params": [
+        {
+          "name": "b",
+          "type": "bytes"
+        }
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "putBe32",
+      "params": [
+        {
+          "name": "n",
+          "type": "u32"
+        }
+      ],
+      "returns": "bytes"
+    },
+    {
+      "name": "idU32",
+      "params": [
+        {
+          "name": "n",
+          "type": "u32"
+        }
+      ],
+      "returns": "u32"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "property",
+      "id": "P-RIGHT-LEN",
+      "title": "four bytes read as a u32 and written back are the same bytes",
+      "covers": [
+        "R-READ",
+        "R-WRITE"
+      ],
+      "forall": [
+        {
+          "name": "b",
+          "type": "bytes",
+          "minLen": 4,
+          "maxLen": 4
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "putBe32",
+            "args": [
+              {
+                "op": "beU32",
+                "args": [
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "var": "b"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-SHORT",
+      "title": "three bytes read as an i32 are not padded with a zero byte",
+      "covers": [
+        "R-READ"
+      ],
+      "forall": [
+        {
+          "name": "b",
+          "type": "bytes",
+          "minLen": 3,
+          "maxLen": 3
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "readLeI32",
+            "args": [
+              {
+                "op": "concat",
+                "args": [
+                  {
+                    "var": "b"
+                  },
+                  {
+                    "op": "zeros",
+                    "args": [
+                      {
+                        "int": 1
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "leI32",
+            "args": [
+              {
+                "var": "b"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-LONG",
+      "title": "five bytes read as a u32 are not cut to four",
+      "covers": [
+        "R-READ"
+      ],
+      "forall": [
+        {
+          "name": "b",
+          "type": "bytes",
+          "minLen": 5,
+          "maxLen": 5
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "idU32",
+            "args": [
+              {
+                "op": "leU32",
+                "args": [
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "leU32",
+            "args": [
+              {
+                "var": "b"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

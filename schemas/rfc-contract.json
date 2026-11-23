@@ -494,6 +494,24 @@
         "returns": {
           "$ref": "#/$defs/returnType"
         },
+        "out": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Only on a function returning bytes or bytes? that the real function writes into a buffer: it takes (out: u8[], at: i32) among its parameters and returns end, an i32, the result being out[at, end).",
+          "properties": {
+            "at": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255,
+              "description": "Where among the declared params the (out, at) pair goes."
+            },
+            "capacity": {
+              "type": "string",
+              "description": "How many bytes past at the buffer holds: decimal numbers, +, *, parentheses and <bytes param>.length, spelt with single spaces around + and *, like 2 * src.length + 8."
+            }
+          },
+          "required": ["at", "capacity"]
+        },
         "names": {
           "$ref": "#/$defs/nameOverrides"
         }
@@ -785,7 +803,22 @@
                 "-",
                 "*",
                 "%",
+                "le16",
+                "le32",
                 "le64",
+                "be16",
+                "be32",
+                "be64",
+                "leU16",
+                "leU32",
+                "leU64",
+                "beU16",
+                "beU32",
+                "beU64",
+                "leI32",
+                "leI64",
+                "beI32",
+                "beI64",
                 "<",
                 "<=",
                 ">",
@@ -813,7 +846,7 @@
             }
           },
           "required": ["op", "args"],
-          "description": "len(bytes)->i32; concat(bytes,bytes); slice(bytes,from,to) clamped; zeros(n); fill(byte,n); flipBit(bytes,bit); xor/bitAnd/bitOr(bytes,bytes) bytewise, the shorter read as zeros past its end; unwrap(bytes?)->bytes (a null fails the sample); isNull/notNull(bytes?); + - * % on i32; le64(i32)->8 bytes; comparisons; == != on i32, bool or bytes/bytes?/null; and/or (2+), not, implies; strLen(string)->i32; strConcat(string,string); lower/upper(string) (ASCII only); utf8(string)->bytes; ascii(bytes)->string? (null when any byte >= 0x80); charAt(string,i32)->string (\"\" out of range); unwrap/isNull/notNull also take string?; == != also on string/string?/null."
+          "description": "len(bytes)->i32; concat(bytes,bytes); slice(bytes,from,to) clamped; zeros(n); fill(byte,n); flipBit(bytes,bit); xor/bitAnd/bitOr(bytes,bytes) bytewise, the shorter read as zeros past its end; unwrap(bytes?)->bytes (a null fails the sample); isNull/notNull(bytes?); + - * % on i32; le16/le32/le64/be16/be32/be64(int)->2/4/8 bytes, an int no wider than the op, little- or big-endian, two's complement; leU16/leU32/leU64/beU16/beU32/beU64/leI32/leI64/beI32/beI64(bytes)->that int, exactly 2/4/8 bytes (any other length fails the sample); comparisons; == != on i32, bool or bytes/bytes?/null; and/or (2+), not, implies; strLen(string)->i32; strConcat(string,string); lower/upper(string) (ASCII only); utf8(string)->bytes; ascii(bytes)->string? (null when any byte >= 0x80); charAt(string,i32)->string (\"\" out of range); unwrap/isNull/notNull also take string?; == != also on string/string?/null."
         },
         {
           "type": "object",
@@ -1092,7 +1125,7 @@
       "required": ["section"]
     },
     "vectorSource": {
-      "description": "Where the expected value comes from: printed in a cited section; the stdout of a command (run under --run-sources); or, for an expected null or bool, a section that states it.",
+      "description": "Where the expected value comes from: printed in a cited section; the stdout of a command (run under --run-sources), which prints bytes as hex, a string, an integer in decimal, or true, false or null; or, for an expected null or bool, a section that states it.",
       "anyOf": [
         {
           "type": "object",

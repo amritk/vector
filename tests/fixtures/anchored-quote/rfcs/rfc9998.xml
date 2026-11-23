@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rfc number="9998" docName="draft-aq-main-00" category="std" ipr="trust200902" version="3">
+<front><title>Anchored quotes in a main RFC</title></front>
+<middle>
+<section anchor="pad"><name>Pad</name>
+<t>A sender MUST pad the block.</t>
+</section>
+<section anchor="again"><name>Again</name>
+<blockquote anchor="R-PAD">
+<t>A sender MUST pad the block.</t>
+</blockquote>
+</section>
+<section anchor="base"><name>Base</name>
+<blockquote anchor="R-B64">
+<t>Implementations MUST include appropriate pad characters at the end of encoded data unless the specification referring to this document explicitly states otherwise.</t>
+</blockquote>
+</section>
+</middle>
+</rfc>

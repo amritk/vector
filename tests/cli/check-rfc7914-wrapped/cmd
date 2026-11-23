@@ -1,0 +1,1 @@
+vector spec check tests/cli/check-rfc7914-wrapped/contracts/rfc7914-pbkdf2.json --spec tests/cli/check-rfc7914-wrapped/rfcs/rfc7914.txt

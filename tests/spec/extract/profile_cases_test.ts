@@ -641,6 +641,74 @@ const profileCasesTestRefusedWith = (
   t.eqStr(name, profileCasesTestMessages(all, xml), want.join("\n"))
 }
 
+/** An interface with a function returning each kind a command may or may not print. */
+const PROFILE_CASES_PRINTS_CODE: string = `
+// module: nish/hex
+export function hexDecode(text: string): u8[] | null
+export function hexLen(text: string): u64
+export function hexSigned(text: string): i64
+export function hexRatio(text: string): f64
+export function isHex(text: string): boolean
+`
+
+/** A spec whose one vector is `call` giving `expected`, sourced from `echo`. */
+const profileCasesTestPrints = (call: string, expected: string): string =>
+  profileCasesTestSpecWith(
+    profileCasesTestSec(
+      PROFILE_CASES_REQ +
+        profileCasesTestTable([
+          profileCasesTestCells(
+            "V1",
+            profileCasesTestTt(call),
+            profileCasesTestTt(expected),
+            "R-A",
+            profileCasesTestTt("echo"),
+            "a title",
+          ),
+        ]),
+      "",
+    ),
+    "draft-t-00",
+    `<section><name>Interface</name>${profileCasesTestIface(PROFILE_CASES_PRINTS_CODE)}</section>`,
+  )
+
+/** A command source's Expected is any kind it prints as one text: never an f64. */
+const profileCasesTestCommandValues = (t: Suite, all: ProfileCasesTestRfcs): void => {
+  const accepts: string[][] = [
+    ['hexDecode("66")', '"f"', "ascii f"],
+    ['hexDecode("66")', "[66]", "hex 66"],
+    ['hexLen("66")', "0", "num 0"],
+    ['hexLen("66")', "1", "num 1"],
+    ['hexLen("66")', "151288809941952652", "num 151288809941952652"],
+    ['hexLen("66")', "18446744073709551615", "num 18446744073709551615"],
+    ['hexSigned("66")', "-1", "num -1"],
+    ['isHex("66")', "true", "bool true"],
+    ['isHex("66")', "false", "bool false"],
+    ['hexDecode("6")', "null", "null"],
+  ]
+  for (const a of accepts) {
+    const name = `a command source may expect ${a[1]}`
+    const c = profileCasesTestContract(t, all, name, profileCasesTestPrints(a[0], a[1]))
+    if (c !== null) {
+      const v = c.clauses[0]
+      const e = v.expect
+      t.eqStr(
+        name,
+        `${profileCasesTestSource(v.source)} ${e === null ? "none" : profileCasesTestLit(e)}`,
+        `command echo ${a[2]}`,
+      )
+    }
+  }
+  const printable = "a command prints bytes (as hex), a string, an integer, a bool or null"
+  profileCasesTestRefusedWith(
+    t,
+    all,
+    "a command source may not expect an f64",
+    profileCasesTestPrints('hexRatio("66")', "1.5"),
+    [`Source: ${printable}, so its Expected is one, not f64`],
+  )
+}
+
 /** BCP 14 sentences, anchors and exclusions. */
 const profileCasesTestSentences = (t: Suite, all: ProfileCasesTestRfcs): void => {
   t.eqStr(
@@ -1489,30 +1557,17 @@ const profileCasesTestVectors = (t: Suite, all: ProfileCasesTestRfcs): void => {
   profileCasesTestRefused(
     t,
     all,
-    "a blank command source, and one whose Expected is null or a bool",
+    "a blank command source",
     profileCasesTestLines([
       PROFILE_CASES_REQ,
       profileCasesTestTable([
         profileCasesTestSrc("<tt/>", '"f"', "V1"),
         profileCasesTestSrc("<tt>   </tt>", '"f"', "V2"),
-        profileCasesTestSrc(profileCasesTestTt("echo"), "null", "V3"),
-        profileCasesTestCells(
-          "V4",
-          profileCasesTestTt('isHex("66")'),
-          profileCasesTestTt("true"),
-          "R-A",
-          profileCasesTestTt("echo"),
-          "a title",
-        ),
       ]),
     ]),
-    [
-      "10 Source: a command is a shell command, not blank",
-      "11 Source: a command is a shell command, not blank",
-      "12 Source: a command prints bytes or a string, so its Expected is one, not null",
-      "13 Source: a command prints bytes or a string, so its Expected is one, not bool",
-    ],
+    ["10 Source: a command is a shell command, not blank", "11 Source: a command is a shell command, not blank"],
   )
+  profileCasesTestCommandValues(t, all)
   profileCasesTestRefused(
     t,
     all,
