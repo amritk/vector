@@ -1,0 +1,2 @@
+vector: tests/fixtures/rfc-main/specs/mini-frame-two-ifaces.xml:24: a spec has exactly one ts-interface block; this one has 2
+vector: tests/fixtures/rfc-main/specs/mini-frame-two-ifaces.xml:33:58: unknown function `h`

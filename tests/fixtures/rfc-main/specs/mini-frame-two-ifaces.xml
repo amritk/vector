@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rfc version="3" docName="draft-mini-frame-two-ifaces-00">
+  <front>
+    <title>Mini Framing profile</title>
+    <keyword>vector-main-RFC9990</keyword>
+  </front>
+  <middle>
+    <section anchor="interface">
+      <name>Interface</name>
+      <sourcecode type="ts-interface"><![CDATA[
+// module: nish/mini/frame
+export function frame(data: u8[]): u8[] | null
+]]></sourcecode>
+    </section>
+    <section anchor="framing">
+      <name>Framing</name>
+      <blockquote anchor="R-PREFIX">
+        <t>A sender MUST prefix each frame with its length in one octet. <xref section="2" sectionFormat="of" target="RFC9990"/></t>
+      </blockquote>
+      <sourcecode type="ts-property"><![CDATA[
+// P-PREFIX covers R-PREFIX — a frame is one length octet, then the data
+forall (data: u8[] /* 0..255 */) => unwrap(frame(data)).length === data.length + 1
+]]></sourcecode>
+      <sourcecode type="ts-interface"><![CDATA[
+// module: nish/mini/len
+export function len(data: u8[]): i32
+]]></sourcecode>
+      <blockquote anchor="R-LIMIT">
+        <t>A sender MUST NOT frame more than 255 octets. <xref section="2" sectionFormat="of" target="RFC9990"/></t>
+      </blockquote>
+      <sourcecode type="ts-property"><![CDATA[
+// P-LIMIT covers R-LIMIT — more than 255 octets is no frame
+forall (data: u8[] /* 256..300 */) => len(data) === 0 && h(data) === 0
+]]></sourcecode>
+    </section>
+  </middle>
+  <back>
+    <references>
+      <name>Normative References</name>
+      <reference anchor="RFC9990"><front><title>Mini Framing</title></front><seriesInfo name="RFC" value="9990"/></reference>
+    </references>
+  </back>
+</rfc>
