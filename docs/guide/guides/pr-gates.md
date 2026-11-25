@@ -331,6 +331,25 @@ built in the checkout. An installed `bin/nish` is a wrapper that execs
 vector: spec mutate: the compiler bin/nish builds the test even with std/crypto/hkdf.ts made unparseable in the copy, so it does not read the copy (an installed wrapper that execs another install by absolute path?): give a --nish that builds from the checkout it sits in
 ```
 
+The compiler builds the test against each slot as it is, with no flag that
+relaxes its no-panic rule. A nish that refuses a module that may panic (the
+latest release does, with `NL2457` for a site and `NL2458` for a call that
+reaches one) refuses the unmutated module's build too, so no mutant runs.
+When every error is located in the module or the test, mutate refuses the
+change (exit 1) with the compiler's lines; when one is located elsewhere, such
+as a std module the module calls, it is the tool's failure (exit 2):
+
+<!-- illustrative -->
+```text
+…
+problems:
+  ✗ the test fails on the unmutated module, so it proves nothing: it does not build: …: error: This call to 'hkdfExpandSha256' may panic: …
+```
+
+Fix the panic site in the module. `npm run allow-panics` refuses the relax
+flag in the repository, and CI's `no-panic` job builds every emitted test with
+the latest nish.
+
 ### Survivors
 
 <!-- exit 1 -->

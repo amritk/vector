@@ -456,6 +456,32 @@ vector: spec run: /path/to/vector/src is neither a nish install (libexec/nish) n
 `--nish <bin>` skips all of this and builds with that compiler as it is, with
 whatever std it reads. `--spec` is accepted and not read.
 
+Either way, the root's compiler builds the emitted test as it is, with no
+flag that relaxes its no-panic rule. A nish that refuses a module that may
+panic (the latest release does; the pinned 0.39.0 does not) refuses the test
+when it builds it, with `NL2457` for a site in the module and `NL2458` for a
+call that reaches one. The run reports `ERROR` and exits 1: every requirement
+is `not-run`, the integrity line says the test never reached the end of
+`main`, and the compiler's own lines follow:
+
+<!-- illustrative -->
+```sh
+./dist/vector spec run contracts/rfc5869-hkdf-sha256.json --nish-root ../nish-latest
+```
+
+```text
+ERROR: rfc5869-hkdf-sha256 (exit 1)
+…
+integrity: the test never reached the end of main (no vector-done line with this run's nonce): it stopped early, or the module exited the process
+  | /tmp/vector-run-…/main.ts:220:179: error: This call to 'hkdfExpandSha256' may panic: it reaches the 'panic' site at std/crypto/sha256.ts:528:7, …
+```
+
+Fix the module, never the build: CI refuses the compiler's relax-panics flag
+(`npm run allow-panics`) anywhere under `scripts/`, `.github/`, `docs/` or
+`src/`. `npm run no-panic` builds vector and every test it emits for its own
+contracts with a compiler you name (`NISH_BIN`, default the pin) and lists each
+site as `file:line:col kind`; CI's `no-panic` job runs it with the latest nish.
+
 ### Slow vectors
 
 An [iterated vector](spec-to-contract.md#an-iterated-vector) marked `slow`,
