@@ -37,9 +37,7 @@ const unhex = (hex: string): u8[] => {
   const out: u8[] = [];
   const n: i32 = toI32(hex.length);
   for (let i: i32 = 0; i < n - 1; i += 2) {
-    if (i + 1 < hex.length) {
-      out.push(toU8((nibble(hex.charCodeAt(i)) << 4) | nibble(hex.charCodeAt(i + 1))));
-    }
+    out.push(toU8((nibble(hex.charCodeAt(i)) << 4) | nibble(hex.charCodeAt(i + 1))));
   }
   return out;
 };

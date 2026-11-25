@@ -131,11 +131,9 @@ export const emitHelperText = (name: string, withStr: boolean): string => {
 const wordHex = (v: u64, digits: i32): string => {
   const hex: string = "0123456789abcdef";
   const parts: string[] = [];
-  for (let i: i32 = 15; i >= 0; i -= 1) {
-    if (i < digits) {
-      const d: i32 = toI32((v >> toU64(i * 4)) & toU64(15));
-      parts.push(hex.substring(d, d + 1));
-    }
+  for (let i: i32 = digits - 1; i >= 0; i -= 1) {
+    const d: i32 = toI32((v >> toU64(i * 4)) & toU64(15));
+    parts.push(hex.substring(d, d + 1));
   }
   return parts.join("");
 };`
@@ -189,9 +187,7 @@ const unhex = (hex: string): u8[] => {
   const out: u8[] = [];
   const n: i32 = toI32(hex.length);
   for (let i: i32 = 0; i < n - 1; i += 2) {
-    if (i + 1 < hex.length) {
-      out.push(toU8((nibble(hex.charCodeAt(i)) << 4) | nibble(hex.charCodeAt(i + 1))));
-    }
+    out.push(toU8((nibble(hex.charCodeAt(i)) << 4) | nibble(hex.charCodeAt(i + 1))));
   }
   return out;
 };`
@@ -372,7 +368,7 @@ const nearUlpsF64 = (t: Suite, name: string, actual: f64, expected: f64, ulps: i
   let near: boolean = false;
   if (ulps >= 0 && mx >= 0 && my >= 0) {
     if ((x < 0) === (y < 0)) {
-      near = mx >= my ? mx - my <= ulps : my - mx <= ulps;
+      near = mx - my <= ulps && my - mx <= ulps;
     } else {
       near = mx <= ulps && my <= ulps - mx;
     }
@@ -390,9 +386,6 @@ const nearUlpsF64 = (t: Suite, name: string, actual: f64, expected: f64, ulps: i
     return `/** The low \`w\` bytes of \`n\`'s bits, little-endian, or big-endian when \`be\`. */
 const intBytes = (n: u64, w: i32, be: boolean): u8[] => {
   const out: u8[] = [];
-  if (w < 0 || w > 8) {
-    return out;
-  }
   for (let i: i32 = 0; i < w; i += 1) {
     const k: i32 = be ? w - 1 - i : i;
     if (k >= 0 && k < 8) {
@@ -408,7 +401,7 @@ const intBytes = (n: u64, w: i32, be: boolean): u8[] => {
  * other length is recorded on \`u\`, as a null is, and reads as 0.
  */
 const bytesInt = (u: Unwrap, b: u8[], w: i32, be: boolean): u64 => {
-  if (w < 0 || w > 8 || toI32(b.length) !== w) {
+  if (toI32(b.length) !== w) {
     u.sawNull = true;
     return toU64(0);
   }
@@ -581,9 +574,8 @@ class OutFault {
   }
 
   take(fn: string, o: u8[], at: i32, end: i32, cap: i32): u8[] {
-    const last: i64 = toI64(at) + toI64(cap)
-    if (end < at || toI64(end) > last) {
-      this.note(\`\${fn} returned end \${end} outside [at, at + capacity] = [\${at}, \${last}]\`)
+    if (end < at || end > at + cap) {
+      this.note(\`\${fn} returned end \${end} outside [at, at + capacity] = [\${at}, \${at + cap}]\`)
       return []
     }
     for (let i: i32 = 0; i < toI32(o.length); i += 1) {
