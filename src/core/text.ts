@@ -45,8 +45,7 @@ const textShiftAsciiCase = (text: string, upper: boolean): string => {
  * @param text the text whose ASCII letters are lower-cased
  * @returns a fresh string as long as `text`
  */
-export const textAsciiLower = (text: string): string =>
-  textShiftAsciiCase(text, false)
+export const textAsciiLower = (text: string): string => textShiftAsciiCase(text, false)
 
 /**
  * Upper-cases the ASCII letters of `text`, leaving every other byte as it is:
@@ -55,5 +54,4 @@ export const textAsciiLower = (text: string): string =>
  * @param text the text whose ASCII letters are upper-cased
  * @returns a fresh string as long as `text`
  */
-export const textAsciiUpper = (text: string): string =>
-  textShiftAsciiCase(text, true)
+export const textAsciiUpper = (text: string): string => textShiftAsciiCase(text, true)
