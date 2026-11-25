@@ -21,25 +21,19 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
-const panicsOptions = (argv) => {
-  try {
-    const { values } = parseArgs({
-      args: argv,
-      options: {
-        report: { type: "string" },
-        nish: { type: "string" },
-        entry: { type: "string", default: "src/main.ts" },
-        "baseline-dir": { type: "string", default: "scripts/panic-baseline" },
-        root: { type: "string", default: process.cwd() },
-      },
-      strict: true,
-      allowPositionals: false,
-    });
-    return values;
-  } catch (e) {
-    throw new Error(e.message);
-  }
-};
+const panicsOptions = (argv) =>
+  parseArgs({
+    args: argv,
+    options: {
+      report: { type: "string" },
+      nish: { type: "string" },
+      entry: { type: "string", default: "src/main.ts" },
+      "baseline-dir": { type: "string", default: "scripts/panic-baseline" },
+      root: { type: "string", default: process.cwd() },
+    },
+    strict: true,
+    allowPositionals: false,
+  }).values;
 
 const panicsReadJson = (file, what) => {
   let text;
@@ -210,12 +204,10 @@ const panicsMain = (argv) => {
   return 0;
 };
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  try {
-    process.exitCode = panicsMain(process.argv.slice(2));
-  } catch (e) {
-    // Any error, a malformed report's included, is a failure to check: 2.
-    console.error(`panics: ${e.message}`);
-    process.exitCode = 2;
-  }
+try {
+  process.exitCode = panicsMain(process.argv.slice(2));
+} catch (e) {
+  // Any error, a malformed report's included, is a failure to check: 2.
+  console.error(`panics: ${e.message}`);
+  process.exitCode = 2;
 }
