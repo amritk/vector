@@ -50,7 +50,7 @@ Then check the binary. `--version` prints its version:
 
 <!-- x-release-please-start-version -->
 ```text
-vector 0.6.0
+vector 0.6.1
 ```
 <!-- x-release-please-end -->
 
@@ -62,7 +62,7 @@ and `--help` lists the commands:
 
 <!-- x-release-please-start-version -->
 ```text
-vector 0.6.0  Prove small programs correct, and hold implementations to their specs
+vector 0.6.1  Prove small programs correct, and hold implementations to their specs
 
 usage: vector <command> [flags]
 
