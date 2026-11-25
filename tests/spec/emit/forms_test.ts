@@ -127,16 +127,16 @@ export const main = (): i32 => {
   // mod-zero: % is remI32, which answers 0 for a zero (or -1) divisor.
   t.ok("remI32 is defined once", formsCount(p, "const remI32 = ") === 1)
   t.contains("a zero divisor is remI32's", p, "remI32(idI32(v_x), 0) === 0")
-  t.contains("a computed divisor too", p, "remI32(v_x, wrappingMul(v_y, v_y))")
+  t.contains("a computed divisor too", p, "remI32(v_x, toI32(toU32(v_y) * toU32(v_y)))")
   t.ok("% is never written bare", p.indexOf("v_x %") < 0 && p.indexOf("v_y %") < 0)
 
-  // i64 and i32 + - * wrap through nish:unsafe, as the sampler does.
-  t.contains("i64 + wraps", p, "(addI64(v_a, v_b) === wrappingAdd(v_a, v_b))")
-  t.contains("i32 + wraps", p, "(addI32(v_a, v_b) === wrappingAdd(v_a, v_b))")
-  t.contains("i32 - wraps", p, "(subI32(v_a, v_b) === wrappingSub(v_a, v_b))")
-  t.contains("i32 * wraps", p, "(mulI32(v_a, v_b) === wrappingMul(v_a, v_b))")
+  // i64 and i32 + - * wrap in the unsigned type of their width, as the sampler does.
+  t.contains("i64 + wraps", p, "(addI64(v_a, v_b) === toI64(toU64(v_a) + toU64(v_b)))")
+  t.contains("i32 + wraps", p, "(addI32(v_a, v_b) === toI32(toU32(v_a) + toU32(v_b)))")
+  t.contains("i32 - wraps", p, "(subI32(v_a, v_b) === toI32(toU32(v_a) - toU32(v_b)))")
+  t.contains("i32 * wraps", p, "(mulI32(v_a, v_b) === toI32(toU32(v_a) * toU32(v_b)))")
   t.ok("i32 * is never written bare", p.indexOf("v_y * v_y") < 0 && p.indexOf("v_a * v_b") < 0)
-  t.contains("nish:unsafe is imported", p, 'import { wrappingAdd, wrappingMul, wrappingSub } from "nish:unsafe";')
+  t.ok("nothing is imported from nish:unsafe", p.indexOf("nish:unsafe") < 0)
   t.contains("i64's maximum is built exactly", p, "toI64((toU64(2147483647) * 4294967296 + 4294967295))")
 
   // rfc-bitwise: xor, bitAnd and bitOr are one helper, chosen by its third argument.
@@ -239,7 +239,7 @@ const formsWithout = (t: Suite, c: Contract): void => {
   t.ok("example-hex emits", plain.isOk())
   t.ok("no % means no remI32", text.indexOf("remI32") < 0)
   t.ok("no secret means no nish:secret", text.indexOf("nish:secret") < 0)
-  t.ok("no sampled + - * means no nish:unsafe", text.indexOf("nish:unsafe") < 0)
+  t.ok("example-hex imports nothing from nish:unsafe", text.indexOf("nish:unsafe") < 0)
 
   c.clauses[0].id = "P-a"
   c.clauses[1].id = "P_a"

@@ -76,9 +76,11 @@ const MUTATEEMIT_TEST_HEX: string = "contracts/example-hex.json"
 
 /**
  * A stub compiler that builds only the test emitted for the contract whose
- * SHA-256 is `sha`, linking a binary that passes only while k is 7.
+ * SHA-256 is `sha`, linking a binary that passes only while k is 7. Each
+ * build's arguments are appended to `log`.
  */
-const mutateemitTestHexNish = (sha: string): string => `#!/bin/sh
+const mutateemitTestHexNish = (sha: string, log: string): string => `#!/bin/sh
+echo "$*" >> "${log}"
 root=$(cd "$(dirname "$0")/.." && pwd)
 if grep -q 'canary' "$root/std/hex.ts"; then
   echo "std/hex.ts:9:1: syntax error: canary" >&2
@@ -95,7 +97,7 @@ chmod +x "$3"
 /** Commits nish/std/hex.ts and a stub compiler for example-hex's test, then changes the module on a work branch. */
 const mutateemitTestHexReady = (d: string, sha: string): Result<boolean, string> => {
   prTestWrite(d, "nish/std/hex.ts", "").orReturn()
-  prTestWrite(d, "nish/bin/nish", mutateemitTestHexNish(sha)).orReturn()
+  prTestWrite(d, "nish/bin/nish", mutateemitTestHexNish(sha, `${d}.argv`)).orReturn()
   runProcess(["chmod", "+x", "--", `${d}/nish/bin/nish`], "", 10000).orReturn()
   prTestCommit(d, "base").orReturn()
   prTestGit(d, ["checkout", "-q", "-b", "work"]).orReturn()
@@ -122,6 +124,7 @@ const mutateemitTestHex = (t: Suite): Result<boolean, string> => {
     r.isOk() ? `${r.value.items.join(" | ")} || ${r.value.problems.join(" | ")}` : r.error,
     "killed std/hex.ts:1:29 int: export const k = (): i32 => 8 | killed std/hex.ts:1:29 int: export const k = (): i32 => 6 || ",
   )
+  mutateemitTestArgv(t, `${d}.argv`)
   const vector = realpathSync("dist/vector")
   if (vector === null) {
     t.fail("a missing z3 exits 2", "no dist/vector: run npm run build")
