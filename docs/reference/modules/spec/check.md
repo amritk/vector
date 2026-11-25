@@ -564,7 +564,7 @@ that extension (`.xml`) with it; it replaces one already there.
 function checkAddReader(
   ctx: CheckContext,
   ext: string,
-  read: SourceReader,
+  kind: SourceReaderKind,
 ): Result<boolean, string>
 ```
 
@@ -580,9 +580,9 @@ the extension, with its leading dot: ".xml"
 
 </scalar-field>
 
-<scalar-field name="read" type="SourceReader" required>
+<scalar-field name="kind" type="SourceReaderKind" required>
 
-the reader
+the format files with that extension are read as
 
 </scalar-field>
 
