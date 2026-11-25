@@ -4,12 +4,12 @@
     "src/spec/gates/completeness.ts": 10,
     "src/spec/gates/coverage.ts": 4,
     "src/spec/gates/derive.ts": 8,
-    "src/spec/gates/fidelity.ts": 98,
-    "src/spec/gates/result.ts": 50,
+    "src/spec/gates/fidelity.ts": 100,
+    "src/spec/gates/result.ts": 54,
     "src/spec/gates/run.ts": 4,
-    "src/spec/gates/signatures.ts": 13,
-    "src/spec/gates/text.ts": 95,
+    "src/spec/gates/signatures.ts": 17,
+    "src/spec/gates/text.ts": 106,
     "src/spec/gates/typing.ts": 1,
-    "src/spec/gates/words.ts": 22
+    "src/spec/gates/words.ts": 24
   }
 }
