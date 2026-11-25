@@ -711,19 +711,51 @@ export const runTest = (c: Contract, source: string, nishBin: string, timeoutMs:
   return ran
 }
 
+/** How long `nish --help` may take, in milliseconds. */
+const RUN_HELP_MS: i32 = 30000
+
+/**
+ * The flag that builds an emitted test against a compiler holding the root
+ * package to no panic by default: `["--allow-panics"]` when `nishBin --help`
+ * lists it, else `[]`. Such a compiler refuses a test whose every call into a
+ * module that may panic is a panic site, and an emitted test is one: it calls
+ * the module under test as it is. An older compiler has no such flag, and
+ * refuses it as unknown, so it is asked rather than assumed. A compiler that
+ * cannot be started gives `[]`, and the build that follows reports why.
+ *
+ * @param nishBin the compiler
+ * @returns the flags to add to its build of a test
+ */
+export const runNishRelax = (nishBin: string): string[] => {
+  const help = runProcess(["sh", "-c", 'NO_COLOR=1 exec "$1" --help', "sh", nishBin], "", RUN_HELP_MS)
+  const none: string[] = []
+  if (help.isErr()) {
+    return none
+  }
+  return help.value.stdout.indexOf("--allow-panics") >= 0 ? ["--allow-panics"] : none
+}
+
 /**
  * The command that builds and runs a Nish test: `nish run <file>`, or, when
  * slow vectors run, `nish run --profile speed <file>`. An optimized build
  * costs about a second more to compile, and runs a long iterated vector some
- * ten times faster, so only a run with `--slow` pays for it.
+ * ten times faster, so only a run with `--slow` pays for it. `relax` goes
+ * before the file (runNishRelax).
  *
  * @param nishBin the compiler
  * @param file the test
  * @param slow whether the test runs its slow vectors
+ * @param relax the flags runNishRelax gives for the compiler
  * @returns the command, without the nonce
  */
-export const runNishArgv = (nishBin: string, file: string, slow: boolean): string[] =>
-  slow ? [nishBin, "run", "--profile", "speed", file] : [nishBin, "run", file]
+export const runNishArgv = (nishBin: string, file: string, slow: boolean, relax: string[]): string[] => {
+  const out: string[] = slow ? [nishBin, "run", "--profile", "speed"] : [nishBin, "run"]
+  for (const f of relax) {
+    out.push(f)
+  }
+  out.push(file)
+  return out
+}
 
 /**
  * Compiles and runs an emitted test already written to `file`, where its
@@ -743,7 +775,7 @@ export const runTestFile = (
   nishBin: string,
   timeoutMs: i32,
   slow: boolean,
-): Result<RunResult, string> => runTestCommand(c, runNishArgv(nishBin, file, slow), timeoutMs)
+): Result<RunResult, string> => runTestCommand(c, runNishArgv(nishBin, file, slow, runNishRelax(nishBin)), timeoutMs)
 
 /**
  * Runs an emitted test with the command that runs it in its language, a fresh

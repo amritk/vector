@@ -29,6 +29,7 @@ Generated from [src/spec/run/run.ts](https://github.com/amritk/vector/blob/main/
 - [`runMakeScratch`](#runmakescratch)
 - [`runMakeScratchIn`](#runmakescratchin)
 - [`runTest`](#runtest)
+- [`runNishRelax`](#runnishrelax)
 - [`runNishArgv`](#runnishargv)
 - [`runTestFile`](#runtestfile)
 - [`runTestCommand`](#runtestcommand)
@@ -750,15 +751,47 @@ the result, or `Err` when the compiler could not be started
 
 </scalar-field>
 
+### runNishRelax
+
+The flag that builds an emitted test against a compiler holding the root
+package to no panic by default: `["--allow-panics"]` when `nishBin --help`
+lists it, else `[]`. Such a compiler refuses a test whose every call into a
+module that may panic is a panic site, and an emitted test is one: it calls
+the module under test as it is. An older compiler has no such flag, and
+refuses it as unknown, so it is asked rather than assumed. A compiler that
+cannot be started gives `[]`, and the build that follows reports why.
+
+```ts
+function runNishRelax(nishBin: string): string[]
+```
+
+<scalar-field name="nishBin" type="string" required>
+
+the compiler
+
+</scalar-field>
+
+<scalar-field name="returns" type="string[]">
+
+the flags to add to its build of a test
+
+</scalar-field>
+
 ### runNishArgv
 
 The command that builds and runs a Nish test: `nish run <file>`, or, when
 slow vectors run, `nish run --profile speed <file>`. An optimized build
 costs about a second more to compile, and runs a long iterated vector some
-ten times faster, so only a run with `--slow` pays for it.
+ten times faster, so only a run with `--slow` pays for it. `relax` goes
+before the file (runNishRelax).
 
 ```ts
-function runNishArgv(nishBin: string, file: string, slow: boolean): string[]
+function runNishArgv(
+  nishBin: string,
+  file: string,
+  slow: boolean,
+  relax: string[],
+): string[]
 ```
 
 <scalar-field name="nishBin" type="string" required>
@@ -776,6 +809,12 @@ the test
 <scalar-field name="slow" type="boolean" required>
 
 whether the test runs its slow vectors
+
+</scalar-field>
+
+<scalar-field name="relax" type="string[]" required>
+
+the flags runNishRelax gives for the compiler
 
 </scalar-field>
 

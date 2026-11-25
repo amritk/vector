@@ -20,6 +20,7 @@ import {
   runMakeScratch,
   runMakeScratchIn,
   runNishArgv,
+  runNishRelax,
   runNonce,
   runOutcomeName,
   runParse,
@@ -205,6 +206,36 @@ const runTestSh = (line: string): void => {
   }
 }
 
+/**
+ * runNishRelax asks the compiler's `--help`: a compiler that lists
+ * `--allow-panics` (one holding the root package to no panic by default) is
+ * given it before the test, and one that does not, or cannot start, is not.
+ */
+const runTestRelax = (t: Suite, c: Contract, dir: string): void => {
+  const strict = `${dir}/strict-nish`
+  const old = `${dir}/old-nish`
+  runTestSh(
+    `printf '#!/bin/sh\\nif [ "$1" = --help ]; then echo "  --allow-panics  hold only the noPanic list to no panic"; exit 0; fi\\necho "$@"\\n' > ${strict} && chmod 755 ${strict}`,
+  )
+  runTestSh(
+    `printf '#!/bin/sh\\nif [ "$1" = --help ]; then echo "  --profile <p>  the build profile"; exit 0; fi\\necho "$@"\\n' > ${old} && chmod 755 ${old}`,
+  )
+  t.eqStr("a compiler whose --help lists --allow-panics is given it", runNishRelax(strict).join(" "), "--allow-panics")
+  t.eqStr("one whose --help does not is given nothing", runNishRelax(old).join(" "), "")
+  t.eqStr("nor is one that cannot start", runNishRelax(`${dir}/no-such-nish`).join(" "), "")
+  const file = `${dir}/sub/main_test.ts`
+  const ran = runTestFile(c, file, strict, 10000, false)
+  t.ok("a test runs with the strict compiler", ran.isOk())
+  if (ran.isOk()) {
+    t.ok("built with --allow-panics", splitLines(ran.value.stdout)[0].startsWith(`run --allow-panics ${file} `))
+  }
+  const plain = runTestFile(c, file, old, 10000, false)
+  t.ok("and with the older one", plain.isOk())
+  if (plain.isOk()) {
+    t.ok("built without it", splitLines(plain.value.stdout)[0].startsWith(`run ${file} `))
+  }
+}
+
 /** runTestFile runs the test where it is, passing the file and a fresh nonce. */
 const runTestInPlace = (t: Suite, c: Contract): void => {
   const dir = makeTempDir("vector-in-place-").expect("a temp dir")
@@ -224,12 +255,23 @@ const runTestInPlace = (t: Suite, c: Contract): void => {
   if (fast.isOk()) {
     t.eqStr("built optimized", splitLines(fast.value.stdout)[0], "run --profile")
   }
-  t.eqStr("runNishArgv builds a plain run by default", runNishArgv("nish", "a.ts", false).join(" "), "nish run a.ts")
+  const none: string[] = []
+  t.eqStr(
+    "runNishArgv builds a plain run by default",
+    runNishArgv("nish", "a.ts", false, none).join(" "),
+    "nish run a.ts",
+  )
   t.eqStr(
     "and an optimized one with --slow",
-    runNishArgv("nish", "a.ts", true).join(" "),
+    runNishArgv("nish", "a.ts", true, none).join(" "),
     "nish run --profile speed a.ts",
   )
+  t.eqStr(
+    "and puts the relax flags before the file",
+    runNishArgv("nish", "a.ts", true, ["--allow-panics"]).join(" "),
+    "nish run --profile speed --allow-panics a.ts",
+  )
+  runTestRelax(t, c, dir)
   t.ok("the test's directory is left alone", isDirectorySync(dir))
   t.ok("runRemove removes it", runRemove(dir).isOk() && !isDirectorySync(dir))
 }
