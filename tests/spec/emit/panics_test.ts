@@ -168,7 +168,8 @@ const panicsWrapRows = (t: Suite, dir: string): void => {
     }
   }
   const file = `${dir}/wrap.ts`
-  const emitted = vectorRun(["spec", "emit", CONTRACT, "--package", "panics=tests/fixtures/emit-panics", "-o", file]) === 0
+  const emitted =
+    vectorRun(["spec", "emit", CONTRACT, "--package", "panics=tests/fixtures/emit-panics", "-o", file]) === 0
   t.ok("wrap: the fixture emits", emitted)
   if (!emitted) {
     return
@@ -304,12 +305,7 @@ const panicsClassifierRows = (t: Suite): void => {
       `{"kind":"index","line":2,"column":3,"allowed":true}`,
       "/s/t.ts:2:3 index f",
     ],
-    [
-      "out of memory passes unproven",
-      "/s/t.ts",
-      `{"kind":"oom","line":2,"column":3,"proven":false}`,
-      "",
-    ],
+    ["out of memory passes unproven", "/s/t.ts", `{"kind":"oom","line":2,"column":3,"proven":false}`, ""],
     [
       "a call into a module only named like the module under test is refused",
       "/s/t.ts",
@@ -347,7 +343,11 @@ const panicsClassifierRows = (t: Suite): void => {
     ["true", "0", "yes"],
   ]
   for (const r of rq) {
-    t.eqStr(`CI=${r[0]} VECTOR_PROVER_REQUIRED=${r[1]} requires the prover`, panicsProverRequired(r[0], r[1]) ? "yes" : "no", r[2])
+    t.eqStr(
+      `CI=${r[0]} VECTOR_PROVER_REQUIRED=${r[1]} requires the prover`,
+      panicsProverRequired(r[0], r[1]) ? "yes" : "no",
+      r[2],
+    )
   }
   t.ok("a report without functions is an error", !panicsRefused("{}", "/s/t.ts", UNDER_TEST).isOk())
 }
