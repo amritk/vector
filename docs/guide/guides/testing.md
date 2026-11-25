@@ -458,7 +458,7 @@ whatever std it reads. `--spec` is accepted and not read.
 
 Either way, the compiler builds the emitted test as it is, with no flag that
 relaxes its no-panic rule. A nish that refuses a module that may
-panic (the latest release does; the pinned 0.39.0 does not) refuses the test
+panic (the latest release does; the pinned release does not) refuses the test
 when it builds it, with `NL2457` for a site in the module and `NL2458` for a
 call that reaches one. The run reports `ERROR` and exits 1: every requirement
 is `not-run`, the integrity line says the test never reached the end of

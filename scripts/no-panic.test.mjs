@@ -12,7 +12,11 @@ import {
   parseDiagnostics,
   refusalSite,
   reportSites,
+  summarize,
 } from "./no-panic.mjs";
+
+/** An NL3011 as the compiler prints it, for a std module it lacks. */
+const NO_STD = "Module `nish/hex` is not part of the standard library";
 
 const diag = (code, message, over = {}) => ({
   file: "src/a.ts",
@@ -72,7 +76,7 @@ test("refusalSite names the callee of a call that reaches a panic", () => {
 
 test("refusalSite is null for anything but a panic refusal error", () => {
   assert.equal(refusalSite(diag("NL2117", "`index` may panic here")), null);
-  assert.equal(refusalSite(diag("NL3011", "no module")), null);
+  assert.equal(refusalSite(diag("NL3011", NO_STD)), null);
   assert.equal(
     refusalSite(diag("NL2457", "`index` may panic", { severity: "warning" })),
     null,
@@ -152,6 +156,27 @@ test("classifyCompile: a clean build is clean only with a report and no unproven
   );
 });
 
+test("classifyCompile: a report with no functions list, or one unreadable, fails", () => {
+  for (const r of [{}, { function: [] }, { functions: {} }]) {
+    const c = classifyCompile({ status: 0, diags: [], report: r });
+    assert.equal(c.outcome, "failed", JSON.stringify(r));
+    assert.equal(c.reason, "the --emit-panics report has no functions list");
+  }
+  for (const status of [0, 1]) {
+    const c = classifyCompile({
+      status,
+      diags: [diag("NL2457", "`index` may panic")],
+      report: null,
+      reportError: "Unexpected end of JSON input",
+    });
+    assert.equal(c.outcome, "failed");
+    assert.equal(
+      c.reason,
+      "unreadable --emit-panics report: Unexpected end of JSON input",
+    );
+  }
+});
+
 test("classifyCompile: refusals are panic sites, one per diagnostic", () => {
   const c = classifyCompile({
     status: 1,
@@ -171,19 +196,11 @@ test("classifyCompile: refusals are panic sites, one per diagnostic", () => {
 test("classifyCompile: a missing import is skipped, with its reason", () => {
   const noModule = classifyCompile({
     status: 1,
-    diags: [
-      diag(
-        "NL3011",
-        "Module `nish/hex` is not in the standard library (it has: nish/a, nish/b)",
-      ),
-    ],
+    diags: [diag("NL3011", `${NO_STD} (it has: array, base64)`)],
     report: null,
   });
   assert.equal(noModule.outcome, "skipped");
-  assert.equal(
-    noModule.reason,
-    "NL3011: Module `nish/hex` is not in the standard library",
-  );
+  assert.equal(noModule.reason, `NL3011: ${NO_STD}`);
   const noExport = classifyCompile({
     status: 1,
     diags: [
@@ -195,14 +212,38 @@ test("classifyCompile: a missing import is skipped, with its reason", () => {
     report: null,
   });
   assert.equal(noExport.outcome, "skipped");
-  // NL2376 with another message is not a missing import.
+  // Only a nish/<module> the std lacks is skipped: a vector-package module
+  // or export, emitted as a relative import, that is missing fails, as does
+  // either code with another message.
+  for (const [code, message] of [
+    ["NL2376", "something else"],
+    ["NL2376", "Module `../../src/core/hex` has no exported function `toHex`"],
+    ["NL2376", "Module `vector/core/hex` has no exported function `toHex`"],
+    ["NL2376", "Module `xnish/hex` has no exported function `toHex`"],
+    ["NL3011", "Module `../src/core/hex` is not part of the standard library"],
+    ["NL3011", "no module"],
+    ["NL3011", `see: ${NO_STD}`],
+  ]) {
+    assert.equal(
+      classifyCompile({ status: 1, diags: [diag(code, message)], report: null })
+        .outcome,
+      "failed",
+      message,
+    );
+  }
+  // The std's own module with no such export is skipped.
   assert.equal(
     classifyCompile({
       status: 1,
-      diags: [diag("NL2376", "something else")],
+      diags: [
+        diag(
+          "NL2376",
+          "Module `nish/crypto/sha256` has no exported function `x`",
+        ),
+      ],
       report: null,
     }).outcome,
-    "failed",
+    "skipped",
   );
 });
 
@@ -210,7 +251,7 @@ test("classifyCompile: a panic beside a missing import is still a panic", () => 
   assert.equal(
     classifyCompile({
       status: 1,
-      diags: [diag("NL3011", "no module"), diag("NL2457", "`pop` may panic")],
+      diags: [diag("NL3011", NO_STD), diag("NL2457", "`pop` may panic")],
       report: null,
     }).outcome,
     "panics",
@@ -221,7 +262,7 @@ test("classifyCompile: any other error fails, beside panics or a missing import"
   const rows = [
     [diag("NL2117", "expected Secret<u8[]>, got u8[]")],
     [diag("NL2117", "expected u8"), diag("NL2457", "`index` may panic")],
-    [diag("NL2117", "expected u8"), diag("NL3011", "no module")],
+    [diag("NL2117", "expected u8"), diag("NL3011", NO_STD)],
   ];
   for (const diags of rows) {
     const c = classifyCompile({ status: 1, diags, report: null }, () => "L");
@@ -240,7 +281,7 @@ test("classifyCompile: warnings neither fail nor excuse a refusal", () => {
   assert.equal(
     classifyCompile({
       status: 1,
-      diags: [warn, diag("NL3011", "no module")],
+      diags: [warn, diag("NL3011", NO_STD)],
       report: null,
     }).outcome,
     "skipped",
@@ -257,7 +298,7 @@ test("classifyCompile: an exit other than 0 or 1 fails, whatever it printed", ()
     for (const diags of [
       [],
       [diag("NL2457", "`index` may panic")],
-      [diag("NL3011", "no module")],
+      [diag("NL3011", NO_STD)],
     ]) {
       assert.equal(
         classifyCompile({ status, diags, report: null }).outcome,
@@ -312,4 +353,87 @@ test("contractsOf keeps tracked contracts and fixture contracts, sorted, no surv
     "contracts/sha256.json",
     "tests/fixtures/a/head/contracts/hex.json",
   ]);
+});
+
+const clean = { outcome: "clean", sites: [], reason: "" };
+const emitted = { outcome: "emitted", reason: "" };
+const site = { file: "/out/t.ts", line: 4, column: 2, kind: "index" };
+
+test("summarize: vector's own build fails the run unless it is clean", () => {
+  const ok = {
+    what: "contracts/a.json",
+    test: "<e>/a",
+    emit: emitted,
+    compile: clean,
+  };
+  const rows = [
+    [clean, 0, 0],
+    [{ outcome: "skipped", sites: [], reason: `NL3011: ${NO_STD}` }, 1, 1],
+    [{ outcome: "panics", sites: [site], reason: "" }, 1, 1],
+    [{ outcome: "failed", sites: [], reason: "boom" }, 1, 1],
+  ];
+  for (const [build, failed, exit] of rows) {
+    const r = summarize(build, [ok]);
+    assert.equal(r.failures.length, failed, build.outcome);
+    assert.equal(r.exit, exit, build.outcome);
+    assert.equal(r.built, build.outcome === "clean" ? 1 : 0);
+    assert.equal(r.skipped.length, 0);
+    if (failed) assert.match(r.failures[0], /^src\/main\.ts: /);
+  }
+  assert.equal(
+    summarize({ outcome: "skipped", sites: [], reason: "NL3011: x" }, [ok])
+      .failures[0],
+    "src/main.ts: did not build: NL3011: x",
+  );
+});
+
+test("summarize: a test's panics fail, a std skip skips, and each is counted", () => {
+  const t = (what, emit, compile) => ({
+    what,
+    test: `<e>/${what}`,
+    emit,
+    compile,
+  });
+  const r = summarize(
+    clean,
+    [
+      t("p.json", emitted, { outcome: "panics", sites: [site], reason: "" }),
+      t("c.json", emitted, clean),
+      t("s.json", emitted, {
+        outcome: "skipped",
+        sites: [],
+        reason: "NL3011: m",
+      }),
+      t("f.json", emitted, {
+        outcome: "failed",
+        sites: [],
+        reason: "NL2117: x",
+      }),
+      t("r.json", { outcome: "skipped", reason: "refused" }, undefined),
+      t(
+        "e.json",
+        { outcome: "failed", reason: "spec emit exited 2: M" },
+        undefined,
+      ),
+    ],
+    (f) => f.replace("/out/", "<e>/"),
+  );
+  assert.deepEqual(r.failures, [
+    "p.json -> <e>/p.json: 1 panic site(s)\n  <e>/t.ts:4:2 index",
+    "f.json -> <e>/f.json: NL2117: x",
+    "e.json: spec emit exited 2: M",
+  ]);
+  assert.deepEqual(r.skipped, [
+    "s.json -> <e>/s.json: NL3011: m",
+    "r.json: spec emit refused it: refused",
+  ]);
+  assert.deepEqual([r.built, r.emitted, r.compiled, r.exit], [1, 4, 2, 1]);
+  // Clean tests alone pass; skips alone, with nothing compiled, do not.
+  assert.equal(summarize(clean, [t("c.json", emitted, clean)]).exit, 0);
+  assert.equal(
+    summarize(clean, [
+      t("s.json", emitted, { outcome: "skipped", sites: [], reason: "m" }),
+    ]).exit,
+    1,
+  );
 });

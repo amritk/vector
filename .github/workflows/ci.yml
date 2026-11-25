@@ -120,6 +120,7 @@ jobs:
   # lists each one. It runs beside `check`, which builds with the pin.
   no-panic:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -164,7 +165,7 @@ jobs:
           version=$(git ls-remote --tags --refs https://github.com/amritk/nish.git 'v*' \
             | sed -E 's|.*refs/tags/v||' \
             | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
-            | sort -V | tail -n 1)
+            | sort -V | tail -n 1) || version=""
           if [ -z "$version" ]; then
             echo "::error::no vX.Y.Z tag found on amritk/nish"
             exit 1

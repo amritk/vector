@@ -197,6 +197,151 @@ const rows = [
     "nish src/main.ts --allow-other\nnpm run allow-panics\n",
     [],
   ],
+  // JavaScript and TypeScript: only the flag inside comment text passes.
+  [
+    "a refused block comment before code naming the flag",
+    "scripts/x.mjs",
+    `/* refused */ run(["build", "${FLAG}"]);\n`,
+    [1],
+  ],
+  [
+    "a block comment's close, then code naming the flag",
+    "scripts/x.mjs",
+    `/*\n */ args.push("${FLAG}"); // refused\n`,
+    [2],
+  ],
+  [
+    "a one-line block comment saying refused",
+    "scripts/x.mjs",
+    `/* ${FLAG} is refused */\n`,
+    [],
+  ],
+  [
+    "a block comment line with no leading star",
+    "src/core/nish.ts",
+    `/*\n  ${FLAG} is refused\n*/\n`,
+    [],
+  ],
+  [
+    "a block comment line not saying refused",
+    "scripts/x.mjs",
+    `/**\n * pass ${FLAG}\n */\n`,
+    [2],
+  ],
+  [
+    "a leading star outside a block comment is not a comment",
+    "scripts/x.mjs",
+    `const n = 2\n* ${FLAG} refused\n`,
+    [2],
+  ],
+  [
+    "code after a block comment closes is not a comment",
+    "scripts/x.mjs",
+    `/* a\n b */ x("${FLAG}") /* refused */\n`,
+    [2],
+  ],
+  [
+    "a // line inside a template literal",
+    "scripts/x.mjs",
+    `const t = \`\n// ${FLAG} refused\n\`;\n`,
+    [2],
+  ],
+  [
+    "a * line inside a template literal",
+    "scripts/x.mjs",
+    `const t = \`\n * ${FLAG} refused\n\`;\n`,
+    [2],
+  ],
+  [
+    "a comment after a closed template literal",
+    "scripts/x.mjs",
+    `const t = \`a\nb\`; // ${FLAG} is refused\n`,
+    [],
+  ],
+  [
+    "a // inside a string is not a comment",
+    "scripts/x.mjs",
+    `const u = "// ${FLAG} refused";\n`,
+    [1],
+  ],
+  [
+    "a comment after a string holding //",
+    "scripts/x.mjs",
+    `const u = "http://x"; // ${FLAG} is refused\n`,
+    [],
+  ],
+  [
+    "a // inside a regular expression is not a comment",
+    "scripts/x.mjs",
+    `const r = /\\/\\/ ${FLAG} refused/;\n`,
+    [1],
+  ],
+  [
+    "a / inside a template literal does not close it",
+    "scripts/x.mjs",
+    `const t = \`a/b\n// ${FLAG} refused\n\`;\n`,
+    [2],
+  ],
+  [
+    "a /* inside a regular expression does not open a comment",
+    "scripts/x.mjs",
+    `const r = /[/*]/; x("${FLAG}"); // refused\n`,
+    [1],
+  ],
+  [
+    "one copy in code, one in a comment",
+    "scripts/x.mjs",
+    `x("${FLAG}"); // ${FLAG} is refused\n`,
+    [1],
+  ],
+  [
+    "a quoted flag inside a comment is comment text",
+    "scripts/x.mjs",
+    `// "${FLAG}" is refused\n`,
+    [],
+  ],
+  [
+    "division is not a regular expression",
+    "scripts/x.mjs",
+    `const h = a / b; // ${FLAG} is refused\n`,
+    [],
+  ],
+  // Every extension of each comment kind.
+  ...[".sh", ".bash", ".yml", ".yaml", ".toml", ".py"].flatMap((ext) => [
+    [`${ext} comment`, `scripts/x${ext}`, `# ${FLAG} refused\n`, []],
+    [`${ext} code`, `scripts/x${ext}`, `x ${FLAG} refused\n`, [1]],
+    [`${ext} // line`, `scripts/x${ext}`, `// ${FLAG} refused\n`, [1]],
+  ]),
+  ...[".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"].flatMap((ext) => [
+    [`${ext} comment`, `scripts/x${ext}`, `// ${FLAG} refused\n`, []],
+    [`${ext} code`, `scripts/x${ext}`, `x("${FLAG}") \n`, [1]],
+    [`${ext} # line`, `scripts/x${ext}`, `# ${FLAG} refused\n`, [1]],
+  ]),
+  // Docs fences.
+  [
+    "docs a fence with an info string does not close a fence",
+    "docs/AI.md",
+    `\`\`\`\n\`\`\`sh\n${FLAG} refused\n\`\`\`\n${FLAG} is refused.\n`,
+    [3],
+  ],
+  [
+    "docs a shorter fence does not close a longer one",
+    "docs/AI.md",
+    `\`\`\`\`\n\`\`\`\n${FLAG} refused\n\`\`\`\`\n${FLAG} is refused.\n`,
+    [3],
+  ],
+  [
+    "docs a longer fence with trailing spaces closes",
+    "docs/AI.md",
+    `\`\`\`\nx\n\`\`\`\`  \n${FLAG} is refused.\n`,
+    [],
+  ],
+  [
+    "docs tab-indented code block saying refused",
+    "docs/AI.md",
+    `Run:\n\n\tnish x ${FLAG} refused\n`,
+    [3],
+  ],
   [
     "case does not matter in refused",
     "scripts/x.sh",
@@ -270,6 +415,34 @@ test("the check passes when every line naming the flag is exempt", () => {
     const r = run(dir);
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /in 2 tracked files/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the check exits 2 when git cannot list the files", () => {
+  const dir = repo({ "scripts/ok.sh": "ok\n" });
+  try {
+    writeFileSync(path.join(dir, ".git", "index"), "not an index");
+    const r = run(dir);
+    assert.equal(r.status, 2, r.stderr);
+    assert.match(r.stderr, /git ls-files failed/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a tracked file deleted from the work tree is passed over; one unreadable exits 2", () => {
+  const dir = repo({ "scripts/gone.sh": "ok\n", "scripts/dir.sh": "ok\n" });
+  try {
+    rmSync(path.join(dir, "scripts/gone.sh"));
+    rmSync(path.join(dir, "scripts/dir.sh"));
+    let r = run(dir);
+    assert.equal(r.status, 0, r.stderr);
+    mkdirSync(path.join(dir, "scripts/dir.sh"));
+    r = run(dir);
+    assert.equal(r.status, 2, r.stderr);
+    assert.match(r.stderr, /cannot read scripts\/dir\.sh/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

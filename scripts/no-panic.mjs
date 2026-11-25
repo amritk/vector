@@ -18,11 +18,16 @@
 // `file:line:col kind`.
 //
 // Skipped, with the reason, never failed: a contract spec emit refuses (exit
-// 1: fixtures built to be refused), and an emitted test whose import nothing
-// provides (no such std module, or no such export). Failed: a panic site, a
-// spec emit exit other than 0 or 1, any other compile error, or no test
-// compiled at all. Exit 0 when nothing failed, 1 when something did, and 2
-// when it cannot run (no dist/vector, no compiler).
+// 1: fixtures built to be refused), and an emitted test whose `nish/<module>`
+// import the std does not provide (no such module, or no such export). Failed:
+// vector's own build unless it is clean, a panic site, a spec emit exit other
+// than 0 or 1, any other compile error (a missing vector-package module or
+// export among them), or no test compiled at all. Exit 0 when nothing failed,
+// 1 when something did, and 2 when it cannot run (no dist/vector, no
+// compiler).
+//
+// A limit: a test skipped for a missing std import is not compiled, so a panic
+// site in it is not seen. Only a test that compiles is held to the rule.
 
 import { spawnSync } from "node:child_process";
 import {
@@ -42,6 +47,9 @@ const PANIC_CALL = "NL2458";
 /** The codes for an import nothing provides: no such std module, no such export. */
 const NO_MODULE = "NL3011";
 const NO_EXPORT = "NL2376";
+/** What a skip needs the message to say: a `nish/<module>` the std lacks, or lacks an export of. */
+const STD_MISSING =
+  /^Module `nish\/[^`]+` (is not part of the standard library|has no exported )/;
 
 /**
  * The diagnostics in `--json` output, one JSON object per line; a line that is
@@ -108,22 +116,34 @@ export const formatSite = (s, label = (f) => f) =>
 
 /**
  * What one compile came to: `{ outcome, sites, reason }`, where outcome is
- * "clean", "panics" (sites lists them), "skipped" (an import nothing
- * provides) or "failed" (reason says why). `status` is the compiler's exit,
- * `diags` its parsed --json diagnostics, and `report` the parsed
- * --emit-panics report, or null when it wrote none. `label` shortens a path
- * in a reason.
+ * "clean", "panics" (sites lists them), "skipped" (a `nish/<module>` import
+ * the std does not provide) or "failed" (reason says why). `status` is the
+ * compiler's exit, `diags` its parsed --json diagnostics, `report` the parsed
+ * --emit-panics report, or null when it wrote none, and `reportError` why the
+ * report it wrote could not be read. `label` shortens a path in a reason.
  */
 export const classifyCompile = (
-  { status, diags, report },
+  { status, diags, report, reportError },
   label = (f) => f,
 ) => {
+  if (reportError !== undefined)
+    return {
+      outcome: "failed",
+      sites: [],
+      reason: `unreadable --emit-panics report: ${reportError}`,
+    };
   if (status === 0) {
     if (report === null)
       return {
         outcome: "failed",
         sites: [],
         reason: "compiled but wrote no --emit-panics report",
+      };
+    if (!Array.isArray(report?.functions))
+      return {
+        outcome: "failed",
+        sites: [],
+        reason: "the --emit-panics report has no functions list",
       };
     const sites = reportSites(report);
     return {
@@ -140,8 +160,8 @@ export const classifyCompile = (
     const s = refusalSite(d);
     if (s !== null) sites.push(s);
     else if (
-      d.code === NO_MODULE ||
-      (d.code === NO_EXPORT && /has no exported/.test(d.message))
+      (d.code === NO_MODULE || d.code === NO_EXPORT) &&
+      STD_MISSING.test(d.message)
     )
       missing.push(d);
     else other.push(d);
@@ -183,6 +203,55 @@ export const classifyEmit = (status, stderr) => {
 export const exitCode = ({ failures, compiled }) =>
   failures > 0 || compiled === 0 ? 1 : 0;
 
+/**
+ * Tallies a run: `build` is what src/main.ts came to (classifyCompile), and
+ * each of `tests` is `{ what, test, emit, compile }`: the contract, the
+ * emitted test's label, its classifyEmit, and its classifyCompile when it was
+ * emitted. vector's build is required: anything but "clean" is a failure.
+ * @returns `{ failures, skipped, built, emitted, compiled, exit }`.
+ */
+export const summarize = (build, tests, label = (f) => f) => {
+  const failures = [];
+  const skipped = [];
+  const record = (what, c, required) => {
+    if (c.outcome === "panics") {
+      failures.push(
+        `${what}: ${c.sites.length} panic site(s)\n${c.sites.map((s) => `  ${formatSite(s, label)}`).join("\n")}`,
+      );
+    } else if (c.outcome === "failed") {
+      failures.push(`${what}: ${c.reason}`);
+    } else if (c.outcome === "skipped") {
+      if (required) failures.push(`${what}: did not build: ${c.reason}`);
+      else skipped.push(`${what}: ${c.reason}`);
+    }
+  };
+  record("src/main.ts", build, true);
+  let emitted = 0;
+  let compiled = 0;
+  for (const t of tests) {
+    if (t.emit.outcome === "skipped") {
+      skipped.push(`${t.what}: spec emit refused it: ${t.emit.reason}`);
+      continue;
+    }
+    if (t.emit.outcome === "failed") {
+      failures.push(`${t.what}: ${t.emit.reason}`);
+      continue;
+    }
+    emitted++;
+    if (t.compile.outcome === "clean" || t.compile.outcome === "panics")
+      compiled++;
+    record(`${t.what} -> ${t.test}`, t.compile, false);
+  }
+  return {
+    failures,
+    skipped,
+    built: build.outcome === "clean" ? 1 : 0,
+    emitted,
+    compiled,
+    exit: exitCode({ failures: failures.length, compiled }),
+  };
+};
+
 /** The contracts to emit: tracked, under contracts/ or a fixture's contracts/, no survivors. */
 export const contractsOf = (files) =>
   files
@@ -218,9 +287,6 @@ const main = () => {
       ? `<emitted>/${path.relative(out, abs)}`
       : path.relative(root, abs);
   };
-  const failures = [];
-  const skipped = [];
-
   /** Compiles `file` with no relax flag; returns what it came to. */
   const compile = (file, name) => {
     const panics = path.join(out, `${name}.panics.json`);
@@ -238,15 +304,12 @@ const main = () => {
       { cwd: root, encoding: "utf8", maxBuffer: 1 << 28 },
     );
     let report = null;
+    let reportError;
     if (existsSync(panics)) {
       try {
         report = JSON.parse(readFileSync(panics, "utf8"));
       } catch (e) {
-        return {
-          outcome: "failed",
-          sites: [],
-          reason: `unreadable --emit-panics report: ${e.message}`,
-        };
+        reportError = e.message;
       }
     }
     return classifyCompile(
@@ -254,27 +317,14 @@ const main = () => {
         status: r.status,
         diags: parseDiagnostics(`${r.stdout}\n${r.stderr}`),
         report,
+        reportError,
       },
       label,
     );
   };
 
-  const record = (what, c) => {
-    if (c.outcome === "panics") {
-      failures.push(
-        `${what}: ${c.sites.length} panic site(s)\n${c.sites.map((s) => `  ${formatSite(s, label)}`).join("\n")}`,
-      );
-    } else if (c.outcome === "failed") {
-      failures.push(`${what}: ${c.reason}`);
-    } else if (c.outcome === "skipped") {
-      skipped.push(`${what}: ${c.reason}`);
-    }
-  };
-
   // 1. vector itself.
   const build = compile("src/main.ts", "vector");
-  record("src/main.ts", build);
-  const built = build.outcome === "clean" ? 1 : 0;
 
   // 2. and 3. every contract's emitted test.
   const ls = spawnSync("git", ["ls-files", "contracts", "tests/fixtures"], {
@@ -285,8 +335,7 @@ const main = () => {
     console.error("no-panic: git ls-files failed");
     process.exit(2);
   }
-  let emitted = 0;
-  let compiled = 0;
+  const tests = [];
   for (const contract of contractsOf(ls.stdout.split("\n"))) {
     const stem = contract.replace(/\.json$/, "");
     const test = path.join(out, `${stem}_test.ts`);
@@ -296,29 +345,27 @@ const main = () => {
       ["spec", "emit", contract, "--package", "vector=src", "-o", test],
       { cwd: root, encoding: "utf8" },
     );
-    const e = classifyEmit(em.status, em.stderr ?? "");
-    if (e.outcome === "skipped") {
-      skipped.push(`${contract}: spec emit refused it: ${e.reason}`);
-      continue;
-    }
-    if (e.outcome === "failed") {
-      failures.push(`${contract}: ${e.reason}`);
-      continue;
-    }
-    emitted++;
-    const c = compile(test, stem.replaceAll("/", "_"));
-    if (c.outcome === "clean" || c.outcome === "panics") compiled++;
-    record(`${contract} -> ${label(test)}`, c);
+    const emit = classifyEmit(em.status, em.stderr ?? "");
+    const c =
+      emit.outcome === "emitted"
+        ? compile(test, stem.replaceAll("/", "_"))
+        : undefined;
+    tests.push({ what: contract, test: label(test), emit, compile: c });
   }
   rmSync(out, { recursive: true, force: true });
 
+  const { failures, skipped, built, emitted, compiled, exit } = summarize(
+    build,
+    tests,
+    label,
+  );
   for (const s of skipped) console.log(`SKIP  ${s}`);
   for (const f of failures) console.log(`FAIL  ${f}`);
   if (compiled === 0) console.log("FAIL  no emitted test compiled");
   console.log(
     `\nbuilt ${built}/1, emitted ${emitted}, compiled ${compiled}, skipped ${skipped.length}, failed ${failures.length}`,
   );
-  process.exit(exitCode({ failures: failures.length, compiled }));
+  process.exit(exit);
 };
 
 if (
