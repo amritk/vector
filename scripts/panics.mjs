@@ -13,7 +13,8 @@
 //        [--entry <file>] [--baseline-dir <dir>] [--root <dir>]
 // --report reads an existing --emit-panics report instead of compiling.
 // Exit: 0 at or under every baseline, 1 a module over its baseline or
-// missing from every baseline, 2 a tool failure or an unreadable input.
+// missing from every baseline, 2 a tool failure or an unreadable input,
+// a report the counting rule cannot read or naming no src/ module included.
 
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
@@ -77,18 +78,57 @@ const panicsCompile = (root, nish, entry) => {
   }
 };
 
-/** The counted sites of a report, as {module, line, column, kind, callee}. */
-const panicsCounted = (report) => {
+const panicsSrc = (module) => module.startsWith("src/");
+const panicsStd = (module) => module.startsWith("std/");
+const panicsFlag = (v) => v === undefined || typeof v === "boolean";
+
+/**
+ * Refuses a report whose shape the counting rule cannot read, so that no
+ * report counts nothing by accident: each function needs a string name, a
+ * module under src/ or std/ (no other path form), and a panics array; each
+ * site a string kind, an integer line and column, boolean proven and allowed
+ * when present, and a string callee when it is a call. A report must name a
+ * src/ module.
+ */
+const panicsShape = (report) => {
   if (!report || !Array.isArray(report.functions))
     throw new Error("panic report has no functions array");
+  report.functions.forEach((f, i) => {
+    const at = `panic report: function ${i}`;
+    if (!f || typeof f !== "object") throw new Error(`${at} is not an object`);
+    if (typeof f.name !== "string") throw new Error(`${at} has no name`);
+    if (typeof f.module !== "string") throw new Error(`${at} has no module`);
+    if (!panicsSrc(f.module) && !panicsStd(f.module))
+      throw new Error(
+        `${at}: module ${f.module} is under neither src/ nor std/`,
+      );
+    if (!Array.isArray(f.panics)) throw new Error(`${at} has no panics array`);
+    f.panics.forEach((p, j) => {
+      const site = `${at} (${f.module}) site ${j}`;
+      if (!p || typeof p !== "object")
+        throw new Error(`${site} is not an object`);
+      if (typeof p.kind !== "string") throw new Error(`${site} has no kind`);
+      if (!Number.isInteger(p.line) || !Number.isInteger(p.column))
+        throw new Error(`${site} has no line and column`);
+      if (!panicsFlag(p.proven) || !panicsFlag(p.allowed))
+        throw new Error(`${site}: proven and allowed must be booleans`);
+      if (p.kind === "call" && typeof p.callee !== "string")
+        throw new Error(`${site} is a call with no callee`);
+    });
+  });
+  if (!report.functions.some((f) => panicsSrc(f.module)))
+    throw new Error("panic report names no src/ module");
+};
+
+/** The counted sites of a report, as {module, line, column, kind, callee}. */
+const panicsCounted = (report) => {
+  panicsShape(report);
   const own = new Set(
-    report.functions
-      .filter((f) => f.module.startsWith("src/"))
-      .map((f) => f.name),
+    report.functions.filter((f) => panicsSrc(f.module)).map((f) => f.name),
   );
   const sites = [];
   for (const f of report.functions) {
-    if (!f.module.startsWith("src/")) continue;
+    if (!panicsSrc(f.module)) continue;
     for (const p of f.panics) {
       if (p.kind === "oom" || p.proven === true || p.allowed === true) continue;
       if (p.kind === "call" && own.has(p.callee)) continue;
@@ -128,6 +168,8 @@ const panicsBaseline = (dir) => {
       throw new Error(`baseline ${file} has no modules object`);
     }
     for (const [module, n] of Object.entries(json.modules)) {
+      if (!panicsSrc(module))
+        throw new Error(`baseline ${file}: ${module} is not a src/ module`);
       if (!Number.isInteger(n) || n < 0)
         throw new Error(`baseline ${file}: ${module} is not a count: ${n}`);
       if (owner.has(module))

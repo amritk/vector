@@ -6,8 +6,10 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -153,7 +155,14 @@ for (const [name, panics, n] of counted) {
     });
     const r = ratchet(dir, "--report", "r.json");
     assert.equal(r.status, n, r.out + r.err);
-    if (n === 1) assert.match(r.err, /over its baseline of 0 \(s\.json\)/);
+    if (n === 1) {
+      const p = panics[0];
+      const site = `  ${L}:2:3 ${p.kind}${p.kind === "call" ? ` ${p.callee}` : ""}`;
+      assert.equal(
+        r.err,
+        `${L}: 1 unproven sites, over its baseline of 0 (s.json)\n${site}\npanics: 1 module(s) refused\n`,
+      );
+    }
   });
 }
 
@@ -241,8 +250,12 @@ test("baseline: counts in two files are merged", (t) => {
   );
 });
 
-/** A stub nish writing `report` to its --emit-panics path, then exiting 0. */
+/**
+ * A stub nish, run in the root: it writes its arguments to args.txt there and
+ * `report` to its --emit-panics path, then exits 0.
+ */
 const stubNish = (report) => `#!/bin/bash
+printf '%s\\n' "$@" > args.txt
 while [ "$1" != --emit-panics ]; do shift; done
 printf '%s' '${JSON.stringify(report)}' > "$2"
 `;
@@ -272,6 +285,43 @@ for (const [name, fetch, status, err] of defaultNish) {
   });
 }
 
+test("compile: nish gets --entry, a debug profile and a link in a temp dir it then removes", (t) => {
+  const dir = fixture(t, {
+    "n.sh": stubNish({ functions: [fn(L, "lFn", { kind: "index" })] }),
+  });
+  chmodSync(path.join(dir, "n.sh"), 0o755);
+  const r = ratchet(dir, "--nish", path.join(dir, "n.sh"), "--entry", "e.ts");
+  assert.equal(r.status, 1, r.out + r.err);
+  const args = readFileSync(path.join(dir, "args.txt"), "utf8").split("\n");
+  const tmp = path.dirname(args[3]);
+  assert.match(path.basename(tmp), /^vector-panics-/);
+  assert.deepEqual(args, [
+    "e.ts",
+    "--allow-panics",
+    "--emit-panics",
+    path.join(tmp, "panics.json"),
+    "--link",
+    path.join(tmp, "v"),
+    "--profile",
+    "debug",
+    "",
+  ]);
+  assert.equal(existsSync(tmp), false);
+});
+
+test("root and baseline dir: default to the working directory and its scripts/panic-baseline", (t) => {
+  const dir = fixture(t, {
+    "r.json": two,
+    "scripts/panic-baseline/s.json": { modules: { [L]: 2 } },
+  });
+  const run = spawnSync(process.execPath, [script, "--report", "r.json"], {
+    cwd: dir,
+    encoding: "utf8",
+  });
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  assert.match(run.stdout, /panics: 2 unproven sites/);
+});
+
 const failures = [
   ["a missing report", {}, ["--report", "r.json"], /cannot read panic report/],
   [
@@ -287,16 +337,22 @@ const failures = [
     /no functions array/,
   ],
   [
-    "a function with no module",
-    { "r.json": { functions: [{ name: "f", panics: [] }] } },
-    ["--report", "r.json"],
-    /panics: .*startsWith/,
-  ],
-  [
     "a report that is null",
     { "r.json": "null" },
     ["--report", "r.json"],
     /no functions array/,
+  ],
+  [
+    "a baseline module not under src/",
+    { "r.json": two, "b/s.json": { modules: { "srcx/l.ts": 0 } } },
+    ["--report", "r.json"],
+    /baseline .*s\.json: srcx\/l\.ts is not a src\/ module/,
+  ],
+  [
+    "a nish that exits 0 and writes no report",
+    { "src/main.ts": "" },
+    ["--nish", "true"],
+    /cannot read panic report .*panics\.json/,
   ],
   [
     "a baseline that is not JSON",
@@ -309,6 +365,12 @@ const failures = [
     { "r.json": two, "b/s.json": { counts: {} } },
     ["--report", "r.json"],
     /has no modules object/,
+  ],
+  [
+    "a baseline that is null",
+    { "r.json": two, "b/s.json": "null" },
+    ["--report", "r.json"],
+    /baseline .*s\.json has no modules object/,
   ],
   [
     "a baseline whose modules is null",
@@ -376,6 +438,105 @@ const failures = [
     /exited 1/,
   ],
 ];
+
+// Report shapes the counting rule cannot read, each refused rather than
+// counted as nothing. `good` is a src/ function, so only the row's flaw fails.
+const good = fn(L, "lFn", { kind: "index" });
+const site = (p) => fn(L, "lFn", { kind: "index", ...p });
+const shapes = [
+  ["no functions", [], /names no src\/ module/],
+  ["only std functions", [fn("std/s.ts", "s")], /names no src\/ module/],
+  [
+    "a ./src/ module",
+    [fn("./src/x.ts", "x", { kind: "index" })],
+    /module \.\/src\/x\.ts is under neither/,
+  ],
+  [
+    "a srcx/ module",
+    [good, fn("srcx/a.ts", "a")],
+    /function 1: module srcx\/a\.ts is under neither/,
+  ],
+  [
+    "a stdx/ module",
+    [good, fn("stdx/a.ts", "a")],
+    /function 1: module stdx\/a\.ts is under neither/,
+  ],
+  ["a function that is null", [good, null], /function 1 is not an object/],
+  ["a function that is a number", [good, 5], /function 1 is not an object/],
+  [
+    "a function with no name",
+    [good, { module: L, panics: [] }],
+    /function 1 has no name/,
+  ],
+  [
+    "a function with no module",
+    [good, { name: "f", panics: [] }],
+    /function 1 has no module/,
+  ],
+  [
+    "a function with no panics",
+    [good, { name: "f", module: L }],
+    /function 1 has no panics array/,
+  ],
+  [
+    "a function whose panics is an object",
+    [good, { name: "f", module: L, panics: {} }],
+    /function 1 has no panics array/,
+  ],
+  [
+    "a site that is null",
+    [good, { name: "f", module: L, panics: [null] }],
+    /function 1 \(src\/l\.ts\) site 0 is not an object/,
+  ],
+  [
+    "a site that is a string",
+    [good, { name: "f", module: L, panics: ["index"] }],
+    /site 0 is not an object/,
+  ],
+  [
+    "a site with no kind",
+    [good, site({ kind: undefined })],
+    /site 0 has no kind/,
+  ],
+  [
+    "a site with no line",
+    [good, site({ line: undefined })],
+    /site 0 has no line and column/,
+  ],
+  [
+    "a site with a string column",
+    [good, site({ column: "3" })],
+    /site 0 has no line and column/,
+  ],
+  [
+    'a site proven "true"',
+    [good, site({ proven: "true" })],
+    /proven and allowed must be booleans/,
+  ],
+  [
+    "a site allowed 1",
+    [good, site({ allowed: 1 })],
+    /proven and allowed must be booleans/,
+  ],
+  [
+    "a call with no callee",
+    [good, site({ kind: "call" })],
+    /site 0 is a call with no callee/,
+  ],
+];
+
+for (const [name, functions, err] of shapes) {
+  test(`report shape: ${name} exits 2`, (t) => {
+    const dir = fixture(t, {
+      "r.json": { functions },
+      "b/s.json": { modules: { [L]: 5 } },
+    });
+    const r = ratchet(dir, "--report", "r.json");
+    assert.equal(r.status, 2, r.out + r.err);
+    assert.match(r.err, err);
+    assert.doesNotMatch(r.err, /TypeError|is not a function|Cannot read/);
+  });
+}
 
 for (const [name, files, args, err] of failures) {
   test(`failure: ${name} exits 2`, (t) => {

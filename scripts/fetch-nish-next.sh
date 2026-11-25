@@ -16,6 +16,8 @@ if [ -x "$dir/bin/nish" ] && [ "$("$dir/bin/nish" --version)" = "nish $version" 
 fi
 
 # The installer comes from the same tag as the release, so it is pinned too.
+# Unlike fetch-nish.sh, --no-modify-path: this compiler is reached by its path
+# alone, and must never shadow the pinned one on a shell's PATH.
 curl -fsSL "https://raw.githubusercontent.com/amritk/nish/v$version/install.sh" |
   sh -s -- "$version" --dir "$dir" --force --no-modify-path
 "$dir/bin/nish" --version
