@@ -33,7 +33,7 @@ export const gitdiffBaseProblem = (base: string): string | null => {
   if (base.length === 0) {
     return "--base is empty: give the ref the change is against, like origin/main"
   }
-  if (base.charCodeAt(0) === 0x2d) {
+  if (base.startsWith("-")) {
     return `--base ${base} starts with "-": git would read it as an option`
   }
   if (base.indexOf("..") >= 0) {
@@ -215,6 +215,9 @@ export class GitdiffFile {
   }
 }
 
+/** The decimal digits, each at the index of its value. */
+const GITDIFF_DIGITS: string = "0123456789"
+
 /** Reads a decimal count, or -1 when `text` is not one. */
 const gitdiffInt = (text: string): i32 => {
   if (text.length === 0 || text.length > 9) {
@@ -222,11 +225,12 @@ const gitdiffInt = (text: string): i32 => {
   }
   let n: i32 = 0
   for (let i = 0; i < text.length; i++) {
-    const c = text.charCodeAt(i)
-    if (c < 0x30 || c > 0x39) {
+    const d = GITDIFF_DIGITS.indexOf(text.substring(i, i + 1))
+    // `text` holds at most nine digits, so `n` never passes the bound below.
+    if (d < 0 || d > 9 || n < 0 || n > 99999999) {
       return -1
     }
-    n = n * 10 + (c - 0x30)
+    n = n * 10 + d
   }
   return n
 }
@@ -249,10 +253,11 @@ export const gitdiffHunk = (line: string): i32[] | null => {
   if (end < 0) {
     return null
   }
-  const spec = line.substring(plus + 2, end)
+  // The text from `plus` starts " +", so the spec is what follows those two.
+  const spec = line.substring(plus, end).substring(2)
   const comma = spec.indexOf(",")
   const first = gitdiffInt(comma >= 0 ? spec.substring(0, comma) : spec)
-  const count = comma >= 0 ? gitdiffInt(spec.substring(comma + 1)) : 1
+  const count = comma >= 0 ? gitdiffInt(spec.substring(comma).substring(1)) : 1
   if (first < 0 || count < 0) {
     return null
   }
@@ -302,12 +307,22 @@ export const gitdiffParse = (text: string): Result<GitdiffFile[], string> => {
       cur = f
     } else if (line.startsWith("@@ ") && cur !== null) {
       const h = gitdiffHunk(line)
+      // gitdiffHunk answers two counts of at most nine digits each.
       if (h === null) {
         return Err(`cannot read the hunk header "${line}"`)
       }
-      if (h[1] > 0) {
-        cur.ranges.push(h[0])
-        cur.ranges.push(h[0] + h[1] - 1)
+      const hunk: i32[] = h
+      if (hunk.length < 2) {
+        return Err(`cannot read the hunk header "${line}"`)
+      }
+      const first = hunk[0]
+      const count = hunk[1]
+      if (first < 0 || first > 999999999 || count < 0 || count > 999999999) {
+        return Err(`cannot read the hunk header "${line}"`)
+      }
+      if (count > 0) {
+        cur.ranges.push(first)
+        cur.ranges.push(first + count - 1)
       }
     } else if (line.startsWith("Binary files ") && cur === null && oldPath.length === 0) {
       return Err(`the change touches a binary file: ${line}`)
@@ -324,8 +339,9 @@ export const gitdiffParse = (text: string): Result<GitdiffFile[], string> => {
  * @returns true when the change adds or rewrites that line
  */
 export const gitdiffTouches = (file: GitdiffFile, line: i32): boolean => {
-  for (let i = 0; i + 1 < file.ranges.length; i += 2) {
-    if (line >= file.ranges[i] && line <= file.ranges[i + 1]) {
+  const ranges = file.ranges
+  for (let i = 0; i < ranges.length - 1; i += 2) {
+    if (line >= ranges[i] && line <= ranges[i + 1]) {
       return true
     }
   }
@@ -443,8 +459,7 @@ export const gitdiffChangedPaths = (repo: string, base: string): Result<string[]
  * @returns negative when `a` sorts first, positive when `b` does, 0 when equal
  */
 export const gitdiffCompare = (a: string, b: string): i32 => {
-  const n = a.length < b.length ? a.length : b.length
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < a.length && i < b.length; i++) {
     const d = a.charCodeAt(i) - b.charCodeAt(i)
     if (d !== 0) {
       return d
@@ -519,14 +534,24 @@ const GITDIFF_DECL_UNNAMED: i32 = 1
 const GITDIFF_DECL_UNSPLIT: i32 = 2
 
 /** The text of token `i`, or "" past `to`. */
-const gitdiffTok = (toks: LexToken[], i: i32, to: i32): string => (i < to ? toks[i].text : "")
+const gitdiffTok = (toks: LexToken[], i: i32, to: i32): string =>
+  i >= 0 && i < to && i < toks.length ? toks[i].text : ""
 
 /** Whether token `i`, before `to`, is an identifier. */
-const gitdiffIsIdent = (toks: LexToken[], i: i32, to: i32): boolean => i < to && toks[i].kind === LEX_IDENT
+const gitdiffIsIdent = (toks: LexToken[], i: i32, to: i32): boolean =>
+  i >= 0 && i < to && i < toks.length && toks[i].kind === LEX_IDENT
+
+/** Whether token `i`, before `to`, is an identifier outside every bracket. */
+const gitdiffIsTopIdent = (toks: LexToken[], i: i32, to: i32): boolean =>
+  i >= 0 && i < to && i < toks.length && toks[i].kind === LEX_IDENT && toks[i].depth === 0
 
 /** Whether token `i`, before `to`, is the punctuation `p`. */
 const gitdiffIsPunct = (toks: LexToken[], i: i32, to: i32, p: string): boolean =>
-  i < to && toks[i].kind === LEX_PUNCT && toks[i].text === p
+  i >= 0 && i < to && i < toks.length && toks[i].kind === LEX_PUNCT && toks[i].text === p
+
+/** Whether token `i`, before `to`, is `p` at bracket depth `depth`. */
+const gitdiffIsAt = (toks: LexToken[], i: i32, to: i32, depth: i32, p: string): boolean =>
+  i >= 0 && i < to && i < toks.length && toks[i].depth === depth && toks[i].text === p
 
 /**
  * Whether the `<` at `at` follows a type's name in a value: `new Map<`,
@@ -534,18 +559,24 @@ const gitdiffIsPunct = (toks: LexToken[], i: i32, to: i32, p: string): boolean =
  * identifiers after `new`, `as` or `satisfies`, all within the value.
  */
 const gitdiffTypeChain = (toks: LexToken[], valueStart: i32, at: i32): boolean => {
-  let i = at - 1
-  if (i < valueStart || toks[i].kind !== LEX_IDENT || toks[i].depth !== 0) {
+  if (valueStart < 0 || at <= valueStart || at > toks.length) {
     return false
   }
-  while (i - 2 >= valueStart && gitdiffIsPunct(toks, i - 1, at, ".") && toks[i - 2].kind === LEX_IDENT) {
+  let i = at - 1
+  if (!gitdiffIsTopIdent(toks, i, at)) {
+    return false
+  }
+  while (i >= 2 && i - 2 >= valueStart && gitdiffIsPunct(toks, i - 1, at, ".") && gitdiffIsIdent(toks, i - 2, at)) {
     i = i - 2
   }
-  i = i - 1
-  if (i < valueStart || toks[i].kind !== LEX_IDENT || toks[i].depth !== 0) {
+  if (i < 1 || i <= valueStart) {
     return false
   }
-  const w = toks[i].text
+  const j = i - 1
+  if (!gitdiffIsTopIdent(toks, j, at)) {
+    return false
+  }
+  const w = gitdiffTok(toks, j, at)
   return w === "new" || w === "as" || w === "satisfies"
 }
 
@@ -558,13 +589,15 @@ const gitdiffTypeChain = (toks: LexToken[], valueStart: i32, at: i32): boolean =
  * never comes, so `x < 1, y > (z)` is still a statement it cannot split.
  */
 const gitdiffCallTypeArgs = (toks: LexToken[], valueStart: i32, at: i32, to: i32): boolean => {
-  if (at - 1 < valueStart || toks[at - 1].kind !== LEX_IDENT || toks[at - 1].depth !== 0) {
+  if (valueStart < 0 || at <= valueStart || at >= toks.length || !gitdiffIsTopIdent(toks, at - 1, at)) {
     return false
   }
-  let nest = 0
-  for (let i = at; i < to; i++) {
+  const atDepth = toks[at].depth
+  // Only ever compared with 0, so a `>` before any `<` wrapping is harmless.
+  let nest: u32 = 0
+  for (let i = at; i < to && i < toks.length; i++) {
     const t = toks[i]
-    if (t.depth > toks[at].depth || (t.kind === LEX_PUNCT && (t.text === "(" || t.text === "[" || t.text === "{"))) {
+    if (t.depth > atDepth || (t.kind === LEX_PUNCT && (t.text === "(" || t.text === "[" || t.text === "{"))) {
       if (t.kind === LEX_STRING || t.kind === LEX_NUMBER || t.kind === LEX_TEMPLATE) {
         return false
       }
@@ -605,33 +638,41 @@ const gitdiffCallTypeArgs = (toks: LexToken[], valueStart: i32, at: i32, to: i32
  * after it starts the arrow's return type rather than a ternary's other arm.
  */
 const gitdiffArrowHead = (toks: LexToken[], valueStart: i32, close: i32): boolean => {
-  if (close < valueStart || !gitdiffIsPunct(toks, close, close + 1, ")") || toks[close].depth !== 0) {
+  if (valueStart < 0 || close < valueStart || close >= toks.length) {
+    return false
+  }
+  if (!gitdiffIsPunct(toks, close, close + 1, ")") || toks[close].depth !== 0) {
     return false
   }
   let open = close - 1
-  while (open >= valueStart && !(toks[open].depth === 0 && toks[open].text === "(")) {
+  while (open >= 0 && open >= valueStart && !gitdiffIsAt(toks, open, close, 0, "(")) {
     open = open - 1
   }
   let head = valueStart
-  if (gitdiffTok(toks, head, open) === "async" && toks[head].kind === LEX_IDENT) {
-    head = head + 1
+  if (gitdiffTok(toks, valueStart, open) === "async" && gitdiffIsIdent(toks, valueStart, open)) {
+    head = valueStart + 1
   }
   if (open === head) {
     return true
   }
-  return open > head && gitdiffIsPunct(toks, head, open, "<") && gitdiffIsPunct(toks, open - 1, open, ">")
+  return open >= 1 && open > head && gitdiffIsPunct(toks, head, open, "<") && gitdiffIsPunct(toks, open - 1, open, ">")
 }
 
 /** Whether a `,` at `at` is followed by another declarator: a name, then `:`, `=`, `!`, `,` or the end. */
 const gitdiffNextDeclarator = (toks: LexToken[], at: i32, to: i32): boolean => {
-  if (!gitdiffIsIdent(toks, at + 1, to)) {
+  if (at < 0 || at >= toks.length - 1 || !gitdiffIsIdent(toks, at + 1, to)) {
     return false
   }
-  if (at + 2 >= to) {
+  const k = at + 2
+  if (k >= to) {
     return true
   }
-  const n = toks[at + 2]
-  return n.kind === LEX_PUNCT && (n.text === ":" || n.text === "=" || n.text === "!" || n.text === ",")
+  return (
+    gitdiffIsPunct(toks, k, to, ":") ||
+    gitdiffIsPunct(toks, k, to, "=") ||
+    gitdiffIsPunct(toks, k, to, "!") ||
+    gitdiffIsPunct(toks, k, to, ",")
+  )
 }
 
 /**
@@ -650,17 +691,18 @@ const gitdiffDeclarators = (toks: LexToken[], from: i32, to: i32): GitdiffDecl =
   const names: string[] = []
   let i = from
   while (true) {
-    if (!gitdiffIsIdent(toks, i, to)) {
+    if (!gitdiffIsIdent(toks, i, to) || i < 0 || i >= toks.length) {
       return new GitdiffDecl(names, names.length === 0 ? GITDIFF_DECL_UNNAMED : GITDIFF_DECL_UNSPLIT)
     }
-    names.push(toks[i].text)
+    names.push(gitdiffTok(toks, i, to))
     i = i + 1
     let inValue = false
     let valueStart: i32 = -1
-    let angle = 0
+    // Lowered only while above 0.
+    let angle: u32 = 0
     let returnType = false
     let next = false
-    while (i < to) {
+    while (i >= 0 && i < to && i < toks.length) {
       const t = toks[i]
       if (t.depth === 0 && t.kind === LEX_PUNCT) {
         const typeAngle = !inValue || returnType || angle > 0
@@ -713,6 +755,8 @@ const gitdiffDeclarators = (toks: LexToken[], from: i32, to: i32): GitdiffDecl =
 const gitdiffDeclare = (toks: LexToken[], from: i32, to: i32): GitdiffDecl => {
   let i = from
   while (
+    i >= 0 &&
+    i < toks.length &&
     (gitdiffTok(toks, i, to) === "declare" ||
       gitdiffTok(toks, i, to) === "abstract" ||
       gitdiffTok(toks, i, to) === "async") &&
@@ -720,20 +764,23 @@ const gitdiffDeclare = (toks: LexToken[], from: i32, to: i32): GitdiffDecl => {
   ) {
     i = i + 1
   }
-  if (!gitdiffIsIdent(toks, i, to)) {
+  if (i < 0 || i >= toks.length || !gitdiffIsIdent(toks, i, to)) {
     return new GitdiffDecl([], GITDIFF_DECL_UNNAMED)
   }
-  let k = toks[i].text
-  if (k === "const" && gitdiffTok(toks, i + 1, to) === "enum") {
+  let k = gitdiffTok(toks, i, to)
+  if (k === "const" && i < toks.length - 1 && gitdiffTok(toks, i + 1, to) === "enum") {
     i = i + 1
     k = "enum"
+  }
+  if (i >= toks.length) {
+    return new GitdiffDecl([], GITDIFF_DECL_UNNAMED)
   }
   if (k === "const" || k === "let" || k === "var") {
     return gitdiffDeclarators(toks, i + 1, to)
   }
   if (k === "function") {
     i = i + 1
-    if (gitdiffIsPunct(toks, i, to, "*")) {
+    if (i < toks.length && gitdiffIsPunct(toks, i, to, "*")) {
       i = i + 1
     }
   } else if (["class", "enum", "interface", "type", "namespace", "module"].indexOf(k) >= 0) {
@@ -744,35 +791,61 @@ const gitdiffDeclare = (toks: LexToken[], from: i32, to: i32): GitdiffDecl => {
   if (!gitdiffIsIdent(toks, i, to)) {
     return new GitdiffDecl([], GITDIFF_DECL_UNNAMED)
   }
-  return new GitdiffDecl([toks[i].text], GITDIFF_DECL_OK)
+  return new GitdiffDecl([gitdiffTok(toks, i, to)], GITDIFF_DECL_OK)
 }
 
 /** The index after a statement's last token other than a closing `;`. */
-const gitdiffStmtEnd = (toks: LexToken[], span: LexSpan): i32 =>
-  span.to > span.from && gitdiffIsPunct(toks, span.to - 1, span.to, ";") ? span.to - 1 : span.to
+const gitdiffStmtEnd = (toks: LexToken[], span: LexSpan): i32 => {
+  const from = span.from
+  const to = span.to
+  if (to > from && to >= 1 && gitdiffIsPunct(toks, to - 1, to, ";")) {
+    return to - 1
+  }
+  return to
+}
+
+/** Why tokens `[from, to)` are not a statement of the module's `toks`. */
+const gitdiffOutside = (toks: LexToken[], from: i32, to: i32): string =>
+  `a statement at tokens [${from}, ${to}) of a module of ${toks.length} tokens`
+
+/** The text of tokens `[from, to)`, from the first's start to the last's end. */
+const gitdiffText = (text: string, toks: LexToken[], from: i32, to: i32): Result<string, string> => {
+  if (from < 0 || from >= to || from >= toks.length || to < 1 || to > toks.length) {
+    return Err(gitdiffOutside(toks, from, to))
+  }
+  return Ok(text.substring(toks[from].start, toks[to - 1].end))
+}
 
 /** A statement's text, from its first token to its last. */
-const gitdiffStmtText = (text: string, toks: LexToken[], span: LexSpan): string =>
-  text.substring(toks[span.from].start, toks[span.to - 1].end)
+const gitdiffStmtText = (text: string, toks: LexToken[], span: LexSpan): Result<string, string> =>
+  gitdiffText(text, toks, span.from, span.to)
 
 /** Whether a statement starts with `export`. */
 const gitdiffIsExportStmt = (toks: LexToken[], span: LexSpan): boolean =>
-  toks[span.from].kind === LEX_IDENT && toks[span.from].text === "export"
+  gitdiffIsIdent(toks, span.from, span.to) && gitdiffTok(toks, span.from, span.to) === "export"
 
 /**
  * The text of every top-level statement declaring `name`, exported or not,
  * joined by line breaks (overloads); null when there is none.
  */
-const gitdiffDeclText = (text: string, toks: LexToken[], spans: LexSpan[], name: string): string | null => {
+const gitdiffDeclText = (
+  text: string,
+  toks: LexToken[],
+  spans: LexSpan[],
+  name: string,
+): Result<string | null, string> => {
   const found: string[] = []
   for (const span of spans) {
-    const from = gitdiffIsExportStmt(toks, span) ? span.from + 1 : span.from
-    const d = gitdiffDeclare(toks, from, gitdiffStmtEnd(toks, span))
+    const from = span.from
+    const to = span.to
+    const start = gitdiffIsExportStmt(toks, span) && from < to ? from + 1 : from
+    const d = gitdiffDeclare(toks, start, gitdiffStmtEnd(toks, span))
     if (d.names.indexOf(name) >= 0) {
-      found.push(gitdiffStmtText(text, toks, span))
+      found.push(gitdiffStmtText(text, toks, span).orReturn())
     }
   }
-  return found.length > 0 ? found.join("\n") : null
+  const joined: string | null = found.length > 0 ? found.join("\n") : null
+  return Ok(joined)
 }
 
 /**
@@ -788,43 +861,53 @@ const gitdiffListExports = (
   span: LexSpan,
   open: i32,
   out: GitdiffExport[],
-): void => {
+): Result<void, string> => {
   const end = gitdiffStmtEnd(toks, span)
-  const line = toks[span.from].line
-  const statement = gitdiffStmtText(text, toks, span)
+  const statement = gitdiffStmtText(text, toks, span).orReturn()
+  const from = span.from
+  if (from < 0 || from >= toks.length || open < 0 || open >= end || end < 1 || end > toks.length) {
+    return Err(gitdiffOutside(toks, from, span.to))
+  }
+  const line = toks[from].line
   let close = open + 1
-  while (close < end && !(toks[close].depth === 0 && toks[close].text === "}")) {
+  while (close < end && !gitdiffIsAt(toks, close, end, 0, "}")) {
     close = close + 1
   }
-  if (close + 1 < end) {
+  if (close < end - 1) {
     const why =
       gitdiffTok(toks, close + 1, end) === "from"
         ? `a re-export from another module it cannot resolve: ${statement}`
         : `an export list it cannot read: ${statement}`
     out.push(new GitdiffExport("", line, statement, why))
-    return
+    return Ok()
   }
   let a = open + 1
-  while (a < close) {
+  while (a >= 0 && a < close) {
     let b = a
-    while (b < close && !(toks[b].depth === 1 && toks[b].text === ",")) {
+    while (b < close && !gitdiffIsAt(toks, b, close, 1, ",")) {
       b = b + 1
     }
     if (b > a) {
       let s = a
-      if (b - s > 1 && toks[s].kind === LEX_IDENT && toks[s].text === "type") {
+      if (s < b - 1 && gitdiffIsIdent(toks, s, b) && gitdiffTok(toks, s, b) === "type") {
         s = s + 1
       }
-      const entry = text.substring(toks[s].start, toks[b - 1].end)
+      const entry = gitdiffText(text, toks, s, b).orReturn()
       let name = ""
       if (gitdiffIsIdent(toks, s, b)) {
-        if (b - s === 1) {
-          name = toks[s].text
-        } else if (b - s === 3 && gitdiffTok(toks, s + 1, b) === "as" && gitdiffIsIdent(toks, s + 2, b)) {
-          name = toks[s + 2].text
+        if (s === b - 1) {
+          name = gitdiffTok(toks, s, b)
+        } else if (b >= 3 && s === b - 3) {
+          // `s as t`: the `as` at b - 2, the exported name at b - 1.
+          if (gitdiffTok(toks, b - 2, b) === "as" && gitdiffIsIdent(toks, b - 1, b)) {
+            name = gitdiffTok(toks, b - 1, b)
+          }
         }
       }
-      const decl: string | null = name.length > 0 ? gitdiffDeclText(text, toks, spans, toks[s].text) : null
+      let decl: string | null = null
+      if (name.length > 0) {
+        decl = gitdiffDeclText(text, toks, spans, gitdiffTok(toks, s, b)).orReturn()
+      }
       if (decl === null) {
         out.push(
           new GitdiffExport(
@@ -838,8 +921,10 @@ const gitdiffListExports = (
         out.push(new GitdiffExport(name, line, `${entry}\n${decl}`, ""))
       }
     }
-    a = b + 1
+    // At `close` the list ends, as it does one past it.
+    a = b < close ? b + 1 : close
   }
+  return Ok()
 }
 
 /** Adds `e` to `out`, joining it to an earlier export of the same name (an overload). */
@@ -857,14 +942,20 @@ const gitdiffAddExport = (out: GitdiffExport[], e: GitdiffExport): void => {
 
 /** The line a lexer message (`line N: why`) names, or 1. */
 const gitdiffLexLine = (message: string): i32 => {
-  let n: i32 = 0
-  let i = 5
   if (!message.startsWith("line ")) {
     return 1
   }
-  while (i < message.length && message.charCodeAt(i) >= 0x30 && message.charCodeAt(i) <= 0x39) {
-    n = n * 10 + (message.charCodeAt(i) - 0x30)
-    i = i + 1
+  let n: i32 = 0
+  for (let i = 5; i < message.length; i++) {
+    const d = GITDIFF_DIGITS.indexOf(message.substring(i, i + 1))
+    if (d < 0 || d > 9) {
+      break
+    }
+    // A line past i32 is past any module the lexer reads.
+    if (n < 0 || n > 214748363) {
+      return 1
+    }
+    n = n * 10 + d
   }
   return n > 0 ? n : 1
 }
@@ -876,26 +967,32 @@ const gitdiffExportStmt = (
   spans: LexSpan[],
   span: LexSpan,
   out: GitdiffExport[],
-): void => {
+): Result<void, string> => {
   const end = gitdiffStmtEnd(toks, span)
-  const line = toks[span.from].line
-  const body = gitdiffStmtText(text, toks, span)
-  const first = trim(splitLines(body)[0])
-  const k = span.from + 1
-  if (gitdiffIsIdent(toks, k, end) && toks[k].text === "default") {
+  const body = gitdiffStmtText(text, toks, span).orReturn()
+  const from = span.from
+  if (from < 0 || from >= toks.length) {
+    return Err(gitdiffOutside(toks, from, span.to))
+  }
+  const line = toks[from].line
+  // The statement's first line, as splitLines(body)[0] reads it.
+  const nl = body.indexOf("\n")
+  const first = trim(nl >= 0 ? body.substring(0, nl) : body)
+  const k = from + 1
+  if (gitdiffIsIdent(toks, k, end) && gitdiffTok(toks, k, end) === "default") {
     gitdiffAddExport(out, new GitdiffExport("default", line, body, ""))
-    return
+    return Ok()
   }
   if (gitdiffIsPunct(toks, k, end, "{")) {
-    gitdiffListExports(text, toks, spans, span, k, out)
-    return
+    return gitdiffListExports(text, toks, spans, span, k, out)
   }
-  if (gitdiffTok(toks, k, end) === "type" && gitdiffIsPunct(toks, k + 1, end, "{")) {
-    gitdiffListExports(text, toks, spans, span, k + 1, out)
-    return
+  if (k < toks.length && gitdiffTok(toks, k, end) === "type" && gitdiffIsPunct(toks, k + 1, end, "{")) {
+    return gitdiffListExports(text, toks, spans, span, k + 1, out)
   }
   const d = gitdiffDeclare(toks, k, end)
-  if (d.problem === GITDIFF_DECL_UNNAMED) {
+  const names = d.names
+  // gitdiffDeclare names at least one when it answers OK.
+  if (d.problem === GITDIFF_DECL_UNNAMED || names.length < 1) {
     out.push(new GitdiffExport("", line, body, `an export it cannot name: ${first}`))
   } else if (d.problem === GITDIFF_DECL_UNSPLIT) {
     out.push(
@@ -906,7 +1003,7 @@ const gitdiffExportStmt = (
         `an export it cannot split into names: ${first}: a comma or an angle bracket it cannot place, so it may declare more than one name`,
       ),
     )
-  } else if (d.names.length > 1) {
+  } else if (names.length > 1) {
     out.push(
       new GitdiffExport(
         "",
@@ -916,8 +1013,9 @@ const gitdiffExportStmt = (
       ),
     )
   } else {
-    gitdiffAddExport(out, new GitdiffExport(d.names[0], line, body, ""))
+    gitdiffAddExport(out, new GitdiffExport(names[0], line, body, ""))
   }
+  return Ok()
 }
 
 /**
@@ -947,7 +1045,11 @@ export const gitdiffExports = (text: string): GitdiffExport[] => {
   const spans = lexStatements(toks)
   for (const span of spans) {
     if (gitdiffIsExportStmt(toks, span)) {
-      gitdiffExportStmt(text, toks, spans, span, out)
+      // lexStatements answers spans within `toks`, so this never fails.
+      const r = gitdiffExportStmt(text, toks, spans, span, out)
+      if (r.isErr()) {
+        return [new GitdiffExport("", 1, text, `a module it cannot read: ${r.error}`)]
+      }
     }
   }
   return out
@@ -964,11 +1066,12 @@ export const gitdiffExports = (text: string): GitdiffExport[] => {
  */
 export const gitdiffExportName = (source: string): Result<string, string> => {
   const list = gitdiffExports(source)
-  if (list.length === 0) {
+  if (list.length < 1) {
     return Ok("")
   }
-  if (list[0].problem.length > 0) {
-    return Err(list[0].problem)
+  const e = list[0]
+  if (e.problem.length > 0) {
+    return Err(e.problem)
   }
-  return Ok(list[0].name)
+  return Ok(e.name)
 }
