@@ -4,9 +4,10 @@
  * returns its findings. checkContract runs them in order and collects every
  * finding, so one run names them all.
  *
- * How a stage plugs in: write the gate as a top-level function of type
- * CheckGate in its own module (`(ctx) => string[]`: it reads `ctx.contract`
- * and returns one message per finding, empty when it passes), and add one
+ * How a stage plugs in: write the gate as a top-level function in its own
+ * module (`(ctx: CheckContext) => string[]`: it reads `ctx.contract` and
+ * returns one message per finding, empty when it passes), give it a
+ * CheckGateKind and a case in checkGateRun, and add one
  * `new CheckGateEntry(...)` line for it to checkGates, in the order it must
  * run. A gate that later gates
  * depend on (the shape gate: nothing after it can trust a malformed contract)
@@ -234,28 +235,85 @@ export class CheckContext {
 export const checkAddReader = (ctx: CheckContext, ext: string, kind: SourceReaderKind): Result<boolean, string> =>
   sourceReadersAdd(ctx.readers, ext, kind)
 
-/** A gate: every finding in `ctx.contract`, one message each; empty when it passes. */
-export type CheckGate = (ctx: CheckContext) => string[]
+/** Which gate a registry entry runs: checkGateRun calls the gate it names. */
+export enum CheckGateKind {
+  /** checkShapeGate: every value the schema and the generated test constrain. */
+  Shape = 1,
+  /** gateIds. */
+  Ids = 2,
+  /** gateTyping. */
+  Typing = 3,
+  /** gateCoverage. */
+  Coverage = 4,
+  /** gateFidelity. */
+  Fidelity = 5,
+  /** gateCompleteness. */
+  Completeness = 6,
+  /** gateRunSources. */
+  RunSources = 7,
+  /** gateProvenance. */
+  Provenance = 8,
+  /** gateSignatures. */
+  Signatures = 9,
+  /** gateDomain. */
+  Domain = 10,
+}
+
+/** Runs the gate `kind` names over `ctx.contract`: one message per finding, empty when it passes. */
+const checkGateRun = (kind: CheckGateKind, ctx: CheckContext): string[] => {
+  switch (kind) {
+    case CheckGateKind.Shape:
+      return checkShapeGate(ctx)
+    case CheckGateKind.Ids:
+      return gateIds(ctx)
+    case CheckGateKind.Typing:
+      return gateTyping(ctx)
+    case CheckGateKind.Coverage:
+      return gateCoverage(ctx)
+    case CheckGateKind.Fidelity:
+      return gateFidelity(ctx)
+    case CheckGateKind.Completeness:
+      return gateCompleteness(ctx)
+    case CheckGateKind.RunSources:
+      return gateRunSources(ctx)
+    case CheckGateKind.Provenance:
+      return gateProvenance(ctx)
+    case CheckGateKind.Signatures:
+      return gateSignatures(ctx)
+    default:
+      return gateDomain(ctx)
+  }
+}
 
 /** A gate in the registry. */
 export class CheckGateEntry {
   /** The name its findings are reported under. */
   name: string
-  /** The gate: it returns one message per finding. */
-  run: CheckGate
+  /** Which gate it runs. */
+  kind: CheckGateKind
   /** Whether a finding stops the gates after it. */
   blocking: boolean
   /**
    * Makes a registry entry.
    *
    * @param name the gate's name
-   * @param run the gate
+   * @param kind which gate it runs
    * @param blocking whether a finding stops the gates after it
    */
-  constructor(name: string, run: CheckGate, blocking: boolean) {
+  constructor(name: string, kind: CheckGateKind, blocking: boolean) {
     this.name = name
-    this.run = run
+    this.kind = kind
     this.blocking = blocking
+  }
+
+  /**
+   * Runs this entry's gate.
+   *
+   * @param ctx the check's context, holding the contract
+   * @returns one message per finding, empty when it passes
+   */
+  run(ctx: CheckContext): string[] {
+    return checkGateRun(this.kind, ctx)
   }
 }
 
@@ -314,16 +372,16 @@ export const checkShapeGate = (ctx: CheckContext): string[] => contractShapeErro
  * @returns the registry
  */
 export const checkGates = (): CheckGateEntry[] => [
-  new CheckGateEntry("shape", checkShapeGate, true),
-  new CheckGateEntry("ids", gateIds, true),
-  new CheckGateEntry("typing", gateTyping, false),
-  new CheckGateEntry("coverage", gateCoverage, false),
-  new CheckGateEntry("fidelity", gateFidelity, false),
-  new CheckGateEntry("completeness", gateCompleteness, false),
-  new CheckGateEntry("run-sources", gateRunSources, false),
-  new CheckGateEntry("provenance", gateProvenance, false),
-  new CheckGateEntry("signatures", gateSignatures, false),
-  new CheckGateEntry("domain", gateDomain, false),
+  new CheckGateEntry("shape", CheckGateKind.Shape, true),
+  new CheckGateEntry("ids", CheckGateKind.Ids, true),
+  new CheckGateEntry("typing", CheckGateKind.Typing, false),
+  new CheckGateEntry("coverage", CheckGateKind.Coverage, false),
+  new CheckGateEntry("fidelity", CheckGateKind.Fidelity, false),
+  new CheckGateEntry("completeness", CheckGateKind.Completeness, false),
+  new CheckGateEntry("run-sources", CheckGateKind.RunSources, false),
+  new CheckGateEntry("provenance", CheckGateKind.Provenance, false),
+  new CheckGateEntry("signatures", CheckGateKind.Signatures, false),
+  new CheckGateEntry("domain", CheckGateKind.Domain, false),
 ]
 
 /**
@@ -353,8 +411,7 @@ export const checkContractWith = (ctx: CheckContext, contract: Contract, gates: 
       report.skipped.push(g.name)
       continue
     }
-    const run = g.run
-    const found = run(ctx)
+    const found = g.run(ctx)
     report.ran.push(g.name)
     for (const m of found) {
       report.findings.push(new CheckFinding(g.name, m))
