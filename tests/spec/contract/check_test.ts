@@ -239,6 +239,11 @@ export const main = (): i32 => {
   const domainOnly: CheckGateEntry[] = [new CheckGateEntry("domain", CheckGateKind.Domain, false)]
   const sampled = checkContractWith(sctx, checkTestContract(CHECK_TEST_GATES), domainOnly)
   t.ok("the samples are in the report", want > 0 && checkSamplesOf(sampled.samples, "P2").length === want)
+  const ps = checkSamplesOf(sampled.samples, "P2")
+  const ds = checkSamplesOf(direct.samples, "P2")
+  const first = ps.length > 0 ? `${ps[0].why}=${ps[0].args[0].text}` : ""
+  t.eqStr("the first sample's why and value", first, "boundary: the domain=7")
+  t.eqStr("as the gate chose it", first, ds.length > 0 ? `${ds[0].why}=${ds[0].args[0].text}` : "none")
   t.ok("by clause: an empty domain has none", checkSamplesOf(sampled.samples, "P1").length === 0)
   const again = checkContractWith(sctx, checkTestContract(CHECK_TEST_GATES), domainOnly)
   t.eqStr("a second run starts a new table", `${checkSamplesOf(again.samples, "P2").length}`, `${want}`)
