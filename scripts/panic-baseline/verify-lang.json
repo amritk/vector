@@ -1,0 +1,8 @@
+{
+  "modules": {
+    "src/verify/lang/check.ts": 15,
+    "src/verify/lang/pretty.ts": 9,
+    "src/verify/lang/read.ts": 11,
+    "src/verify/lang/style.ts": 2
+  }
+}
