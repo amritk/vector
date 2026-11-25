@@ -22,8 +22,8 @@
  */
 
 import { jsonStringifyString } from "nish/json"
-import { asciiLower } from "nish/text"
 import { toHex, utf8Bytes } from "../../core/hex"
+import { textAsciiLower } from "../../core/text"
 import { CheckContext, CheckNote } from "../check"
 import { charsTestVector } from "../contract/chars"
 import { contractF64Bits, contractF64IsNaN, contractF64Parse } from "../contract/f64"
@@ -142,6 +142,8 @@ class GateLits {
   hint: string
   /** The section line of each case heading (rfcWithHeadings). */
   heads: i32[]
+  /** The text of each case heading, parallel to heads. */
+  headLines: string[]
   /** The case heading every value is printed under (gateHeadingCase), or -1. */
   chosen: i32
   /**
@@ -169,7 +171,16 @@ class GateLits {
     this.blocks = gateWordBlocks(sec.lines, sec.pageBreaks)
     this.bounds = []
     this.hint = ""
-    this.heads = rfcWithHeadings(sec)
+    this.heads = []
+    this.headLines = []
+    const lines = sec.lines
+    for (const h of rfcWithHeadings(sec)) {
+      if (h >= 0 && h < lines.length) {
+        const line = lines[h]
+        this.heads.push(h)
+        this.headLines.push(line)
+      }
+    }
     this.chosen = -1
   }
 }
@@ -177,7 +188,8 @@ class GateLits {
 const GATE_FIDELITY: string = "fidelity"
 
 /** Whether two labels are the same, whitespace collapsed and case ignored. */
-const gateSameLabel = (a: string, b: string): boolean => asciiLower(rfcNormalize(a)) === asciiLower(rfcNormalize(b))
+const gateSameLabel = (a: string, b: string): boolean =>
+  textAsciiLower(rfcNormalize(a)) === textAsciiLower(rfcNormalize(b))
 
 /** Labels as `"a" or "b"`, each once. */
 const gateQuoted = (labels: string[]): string => {
@@ -203,6 +215,13 @@ const gateOrdinal = (n: i32): string => {
   return ten === 3 && hundred !== 13 ? `${n}rd` : `${n}th`
 }
 
+/**
+ * `a + b` for two counts or offsets whose sum is itself a count or offset of
+ * something the caller holds, so it fits an i32; the sum is taken wide so it
+ * is not checked.
+ */
+const gateFidPlus = (a: i32, b: i32): i32 => toI32(toI64(a) + toI64(b))
+
 /** Whether `hex` is byte-aligned inside `value`. */
 const gateHexInside = (value: string, hex: string): boolean => {
   let at = toI32(value.indexOf(hex))
@@ -210,7 +229,8 @@ const gateHexInside = (value: string, hex: string): boolean => {
     if (at % 2 === 0) {
       return true
     }
-    at = toI32(value.indexOf(hex, at + 1))
+    // at is an offset of value, so at + 1 fits.
+    at = toI32(value.indexOf(hex, gateFidPlus(at, 1)))
   }
   return false
 }
@@ -220,7 +240,7 @@ const gateLitHex = (lit: Literal): string => {
   if (lit.kind === LitKind.Ascii) {
     return toHex(utf8Bytes(lit.text))
   }
-  const run = asciiLower(lit.text)
+  const run = textAsciiLower(lit.text)
   const parts: string[] = []
   const n = lit.repeat >= 1 ? lit.repeat : 1
   for (let i = 0; i < n; i++) {
@@ -312,7 +332,8 @@ const gateHexCheck = (l: GateLits, at: string, hex: string, label: string | null
         b.shown.push(v.line)
       }
       b.printed.push(v.line)
-      of = of + 1
+      // of counts values, so it fits.
+      of = gateFidPlus(of, 1)
     }
   }
   gateRounds(l, b, of, has)
@@ -323,11 +344,16 @@ const gateWordBare = (w: string): string => (w.startsWith("0x") ? w.substring(2,
 
 /** Whether `want` is `words` from `from` on, as printed or, with `bare`, ignoring `0x`. */
 const gateWordsAt = (words: string[], want: string[], from: i32, bare: boolean): boolean => {
-  if (from + want.length > words.length) {
+  if (!(from >= 0 && from <= words.length && want.length <= words.length - from)) {
     return false
   }
   for (let i = 0; i < want.length; i++) {
-    const a = words[from + i]
+    // from + i is under from + want.length, at most words.length.
+    const w = gateFidPlus(from, i)
+    if (!(w >= 0 && w < words.length)) {
+      return false
+    }
+    const a = words[w]
     const b = want[i]
     if (bare ? gateWordBare(a) !== gateWordBare(b) : a !== b) {
       return false
@@ -341,8 +367,8 @@ const gateWordsInside = (words: string[], want: string[]): boolean => {
   if (want.length >= words.length) {
     return false
   }
-  for (let i = 0; i + want.length <= words.length; i++) {
-    if (gateWordsAt(words, want, i, true)) {
+  for (let i = 0; i < words.length; i++) {
+    if (want.length <= words.length - i && gateWordsAt(words, want, i, true)) {
       return true
     }
   }
@@ -356,24 +382,31 @@ const gateWordsInside = (words: string[], want: string[]): boolean => {
  */
 const gateWordsAcross = (blocks: GateWordBlock[], want: string[]): boolean => {
   let b = 0
-  while (b < blocks.length) {
+  while (b >= 0 && b < blocks.length) {
     const words: string[] = []
     const joins: i32[] = []
     let e = b
-    for (const w of blocks[e].words) {
+    let block = blocks[b]
+    for (const w of block.words) {
       words.push(w)
     }
-    while (blocks[e].joinsNext && e + 1 < blocks.length) {
+    while (block.joinsNext && e >= 0 && e < blocks.length - 1) {
       joins.push(words.length)
-      e = e + 1
-      for (const w of blocks[e].words) {
+      const next = toI32(toI64(e) + toI64(1))
+      if (!(next >= 0 && next < blocks.length)) {
+        break
+      }
+      block = blocks[next]
+      e = next
+      for (const w of block.words) {
         words.push(w)
       }
     }
-    for (let i = 0; i + want.length <= words.length; i++) {
+    for (let i = 0; i < words.length && want.length <= words.length - i; i++) {
       let crosses = false
       for (const j of joins) {
-        if (i < j && i + want.length > j) {
+        // i is at most words.length - want.length, so the sum fits.
+        if (i < j && gateFidPlus(i, want.length) > j) {
           crosses = true
         }
       }
@@ -381,7 +414,8 @@ const gateWordsAcross = (blocks: GateWordBlock[], want: string[]): boolean => {
         return true
       }
     }
-    b = e + 1
+    // e is under blocks.length, so e + 1 fits.
+    b = gateFidPlus(e, 1)
   }
   return false
 }
@@ -430,7 +464,7 @@ const gateWordsCheck = (l: GateLits, lit: Literal, at: string): void => {
       gateWordsBreakFail(l, at, n)
       return
     }
-    const prefixed = want[0].startsWith("0x")
+    const prefixed = want.length > 0 && want[0].startsWith("0x")
     for (const b of l.blocks) {
       if (b.words.length === n && gateWordsAt(b.words, want, 0, true)) {
         gateLitFail(
@@ -456,15 +490,21 @@ const gateWordsCheck = (l: GateLits, lit: Literal, at: string): void => {
   }
   const label = lit.label
   if (label === null) {
-    const b = new GateBound(at, null)
-    b.block = exact[0]
-    l.bounds.push(b)
+    if (exact.length > 0) {
+      const b = new GateBound(at, null)
+      b.block = exact[0]
+      l.bounds.push(b)
+    }
     return
   }
   const named: string[] = []
   let block = -1
+  const blocks = l.blocks
   for (const e of exact) {
-    const bl = l.blocks[e].label
+    if (!(e >= 0 && e < blocks.length)) {
+      continue
+    }
+    const bl = blocks[e].label
     if (bl !== null) {
       named.push(bl)
       if (block < 0 && gateSameLabel(bl, label)) {
@@ -490,7 +530,8 @@ const gateWordsCheck = (l: GateLits, lit: Literal, at: string): void => {
       if (exact.indexOf(b) >= 0) {
         has.push(of)
       }
-      of = of + 1
+      // of counts blocks, so it fits.
+      of = gateFidPlus(of, 1)
     }
   }
   const bound = new GateBound(at, label)
@@ -547,7 +588,7 @@ const gateF64Has = (lit: Literal, printed: string[]): i32[] => {
 /** Whether a label states a length of zero: `0` before `byte`, `bytes`, `octet` or `octets` (`MESSAGE (length 0 bytes)`). */
 const gateZeroLength = (label: string): boolean => {
   const ts = gateFidTokens(label)
-  for (let i = 0; i + 1 < ts.length; i++) {
+  for (let i = 0; i < ts.length - 1; i++) {
     if (ts[i] === "0" && gateFidLengthWord(ts[i + 1])) {
       return true
     }
@@ -575,9 +616,11 @@ const gateEmptyCheck = (l: GateLits, at: string, label: string): void => {
   const names = rfcUnvaluedLabels(l.sec)
   const lines = rfcUnvaluedLines(l.sec)
   const b = new GateBound(at, label)
-  for (let i = 0; i < names.length; i++) {
+  // The two lists are parallel: one line per label.
+  for (let i = 0; i < names.length && i < lines.length; i++) {
+    const line = lines[i]
     if (gateSameLabel(names[i], label)) {
-      b.printed.push(lines[i])
+      b.printed.push(line)
     }
   }
   const of = b.printed.length
@@ -691,7 +734,7 @@ const gateBoundRound = (b: GateBound): string => {
 }
 
 /** A repeated bound's printings, for a message: `1st or 3rd`. */
-const gateNth = (has: i32[]): string => has.map((r: i32): string => gateOrdinal(r + 1)).join(" or ")
+const gateNth = (has: i32[]): string => has.map((r: i32): string => gateOrdinal(gateFidPlus(r, 1))).join(" or ")
 
 /** Whether an argument's string or integer is printed inside a call label: `"salt"` or `c=1` in `PBKDF2 (P="passwd", S="salt", c=1)`. */
 const gateInLabel = (b: GateBound, label: string): boolean => {
@@ -720,7 +763,8 @@ const gateLabelLines = (l: GateLits, v: HexValue): i32[] => {
     if (i >= v.line) {
       out.push(k)
     }
-    k = k + 1
+    // k counts lines of the section, so it stays below its length.
+    k = gateFidPlus(k, 1)
   }
   return out
 }
@@ -746,10 +790,12 @@ const gateArgText = (b: GateBound): string => {
  */
 const gateLabelArgs = (l: GateLits, args: i32): void => {
   // Every bound past the args is the expected value's.
-  if (l.bounds.length <= args) {
+  const bounds = l.bounds
+  const last = bounds.length - 1
+  if (last < args || !(last >= 0 && last < bounds.length)) {
     return
   }
-  const e = l.bounds[l.bounds.length - 1]
+  const e = bounds[last]
   const label = e.label
   if (label === null) {
     return
@@ -762,8 +808,8 @@ const gateLabelArgs = (l: GateLits, args: i32): void => {
       under.push(rfcNormalize(vl))
     }
   }
-  for (let a = 0; a < args; a++) {
-    const b = l.bounds[a]
+  for (let a = 0; a < args && a < bounds.length; a++) {
+    const b = bounds[a]
     // Paired only by the label the RFC prints over the value, and placed on
     // that printing's lines: the contract's label is bound to it ignoring case.
     for (const v of e.held) {
@@ -803,7 +849,8 @@ const gateSecLine = (l: GateLits, k: i32): i32 => {
       if (n === k) {
         return i
       }
-      n = n + 1
+      // n counts lines of the section, so it stays below its length.
+      n = gateFidPlus(n, 1)
     }
   }
   return -1
@@ -853,7 +900,7 @@ const gateBoundCases = (l: GateLits, places: i32[]): i32[] => {
 }
 
 /** A case heading, for a message: `"With SHA-256, message = "sample":"`. */
-const gateHeadingText = (l: GateLits, h: i32): string => `"${rfcNormalize(l.sec.lines[l.heads[h]])}"`
+const gateHeadingText = (line: string): string => `"${rfcNormalize(line)}"`
 
 /**
  * In a section split into cases by headings of RFC 6979 §A.2's form
@@ -894,10 +941,19 @@ const gateHeadingCase = (l: GateLits, inSection: string): void => {
   }
   if (shared.length === 0) {
     const each: string[] = []
-    for (let i = 0; i < placed.length; i++) {
-      if (cases[i].length < l.heads.length) {
-        const heads = cases[i].map((h: i32): string => gateHeadingText(l, h))
-        each.push(`${placed[i].at} is under ${heads.join(" or ")}`)
+    // cases is parallel to placed, and holds indices into heads.
+    for (let i = 0; i < placed.length && i < cases.length; i++) {
+      const at = placed[i].at
+      const under = cases[i]
+      if (under.length < l.heads.length) {
+        const heads: string[] = []
+        const headLines = l.headLines
+        for (const h of under) {
+          if (h >= 0 && h < headLines.length) {
+            heads.push(gateHeadingText(headLines[h]))
+          }
+        }
+        each.push(`${at} is under ${heads.join(" or ")}`)
       }
     }
     gateNote(
@@ -915,6 +971,15 @@ const gateHeadingCase = (l: GateLits, inSection: string): void => {
  * A cited vector's values are one test case: text printed on one shared line,
  * repeated labels from one round, and the expected value not an input's.
  */
+/** Whether every bound is printed the same number of times. */
+const gateSameRounds = (bs: GateBound[]): boolean => {
+  if (bs.length === 0) {
+    return true
+  }
+  const of = bs[0].of
+  return bs.every((b: GateBound): boolean => b.of === of)
+}
+
 const gateOneTestCase = (l: GateLits, args: i32, sec: RfcSection): void => {
   const id = l.id
   const inSection = `${l.where} ("${sec.title}")`
@@ -953,7 +1018,7 @@ const gateOneTestCase = (l: GateLits, args: i32, sec: RfcSection): void => {
       `${texts.map(gateArgText).join(", ")} and ${repeated.map(gateBoundRound).join(", ")} in ${inSection}: nothing pairs a printed string with one of several labelled values: cite the subsection that holds one test case`,
       false,
     )
-  } else if (repeated.length > 1 && repeated.some((b: GateBound): boolean => b.of !== repeated[0].of)) {
+  } else if (repeated.length > 1 && !gateSameRounds(repeated)) {
     // Rounds pair only when every label is printed once per test case.
     const counts = repeated.map((b: GateBound): string => `"${gateBoundLabel(b)}" is printed ${b.of} times`)
     gateNote(
@@ -983,15 +1048,18 @@ const gateOneTestCase = (l: GateLits, args: i32, sec: RfcSection): void => {
       )
     }
   }
-  for (let e = args; e < l.bounds.length; e++) {
-    const block = l.bounds[e].block
+  const bounds = l.bounds
+  for (let e = args; e >= 0 && e < bounds.length; e++) {
+    const be = bounds[e]
+    const block = be.block
     if (block >= 0) {
-      for (let a = 0; a < args; a++) {
-        if (l.bounds[a].block === block) {
+      for (let a = 0; a < args && a < bounds.length; a++) {
+        const ba = bounds[a]
+        if (ba.block === block) {
           gateNote(
             l,
-            `${id}.${l.bounds[e].at}`,
-            `the expected value is the block of words ${l.bounds[a].at} is bound to as well: an input is not the expected result`,
+            `${id}.${be.at}`,
+            `the expected value is the block of words ${ba.at} is bound to as well: an input is not the expected result`,
             false,
           )
           break
@@ -999,17 +1067,18 @@ const gateOneTestCase = (l: GateLits, args: i32, sec: RfcSection): void => {
       }
       continue
     }
-    const label = l.bounds[e].label
+    const label = be.label
     if (label === null) {
       continue
     }
-    for (let a = 0; a < args; a++) {
-      const al = l.bounds[a].label
+    for (let a = 0; a < args && a < bounds.length; a++) {
+      const ba = bounds[a]
+      const al = ba.label
       if (al !== null && gateSameLabel(al, label)) {
         gateNote(
           l,
-          `${id}.${l.bounds[e].at}`,
-          `the expected value is the one printed under "${label}", which ${l.bounds[a].at} is bound to as well: an input is not the expected result`,
+          `${id}.${be.at}`,
+          `the expected value is the one printed under "${label}", which ${ba.at} is bound to as well: an input is not the expected result`,
           false,
         )
         break
@@ -1026,18 +1095,27 @@ const gateOneTestCase = (l: GateLits, args: i32, sec: RfcSection): void => {
  * refused. Numbers and text are not placed by line, so they are not tied.
  */
 const gateOnceRound = (l: GateLits, repeated: GateBound[], shared: i32[], inSection: string): void => {
-  const rounds = repeated[0].of
+  if (repeated.length < 1) {
+    return
+  }
+  const first = repeated[0]
+  const rounds = first.of
   if (repeated.some((b: GateBound): boolean => b.printed.length !== rounds)) {
     return
   }
   const start: i32[] = []
   const end: i32[] = []
-  for (let r = 0; r < rounds; r++) {
-    let lo = repeated[0].printed[r]
+  const firstPrinted = first.printed
+  for (let r = 0; r < rounds && r < firstPrinted.length; r++) {
+    let lo = firstPrinted[r]
     let hi = lo
     for (const b of repeated) {
-      lo = Math.min(lo, b.printed[r])
-      hi = Math.max(hi, b.printed[r])
+      // Every bound is printed `rounds` times (checked above).
+      const printed = b.printed
+      if (r < printed.length) {
+        lo = Math.min(lo, printed[r])
+        hi = Math.max(hi, printed[r])
+      }
     }
     start.push(lo)
     end.push(hi)
@@ -1049,7 +1127,10 @@ const gateOnceRound = (l: GateLits, repeated: GateBound[], shared: i32[], inSect
     const p = b.printed[0]
     const near: i32[] = []
     for (let r = 0; r < rounds; r++) {
-      if ((r === 0 || end[r - 1] < p) && (r === rounds - 1 || p < start[r + 1])) {
+      // start and end hold one entry per round.
+      const afterLast = r <= 0 || (r <= end.length && end[r - 1] < p)
+      const beforeNext = r + 1 >= rounds || (r < start.length - 1 && p < start[r + 1])
+      if (afterLast && beforeNext) {
         near.push(r)
       }
     }
@@ -1062,7 +1143,7 @@ const gateOnceRound = (l: GateLits, repeated: GateBound[], shared: i32[], inSect
     gateNote(
       l,
       `${l.id}.${b.at}`,
-      `"${gateBoundLabel(b)}" is printed once in ${inSection}, with the ${gateNth(near)} of ${rounds} "${gateBoundLabel(repeated[0])}", but ${each.join(", ")}, so they are from different test cases: use the values printed together`,
+      `"${gateBoundLabel(b)}" is printed once in ${inSection}, with the ${gateNth(near)} of ${rounds} "${gateBoundLabel(first)}", but ${each.join(", ")}, so they are from different test cases: use the values printed together`,
       false,
     )
   }
@@ -1084,7 +1165,7 @@ const gateDigitRuns = (s: string): string[] => {
   const t = rfcNormalize(s)
   const out: string[] = []
   let i = 0
-  while (i < t.length) {
+  while (i >= 0 && i < t.length) {
     const c = t.charCodeAt(i)
     if (c < 48 || c > 57) {
       i = i + 1
@@ -1102,7 +1183,7 @@ const gateDigitRuns = (s: string): string[] => {
 
 /** A label with every run of digits as "#", lowercase: what variants of it share. */
 const gateSkeleton = (s: string): string => {
-  const t = asciiLower(rfcNormalize(s))
+  const t = textAsciiLower(rfcNormalize(s))
   const parts: string[] = []
   let i = 0
   while (i < t.length) {
@@ -1133,11 +1214,13 @@ const gateCounts = (labels: string[], i: i32): boolean => {
       ns.push(n)
     }
   }
-  let lo = ns[0]
-  let hi = ns[0]
-  for (const n of ns) {
-    lo = n < lo ? n : lo
-    hi = n > hi ? n : hi
+  // The first number starts both ends; with none, hi - lo + 1 is 1, never 0.
+  let lo = toF64(0)
+  let hi = toF64(0)
+  for (let j = 0; j < ns.length; j++) {
+    const n = ns[j]
+    lo = j === 0 || n < lo ? n : lo
+    hi = j === 0 || n > hi ? n : hi
   }
   return hi - lo + 1 === toF64(ns.length)
 }
@@ -1158,6 +1241,10 @@ const gateFidLetter = (c: i32): boolean => (c >= 65 && c <= 90) || (c >= 97 && c
  * `5.2`, `X25519` and `SHA-256-128` hold none.
  */
 const gateFidTokenAt = (s: string, start: i32, i: i32): boolean => {
+  // Past the end of s there is no byte, so none belongs to a token.
+  if (!(i >= 0 && i < s.length)) {
+    return false
+  }
   const c = s.charCodeAt(i)
   if (gateFidDigit(c) || gateFidLetter(c) || c === 46 || c === 44) {
     return true
@@ -1165,8 +1252,9 @@ const gateFidTokenAt = (s: string, start: i32, i: i32): boolean => {
   return (
     c === 45 &&
     i > start &&
+    start >= 0 &&
     gateFidLetter(s.charCodeAt(start)) &&
-    i + 1 < s.length &&
+    i < s.length - 1 &&
     (gateFidLetter(s.charCodeAt(i + 1)) || gateFidDigit(s.charCodeAt(i + 1)))
   )
 }
@@ -1178,7 +1266,7 @@ const gateFidTokenAt = (s: string, start: i32, i: i32): boolean => {
 const gateFidSpans = (s: string): i32[] => {
   const out: i32[] = []
   let i = 0
-  while (i < s.length) {
+  while (i >= 0 && i < s.length) {
     if (!gateFidTokenAt(s, i, i)) {
       i = i + 1
       continue
@@ -1188,7 +1276,7 @@ const gateFidSpans = (s: string): i32[] => {
       j = j + 1
     }
     let e = j
-    while (e > i && (s.charCodeAt(e - 1) === 46 || s.charCodeAt(e - 1) === 44)) {
+    while (e > i && e > 0 && e <= s.length && (s.charCodeAt(e - 1) === 46 || s.charCodeAt(e - 1) === 44)) {
       e = e - 1
     }
     if (e > i) {
@@ -1204,7 +1292,7 @@ const gateFidSpans = (s: string): i32[] => {
 const gateFidTokens = (s: string): string[] => {
   const spans = gateFidSpans(s)
   const out: string[] = []
-  for (let i = 0; i + 1 < spans.length; i = i + 2) {
+  for (let i = 0; i >= 0 && i < spans.length - 1; i = gateFidPlus(i, 2)) {
     out.push(s.substring(spans[i], spans[i + 1]))
   }
   return out
@@ -1222,7 +1310,8 @@ const gateFidNumber = (t: string): string => {
     const c = t.charCodeAt(i)
     if (gateFidDigit(c)) {
       digits = `${digits}${t.substring(i, i + 1)}`
-      group = group < 0 ? group : group + 1
+      // group is at most 3 here, or the token was refused below.
+      group = group < 0 ? group : gateFidPlus(group, 1)
       if (group > 3) {
         return ""
       }
@@ -1271,7 +1360,7 @@ const gateGrouped = (d: string): string => {
 
 /** Whether `w` is a word that a length in bytes ends with: "byte", "bytes", "octet" or "octets". */
 const gateFidLengthWord = (w: string): boolean => {
-  const l = asciiLower(w)
+  const l = textAsciiLower(w)
   return l === "byte" || l === "bytes" || l === "octet" || l === "octets"
 }
 
@@ -1284,11 +1373,15 @@ const gateLabelUnsized = (label: string): string => {
   const spans = gateFidSpans(label)
   let out = ""
   let from = 0
-  for (let i = 0; i + 3 < spans.length; i = i + 2) {
-    const n = gateFidNumber(label.substring(spans[i], spans[i + 1]))
-    if (n.length > 0 && spans[i] >= from && gateFidLengthWord(label.substring(spans[i + 2], spans[i + 3]))) {
-      out = `${out}${label.substring(from, spans[i])}`
-      from = spans[i + 3]
+  for (let i = 0; i >= 0 && i < spans.length - 3; i = gateFidPlus(i, 2)) {
+    const start = spans[i]
+    const end = spans[i + 1]
+    const wordStart = spans[i + 2]
+    const wordEnd = spans[i + 3]
+    const n = gateFidNumber(label.substring(start, end))
+    if (n.length > 0 && start >= from && gateFidLengthWord(label.substring(wordStart, wordEnd))) {
+      out = `${out}${label.substring(from, start)}`
+      from = wordEnd
     }
   }
   return `${out}${label.substring(from, label.length)}`
@@ -1296,7 +1389,7 @@ const gateLabelUnsized = (label: string): string => {
 
 /** Whether `w` is a word that counts rounds: "iteration", "iterations" or "times". */
 const gateFidRoundsWord = (w: string): boolean => {
-  const l = asciiLower(w)
+  const l = textAsciiLower(w)
   return l === "iteration" || l === "iterations" || l === "times"
 }
 
@@ -1307,9 +1400,10 @@ const gateFidRoundsWord = (w: string): boolean => {
  */
 const gateLabelRounds = (label: string): string => {
   const ts = gateFidTokens(label)
-  for (let i = 0; i + 1 < ts.length; i++) {
+  for (let i = 0; i < ts.length - 1; i++) {
+    const after = ts[i + 1]
     const n = gateFidNumber(ts[i])
-    if (n.length > 0 && gateFidRoundsWord(ts[i + 1])) {
+    if (n.length > 0 && gateFidRoundsWord(after)) {
       return n
     }
   }
@@ -1344,7 +1438,7 @@ const gateLabelUncounted = (label: string): string => {
   const spans = gateFidSpans(label)
   let out = ""
   let from = 0
-  for (let i = 0; i + 1 < spans.length; i = i + 2) {
+  for (let i = 0; i >= 0 && i < spans.length - 1; i = i + 2) {
     if (gateFidNumber(label.substring(spans[i], spans[i + 1])) === n) {
       out = `${out}${label.substring(from, spans[i])} `
       from = spans[i + 1]
@@ -1376,9 +1470,11 @@ const gateIterateCount = (
 ): void => {
   const want = `${it.count}`
   let printed = false
-  for (let i = 0; i < sec.lines.length && !printed; i++) {
+  const lines = sec.lines
+  for (let i = 0; i < lines.length && !printed; i++) {
     // The cheap test first: a heading is read only when its line holds the count.
-    printed = gateWholeNumbers(sec.lines[i]).indexOf(want) >= 0 && !gateFidHeading(sec.lines[i])
+    const line = lines[i]
+    printed = gateWholeNumbers(line).indexOf(want) >= 0 && !gateFidHeading(line)
   }
   if (!printed) {
     gateIssue(ctx, out, GATE_FIDELITY, `${k.id}.iterate`, `the count ${gateGrouped(want)} is not printed in ${where}`)
@@ -1413,7 +1509,7 @@ const gateTruncateLength = (
   sec: RfcSection,
   where: string,
 ): void => {
-  const want = t.unit === "bits" ? `${t.bytes * 8}` : `${t.bytes}`
+  const want = `${t.count()}`
   const words: string[] = []
   for (const line of sec.lines) {
     if (!gateFidHeading(line)) {
@@ -1422,8 +1518,9 @@ const gateTruncateLength = (
       }
     }
   }
-  for (let i = 0; i + 1 < words.length; i++) {
-    if (gateFidNumber(words[i]) === want && asciiLower(words[i + 1]) === t.unit) {
+  for (let i = 0; i < words.length - 1; i++) {
+    const after = words[i + 1]
+    if (gateFidNumber(words[i]) === want && textAsciiLower(after) === t.unit) {
       return
     }
   }
@@ -1444,11 +1541,12 @@ const gateTruncateLength = (
 const gateLabelUnText = (label: string, text: string): string => {
   const quotes = gateQuotePairs()
   let out = label
-  for (let q = 0; q < quotes.length; q += 2) {
+  for (let q = 0; q >= 0 && q < quotes.length - 1; q += 2) {
     const quoted = `${quotes[q]}${text}${quotes[q + 1]}`
     const at = out.indexOf(quoted)
     if (at >= 0) {
-      out = `${out.substring(0, at)}${quotes[q]}${quotes[q + 1]}${out.substring(at + quoted.length)}`
+      // quoted is in out at `at`, so the sum is at most out.length.
+      out = `${out.substring(0, at)}${quotes[q]}${quotes[q + 1]}${out.substring(gateFidPlus(at, quoted.length))}`
     }
   }
   return out
@@ -1466,7 +1564,7 @@ const gateNameChar = (c: i32): boolean => (c >= 48 && c <= 57) || (c >= 65 && c 
 const gateLabelUnNumbered = (label: string, names: string[]): string => {
   const out: string[] = []
   let i = 0
-  while (i < label.length) {
+  while (i >= 0 && i < label.length) {
     const c = label.charCodeAt(i)
     out.push(label.substring(i, i + 1))
     i = i + 1
@@ -1474,13 +1572,13 @@ const gateLabelUnNumbered = (label: string, names: string[]): string => {
       continue
     }
     let s = i - 1
-    while (s > 0 && gateNameChar(label.charCodeAt(s - 1))) {
+    while (s > 0 && s <= label.length && gateNameChar(label.charCodeAt(s - 1))) {
       s = s - 1
     }
     if (names.indexOf(label.substring(s, i - 1)) < 0) {
       continue
     }
-    while (i < label.length && gateNameChar(label.charCodeAt(i))) {
+    while (i >= 0 && i < label.length && gateNameChar(label.charCodeAt(i))) {
       i = i + 1
     }
   }
@@ -1546,36 +1644,44 @@ const gateVariantNote = (
   const own: string[] = []
   const theirs: string[] = []
   const from: string[] = []
-  for (let si = 0; si < siblings.length; si++) {
+  // shownAll is the label, then each sibling as it is printed.
+  for (let si = 0; si < siblings.length && si < shownAll.length - 1; si++) {
+    const shown = shownAll[si + 1]
     const ds = gateDigitRuns(siblings[si])
     for (let i = 0; i < ds.length; i++) {
+      const d = ds[i]
       const m = i < mine.length ? mine[i] : ""
-      if (ds[i] === m || gateCounts(all, i)) {
+      if (d === m || gateCounts(all, i)) {
         continue
       }
       if (own.indexOf(m) < 0) {
         own.push(m)
       }
-      if (theirs.indexOf(ds[i]) < 0) {
-        theirs.push(ds[i])
-        from.push(shownAll[si + 1])
+      if (theirs.indexOf(d) < 0) {
+        theirs.push(d)
+        from.push(shown)
       }
     }
   }
   if (own.every((d: string): boolean => named.indexOf(d) >= 0)) {
     return
   }
-  let other = -1
-  for (let i = 0; i < theirs.length && other < 0; i++) {
-    if (named.indexOf(theirs[i]) >= 0 && own.indexOf(theirs[i]) < 0) {
-      other = i
+  // from is parallel to theirs: where each other variant's number is printed.
+  let other: string | null = null
+  let otherFrom = ""
+  for (let i = 0; i < theirs.length && i < from.length && other === null; i++) {
+    const t = theirs[i]
+    const f = from[i]
+    if (named.indexOf(t) >= 0 && own.indexOf(t) < 0) {
+      other = t
+      otherFrom = f
     }
   }
-  if (other >= 0) {
+  if (other !== null) {
     gateNote(
       l,
       at,
-      `${subject} in ${inSection}, but ${k.call} names ${theirs[other]}, as in "${from[other]}": a vector uses the value printed for the variant its function computes`,
+      `${subject} in ${inSection}, but ${k.call} names ${other}, as in "${otherFrom}": a vector uses the value printed for the variant its function computes`,
       false,
     )
   } else {
@@ -1596,21 +1702,23 @@ const gateVariantNote = (
  */
 const gateHeadingVariant = (l: GateLits, k: Clause, sec: RfcSection): void => {
   const c = l.chosen
-  if (c < 0) {
+  const headLines = l.headLines
+  if (!(c >= 0 && c < headLines.length)) {
     return
   }
-  const mine = rfcWithHeading(l.sec.lines[l.heads[c]])
+  const line = headLines[c]
+  const mine = rfcWithHeading(line)
   const shape = gateSkeleton(mine)
   const siblings: string[] = []
   const shownAll = [mine]
-  for (const h of l.heads) {
-    const w = rfcWithHeading(l.sec.lines[h])
+  for (const h of headLines) {
+    const w = rfcWithHeading(h)
     if (gateSkeleton(w) === shape) {
       siblings.push(w)
       shownAll.push(w)
     }
   }
-  const subject = `the values are printed under the case heading ${gateHeadingText(l, c)}`
+  const subject = `the values are printed under the case heading ${gateHeadingText(line)}`
   gateVariantNote(l, k, k.id, subject, mine, siblings, shownAll, `${l.where} ("${sec.title}")`)
 }
 
@@ -1626,8 +1734,8 @@ const gateOwnVariant = (l: GateLits, k: Clause, sec: RfcSection): void => {
   const keys: string[] = []
   for (const v of l.values) {
     const vl = v.label
-    if (vl !== null && keys.indexOf(asciiLower(rfcNormalize(vl))) < 0) {
-      keys.push(asciiLower(rfcNormalize(vl)))
+    if (vl !== null && keys.indexOf(textAsciiLower(rfcNormalize(vl))) < 0) {
+      keys.push(textAsciiLower(rfcNormalize(vl)))
       printed.push(vl)
     }
   }
