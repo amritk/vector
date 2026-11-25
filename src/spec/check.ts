@@ -27,7 +27,7 @@ import { gateProvenance } from "./gates/provenance"
 import { gateRunSources } from "./gates/run"
 import { gateSignatures } from "./gates/signatures"
 import { gateTyping } from "./gates/typing"
-import { SourceReader, SourceReaders, SourceSet, sourceReadersAdd, sourceReadersDefault } from "./source/load"
+import { SourceReaderKind, SourceReaders, SourceSet, sourceReadersAdd, sourceReadersDefault } from "./source/load"
 
 /** One sampled input of a property: the values its variables take, and why. */
 export class Sample {
@@ -227,12 +227,12 @@ export class CheckContext {
  *
  * @param ctx the check's context
  * @param ext the extension, with its leading dot: ".xml"
- * @param read the reader
+ * @param kind the format files with that extension are read as
  * @returns `Ok(true)` when added, `Err` (as sourceReadersAdd) when `ext` is
  *   not a leading dot and a name; nothing is added then
  */
-export const checkAddReader = (ctx: CheckContext, ext: string, read: SourceReader): Result<boolean, string> =>
-  sourceReadersAdd(ctx.readers, ext, read)
+export const checkAddReader = (ctx: CheckContext, ext: string, kind: SourceReaderKind): Result<boolean, string> =>
+  sourceReadersAdd(ctx.readers, ext, kind)
 
 /** A gate: every finding in `ctx.contract`, one message each; empty when it passes. */
 export type CheckGate = (ctx: CheckContext) => string[]

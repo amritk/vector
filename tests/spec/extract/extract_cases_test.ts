@@ -7,8 +7,7 @@ import { ProcessResult, runProcess } from "../../../src/core/process"
 import { CheckContext, checkAddReader, checkContractWith, checkGates, checkPassed } from "../../../src/spec/check"
 import { contractFromJson } from "../../../src/spec/contract/read"
 import { ExtractOutcome, extractContract, extractReaders, extractUnifiedDiff } from "../../../src/spec/extract"
-import { SourceReaders } from "../../../src/spec/source/load"
-import { xmlRead } from "../../../src/spec/xml/doc"
+import { SourceReaderKind, SourceReaders } from "../../../src/spec/source/load"
 
 const EXTRACT_CASES_TEST_MINI: string = "tests/fixtures/extract/extract-mini.xml"
 const EXTRACT_CASES_TEST_MAIN: string = "tests/fixtures/rfc-main"
@@ -223,7 +222,7 @@ const extractCasesTestChecked = (path: string, root: string): string => {
     return c.error.join("\n")
   }
   const ctx = new CheckContext(path, root)
-  const added = checkAddReader(ctx, ".xml", xmlRead)
+  const added = checkAddReader(ctx, ".xml", SourceReaderKind.Xml)
   if (added.isErr()) {
     return added.error
   }
