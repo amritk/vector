@@ -202,7 +202,7 @@ fresh, a stale, an unmarked and a doubly marked test.
 
 ## exports
 
-`spec exports <contract.json> --nish-root <dir> --base <ref>` lists the
+`spec exports <contracts.json...> --nish-root <dir> --base <ref>` lists the
 exports of the contract's module that the change adds or changes, and refuses
 one the contract neither tests nor lists in its `outOfScope` with a reason.
 `--nish-root` is required, and must be a git checkout of nish: the change is
@@ -255,6 +255,14 @@ Without `--nish-root` it exits 2 (`VECTOR_NISH_ROOT` is not read here):
 ```text
 vector: spec exports: --nish-root <dir> is required: the nish checkout holding the module
 ```
+
+Name every contract that targets a module in one call. A module that two
+contracts target (HMAC by RFC 4231 and PBKDF2 by RFC 7914, both in one file)
+is judged once, on what they cover together: an export is covered when any of
+them tests it or, when none does, any lists it out of scope. Run alone, each
+would refuse the exports only the other tests. With contracts for more than
+one module, each module is judged on its own contracts, and every line of the
+report starts with the module's file (`std/g.ts: export g2 is added, …`).
 
 ## mutate
 

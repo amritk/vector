@@ -4,8 +4,10 @@
 
 `cli/spec-exports` — `vector spec exports`: refuse a new export its contract does not cover.
 
-Every export the change adds to or changes in the contract's target module
-is one the contract tests or lists out of scope (`spec/pr/exports`).
+Every export the change adds to or changes in a contract's target module
+is one a contract targeting that module tests or lists out of scope
+(`spec/pr/exports`). Several contracts may be given: a module two of them
+target is judged on what they cover together.
 
 Generated from [src/cli/spec-exports.ts](https://github.com/amritk/vector/blob/main/src/cli/spec-exports.ts).
 
@@ -63,12 +65,12 @@ The `--base <ref>` flag.
 baseFlag: i32
 ```
 
-#### SpecExportsCommand.contractJsonArg
+#### SpecExportsCommand.contractsArg
 
-The `<contract.json>` argument.
+The `<contracts.json...>` argument.
 
 ```ts
-contractJsonArg: i32
+contractsArg: i32
 ```
 
 #### SpecExportsCommand.formatFlag

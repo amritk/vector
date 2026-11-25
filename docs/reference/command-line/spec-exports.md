@@ -7,14 +7,14 @@ Refuse a new export its contract does not cover.
 ## Usage
 
 ```text
-vector spec exports <contract.json> [flags]
+vector spec exports <contracts.json...> [flags]
 ```
 
 ## Arguments
 
-<scalar-field name="&lt;contract.json&gt;" required>
+<scalar-field name="&lt;contracts.json...&gt;" required>
 
-the contract
+the contracts; a module several target is judged on all of them
 
 </scalar-field>
 
