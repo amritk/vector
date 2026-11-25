@@ -49,7 +49,7 @@ const gateSigType = (t: string): string => splitWhitespace(t).join(" ")
 /** The offset after the whitespace at `i`. */
 const gateSigSkip = (s: string, i: i32): i32 => {
   let j = i
-  while (j < s.length && gateSigIsSpace(s.charCodeAt(j))) {
+  while (j >= 0 && j < s.length && gateSigIsSpace(s.charCodeAt(j))) {
     j++
   }
   return j
@@ -57,22 +57,24 @@ const gateSigSkip = (s: string, i: i32): i32 => {
 
 /** The parameters' types between `(` at `open` and its `)`, and the offset after it; -1 when unbalanced. */
 const gateSigParams = (s: string, open: i32, types: string[]): i32 => {
+  // Each character moves `depth` by one at most, so it stays within s.length
+  // of zero: it neither passes s.length nor drops below -s.length.
   let depth = 0
   let start = open + 1
   for (let i = open + 1; i < s.length; i++) {
     const c = s.charCodeAt(i)
     if (c === 0x28 || c === 0x3c || c === 0x5b || c === 0x7b) {
-      depth++
+      depth = toI32(toI64(depth) + toI64(1))
     } else if (c === 0x3e && s.charCodeAt(i - 1) === 0x3d) {
       // `=>` inside a function-typed parameter is not a closing `>`.
     } else if (c === 0x3e || c === 0x5d || c === 0x7d) {
-      depth--
+      depth = toI32(toI64(depth) - toI64(1))
     } else if (c === 0x29 && depth > 0) {
       depth--
     } else if ((c === 0x2c && depth === 0) || c === 0x29) {
       const p = s.substring(start, i)
       const colon = p.indexOf(":")
-      if (colon >= 0) {
+      if (colon >= 0 && colon < p.length) {
         types.push(gateSigType(p.substring(colon + 1)))
       }
       start = i + 1
@@ -97,20 +99,21 @@ export const gateModuleSignatures = (source: string): GateModuleSig[] => {
   const key = "export const "
   let at = source.indexOf(key)
   while (at >= 0) {
-    let i = at + key.length
+    // The key is in source at `at`, so the sum is at most source.length.
+    let i = toI32(toI64(at) + toI64(key.length))
     const nameStart = i
-    while (i < source.length && gateSigIsIdent(source.charCodeAt(i))) {
+    while (i >= 0 && i < source.length && gateSigIsIdent(source.charCodeAt(i))) {
       i++
     }
     const name = source.substring(nameStart, i)
     i = gateSigSkip(source, i)
-    if (name.length > 0 && source.charCodeAt(i) === 0x3d) {
+    if (name.length > 0 && i >= 0 && i < source.length && source.charCodeAt(i) === 0x3d) {
       i = gateSigSkip(source, i + 1)
-      if (source.charCodeAt(i) === 0x28) {
+      if (i >= 0 && i < source.length && source.charCodeAt(i) === 0x28) {
         const params: string[] = []
         const end = gateSigParams(source, i, params)
         const j = end < 0 ? -1 : gateSigSkip(source, end)
-        if (j >= 0 && source.charCodeAt(j) === 0x3a) {
+        if (j >= 0 && j < source.length && source.charCodeAt(j) === 0x3a) {
           const arrow = source.indexOf("=>", j)
           if (arrow > j) {
             out.push(new GateModuleSig(name, params, gateSigType(source.substring(j + 1, arrow))))
@@ -118,7 +121,7 @@ export const gateModuleSignatures = (source: string): GateModuleSig[] => {
         }
       }
     }
-    at = source.indexOf(key, at + key.length)
+    at = source.indexOf(key, toI32(toI64(at) + toI64(key.length)))
   }
   return out
 }
@@ -194,24 +197,32 @@ export const gateSignatures = (ctx: CheckContext): string[] => {
   const module = c.target.module
   for (const name of gateTargets(c)) {
     const ri = sigs.findIndex((s: GateModuleSig): boolean => s.name === name)
-    if (ri < 0) {
+    if (!(ri >= 0 && ri < sigs.length)) {
       gateIssue(ctx, out, g, name, `${module} does not export ${name}`)
       continue
     }
     const real = sigs[ri]
-    const f = c.functions[c.functions.findIndex((d: FnSig): boolean => d.name === name)]
+    const fns = c.functions
+    const fi = fns.findIndex((d: FnSig): boolean => d.name === name)
+    if (!(fi >= 0 && fi < fns.length)) {
+      gateIssue(ctx, out, g, name, `${name} is not a function the contract declares`)
+      continue
+    }
+    const f = fns[fi]
     // A window is one bytes parameter the real function takes as (buf, off, len).
     // An out buffer is an (out, at) pair the real function writes into, returning end.
     const o = f.out
     const types: string[] = []
-    for (let i: i32 = 0; i <= toI32(f.params.length); i++) {
+    const params = f.params
+    for (let i: i32 = 0; i < params.length; i++) {
+      const p = params[i]
       if (o !== null && o.at === i) {
         types.push("bytes, i32")
       }
-      if (i < toI32(f.params.length)) {
-        const p = f.params[i]
-        types.push(typesIsWindow(p) ? "bytes, i32, i32" : p.type)
-      }
+      types.push(typesIsWindow(p) ? "bytes, i32, i32" : p.type)
+    }
+    if (o !== null && o.at === params.length) {
+      types.push("bytes, i32")
     }
     const want = `(${types.join(", ")}) -> ${o === null ? f.returns : "i32"}`
     const got = `(${real.params.map((p: string): string => gateNishType(p)).join(", ")}) -> ${gateNishType(real.returns)}`

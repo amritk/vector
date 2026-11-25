@@ -1,10 +1,7 @@
 {
   "modules": {
-    "src/spec/gates/completeness.ts": 10,
-    "src/spec/gates/derive.ts": 8,
     "src/spec/gates/fidelity.ts": 98,
     "src/spec/gates/result.ts": 50,
-    "src/spec/gates/signatures.ts": 13,
     "src/spec/gates/text.ts": 95,
     "src/spec/gates/words.ts": 22
   }

@@ -65,8 +65,10 @@ const deriveSame = (x: SampleValue, y: SampleValue): boolean => {
     if (x.bytes.length !== y.bytes.length) {
       return false
     }
-    for (let i = 0; i < x.bytes.length; i++) {
-      if (x.bytes[i] !== y.bytes[i]) {
+    const xb = x.bytes
+    const yb = y.bytes
+    for (let i = 0; i < xb.length && i < yb.length; i++) {
+      if (xb[i] !== yb[i]) {
         return false
       }
     }
@@ -132,7 +134,7 @@ const deriveArgs = (p: Clause, sibs: Clause[], args: Expr[], vals: SampleValue[]
     m.why = `${p.id} passes ${args.length} arguments where ${vals.length} are given`
     return
   }
-  for (let i = 0; i < args.length && m.why === null; i++) {
+  for (let i = 0; i < args.length && i < vals.length && m.why === null; i++) {
     deriveUnify(p, sibs, args[i], vals[i], m, depth)
   }
 }
@@ -265,22 +267,32 @@ const deriveMentions = (e: Expr): boolean => {
 const deriveNeighbours = (x: SampleValue): SampleValue[] => {
   const out: SampleValue[] = []
   if (x.kind === SampleKind.Bytes) {
-    for (let i = 0; i < x.bytes.length; i++) {
-      const b: u8[] = x.bytes.slice(0, x.bytes.length)
-      b[i] = toU8(toI32(b[i]) ^ 1)
+    const bytes = x.bytes
+    for (let i = 0; i < bytes.length; i++) {
+      const at = i
+      const b: u8[] = bytes.map((v: u8, j: i32): u8 => (j === at ? toU8(toI32(v) ^ 1) : v))
       out.push(sampleBytes(b))
     }
-    const longer: u8[] = x.bytes.slice(0, x.bytes.length)
+    const longer: u8[] = bytes.slice(0, bytes.length)
     longer.push(toU8(0))
     out.push(sampleBytes(longer))
-    if (x.bytes.length > 0) {
-      out.push(sampleBytes(x.bytes.slice(0, x.bytes.length - 1)))
+    const shorter = bytes.length - 1
+    if (shorter >= 0 && shorter <= bytes.length) {
+      out.push(sampleBytes(bytes.slice(0, shorter)))
     }
     return out
   }
   if (x.kind === SampleKind.Int) {
-    out.push(sampleInt(x.n - 1, x.ty))
-    out.push(sampleInt(x.n + 1, x.ty))
+    // In the u64 bits of the i64, which wrap where the i64 would not fit: an
+    // i64 has no neighbour past its ends, and no domain holds one.
+    const u = toU64(x.n)
+    const min: u64 = toU64(1) << toU64(63)
+    if (u !== min) {
+      out.push(sampleInt(toI64(u - toU64(1)), x.ty))
+    }
+    if (u !== min - toU64(1)) {
+      out.push(sampleInt(toI64(u + toU64(1)), x.ty))
+    }
   }
   return out
 }
@@ -313,11 +325,15 @@ const deriveAdmitsOther = (p: Clause, v: ForallVar, env: Map<string, SampleValue
 /** Why one property does not derive the vector's result, or null when it does. */
 const deriveFrom = (clauses: Clause[], k: Clause, want: SampleValue, p: Clause): string | null => {
   const a = p.assert
-  if (a === null || a.kind !== ExprKind.Op || a.name !== "==" || a.args.length !== 2) {
+  if (a === null || a.kind !== ExprKind.Op || a.name !== "==") {
     return `${p.id} does not assert a single equality`
   }
-  const left = a.args[0]
-  const right = a.args[1]
+  const args = a.args
+  if (args.length !== 2) {
+    return `${p.id} does not assert a single equality`
+  }
+  const left = args[0]
+  const right = args[1]
   const call = left.kind === ExprKind.Call ? left : right
   const lit = left.kind === ExprKind.Call ? right : left
   const said: SampleValue | null = lit.kind === ExprKind.Lit ? deriveValue(lit.lit) : null

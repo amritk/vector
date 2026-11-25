@@ -66,8 +66,10 @@ const gateSameSections = (a: RfcSection[], b: RfcSection[]): boolean => {
   if (a.length !== b.length) {
     return false
   }
-  for (let i = 0; i < a.length; i++) {
-    if (a[i].id !== b[i].id || a[i].ownLines.join("\n") !== b[i].ownLines.join("\n")) {
+  for (let i = 0; i < a.length && i < b.length; i++) {
+    const x = a[i]
+    const y = b[i]
+    if (x.id !== y.id || x.ownLines.join("\n") !== y.ownLines.join("\n")) {
       return false
     }
   }
@@ -117,7 +119,7 @@ const gateQuoteSections = (main: LoadedSource): Map<string, string> => {
 
 /** Whether one of the spans, two numbers a span, holds all of [start, end). */
 const gateSpanHolds = (spans: i32[], start: i32, end: i32): boolean => {
-  for (let i = 0; i + 1 < spans.length; i += 2) {
+  for (let i = 0; i < spans.length - 1; i += 2) {
     if (spans[i] <= start && end <= spans[i + 1]) {
       return true
     }
@@ -126,20 +128,18 @@ const gateSpanHolds = (spans: i32[], start: i32, end: i32): boolean => {
 }
 
 /**
- * Where the sentence around an offset starts, stops and ends in a section's
- * own text, as gateSentenceSpan bounds it: without a list bullet, or the
- * section's heading before it when the heading shares its paragraph, and
- * without its terminator (which a quote may leave out) before `stop`.
+ * Where a sentence that gateSentenceSpan starts at `start` starts in a
+ * section's own text without the section's heading before it, when the
+ * heading shares its paragraph.
  */
-const gateSentenceBounds = (sec: RfcSection, text: string, paras: i32[], at: i32): i32[] => {
-  const b = gateSentenceSpan(text, paras, at)
-  let start = b[0]
+const gateSentenceStart = (sec: RfcSection, text: string, paras: i32[], start: i32): i32 => {
   const head = `${rfcNormalize(sec.title)} `
   const first = paras.length > 0 ? paras[0] : text.length
   if (start > 0 && start < first && text.substring(start).startsWith(head)) {
-    start = start + head.length
+    // The heading is in `text` past `start`, so the sum is at most text.length.
+    return toI32(toI64(start) + toI64(head.length))
   }
-  return [start, b[1], b[2]]
+  return start
 }
 
 /** Each exclusion's quote is in its section; each one found is a warning. */
@@ -183,16 +183,30 @@ const gateSectionComplete = (
       spans.push(s)
     }
   }
-  for (let i = 0; i + 1 < uses.length; i += 2) {
-    const b = gateSentenceBounds(sec, text, paras, uses[i])
-    if (!gateSpanHolds(spans, b[0], b[1])) {
-      const sentence = text.substring(b[0], b[2])
+  // Two numbers a use, offset then keyword: `i` is each keyword's index.
+  for (let i = 1; i < uses.length; i++) {
+    if (i % 2 === 0) {
+      continue
+    }
+    const keyword = uses[i]
+    // Where the sentence starts, stops before its terminator (which a quote
+    // may leave out), and ends; without a list bullet.
+    const b = gateSentenceSpan(text, paras, uses[i - 1])
+    if (b.length !== 3) {
+      ctx.toolFailure = `§${sec.id}: a sentence has ${b.length} bounds, not 3`
+      return
+    }
+    const stop = b[1]
+    const end = b[2]
+    const start = gateSentenceStart(sec, text, paras, b[0])
+    if (!gateSpanHolds(spans, start, stop)) {
+      const sentence = text.substring(start, end)
       gateIssue(
         ctx,
         out,
         GATE_COMPLETENESS,
         `§${sec.id}`,
-        `${gateKeywordName(uses[i + 1])} sentence is neither a requirement nor an exclusion: ${jsonStringifyString(sentence)}`,
+        `${gateKeywordName(keyword)} sentence is neither a requirement nor an exclusion: ${jsonStringifyString(sentence)}`,
       )
     }
   }
