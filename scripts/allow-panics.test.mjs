@@ -306,6 +306,85 @@ const rows = [
     `const h = a / b; // ${FLAG} is refused\n`,
     [],
   ],
+  [
+    "division by a number is not a regular expression",
+    "scripts/x.mjs",
+    `const h = n / 2; // ${FLAG} is refused\n`,
+    [],
+  ],
+  [
+    "division after a property named like a keyword",
+    "scripts/x.mjs",
+    `const h = x.in / 2; // ${FLAG} is refused\n`,
+    [],
+  ],
+  [
+    "division after a ] is not a regular expression",
+    "scripts/x.mjs",
+    `const h = a[0] / 2; // ${FLAG} is refused\n`,
+    [],
+  ],
+  // A regular expression after a keyword holds a // or /* that is no comment.
+  ...[
+    "return",
+    "typeof",
+    "case",
+    "yield",
+    "await",
+    "in",
+    "of",
+    "delete",
+    "void",
+    "else",
+    "throw",
+    "new",
+    "instanceof",
+    "do",
+  ].flatMap((kw) => [
+    [
+      `a // in a regex after ${kw}`,
+      "scripts/x.mjs",
+      `${kw} /\\//.test(s) && run(["${FLAG}"]) // refused\n`,
+      [1],
+    ],
+    [
+      `a /* in a regex after ${kw}`,
+      "scripts/x.mjs",
+      `${kw} /[/*]/.test(s) && run(["${FLAG}"]) // refused\n`,
+      [1],
+    ],
+  ]),
+  // After a ), a / may open a regular expression: nothing after it is comment.
+  [
+    "a // in a regex after if (x)",
+    "scripts/x.mjs",
+    `if (x) /\\//.test(y) && run(["${FLAG}"]); // refused\n`,
+    [1],
+  ],
+  [
+    "a /* in a regex after if (x)",
+    "scripts/x.mjs",
+    `if (x) /[/*]/.test(y) && run(["${FLAG}"]); // refused\n`,
+    [1],
+  ],
+  [
+    "a /* in a regex after while (x), across lines",
+    "scripts/x.mjs",
+    `while (x) /\\/*/.test(y);\nrun(["${FLAG}"]); // refused\n`,
+    [2],
+  ],
+  [
+    "a / after a call fails closed",
+    "scripts/x.mjs",
+    `const h = f(a) / 2; // ${FLAG} is refused\n`,
+    [1],
+  ],
+  [
+    "a // before an unsure / is still a comment",
+    "scripts/x.mjs",
+    `// ${FLAG} is refused: f(a) / 2\n`,
+    [],
+  ],
   // Every extension of each comment kind.
   ...[".sh", ".bash", ".yml", ".yaml", ".toml", ".py"].flatMap((ext) => [
     [`${ext} comment`, `scripts/x${ext}`, `# ${FLAG} refused\n`, []],

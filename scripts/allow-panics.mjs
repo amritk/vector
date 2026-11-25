@@ -44,11 +44,37 @@ export const commentKind = (file) => {
 /** The characters after which a `/` in code opens a regular expression. */
 const REGEX_AFTER = "(,=:[!&|?{};+-*%<>~^";
 
+/** The keywords after which a `/` in code opens a regular expression. */
+const REGEX_KEYWORDS = new Set(
+  "return typeof case yield await in of delete void else throw new instanceof do".split(
+    " ",
+  ),
+);
+
+/**
+ * How the `/` at `at` in code reads, by what comes before it on `line`
+ * (`prev` is the last non-space code character): "regex", "division", or
+ * "unsure" after a `)`, which closes an `if (…)` head as well as a call.
+ */
+const slashReads = (line, at, prev) => {
+  if (prev === "" || REGEX_AFTER.includes(prev)) return "regex";
+  if (prev === ")") return "unsure";
+  if (!/[\w$]/.test(prev)) return "division";
+  let j = at - 1;
+  while (line[j] === " " || line[j] === "\t") j--;
+  const end = j + 1;
+  while (j >= 0 && /[\w$]/.test(line[j])) j--;
+  const word = line.slice(j + 1, end);
+  while (j >= 0 && (line[j] === " " || line[j] === "\t")) j--;
+  return REGEX_KEYWORDS.has(word) && line[j] !== "." ? "regex" : "division";
+};
+
 /**
  * For each line of JavaScript or TypeScript `lines`, which of its characters
  * are comment text: a `boolean[]` per line. State runs across lines for a
  * block comment and a template literal; a quoted string, a `//` comment and a
- * regular expression end with their line.
+ * regular expression end with their line. After a `/` it cannot tell regex
+ * from division, nothing more on the line is comment text: it fails closed.
  */
 export const slashCommentMasks = (lines) => {
   let state = "code"; // "code" | "block" | "template"
@@ -57,6 +83,7 @@ export const slashCommentMasks = (lines) => {
     const mask = new Array(line.length).fill(false);
     let i = 0;
     let prev = ""; // the last non-space code character on this line
+    let unsure = false; // a `/` on this line may have opened a regex
     while (i < line.length) {
       const c = line[i];
       const d = line[i + 1];
@@ -74,10 +101,10 @@ export const slashCommentMasks = (lines) => {
           i++;
           prev = "`";
         }
-      } else if (c === "/" && d === "/") {
+      } else if (c === "/" && d === "/" && !unsure) {
         mask.fill(true, i);
         break;
-      } else if (c === "/" && d === "*") {
+      } else if (c === "/" && d === "*" && !unsure) {
         mask[i] = mask[i + 1] = true;
         state = "block";
         i += 2;
@@ -89,7 +116,7 @@ export const slashCommentMasks = (lines) => {
       } else if (c === "`") {
         state = "template";
         i++;
-      } else if (c === "/" && (prev === "" || REGEX_AFTER.includes(prev))) {
+      } else if (c === "/" && slashReads(line, i, prev) === "regex") {
         i++;
         let cls = false;
         while (i < line.length && (cls || line[i] !== "/")) {
@@ -101,6 +128,7 @@ export const slashCommentMasks = (lines) => {
         i++;
         prev = "/";
       } else {
+        if (c === "/" && slashReads(line, i, prev) === "unsure") unsure = true;
         if (c !== " " && c !== "\t") prev = c;
         i++;
       }
