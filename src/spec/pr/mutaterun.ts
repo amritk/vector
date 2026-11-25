@@ -24,7 +24,7 @@ import { shapeNishModuleFile } from "../contract/shape"
 import { emitContractFile } from "../emit/file"
 import { EmitPackages } from "../emit/packages"
 import { EmitTarget } from "../emit/target"
-import { runMakeScratchIn, runNishRelax, runSeedOf, runWriteInside } from "../run/run"
+import { runMakeScratchIn, runSeedOf, runWriteInside } from "../run/run"
 import { gitdiffChanged, gitdiffPrefix } from "./gitdiff"
 import {
   MUTATE_BUILD_TIMED_OUT,
@@ -62,8 +62,6 @@ export class MutateRun {
   jobs: i32
   /** The most milliseconds a build or run may take; 0 or less for three times the baseline's, at least MUTATERUN_MIN_TIMEOUT_MS. */
   timeoutMs: i32
-  /** The flags every build passes the compiler (runNishRelax), asked of the first slot's compiler once it exists. */
-  relax: string[]
 
   /**
    * Makes the settings for a run.
@@ -83,7 +81,6 @@ export class MutateRun {
     const cpus = availableParallelism()
     this.jobs = jobs < 1 ? 1 : jobs > cpus ? cpus : jobs
     this.timeoutMs = timeoutMs
-    this.relax = []
   }
 }
 
@@ -136,15 +133,13 @@ const mutaterunLogged = (log: string, argv: string[]): string[] => {
 const mutaterunCompiler = (run: MutateRun): string => (run.nish === "" ? "libexec/nish" : run.nish)
 
 /** The build's argv in a slot. */
-const mutaterunBuildArgv = (run: MutateRun, dir: string): string[] => {
-  const argv: string[] = [joinPath(dir, mutaterunCompiler(run)), run.test]
-  for (const f of run.relax) {
-    argv.push(f)
-  }
-  argv.push("--link")
-  argv.push(joinPath(dir, "mutant.bin"))
-  return mutaterunLogged(joinPath(dir, "mutant.log"), argv)
-}
+const mutaterunBuildArgv = (run: MutateRun, dir: string): string[] =>
+  mutaterunLogged(joinPath(dir, "mutant.log"), [
+    joinPath(dir, mutaterunCompiler(run)),
+    run.test,
+    "--link",
+    joinPath(dir, "mutant.bin"),
+  ])
 
 /** The test binary's argv in a slot. */
 const mutaterunTestArgv = (dir: string): string[] =>
@@ -600,8 +595,6 @@ const mutaterunIn = (
     mutaterunSlotIn(run, dir, text).orReturn()
     slots.push(new MutaterunSlot(dir))
   }
-  // Every slot holds the same compiler, so the first one answers for all.
-  run.relax = runNishRelax(joinPath(slots[0].dir, mutaterunCompiler(run)))
   const first = run.timeoutMs > 0 ? run.timeoutMs : MUTATERUN_COPY_MS
   let slowest: i64 = 0
   for (let i = 0; i < slots.length; i++) {

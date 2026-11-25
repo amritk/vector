@@ -320,12 +320,6 @@ vector: spec mutate: ../nish-clone has no seed to build mutants with: neither li
 
 Fetching the seed needs no build: `cd ../nish-clone && bash scripts/fetch-seed.sh`.
 
-A compiler that holds the root package to no panic by default refuses an
-emitted test, whose calls into the module are panic sites. When the slot's
-compiler lists `--allow-panics` in its `--help`, every build passes it; an
-older compiler, which has no such flag, is not given it. `spec run` asks the
-same way.
-
 Before any mutant, mutate makes the module unparseable in a slot and builds
 the test: if that still builds, the compiler is not reading the slot, and
 every mutant would pass. A seed whose compiler ignores the `std/` beside it

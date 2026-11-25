@@ -148,14 +148,6 @@ The emitted test's source, written beside the scratch copies when `test` is ""; 
 program: string | null
 ```
 
-#### MutateRun.relax
-
-The flags every build passes the compiler (runNishRelax), asked of the first slot's compiler once it exists.
-
-```ts
-relax: string[]
-```
-
 #### MutateRun.test
 
 The test program, an absolute path; "" to emit it from the contract, as `spec emit` does.

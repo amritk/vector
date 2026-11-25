@@ -412,10 +412,8 @@ The root is either a nish install, with an executable `libexec/nish` (the
 `.nish/` that `scripts/fetch-nish.sh` makes is one), or a nish checkout with a
 built `build/seed`. vector copies that compiler into a scratch directory with
 the root's own `std/` beside it, so the test is built against the root's
-standard library, and removes the copy afterwards. A compiler that lists
-`--allow-panics` in its `--help` holds the root package to no panic by
-default, so the test is built with that flag; an older one is not given it.
-The pinned install answers for the std it ships:
+standard library, and removes the copy afterwards. The pinned install answers
+for the std it ships:
 
 ```sh
 ./dist/vector spec run contracts/rfc5869-hkdf-sha256.json --nish-root .nish
