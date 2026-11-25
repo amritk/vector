@@ -365,7 +365,7 @@ const main = () => {
   console.log(
     `\nbuilt ${built}/1, emitted ${emitted}, compiled ${compiled}, skipped ${skipped.length}, failed ${failures.length}`,
   );
-  process.exit(exit);
+  process.exitCode = exit; // not process.exit: it cuts piped stdout short
 };
 
 if (
