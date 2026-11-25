@@ -1,0 +1,3093 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "emit-panics",
+  "source": {
+    "title": "Emit Panics: Every Clause Kind and Type",
+    "main": "panics",
+    "sha256": "684cd680411abae6984a58e7d763f20f18d04bfef54b870a59520000122a1f16"
+  },
+  "sources": [
+    {
+      "id": "panics",
+      "path": "../rfcs/panics.txt",
+      "sha256": "684cd680411abae6984a58e7d763f20f18d04bfef54b870a59520000122a1f16"
+    }
+  ],
+  "target": {
+    "module": "panics/stub"
+  },
+  "requirements": [
+    {
+      "id": "R-STUB",
+      "section": "1",
+      "level": "MUST",
+      "quote": "Each stub function MUST return what it is given."
+    }
+  ],
+  "exclusions": [],
+  "functions": [
+    {
+      "name": "stubBytes",
+      "params": [
+        {
+          "name": "x",
+          "type": "bytes"
+        }
+      ],
+      "returns": "bytes"
+    },
+    {
+      "name": "stubMaybe",
+      "params": [
+        {
+          "name": "x",
+          "type": "bytes"
+        }
+      ],
+      "returns": "bytes?"
+    },
+    {
+      "name": "stubString",
+      "params": [
+        {
+          "name": "s",
+          "type": "string"
+        }
+      ],
+      "returns": "string"
+    },
+    {
+      "name": "stubMaybeString",
+      "params": [
+        {
+          "name": "s",
+          "type": "string"
+        }
+      ],
+      "returns": "string?"
+    },
+    {
+      "name": "stubBool",
+      "params": [
+        {
+          "name": "b",
+          "type": "bool"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "stubI32",
+      "params": [
+        {
+          "name": "a",
+          "type": "i32"
+        }
+      ],
+      "returns": "i32"
+    },
+    {
+      "name": "stubI64",
+      "params": [
+        {
+          "name": "a",
+          "type": "i64"
+        }
+      ],
+      "returns": "i64"
+    },
+    {
+      "name": "stubU8",
+      "params": [
+        {
+          "name": "a",
+          "type": "u8"
+        }
+      ],
+      "returns": "u8"
+    },
+    {
+      "name": "stubU16",
+      "params": [
+        {
+          "name": "a",
+          "type": "u16"
+        }
+      ],
+      "returns": "u16"
+    },
+    {
+      "name": "stubU32",
+      "params": [
+        {
+          "name": "a",
+          "type": "u32"
+        }
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "stubU64",
+      "params": [
+        {
+          "name": "a",
+          "type": "u64"
+        }
+      ],
+      "returns": "u64"
+    },
+    {
+      "name": "stubWords16",
+      "params": [
+        {
+          "name": "w",
+          "type": "words16"
+        }
+      ],
+      "returns": "words16"
+    },
+    {
+      "name": "stubWords32",
+      "params": [
+        {
+          "name": "w",
+          "type": "words32"
+        }
+      ],
+      "returns": "words32"
+    },
+    {
+      "name": "stubWords64",
+      "params": [
+        {
+          "name": "w",
+          "type": "words64"
+        }
+      ],
+      "returns": "words64"
+    },
+    {
+      "name": "stubSecret",
+      "params": [
+        {
+          "name": "k",
+          "type": "secret-bytes"
+        }
+      ],
+      "returns": "secret-bytes"
+    },
+    {
+      "name": "stubMaybeSecret",
+      "params": [
+        {
+          "name": "k",
+          "type": "secret-bytes?"
+        }
+      ],
+      "returns": "secret-bytes?"
+    },
+    {
+      "name": "stubWindowSum",
+      "params": [
+        {
+          "name": "buf",
+          "type": "bytes",
+          "form": "window"
+        }
+      ],
+      "returns": "u32"
+    },
+    {
+      "name": "stubWindowCopy",
+      "params": [
+        {
+          "name": "src",
+          "type": "bytes",
+          "form": "window"
+        }
+      ],
+      "returns": "bytes",
+      "out": {
+        "at": 1,
+        "capacity": "src.length + 2"
+      }
+    },
+    {
+      "name": "stubF64",
+      "params": [
+        {
+          "name": "x",
+          "type": "f64"
+        }
+      ],
+      "returns": "f64"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "V-BYTES",
+      "title": "V-BYTES",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "command": "true"
+      },
+      "section": "1",
+      "call": "stubBytes",
+      "args": [
+        {
+          "hex": "00ff10",
+          "label": "Bytes"
+        }
+      ],
+      "expect": {
+        "hex": "00ff10"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-TRUNC",
+      "title": "V-TRUNC",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "command": "true"
+      },
+      "section": "1",
+      "call": "stubBytes",
+      "args": [
+        {
+          "hex": "000102030405060708090a0b0c0d0e0f1011121314151617",
+          "label": "Long"
+        }
+      ],
+      "expect": {
+        "hex": "000102030405060708090a0b0c0d0e0f"
+      },
+      "truncate": {
+        "bits": 128
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-ITER",
+      "title": "V-ITER",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "command": "true"
+      },
+      "section": "1",
+      "call": "stubBytes",
+      "args": [
+        {
+          "hex": "c0de",
+          "label": "Pair"
+        }
+      ],
+      "expect": {
+        "hex": "c0de"
+      },
+      "iterate": {
+        "count": 3,
+        "names": [
+          "x"
+        ],
+        "next": [
+          {
+            "call": "stubBytes",
+            "args": [
+              {
+                "var": "x"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-ITER-SLOW",
+      "title": "V-ITER-SLOW",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "command": "true"
+      },
+      "section": "1",
+      "call": "stubBytes",
+      "args": [
+        {
+          "hex": "c0de",
+          "label": "Pair"
+        }
+      ],
+      "expect": {
+        "hex": "c0de"
+      },
+      "iterate": {
+        "count": 1000,
+        "names": [
+          "x"
+        ],
+        "next": [
+          {
+            "call": "stubBytes",
+            "args": [
+              {
+                "var": "x"
+              }
+            ]
+          }
+        ],
+        "slow": true
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-MAYBE",
+      "title": "V-MAYBE",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "command": "true"
+      },
+      "section": "1",
+      "call": "stubMaybe",
+      "args": [
+        {
+          "hex": "7f",
+          "label": "One"
+        }
+      ],
+      "expect": {
+        "hex": "7f"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-MAYBE-NULL",
+      "title": "V-MAYBE-NULL",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "command": "true"
+      },
+      "section": "1",
+      "call": "stubMaybe",
+      "args": [
+        {
+          "hex": ""
+        }
+      ],
+      "expect": {
+        "null": true
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-STR",
+      "title": "V-STR",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "command": "true"
+      },
+      "section": "1",
+      "call": "stubString",
+      "args": [
+        {
+          "str": "abc"
+        }
+      ],
+      "expect": {
+        "str": "abc"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-MSTR",
+      "title": "V-MSTR",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "command": "true"
+      },
+      "section": "1",
+      "call": "stubMaybeString",
+      "args": [
+        {
+          "str": "xyz"
+        }
+      ],
+      "expect": {
+        "str": "xyz"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-MSTR-NULL",
+      "title": "V-MSTR-NULL",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "command": "true"
+      },
+      "section": "1",
+      "call": "stubMaybeString",
+      "args": [
+        {
+          "str": ""
+        }
+      ],
+      "expect": {
+        "null": true
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-BOOL",
+      "title": "V-BOOL",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "command": "true"
+      },
+      "section": "1",
+      "call": "stubBool",
+      "args": [
+        {
+          "bool": true
+        }
+      ],
+      "expect": {
+        "bool": false
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-I32",
+      "title": "V-I32",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "command": "true"
+      },
+      "section": "1",
+      "call": "stubI32",
+      "args": [
+        {
+          "int": 2147483647
+        }
+      ],
+      "expect": {
+        "int": 2147483647
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-I64",
+      "title": "V-I64",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "command": "true"
+      },
+      "section": "1",
+      "call": "stubI64",
+      "args": [
+        {
+          "int": "9223372036854775807"
+        }
+      ],
+      "expect": {
+        "int": "9223372036854775807"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-U8",
+      "title": "V-U8",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "command": "true"
+      },
+      "section": "1",
+      "call": "stubU8",
+      "args": [
+        {
+          "int": 255
+        }
+      ],
+      "expect": {
+        "int": 255
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-U16",
+      "title": "V-U16",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "command": "true"
+      },
+      "section": "1",
+      "call": "stubU16",
+      "args": [
+        {
+          "int": 65535
+        }
+      ],
+      "expect": {
+        "int": 65535
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-U32",
+      "title": "V-U32",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "command": "true"
+      },
+      "section": "1",
+      "call": "stubU32",
+      "args": [
+        {
+          "int": 4294967295
+        }
+      ],
+      "expect": {
+        "int": 4294967295
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-U64",
+      "title": "V-U64",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "command": "true"
+      },
+      "section": "1",
+      "call": "stubU64",
+      "args": [
+        {
+          "int": "18446744073709551615"
+        }
+      ],
+      "expect": {
+        "int": "18446744073709551615"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-W16",
+      "title": "V-W16",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "stubWords16",
+      "args": [
+        {
+          "words16": [
+            "0x0001",
+            "0xffff"
+          ]
+        }
+      ],
+      "expect": {
+        "words16": [
+          "0xffff",
+          "0x0001"
+        ]
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-W32",
+      "title": "V-W32",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "stubWords32",
+      "args": [
+        {
+          "words32": [
+            "0x00000001",
+            "0xffffffff"
+          ]
+        }
+      ],
+      "expect": {
+        "words32": [
+          "0xffffffff",
+          "0x00000001"
+        ]
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-W64",
+      "title": "V-W64",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "stubWords64",
+      "args": [
+        {
+          "words64": [
+            "0x0000000000000001",
+            "0xffffffffffffffff"
+          ]
+        }
+      ],
+      "expect": {
+        "words64": [
+          "0xffffffffffffffff",
+          "0x0000000000000001"
+        ]
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-SECRET",
+      "title": "V-SECRET",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "command": "true"
+      },
+      "section": "1",
+      "call": "stubSecret",
+      "args": [
+        {
+          "hex": "a1b2",
+          "label": "Key"
+        }
+      ],
+      "expect": {
+        "hex": "a1b2"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-MSECRET",
+      "title": "V-MSECRET",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "command": "true"
+      },
+      "section": "1",
+      "call": "stubMaybeSecret",
+      "args": [
+        {
+          "hex": "a1b2",
+          "label": "Key"
+        }
+      ],
+      "expect": {
+        "hex": "a1b2"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-MSECRET-NULL",
+      "title": "V-MSECRET-NULL",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "command": "true"
+      },
+      "section": "1",
+      "call": "stubMaybeSecret",
+      "args": [
+        {
+          "null": true
+        }
+      ],
+      "expect": {
+        "null": true
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-WINDOW",
+      "title": "V-WINDOW",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "command": "true"
+      },
+      "section": "1",
+      "call": "stubWindowSum",
+      "args": [
+        {
+          "ascii": "sum"
+        }
+      ],
+      "expect": {
+        "int": 341
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "V-OUT",
+      "title": "V-OUT",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "command": "true"
+      },
+      "section": "1",
+      "call": "stubWindowCopy",
+      "args": [
+        {
+          "ascii": "hello"
+        }
+      ],
+      "expect": {
+        "ascii": "hello"
+      }
+    },
+    {
+      "kind": "property",
+      "id": "P-BYTES",
+      "title": "P-BYTES",
+      "covers": [
+        "R-STUB"
+      ],
+      "forall": [
+        {
+          "name": "x",
+          "type": "bytes",
+          "minLen": 1,
+          "maxLen": 8
+        },
+        {
+          "name": "y",
+          "type": "bytes",
+          "minLen": 0,
+          "maxLen": 4
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "call": "stubBytes",
+                "args": [
+                  {
+                    "var": "x"
+                  }
+                ]
+              },
+              {
+                "var": "x"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "len",
+                "args": [
+                  {
+                    "call": "stubBytes",
+                    "args": [
+                      {
+                        "var": "x"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "len",
+                "args": [
+                  {
+                    "var": "x"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "xor",
+                "args": [
+                  {
+                    "var": "x"
+                  },
+                  {
+                    "var": "x"
+                  }
+                ]
+              },
+              {
+                "op": "zeros",
+                "args": [
+                  {
+                    "op": "len",
+                    "args": [
+                      {
+                        "var": "x"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "bitAnd",
+                "args": [
+                  {
+                    "var": "x"
+                  },
+                  {
+                    "var": "x"
+                  }
+                ]
+              },
+              {
+                "op": "bitOr",
+                "args": [
+                  {
+                    "var": "x"
+                  },
+                  {
+                    "var": "x"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "slice",
+                "args": [
+                  {
+                    "op": "concat",
+                    "args": [
+                      {
+                        "var": "x"
+                      },
+                      {
+                        "var": "y"
+                      }
+                    ]
+                  },
+                  {
+                    "int": 0
+                  },
+                  {
+                    "op": "len",
+                    "args": [
+                      {
+                        "var": "x"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "x"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "flipBit",
+                "args": [
+                  {
+                    "op": "flipBit",
+                    "args": [
+                      {
+                        "var": "x"
+                      },
+                      {
+                        "int": 3
+                      }
+                    ]
+                  },
+                  {
+                    "int": 3
+                  }
+                ]
+              },
+              {
+                "var": "x"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "len",
+                "args": [
+                  {
+                    "op": "fill",
+                    "args": [
+                      {
+                        "int": 7
+                      },
+                      {
+                        "int": 3
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "int": 3
+              }
+            ]
+          }
+        ]
+      },
+      "samples": 6
+    },
+    {
+      "kind": "property",
+      "id": "P-I32",
+      "title": "P-I32",
+      "covers": [
+        "R-STUB"
+      ],
+      "forall": [
+        {
+          "name": "a",
+          "type": "i32",
+          "min": -2147483648,
+          "max": 2147483647
+        },
+        {
+          "name": "b",
+          "type": "i32",
+          "min": -2147483648,
+          "max": 2147483647
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "+",
+                "args": [
+                  {
+                    "call": "stubI32",
+                    "args": [
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "+",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "-",
+                "args": [
+                  {
+                    "call": "stubI32",
+                    "args": [
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "-",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "*",
+                "args": [
+                  {
+                    "call": "stubI32",
+                    "args": [
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "*",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "%",
+                "args": [
+                  {
+                    "call": "stubI32",
+                    "args": [
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "%",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "<=",
+            "args": [
+              {
+                "op": "%",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "int": 1
+                  }
+                ]
+              },
+              {
+                "op": "%",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "int": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "samples": 6
+    },
+    {
+      "kind": "property",
+      "id": "P-I64",
+      "title": "P-I64",
+      "covers": [
+        "R-STUB"
+      ],
+      "forall": [
+        {
+          "name": "a",
+          "type": "i64",
+          "min": "-9223372036854775808",
+          "max": "9223372036854775807"
+        },
+        {
+          "name": "b",
+          "type": "i64",
+          "min": "-9223372036854775808",
+          "max": "9223372036854775807"
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "+",
+                "args": [
+                  {
+                    "call": "stubI64",
+                    "args": [
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "+",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "-",
+                "args": [
+                  {
+                    "call": "stubI64",
+                    "args": [
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "-",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "*",
+                "args": [
+                  {
+                    "call": "stubI64",
+                    "args": [
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "*",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "%",
+                "args": [
+                  {
+                    "call": "stubI64",
+                    "args": [
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "%",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "<=",
+            "args": [
+              {
+                "op": "%",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "int": 1
+                  }
+                ]
+              },
+              {
+                "op": "%",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "int": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "samples": 6
+    },
+    {
+      "kind": "property",
+      "id": "P-U8",
+      "title": "P-U8",
+      "covers": [
+        "R-STUB"
+      ],
+      "forall": [
+        {
+          "name": "a",
+          "type": "u8",
+          "min": 0,
+          "max": 255
+        },
+        {
+          "name": "b",
+          "type": "u8",
+          "min": 0,
+          "max": 255
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "+",
+                "args": [
+                  {
+                    "call": "stubU8",
+                    "args": [
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "+",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "-",
+                "args": [
+                  {
+                    "call": "stubU8",
+                    "args": [
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "-",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "*",
+                "args": [
+                  {
+                    "call": "stubU8",
+                    "args": [
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "*",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "%",
+                "args": [
+                  {
+                    "call": "stubU8",
+                    "args": [
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "%",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "<=",
+            "args": [
+              {
+                "op": "%",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "int": 1
+                  }
+                ]
+              },
+              {
+                "op": "%",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "int": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "samples": 6
+    },
+    {
+      "kind": "property",
+      "id": "P-U16",
+      "title": "P-U16",
+      "covers": [
+        "R-STUB"
+      ],
+      "forall": [
+        {
+          "name": "a",
+          "type": "u16",
+          "min": 0,
+          "max": 65535
+        },
+        {
+          "name": "b",
+          "type": "u16",
+          "min": 0,
+          "max": 65535
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "+",
+                "args": [
+                  {
+                    "call": "stubU16",
+                    "args": [
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "+",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "-",
+                "args": [
+                  {
+                    "call": "stubU16",
+                    "args": [
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "-",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "*",
+                "args": [
+                  {
+                    "call": "stubU16",
+                    "args": [
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "*",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "%",
+                "args": [
+                  {
+                    "call": "stubU16",
+                    "args": [
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "%",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "<=",
+            "args": [
+              {
+                "op": "%",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "int": 1
+                  }
+                ]
+              },
+              {
+                "op": "%",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "int": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "samples": 6
+    },
+    {
+      "kind": "property",
+      "id": "P-U32",
+      "title": "P-U32",
+      "covers": [
+        "R-STUB"
+      ],
+      "forall": [
+        {
+          "name": "a",
+          "type": "u32",
+          "min": 0,
+          "max": 4294967295
+        },
+        {
+          "name": "b",
+          "type": "u32",
+          "min": 0,
+          "max": 4294967295
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "+",
+                "args": [
+                  {
+                    "call": "stubU32",
+                    "args": [
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "+",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "-",
+                "args": [
+                  {
+                    "call": "stubU32",
+                    "args": [
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "-",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "*",
+                "args": [
+                  {
+                    "call": "stubU32",
+                    "args": [
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "*",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "%",
+                "args": [
+                  {
+                    "call": "stubU32",
+                    "args": [
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "%",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "<=",
+            "args": [
+              {
+                "op": "%",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "int": 1
+                  }
+                ]
+              },
+              {
+                "op": "%",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "int": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "samples": 6
+    },
+    {
+      "kind": "property",
+      "id": "P-U64",
+      "title": "P-U64",
+      "covers": [
+        "R-STUB"
+      ],
+      "forall": [
+        {
+          "name": "a",
+          "type": "u64",
+          "min": 0,
+          "max": "18446744073709551615"
+        },
+        {
+          "name": "b",
+          "type": "u64",
+          "min": 0,
+          "max": "18446744073709551615"
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "+",
+                "args": [
+                  {
+                    "call": "stubU64",
+                    "args": [
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "+",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "-",
+                "args": [
+                  {
+                    "call": "stubU64",
+                    "args": [
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "-",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "*",
+                "args": [
+                  {
+                    "call": "stubU64",
+                    "args": [
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "*",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "%",
+                "args": [
+                  {
+                    "call": "stubU64",
+                    "args": [
+                      {
+                        "var": "a"
+                      }
+                    ]
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              },
+              {
+                "op": "%",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "var": "b"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "<=",
+            "args": [
+              {
+                "op": "%",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "int": 1
+                  }
+                ]
+              },
+              {
+                "op": "%",
+                "args": [
+                  {
+                    "var": "a"
+                  },
+                  {
+                    "int": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "samples": 6
+    },
+    {
+      "kind": "property",
+      "id": "P-RW16",
+      "title": "P-RW16",
+      "covers": [
+        "R-STUB"
+      ],
+      "forall": [
+        {
+          "name": "a",
+          "type": "u16",
+          "min": 0,
+          "max": 65535
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "leU16",
+                "args": [
+                  {
+                    "op": "le16",
+                    "args": [
+                      {
+                        "call": "stubU16",
+                        "args": [
+                          {
+                            "var": "a"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "a"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "beU16",
+                "args": [
+                  {
+                    "op": "be16",
+                    "args": [
+                      {
+                        "call": "stubU16",
+                        "args": [
+                          {
+                            "var": "a"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "a"
+              }
+            ]
+          }
+        ]
+      },
+      "samples": 6
+    },
+    {
+      "kind": "property",
+      "id": "P-RW32",
+      "title": "P-RW32",
+      "covers": [
+        "R-STUB"
+      ],
+      "forall": [
+        {
+          "name": "a",
+          "type": "u32",
+          "min": 0,
+          "max": 4294967295
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "leU32",
+                "args": [
+                  {
+                    "op": "le32",
+                    "args": [
+                      {
+                        "call": "stubU32",
+                        "args": [
+                          {
+                            "var": "a"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "a"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "beU32",
+                "args": [
+                  {
+                    "op": "be32",
+                    "args": [
+                      {
+                        "call": "stubU32",
+                        "args": [
+                          {
+                            "var": "a"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "a"
+              }
+            ]
+          }
+        ]
+      },
+      "samples": 6
+    },
+    {
+      "kind": "property",
+      "id": "P-RW64",
+      "title": "P-RW64",
+      "covers": [
+        "R-STUB"
+      ],
+      "forall": [
+        {
+          "name": "a",
+          "type": "u64",
+          "min": 0,
+          "max": "18446744073709551615"
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "leU64",
+                "args": [
+                  {
+                    "op": "le64",
+                    "args": [
+                      {
+                        "call": "stubU64",
+                        "args": [
+                          {
+                            "var": "a"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "a"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "beU64",
+                "args": [
+                  {
+                    "op": "be64",
+                    "args": [
+                      {
+                        "call": "stubU64",
+                        "args": [
+                          {
+                            "var": "a"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "a"
+              }
+            ]
+          }
+        ]
+      },
+      "samples": 6
+    },
+    {
+      "kind": "property",
+      "id": "P-RWI32",
+      "title": "P-RWI32",
+      "covers": [
+        "R-STUB"
+      ],
+      "forall": [
+        {
+          "name": "a",
+          "type": "i32",
+          "min": -2147483648,
+          "max": 2147483647
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "leI32",
+                "args": [
+                  {
+                    "op": "le32",
+                    "args": [
+                      {
+                        "call": "stubI32",
+                        "args": [
+                          {
+                            "var": "a"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "a"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "beI32",
+                "args": [
+                  {
+                    "op": "be32",
+                    "args": [
+                      {
+                        "call": "stubI32",
+                        "args": [
+                          {
+                            "var": "a"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "a"
+              }
+            ]
+          }
+        ]
+      },
+      "samples": 6
+    },
+    {
+      "kind": "property",
+      "id": "P-RWI64",
+      "title": "P-RWI64",
+      "covers": [
+        "R-STUB"
+      ],
+      "forall": [
+        {
+          "name": "a",
+          "type": "i64",
+          "min": "-9223372036854775808",
+          "max": "9223372036854775807"
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "leI64",
+                "args": [
+                  {
+                    "op": "le64",
+                    "args": [
+                      {
+                        "call": "stubI64",
+                        "args": [
+                          {
+                            "var": "a"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "a"
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "beI64",
+                "args": [
+                  {
+                    "op": "be64",
+                    "args": [
+                      {
+                        "call": "stubI64",
+                        "args": [
+                          {
+                            "var": "a"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "a"
+              }
+            ]
+          }
+        ]
+      },
+      "samples": 6
+    },
+    {
+      "kind": "property",
+      "id": "P-STRING",
+      "title": "P-STRING",
+      "covers": [
+        "R-STUB"
+      ],
+      "forall": [
+        {
+          "name": "s",
+          "type": "string",
+          "minLen": 1,
+          "maxLen": 6,
+          "alphabet": [
+            "a",
+            "B",
+            "7"
+          ]
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "upper",
+                "args": [
+                  {
+                    "call": "stubString",
+                    "args": [
+                      {
+                        "var": "s"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "upper",
+                "args": [
+                  {
+                    "var": "s"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "lower",
+                "args": [
+                  {
+                    "call": "stubString",
+                    "args": [
+                      {
+                        "var": "s"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "lower",
+                "args": [
+                  {
+                    "var": "s"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "strLen",
+                "args": [
+                  {
+                    "op": "strConcat",
+                    "args": [
+                      {
+                        "var": "s"
+                      },
+                      {
+                        "var": "s"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "+",
+                "args": [
+                  {
+                    "op": "strLen",
+                    "args": [
+                      {
+                        "var": "s"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "strLen",
+                    "args": [
+                      {
+                        "var": "s"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "charAt",
+                "args": [
+                  {
+                    "call": "stubString",
+                    "args": [
+                      {
+                        "var": "s"
+                      }
+                    ]
+                  },
+                  {
+                    "int": 0
+                  }
+                ]
+              },
+              {
+                "op": "charAt",
+                "args": [
+                  {
+                    "var": "s"
+                  },
+                  {
+                    "int": 0
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "unwrap",
+                "args": [
+                  {
+                    "op": "ascii",
+                    "args": [
+                      {
+                        "op": "utf8",
+                        "args": [
+                          {
+                            "var": "s"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "var": "s"
+              }
+            ]
+          },
+          {
+            "op": "notNull",
+            "args": [
+              {
+                "call": "stubMaybeString",
+                "args": [
+                  {
+                    "var": "s"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "samples": 6
+    },
+    {
+      "kind": "property",
+      "id": "P-NULL",
+      "title": "P-NULL",
+      "covers": [
+        "R-STUB"
+      ],
+      "forall": [
+        {
+          "name": "x",
+          "type": "bytes",
+          "minLen": 0,
+          "maxLen": 4
+        }
+      ],
+      "assert": {
+        "op": "and",
+        "args": [
+          {
+            "op": "implies",
+            "args": [
+              {
+                "op": "notNull",
+                "args": [
+                  {
+                    "call": "stubMaybe",
+                    "args": [
+                      {
+                        "var": "x"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "==",
+                "args": [
+                  {
+                    "op": "unwrap",
+                    "args": [
+                      {
+                        "call": "stubMaybe",
+                        "args": [
+                          {
+                            "var": "x"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "var": "x"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "==",
+            "args": [
+              {
+                "op": "isNull",
+                "args": [
+                  {
+                    "call": "stubMaybe",
+                    "args": [
+                      {
+                        "var": "x"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "==",
+                "args": [
+                  {
+                    "op": "len",
+                    "args": [
+                      {
+                        "var": "x"
+                      }
+                    ]
+                  },
+                  {
+                    "int": 0
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "samples": 6
+    },
+    {
+      "kind": "property",
+      "id": "P-BOOL",
+      "title": "P-BOOL",
+      "covers": [
+        "R-STUB"
+      ],
+      "forall": [
+        {
+          "name": "x",
+          "type": "bytes",
+          "minLen": 0,
+          "maxLen": 4
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "stubBool",
+            "args": [
+              {
+                "op": "==",
+                "args": [
+                  {
+                    "op": "len",
+                    "args": [
+                      {
+                        "var": "x"
+                      }
+                    ]
+                  },
+                  {
+                    "int": 0
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "op": "not",
+            "args": [
+              {
+                "op": "==",
+                "args": [
+                  {
+                    "op": "len",
+                    "args": [
+                      {
+                        "var": "x"
+                      }
+                    ]
+                  },
+                  {
+                    "int": 0
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "samples": 6
+    },
+    {
+      "kind": "property",
+      "id": "P-WINDOW",
+      "title": "P-WINDOW",
+      "covers": [
+        "R-STUB"
+      ],
+      "forall": [
+        {
+          "name": "x",
+          "type": "bytes",
+          "minLen": 0,
+          "maxLen": 8
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "stubWindowSum",
+            "args": [
+              {
+                "var": "x"
+              }
+            ]
+          },
+          {
+            "call": "stubWindowSum",
+            "args": [
+              {
+                "call": "stubBytes",
+                "args": [
+                  {
+                    "var": "x"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "samples": 6
+    },
+    {
+      "kind": "property",
+      "id": "P-OUT",
+      "title": "P-OUT",
+      "covers": [
+        "R-STUB"
+      ],
+      "forall": [
+        {
+          "name": "x",
+          "type": "bytes",
+          "minLen": 0,
+          "maxLen": 8
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "stubWindowCopy",
+            "args": [
+              {
+                "var": "x"
+              }
+            ]
+          },
+          {
+            "var": "x"
+          }
+        ]
+      },
+      "samples": 6
+    },
+    {
+      "kind": "property",
+      "id": "P-SECRET",
+      "title": "P-SECRET",
+      "covers": [
+        "R-STUB"
+      ],
+      "forall": [
+        {
+          "name": "x",
+          "type": "bytes",
+          "minLen": 0,
+          "maxLen": 8
+        }
+      ],
+      "assert": {
+        "op": "==",
+        "args": [
+          {
+            "call": "stubSecret",
+            "args": [
+              {
+                "var": "x"
+              }
+            ]
+          },
+          {
+            "var": "x"
+          }
+        ]
+      },
+      "samples": 6
+    },
+    {
+      "kind": "property",
+      "id": "P-LET",
+      "title": "P-LET",
+      "covers": [
+        "R-STUB"
+      ],
+      "forall": [
+        {
+          "name": "x",
+          "type": "bytes",
+          "minLen": 1,
+          "maxLen": 8
+        }
+      ],
+      "assert": {
+        "let": [
+          {
+            "name": "z",
+            "value": {
+              "call": "stubBytes",
+              "args": [
+                {
+                  "var": "x"
+                }
+              ]
+            }
+          }
+        ],
+        "in": {
+          "op": "==",
+          "args": [
+            {
+              "var": "z"
+            },
+            {
+              "var": "x"
+            }
+          ]
+        }
+      },
+      "samples": 6,
+      "where": {
+        "op": ">",
+        "args": [
+          {
+            "op": "len",
+            "args": [
+              {
+                "var": "x"
+              }
+            ]
+          },
+          {
+            "int": 0
+          }
+        ]
+      }
+    },
+    {
+      "kind": "vector",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "stubF64",
+      "id": "V-F64",
+      "title": "V-F64",
+      "args": [
+        {
+          "f64": "1.5"
+        }
+      ],
+      "expect": {
+        "f64": "1.5"
+      }
+    },
+    {
+      "kind": "vector",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "stubF64",
+      "id": "V-F64-NEG0",
+      "title": "V-F64-NEG0",
+      "args": [
+        {
+          "f64": "-0"
+        }
+      ],
+      "expect": {
+        "f64": "-0"
+      }
+    },
+    {
+      "kind": "vector",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "stubF64",
+      "id": "V-F64-ULPS",
+      "title": "V-F64-ULPS",
+      "args": [
+        {
+          "f64": "0.35"
+        }
+      ],
+      "expect": {
+        "f64": "0.35"
+      },
+      "tolerance": {
+        "ulps": 1,
+        "section": "1",
+        "quote": "Each stub function MUST return what it is given."
+      }
+    },
+    {
+      "kind": "vector",
+      "covers": [
+        "R-STUB"
+      ],
+      "source": {
+        "cite": {
+          "section": "1"
+        }
+      },
+      "call": "stubF64",
+      "id": "V-F64-ABS",
+      "title": "V-F64-ABS",
+      "args": [
+        {
+          "f64": "-2.5"
+        }
+      ],
+      "expect": {
+        "f64": "-2.5"
+      },
+      "tolerance": {
+        "abs": "0.001",
+        "section": "1",
+        "quote": "Each stub function MUST return what it is given."
+      }
+    }
+  ]
+}

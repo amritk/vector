@@ -1,0 +1,205 @@
+import { JSON_VALUE_ARRAY, JSON_VALUE_BOOLEAN, JSON_VALUE_STRING } from "nish/json-value"
+import { Suite } from "nish/testing"
+import { splitLines } from "nish/text"
+import { makeTempDir } from "../../../src/core/fs"
+import { jsonIntMember, jsonMember, jsonStringMember, newJsonDocument, parseJson } from "../../../src/core/json"
+import { runProcess } from "../../../src/core/process"
+import { vectorRun } from "../../../src/index"
+import { runRemove } from "../../../src/spec/run/run"
+
+/** The no-panic compiler, which `.nish-prover-version` pins next to the 0.39 one. */
+const PROVER: string = ".nish-prover/bin/nish"
+/** A contract with a clause of every kind over every type the emitter writes. */
+const CONTRACT: string = "tests/fixtures/emit-panics/contracts/emit-panics.json"
+/** The module that contract tests, which is not the emitter's to prove. */
+const UNDER_TEST: string = "tests/fixtures/emit-panics/stub.ts"
+
+/**
+ * Builds every program `vector spec emit` writes for the fixture, quick and
+ * `--slow`, with the no-panic compiler and its default rule, and refuses any
+ * site in the emitted test that is neither out of memory, proven, nor a call
+ * into the module under test.
+ */
+export const main = (): i32 => {
+  const t = new Suite("spec/emit panics")
+  panicsClassifierRows(t)
+  if (readFileSyncOrNull(PROVER) === null) {
+    if ((getenv("VECTOR_PROVER_REQUIRED") ?? "") === "1") {
+      t.ok(`${PROVER} is installed (VECTOR_PROVER_REQUIRED=1)`, false)
+    } else {
+      t.skip("the emitted tests build under the no-panic rule", `${PROVER} is not installed`)
+    }
+    return t.done()
+  }
+  const dir = makeTempDir("vector-panics-").expect("a scratch directory")
+  for (const slow of [false, true]) {
+    panicsBuild(t, dir, slow)
+  }
+  runRemove(dir).expect("remove the scratch directory")
+  return t.done()
+}
+
+/**
+ * Emits the fixture through `vectorRun`, builds it with the prover bare and
+ * with `--emit-panics`, and checks both builds and every site they report.
+ */
+const panicsBuild = (t: Suite, dir: string, slow: boolean): void => {
+  const tag = slow ? "--slow" : "quick"
+  const file = `${dir}/${slow ? "slow" : "quick"}.ts`
+  const args = ["spec", "emit", CONTRACT, "--package", "panics=tests/fixtures/emit-panics", "-o", file]
+  if (slow) {
+    args.push("--slow")
+  }
+  t.ok(`${tag}: the fixture emits`, vectorRun(args) === 0)
+  const bare = runProcess([PROVER, file, "-o", `${dir}/out/`], "", 600000).expect("run the prover")
+  t.ok(`${tag}: a bare prover build exits 0`, bare.status === 0)
+  if (bare.status !== 0) {
+    t.eqStr(`${tag}: what it refused`, panicsErrors(bare.stderr), "")
+  }
+  const report = `${dir}/${slow ? "slow" : "quick"}.json`
+  const listed = runProcess([PROVER, file, "--emit-panics", report, "-o", `${dir}/out/`], "", 600000).expect(
+    "run the prover",
+  )
+  t.ok(`${tag}: the build with --emit-panics exits 0`, listed.status === 0)
+  const text = readFileSyncOrNull(report)
+  t.ok(`${tag}: it writes the panic report`, text !== null)
+  if (text === null) {
+    return
+  }
+  const refused = panicsRefused(text, file, UNDER_TEST)
+  t.ok(`${tag}: the report reads`, refused.isOk())
+  const none: string[] = []
+  if (refused.isOk()) {
+    t.eqLines(`${tag}: no site the emitter adds is unproven`, refused.value, none)
+  }
+}
+
+/** The `file:line:col: error:` lines of a refused build, each cut to its kind. */
+const panicsErrors = (stderr: string): string => {
+  const out: string[] = []
+  for (const line of splitLines(stderr)) {
+    const at = line.indexOf(": error: ")
+    if (at > 0) {
+      const tail = line.substring(at + 9, line.length)
+      const cut = tail.indexOf(" here")
+      out.push(`${line.substring(0, at)} ${cut > 0 ? tail.substring(0, cut) : tail}`)
+    }
+  }
+  return out.join("\n")
+}
+
+/**
+ * The sites of a `--emit-panics` report that the emitted test may not keep,
+ * each as `module:line:col kind function` (and `-> callee` for a call).
+ *
+ * Only sites in `testModule` count: the module under test and std are not
+ * the emitter's. There a site passes when it is out of memory, proven, or a
+ * call whose callee is defined in a module ending in `underTest`.
+ */
+const panicsRefused = (text: string, testModule: string, underTest: string): Result<string[], string> => {
+  const doc = newJsonDocument()
+  const root = parseJson(doc, text, "the panic report").orReturn()
+  const fns = jsonMember(doc, root, "functions", JSON_VALUE_ARRAY).orReturn()
+  // Where each function is defined, to place a call's callee.
+  const names: string[] = []
+  const modules: string[] = []
+  for (let i = 0; i < doc.length(fns); i++) {
+    const f = doc.at(fns, i)
+    names.push(jsonStringMember(doc, f, "name").orReturn())
+    modules.push(jsonStringMember(doc, f, "module").orReturn())
+  }
+  const out: string[] = []
+  for (let i = 0; i < doc.length(fns); i++) {
+    const f = doc.at(fns, i)
+    const module = jsonStringMember(doc, f, "module").orReturn()
+    if (module !== testModule) {
+      continue
+    }
+    const name = jsonStringMember(doc, f, "name").orReturn()
+    const sites = jsonMember(doc, f, "panics", JSON_VALUE_ARRAY).orReturn()
+    for (let j = 0; j < doc.length(sites); j++) {
+      const p = doc.at(sites, j)
+      const kind = jsonStringMember(doc, p, "kind").orReturn()
+      const proven = jsonMember(doc, p, "proven", JSON_VALUE_BOOLEAN)
+      if (kind === "oom" || (proven.isOk() && doc.boolean(proven.value))) {
+        continue
+      }
+      const at = `${module}:${jsonIntMember(doc, p, "line").orReturn()}:${jsonIntMember(doc, p, "column").orReturn()}`
+      if (kind === "call") {
+        const callee = jsonMember(doc, p, "callee", JSON_VALUE_STRING)
+        const who = callee.isOk() ? doc.string(callee.value) : "?"
+        const k = names.indexOf(who)
+        const home = k >= 0 && k < modules.length ? modules[k] : ""
+        if (home === underTest || home.endsWith(`/${underTest}`)) {
+          continue
+        }
+        out.push(`${at} call ${name} -> ${who}`)
+      } else {
+        out.push(`${at} ${kind} ${name}`)
+      }
+    }
+  }
+  return Ok(out)
+}
+
+/** A one-function report: `fn` in `module`, with `sites` as its panics, beside the module under test's `stubBytes` and a helper. */
+const panicsReport = (module: string, sites: string): string => {
+  const f = `{"name":"f","symbol":"f","module":"${module}","line":1,"panics":[${sites}]}`
+  const helper =
+    '{"name":"hexOf","symbol":"hexOf","module":"/s/t.ts","line":9,"panics":[{"kind":"oom","line":9,"column":2,"allowed":true}]}'
+  const stub = `{"name":"stubBytes","symbol":"stubBytes","module":"/r/${UNDER_TEST}","line":3,"panics":[{"kind":"index","line":4,"column":5,"proven":false}]}`
+  return `{"functions":[${f},${helper},${stub}]}`
+}
+
+/** Checks the classifier on hand-written reports, one row a kind of site. */
+const panicsClassifierRows = (t: Suite): void => {
+  // [what, the function's module, its sites, the sites refused]
+  const rows: string[][] = [
+    ["out of memory passes", "/s/t.ts", `{"kind":"oom","line":2,"column":3,"allowed":true}`, ""],
+    ["a proven index passes", "/s/t.ts", `{"kind":"index","line":2,"column":3,"proven":true}`, ""],
+    [
+      "an unproven index is refused",
+      "/s/t.ts",
+      `{"kind":"index","line":2,"column":3,"proven":false}`,
+      "/s/t.ts:2:3 index f",
+    ],
+    [
+      "an unproven overflow is refused",
+      "/s/t.ts",
+      `{"kind":"overflow","line":5,"column":7,"proven":false}`,
+      "/s/t.ts:5:7 overflow f",
+    ],
+    [
+      "a call into the module under test passes",
+      "/s/t.ts",
+      `{"kind":"call","line":2,"column":3,"callee":"stubBytes","via":"index"}`,
+      "",
+    ],
+    [
+      "a call into a helper is refused",
+      "/s/t.ts",
+      `{"kind":"call","line":2,"column":3,"callee":"hexOf","via":"oom"}`,
+      "/s/t.ts:2:3 call f -> hexOf",
+    ],
+    [
+      "a call to an unknown function is refused",
+      "/s/t.ts",
+      `{"kind":"call","line":2,"column":3,"callee":"nope","via":"index"}`,
+      "/s/t.ts:2:3 call f -> nope",
+    ],
+    [
+      "a site in another module is not the emitter's",
+      "/r/other.ts",
+      `{"kind":"index","line":2,"column":3,"proven":false}`,
+      "",
+    ],
+  ]
+  for (const r of rows) {
+    const got = panicsRefused(panicsReport(r[1], r[2]), "/s/t.ts", UNDER_TEST)
+    t.ok(`${r[0]}: the report reads`, got.isOk())
+    if (got.isOk()) {
+      t.eqStr(r[0], got.value.join("\n"), r[3])
+    }
+  }
+  t.ok("a report without functions is an error", !panicsRefused("{}", "/s/t.ts", UNDER_TEST).isOk())
+}
