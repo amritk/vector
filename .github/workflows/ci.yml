@@ -101,14 +101,17 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Fetch the next nish compiler
+        run: bash scripts/fetch-nish-next.sh
+
       # The ratchet compiles src/ with the next nish (.nish-next-version) and
       # exits 1 when a module has more unproven panic sites than its baseline
       # in scripts/panic-baseline/, 2 when it cannot count them.
       - name: No module has more panic sites than its baseline
-        run: |
-          bash scripts/fetch-nish-next.sh
-          npm run panics
-          node --test scripts/panics.test.mjs
+        run: npm run panics
+
+      - name: The panic ratchet tests itself
+        run: node --test scripts/panics.test.mjs
 
       - name: Test
         run: npm test
