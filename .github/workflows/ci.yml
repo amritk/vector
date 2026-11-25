@@ -69,6 +69,12 @@ jobs:
       - name: The doc-caps check tests itself
         run: node --test scripts/doc-caps.test.mjs
 
+      - name: Nothing relaxes the compiler's no-panic rule
+        run: npm run allow-panics
+
+      - name: The no-panic and allow-panics checks test themselves
+        run: node --test scripts/allow-panics.test.mjs scripts/no-panic.test.mjs
+
       # A pull request is also checked against its base, and a push to main
       # against the commit main was at before it: a cap may be lowered or added,
       # never raised or dropped. A push that creates the branch has no before.
@@ -108,3 +114,71 @@ jobs:
 
       - name: Smoke-run the binary
         run: ./dist/vector --version
+
+  # vector and every test it emits, built by the latest nish release (not the
+  # pin) with no relax flag: a site that may panic is refused, and the job
+  # lists each one. It runs beside `check`, which builds with the pin.
+  no-panic:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install the LLVM toolchain nish links with
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 lld-18 llvm-18
+          mkdir -p "$HOME/.local/llvm-bin"
+          for t in clang llc opt ld.lld; do ln -sf "/usr/bin/$t-18" "$HOME/.local/llvm-bin/$t"; done
+          echo "$HOME/.local/llvm-bin" >> "$GITHUB_PATH"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache the pinned nish and z3
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .nish
+            .z3
+          key: toolchain-${{ runner.os }}-${{ hashFiles('.nish-version', 'scripts/fetch-nish.sh', 'scripts/fetch-z3.sh') }}
+
+      - name: Fetch the pinned nish compiler
+        run: bash scripts/fetch-nish.sh
+
+      - name: Fetch the pinned z3
+        run: bash scripts/fetch-z3.sh
+
+      - name: Build with the pinned nish
+        run: npm run build
+
+      # The highest release tag vX.Y.Z of amritk/nish; a prerelease or another
+      # tag (ddc-*) is not a release of the compiler.
+      - name: Resolve the latest nish release
+        id: latest
+        run: |
+          version=$(git ls-remote --tags --refs https://github.com/amritk/nish.git 'v*' \
+            | sed -E 's|.*refs/tags/v||' \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V | tail -n 1)
+          if [ -z "$version" ]; then
+            echo "::error::no vX.Y.Z tag found on amritk/nish"
+            exit 1
+          fi
+          echo "latest nish: $version (pinned: $(tr -d '[:space:]' < .nish-version))"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch the latest nish compiler
+        env:
+          NISH_VERSION: ${{ steps.latest.outputs.version }}
+          NISH_DIR: ${{ runner.temp }}/nish-latest
+        run: bash scripts/fetch-nish.sh
+
+      - name: vector and its emitted tests build with no panic site
+        env:
+          NISH_BIN: ${{ runner.temp }}/nish-latest/bin/nish
+        run: npm run no-panic
