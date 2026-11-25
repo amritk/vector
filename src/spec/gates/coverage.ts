@@ -22,8 +22,7 @@ const gateCoverageCite = (ctx: CheckContext, r: Requirement): string => {
 
 /** Byte order of two names, for sorting. */
 const gateCoverageOrder = (x: string, y: string): i32 => {
-  const n = x.length < y.length ? x.length : y.length
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < x.length && i < y.length; i++) {
     const d = x.charCodeAt(i) - y.charCodeAt(i)
     if (d !== 0) {
       return d
@@ -88,7 +87,7 @@ export const gateCoverage = (ctx: CheckContext): string[] => {
       `${module}, the module under test, declares no function, so no clause can test it`,
     )
   }
-  let properties = 0
+  let anyProperty = false
   for (const k of c.clauses) {
     if (k.kind === ClauseKind.Vector) {
       if (gateFunction(c, k.call) !== null && targets.indexOf(k.call) < 0) {
@@ -102,7 +101,7 @@ export const gateCoverage = (ctx: CheckContext): string[] => {
       }
       continue
     }
-    properties = properties + 1
+    anyProperty = true
     const a = k.assert
     const nothing: string[] = []
     const calls = a !== null ? typeCallsIn(a) : nothing
@@ -125,7 +124,7 @@ export const gateCoverage = (ctx: CheckContext): string[] => {
       )
     }
   }
-  if (properties === 0) {
+  if (!anyProperty) {
     gateWarn(ctx, g, "clauses", "no property clauses: the contract checks only the RFC's own vectors")
   }
   return out

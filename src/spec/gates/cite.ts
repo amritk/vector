@@ -126,10 +126,13 @@ const gateIsDigitChar = (c: i32): boolean => c >= 48 && c <= 57
  *
  * @param text the text
  * @param inner the offset of the quote's edge character
- * @param outer the offset of the text's character beside it
- * @param step 1 when outer is after inner, -1 when before
+ * @param after true for the text's character after it, false for the one before
  */
-const gateCutsAt = (text: string, inner: i32, outer: i32, step: i32): boolean => {
+const gateCutsAt = (text: string, inner: i32, after: boolean): boolean => {
+  if (inner < 0 || inner >= text.length) {
+    return false
+  }
+  const outer = after ? inner + 1 : inner - 1
   if (outer < 0 || outer >= text.length) {
     return false
   }
@@ -138,7 +141,7 @@ const gateCutsAt = (text: string, inner: i32, outer: i32, step: i32): boolean =>
   if (gateIsWordChar(a) && gateIsWordChar(b)) {
     return true
   }
-  const past = outer + step
+  const past = after ? outer + 1 : outer - 1
   return (
     gateIsDigitChar(a) &&
     (b === 46 || b === 44) &&
@@ -161,9 +164,10 @@ const gateCutsAt = (text: string, inner: i32, outer: i32, step: i32): boolean =>
  */
 export const gateQuoteWhole = (text: string, q: string): boolean => {
   let at = toI32(text.indexOf(q))
-  while (at >= 0) {
-    const end = at + q.length
-    if (!gateCutsAt(text, at, at - 1, -1) && !gateCutsAt(text, end - 1, end, 1)) {
+  while (at >= 0 && at < text.length && q.length <= text.length - at) {
+    // Below text.length, so it fits an i32.
+    const last = toI32(toI64(at) + toI64(q.length) - 1)
+    if (!gateCutsAt(text, at, false) && !gateCutsAt(text, last, true)) {
       return true
     }
     at = toI32(text.indexOf(q, at + 1))

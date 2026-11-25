@@ -55,8 +55,9 @@ const gateTypingVector = (k: Clause, fns: FnSig[], errors: string[]): void => {
   if (k.args.length !== sig.params.length) {
     errors.push(`${k.call} takes ${sig.params.length} argument(s), got ${k.args.length}`)
   }
-  for (let i = 0; i < k.args.length && i < sig.params.length; i++) {
-    const p = sig.params[i]
+  const params = sig.params
+  for (let i = 0; i < k.args.length && i < params.length; i++) {
+    const p = params[i]
     const want = vocabValueType(p.type)
     if (!typeLiteralFits(k.args[i], want)) {
       errors.push(`args[${i}]: ${k.call}(${p.name}) wants ${want}, got ${gateMisfit(k.args[i], want)}`)
