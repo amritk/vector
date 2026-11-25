@@ -250,12 +250,12 @@ const lexPush = (s: LexState, kind: i32, start: i32, line: u32, depth: i32): voi
 const lexString = (s: LexState, at: i32): Result<i32, string> => {
   const text = s.text
   const line = s.line
-  if (at < 0 || at >= text.length) {
+  if (at >= text.length) {
     return Err(`line ${line}: a string that never closes`)
   }
   const q = text.charCodeAt(at)
   let i = at + 1
-  while (i >= 0 && i < text.length) {
+  while (i < text.length) {
     const c = text.charCodeAt(i)
     if (c === q) {
       s.pos = i + 1
@@ -453,9 +453,6 @@ const lexStep = (s: LexState): Result<i32, string> => {
 /** Where the punctuator at `start` ends: after the first of lexLongPunct that the text there starts with, else after its one character. */
 const lexPunctEnd = (text: string, start: i32): i32 => {
   const longs = lexLongPunct()
-  if (start < 0 || start >= text.length) {
-    return start
-  }
   for (const p of longs) {
     const end = toI32(toU32(start) + toU32(p.length))
     // `substring` clamps an entry that runs past the end, so it matches only one that fits.
@@ -536,7 +533,7 @@ const lexEndsBefore = (tokens: LexToken[], closes: boolean[], i: i32): boolean =
 
 /** Whether the contextual keyword at `i` is used between two operands (`x as T`), not as a name. */
 const lexIsInfix = (tokens: LexToken[], closes: boolean[], i: i32): boolean => {
-  if (i < 0 || i >= tokens.length || i >= closes.length) {
+  if (i >= tokens.length) {
     return false
   }
   const t = tokens[i]
@@ -568,7 +565,7 @@ const lexIsInfix = (tokens: LexToken[], closes: boolean[], i: i32): boolean => {
  * a name (`= from`), the keyword can.
  */
 const lexEndsLine = (tokens: LexToken[], closes: boolean[], typed: boolean[], i: i32): boolean => {
-  if (i < 0 || i >= tokens.length || i >= closes.length || i >= typed.length) {
+  if (i >= tokens.length || i >= closes.length || i >= typed.length) {
     return false
   }
   const t = tokens[i]
@@ -607,7 +604,7 @@ const lexStartsAlias = (tokens: LexToken[], from: i32, i: i32): boolean => {
 
 /** Follows a top-level token `i` through the statement's types, marking a `>` that closes type arguments. */
 const lexFollow = (tokens: LexToken[], closes: boolean[], from: i32, i: i32, ty: LexTypes): void => {
-  if (i < 0 || i >= tokens.length || i >= closes.length) {
+  if (i >= tokens.length) {
     return
   }
   const t = tokens[i]
@@ -686,7 +683,7 @@ export const lexStatements = (tokens: LexToken[]): LexSpan[] => {
   }
   let ty = new LexTypes()
   let from: i32 = 0
-  for (let i: i32 = 0; i < tokens.length && i < typed.length && i < closes.length; i++) {
+  for (let i: i32 = 0; i < tokens.length; i++) {
     const t = tokens[i]
     if (t.depth !== 0) {
       continue

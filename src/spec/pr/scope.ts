@@ -117,7 +117,6 @@ const scopeDeclarators = (toks: LexToken[], i: i32, to: i32): string[] => {
 const scopeNames = (toks: LexToken[], from: i32, to: i32): string[] => {
   let i = from
   while (
-    i >= 0 &&
     i < toks.length &&
     (scopeIdent(toks, i, to) === "declare" ||
       scopeIdent(toks, i, to) === "abstract" ||
@@ -127,8 +126,8 @@ const scopeNames = (toks: LexToken[], from: i32, to: i32): string[] => {
     i = i + 1
   }
   let k = scopeIdent(toks, i, to)
-  // A keyword means token `i` exists; "" names nothing, as no branch below matches it.
-  if (k === "" || i < 0 || i >= toks.length) {
+  // "" names nothing, as no branch below matches it.
+  if (i >= toks.length) {
     return []
   }
   // The token after the keyword; a token test past `toks` answers no, as scopeIdent does.

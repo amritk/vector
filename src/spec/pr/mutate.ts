@@ -109,9 +109,6 @@ const mutateKind = (kinds: i32[], i: i32): i32 => (i >= 0 && i < kinds.length ? 
 
 /** Whether `op` stands at `i` with a space on each side, as the formatter puts a binary operator. */
 const mutateSpaced = (s: string, i: i32, op: string): boolean => {
-  if (i < 1 || i >= s.length - op.length) {
-    return false
-  }
   const end = toI32(toI64(i) + toI64(op.length))
   return mutateAt(s, i - 1) === 32 && s.substring(i, end) === op && mutateAt(s, end) === 32
 }
@@ -197,8 +194,7 @@ const mutateSwaps = (): string[] => [
 
 /** Whether ` | ` at `i` joins a type with null, as `T | null` or `null | T` does: a type, not a bitwise or. */
 const mutateNullUnion = (s: string, i: i32): boolean =>
-  (i >= 0 && i <= s.length - 6 && s.substring(i + 2, i + 6) === "null") ||
-  (i >= 5 && s.substring(i - 5, i - 1) === "null")
+  (i <= s.length - 6 && s.substring(i + 2, i + 6) === "null") || (i >= 5 && s.substring(i - 5, i - 1) === "null")
 
 /** The line with `len` chars at `i` replaced by `by`. */
 const mutateSplice = (s: string, i: i32, len: i32, by: string): string =>
@@ -222,7 +218,7 @@ const mutateMark = (kinds: i32[], from: i32, to: i32, kind: i32): void => {
 
 /** Marks the comments in `[from, to)`, a gap between tokens, which the lexer read as only spaces and comments. */
 const mutateMarkComments = (text: string, kinds: i32[], from: i32, to: i32): void => {
-  if (from < 0 || to < from || to > text.length) {
+  if (to > text.length) {
     return
   }
   let i = from
@@ -274,11 +270,8 @@ export const mutateCode = (text: string): Result<i32[][], string> => {
   let start: i32 = 0
   for (const line of splitLines(text)) {
     // splitLines splits at each line break and nowhere else, so every line
-    // and the break after it lie in `kinds`: this test always holds.
+    // and the break after it lie in `kinds`.
     const end = toI64(start) + toI64(line.length) + 1
-    if (start < 0 || end > toI64(kinds.length)) {
-      return Err(`the lines of the module run past its end at offset ${start}`)
-    }
     const row: i32[] = []
     for (let k = start; k >= 0 && toI64(k) < end && k < kinds.length; k++) {
       row.push(kinds[k])
@@ -306,7 +299,6 @@ const mutateWholeLine = (text: string, line: i32, kinds: i32[], out: MutateMutan
   // The line must start in code and end outside every string, template and
   // block comment, or deleting it would cut one open.
   if (
-    first < 0 ||
     first >= text.length ||
     mutateKind(kinds, first) !== MUTATE_CODE ||
     mutateKind(kinds, toI32(text.length)) !== MUTATE_BLANK
@@ -364,15 +356,11 @@ export const mutateLine = (text: string, line: i32, kinds: i32[]): MutateMutant[
     const k = mutateSwapAt(text, i, swaps)
     if (k >= 0 && k < swaps.length - 2) {
       const op = swaps[k]
-      // mutateSwapAt found op spaced at i, so it ends before the line does:
-      // this test always holds.
-      if (i < text.length - op.length) {
-        if (op !== "|" || !mutateNullUnion(text, i)) {
-          out.push(new MutateMutant(line, i + 1, swaps[k + 2], "", mutateSplice(text, i, op.length, swaps[k + 1])))
-        }
-        i = toI32(toI64(i) + toI64(op.length))
-        continue
+      if (op !== "|" || !mutateNullUnion(text, i)) {
+        out.push(new MutateMutant(line, i + 1, swaps[k + 2], "", mutateSplice(text, i, op.length, swaps[k + 1])))
       }
+      i = toI32(toI64(i) + toI64(op.length))
+      continue
     }
     if (c === 33 && mutateAt(text, i + 1) !== 61 && !mutateWordChar(mutateAt(text, i - 1))) {
       const next = mutateAt(text, i + 1)
@@ -384,7 +372,7 @@ export const mutateLine = (text: string, line: i32, kinds: i32[]): MutateMutant[
     }
     if (c >= 48 && c <= 57 && !mutateWordChar(mutateAt(text, i - 1)) && mutateAt(text, i - 1) !== 46) {
       let j = i
-      while (j >= 0 && j < text.length && text.charCodeAt(j) >= 48 && text.charCodeAt(j) <= 57) {
+      while (j < text.length && text.charCodeAt(j) >= 48 && text.charCodeAt(j) <= 57) {
         j++
       }
       const after = mutateAt(text, j)
@@ -400,7 +388,7 @@ export const mutateLine = (text: string, line: i32, kinds: i32[]): MutateMutant[
       continue
     }
     if (mutateWordChar(c)) {
-      while (i >= 0 && i < text.length && mutateWordChar(text.charCodeAt(i))) {
+      while (i < text.length && mutateWordChar(text.charCodeAt(i))) {
         i++
       }
       continue

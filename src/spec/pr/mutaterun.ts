@@ -313,9 +313,6 @@ const mutaterunStart = (
     return Err(`cannot start ${argv.length > 0 ? argv[0] : "an empty argv"} (errno ${mutaterunErrno(pid)})`)
   }
   const now = monotonicNanos()
-  if (now < 0 || limitMs < 0) {
-    return Err(`cannot time a step from ${now} ns for ${limitMs} ms`)
-  }
   slot.pid = pid
   slot.building = building
   slot.started = now
@@ -362,12 +359,12 @@ class MutaterunStep {
   }
 }
 
-/** Whether `text[from, to)` is one or more digits. */
+/** Whether `text[from, to)` is one or more digits; every caller passes 0 <= from and to <= text.length. */
 const mutaterunDigits = (text: string, from: i32, to: i32): boolean => {
-  if (to <= from || from < 0 || to > text.length) {
+  if (to <= from) {
     return false
   }
-  for (let i = from; i >= 0 && i < to && i < text.length; i++) {
+  for (let i = from; i < to; i++) {
     const c = text.charCodeAt(i)
     if (c < 0x30 || c > 0x39) {
       return false
@@ -587,7 +584,7 @@ const mutaterunLoop = (
       for (const slot of slots) {
         if (reaped && slot.pid === wpid) {
           const step = mutaterunExited(run, slot, mutants, wstatus, limitMs)
-          if (step.settled > 0 && busy > 0) {
+          if (step.settled > 0) {
             busy--
           }
           if (step.failure.length > 0) {
@@ -605,7 +602,7 @@ const mutaterunLoop = (
         const late = waitPid(slot.pid, 1)
         if (late.length > 1 && late[0] === slot.pid) {
           const step = mutaterunExited(run, slot, mutants, late[1], limitMs)
-          if (step.settled > 0 && busy > 0) {
+          if (step.settled > 0) {
             busy--
           }
           if (step.failure.length > 0) {
@@ -614,9 +611,7 @@ const mutaterunLoop = (
         } else {
           mutaterunKill(slot.pid)
           mutaterunSettle(slot, mutants, slot.building ? MUTATE_BUILD_TIMED_OUT : MUTATE_TIMED_OUT)
-          if (busy > 0) {
-            busy--
-          }
+          busy--
         }
       }
     }
