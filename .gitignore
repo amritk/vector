@@ -5,4 +5,5 @@ dist/
 /.z3
 coverage/
 /.nish
+/.nish-next
 __pycache__/
