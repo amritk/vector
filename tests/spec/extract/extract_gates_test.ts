@@ -20,8 +20,7 @@ import {
   extractUnifiedDiff,
 } from "../../../src/spec/extract"
 import { ProfileLocator, ProfileWhere } from "../../../src/spec/profile/profile"
-import { SourceReaders } from "../../../src/spec/source/load"
-import { xmlRead } from "../../../src/spec/xml/doc"
+import { SourceReaderKind, SourceReaders } from "../../../src/spec/source/load"
 
 /** A gate's note, and the finding the report carries for it. */
 const extractGatesTestIssue = (
@@ -248,7 +247,7 @@ const extractGatesTestSources = (t: Suite, readers: SourceReaders): void => {
     return
   }
   const check = new CheckContext(lone, away.value)
-  checkAddReader(check, ".xml", xmlRead).expect("the xml reader")
+  checkAddReader(check, ".xml", SourceReaderKind.Xml).expect("the xml reader")
   const report = checkContractWith(check, c.value, checkGates())
   const sources = report.findings.filter((f: CheckFinding): boolean => f.message.startsWith("sources: "))
   t.eqI32("a source not there is one finding", sources.length, 1)

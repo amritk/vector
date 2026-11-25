@@ -7,9 +7,10 @@ registry of gates, each a top-level function that reads the contract and
 returns its findings. checkContract runs them in order and collects every
 finding, so one run names them all.
 
-How a stage plugs in: write the gate as a top-level function of type
-CheckGate in its own module (`(ctx) => string[]`: it reads `ctx.contract`
-and returns one message per finding, empty when it passes), and add one
+How a stage plugs in: write the gate as a top-level function in its own
+module (`(ctx: CheckContext) => string[]`: it reads `ctx.contract` and
+returns one message per finding, empty when it passes), give it a
+CheckGateKind and a case in checkGateRun, and add one
 `new CheckGateEntry(...)` line for it to checkGates, in the order it must
 run. A gate that later gates
 depend on (the shape gate: nothing after it can trust a malformed contract)
@@ -31,7 +32,7 @@ Generated from [src/spec/check.ts](https://github.com/amritk/vector/blob/main/sr
 - [`CheckSampleStat`](#checksamplestat)
 - [`CheckContext`](#checkcontext)
 - [`checkAddReader`](#checkaddreader)
-- [`CheckGate`](#checkgate)
+- [`CheckGateKind`](#checkgatekind)
 - [`CheckGateEntry`](#checkgateentry)
 - [`CheckFinding`](#checkfinding)
 - [`CheckReport`](#checkreport)
@@ -564,7 +565,7 @@ that extension (`.xml`) with it; it replaces one already there.
 function checkAddReader(
   ctx: CheckContext,
   ext: string,
-  read: SourceReader,
+  kind: SourceReaderKind,
 ): Result<boolean, string>
 ```
 
@@ -580,9 +581,9 @@ the extension, with its leading dot: ".xml"
 
 </scalar-field>
 
-<scalar-field name="read" type="SourceReader" required>
+<scalar-field name="kind" type="SourceReaderKind" required>
 
-the reader
+the format files with that extension are read as
 
 </scalar-field>
 
@@ -593,13 +594,73 @@ the reader
 
 </scalar-field>
 
-### CheckGate
+### CheckGateKind
 
-A gate: every finding in `ctx.contract`, one message each; empty when it passes.
+Which gate a registry entry runs: checkGateRun calls the gate it names.
 
 ```ts
-type CheckGate = (ctx: CheckContext) => string[]
+enum CheckGateKind
 ```
+
+<scalar-field name="Completeness" type="6">
+
+gateCompleteness.
+
+</scalar-field>
+
+<scalar-field name="Coverage" type="4">
+
+gateCoverage.
+
+</scalar-field>
+
+<scalar-field name="Domain" type="10">
+
+gateDomain.
+
+</scalar-field>
+
+<scalar-field name="Fidelity" type="5">
+
+gateFidelity.
+
+</scalar-field>
+
+<scalar-field name="Ids" type="2">
+
+gateIds.
+
+</scalar-field>
+
+<scalar-field name="Provenance" type="8">
+
+gateProvenance.
+
+</scalar-field>
+
+<scalar-field name="RunSources" type="7">
+
+gateRunSources.
+
+</scalar-field>
+
+<scalar-field name="Shape" type="1">
+
+checkShapeGate: every value the schema and the generated test constrain.
+
+</scalar-field>
+
+<scalar-field name="Signatures" type="9">
+
+gateSignatures.
+
+</scalar-field>
+
+<scalar-field name="Typing" type="3">
+
+gateTyping.
+
+</scalar-field>
 
 ### CheckGateEntry
 
@@ -616,7 +677,7 @@ Makes a registry entry.
 ```ts
 new CheckGateEntry(
   name: string,
-  run: CheckGate,
+  kind: CheckGateKind,
   blocking: boolean,
 ): CheckGateEntry
 ```
@@ -627,9 +688,9 @@ the gate's name
 
 </scalar-field>
 
-<scalar-field name="run" type="CheckGate" required>
+<scalar-field name="kind" type="CheckGateKind" required>
 
-the gate
+which gate it runs
 
 </scalar-field>
 
@@ -647,6 +708,14 @@ Whether a finding stops the gates after it.
 blocking: boolean
 ```
 
+#### CheckGateEntry.kind
+
+Which gate it runs.
+
+```ts
+kind: CheckGateKind
+```
+
 #### CheckGateEntry.name
 
 The name its findings are reported under.
@@ -657,11 +726,23 @@ name: string
 
 #### CheckGateEntry.run
 
-The gate: it returns one message per finding.
+Runs this entry's gate.
 
 ```ts
-run: CheckGate
+run(ctx: CheckContext): string[]
 ```
+
+<scalar-field name="ctx" type="CheckContext" required>
+
+the check's context, holding the contract
+
+</scalar-field>
+
+<scalar-field name="returns" type="string[]">
+
+one message per finding, empty when it passes
+
+</scalar-field>
 
 ### CheckFinding
 
