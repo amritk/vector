@@ -1,14 +1,16 @@
 /**
  * `cli/spec-exports` — `vector spec exports`: refuse a new export its contract does not cover.
  *
- * Every export the change adds to or changes in the contract's target module
- * is one the contract tests or lists out of scope (`spec/pr/exports`).
+ * Every export the change adds to or changes in a contract's target module
+ * is one a contract targeting that module tests or lists out of scope
+ * (`spec/pr/exports`). Several contracts may be given: a module two of them
+ * target is judged on what they cover together.
  */
 
 import { Cli, ParseResult } from "nish/cli-args"
 import { report, usageError } from "../core/diag"
 import { prCliBase, prCliFinish, prCliFormat } from "../spec/pr/cli"
-import { exportsCheck } from "../spec/pr/exports"
+import { exportsCheckAll } from "../spec/pr/exports"
 
 /** The id `vector spec exports` is parsed to. */
 export const SPEC_EXPORTS_ID: i32 = 9
@@ -21,8 +23,8 @@ export class SpecExportsCommand {
   nishRootFlag: i32
   /** The `--format <f>` flag. */
   formatFlag: i32
-  /** The `<contract.json>` argument. */
-  contractJsonArg: i32
+  /** The `<contracts.json...>` argument. */
+  contractsArg: i32
 
   /**
    * Declares `vector spec exports` and its flags under `parent`.
@@ -35,7 +37,11 @@ export class SpecExportsCommand {
     this.baseFlag = cli.flag(handle, "--base <ref>", "the commit the change is against")
     this.nishRootFlag = cli.flag(handle, "--nish-root <dir>", "a nish checkout: finds the module and the compiler")
     this.formatFlag = cli.flag(handle, "--format <f>", "text (default), markdown (a PR comment) or json")
-    this.contractJsonArg = cli.argument(handle, "<contract.json>", "the contract")
+    this.contractsArg = cli.argument(
+      handle,
+      "<contracts.json...>",
+      "the contracts; a module several target is judged on all of them",
+    )
   }
 
   /**
@@ -58,8 +64,11 @@ export class SpecExportsCommand {
     if (root === null) {
       return report(usageError("spec exports: --nish-root <dir> is required: the nish checkout holding the module"))
     }
-    const contract = r.positional(this.contractJsonArg) ?? ""
-    return prCliFinish("spec exports", exportsCheck(contract, root, base.value), format.value)
+    return prCliFinish(
+      "spec exports",
+      exportsCheckAll(r.positionals(this.contractsArg), root, base.value),
+      format.value,
+    )
   }
 }
 

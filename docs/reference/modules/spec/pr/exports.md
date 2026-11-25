@@ -19,7 +19,9 @@ Generated from [src/spec/pr/exports.ts](https://github.com/amritk/vector/blob/ma
 - [`exportsDiff`](#exportsdiff)
 - [`exportsTested`](#exportstested)
 - [`exportsJudge`](#exportsjudge)
+- [`exportsJudgeAll`](#exportsjudgeall)
 - [`exportsCheck`](#exportscheck)
+- [`exportsCheckAll`](#exportscheckall)
 
 ## Declarations
 
@@ -157,6 +159,47 @@ the exports that changed (exportsDiff)
 
 </scalar-field>
 
+### exportsJudgeAll
+
+Judges a module's changed exports against every contract that targets it:
+an export is covered when any of them tests it, or, when none does, any
+lists it in outOfScope with a reason. One module tested by two specs (HMAC
+by RFC 4231, PBKDF2 by RFC 7914) is judged on what the two cover together,
+where each alone leaves the other's functions uncovered.
+
+```ts
+function exportsJudgeAll(
+  r: PrReport,
+  cs: Contract[],
+  changes: ExportsChange[],
+  where: string,
+): void
+```
+
+<scalar-field name="r" type="PrReport" required>
+
+the report to fill
+
+</scalar-field>
+
+<scalar-field name="cs" type="Contract[]" required>
+
+the contracts, all targeting the module
+
+</scalar-field>
+
+<scalar-field name="changes" type="ExportsChange[]" required>
+
+the exports that changed (exportsDiff)
+
+</scalar-field>
+
+<scalar-field name="where" type="string" required>
+
+what each line starts with: "" for one module, `<file>: ` when the report covers several
+
+</scalar-field>
+
 ### exportsCheck
 
 Checks the exports a change makes to a contract's target module, in the
@@ -192,5 +235,43 @@ the ref the change is against
 
 the report, or `Err` when the contract cannot be read, its target
   is outside nish, the module exists but cannot be read, or git fails
+
+</scalar-field>
+
+### exportsCheckAll
+
+Checks the exports a change makes to every module the contracts target:
+each module once, against all the contracts that target it (exportsJudgeAll).
+
+```ts
+function exportsCheckAll(
+  contractPaths: string[],
+  nishRoot: string,
+  base: string,
+): Result<PrReport, string>
+```
+
+<scalar-field name="contractPaths" type="string[]" required>
+
+the contract files, at least one
+
+</scalar-field>
+
+<scalar-field name="nishRoot" type="string" required>
+
+the nish checkout, a git work tree, whose std/ holds the modules
+
+</scalar-field>
+
+<scalar-field name="base" type="string" required>
+
+the ref the change is against
+
+</scalar-field>
+
+<scalar-field name="returns" type="Result&lt;PrReport, string&gt;">
+
+the report, or `Err` when no contract is given, a contract cannot
+  be read, a target is outside nish, a module exists but cannot be read, or git fails
 
 </scalar-field>

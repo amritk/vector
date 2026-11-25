@@ -202,7 +202,7 @@ fresh, a stale, an unmarked and a doubly marked test.
 
 ## exports
 
-`spec exports <contract.json> --nish-root <dir> --base <ref>` lists the
+`spec exports <contracts.json...> --nish-root <dir> --base <ref>` lists the
 exports of the contract's module that the change adds or changes, and refuses
 one the contract neither tests nor lists in its `outOfScope` with a reason.
 `--nish-root` is required, and must be a git checkout of nish: the change is
@@ -255,6 +255,14 @@ Without `--nish-root` it exits 2 (`VECTOR_NISH_ROOT` is not read here):
 ```text
 vector: spec exports: --nish-root <dir> is required: the nish checkout holding the module
 ```
+
+Name every contract that targets a module in one call. A module that two
+contracts target (HMAC by RFC 4231 and PBKDF2 by RFC 7914, both in one file)
+is judged once, on what they cover together: an export is covered when any of
+them tests it or, when none does, any lists it out of scope. Run alone, each
+would refuse the exports only the other tests. With contracts for more than
+one module, each module is judged on its own contracts, and every line of the
+report starts with the module's file (`std/g.ts: export g2 is added, …`).
 
 ## mutate
 
@@ -311,6 +319,12 @@ vector: spec mutate: ../nish-clone has no seed to build mutants with: neither li
 ```
 
 Fetching the seed needs no build: `cd ../nish-clone && bash scripts/fetch-seed.sh`.
+
+A compiler that holds the root package to no panic by default refuses an
+emitted test, whose calls into the module are panic sites. When the slot's
+compiler lists `--allow-panics` in its `--help`, every build passes it; an
+older compiler, which has no such flag, is not given it. `spec run` asks the
+same way.
 
 Before any mutant, mutate makes the module unparseable in a slot and builds
 the test: if that still builds, the compiler is not reading the slot, and
