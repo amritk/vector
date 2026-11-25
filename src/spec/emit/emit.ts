@@ -25,6 +25,7 @@ import {
   vocabBaseOf,
   vocabBigEndian,
   vocabByteWidth,
+  vocabFitsInt,
   vocabHas,
   vocabIsIntType,
   vocabIsOptional,
@@ -897,7 +898,8 @@ const emitIterateSteps = (ctx: EmitContext, k: Clause, sig: FnSig, args: string[
     vars.push(`it_a${i}`)
     lines.push(`  let it_a${i}: ${emitNishType(vocabValueType(sig.params[i].type))} = ${args[i]};`)
   }
-  const count = emitIntLit(`${it.count}`, "i64")
+  // A bare literal where it fits, which the no-panic checker reads as the counter's bound.
+  const count = vocabFitsInt(`${it.count}`, "i32") ? `${it.count}` : emitIntLit(`${it.count}`, "i64")
   const optional = vocabIsOptional(vocabValueType(sig.returns))
   lines.push(`  for (let it_i: i64 = 1; it_i < ${count}; it_i += 1) {`)
   lines.push(`    const it_s = ${emitCall(ctx, sig, vars)};`)
@@ -1045,15 +1047,22 @@ const emitProperty = (ctx: EmitContext, k: Clause, samples: Sample[]): string =>
   }
   const undefinedWhy = emitUndefinedWhy(assert)
   const usesUnwrap = undefinedWhy !== null
-  out.push(`  for (let i: i32 = 0; i < ${count}; i += 1) {`)
+  // Each table's length bounds the index too, so the no-panic checker proves every table_x[i].
+  const inTables = k.forall.map((v) => ` && i < table_${v.name}.length`).join("")
+  out.push(`  for (let i: i32 = 0; i < ${count}${inTables}; i += 1) {`)
   ctx.env = new TypeEnv(ctx.c.functions, true)
   const shown: string[] = []
+  // Every row is read before any call, which would drop the loop bound's facts about the tables.
+  for (const v of k.forall) {
+    const raw = v.type === "bytes" ? "string" : v.type
+    out.push(`    const r_${v.name}: ${raw} = table_${v.name}[i];`)
+  }
   for (const v of k.forall) {
     typeEnvBind(ctx.env, v.name, v.type)
     if (v.type === "bytes") {
-      out.push(`    const v_${v.name}: u8[] = unhex(table_${v.name}[i]);`)
+      out.push(`    const v_${v.name}: u8[] = unhex(r_${v.name});`)
     } else {
-      out.push(`    const v_${v.name}: ${v.type} = table_${v.name}[i];`)
+      out.push(`    const v_${v.name}: ${v.type} = r_${v.name};`)
     }
     shown.push(
       vocabIsIntType(v.type) ? `${v.name} = \${v_${v.name}}` : `len(${v.name}) = \${toI32(v_${v.name}.length)}`,
@@ -1267,7 +1276,8 @@ const emitMain = (c: Contract): string => {
     lines.push(`  ran = \`\${ran}\${${emitClauseFn(k)}(t) ? "1" : "0"}\`;`)
   }
   lines.push("  const code: i32 = t.done();")
-  lines.push(`  const nonce: string = toI32(process.argv.length) > 1 ? process.argv[1] : "-";`)
+  lines.push("  const argv: string[] = process.argv;")
+  lines.push(`  const nonce: string = 1 < argv.length ? argv[1] : "-";`)
   lines.push("  console.log(`vector-done ${nonce} ${ran}`);")
   lines.push("  return code;")
   lines.push("};")
