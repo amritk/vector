@@ -559,7 +559,7 @@ const gitdiffIsAt = (toks: LexToken[], i: i32, to: i32, depth: i32, p: string): 
  * identifiers after `new`, `as` or `satisfies`, all within the value.
  */
 const gitdiffTypeChain = (toks: LexToken[], valueStart: i32, at: i32): boolean => {
-  if (valueStart < 0 || at <= valueStart || at > toks.length) {
+  if (valueStart < 0 || at < 1 || at <= valueStart || at > toks.length) {
     return false
   }
   let i = at - 1
@@ -589,7 +589,7 @@ const gitdiffTypeChain = (toks: LexToken[], valueStart: i32, at: i32): boolean =
  * never comes, so `x < 1, y > (z)` is still a statement it cannot split.
  */
 const gitdiffCallTypeArgs = (toks: LexToken[], valueStart: i32, at: i32, to: i32): boolean => {
-  if (valueStart < 0 || at <= valueStart || at >= toks.length || !gitdiffIsTopIdent(toks, at - 1, at)) {
+  if (valueStart < 0 || at < 1 || at <= valueStart || at >= toks.length || !gitdiffIsTopIdent(toks, at - 1, at)) {
     return false
   }
   const atDepth = toks[at].depth
@@ -638,7 +638,7 @@ const gitdiffCallTypeArgs = (toks: LexToken[], valueStart: i32, at: i32, to: i32
  * after it starts the arrow's return type rather than a ternary's other arm.
  */
 const gitdiffArrowHead = (toks: LexToken[], valueStart: i32, close: i32): boolean => {
-  if (valueStart < 0 || close < valueStart || close >= toks.length) {
+  if (valueStart < 0 || close < 0 || close < valueStart || close >= toks.length || valueStart >= toks.length) {
     return false
   }
   if (!gitdiffIsPunct(toks, close, close + 1, ")") || toks[close].depth !== 0) {

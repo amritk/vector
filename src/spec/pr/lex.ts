@@ -324,6 +324,9 @@ const lexClose = (s: LexState, c: i32, at: i32): Result<i32, string> => {
   const ch = String.fromCharCode(c)
   const stack = s.stack
   const n = stack.length
+  if (at < 0 || at >= s.text.length) {
+    return Err(`line ${s.line}: a position outside the text`)
+  }
   if (n === 0) {
     return Err(`line ${s.line}: a \`${ch}\` that closes nothing`)
   }
@@ -583,6 +586,9 @@ const lexEndsLine = (tokens: LexToken[], closes: boolean[], typed: boolean[], i:
 
 /** Whether the top-level token at `i` starts a type alias: `type` then a name on its line, first in its statement but for `export` and `declare`. */
 const lexStartsAlias = (tokens: LexToken[], from: i32, i: i32): boolean => {
+  if (i < 0 || i >= tokens.length) {
+    return false
+  }
   const t = tokens[i]
   if (from < 0 || t.kind !== LEX_IDENT || t.text !== "type" || i + 1 >= tokens.length) {
     return false
