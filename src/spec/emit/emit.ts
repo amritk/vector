@@ -554,10 +554,10 @@ const emitHelperOp = (ctx: EmitContext, e: Expr): string | null => {
     return `\`\${${emitArg(ctx, e, 0, null)}}\${${emitArg(ctx, e, 1, null)}}\``
   }
   if (op === "lower") {
-    return `${emitUse(ctx, "shiftCase")}(${emitArg(ctx, e, 0, null)}, 65, 90, 32)`
+    return `${emitUse(ctx, "shiftCase")}(${emitArg(ctx, e, 0, null)}, false)`
   }
   if (op === "upper") {
-    return `${emitUse(ctx, "shiftCase")}(${emitArg(ctx, e, 0, null)}, 97, 122, -32)`
+    return `${emitUse(ctx, "shiftCase")}(${emitArg(ctx, e, 0, null)}, true)`
   }
   if (op === "utf8") {
     return `${emitUse(ctx, "utf8Bytes")}(${emitArg(ctx, e, 0, null)})`
