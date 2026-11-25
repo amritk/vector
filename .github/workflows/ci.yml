@@ -83,16 +83,20 @@ jobs:
           git fetch --no-tags --depth=1 origin "$BASE_SHA"
           npm run doc-caps -- --base "$BASE_SHA"
 
-      - name: Cache the pinned nish and z3
+      - name: Cache the pinned nish, the prover and z3
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             .nish
+            .nish-prover
             .z3
-          key: toolchain-${{ runner.os }}-${{ hashFiles('.nish-version', 'scripts/fetch-nish.sh', 'scripts/fetch-z3.sh') }}
+          key: toolchain-${{ runner.os }}-${{ hashFiles('.nish-version', 'scripts/fetch-nish.sh', '.nish-prover-version', 'scripts/fetch-nish-prover.sh', 'scripts/fetch-z3.sh') }}
 
       - name: Fetch the pinned nish compiler
         run: bash scripts/fetch-nish.sh
+
+      - name: Fetch the pinned nish prover
+        run: bash scripts/fetch-nish-prover.sh
 
       - name: Fetch the pinned z3
         run: bash scripts/fetch-z3.sh
@@ -102,6 +106,8 @@ jobs:
 
       - name: Test
         run: npm test
+        env:
+          VECTOR_PROVER_REQUIRED: "1"
 
       - name: vector's tests of itself match their specs
         run: npm run dogfood

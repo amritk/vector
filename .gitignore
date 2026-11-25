@@ -6,3 +6,4 @@ dist/
 coverage/
 /.nish
 __pycache__/
+/.nish-prover

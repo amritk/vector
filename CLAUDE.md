@@ -3,13 +3,16 @@
 vector is written in [Nish](https://github.com/amritk/nish), a static subset
 of TypeScript compiled to a native binary, `dist/vector`. The
 compiler is pinned in `.nish-version` (read by `scripts/fetch-nish.sh`) and
-lives in `.nish/`; z3 is
+lives in `.nish/`. A second nish, the prover, is pinned in
+`.nish-prover-version` and lives in `.nish-prover/`; it exists only to check
+the tests vector emits, and never builds vector. z3 is
 pinned in `scripts/fetch-z3.sh` and lives in `.z3/`. Before writing Nish,
 read `.nish/docs/AI.md` (the language as rules, traps first).
 
 | Command | What it does |
 | --- | --- |
 | `bash scripts/fetch-nish.sh` | install the pinned compiler into `.nish/` |
+| `bash scripts/fetch-nish-prover.sh` | install the pinned prover into `.nish-prover/` |
 | `bash scripts/fetch-z3.sh` | install the pinned z3 into `.z3/` |
 | `npm run build` | compile `src/main.ts` to `dist/vector` |
 | `node tests/run.mjs <filter>` | the tests whose path contains `<filter>` |

@@ -34,6 +34,7 @@ if ! command -v clang >/dev/null 2>&1 || ! command -v ld.lld >/dev/null 2>&1; th
 fi
 
 bash scripts/fetch-nish.sh || say "fetching the pinned nish failed; npm run build and npm test need it"
+bash scripts/fetch-nish-prover.sh || say "fetching the pinned nish prover failed; the emitted-test panic check needs it"
 bash scripts/fetch-z3.sh || say "fetching the pinned z3 failed; set VECTOR_Z3 or put z3 on PATH"
 npm ci --no-audit --no-fund >/dev/null 2>&1 || say "npm ci failed; npm run lint needs biome"
 
