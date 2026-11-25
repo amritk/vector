@@ -20,7 +20,7 @@ The 3 JSON Schemas in `schemas/`.
 
 <scalar-card title="Modules" icon="phosphor/regular/books" href="#modules">
 
-The 120 source files of `src/`, from their doc comments.
+The 121 source files of `src/`, from their doc comments.
 
 </scalar-card>
 
@@ -54,6 +54,7 @@ The 120 source files of `src/`, from their doc comments.
 | [`core/json`](modules/core/json.md) | reading and writing JSON through `nish/json-value`: parse a file into a document, read typed members with a clear error when one is missing or of the wrong kind, and write a document back with a final newline. |
 | [`core/process`](modules/core/process.md) | running a child process with its input given and its output collected. |
 | [`core/smt`](modules/core/smt.md) | reading what z3 prints: s-expressions, the numerals in a model, and a whole run's output split into one answer per query by the `(echo "@@Q<i>")` markers the script writes before each `(check-sat)`. |
+| [`core/text`](modules/core/text.md) | ASCII case mapping that cannot panic. |
 | [`core/z3`](modules/core/z3.md) | finding z3 and running one SMT-LIB2 script through it. |
 | [`index`](modules/index.md) | the package's entry point, the module a Nish program reaches with `import { … } from "@amritk/vector"`. |
 | [`lang/c`](modules/lang/c.md) | the C table: how C writes each construct of the contract vocabulary, and what it drops. |

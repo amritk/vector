@@ -1,0 +1,13 @@
+{
+  "modules": {
+    "src/spec/emit/emit.ts": 25,
+    "src/spec/emit/file.ts": 3,
+    "src/spec/emit/go.ts": 20,
+    "src/spec/emit/lit.ts": 4,
+    "src/spec/emit/packages.ts": 10,
+    "src/spec/emit/python.ts": 14,
+    "src/spec/emit/rust.ts": 40,
+    "src/spec/emit/target.ts": 2,
+    "src/spec/emit/typescript.ts": 13
+  }
+}
