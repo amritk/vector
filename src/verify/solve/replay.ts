@@ -475,16 +475,24 @@ class ReplayCtx {
   ranges: ReplayHit[]
   /** ±(2^53−1), the range an Int must stay in. */
   safeMax: ReplayValue
+  /** The function whose body is being walked, to name a division by zero in it. */
+  fn: string
+  /** Which version of the program this is, `old` or `new` for `vector diff`; "" for `verify`. */
+  version: string
 
   /**
    * Makes a walk.
    *
    * @param program the program
    * @param record whether to record hazards
+   * @param fn the function the walk starts in
+   * @param version `old` or `new` for `vector diff`, else ""
    */
-  constructor(program: Program, record: boolean) {
+  constructor(program: Program, record: boolean, fn: string, version: string) {
     this.program = program
     this.record = record
+    this.fn = fn
+    this.version = version
     this.divs = []
     this.pres = []
     this.ranges = []
@@ -529,6 +537,13 @@ const replayBinop = (op: string, l: ReplayValue, r: ReplayValue): ReplayValue =>
   return new ReplayValue(`the operator ${op} is not one the replay evaluates`)
 }
 
+// Names the division a value depends on: z3 leaves `x / 0` unspecified, so
+// the replay cannot know it, and the detail says which division to look at.
+const replayWhyDivZero = (ctx: ReplayCtx, e: LangExpr): string => {
+  const where = ctx.version === "" ? ctx.fn : `the ${ctx.version} version of ${ctx.fn}`
+  return `a value depends on the division by zero ${prettyMath(e)} in ${where}, which z3 leaves unspecified`
+}
+
 // Mirrors `SmtEmitter.term`: the same value, the same paths, the same hazards in the same order.
 const replayTerm = (ctx: ReplayCtx, e: LangExpr, scope: ReplayScope, path: ReplayValue): ReplayValue => {
   if (e.kind === EXPR_NUM) {
@@ -570,6 +585,9 @@ const replayTerm = (ctx: ReplayCtx, e: LangExpr, scope: ReplayScope, path: Repla
         new ReplayHit(path, replayEq(r, replayInt(toI64(0))), `the divisor is ${replayValueText(r)}, not 0`),
       )
     }
+    if (e.op === "/" && l.known && r.known && r.num === toI64(0)) {
+      return new ReplayValue(replayWhyDivZero(ctx, e))
+    }
     if (e.op === "min" || e.op === "max") {
       const c = replayRelation(e.op === "min" ? "<=" : ">=", l, r)
       return c.known ? (c.truth ? l : r) : c
@@ -596,6 +614,8 @@ const replayTerm = (ctx: ReplayCtx, e: LangExpr, scope: ReplayScope, path: Repla
     for (let i = 0; i < toI32(callee.params.length) && i < toI32(e.args.length); i++) {
       inner.bind(callee.params[i].name, replayTerm(ctx, e.args[i], scope, path))
     }
+    const caller = ctx.fn
+    ctx.fn = callee.name
     let guarded = path
     for (const rc of callee.requires) {
       const t = replayTerm(ctx, rc.expr, inner, guarded)
@@ -604,7 +624,9 @@ const replayTerm = (ctx: ReplayCtx, e: LangExpr, scope: ReplayScope, path: Repla
       }
       guarded = replayAnd(guarded, t)
     }
-    return replayTerm(ctx, callee.body, inner, guarded)
+    const out = replayTerm(ctx, callee.body, inner, guarded)
+    ctx.fn = caller
+    return out
   }
   return new ReplayValue(`the expression kind ${e.kind} is not one the replay evaluates`)
 }
@@ -663,8 +685,18 @@ export class ReplayRun {
  * @param values each parameter's value
  * @returns the run; `unbound` is set when a value is missing or unreadable
  */
-export const replayEvaluate = (program: Program, fn: FnUnit, names: string[], values: string[]): ReplayRun => {
-  const run = new ReplayRun(new ReplayCtx(program, true))
+export const replayEvaluate = (program: Program, fn: FnUnit, names: string[], values: string[]): ReplayRun =>
+  replayEvaluateVersion(program, fn, names, values, "")
+
+// `replayEvaluate` for one version of a `vector diff`, which a division by zero names.
+const replayEvaluateVersion = (
+  program: Program,
+  fn: FnUnit,
+  names: string[],
+  values: string[],
+  version: string,
+): ReplayRun => {
+  const run = new ReplayRun(new ReplayCtx(program, true, fn.name, version))
   for (let i = 0; i < toI32(fn.params.length); i++) {
     const p = fn.params[i]
     const at = i < toI32(names.length) && i < toI32(values.length) ? i : -1
@@ -806,7 +838,7 @@ export const replayClause = (program: Program, fn: FnUnit, clause: LangClause, c
     scope.bind(run.scope.names[i], run.scope.values[i])
   }
   scope.bind(RESULT_NAME, result)
-  const holds = replayTerm(new ReplayCtx(program, false), clause.expr, scope, replayBool(true))
+  const holds = replayTerm(new ReplayCtx(program, false, fn.name, ""), clause.expr, scope, replayBool(true))
   checks.expect(replayNot(holds), `${prettyMath(clause.expr)} holds there`)
   return checks.result()
 }
@@ -900,8 +932,8 @@ export const replayWitness = (
     names.push(at < 0 ? "" : p.name)
     values.push(at < 0 ? "" : inputs.values[at])
   }
-  const was = replayEvaluate(oldProgram, oldFn, names, values)
-  const now = replayEvaluate(newProgram, newFn, names, values)
+  const was = replayEvaluateVersion(oldProgram, oldFn, names, values, "old")
+  const now = replayEvaluateVersion(newProgram, newFn, names, values, "new")
   for (const run of [was, now]) {
     if (run.unbound !== "") {
       return new ReplayResult(REPLAY_NOT_REPLAYED, run.unbound)

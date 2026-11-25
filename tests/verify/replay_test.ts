@@ -12,7 +12,7 @@ import {
   diffReplayWitnesses,
   pairFunctions,
 } from "../../src/verify/equiv/diff"
-import { FnUnit, Program } from "../../src/verify/lang/ast"
+import { FnUnit, Program, programFunctionIndex } from "../../src/verify/lang/ast"
 import { QUERY_DIV, QUERY_PRE, QUERY_RANGE } from "../../src/verify/smt/script"
 import {
   REPLAY_CONFIRMED,
@@ -760,6 +760,125 @@ const replayDiffMismatch = (t: Suite): void => {
   t.contains("the summary says so", out.summary, "this is a bug in vector, not in your programs")
 }
 
+// A value that depends on a division by zero is not replayed, and the detail
+// names that division and the function it is in. The division named is the
+// one that divides by zero, not an enclosing one, and not one in an untaken
+// branch; a callee's division is named in the callee, and the caller's after
+// the call in the caller.
+const replayWhyDiv = (what: string, where: string): string =>
+  `a value depends on the division by zero ${what} in ${where}, which z3 leaves unspecified`
+
+const replayDivZeroCases = (t: Suite): void => {
+  const c = new BCase("divzero")
+  const real = ["x:Real"]
+  const any = [bBin("==", bVar("result"), bVar("result"))]
+  c.fn("inv", 1, real, "Real", replayNone(), any, bBin("/", bNum("1"), bVar("x")))
+  c.fn("calls", 2, real, "Real", replayNone(), any, bCall("inv", [bVar("x")]))
+  c.fn(
+    "after",
+    2,
+    real,
+    "Real",
+    replayNone(),
+    any,
+    bBin("+", bCall("inv", [bBin("+", bVar("x"), bNum("1"))]), bBin("/", bNum("2"), bVar("x"))),
+  )
+  c.fn(
+    "two",
+    1,
+    real,
+    "Real",
+    replayNone(),
+    any,
+    bBin("+", bBin("/", bNum("3"), bVar("x")), bBin("/", bNum("4"), bBin("-", bVar("x"), bNum("1")))),
+  )
+  c.fn("nested", 1, real, "Real", replayNone(), any, bBin("/", bBin("/", bNum("5"), bVar("x")), bVar("x")))
+  c.fn("inner", 1, real, "Real", replayNone(), any, bBin("/", bNum("6"), bBin("/", bNum("7"), bVar("x"))))
+  c.fn(
+    "guarded",
+    1,
+    real,
+    "Real",
+    replayNone(),
+    any,
+    bIte(bBin("==", bVar("x"), bNum("0")), bNum("0"), bBin("/", bNum("8"), bVar("x"))),
+  )
+  c.fn("byx", 1, real, "Real", replayNone(), [bBin("==", bBin("/", bVar("result"), bVar("x")), bNum("1"))], bVar("x"))
+  const program = replayProgram(t, c)
+  // [function, x, the body's value, or why it is not known]
+  const rows: string[][] = [
+    ["inv", "0", replayWhyDiv("1 / x", "inv")],
+    ["inv", "2", "1/2"],
+    ["calls", "0", replayWhyDiv("1 / x", "inv")],
+    ["after", "0", replayWhyDiv("2 / x", "after")],
+    ["after", "-1", replayWhyDiv("1 / x", "inv")],
+    ["two", "0", replayWhyDiv("3 / x", "two")],
+    ["two", "1", replayWhyDiv("4 / (x - 1)", "two")],
+    ["nested", "0", replayWhyDiv("5 / x", "nested")],
+    ["inner", "0", replayWhyDiv("7 / x", "inner")],
+    ["guarded", "0", "0"],
+    ["guarded", "2", "4"],
+  ]
+  for (const row of rows) {
+    const at = programFunctionIndex(program, row[0])
+    if (at < 0) {
+      t.ok(`${row[0]} is in the program`, false)
+      continue
+    }
+    const run = replayEvaluate(program, program.functions[at], ["x"], [row[1]])
+    const got = run.body.known ? replayValueText(run.body) : run.body.why
+    t.eqStr(`${row[0]} at x = ${row[1]}`, got, row[2])
+  }
+
+  // An ensures clause that divides by zero names the function it belongs to.
+  const byx = programFunctionIndex(program, "byx")
+  if (byx >= 0 && program.functions[byx].ensures.length > 0) {
+    const fn = program.functions[byx]
+    const r = replayClause(program, fn, fn.ensures[0], replayCex(["x"], ["0"], "0"))
+    t.eqStr("a clause dividing by zero: not replayed", r.outcome, REPLAY_NOT_REPLAYED)
+    t.eqStr("a clause dividing by zero: named", r.detail, replayWhyDiv("result / x", "byx"))
+  } else {
+    t.ok("byx is in the program", false)
+  }
+}
+
+// A diff witness names the version whose division is by zero.
+const replayDivVersion = (t: Suite, body: string): Program => {
+  const c = new BCase("versions")
+  c.fn("f", 1, ["x:Real"], "Real", replayNone(), [bBin("==", bVar("result"), bVar("result"))], body)
+  return replayProgram(t, c)
+}
+
+const replayDivZeroWitness = (t: Suite): void => {
+  const divides = replayDivVersion(t, bBin("/", bNum("1"), bVar("x")))
+  const plain = replayDivVersion(t, bVar("x"))
+  if (divides.functions.length === 0 || plain.functions.length === 0) {
+    return
+  }
+  // [the version that divides, how the detail names it, z3's old result, its new result]:
+  // the version that does not divide returns x, 0 at the witness.
+  const rows: string[][] = [
+    ["old", "the old version of f", "1", "0"],
+    ["new", "the new version of f", "0", "1"],
+  ]
+  for (const row of rows) {
+    const was = row[0] === "old" ? divides : plain
+    const now = row[0] === "old" ? plain : divides
+    const r = replayWitness(
+      was,
+      replayFnOf(was),
+      now,
+      replayFnOf(now),
+      REPLAY_VALUE,
+      replayCex(["x"], ["0"], "?"),
+      row[2],
+      row[3],
+    )
+    t.eqStr(`the ${row[0]} version divides by zero: not replayed`, r.outcome, REPLAY_NOT_REPLAYED)
+    t.eqStr(`the ${row[0]} version divides by zero: named`, r.detail, replayWhyDiv("1 / x", row[1]))
+  }
+}
+
 // Which outcomes --json explains with replayDetail: the two that did not confirm.
 const replayJsonCases = (t: Suite): void => {
   const rows: string[][] = [
@@ -788,5 +907,7 @@ export const main = (): i32 => {
   replayUnreadableHazard(t)
   replayDiffMismatch(t)
   replayJsonCases(t)
+  replayDivZeroCases(t)
+  replayDivZeroWitness(t)
   return t.done()
 }
