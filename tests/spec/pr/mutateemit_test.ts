@@ -6,6 +6,7 @@
  */
 
 import { Suite } from "nish/testing"
+import { splitLines } from "nish/text"
 import { joinPath } from "../../../src/core/fs"
 import { sha256Hex } from "../../../src/core/hex"
 import { runProcess } from "../../../src/core/process"
@@ -39,9 +40,11 @@ const mutateemitTestContract = (sha: string): string => `{
 /**
  * A stub compiler: refuses the canary, fails with no located error unless
  * its test is the emitted one (it carries the contract's sha line), and
- * otherwise links a binary that passes only while k is 7.
+ * otherwise links a binary that passes only while k is 7. Each build's
+ * arguments are appended to `log`.
  */
-const MUTATEEMIT_TEST_NISH: string = `#!/bin/sh
+const mutateemitTestNish = (log: string): string => `#!/bin/sh
+echo "$*" >> "${log}"
 root=$(cd "$(dirname "$0")/.." && pwd)
 if grep -q 'canary' "$root/std/m.ts"; then
   echo "std/m.ts:9:1: syntax error: canary" >&2
@@ -58,7 +61,7 @@ chmod +x "$3"
 /** Commits the module, stub compiler, RFC and contract, then changes the module on a work branch. */
 const mutateemitTestReady = (d: string): Result<boolean, string> => {
   prTestWrite(d, "nish/std/m.ts", "").orReturn()
-  prTestWrite(d, "nish/bin/nish", MUTATEEMIT_TEST_NISH).orReturn()
+  prTestWrite(d, "nish/bin/nish", mutateemitTestNish(`${d}.argv`)).orReturn()
   runProcess(["chmod", "+x", "--", `${d}/nish/bin/nish`], "", 10000).orReturn()
   prTestWrite(d, "rfc9999.txt", MUTATEEMIT_TEST_RFC).orReturn()
   prTestWrite(d, "c.json", mutateemitTestContract(sha256Hex(MUTATEEMIT_TEST_RFC))).orReturn()
@@ -149,6 +152,22 @@ const mutateemitTestHex = (t: Suite): Result<boolean, string> => {
   return Ok(true)
 }
 
+/** Every build mutate started was of a test, and none relaxed the no-panic rule. */
+const mutateemitTestArgv = (t: Suite, log: string): void => {
+  const text = readFileSyncOrNull(log) ?? ""
+  const builds: string[] = []
+  for (const l of splitLines(text)) {
+    if (l.length > 0) {
+      builds.push(l)
+    }
+  }
+  t.ok(`mutate started its builds (${builds.length})`, builds.length >= 3)
+  for (const b of builds) {
+    t.ok(`a mutant build keeps the no-panic rule: ${b}`, b.indexOf("--link ") > 0 && b.indexOf("--allow") < 0)
+  }
+  t.ok("its log is removed", runProcess(["rm", "-f", "--", log], "", 10000).isOk())
+}
+
 /** The emitted test kills both mutants of the changed line. */
 export const main = (): i32 => {
   const t = new Suite("spec/pr mutateemit")
@@ -174,6 +193,7 @@ export const main = (): i32 => {
       r.isOk() ? r.value.notes.join(" | ") : r.error,
       "slow vector V2 was not run against the mutants: the emitted test skips it, as spec emit does without --slow",
     )
+    mutateemitTestArgv(t, `${d}.argv`)
   }
   prTestRemove(d)
   const hex = mutateemitTestHex(t)
