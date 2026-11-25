@@ -3,15 +3,13 @@
 vector is written in [Nish](https://github.com/amritk/nish), a static subset
 of TypeScript compiled to a native binary, `dist/vector`. The
 compiler is pinned in `.nish-version` (read by `scripts/fetch-nish.sh`) and
-lives in `.nish/`. The prover, a second nish pinned in
-`.nish-prover-version`, lives in `.nish-prover/` and only checks emitted tests.
-z3 is pinned in `scripts/fetch-z3.sh` and lives in `.z3/`. Before writing Nish,
+lives in `.nish/`; z3 is
+pinned in `scripts/fetch-z3.sh` and lives in `.z3/`. Before writing Nish,
 read `.nish/docs/AI.md` (the language as rules, traps first).
 
 | Command | What it does |
 | --- | --- |
 | `bash scripts/fetch-nish.sh` | install the pinned compiler into `.nish/` |
-| `bash scripts/fetch-nish-prover.sh` | install the prover into `.nish-prover/` |
 | `bash scripts/fetch-z3.sh` | install the pinned z3 into `.z3/` |
 | `npm run build` | compile `src/main.ts` to `dist/vector` |
 | `node tests/run.mjs <filter>` | the tests whose path contains `<filter>` |
@@ -61,13 +59,13 @@ read `.nish/docs/AI.md` (the language as rules, traps first).
 
 ## Definition of done
 
-Before pushing: `npm run build`, `node tests/run.mjs <filter>` for
+Locally, before pushing: `npm run build`, `node tests/run.mjs <filter>` for
 every area the change touches, `npm run lint`, `npm run tested-exports`, and
 `npm run dogfood` when the emitter, a `specs/vector-*` spec or its module changed,
 `npm run doc-caps` when an agent-facing doc changed, and
 `node scripts/gen-reference.mjs --check` when an export's doc comment changed.
 A doc over its cap is
-shortened in place; a cap is never raised or dropped (CI refuses either).
+shortened in place; a cap is never raised or dropped, and CI refuses either.
 **The full gate is CI** (`.github/workflows/ci.yml`, on every push).
 
 **Read a check's exit status, never its piped tail**: `npm run lint | tail`
@@ -102,14 +100,15 @@ edit after extraction is refused.
 `docs/reference/**` and its routes in `scalar.config.json`, `tests/dogfood/**`, `contracts/*.json`
 (extracted from `specs/*.xml`) and `specs/*.xml` and fixture `.xml` (built from
 their `.md` by `scripts/build-spec.sh`). Change the source and rerun the generator.
-`CHANGELOG.md` and every version bump are release-please's, never hand-edited.
+`CHANGELOG.md` and every version bump are release-please's: never edit the
+version or the changelog by hand.
 
 **A change a user sees updates its guide page and `docs/AI.md` in the same PR**:
 a command, a flag, an exit code, an install step, or a message a guide page
 shows.
 
-**Moving a fact moves every pointer to it in the same PR.** Grep the docs,
-`.claude/`, `CLAUDE.md` and source comments for the old location.
+**Moving where a fact lives moves every pointer to it in the same PR.** Grep
+the docs, `.claude/`, `CLAUDE.md` and source comments for the old location.
 
 ## Releasing
 
@@ -125,23 +124,27 @@ that `.github/workflows/release.yml` calls, pinned by commit:
    `x-release-please-start-version` and `x-release-please-end`), and
    `CHANGELOG.md`, from the conventional commits since the last release.
    Nothing else may hold the version: a golden writes it `{{version}}`, and
-   the generated reference leaves out a marked value. Red CI on a release
-   commit means a copy was missed.
+   the generated reference leaves out a marked value. A release commit that
+   leaves CI red on `main` means a copy was missed.
 2. Merging the release PR tags `v<version>`, creates the GitHub release, and
    starts `release.yml` on the tag.
 3. That run packs `@amritk/vector` (the Nish source under `src/`, as
    `npm publish` would), attaches it with `SHA256SUMS` to the release, and
    publishes it to npm. Nothing is built, and no binary ships.
 
-Config is `.github/release-please-config.json` and the version in
-`.github/.release-please-manifest.json`; the release workflow checks both. A version with a hyphen
+Config is `.github/release-please-config.json`, with the current version in
+`.github/.release-please-manifest.json`; the release workflow checks both on
+every pull request that touches the release. A version with a hyphen
 (`1.2.0-rc.1`) is a prerelease, published under npm's `next` dist-tag.
 Attestations and npm provenance exist only while the repository is public.
-Dependabot (`.github/dependabot.yml`) proposes pin updates for releases over 5 days old.
+Dependabot (`.github/dependabot.yml`) proposes updates to the pin once a
+release is 5 days old.
 
-The release PR's `GITHUB_TOKEN` skips CI; close and reopen it.
+The release PR is opened with `GITHUB_TOKEN`, so CI does not run on it;
+close and reopen it to run the checks.
 
-npm publishes by trusted publishing alone; no npm token is stored. The trusted publisher for `@amritk/vector` on
+npm publishes through trusted publishing alone: no npm token is stored
+anywhere. The trusted publisher for `@amritk/vector` on
 npmjs.com names repository `amritk/vector`, workflow file `release.yml` and
 environment `npm`, which is limited to `v*` tags in Settings, Environments.
 
