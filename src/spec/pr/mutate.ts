@@ -109,6 +109,9 @@ const mutateKind = (kinds: i32[], i: i32): i32 => (i >= 0 && i < kinds.length ? 
 
 /** Whether `op` stands at `i` with a space on each side, as the formatter puts a binary operator. */
 const mutateSpaced = (s: string, i: i32, op: string): boolean => {
+  if (i < 1 || i >= s.length - op.length) {
+    return false
+  }
   const end = toI32(toI64(i) + toI64(op.length))
   return mutateAt(s, i - 1) === 32 && s.substring(i, end) === op && mutateAt(s, end) === 32
 }

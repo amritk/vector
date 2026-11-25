@@ -359,9 +359,9 @@ class MutaterunStep {
   }
 }
 
-/** Whether `text[from, to)` is one or more digits; every caller passes 0 <= from and to <= text.length. */
+/** Whether `text[from, to)` is one or more digits. */
 const mutaterunDigits = (text: string, from: i32, to: i32): boolean => {
-  if (to <= from) {
+  if (to <= from || from < 0 || to > text.length) {
     return false
   }
   for (let i = from; i < to; i++) {
