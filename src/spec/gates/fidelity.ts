@@ -60,10 +60,12 @@ import {
   gateF64Printed,
   gateIntLabelCount,
   gateIntLines,
+  gateIntPrinted,
   gateIntRounds,
   gateLines,
   gateQuotePairs,
   gateTextLines,
+  gateTextStarts,
 } from "./text"
 import { GateWordBlock, gateWordBlocks } from "./words"
 
@@ -99,8 +101,14 @@ class GateBound {
   callArgs: boolean
   /** For a paired argument: the lines (of GateLits.lines) its call label is printed on. */
   call: i32[]
-  /** Whether it was refused as printed in another test case's call label (gateLabelArgs), which says why. */
+  /** Whether gateLabelArgs refused it (another test case's call label, or out of the label's order), saying why. */
   other: boolean
+  /**
+   * For an empty value (`num` "") or an integer without a label (`num` its
+   * digits): placed only by the call label its vector's expected value is
+   * printed under (gateLabelArgs), and not by line or round otherwise.
+   */
+  loose: boolean
   /** For a hex value or labelled integer: the section line of each printing that is it. */
   shown: i32[]
   constructor(at: string, label: string | null) {
@@ -113,6 +121,7 @@ class GateBound {
     this.callArgs = false
     this.call = []
     this.other = false
+    this.loose = false
     this.of = 0
     this.has = []
     this.printed = []
@@ -624,7 +633,9 @@ const gateLitCheck = (l: GateLits, lit: Literal, at: string): void => {
     // found only where the section prints one.
     if (l.text.indexOf('""') < 0 && l.text.indexOf("(0 octets)") < 0) {
       gateLitFail(l, at, `the empty value is not printed in ${l.inSection}: it needs "" or "(0 octets)" there`)
+      return
     }
+    gateLooseBound(l, at, "")
     return
   }
   if (bytes) {
@@ -666,7 +677,10 @@ const gateLitCheck = (l: GateLits, lit: Literal, at: string): void => {
   }
   const label = lit.label
   const name = lit.kind === LitKind.Int ? "integer" : "f64"
-  if (label === null) {
+  if (label === null && lit.kind === LitKind.Int) {
+    // gateLabelArgs places it by a call label, or warns as below.
+    gateLooseBound(l, at, lit.text)
+  } else if (label === null) {
     gateNote(
       l,
       `${l.id}.${at}`,
@@ -681,6 +695,14 @@ const gateLitCheck = (l: GateLits, lit: Literal, at: string): void => {
   }
 }
 
+/** An empty value, or an integer without a label (`num`), that only a call label places: GateBound.loose. */
+const gateLooseBound = (l: GateLits, at: string, num: string): void => {
+  const b = new GateBound(at, null)
+  b.loose = true
+  b.num = num
+  l.bounds.push(b)
+}
+
 /** A bound's text, for a message: `args[0] "abc"`. */
 const gateBoundText = (b: GateBound): string => `${b.at} ${jsonStringifyString(b.text)}`
 
@@ -693,16 +715,41 @@ const gateBoundRound = (b: GateBound): string => {
 /** A repeated bound's printings, for a message: `1st or 3rd`. */
 const gateNth = (has: i32[]): string => has.map((r: i32): string => gateOrdinal(r + 1)).join(" or ")
 
-/** Whether an argument's string or integer is printed inside a call label: `"salt"` or `c=1` in `PBKDF2 (P="passwd", S="salt", c=1)`. */
-const gateInLabel = (b: GateBound, label: string): boolean => {
+/**
+ * Where an argument is printed inside a call label, as offsets in the label
+ * normalized: `"salt"`, `c=1`, an empty value's `""` or an unlabelled
+ * integer's whole number (`64` of `dkLen=64`) in
+ * `PBKDF2 (P="passwd", S="salt", c=1, dkLen=64)`; empty when it is not, or
+ * when the label is no call label.
+ */
+const gateLabelStarts = (b: GateBound, label: string): i32[] => {
+  const out: i32[] = []
   if (label.indexOf("(") < 0) {
-    return false
+    return out
   }
+  const s = rfcNormalize(label)
   const name = b.label
   if (b.lines !== null) {
-    return gateTextLines(rfcNormalize(label), b.text).length > 0
+    return gateTextStarts(s, b.text)
   }
-  return name !== null && gateIntRounds(rfcNormalize(label), name, b.num).length > 0
+  if (b.loose && b.num.length === 0) {
+    let p = toI32(s.indexOf('""'))
+    while (p >= 0) {
+      out.push(p)
+      p = toI32(s.indexOf('""', p + 2))
+    }
+    return out
+  }
+  if (b.loose) {
+    const spans = gateFidSpans(s)
+    for (let i = 0; i + 1 < spans.length; i += 2) {
+      if (s.substring(spans[i], spans[i + 1]) === b.num) {
+        out.push(spans[i])
+      }
+    }
+    return out
+  }
+  return name !== null ? gateIntPrinted(s, name, b.num) : out
 }
 
 /**
@@ -734,54 +781,116 @@ const gateBoundPlaces = (b: GateBound): i32[] => {
 /** An argument, for a message: `args[0] "salt"`, `args[2] c=1`. */
 const gateArgText = (b: GateBound): string => {
   const name = b.label
+  if (b.loose) {
+    return b.num.length === 0 ? `${b.at} ""` : `${b.at} ${b.num}`
+  }
   return b.lines !== null ? gateBoundText(b) : `${b.at} ${name !== null ? name : ""}=${b.num}`
 }
 
 /**
  * The strings and integers a vector's expected value prints in its own call
  * label (`PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)`) are one
- * test case with it, so they are paired and not placed by line or round. One
- * printed in another call label of the section, and not in this one, is from
- * another test case and refused.
+ * test case with it, so they are paired and not placed by line or round. They
+ * pair in the order the label prints them: each at its first printing after
+ * the argument paired before it, so `("salt", "passwd")` is refused against
+ * that label, while `P="", S=""` binds two empty values. One printed in
+ * another call label of the section, and not in this one, is from another
+ * test case and refused. An empty value or an unlabelled integer is placed
+ * only by the expected value's call label: when there is one and it does
+ * not print it, it is refused; when there is none, it is not placed.
  */
 const gateLabelArgs = (l: GateLits, args: i32): void => {
   // Every bound past the args is the expected value's.
   if (l.bounds.length <= args) {
+    gateLooseWarn(l, 0)
     return
   }
   const e = l.bounds[l.bounds.length - 1]
   const label = e.label
   if (label === null) {
+    gateLooseWarn(l, 0)
     return
   }
   // Only a hex value is bound to printings; any other names its label.
   const under: string[] = e.held.length === 0 ? [rfcNormalize(label)] : []
+  const calls: string[] = []
   for (const v of e.held) {
     const vl = v.label
     if (vl !== null) {
       under.push(rfcNormalize(vl))
+      if (vl.indexOf("(") >= 0) {
+        calls.push(rfcNormalize(vl))
+      }
+    }
+  }
+  // Why an argument printed in a call label is not paired by it: printed
+  // there only before the argument paired ahead of it.
+  const late: string[] = []
+  for (let a = 0; a < args; a++) {
+    late.push("")
+  }
+  for (const v of e.held) {
+    const vl = v.label
+    if (vl === null) {
+      continue
+    }
+    // Paired only by the label the RFC prints over the value, and placed on
+    // that printing's lines: the contract's label is bound to it ignoring case.
+    let prev = -1
+    let prevAt = ""
+    for (let a = 0; a < args; a++) {
+      const b = l.bounds[a]
+      const at = gateLabelStarts(b, vl)
+      if (at.length === 0) {
+        continue
+      }
+      // A labelled argument's name binds it, wherever the label prints it.
+      const named = b.label !== null
+      const after = named ? -1 : prev
+      const next = at.filter((p: i32): boolean => p > after)
+      if (next.length === 0) {
+        late[a] =
+          `${gateArgText(b)} is printed in the call label "${rfcNormalize(vl)}" in ${l.inSection} only before ${prevAt}, which the contract passes ahead of it: the arguments are not in the order the label prints them`
+        continue
+      }
+      if (!named) {
+        prev = next[0]
+        prevAt = l.bounds[a].at
+      }
+      b.paired = true
+      e.callArgs = true
+      for (const n of gateLabelLines(l, v)) {
+        b.call.push(n)
+      }
     }
   }
   for (let a = 0; a < args; a++) {
     const b = l.bounds[a]
-    // Paired only by the label the RFC prints over the value, and placed on
-    // that printing's lines: the contract's label is bound to it ignoring case.
-    for (const v of e.held) {
-      const vl = v.label
-      if (vl !== null && gateInLabel(b, vl)) {
-        b.paired = true
-        e.callArgs = true
-        for (const n of gateLabelLines(l, v)) {
-          b.call.push(n)
-        }
-      }
-    }
     if (b.paired) {
+      continue
+    }
+    if (late[a].length > 0) {
+      gateNote(l, `${l.id}.${b.at}`, late[a], false)
+      b.other = true
+      continue
+    }
+    if (b.loose) {
+      if (calls.length > 0) {
+        gateNote(
+          l,
+          `${l.id}.${b.at}`,
+          `${gateArgText(b)} is not printed in ${gateQuoted(calls)} that the expected value is printed under in ${l.inSection}, so nothing pairs it with that test case`,
+          false,
+        )
+        b.other = true
+      } else {
+        gateLooseOne(l, b)
+      }
       continue
     }
     for (const v of l.values) {
       const vl = v.label
-      if (vl !== null && gateInLabel(b, vl)) {
+      if (vl !== null && gateLabelStarts(b, vl).length > 0) {
         gateNote(
           l,
           `${l.id}.${b.at}`,
@@ -792,6 +901,28 @@ const gateLabelArgs = (l: GateLits, args: i32): void => {
         break
       }
     }
+  }
+  gateLooseWarn(l, args)
+}
+
+/** The warning for each loose bound from `from` on, which no call label places: gateLooseOne. */
+const gateLooseWarn = (l: GateLits, from: i32): void => {
+  for (let a = from; a < l.bounds.length; a++) {
+    if (l.bounds[a].loose) {
+      gateLooseOne(l, l.bounds[a])
+    }
+  }
+}
+
+/** An unplaced loose bound: an integer is not checked against the RFC (a warning); an empty value was found printed. */
+const gateLooseOne = (l: GateLits, b: GateBound): void => {
+  if (b.num.length > 0) {
+    gateNote(
+      l,
+      `${l.id}.${b.at}`,
+      `not checked against the RFC: the integer ${b.num} has no "label" to find it by`,
+      true,
+    )
   }
 }
 
@@ -1454,6 +1585,20 @@ const gateLabelUnText = (label: string, text: string): string => {
   return out
 }
 
+/** A label with each whole number `num` (an unlabelled integer it pairs, gateFidSpans) cut out: `64` of `dkLen=64` leaves `dkLen=`. */
+const gateLabelUnBare = (label: string, num: string): string => {
+  const spans = gateFidSpans(label)
+  let out = ""
+  let from = 0
+  for (let i = 0; i + 1 < spans.length; i += 2) {
+    if (label.substring(spans[i], spans[i + 1]) === num) {
+      out = `${out}${label.substring(from, spans[i])}`
+      from = spans[i + 1]
+    }
+  }
+  return `${out}${label.substring(from)}`
+}
+
 /** Whether `c` is an ASCII letter or digit: it runs a name or a number on. */
 const gateNameChar = (c: i32): boolean => (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122)
 
@@ -1507,6 +1652,8 @@ const gateCallHead = (l: GateLits, b: GateBound, label: string): string => {
       if (a.paired) {
         out = gateLabelUnText(out, a.text)
       }
+    } else if (a.loose && a.paired && a.num.length > 0) {
+      out = gateLabelUnBare(out, a.num)
     } else if ((a.paired || a.other) && name !== null) {
       // An integer the vector binds and a call label prints (its own, or
       // another case's) is an argument wherever that name is printed,

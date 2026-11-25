@@ -719,7 +719,13 @@ of matching bytes:
   string printed only in prose, or one of several `n=` values printed outside
   the label, is refused. One printed in another
   call label of the section instead (`"NaCl"`, `c=80000` beside case 1's
-  value) is refused: "they are different test cases". Call labels that
+  value) is refused: "they are different test cases". Arguments without a
+  name (a string, an empty `""`, a bare integer such as `64`) pair in the
+  order the label prints them: `"salt", "passwd"` against
+  `(P="passwd", S="salt")` is refused, "the arguments are not in the order
+  the label prints them", and one the label does not print is refused. An
+  integer with its `label` pairs by that name wherever the label prints it,
+  and a bare integer is cut from the label before its variant is read. Call labels that
   differ only in the arguments the vector binds (its strings, and the
   number after each of its integer arguments' names that a call label
   prints) are one variant. Any
