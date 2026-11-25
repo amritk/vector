@@ -14,21 +14,26 @@ import { wrappingMul } from "nish:unsafe";
 
 /** The bytes a lowercase hex string spells. */
 const unhex = (hex: string): u8[] => {
-  const n: i32 = toI32(hex.length) >> 1;
-  const out: u8[] = new Array<u8>(n);
-  for (let i: i32 = 0; i < n; i += 1) {
-    out[i] = toU8(nibble(hex.charCodeAt(2 * i)) * 16 + nibble(hex.charCodeAt(2 * i + 1)));
+  const out: u8[] = [];
+  const n: i32 = toI32(hex.length);
+  for (let i: i32 = 0; i < n - 1; i += 2) {
+    if (i + 1 < hex.length) {
+      out.push(toU8((nibble(hex.charCodeAt(i)) << 4) | nibble(hex.charCodeAt(i + 1))));
+    }
   }
   return out;
 };
 
-/** One hex digit's value. */
+/** One lowercase hex digit's value (0 for any other character). */
 const nibble = (c: number): i32 => {
   const v: i32 = toI32(c);
-  if (v >= 97) {
+  if (v >= 97 && v <= 102) {
     return v - 87;
   }
-  return v - 48;
+  if (v >= 48 && v <= 57) {
+    return v - 48;
+  }
+  return 0;
 };
 
 const concatBytes = (a: u8[], b: u8[]): u8[] => {
@@ -47,26 +52,30 @@ const strEq = (a: string | null, b: string | null): boolean => {
   if (a === null || b === null) {
     return a === null && b === null;
   }
-  const n: i32 = toI32(a.length);
-  if (n !== toI32(b.length)) {
+  const x: string = a;
+  const y: string = b;
+  if (x.length !== y.length) {
     return false;
   }
-  for (let i: i32 = 0; i < n; i += 1) {
-    if (a.charCodeAt(i) !== b.charCodeAt(i)) {
+  for (let i: i32 = 0; i < toI32(x.length); i += 1) {
+    if (i < y.length && x.charCodeAt(i) !== y.charCodeAt(i)) {
       return false;
     }
   }
   return true;
 };
 
-/** `s` with every byte in [lo, hi] moved by `delta` (ASCII case mapping). */
-const shiftCase = (s: string, lo: i32, hi: i32, delta: i32): string => {
+/** `s` with every ASCII letter in upper case, or in lower case when not `upper`. */
+const shiftCase = (s: string, upper: boolean): string => {
   const parts: string[] = [];
   const n: i32 = toI32(s.length);
   for (let i: i32 = 0; i < n; i += 1) {
     let c: i32 = toI32(s.charCodeAt(i));
-    if (c >= lo && c <= hi) {
-      c = c + delta;
+    if (upper && c >= 97 && c <= 122) {
+      c = c - 32;
+    }
+    if (!upper && c >= 65 && c <= 90) {
+      c = c + 32;
     }
     parts.push(String.fromCharCode(c));
   }
@@ -167,8 +176,9 @@ const clause_P_HEX_LEN = (t: Suite): boolean => {
     "5f5aed",
     "38ef05382901359b566e7cd4b5868d800bae3f621a66a88d066b05de4583c85beb89a61e320605511d8340c3d3e174daa1049d",
   ];
-  for (let i: i32 = 0; i < 29; i += 1) {
-    const v_b: u8[] = unhex(table_b[i]);
+  for (let i: i32 = 0; i < 29 && i < table_b.length; i += 1) {
+    const r_b: string = table_b[i];
+    const v_b: u8[] = unhex(r_b);
     const holds: boolean = (toI32(toHex(v_b).length) === wrappingMul(2, toI32(v_b.length)));
     if (!holds) {
       return t.fail("[P-HEX-LEN] two characters per byte (R-HEX-LEN)", `sample ${i + 1} of 29 (len(b) = ${toI32(v_b.length)}): the assertion is false`);
@@ -216,10 +226,11 @@ const clause_P_HEX_LOWER = (t: Suite): boolean => {
     "f07c111e",
     "4c3ea1b67e484a20ed2762325222139adef12a948ce65174ba5c8a644108137834f4785c11e6e2a1e9c85f8bdfa1",
   ];
-  for (let i: i32 = 0; i < 29; i += 1) {
-    const v_b: u8[] = unhex(table_b[i]);
+  for (let i: i32 = 0; i < 29 && i < table_b.length; i += 1) {
+    const r_b: string = table_b[i];
+    const v_b: u8[] = unhex(r_b);
     const v_e: string = toHex(v_b);
-    const holds: boolean = strEq(v_e, shiftCase(v_e, 65, 90, 32));
+    const holds: boolean = strEq(v_e, shiftCase(v_e, false));
     if (!holds) {
       return t.fail("[P-HEX-LOWER] the encoding has no uppercase digit (R-HEX-DIGITS)", `sample ${i + 1} of 29 (len(b) = ${toI32(v_b.length)}): the assertion is false`);
     }
@@ -308,9 +319,11 @@ const clause_P_HEX_CONCAT = (t: Suite): boolean => {
     "b3c03fb7b5e26d3d97b2b5cabfa5dad52b33860c10c27055b44a80",
     "79",
   ];
-  for (let i: i32 = 0; i < 33; i += 1) {
-    const v_a: u8[] = unhex(table_a[i]);
-    const v_b: u8[] = unhex(table_b[i]);
+  for (let i: i32 = 0; i < 33 && i < table_a.length && i < table_b.length; i += 1) {
+    const r_a: string = table_a[i];
+    const r_b: string = table_b[i];
+    const v_a: u8[] = unhex(r_a);
+    const v_b: u8[] = unhex(r_b);
     const holds: boolean = strEq(toHex(concatBytes(v_a, v_b)), `${toHex(v_a)}${toHex(v_b)}`);
     if (!holds) {
       return t.fail("[P-HEX-CONCAT] each byte is written on its own, in order (R-HEX-LEN, R-HEX-DIGITS)", `sample ${i + 1} of 33 (len(a) = ${toI32(v_a.length)}, len(b) = ${toI32(v_b.length)}): the assertion is false`);
@@ -358,10 +371,11 @@ const clause_P_SHA256_LEN = (t: Suite): boolean => {
     "MQF<B9*QAWv|4:)",
     "^Ac*^",
   ];
-  for (let i: i32 = 0; i < 29; i += 1) {
-    const v_t: string = table_t[i];
+  for (let i: i32 = 0; i < 29 && i < table_t.length; i += 1) {
+    const r_t: string = table_t[i];
+    const v_t: string = r_t;
     const v_d: string = sha256Hex(v_t);
-    const holds: boolean = ((toI32(v_d.length) === 64) && strEq(v_d, shiftCase(v_d, 65, 90, 32)));
+    const holds: boolean = ((toI32(v_d.length) === 64) && strEq(v_d, shiftCase(v_d, false)));
     if (!holds) {
       return t.fail("[P-SHA256-LEN] a digest is 64 lowercase hex digits (R-SHA256)", `sample ${i + 1} of 29 (len(t) = ${toI32(v_t.length)}): the assertion is false`);
     }
@@ -383,7 +397,8 @@ export const main = (): i32 => {
   ran = `${ran}${clause_P_HEX_CONCAT(t) ? "1" : "0"}`;
   ran = `${ran}${clause_P_SHA256_LEN(t) ? "1" : "0"}`;
   const code: i32 = t.done();
-  const nonce: string = toI32(process.argv.length) > 1 ? process.argv[1] : "-";
+  const argv: string[] = process.argv;
+  const nonce: string = 1 < argv.length ? argv[1] : "-";
   console.log(`vector-done ${nonce} ${ran}`);
   return code;
 };

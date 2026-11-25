@@ -345,7 +345,9 @@ const emitOutBody = (
     return
   }
   body.push(`  const o_cap: i32 = of.cap("${sig.name}", ${capacityNish(cap.value, "a_")});`)
-  body.push("  if (o_cap < 0) {")
+  // of.cap returns -1 past 2^20; the bound is repeated here, where the
+  // checker reads it, so that o_cap + 2 * at is proven to fit.
+  body.push("  if (o_cap < 0 || o_cap > 1048576) {")
   for (const w of wipes) {
     body.push(`  ${w}`)
   }

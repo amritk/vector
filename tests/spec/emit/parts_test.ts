@@ -29,11 +29,19 @@ export const main = (): i32 => {
   t.eqStr("an i32 is its literal", emitIntLit("-5", "i32"), "(-5)")
   t.eqStr("an i64 within i32 converts", emitIntLit("7", "i64"), "toI64(7)")
   t.eqStr("an i64 within 2^53 is typed by its sum", emitIntLit("4294967296", "i64"), "(toI64(0) + 4294967296)")
-  t.eqStr(
-    "i64's minimum is built from exact halves",
-    emitIntLit("-9223372036854775808", "i64"),
-    "(toI64(-2147483648) * 4294967296 + 0)",
-  )
+  // Past 2^53 an i64 is its two's complement bits, built in u64 (which wraps)
+  // and read back with toI64: no signed step is left to overflow.
+  const wide: string[][] = [
+    ["i64's minimum", "-9223372036854775808", "toI64(((toU64(0) + 2147483648) * 4294967296 + 0))"],
+    ["i64's maximum", "9223372036854775807", "toI64((toU64(2147483647) * 4294967296 + 4294967295))"],
+    ["a negative with a low part", "-9223372036854775795", "toI64(((toU64(0) + 2147483648) * 4294967296 + 13))"],
+    ["one past -2^53", "-9007199254740993", "toI64(((toU64(0) + 4292870143) * 4294967296 + 4294967295))"],
+    ["one past 2^53", "9007199254740993", "toI64((toU64(2097152) * 4294967296 + 1))"],
+    ["-2^53 is typed by its sum", "-9007199254740992", "(toI64(0) + (-9007199254740992))"],
+  ]
+  for (const w of wide) {
+    t.eqStr(w[0], emitIntLit(w[1], "i64"), w[2])
+  }
   t.eqStr(
     "u64's maximum",
     emitIntLit("18446744073709551615", "u64"),
@@ -42,7 +50,7 @@ export const main = (): i32 => {
   t.ok("1.5 is finite", emitF64IsFinite("1.5", null))
   t.ok("an infinity is not", !emitF64IsFinite("", "7ff0000000000000"))
   t.eqStr("an f64 through toF64", emitF64Lit("1", null), "toF64(1.0)")
-  t.eqStr("-0 from its bits", emitF64Lit("-0", null), "bitsToF64((toI64(-2147483648) * 4294967296 + 0))")
+  t.eqStr("-0 from its bits", emitF64Lit("-0", null), "bitsToF64(toI64(((toU64(0) + 2147483648) * 4294967296 + 0)))")
   t.eqStr("a quoted string", emitQuote('a"b\\c\n\u0001'), '"a\\"b\\\\c\\n\\u0001"')
   t.eqStr("a comment cannot close", emitCommentText("x*/y\nz"), "x* /y z")
   const rep = new Literal(LitKind.Hex, "aB")

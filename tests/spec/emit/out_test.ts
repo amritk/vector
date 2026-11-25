@@ -244,7 +244,7 @@ export const main = (): i32 => {
   t.contains(
     "a secret is wiped on the early return too, at the if's indent",
     both,
-    "  if (o_cap < 0) {\n    wipe(s_k);\n    return fillBytes(0, 0);\n  }\n  const o_out",
+    "  if (o_cap < 0 || o_cap > 1048576) {\n    wipe(s_k);\n    return fillBytes(0, 0);\n  }\n  const o_out",
   )
   t.contains(
     "the wrapper gives both reasons",
@@ -310,7 +310,7 @@ export const main = (): i32 => {
   t.contains(
     "the capacity is f64 until it is checked",
     bigProgram,
-    'const o_cap: i32 = of.cap("outBig", toF64(a_d.length) * toF64(a_d.length) * toF64(16));\n  if (o_cap < 0) {\n    return fillBytes(0, 0);\n  }',
+    'const o_cap: i32 = of.cap("outBig", toF64(a_d.length) * toF64(a_d.length) * toF64(16));\n  if (o_cap < 0 || o_cap > 1048576) {\n    return fillBytes(0, 0);\n  }',
   )
   t.eqStr(
     "a capacity not at most 2^20, NaN included, fails its clause, naming the function",
