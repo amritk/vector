@@ -176,7 +176,7 @@ stages:
         content: names.ts calls textAsciiLower and textAsciiUpper instead of the std functions
         status: pending
       - id: std-left
-        content: the baseline keeps only the Cli.flag, Cli.argument, Cli.command, Cli.group, Cli.repeatable and ParseResult accessor sites, plus sha256 and JsonDocument.stringify, each annotated with the upstream issue
+        content: the baseline keeps only the Cli.flag, Cli.argument, Cli.command, Cli.group, Cli.repeatable and ParseResult accessor sites, plus sha256 and JsonDocument.stringify, the Cli and ParseResult sites annotated for nish-bump and sha256 and JsonDocument.stringify annotated with amritk/nish#2322
         status: pending
   - id: nish-bump
     title: Move .nish-version to the latest nish release
@@ -184,13 +184,13 @@ stages:
     verification: bash scripts/fetch-nish.sh && npm run build && npm test && npm run lint && npm run tested-exports && npm run dogfood && npm run doc-caps && node scripts/gen-reference.mjs --check && npm run panics && node --test scripts/panics.test.mjs
     todos:
       - id: pin
-        content: .nish-version and the package.json nish engine move to the release that fixes the upstream issue, and the installation guide line names it
+        content: .nish-version and the package.json nish engine move to the release that fixes amritk/nish#2322, and the installation guide line names it
         status: pending
       - id: cli-try
-        content: the cli declarations switch to tryFlag, tryArgument, tryCommand, tryGroup and tryRepeatable, passing a declaration error up as Err
+        content: the cli declarations switch to tryFlag, tryArgument, tryCommand, tryGroup and tryRepeatable, passing a declaration error up as Err, and the ParseResult accessors switch to readFlag, readValue, readValues, readSource, readPositional and readPositionals on the returned CliFlag and CliArgument handles
         status: pending
       - id: std-fixes
-        content: the ParseResult accessors, sha256 and JsonDocument.stringify sites clear on the new release, and the last baseline file is deleted
+        content: the sha256 and JsonDocument.stringify sites clear on the release that fixes amritk/nish#2322, and the last baseline file is deleted
         status: pending
       - id: retire-next
         content: panics.mjs runs .nish/bin/nish, and .nish-next-version, fetch-nish-next.sh and the .nish-next CI cache entry are removed
@@ -243,9 +243,9 @@ By this rule there are 2041 sites at base. The table gives each stage's count.
 The std calls fall into four groups:
 
 - **`Cli.flag/argument/command/group/repeatable`** (68 sites) panic on a bad declaration. 0.47 adds `tryFlag`, `tryArgument`, `tryCommand`, `tryGroup` and `tryRepeatable`, which return a `Result`. 0.39 lacks them, so the switch waits for the bump.
-- **`ParseResult.flag/value/values/positional/positionals`** (45 sites) panic on a bad handle, and std has no non-panicking form. These wait on an issue filed on amritk/nish.
+- **`ParseResult.flag/value/values/positional/positionals`** (45 sites) panic on a bad handle. 0.47 adds `readFlag`, `readValue`, `readValues`, `readSource`, `readPositional` and `readPositionals`, which take the `CliFlag` and `CliArgument` handles the `try*` declarations return and do not panic. 0.39 lacks them, so this switch also waits for the bump. No upstream issue is needed.
 - **`asciiLower` and `asciiUpper`** (25 sites) slice at std/text.ts:886. vector replaces them with its own panic-free helpers.
-- **`sha256` and `JsonDocument.stringify`** (2 sites each) are std defects. Reimplementing crypto or JSON in vector is out of scope, so they wait on the same upstream issue.
+- **`sha256` and `JsonDocument.stringify`** (2 sites each) are std defects. Reimplementing crypto or JSON in vector is out of scope, so they wait on amritk/nish#2322. That issue also notes `asciiLower` and `asciiUpper`, which #2309 owns upstream; vector replaces them itself and does not wait.
 
 The remaining std-call sites are instantiations of `map`, `some`, `filter`, `every`, `everyIndexed` and `sortWith`. They take a vector closure or comparator, and each clears when the stage that owns that closure fixes it.
 
@@ -284,7 +284,7 @@ Because each stage owns its own baseline file, concurrent stages never touch the
 
 1. panic-gate merges first, and every other stage starts from it.
 2. spec-source and spec-extract wait for fn-ref, because fn-ref edits `source/load.ts`, `source/path.ts` and `extract.ts`.
-3. nish-bump comes last. It waits on every stage and on an amritk/nish release that fixes the upstream issue.
+3. nish-bump comes last. It waits on every stage and on an amritk/nish release that fixes amritk/nish#2322.
 
 ## Stage: panic-gate
 
@@ -367,7 +367,7 @@ Tests are not expected to change. When a restructure needs a new test, its file 
 
 **Build.** Guard every own site. `lang/names.ts` switches to the text helpers.
 
-The baseline keeps only these sites: `Cli.*` declarations, `ParseResult` accessors, `sha256` and `JsonDocument.stringify`. Each is annotated in a `"waiting"` key with the upstream issue number. The stage does not work around them.
+The baseline keeps only these sites: `Cli.*` declarations, `ParseResult` accessors, `sha256` and `JsonDocument.stringify`. Each is annotated in a `"waiting"` key: `nish-bump` for the Cli and ParseResult sites, and `amritk/nish#2322` for sha256 and stringify. The stage does not work around them.
 
 **Verification**: the stage's verification line in the frontmatter, plus the same no-change check on the goldens and dogfood tests.
 
@@ -385,10 +385,10 @@ The baseline keeps only these sites: `Cli.*` declarations, `ParseResult` accesso
 
 This stage is sensitive and goes to a human for the merge.
 
-**Build.** The stage waits on every other stage and on an amritk/nish release that fixes the upstream issue.
+**Build.** The stage waits on every other stage and on an amritk/nish release that fixes amritk/nish#2322.
 
 1. Set `.nish-version` and the `package.json` nish engine to that release, and drop 0.39.0. THIRD_PARTY_NOTICES.md keeps its x25519 fixture provenance (nish v0.39.0), because that is a historical fact, not a pin.
-2. Switch the cli declarations to the `try*` forms.
+2. Switch the cli declarations to the `try*` forms, and the ParseResult accessors to the `read*` forms.
 3. Point `panics.mjs` at `.nish/bin/nish`, and delete the last baseline file.
 4. Fix whatever else the release changed.
 
