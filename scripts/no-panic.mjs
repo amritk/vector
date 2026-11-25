@@ -50,10 +50,8 @@ const NO_EXPORT = "NL2376";
 export const parseDiagnostics = (text) => {
   const out = [];
   for (const line of text.split("\n")) {
-    const t = line.trim();
-    if (!t.startsWith("{")) continue;
     try {
-      const d = JSON.parse(t);
+      const d = JSON.parse(line);
       if (d !== null && typeof d === "object" && typeof d.code === "string")
         out.push(d);
     } catch {
