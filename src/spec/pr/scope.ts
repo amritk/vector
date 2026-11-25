@@ -65,11 +65,11 @@ export class ScopeModule {
 
 /** The text of token `i` when it is an identifier before `to`, else "". */
 const scopeIdent = (toks: LexToken[], i: i32, to: i32): string =>
-  i < to && toks[i].kind === LEX_IDENT ? toks[i].text : ""
+  i >= 0 && i < to && i < toks.length && toks[i].kind === LEX_IDENT ? toks[i].text : ""
 
 /** Whether token `i`, before `to`, is the punctuation `p`. */
 const scopePunct = (toks: LexToken[], i: i32, to: i32, p: string): boolean =>
-  i < to && toks[i].kind === LEX_PUNCT && toks[i].text === p
+  i >= 0 && i < to && i < toks.length && toks[i].kind === LEX_PUNCT && toks[i].text === p
 
 /**
  * The names a `const`, `let` or `var` declares from token `i`: the first
@@ -85,18 +85,23 @@ const scopeDeclarators = (toks: LexToken[], i: i32, to: i32): string[] => {
     return names
   }
   names.push(first)
-  for (let k = i + 1; k < to; k++) {
+  // Token `i` is the first name, not a comma, so starting there skips nothing.
+  for (let k = i; k >= 0 && k < to && k < toks.length; k++) {
     if (toks[k].depth === 0 && scopePunct(toks, k, to, ",")) {
-      const name = scopeIdent(toks, k + 1, to)
-      const after = k + 2
+      const next = k + 1
+      const name = scopeIdent(toks, next, to)
+      // A name means `next` is a token, so `next + 1` cannot overflow.
+      if (name === "" || next >= toks.length) {
+        continue
+      }
+      const after = next + 1
       if (
-        name !== "" &&
-        (after >= to ||
-          scopePunct(toks, after, to, ":") ||
-          scopePunct(toks, after, to, "=") ||
-          scopePunct(toks, after, to, "!") ||
-          scopePunct(toks, after, to, ",") ||
-          scopePunct(toks, after, to, ";"))
+        after >= to ||
+        scopePunct(toks, after, to, ":") ||
+        scopePunct(toks, after, to, "=") ||
+        scopePunct(toks, after, to, "!") ||
+        scopePunct(toks, after, to, ",") ||
+        scopePunct(toks, after, to, ";")
       ) {
         names.push(name)
       }
@@ -112,6 +117,8 @@ const scopeDeclarators = (toks: LexToken[], i: i32, to: i32): string[] => {
 const scopeNames = (toks: LexToken[], from: i32, to: i32): string[] => {
   let i = from
   while (
+    i >= 0 &&
+    i < toks.length &&
     (scopeIdent(toks, i, to) === "declare" ||
       scopeIdent(toks, i, to) === "abstract" ||
       scopeIdent(toks, i, to) === "async") &&
@@ -120,36 +127,42 @@ const scopeNames = (toks: LexToken[], from: i32, to: i32): string[] => {
     i = i + 1
   }
   let k = scopeIdent(toks, i, to)
-  if (k === "const" && scopeIdent(toks, i + 1, to) === "enum") {
-    i = i + 1
+  // A keyword means token `i` exists; "" names nothing, as no branch below matches it.
+  if (k === "" || i < 0 || i >= toks.length) {
+    return []
+  }
+  // The token after the keyword; a token test past `toks` answers no, as scopeIdent does.
+  let at = i + 1
+  if (k === "const" && at < toks.length && scopeIdent(toks, at, to) === "enum") {
+    at = at + 1
     k = "enum"
   }
   if (k === "const" || k === "let" || k === "var") {
-    return scopeDeclarators(toks, i + 1, to)
+    return scopeDeclarators(toks, at, to)
   }
   if (k === "function") {
-    i = i + 1
-    if (scopePunct(toks, i, to, "*")) {
-      i = i + 1
+    if (at < toks.length && scopePunct(toks, at, to, "*")) {
+      at = at + 1
     }
-  } else if (["class", "enum", "interface", "type", "namespace", "module"].indexOf(k) >= 0) {
-    i = i + 1
-  } else {
+  } else if (["class", "enum", "interface", "type", "namespace", "module"].indexOf(k) < 0) {
     return []
   }
-  const name = scopeIdent(toks, i, to)
+  const name = scopeIdent(toks, at, to)
   return name === "" ? [] : [name]
 }
 
-/** The last line a token covers: its own, plus the line breaks inside it. */
-const scopeLastLine = (t: LexToken): i32 => {
+/** The last line a token covers: its own, plus the line breaks inside it; Err past the largest line. */
+const scopeLastLine = (t: LexToken): Result<i32, string> => {
   let line = t.line
   for (let c = 0; c < t.text.length; c++) {
     if (t.text.charCodeAt(c) === 10) {
+      if (line >= 2147483647) {
+        return Err(`line ${t.line} starts a token that ends past line 2147483647`)
+      }
       line++
     }
   }
-  return line
+  return Ok(line)
 }
 
 /**
@@ -160,27 +173,38 @@ const scopeLastLine = (t: LexToken): i32 => {
  */
 const scopeSplit = (toks: LexToken[], spans: LexSpan[], out: ScopeDecl[]): string => {
   for (const span of spans) {
-    if (span.to <= span.from) {
+    const from = span.from
+    const to = span.to
+    if (to <= from) {
       continue
     }
-    const head = scopeIdent(toks, span.from, span.to)
+    if (from < 0 || from >= toks.length || to < 1 || to > toks.length) {
+      return `a statement spans tokens ${from} to ${to} of ${toks.length}`
+    }
+    const firstTok = toks[from]
+    const lastTok = toks[to - 1]
+    const head = scopeIdent(toks, from, to)
     const exported = head === "export"
-    const at = exported ? span.from + 1 : span.from
-    if (head === "import" || (exported && (scopePunct(toks, at, span.to, "{") || scopePunct(toks, at, span.to, "*")))) {
+    const at = exported ? from + 1 : from
+    if (head === "import" || (exported && (scopePunct(toks, at, to, "{") || scopePunct(toks, at, to, "*")))) {
       continue
     }
-    const first = toks[span.from].line
-    const last = scopeLastLine(toks[span.to - 1])
+    const first = firstTok.line
+    const lastLine = scopeLastLine(lastTok)
+    if (lastLine.isErr()) {
+      return lastLine.error
+    }
+    const last = lastLine.value
     // Nish refuses `export default`, so `export default function f` naming only `default` loses nothing.
-    if (exported && scopeIdent(toks, at, span.to) === "default") {
-      out.push(new ScopeDecl(["default"], first, last, span.from, span.to))
+    if (exported && scopeIdent(toks, at, to) === "default") {
+      out.push(new ScopeDecl(["default"], first, last, from, to))
       continue
     }
-    const names = scopeNames(toks, at, span.to)
+    const names = scopeNames(toks, at, to)
     if (names.length === 0 && exported) {
       return `line ${first} exports a declaration the scanner cannot name`
     }
-    out.push(new ScopeDecl(names, first, last, span.from, span.to))
+    out.push(new ScopeDecl(names, first, last, from, to))
   }
   return ""
 }
@@ -205,7 +229,7 @@ const scopeVisit = (m: ScopeModule, toks: LexToken[], name: string, seen: Set<st
       continue
     }
     d.reached = true
-    for (let i = d.from; i < d.to; i++) {
+    for (let i = d.from; i >= 0 && i < d.to && i < toks.length; i++) {
       const t = toks[i]
       const member = i > d.from && (scopePunct(toks, i - 1, d.to, ".") || scopePunct(toks, i - 1, d.to, "?."))
       if (t.kind === LEX_IDENT && !member && !seen.has(t.text)) {
@@ -255,10 +279,11 @@ export const scopeReach = (text: string, roots: string[]): ScopeModule => {
   for (const d of decls) {
     if (d.names.length === 0) {
       d.reached = true
-      for (let i = d.from; i < d.to; i++) {
-        if (toks[i].kind === LEX_IDENT && !seen.has(toks[i].text)) {
-          seen.add(toks[i].text)
-          queue.push(toks[i].text)
+      for (let i = d.from; i >= 0 && i < d.to && i < toks.length; i++) {
+        const t = toks[i]
+        if (t.kind === LEX_IDENT && !seen.has(t.text)) {
+          seen.add(t.text)
+          queue.push(t.text)
         }
       }
     }

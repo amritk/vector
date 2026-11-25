@@ -94,8 +94,10 @@ class MutaterunSlot {
   building: boolean
   /** The index of the mutant in the slot, or -1. */
   mutant: i32 = -1
-  /** When the child must have exited, from monotonicNanos. */
-  deadline: i64 = 0
+  /** When the child started, from monotonicNanos. */
+  started: i64 = 0
+  /** How many nanoseconds the child may run. */
+  span: i64 = 0
 
   /**
    * Makes a slot.
@@ -237,8 +239,24 @@ const mutaterunBaseline = (run: MutateRun, dir: string, limitMs: i32): Result<Mu
   if (test.status !== 0) {
     return Ok(new MutaterunBaseline(0, `it exits ${test.status}: ${mutaterunLogTail(dir)}`))
   }
-  return Ok(new MutaterunBaseline((monotonicNanos() - start) / toI64(1000000), ""))
+  const now = monotonicNanos()
+  if (start < 0 || now < start) {
+    return Err(`the monotonic clock read ${start} ns and then ${now} ns`)
+  }
+  return Ok(new MutaterunBaseline((now - start) / toI64(1000000), ""))
 }
+
+/** Writes `text` to `path`, or `Err` naming the errno. */
+const mutaterunWrite = (path: string, text: string): Result<boolean, string> => {
+  const n = writeFileSyncMode(path, text, 0o644)
+  if (n < 0) {
+    return Err(`cannot write ${path} (errno ${mutaterunErrno(n)})`)
+  }
+  return Ok(true)
+}
+
+/** A negative errno's number, without the sign; `${-n}` would overflow at the least i32. */
+const mutaterunErrno = (n: i32): string => `${n}`.substring(1)
 
 /** The line the canary build appends to the module: no module can hold it. */
 const MUTATERUN_CANARY: string = "\n)vector mutate canary(\n"
@@ -253,10 +271,10 @@ const MUTATERUN_CANARY: string = "\n)vector mutate canary(\n"
  */
 const mutaterunCanary = (run: MutateRun, dir: string, text: string, limitMs: i32): Result<boolean, string> => {
   const module = joinPath(dir, run.file)
-  writeFileSync(module, `${text}${MUTATERUN_CANARY}`)
+  mutaterunWrite(module, `${text}${MUTATERUN_CANARY}`).orReturn()
   unlinkSync(joinPath(dir, "mutant.bin"))
   const build = runProcess(mutaterunBuildArgv(run, dir), "", limitMs)
-  writeFileSync(module, text)
+  mutaterunWrite(module, text).orReturn()
   const b = build.orReturn()
   if (b.timedOut) {
     return Err(`the canary build (the module made unparseable) ran past ${limitMs} ms: ${mutaterunLogTail(dir)}`)
@@ -292,11 +310,16 @@ const mutaterunStart = (
   }
   const pid = spawn(argv)
   if (pid < 0) {
-    return Err(`cannot start ${argv[0]} (errno ${-pid})`)
+    return Err(`cannot start ${argv.length > 0 ? argv[0] : "an empty argv"} (errno ${mutaterunErrno(pid)})`)
+  }
+  const now = monotonicNanos()
+  if (now < 0 || limitMs < 0) {
+    return Err(`cannot time a step from ${now} ns for ${limitMs} ms`)
   }
   slot.pid = pid
   slot.building = building
-  slot.deadline = monotonicNanos() + toI64(limitMs) * toI64(1000000)
+  slot.started = now
+  slot.span = toI64(limitMs) * toI64(1000000)
   return Ok(true)
 }
 
@@ -311,7 +334,11 @@ const mutaterunKill = (pid: i32): void => {
 
 /** Settles a mutant and frees its slot. */
 const mutaterunSettle = (slot: MutaterunSlot, mutants: MutateMutant[], outcome: i32): void => {
-  mutants[slot.mutant].outcome = outcome
+  const m = slot.mutant
+  // A slot holds a mutant's index; one past the list leaves that mutant pending, which the report names.
+  if (m >= 0 && m < mutants.length) {
+    mutants[m].outcome = outcome
+  }
   slot.pid = 0
   slot.mutant = -1
 }
@@ -337,10 +364,10 @@ class MutaterunStep {
 
 /** Whether `text[from, to)` is one or more digits. */
 const mutaterunDigits = (text: string, from: i32, to: i32): boolean => {
-  if (to <= from) {
+  if (to <= from || from < 0 || to > text.length) {
     return false
   }
-  for (let i = from; i < to; i++) {
+  for (let i = from; i >= 0 && i < to && i < text.length; i++) {
     const c = text.charCodeAt(i)
     if (c < 0x30 || c > 0x39) {
       return false
@@ -369,10 +396,18 @@ const mutaterunWord = (text: string): boolean => {
  */
 const mutaterunDiagnosticPath = (line: string): string => {
   let at = line.indexOf(":")
-  while (at > 0) {
+  while (at > 0 && at < line.length) {
     const a = line.indexOf(":", at + 1)
-    const b = a < 0 ? -1 : line.indexOf(": ", a + 1)
-    if (a > 0 && b > 0 && mutaterunDigits(line, at + 1, a) && mutaterunDigits(line, a + 1, b)) {
+    const b = a < 0 || a >= line.length ? -1 : line.indexOf(": ", a + 1)
+    // `": "` found at `b` leaves two characters there, so `b + 2` is at most the length.
+    if (
+      a > 0 &&
+      a < line.length &&
+      b > 0 &&
+      b < line.length - 1 &&
+      mutaterunDigits(line, at + 1, a) &&
+      mutaterunDigits(line, a + 1, b)
+    ) {
       const rest = line.substring(b + 2)
       const e = rest.indexOf("error: ")
       const before = e < 0 ? "" : rest.substring(0, e)
@@ -392,7 +427,7 @@ const mutaterunPlain = (text: string): string => {
   const out: string[] = []
   let from = 0
   let i = 0
-  while (i < text.length) {
+  while (i >= 0 && i < text.length) {
     if (text.charCodeAt(i) !== 0x1b) {
       i = i + 1
       continue
@@ -428,7 +463,7 @@ const mutaterunUndot = (path: string): string => {
 const mutaterunTally = (line: string): boolean => {
   const rest = line.startsWith("...and ") ? line.substring(7) : line
   const sp = rest.indexOf(" ")
-  if (sp <= 0 || !mutaterunDigits(rest, 0, sp)) {
+  if (sp <= 0 || sp >= rest.length || !mutaterunDigits(rest, 0, sp)) {
     return false
   }
   const tail = line.startsWith("...and ") ? rest.substring(sp + 1) : `more ${rest.substring(sp + 1)}`
@@ -516,19 +551,22 @@ const mutaterunLoop = (
 ): Result<boolean, string> => {
   const loop = pollCreate()
   if (loop < 0) {
-    return Err(`cannot make a poll loop (errno ${-loop})`)
+    return Err(`cannot make a poll loop (errno ${mutaterunErrno(loop)})`)
   }
   const ready: i32[] = [0, 0]
   let next = 0
-  let busy = 0
+  // A count of running steps: each start adds one and each settle takes one, so it never wraps.
+  let busy: u32 = 0
   let failure = ""
   while (failure.length === 0 && (next < mutants.length || busy > 0)) {
     for (const slot of slots) {
       if (slot.pid === 0 && next < mutants.length && failure.length === 0) {
-        writeFileSync(joinPath(slot.dir, run.file), mutateApply(text, mutants[next]))
+        const written = mutaterunWrite(joinPath(slot.dir, run.file), mutateApply(text, mutants[next]))
         slot.mutant = toI32(next)
         next++
-        const started = mutaterunStart(slot, mutaterunBuildArgv(run, slot.dir), true, limitMs)
+        const started = written.isErr()
+          ? written
+          : mutaterunStart(slot, mutaterunBuildArgv(run, slot.dir), true, limitMs)
         if (started.isErr()) {
           failure = started.error
         } else {
@@ -539,11 +577,19 @@ const mutaterunLoop = (
     let reaped = true
     while (reaped) {
       const w = waitPid(-1, 1)
-      reaped = w[0] > 0
+      if (w.length < 2) {
+        failure = `waitPid answered ${w.length} values, not a pid and a status`
+        break
+      }
+      const wpid = w[0]
+      const wstatus = w[1]
+      reaped = wpid > 0
       for (const slot of slots) {
-        if (reaped && slot.pid === w[0]) {
-          const step = mutaterunExited(run, slot, mutants, w[1], limitMs)
-          busy -= step.settled
+        if (reaped && slot.pid === wpid) {
+          const step = mutaterunExited(run, slot, mutants, wstatus, limitMs)
+          if (step.settled > 0 && busy > 0) {
+            busy--
+          }
           if (step.failure.length > 0) {
             failure = step.failure
           }
@@ -552,18 +598,25 @@ const mutaterunLoop = (
     }
     const now = monotonicNanos()
     for (const slot of slots) {
-      if (slot.pid !== 0 && now > slot.deadline) {
+      const started = slot.started
+      const span = slot.span
+      // Both are monotonicNanos readings, at least 0, so the difference cannot overflow.
+      if (slot.pid !== 0 && (now < 0 || started < 0 || now - started > span)) {
         const late = waitPid(slot.pid, 1)
-        if (late[0] === slot.pid) {
+        if (late.length > 1 && late[0] === slot.pid) {
           const step = mutaterunExited(run, slot, mutants, late[1], limitMs)
-          busy -= step.settled
+          if (step.settled > 0 && busy > 0) {
+            busy--
+          }
           if (step.failure.length > 0) {
             failure = step.failure
           }
         } else {
           mutaterunKill(slot.pid)
           mutaterunSettle(slot, mutants, slot.building ? MUTATE_BUILD_TIMED_OUT : MUTATE_TIMED_OUT)
-          busy--
+          if (busy > 0) {
+            busy--
+          }
         }
       }
     }
@@ -610,9 +663,16 @@ const mutaterunIn = (
       slowest = baseline.value.ms
     }
   }
+  if (slots.length < 1) {
+    return Err(`no slot to run the mutants in: --jobs is ${run.jobs}`)
+  }
   mutaterunCanary(run, slots[0].dir, text, first).orReturn()
   let limitMs = run.timeoutMs
   if (limitMs <= 0) {
+    // With no timeout given, each baseline step stops by MUTATERUN_COPY_MS, so `slowest` is far below this.
+    if (slowest < 0 || slowest > 715827882) {
+      return Err(`the baseline took ${slowest} ms, too long to time three times over`)
+    }
     const derived = slowest * toI64(3)
     limitMs = derived > toI64(MUTATERUN_MIN_TIMEOUT_MS) ? toI32(derived) : MUTATERUN_MIN_TIMEOUT_MS
   }
@@ -662,7 +722,7 @@ const mutaterunWithTest = (
     const test = joinPath(scratch, "spec_test.ts")
     const n = createFileExclusiveSync(test, program, 0o644)
     if (n < 0) {
-      return Err(`cannot write the emitted test ${test} (errno ${-n})`)
+      return Err(`cannot write the emitted test ${test} (errno ${mutaterunErrno(n)})`)
     }
     run.test = test
   }
@@ -792,6 +852,7 @@ export const mutateCheck = (contractPath: string, base: string, run: MutateRun, 
   let outside = ""
   let reached = false
   if (changed.length > 0) {
+    const firstChanged = changed[0]
     // The roots are the contract's own functions, as shapeTested in
     // spec/contract/shape.ts takes them: one whose module is set to another
     // module is a reference the test calls, not code it tests. Keep the two
@@ -803,7 +864,7 @@ export const mutateCheck = (contractPath: string, base: string, run: MutateRun, 
         roots.push(f.name)
       }
     }
-    const sites = mutateSites(text, changed[0], roots)
+    const sites = mutateSites(text, firstChanged, roots)
     if (sites.isErr()) {
       return Err(`${run.nishRoot}/${file} cannot be mutated: ${sites.error}`)
     }

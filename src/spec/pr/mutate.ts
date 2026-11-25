@@ -104,9 +104,27 @@ const mutateWordChar = (c: i32): boolean =>
 /** The char code at `i`, or -1 off either end. */
 const mutateAt = (s: string, i: i32): i32 => (i >= 0 && i < s.length ? s.charCodeAt(i) : -1)
 
+/** The kind (MUTATE_CODE, ...) of character `i`, or -1 off either end. */
+const mutateKind = (kinds: i32[], i: i32): i32 => (i >= 0 && i < kinds.length ? kinds[i] : -1)
+
 /** Whether `op` stands at `i` with a space on each side, as the formatter puts a binary operator. */
-const mutateSpaced = (s: string, i: i32, op: string): boolean =>
-  mutateAt(s, i - 1) === 32 && s.substring(i, i + op.length) === op && mutateAt(s, i + op.length) === 32
+const mutateSpaced = (s: string, i: i32, op: string): boolean => {
+  if (i < 1 || i >= s.length - op.length) {
+    return false
+  }
+  const end = toI32(toI64(i) + toI64(op.length))
+  return mutateAt(s, i - 1) === 32 && s.substring(i, end) === op && mutateAt(s, end) === 32
+}
+
+/** Where in `swaps` (mutateSwaps) the operator spaced at `i` of `s` is, or -1 for none. */
+const mutateSwapAt = (s: string, i: i32, swaps: string[]): i32 => {
+  for (let k = 0; k < swaps.length - 2; k += 3) {
+    if (mutateSpaced(s, i, swaps[k])) {
+      return k
+    }
+  }
+  return -1
+}
 
 /**
  * The binary operators a mutant swaps, as triples: the operator, its
@@ -179,11 +197,12 @@ const mutateSwaps = (): string[] => [
 
 /** Whether ` | ` at `i` joins a type with null, as `T | null` or `null | T` does: a type, not a bitwise or. */
 const mutateNullUnion = (s: string, i: i32): boolean =>
-  s.substring(i + 2, i + 6) === "null" || (i >= 5 && s.substring(i - 5, i - 1) === "null")
+  (i >= 0 && i <= s.length - 6 && s.substring(i + 2, i + 6) === "null") ||
+  (i >= 5 && s.substring(i - 5, i - 1) === "null")
 
 /** The line with `len` chars at `i` replaced by `by`. */
 const mutateSplice = (s: string, i: i32, len: i32, by: string): string =>
-  `${s.substring(0, i)}${by}${s.substring(i + len)}`
+  `${s.substring(0, i)}${by}${s.substring(i).substring(len)}`
 
 /** A character of no token: a space or a line break between tokens. */
 const MUTATE_BLANK: i32 = 0
@@ -196,23 +215,26 @@ const MUTATE_COMMENT: i32 = 3
 
 /** Marks `[from, to)` of `kinds` as `kind`. */
 const mutateMark = (kinds: i32[], from: i32, to: i32, kind: i32): void => {
-  for (let i = from; i < to; i++) {
+  for (let i = from; i >= 0 && i < to && i < kinds.length; i++) {
     kinds[i] = kind
   }
 }
 
 /** Marks the comments in `[from, to)`, a gap between tokens, which the lexer read as only spaces and comments. */
 const mutateMarkComments = (text: string, kinds: i32[], from: i32, to: i32): void => {
+  if (from < 0 || to < from || to > text.length) {
+    return
+  }
   let i = from
-  while (i < to) {
+  while (i >= 0 && i < to) {
     if (text.charCodeAt(i) === 47 && mutateAt(text, i + 1) === 47) {
       const nl = text.indexOf("\n", i)
       const end = nl < 0 || toI32(nl) > to ? to : toI32(nl)
       mutateMark(kinds, i, end, MUTATE_COMMENT)
       i = end
-    } else if (text.charCodeAt(i) === 47 && mutateAt(text, i + 1) === 42) {
+    } else if (text.charCodeAt(i) === 47 && i + 1 < text.length && text.charCodeAt(i + 1) === 42) {
       const close = text.indexOf("*/", i + 2)
-      const end = close < 0 || toI32(close) + 2 > to ? to : toI32(close) + 2
+      const end = close < 0 || toI64(close) + 2 > toI64(to) ? to : toI32(toI64(close) + 2)
       mutateMark(kinds, i, end, MUTATE_COMMENT)
       i = end
     } else {
@@ -235,7 +257,9 @@ const mutateMarkComments = (text: string, kinds: i32[], from: i32, to: i32): voi
 export const mutateCode = (text: string): Result<i32[][], string> => {
   const tokens = lexTokens(text).orReturn()
   const kinds: i32[] = []
-  for (let i = 0; i <= text.length; i++) {
+  // One more than the text, for the line break after its last line.
+  kinds.push(MUTATE_BLANK)
+  for (let i = 0; i < text.length; i++) {
     kinds.push(MUTATE_BLANK)
   }
   let gap: i32 = 0
@@ -249,8 +273,18 @@ export const mutateCode = (text: string): Result<i32[][], string> => {
   const out: i32[][] = []
   let start: i32 = 0
   for (const line of splitLines(text)) {
-    out.push(kinds.slice(start, start + toI32(line.length) + 1))
-    start = start + toI32(line.length) + 1
+    // splitLines splits at each line break and nowhere else, so every line
+    // and the break after it lie in `kinds`: this test always holds.
+    const end = toI64(start) + toI64(line.length) + 1
+    if (start < 0 || end > toI64(kinds.length)) {
+      return Err(`the lines of the module run past its end at offset ${start}`)
+    }
+    const row: i32[] = []
+    for (let k = start; k >= 0 && toI64(k) < end && k < kinds.length; k++) {
+      row.push(kinds[k])
+    }
+    out.push(row)
+    start = toI32(end)
   }
   return Ok(out)
 }
@@ -258,16 +292,25 @@ export const mutateCode = (text: string): Result<i32[][], string> => {
 /** The mutants of one statement-level line: deleting it, or returning null. */
 const mutateWholeLine = (text: string, line: i32, kinds: i32[], out: MutateMutant[]): void => {
   let first = 0
-  while (first < text.length && kinds[first] === MUTATE_BLANK) {
+  while (first < text.length && mutateKind(kinds, first) === MUTATE_BLANK) {
     first++
   }
   let last = toI32(text.length)
-  while (last > first && (kinds[last - 1] === MUTATE_BLANK || kinds[last - 1] === MUTATE_COMMENT)) {
+  while (
+    last > first &&
+    last > 0 &&
+    (mutateKind(kinds, last - 1) === MUTATE_BLANK || mutateKind(kinds, last - 1) === MUTATE_COMMENT)
+  ) {
     last--
   }
   // The line must start in code and end outside every string, template and
   // block comment, or deleting it would cut one open.
-  if (first >= text.length || kinds[first] !== MUTATE_CODE || kinds[text.length] !== MUTATE_BLANK) {
+  if (
+    first < 0 ||
+    first >= text.length ||
+    mutateKind(kinds, first) !== MUTATE_CODE ||
+    mutateKind(kinds, toI32(text.length)) !== MUTATE_BLANK
+  ) {
     return
   }
   const t = trim(text.substring(first, last))
@@ -279,7 +322,7 @@ const mutateWholeLine = (text: string, line: i32, kinds: i32[], out: MutateMutan
   }
   if (t.startsWith("return ")) {
     if (t !== "return null") {
-      out.push(new MutateMutant(line, indent.length + 1, "return-null", "", `${indent}return null`))
+      out.push(new MutateMutant(line, first + 1, "return-null", "", `${indent}return null`))
     }
     return
   }
@@ -289,8 +332,8 @@ const mutateWholeLine = (text: string, line: i32, kinds: i32[], out: MutateMutan
       return
     }
   }
-  if (mutateWordChar(t.charCodeAt(0))) {
-    out.push(new MutateMutant(line, indent.length + 1, "delete-statement", "", ""))
+  if (t.length > 0 && mutateWordChar(t.charCodeAt(0))) {
+    out.push(new MutateMutant(line, first + 1, "delete-statement", "", ""))
   }
 }
 
@@ -312,26 +355,24 @@ export const mutateLine = (text: string, line: i32, kinds: i32[]): MutateMutant[
   }
   const swaps = mutateSwaps()
   let i = 0
-  while (i < text.length) {
+  while (i >= 0 && i < text.length) {
     const c = text.charCodeAt(i)
-    if (kinds[i] !== MUTATE_CODE) {
+    if (mutateKind(kinds, i) !== MUTATE_CODE) {
       i++
       continue
     }
-    let swapped = false
-    for (let k = 0; k < swaps.length; k += 3) {
+    const k = mutateSwapAt(text, i, swaps)
+    if (k >= 0 && k < swaps.length - 2) {
       const op = swaps[k]
-      if (mutateSpaced(text, i, op)) {
+      // mutateSwapAt found op spaced at i, so it ends before the line does:
+      // this test always holds.
+      if (i < text.length - op.length) {
         if (op !== "|" || !mutateNullUnion(text, i)) {
           out.push(new MutateMutant(line, i + 1, swaps[k + 2], "", mutateSplice(text, i, op.length, swaps[k + 1])))
         }
-        i += op.length
-        swapped = true
-        break
+        i = toI32(toI64(i) + toI64(op.length))
+        continue
       }
-    }
-    if (swapped) {
-      continue
     }
     if (c === 33 && mutateAt(text, i + 1) !== 61 && !mutateWordChar(mutateAt(text, i - 1))) {
       const next = mutateAt(text, i + 1)
@@ -343,20 +384,23 @@ export const mutateLine = (text: string, line: i32, kinds: i32[]): MutateMutant[
     }
     if (c >= 48 && c <= 57 && !mutateWordChar(mutateAt(text, i - 1)) && mutateAt(text, i - 1) !== 46) {
       let j = i
-      while (j < text.length && text.charCodeAt(j) >= 48 && text.charCodeAt(j) <= 57) {
+      while (j >= 0 && j < text.length && text.charCodeAt(j) >= 48 && text.charCodeAt(j) <= 57) {
         j++
       }
       const after = mutateAt(text, j)
       if (!mutateWordChar(after) && after !== 46 && j - i <= 9) {
         const n = parseInt(text.substring(i, j))
-        out.push(new MutateMutant(line, i + 1, "int", "+1", mutateSplice(text, i, j - i, `${n + 1}`)))
-        out.push(new MutateMutant(line, i + 1, "int", "-1", mutateSplice(text, i, j - i, `${n - 1}`)))
+        // At most nine digits: n is below 1e9, so n + 1 and n - 1 fit.
+        if (n >= 0 && n < 1000000000) {
+          out.push(new MutateMutant(line, i + 1, "int", "+1", mutateSplice(text, i, j - i, `${n + 1}`)))
+          out.push(new MutateMutant(line, i + 1, "int", "-1", mutateSplice(text, i, j - i, `${n - 1}`)))
+        }
       }
       i = j
       continue
     }
     if (mutateWordChar(c)) {
-      while (i < text.length && mutateWordChar(text.charCodeAt(i))) {
+      while (i >= 0 && i < text.length && mutateWordChar(text.charCodeAt(i))) {
         i++
       }
       continue
@@ -411,8 +455,10 @@ export const mutateSites = (text: string, changed: GitdiffFile, roots: string[])
   const kinds = mutateCode(text).orReturn()
   const scope: ScopeModule = scopeReach(text, roots)
   const out = new MutateSites(scope.whole)
-  for (let i = 0; i < lines.length; i++) {
-    const n = toI32(i) + 1
+  // At most one per line, so it never wraps.
+  let outside: u32 = 0
+  for (let i = 0; i < lines.length && i < kinds.length; i++) {
+    const n = i + 1
     if (gitdiffTouches(changed, n)) {
       const ms = mutateLine(lines[i], n, kinds[i])
       if (scopeIn(scope, n)) {
@@ -421,7 +467,8 @@ export const mutateSites = (text: string, changed: GitdiffFile, roots: string[])
           out.mutants.push(m)
         }
       } else if (ms.length > 0) {
-        out.outside = out.outside + 1
+        outside++
+        out.outside = toI32(outside)
         for (const o of scopeOwners(scope, n)) {
           if (out.owners.indexOf(o) < 0) {
             out.owners.push(o)
@@ -457,12 +504,17 @@ export const mutateOutsideNote = (s: MutateSites): string => {
  */
 export const mutatePick = (all: MutateMutant[], max: i32): MutateMutant[] => {
   const n = toI32(all.length)
-  if (max <= 0 || n <= max) {
+  const d = toI64(max)
+  if (d <= 0 || toI64(n) <= d) {
     return all
   }
   const out: MutateMutant[] = []
   for (let k = 0; k < max; k++) {
-    out.push(all[toI32((toI64(k) * toI64(n)) / toI64(max))])
+    // k is below max, so the pick is below n: this test always holds.
+    const at = toI32((toI64(k) * toI64(n)) / d)
+    if (at >= 0 && at < all.length) {
+      out.push(all[at])
+    }
   }
   return out
 }
@@ -479,7 +531,7 @@ export const mutateApply = (text: string, m: MutateMutant): string => {
   const lines = splitLines(text)
   const out: string[] = []
   for (let i = 0; i < lines.length; i++) {
-    out.push(toI32(i) + 1 === m.line ? m.after : lines[i])
+    out.push(i + 1 === m.line ? m.after : lines[i])
   }
   const joined = out.join("\n")
   return text.endsWith("\n") ? `${joined}\n` : joined
@@ -540,11 +592,16 @@ export const mutateJudge = (
     return
   }
   if (dropped > 0) {
-    r.notes.push(`${dropped} of ${toI32(mutants.length) + dropped} mutants were not run: --max kept ${mutants.length}`)
+    r.notes.push(
+      `${dropped} of ${toI64(mutants.length) + toI64(dropped)} mutants were not run: --max kept ${mutants.length}`,
+    )
   }
-  let stillborn = 0
-  let timedOut = 0
-  let buildTimedOut = 0
+  // Each counts some of the mutants, so none wraps.
+  let stillborn: u32 = 0
+  let timedOut: u32 = 0
+  let buildTimedOut: u32 = 0
+  const total = toI64(mutants.length)
+  const limit = toU64(mutants.length) * toU64(MUTATE_BUILD_TIMEOUT_PERCENT)
   const used = new Set<string>()
   for (const m of mutants) {
     r.items.push(`${mutateOutcomeName(m.outcome)} ${file}:${m.line}:${m.col} ${m.op}: ${trim(m.after)}`)
@@ -568,22 +625,22 @@ export const mutateJudge = (
       r.problems.push(`mutant ${m.id} was not run`)
     }
   }
-  if (stillborn + buildTimedOut === mutants.length) {
+  if (toI64(stillborn) + toI64(buildTimedOut) === total) {
     r.problems.push(
       "every mutant is stillborn or its build ran past its time: none built, so the test met none of them",
     )
-  } else if (buildTimedOut * 100 > toI32(mutants.length) * MUTATE_BUILD_TIMEOUT_PERCENT) {
+  } else if (toU64(buildTimedOut) * 100 > limit) {
     r.problems.push(
       `${buildTimedOut} of ${mutants.length} mutant builds ran past their time, more than ${MUTATE_BUILD_TIMEOUT_PERCENT}%: a survivor may hide among them, so run with fewer --jobs`,
     )
   } else if (buildTimedOut > 0) {
     r.notes.push(`${buildTimedOut} of ${mutants.length} mutant builds ran past their time: they tested nothing`)
   }
-  if (timedOut > 0 && stillborn + buildTimedOut + timedOut === mutants.length) {
+  if (timedOut > 0 && toI64(stillborn) + toI64(buildTimedOut) + toI64(timedOut) === total) {
     r.problems.push(
       "every mutant that built ran its test past its time: the test settled none of them, so run with fewer --jobs",
     )
-  } else if (timedOut * 100 > toI32(mutants.length) * MUTATE_BUILD_TIMEOUT_PERCENT) {
+  } else if (toU64(timedOut) * 100 > limit) {
     r.problems.push(
       `${timedOut} of ${mutants.length} mutants ran their test past its time, more than ${MUTATE_BUILD_TIMEOUT_PERCENT}%: a timeout is neither a kill nor a survival, so a survivor may hide among them: run with fewer --jobs`,
     )
