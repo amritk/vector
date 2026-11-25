@@ -2,7 +2,6 @@
   "modules": {
     "src/spec/gates/fidelity.ts": 98,
     "src/spec/gates/result.ts": 50,
-    "src/spec/gates/text.ts": 95,
-    "src/spec/gates/words.ts": 22
+    "src/spec/gates/text.ts": 95
   }
 }
