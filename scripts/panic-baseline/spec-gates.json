@@ -1,6 +1,6 @@
 {
   "modules": {
     "src/spec/gates/fidelity.ts": 98,
-    "src/spec/gates/text.ts": 95
+    "src/spec/gates/text.ts": 1
   }
 }
