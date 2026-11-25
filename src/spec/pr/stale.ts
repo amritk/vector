@@ -30,7 +30,8 @@ const staleClosesBlock = (line: string): boolean => line.indexOf("*/") >= 0
 
 /** Whether the text after the close of a block comment in `line` is code, not a comment or nothing. */
 const staleCodeAfterBlock = (line: string): boolean => {
-  const rest = trim(line.substring(line.indexOf("*/") + 2))
+  const close = line.indexOf("*/")
+  const rest = close >= 0 && close < line.length - 1 ? trim(line.substring(close + 2)) : ""
   return rest.length > 0 && !rest.startsWith("//") && !rest.startsWith("/*")
 }
 
@@ -89,12 +90,15 @@ export const staleReason = (test: string, contract: string): string | null => {
   if (found.length > 1) {
     return `${found.length} vector-contract-sha256 lines: a test names one contract`
   }
-  if (!staleIsSha(found[0])) {
-    return `its vector-contract-sha256 line holds "${found[0]}", not 64 lowercase hex digits: regenerate it with vector spec emit`
-  }
-  const want = sha256Hex(contract)
-  if (found[0] !== want) {
-    return `stale: emitted from a contract with sha256 ${found[0]}, but the contract's is ${want}: regenerate it with vector spec emit`
+  // `found` holds exactly one line here: the loop reads it without an index.
+  for (const one of found) {
+    if (!staleIsSha(one)) {
+      return `its vector-contract-sha256 line holds "${one}", not 64 lowercase hex digits: regenerate it with vector spec emit`
+    }
+    const want = sha256Hex(contract)
+    if (one !== want) {
+      return `stale: emitted from a contract with sha256 ${one}, but the contract's is ${want}: regenerate it with vector spec emit`
+    }
   }
   return null
 }

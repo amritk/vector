@@ -1,14 +1,11 @@
 {
   "modules": {
     "src/spec/pr/cli.ts": 2,
-    "src/spec/pr/exports.ts": 1,
-    "src/spec/pr/frozen.ts": 4,
+    "src/spec/pr/frozen.ts": 1,
     "src/spec/pr/gitdiff.ts": 89,
     "src/spec/pr/lex.ts": 65,
     "src/spec/pr/mutate.ts": 70,
     "src/spec/pr/mutaterun.ts": 32,
-    "src/spec/pr/rename.ts": 13,
-    "src/spec/pr/scope.ts": 24,
-    "src/spec/pr/stale.ts": 3
+    "src/spec/pr/scope.ts": 24
   }
 }
