@@ -101,7 +101,7 @@ stages:
         status: completed
       - id: emit-wrap-claude-md
         content: State the on-purpose wrap rule in CLAUDE.md under Writing Nish, in its own PR — see Emitted wraps
-        status: in_progress
+        status: completed
 ---
 
 ## Context
