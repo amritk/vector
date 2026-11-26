@@ -390,6 +390,8 @@ const xmlDocFirstAtLeast = (xs: i32[], v: i32): u32 => {
   let hi = toU32(xs.length)
   while (lo < hi) {
     const mid = lo + ((hi - lo) >> 1)
+    // Always true, since mid < hi <= xs.length; it is stated for the prover, which
+    // does not carry hi's bound through the loop, so no input reaches the else.
     if (mid < toU32(xs.length) && xs[mid] < v) {
       lo = mid + 1
     } else {
