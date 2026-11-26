@@ -60,7 +60,8 @@ export const typeEnvBind = (env: TypeEnv, name: string, type: string): void => {
 
 const typingCopy = (env: TypeEnv): TypeEnv => {
   const out = new TypeEnv(env.fns, env.allowCalls)
-  for (let i = 0; i < env.names.length; i++) {
+  // names and types are parallel: typeEnvBind pushes one of each.
+  for (let i = 0; i < env.names.length && i < env.types.length; i++) {
     typeEnvBind(out, env.names[i], env.types[i])
   }
   return out
@@ -68,7 +69,7 @@ const typingCopy = (env: TypeEnv): TypeEnv => {
 
 const typingVar = (env: TypeEnv, name: string): string | null => {
   for (let i = env.names.length - 1; i >= 0; i--) {
-    if (env.names[i] === name) {
+    if (env.names[i] === name && i < env.types.length) {
       return env.types[i]
     }
   }
@@ -267,10 +268,11 @@ const typingCall = (e: Expr, env: TypeEnv, at: string, errors: string[]): string
     return null
   }
   let ok = true
-  for (let i = 0; i < e.args.length; i++) {
+  const params = sig.params
+  for (let i = 0; i < e.args.length && i < params.length; i++) {
     const a = e.args[i]
+    const p = params[i]
     const t = typeOf(a, env, `${at}.args[${i}]`, errors)
-    const p = sig.params[i]
     const want = vocabValueType(p.type)
     const wantInt = typeIntBase(want)
     if (t === null) {
@@ -312,10 +314,10 @@ const opWant = (o: OpTyping, n: i32): boolean => {
   return true
 }
 
-/** Whether operand `i` has type `ty`, reporting when it has not. */
-const opExpect = (o: OpTyping, i: i32, ty: string): boolean => {
-  if (o.ts[i] !== ty) {
-    o.errors.push(`${o.at}.args[${i}]: ${o.op} wants ${ty}, got ${o.ts[i]}`)
+/** Whether operand `i`, of type `got`, has type `ty`, reporting when it has not. */
+const opExpect = (o: OpTyping, i: i32, got: string, ty: string): boolean => {
+  if (got !== ty) {
+    o.errors.push(`${o.at}.args[${i}]: ${o.op} wants ${ty}, got ${got}`)
     return false
   }
   return true
@@ -327,8 +329,9 @@ const opSig = (o: OpTyping, want: string[], result: string): string | null => {
     return null
   }
   let ok = true
-  for (let i = 0; i < want.length; i++) {
-    ok = opExpect(o, i, want[i]) && ok
+  // opWant made the operands as many as want.
+  for (let i = 0; i < want.length && i < o.ts.length; i++) {
+    ok = opExpect(o, i, o.ts[i], want[i]) && ok
   }
   return ok ? result : null
 }
@@ -359,11 +362,13 @@ const opSameInt = (o: OpTyping): string | null => {
  * An int literal was checked against the op's width in `typingOp`.
  */
 const opWriteInt = (o: OpTyping): string | null => {
-  if (!opWant(o, 1)) {
+  // opWant answers true only for one operand.
+  if (!opWant(o, 1) || o.ts.length < 1) {
     return null
   }
   const t = o.ts[0]
-  const bits = vocabByteWidth(o.op) * 8
+  // A shift, not × 8: vocabByteWidth is a shift right by 3, so this is exact.
+  const bits = vocabByteWidth(o.op) << 3
   if (!vocabIsIntType(t) || parseInt(t.substring(1)) > bits) {
     o.errors.push(`${o.at}.args[0]: ${o.op} wants an integer of at most ${bits} bits, got ${t}`)
     return null
@@ -406,9 +411,11 @@ const typingOp = (e: Expr, env: TypeEnv, at: string, errors: string[]): string |
   }
   // A write op's int literal must fit its width, signed or unsigned: le16
   // takes -32768 to 65535, whatever type the literal takes on its own.
-  if (vocabHas(vocabWriteOps(), e.name) && o.ts.length === 1 && typingIsIntLit(e.args[0])) {
+  // o.ts holds one type per argument, so e.args has one too.
+  if (vocabHas(vocabWriteOps(), e.name) && o.ts.length === 1 && e.args.length > 0 && typingIsIntLit(e.args[0])) {
     const v = typingIntText(e.args[0])
-    const bits = vocabByteWidth(e.name) * 8
+    // A shift, not × 8: vocabByteWidth is a shift right by 3, so this is exact.
+    const bits = vocabByteWidth(e.name) << 3
     if (!vocabFitsInt(v, `i${bits}`) && !vocabFitsInt(v, `u${bits}`)) {
       errors.push(`${at}.args[0]: ${v} does not fit ${e.name}'s ${bits} bits`)
       return null
@@ -418,17 +425,27 @@ const typingOp = (e: Expr, env: TypeEnv, at: string, errors: string[]): string |
   // An int literal takes the integer type of the other operand when it fits
   // there, so `x + 1` is a u8 when x is (ISO C11 §6.4.4.1 types a constant by
   // its value; here the context gives the type instead).
-  if (o.ts.length === 2) {
-    for (let i = 0; i < 2; i++) {
+  const ts = o.ts
+  const args = e.args
+  if (ts.length === 2 && args.length === 2) {
+    // Both have two elements throughout: the loop only replaces ts[i].
+    for (let i = 0; i < 2 && i < ts.length && i < args.length; i++) {
       const j = 1 - i
-      const other = typeIntBase(o.ts[j])
-      if (typingIsIntLit(e.args[i]) && other !== null && e.args[j].kind !== ExprKind.Lit) {
-        const v = typingIntText(e.args[i])
+      if (j >= ts.length || j >= args.length) {
+        break
+      }
+      const ai = args[i]
+      const aj = args[j]
+      const other = typeIntBase(ts[j])
+      if (typingIsIntLit(ai) && other !== null && aj.kind !== ExprKind.Lit) {
+        const v = typingIntText(ai)
         if (!vocabFitsInt(v, other)) {
           errors.push(`${at}.args[${i}]: ${v} is outside ${other}`)
           return null
         }
-        o.ts[i] = other
+        if (i < ts.length) {
+          ts[i] = other
+        }
       }
     }
   }
@@ -462,7 +479,7 @@ const typingOpResult = (o: OpTyping): string | null => {
     return opSig(o, ["bytes", "i32"], "bytes")
   }
   if (op === "unwrap" || op === "isNull" || op === "notNull") {
-    if (!opWant(o, 1)) {
+    if (!opWant(o, 1) || o.ts.length < 1) {
       return null
     }
     if (!vocabIsOptional(o.ts[0])) {
@@ -478,7 +495,7 @@ const typingOpResult = (o: OpTyping): string | null => {
     return opWant(o, 2) && opSameInt(o) !== null ? "bool" : null
   }
   if (op === "==" || op === "!=") {
-    if (!opWant(o, 2)) {
+    if (!opWant(o, 2) || o.ts.length < 2) {
       return null
     }
     if (!typingComparable(o.ts[0], o.ts[1])) {
@@ -494,7 +511,7 @@ const typingOpResult = (o: OpTyping): string | null => {
     }
     let ok = true
     for (let i = 0; i < o.ts.length; i++) {
-      ok = opExpect(o, i, "bool") && ok
+      ok = opExpect(o, i, o.ts[i], "bool") && ok
     }
     return ok ? "bool" : null
   }
