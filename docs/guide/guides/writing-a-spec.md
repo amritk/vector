@@ -484,9 +484,10 @@ lives ([Test your own modules](testing.md#test-your-own-modules)).
   `typescript` refuse a function that takes or returns one.
 - An f64 is its shortest round-tripping decimal, or, for `-0`, `NaN` and the
   infinities, its bits.
-- `i32` and `i64` `+ - *` are computed in `u32` and `u64` and read back with
-  `toI32` and `toI64` (`toI32(toU32(a) + toU32(b))`), since Nish's signed
-  operators panic on overflow; the test imports nothing from `nish:unsafe`.
+- `i32` and `i64` `+ - *` are emitted as `wrappingAdd`, `wrappingSub` and
+  `wrappingMul` from `nish:unsafe` (`wrappingAdd(a, b)`): the contract wraps,
+  and Nish's signed operators refuse overflow. The test imports only the
+  names it uses, and nothing from `nish:unsafe` when it has no signed `+ - *`.
   `u8`, `u16`, `u32` and `u64` are emitted as plain operators,
   which wrap in Nish. So for every integer type the test can hold, a sample
   that overflows wraps, as it does in the evaluator and the sampler.

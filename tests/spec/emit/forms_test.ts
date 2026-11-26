@@ -1,7 +1,7 @@
 import { Suite } from "nish/testing"
 import { CheckContext, Sample, SampleTable, checkAddSample, checkContract, checkPassed } from "../../../src/spec/check"
 import { contractLoadFile } from "../../../src/spec/contract/contract"
-import { Contract, Expr, ExprKind, LitKind, Literal } from "../../../src/spec/contract/types"
+import { Clause, Contract, Expr, ExprKind, LitKind, Literal } from "../../../src/spec/contract/types"
 import { EmitOptions, emitProgram, emitUndefinedWhy } from "../../../src/spec/emit/emit"
 import { emitContractFile } from "../../../src/spec/emit/file"
 import { EmitPackages } from "../../../src/spec/emit/packages"
@@ -75,6 +75,59 @@ const formsAssert = (c: Contract, id: string): Expr => {
   return new Expr(ExprKind.Var, "missing")
 }
 
+/** The forms contract cut to the clause `id`, with its variables retyped to `ty` when that is not "". */
+const formsOnly = (id: string, ty: string): Contract => {
+  const c = contractLoadFile(FORMS).expect("reload the forms contract")
+  const keep: Clause[] = []
+  for (const k of c.clauses) {
+    if (k.id === id) {
+      for (const v of k.forall) {
+        if (ty !== "") {
+          v.type = ty
+        }
+      }
+      keep.push(k)
+    }
+  }
+  c.clauses = keep
+  return c
+}
+
+/** The line importing from nish:unsafe in `c`'s emitted test, or "" when there is none. */
+const formsUnsafeLine = (c: Contract): string => {
+  const out = emitProgram(c, formsSamples(), new EmitOptions("0"))
+  const text = out.isOk() ? out.value : "refused"
+  let at = 0
+  while (at < text.length) {
+    let end = text.indexOf("\n", at)
+    if (end < 0) {
+      end = text.length
+    }
+    const l = text.substring(at, end)
+    if (l.indexOf('"nish:unsafe"') >= 0) {
+      return l
+    }
+    at = end + 1
+  }
+  return text === "refused" ? "refused" : ""
+}
+
+/** Only the wrapping ops a contract uses are imported, and none when no signed + - * is. */
+const formsWrapImports = (t: Suite): void => {
+  t.eqStr(
+    "a lone i64 + imports wrappingAdd only",
+    formsUnsafeLine(formsOnly("P-WRAP", "")),
+    'import { wrappingAdd } from "nish:unsafe";',
+  )
+  t.eqStr(
+    "a lone i32 - * imports both",
+    formsUnsafeLine(formsOnly("P-WRAP32", "")),
+    'import { wrappingAdd, wrappingMul, wrappingSub } from "nish:unsafe";',
+  )
+  t.eqStr("unsigned + imports nothing", formsUnsafeLine(formsOnly("P-WRAP", "u64")), "")
+  t.eqStr("a contract with no + - * imports nothing", formsUnsafeLine(formsOnly("P-BITS", "")), "")
+}
+
 /** Why a sample is undefined: an unwrap, a read, both, or neither. */
 const formsUndefinedWhy = (t: Suite, c: Contract): void => {
   const both = new Expr(ExprKind.Op, "and")
@@ -127,16 +180,22 @@ export const main = (): i32 => {
   // mod-zero: % is remI32, which answers 0 for a zero (or -1) divisor.
   t.ok("remI32 is defined once", formsCount(p, "const remI32 = ") === 1)
   t.contains("a zero divisor is remI32's", p, "remI32(idI32(v_x), 0) === 0")
-  t.contains("a computed divisor too", p, "remI32(v_x, toI32(toU32(v_y) * toU32(v_y)))")
+  t.contains("a computed divisor too", p, "remI32(v_x, wrappingMul(v_y, v_y))")
   t.ok("% is never written bare", p.indexOf("v_x %") < 0 && p.indexOf("v_y %") < 0)
 
-  // i64 and i32 + - * wrap in the unsigned type of their width, as the sampler does.
-  t.contains("i64 + wraps", p, "(addI64(v_a, v_b) === toI64(toU64(v_a) + toU64(v_b)))")
-  t.contains("i32 + wraps", p, "(addI32(v_a, v_b) === toI32(toU32(v_a) + toU32(v_b)))")
-  t.contains("i32 - wraps", p, "(subI32(v_a, v_b) === toI32(toU32(v_a) - toU32(v_b)))")
-  t.contains("i32 * wraps", p, "(mulI32(v_a, v_b) === toI32(toU32(v_a) * toU32(v_b)))")
+  // i64 and i32 + - * wrap modulo 2^N, written as nish:unsafe's wrapping ops.
+  t.contains("i64 + wraps", p, "(addI64(v_a, v_b) === wrappingAdd(v_a, v_b))")
+  t.contains("i32 + wraps", p, "(addI32(v_a, v_b) === wrappingAdd(v_a, v_b))")
+  t.contains("i32 - wraps", p, "(subI32(v_a, v_b) === wrappingSub(v_a, v_b))")
+  t.contains("i32 * wraps", p, "(mulI32(v_a, v_b) === wrappingMul(v_a, v_b))")
   t.ok("i32 * is never written bare", p.indexOf("v_y * v_y") < 0 && p.indexOf("v_a * v_b") < 0)
-  t.ok("nothing is imported from nish:unsafe", p.indexOf("nish:unsafe") < 0)
+  t.ok("no + - * is a toI32/toI64 round trip", p.indexOf("toI32(toU32(v_") < 0 && p.indexOf("toI64(toU64(v_") < 0)
+  t.contains(
+    "the import is exactly the names used",
+    p,
+    'import { wrappingAdd, wrappingMul, wrappingSub } from "nish:unsafe";\n',
+  )
+  t.ok("and it is written once", formsCount(p, '"nish:unsafe"') === 1)
   t.contains("i64's maximum is built exactly", p, "toI64((toU64(2147483647) * 4294967296 + 4294967295))")
 
   // rfc-bitwise: xor, bitAnd and bitOr are one helper, chosen by its third argument.
@@ -239,7 +298,7 @@ const formsWithout = (t: Suite, c: Contract): void => {
   t.ok("example-hex emits", plain.isOk())
   t.ok("no % means no remI32", text.indexOf("remI32") < 0)
   t.ok("no secret means no nish:secret", text.indexOf("nish:secret") < 0)
-  t.ok("example-hex imports nothing from nish:unsafe", text.indexOf("nish:unsafe") < 0)
+  formsWrapImports(t)
 
   c.clauses[0].id = "P-a"
   c.clauses[1].id = "P_a"
