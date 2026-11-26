@@ -82,6 +82,26 @@ stages:
       - id: wrap-rows
         content: Add an exact-edge row for each converted site where main has none, and mutation-check each — see On-purpose wraps
         status: completed
+  - id: emit-wrap
+    title: Emitted wraps through nish:unsafe, and the rule in CLAUDE.md
+    goal: The Nish emitter writes i32 and i64 + - * as wrappingAdd, wrappingSub and wrappingMul from nish:unsafe instead of a u32 or u64 round trip, and CLAUDE.md states the on-purpose wrap rule
+    verification: no emitted test holds toI32(toU32( or toI64(toU64( for a + - * clause, the emitted SHA-1 and X25519 tests still build under bare 0.47.0 with only oom and module-call sites, a row fails when the emitter writes the plain operator, goldens and dogfood are regenerated, and npm run build, npm test, lint, tested-exports, panics, dogfood, doc-caps and gen-reference --check are green
+    todos:
+      - id: emit-wrap-emitter
+        content: Emit wrappingAdd, wrappingSub and wrappingMul for i32 and i64 in src/spec/emit/emit.ts, importing only what a test uses — see Emitted wraps
+        status: pending
+      - id: emit-wrap-tests
+        content: Flip the forms_test.ts round-trip and no-nish:unsafe assertions, and add rows that fail on a plain operator — see Emitted wraps
+        status: pending
+      - id: emit-wrap-regen
+        content: Regenerate the example-hex golden, the CLI goldens and tests/dogfood from the emitter — see Emitted wraps
+        status: pending
+      - id: emit-wrap-docs
+        content: Update docs/guide/guides/writing-a-spec.md and, if it describes emitted arithmetic, docs/AI.md — see Emitted wraps
+        status: pending
+      - id: emit-wrap-claude-md
+        content: State the on-purpose wrap rule in CLAUDE.md under Writing Nish, in its own PR — see Emitted wraps
+        status: pending
 ---
 
 ## Context
@@ -205,6 +225,21 @@ A site counts as **on purpose** when the signed result can fall outside its type
 Results stay bit-identical, so no golden or dogfood file moves. Rows: add an exact-edge row where main has none, through the real entry points. Examples: `sampleArith` at i64 MAX + 1, MIN - 1, MAX * 2, and in `u64` at `2^64 - 1 + 1`; `sampleIntWrap` at `w = 63`, signed and unsigned; `sampleIntIn` over `[MIN, MAX]` and over a span above `2^63`; `replayNeg(MIN)`; `replayAdd64` at MAX - 1 + 1 and MAX + 1. #233 and #235 added some of these, so the worker lists which rows already exist. Mutation: replace each wrapping op with the plain operator (0.39.0 then aborts on overflow) and swap add and sub; the PR body names the failing row for each. `npm run panics` shows no new site.
 
 **Note for run #217:** its acceptance criterion 2 asks for no `nish:unsafe` anywhere in `src/**`. The owner's rule contradicts that, and the conflict is reported to that run's lead.
+
+## Emitted wraps
+
+**Owns:** [src/spec/emit/emit.ts](src/spec/emit/emit.ts) (and other `src/spec/emit/**` files only for the import), `tests/spec/emit/**`, `tests/cli/**` and `tests/dogfood/**` (regenerated only), [docs/guide/guides/writing-a-spec.md](docs/guide/guides/writing-a-spec.md), [docs/AI.md](docs/AI.md), and, in a second PR, [CLAUDE.md](CLAUDE.md) alone. **Model:** sonnet. Added at the owner's request ("we now allow nish:unsafe if wrapping is the intended behaviour", then "do both as a new stage").
+
+The contract says `i32` and `i64` `+ - *` wrap modulo 2^N, so every such op in an emitted test is an on-purpose wrap. Today [emit.ts](src/spec/emit/emit.ts) (the `op === "+" || "-" || "*"` branch, about line 698) writes it as `toI32(toU32(a) op toU32(b))`, and `toI64`/`toU64` for i64. That was #221's answer to the original "no `nish:unsafe` in emitted code" rule, which the owner has since replaced. It becomes `wrappingAdd(a, b)`, `wrappingSub(a, b)` or `wrappingMul(a, b)`. The test imports from `"nish:unsafe"` only the names it uses, and a test with no signed `+ - *` imports nothing from it. Unsigned ops stay plain operators. The Rust emitter already writes `wrapping_add` and friends (`rust.ts:610`).
+
+Pre-flight, checked by the lead on main 090793c: under bare 0.47.0 (`.nish-next/bin/nish`), a program calling all three on `i32` and `i64` builds and runs with no flag, and `--emit-panics` lists one `oom` site and nothing else. Nish's own `AI.md` names these imports as the way to write a defined wrap.
+
+- **Tests.** `tests/spec/emit/forms_test.ts` lines 133-137 move to the `wrapping*` forms, and its two "imports nothing from nish:unsafe" checks (lines 139 and 242) become checks that the import is exactly the names used. `example-hex` now uses `wrappingMul` (its `2 * len` clause). Add a row that a contract with only unsigned ops imports nothing from `nish:unsafe`. Mutations: emit the plain operator (the panics test fails under 0.47.0), swap two of the three names, and always import all three or none. Each one fails a row, or the PR states why it is equivalent.
+- **Regenerated.** `tests/spec/emit/golden/example-hex.golden`, any CLI golden that prints an emitted test, and `tests/dogfood/vector-core-hex_test.ts`, each by the repo's generator, never by hand.
+- **Docs.** In `writing-a-spec.md`, lines 431-433 describe the `wrapping*` forms. `docs/AI.md` changes only if it describes emitted arithmetic. It is at 6398 of its 6400-byte cap, so any line added there is paid for by shortening it in place.
+- **CLAUDE.md, a separate PR.** Under "Writing Nish", one bullet: a wrap that is meant to happen is `wrappingAdd`/`wrappingSub`/`wrappingMul` from `nish:unsafe` at its site, never `toI64(toU64(a) op toU64(b))`, and arithmetic that cannot wrap stays plain. The file is at 8950 of its 8960-byte cap, so the bullet is paid for by shortening other text in place, never by raising the cap. `CLAUDE.md` is a sensitive path for the merge gate, so this PR waits for a human merge, and the emitter PR does not wait on it.
+- **Fixtures.** The `toI32(toU32(` round trips in `tests/fixtures/{byte-order,nish-hex,x25519}` are hand-written stand-ins for modules under test, outside this stage. The worker lists which of them are on purpose, and changes none of them.
+- **Downstream.** amritk/nish's `test/spec/*.ts` will import `nish:unsafe` once they are regenerated from this emitter. The PR body says so.
 
 ## Out of scope
 
