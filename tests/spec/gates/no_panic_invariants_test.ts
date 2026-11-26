@@ -11,7 +11,7 @@ import { LoadedSource, SourceSet } from "../../../src/spec/source/load"
 import { rfcParse } from "../../../src/spec/source/rfc"
 
 /** RFC 4231 §4 with one 16-byte value under each call label, label i's bytes from 16 * i + 1 up. */
-const noPanicR1Rfc = (labels: string[]): string => {
+const noPanicInvariantsRfc = (labels: string[]): string => {
   const out = [
     "Request for Comments: 4231",
     "",
@@ -40,7 +40,7 @@ const noPanicR1Rfc = (labels: string[]): string => {
 }
 
 /** The findings and warnings for a vector of kdf citing §4, expecting the first label's value. */
-const noPanicR1Kdf = (labels: string[]): string => {
+const noPanicInvariantsKdf = (labels: string[]): string => {
   const contract = `{
   "contract": "c6",
   "source": {"title": "T", "rfc": 4231},
@@ -56,7 +56,7 @@ const noPanicR1Kdf = (labels: string[]): string => {
   ctx.contract = contractParse(contract, "c6").expect("parse")
   const set = new SourceSet()
   set.main = "rfc4231"
-  set.sources.push(new LoadedSource("rfc4231", "r.txt", "r.txt", rfcParse(noPanicR1Rfc(labels))))
+  set.sources.push(new LoadedSource("rfc4231", "r.txt", "r.txt", rfcParse(noPanicInvariantsRfc(labels))))
   ctx.sources = set
   const out = gateFidelity(ctx)
   for (const n of gateWarnings(ctx)) {
@@ -66,7 +66,7 @@ const noPanicR1Kdf = (labels: string[]): string => {
 }
 
 /** A contract whose iterated vector feeds `mix` (two parameters) a count of names and next of its own. */
-const noPanicR1Iterate = (names: string, next: string): string => {
+const noPanicInvariantsIterate = (names: string, next: string): string => {
   const contract = `{
   "contract": "c2",
   "source": {"title": "T", "rfc": 7748},
@@ -85,14 +85,14 @@ const noPanicR1Iterate = (names: string, next: string): string => {
 }
 
 /** The names of a source's signatures. */
-const noPanicR1Sigs = (source: string): string =>
+const noPanicInvariantsSigs = (source: string): string =>
   gateModuleSignatures(source)
     .map((s): string => s.name)
     .join(",")
 
-/** The round-1 review's rows: the guards a refusal now reports instead of skipping. */
+/** The guards a refusal now reports instead of skipping, and the rows that kill their mutants. */
 export const main = (): i32 => {
-  const t = new Suite("spec/gates/no_panic_r1")
+  const t = new Suite("spec/gates/no_panic_invariants")
   const variant =
     'the value is printed under "KDF (c=1)", one of "KDF (c=1)" or "KDF (c=3)" or "KDF (c=5)" in RFC §4 ("Test Vectors"), and nothing in the name kdf says which variant it computes: not checked that this is its own'
   const kdfRows: string[][] = [
@@ -104,33 +104,49 @@ export const main = (): i32 => {
     ["KDF (c=1)|KDF (c=3)|KDF (c=5)", variant],
   ]
   for (const r of kdfRows) {
-    t.eqStr(`test cases counted by ${r[0]}`, noPanicR1Kdf(split(r[0], "|")), r[1])
+    t.eqStr(`test cases counted by ${r[0]}`, noPanicInvariantsKdf(split(r[0], "|")), r[1])
   }
 
   t.eqBool("an empty quote is not whole", gateQuoteWhole("It MUST hold.", ""), false)
   t.eqBool("nor in an empty text", gateQuoteWhole("", ""), false)
   t.eqBool("a one-byte quote still is", gateQuoteWhole("a b", "b"), true)
 
-  t.eqStr("a trailing export with no =", noPanicR1Sigs("export const a = (x: u8): u8 => x\nexport const name"), "a")
-  t.eqStr("one with = and nothing after", noPanicR1Sigs("export const a = (x: u8): u8 => x\nexport const b ="), "a")
-  t.eqStr("one cut in its parameters", noPanicR1Sigs("export const a = (x: u8): u8 => x\nexport const b = (x"), "a")
-  t.eqStr("and one after a bare export", noPanicR1Sigs("export const name\nexport const b = (x: u8): u8 => x"), "b")
+  t.eqStr(
+    "a trailing export with no =",
+    noPanicInvariantsSigs("export const a = (x: u8): u8 => x\nexport const name"),
+    "a",
+  )
+  t.eqStr(
+    "one with = and nothing after",
+    noPanicInvariantsSigs("export const a = (x: u8): u8 => x\nexport const b ="),
+    "a",
+  )
+  t.eqStr(
+    "one cut in its parameters",
+    noPanicInvariantsSigs("export const a = (x: u8): u8 => x\nexport const b = (x"),
+    "a",
+  )
+  t.eqStr(
+    "and one after a bare export",
+    noPanicInvariantsSigs("export const name\nexport const b = (x: u8): u8 => x"),
+    "b",
+  )
 
   const call = `{"call": "mix", "args": [{"var": "a"}, {"var": "b"}]}`
-  t.eqStr("next and names fit", noPanicR1Iterate(`"a", "b"`, `${call}, {"var": "a"}`), "")
+  t.eqStr("next and names fit", noPanicInvariantsIterate(`"a", "b"`, `${call}, {"var": "a"}`), "")
   t.eqStr(
     "next short of the parameters",
-    noPanicR1Iterate(`"a", "b"`, call),
+    noPanicInvariantsIterate(`"a", "b"`, call),
     "I1: iterate.next: mix takes 2 argument(s), got 1",
   )
   t.eqStr(
     "next past the parameters",
-    noPanicR1Iterate(`"a", "b"`, `${call}, {"var": "a"}, {"var": "b"}`),
+    noPanicInvariantsIterate(`"a", "b"`, `${call}, {"var": "a"}, {"var": "b"}`),
     "I1: iterate.next: mix takes 2 argument(s), got 3",
   )
   t.eqStr(
     "names short of the parameters",
-    noPanicR1Iterate(`"a"`, `${call}, {"var": "a"}`),
+    noPanicInvariantsIterate(`"a"`, `${call}, {"var": "a"}`),
     "I1: iterate.names: mix takes 2 argument(s), got 1",
   )
   return t.done()

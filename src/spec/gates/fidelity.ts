@@ -1716,6 +1716,10 @@ const gateVariantNote = (
   }
   // from is parallel to theirs, pushed together above: where each other
   // variant's number is printed.
+  if (theirs.length !== from.length) {
+    gateLitBroken(l, `${from.length} printings for ${theirs.length} variant numbers`)
+    return
+  }
   let other: string | null = null
   let otherFrom = ""
   for (let i = 0; i < theirs.length && i < from.length && other === null; i++) {
