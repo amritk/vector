@@ -19,6 +19,7 @@ import {
   EXPR_VAR,
   FnUnit,
   LangExpr,
+  PlanUnit,
   Program,
   SpecPlan,
 } from "./ast"
@@ -55,21 +56,48 @@ export const mentionsResult = (e: LangExpr): boolean => {
   return false
 }
 
+// One visible name and its type.
+class CheckBinding {
+  name: string
+  ty: string
+
+  constructor(name: string, ty: string) {
+    this.name = name
+    this.ty = ty
+  }
+}
+
 // A typing scope: the visible names and their types, and whether `result` is one.
 class CheckScope {
-  names: string[]
-  tys: string[]
+  bindings: CheckBinding[]
   allowResult: boolean
 
   constructor(allowResult: boolean) {
-    this.names = []
-    this.tys = []
+    this.bindings = []
     this.allowResult = allowResult
   }
 
+  bind(name: string, ty: string): void {
+    this.bindings.push(new CheckBinding(name, ty))
+  }
+
+  has(name: string): boolean {
+    for (const b of this.bindings) {
+      if (b.name === name) {
+        return true
+      }
+    }
+    return false
+  }
+
+  // The first binding of a name wins, as `indexOf` over the names did.
   lookup(name: string): string {
-    const i = toI32(this.names.indexOf(name))
-    return i < 0 ? "" : this.tys[i]
+    for (const b of this.bindings) {
+      if (b.name === name) {
+        return b.ty
+      }
+    }
+    return ""
   }
 }
 
@@ -131,7 +159,15 @@ class Checker {
     return ty
   }
 
+  // Refuses an operator node with fewer operands than its kind takes, which
+  // the reader never builds but a hand-built program can: it is refused, not
+  // indexed past its end.
+  short(e: LangExpr, want: i32): string {
+    return this.fail(`expression kind ${e.kind} has ${e.args.length} operand(s), not the ${want} it takes`)
+  }
+
   inferKind(e: LangExpr, scope: CheckScope, expected: string): string {
+    const args = e.args
     if (e.kind === EXPR_NUM) {
       if (expected === "Bool") {
         return this.fail(`numeric literal "${e.value}" where Bool expected`)
@@ -160,19 +196,26 @@ class Checker {
       return this.check(ty, expected)
     }
     if (e.kind === EXPR_UNOP) {
+      if (toI32(args.length) < 1) {
+        return this.short(e, 1)
+      }
+      const a = args[0]
       if (e.op === "not") {
-        this.infer(e.args[0], scope, "Bool")
+        this.infer(a, scope, "Bool")
         return this.check("Bool", expected)
       }
       if (e.op === "floor" || e.op === "ceil") {
-        this.infer(e.args[0], scope, "Real")
+        this.infer(a, scope, "Real")
         return this.check("Real", expected)
       }
-      return this.check(this.numericPair(e.args[0], null, scope, expected), expected)
+      return this.check(this.numericPair(a, null, scope, expected), expected)
     }
     if (e.kind === EXPR_BINOP) {
-      const l = e.args[0]
-      const r = e.args[1]
+      if (toI32(args.length) < 2) {
+        return this.short(e, 2)
+      }
+      const l = args[0]
+      const r = args[1]
       const op = e.op
       if (op === "/") {
         // JS `/` is float division, so an Int quotient would not match the proof.
@@ -198,35 +241,44 @@ class Checker {
       return this.check("Bool", expected)
     }
     if (e.kind === EXPR_ITE) {
-      this.infer(e.args[0], scope, "Bool")
-      const thenTy = this.infer(e.args[1], scope, expected)
-      const elseTy = this.infer(e.args[2], scope, thenTy !== "" ? thenTy : expected)
+      if (toI32(args.length) < 3) {
+        return this.short(e, 3)
+      }
+      const cond = args[0]
+      const then = args[1]
+      const other = args[2]
+      this.infer(cond, scope, "Bool")
+      const thenTy = this.infer(then, scope, expected)
+      const elseTy = this.infer(other, scope, thenTy !== "" ? thenTy : expected)
       if (thenTy !== "" && elseTy !== "" && thenTy !== elseTy) {
         return this.fail(`ite branches disagree: ${thenTy} vs ${elseTy}`)
       }
       return this.check(thenTy !== "" ? thenTy : elseTy, expected)
     }
     if (e.kind === EXPR_CALL) {
-      let ci = -1
-      for (let i = 0; i < toI32(this.program.functions.length); i++) {
-        if (ci < 0 && this.program.functions[i].name === e.name) {
-          ci = i
+      let found: FnUnit | null = null
+      for (const g of this.program.functions) {
+        if (found === null && g.name === e.name) {
+          found = g
         }
       }
-      if (ci < 0) {
+      if (found === null) {
         return this.fail(`call to unknown function "${e.name}"`)
       }
-      const callee = this.program.functions[ci]
+      const callee: FnUnit = found
       if (callee.name === this.fn.name || callee.layer >= this.fn.layer) {
         this.fail(
           `"${this.fn.name}" (layer ${this.fn.layer}) may only call strictly lower layers, but calls "${callee.name}" (layer ${callee.layer})`,
         )
       }
-      if (e.args.length !== callee.params.length) {
-        return this.fail(`"${e.name}" expects ${callee.params.length} argument(s), got ${e.args.length}`)
+      const params = callee.params
+      if (args.length !== params.length) {
+        return this.fail(`"${e.name}" expects ${params.length} argument(s), got ${args.length}`)
       }
-      for (let i = 0; i < toI32(e.args.length); i++) {
-        this.infer(e.args[i], scope, callee.params[i].ty)
+      // The arity check above makes the two bounds equal; the second is the
+      // prover's, which cannot see that `infer` leaves both lists alone.
+      for (let i = 0; i < toI32(args.length) && i < toI32(params.length); i++) {
+        this.infer(args[i], scope, params[i].ty)
       }
       return this.check(callee.returnType, expected)
     }
@@ -253,29 +305,28 @@ class Checker {
           break
         }
       }
-      if (params.names.indexOf(p.name) >= 0) {
+      if (params.has(p.name)) {
         this.fail(`duplicate parameter "${p.name}"`)
       }
-      params.names.push(p.name)
-      params.tys.push(p.ty)
-      ensures.names.push(p.name)
-      ensures.tys.push(p.ty)
+      params.bind(p.name, p.ty)
+      ensures.bind(p.name, p.ty)
     }
-    ensures.names.push(RESULT_NAME)
-    ensures.tys.push(fn.returnType)
+    ensures.bind(RESULT_NAME, fn.returnType)
     for (let i = 0; i < toI32(fn.requires.length); i++) {
+      const c = fn.requires[i]
       this.part = `requires[${i}]`
-      this.infer(fn.requires[i].expr, params, "Bool")
-      if (mentionsResult(fn.requires[i].expr)) {
+      this.infer(c.expr, params, "Bool")
+      if (mentionsResult(c.expr)) {
         this.fail(`a requires clause may not reference "${RESULT_NAME}"`)
       }
     }
     for (let i = 0; i < toI32(fn.ensures.length); i++) {
+      const c = fn.ensures[i]
       this.part = `ensures[${i}]`
-      this.infer(fn.ensures[i].expr, ensures, "Bool")
-      if (!mentionsResult(fn.ensures[i].expr)) {
+      this.infer(c.expr, ensures, "Bool")
+      if (!mentionsResult(c.expr)) {
         this.fail(
-          `an ensures clause (axiom ${fn.ensures[i].axiomId}) must reference "${RESULT_NAME}"; a postcondition that ignores the return value proves nothing about the implementation`,
+          `an ensures clause (axiom ${c.axiomId}) must reference "${RESULT_NAME}"; a postcondition that ignores the return value proves nothing about the implementation`,
         )
       }
     }
@@ -335,17 +386,17 @@ export const checkSpecProgramConsistency = (plan: SpecPlan, program: Program): s
     }
   }
   for (const fn of program.functions) {
-    let ui = -1
-    for (let i = 0; i < toI32(plan.units.length); i++) {
-      if (ui < 0 && plan.units[i].name === fn.name) {
-        ui = i
+    let found: PlanUnit | null = null
+    for (const x of plan.units) {
+      if (found === null && x.name === fn.name) {
+        found = x
       }
     }
-    if (ui < 0) {
+    if (found === null) {
       errors.push(`function "${fn.name}" is not declared as a unit in the spec plan`)
       continue
     }
-    const u = plan.units[ui]
+    const u: PlanUnit = found
     if (fn.layer !== u.layer) {
       errors.push(`function "${fn.name}": layer ${fn.layer} disagrees with spec unit layer ${u.layer}`)
     }
@@ -358,9 +409,13 @@ export const checkSpecProgramConsistency = (plan: SpecPlan, program: Program): s
       errors.push(`function "${fn.name}": has ${fn.params.length} param(s) but spec unit declares ${u.params.length}`)
       continue
     }
-    for (let i = 0; i < toI32(fn.params.length); i++) {
-      const p = fn.params[i]
-      const up = u.params[i]
+    // The count check above makes the two bounds equal; the second is the
+    // prover's, which cannot see that `errors.push` leaves both lists alone.
+    const ps = fn.params
+    const ups = u.params
+    for (let i = 0; i < toI32(ps.length) && i < toI32(ups.length); i++) {
+      const p = ps[i]
+      const up = ups[i]
       if (p.name !== up.name || p.ty !== up.ty) {
         errors.push(
           `function "${fn.name}": param ${i + 1} is ${p.name}:${p.ty} but spec unit declares ${up.name}:${up.ty}`,
