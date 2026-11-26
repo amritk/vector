@@ -225,7 +225,7 @@ const runEmitAndRun = (req: RunRequest, target: EmitTarget, tempDir: string | nu
   } else {
     const n = writeFileSyncMode(file, e.program, 0o600)
     if (n < 0) {
-      return report(usageError(`spec run: cannot write ${file} (errno ${-n})`))
+      return report(usageError(`spec run: cannot write ${file} (errno ${-toI64(n)})`))
     }
   }
   const ran = runWith(req, target, e.contract, file)

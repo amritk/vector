@@ -9,7 +9,7 @@ import { splitLines } from "nish/text"
 import { basename, joinPath, makeTempDir, mkdirAll } from "../../core/fs"
 import { toHex } from "../../core/hex"
 import { runProcess } from "../../core/process"
-import { Contract, Truncate } from "../contract/types"
+import { Clause, Contract, Truncate } from "../contract/types"
 import { EMIT_SLOW_SKIP, emitQuote } from "../emit/lit"
 
 /** A clause's outcome, ordered from best to worst: a requirement takes its clauses' worst. */
@@ -158,6 +158,26 @@ const runReadLine = (line: string): RunLine | null => {
   return new RunLine(o, line.substring(7, close))
 }
 
+/** The first of `clauses` with id `id`, as runClauseIndex finds it; null when none has it. */
+const runClauseOf = (clauses: Clause[], id: string): Clause | null => {
+  for (const k of clauses) {
+    if (k.id === id) {
+      return k
+    }
+  }
+  return null
+}
+
+/** The first of a run's clauses with id `id`, which runParse makes one per contract clause, in order; null when none has it. */
+const runRunClauseOf = (clauses: RunClause[], id: string): RunClause | null => {
+  for (const r of clauses) {
+    if (r.id === id) {
+      return r
+    }
+  }
+  return null
+}
+
 const runClauseIndex = (c: Contract, id: string): i32 => {
   for (let i = 0; i < c.clauses.length; i++) {
     if (c.clauses[i].id === id) {
@@ -191,15 +211,17 @@ export const runParse = (c: Contract, stdout: string): RunClause[] => {
     if (m === null) {
       continue
     }
-    const at = runClauseIndex(c, m.id)
-    if (at < 0) {
+    // out holds one clause per contract clause, with its id, in contract
+    // order: the first of each with this id is the same clause, or neither is.
+    const r = runRunClauseOf(out, m.id)
+    const k = runClauseOf(c.clauses, m.id)
+    if (r === null || k === null) {
       continue
     }
-    const r = out[at]
     r.outcome = m.outcome
     r.line = lines[i]
     r.detail = ""
-    const it = c.clauses[at].iterate
+    const it = k.iterate
     r.slow = m.outcome === RunOutcome.Skip && (it?.slow ?? false) && lines[i].endsWith(` (${EMIT_SLOW_SKIP})`)
     if (m.outcome === RunOutcome.Fail && i + 1 < lines.length && lines[i + 1].startsWith("      ")) {
       r.detail = lines[i + 1].substring(6, lines[i + 1].length)
@@ -229,7 +251,8 @@ const runReadEnd = (line: string): RunEnd | null => {
     return null
   }
   const nonce = rest.substring(0, sp)
-  const bits = rest.substring(sp + 1, rest.length)
+  const spaced = rest.substring(sp, rest.length)
+  const bits = spaced.substring(1, spaced.length)
   for (let i = 0; i < bits.length; i++) {
     const b = bits.substring(i, i + 1)
     if (b !== "0" && b !== "1") {
@@ -262,8 +285,9 @@ const runReadEnd = (line: string): RunEnd | null => {
 export const runTranscript = (c: Contract, stdout: string, nonce: string, clauses: RunClause[]): string[] => {
   const problems: string[] = []
   const lines = splitLines(stdout)
-  let others = 0
-  let mine = 0
+  // The end lines are listed, not counted: a list's length cannot overflow.
+  const otherEnds: i32[] = []
+  const mineEnds: i32[] = []
   let end = -1
   let bits = ""
   for (let i = 0; i < lines.length; i++) {
@@ -272,15 +296,17 @@ export const runTranscript = (c: Contract, stdout: string, nonce: string, clause
       continue
     }
     if (e.nonce !== nonce) {
-      others++
+      otherEnds.push(i)
     } else {
-      if (mine === 0) {
+      if (mineEnds.length === 0) {
         end = i
         bits = e.bits
       }
-      mine++
+      mineEnds.push(i)
     }
   }
+  const others = otherEnds.length
+  const mine = mineEnds.length
   if (others > 0) {
     problems.push(
       `${others} vector-done line(s) with the wrong nonce: something other than the test's main printed them`,
@@ -295,10 +321,8 @@ export const runTranscript = (c: Contract, stdout: string, nonce: string, clause
   if (mine > 1) {
     problems.push(`${mine} vector-done lines carry this run's nonce`)
   }
-  const seen: i32[] = []
-  for (const _k of c.clauses) {
-    seen.push(0)
-  }
+  // Each report's clause index, one entry per line that reports a clause.
+  const reported: i32[] = []
   for (let i = 0; i < lines.length; i++) {
     const m = runReadLine(lines[i])
     if (m === null) {
@@ -308,14 +332,21 @@ export const runTranscript = (c: Contract, stdout: string, nonce: string, clause
     if (at < 0) {
       continue
     }
-    seen[at] = seen[at] + 1
+    reported.push(at)
     if (i > end) {
       problems.push(`[${m.id}] reported after the test's main had finished`)
     }
   }
   for (let i = 0; i < c.clauses.length; i++) {
-    if (seen[i] > 1) {
-      problems.push(`[${c.clauses[i].id}] reported ${seen[i]} times; a clause reports once`)
+    const id = c.clauses[i].id
+    const times: i32[] = []
+    for (const at of reported) {
+      if (at === i) {
+        times.push(at)
+      }
+    }
+    if (times.length > 1) {
+      problems.push(`[${id}] reported ${times.length} times; a clause reports once`)
     }
   }
   if (bits.length !== c.clauses.length) {
@@ -470,12 +501,13 @@ export const runIsStdPath = (rel: string): boolean => {
   }
   const parts: string[] = []
   let start = 0
-  for (let i = 0; i <= rel.length; i++) {
-    if (i === rel.length || rel.substring(i, i + 1) === "/") {
+  for (let i = 0; i < rel.length; i++) {
+    if (rel.substring(i, i + 1) === "/") {
       parts.push(rel.substring(start, i))
       start = i + 1
     }
   }
+  parts.push(rel.substring(start, rel.length))
   for (const p of parts) {
     if (p === ".." || p === "." || p.length === 0) {
       return false
@@ -520,8 +552,10 @@ export const runDisposeScratch = (s: RunScratch): Result<boolean, string> => run
  * creating or writing below it stays inside `base`.
  */
 const runCheckInside = (base: string, rel: string, where: string, what: string): Result<boolean, string> => {
-  let at = rel.indexOf("/")
-  while (at >= 0) {
+  for (let at = 0; at < rel.length; at++) {
+    if (rel.substring(at, at + 1) !== "/") {
+      continue
+    }
     const full = joinPath(base, rel.substring(0, at))
     if (lstatOwnerModeSync(full) < 0) {
       return Ok(true)
@@ -530,7 +564,6 @@ const runCheckInside = (base: string, rel: string, where: string, what: string):
     if (real === null || real !== full) {
       return Err(`${where}: ${rel.substring(0, at)} is a symlink, which ${what} ${rel} would write through`)
     }
-    at = rel.indexOf("/", at + 1)
   }
   return Ok(true)
 }
@@ -560,19 +593,27 @@ export const runWriteInside = (
   if (base === null) {
     return Err(`cannot resolve ${dir}`)
   }
-  for (let i = 0; i < paths.length; i++) {
-    runCheckInside(base, paths[i], where, what).orReturn()
+  if (texts.length !== paths.length) {
+    return Err(`${where}: ${paths.length} ${what} path(s) but ${texts.length} text(s)`)
   }
-  for (let i = 0; i < paths.length; i++) {
+  for (const rel of paths) {
+    runCheckInside(base, rel, where, what).orReturn()
+  }
+  for (let i = 0; i < paths.length && i < texts.length; i++) {
     const target = joinPath(base, paths[i])
-    const parent = target.substring(0, target.length - basename(target).length - 1)
+    const text = texts[i]
+    const name = basename(target)
+    if (name.length >= target.length) {
+      return Err(`cannot write ${target}: it names no file in a directory`)
+    }
+    const parent = target.substring(0, target.length - name.length - 1)
     mkdirAll(parent, 0o755).orReturn()
     // The file itself may be a link: remove it (never what it points at),
     // then create the file afresh, refusing to follow anything in its place.
     unlinkSync(target)
-    const n = createFileExclusiveSync(target, texts[i], 0o644)
+    const n = createFileExclusiveSync(target, text, 0o644)
     if (n < 0) {
-      return Err(`cannot write ${target} (errno ${-n})`)
+      return Err(`cannot write ${target} (errno ${-toI64(n)})`)
     }
   }
   return Ok(true)
@@ -703,7 +744,7 @@ export const runTest = (c: Contract, source: string, nishBin: string, timeoutMs:
   const file = joinPath(dir, "main.ts")
   const n = writeFileSyncMode(file, source, 0o600)
   const ran: Result<RunResult, string> =
-    n < 0 ? Err(`cannot write ${file} (errno ${-n})`) : runTestFile(c, file, nishBin, timeoutMs, false)
+    n < 0 ? Err(`cannot write ${file} (errno ${-toI64(n)})`) : runTestFile(c, file, nishBin, timeoutMs, false)
   const gone = runRemove(dir)
   if (gone.isErr()) {
     console.error(`vector: warning: spec run: ${gone.error}`)
@@ -786,7 +827,11 @@ const runKeepTail = (text: string): string => {
     return text
   }
   const from = text.indexOf("\n", text.length - RUN_KEEP_CHARS - 1)
-  return from < 0 ? "" : text.substring(from + 1, text.length)
+  if (from < 0) {
+    return ""
+  }
+  const kept = text.substring(from, text.length)
+  return kept.substring(1, kept.length)
 }
 
 /** The longest line of the module's output a report shows. */
@@ -808,7 +853,11 @@ export const runEscape = (text: string): string => {
   while (n > 0 && n < text.length && (toI32(text.charCodeAt(n)) & 0xc0) === 0x80) {
     n -= 1
   }
-  for (let i = 0; i < n; i++) {
+  // n is at most text.length: the loop runs below both, and stops at the cut.
+  for (let i = 0; i < text.length; i++) {
+    if (i >= n) {
+      break
+    }
     const c = toI32(text.charCodeAt(i))
     if (c < 32 || c === 127) {
       const h = toHex([toU8(c)])
@@ -825,10 +874,32 @@ export const runEscape = (text: string): string => {
   return out.join("")
 }
 
-const runTail = (text: string, n: i32): string[] => {
+/** How many of the compiler's last lines an ERROR with no clause run shows. */
+const RUN_TAIL_LINES: i32 = 20
+
+const runTail = (text: string): string[] => {
   const lines = splitLines(text)
-  const from = lines.length > n ? lines.length - n : 0
-  return lines.slice(from, lines.length)
+  const from = lines.length > RUN_TAIL_LINES ? lines.length - RUN_TAIL_LINES : 0
+  const out: string[] = []
+  for (let i = 0; i < lines.length; i++) {
+    if (i >= from) {
+      out.push(lines[i])
+    }
+  }
+  return out
+}
+
+/**
+ * The name of a verdict's `i`th requirement's outcome. runJudge gives each
+ * requirement one outcome; a verdict whose lists differ is a vector bug, and
+ * its requirement shows MISMATCH rather than drop out of the report.
+ */
+const runOutcomeAt = (v: RunVerdict, i: i32): string => {
+  const outcomes = v.outcomes
+  if (i >= 0 && i < outcomes.length) {
+    return runOutcomeName(outcomes[i])
+  }
+  return "MISMATCH"
 }
 
 /** Why a run whose only clauses were slow skips is an ERROR. */
@@ -862,7 +933,7 @@ const runTruncation = (k: RunClause): string => {
 export const runFormatText = (r: RunResult): string[] => {
   const out: string[] = [`${r.verdict.status}: ${r.contract} (exit ${r.exitCode})`]
   for (let i = 0; i < r.verdict.requirements.length; i++) {
-    out.push(`  ${runOutcomeName(r.verdict.outcomes[i])}  ${r.verdict.requirements[i]}`)
+    out.push(`  ${runOutcomeAt(r.verdict, i)}  ${r.verdict.requirements[i]}`)
   }
   for (const k of r.clauses) {
     if (k.slow) {
@@ -888,7 +959,7 @@ export const runFormatText = (r: RunResult): string[] => {
     }
   }
   if (r.verdict.status === "ERROR" && !anyRan) {
-    for (const l of runTail(`${r.stdout}${r.stderr}`, 20)) {
+    for (const l of runTail(`${r.stdout}${r.stderr}`)) {
       out.push(`  | ${runEscape(l)}`)
     }
   }
@@ -908,7 +979,7 @@ export const runFormatText = (r: RunResult): string[] => {
 export const runFormatMarkdown = (r: RunResult): string => {
   const out: string[] = [`### \`${r.contract}\`: ${r.verdict.status}`, "", "| requirement | outcome |", "| --- | --- |"]
   for (let i = 0; i < r.verdict.requirements.length; i++) {
-    out.push(`| ${r.verdict.requirements[i]} | ${runOutcomeName(r.verdict.outcomes[i])} |`)
+    out.push(`| ${r.verdict.requirements[i]} | ${runOutcomeAt(r.verdict, i)} |`)
   }
   const slow: string[] = []
   for (const k of r.clauses) {
@@ -954,7 +1025,7 @@ export const runFormatMarkdown = (r: RunResult): string => {
 export const runFormatJson = (r: RunResult): string => {
   const reqs: string[] = []
   for (let i = 0; i < r.verdict.requirements.length; i++) {
-    reqs.push(`${emitQuote(r.verdict.requirements[i])}: ${emitQuote(runOutcomeName(r.verdict.outcomes[i]))}`)
+    reqs.push(`${emitQuote(r.verdict.requirements[i])}: ${emitQuote(runOutcomeAt(r.verdict, i))}`)
   }
   const clauses: string[] = []
   for (const k of r.clauses) {
