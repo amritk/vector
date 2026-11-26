@@ -1,7 +1,6 @@
 {
   "modules": {
     "src/spec/source/hidden.ts": 4,
-    "src/spec/source/path.ts": 1,
-    "src/spec/source/rfc.ts": 66
+    "src/spec/source/path.ts": 1
   }
 }
