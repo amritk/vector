@@ -164,6 +164,8 @@ const langCanonicalDecimal = (text: string): string | null => {
       neg = text.charCodeAt(j) === 45
       j = j + 1
     }
+    // Unreachable: j steps past i only while it is under n. The prover
+    // needs it for the slice.
     if (j > n) {
       return null
     }
@@ -174,13 +176,17 @@ const langCanonicalDecimal = (text: string): string | null => {
     start = start + 1
   }
   let end = len
+  // `end > 0` follows from `end > start`, but the prover needs it for
+  // `end - 1`.
   while (end > start && end > 0 && digits.charCodeAt(end - 1) === 48) {
     end = end - 1
   }
   if (end === start) {
     return "0"
   }
-  if (!(start >= 0 && start <= end && end <= len)) {
+  // Unreachable: both scans stay in 0..len with start <= end. The prover
+  // needs it for the slice.
+  if (!(start <= end && end <= len)) {
     return null
   }
   // The last kept digit's exponent: the integer digits' count less its own
@@ -244,25 +250,21 @@ class LangReader {
   }
 
   // An integer from 1 to 1000000 written as one (no sign, fraction or
-  // exponent), else 0. JSON writes no leading zero, so it is one to seven
-  // digits, read from the number's own text.
+  // exponent), else 0, read from the number's own digits. `0` reads as 0,
+  // and parseInt stops at 2147483647 past i32, which is over the bound too.
   layer(o: JsonValue): i32 {
     const v = this.doc.get(o, "layer")
     if (this.doc.kind(v) !== JSON_VALUE_NUMBER) {
       return 0
     }
     const text = this.doc.numberText(v)
-    const n = toI32(text.length)
-    if (n < 1 || n > 7) {
-      return 0
-    }
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < toI32(text.length); i++) {
       if (!langIsDigit(text.charCodeAt(i))) {
         return 0
       }
     }
     const layer = parseInt(text)
-    return layer < 1 || layer > 1000000 ? 0 : layer
+    return layer > 1000000 ? 0 : layer
   }
 
   expr(v: JsonValue, where: string): LangExpr {
