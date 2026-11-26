@@ -114,8 +114,16 @@ const formsUnsafeLine = (c: Contract): string => {
 
 /** Only the wrapping ops a contract uses are imported, and none when no signed + - * is. */
 const formsWrapImports = (t: Suite): void => {
-  t.eqStr("a lone i64 + imports wrappingAdd only", formsUnsafeLine(formsOnly("P-WRAP", "")), 'import { wrappingAdd } from "nish:unsafe";')
-  t.eqStr("a lone i32 - * imports both", formsUnsafeLine(formsOnly("P-WRAP32", "")), 'import { wrappingAdd, wrappingMul, wrappingSub } from "nish:unsafe";')
+  t.eqStr(
+    "a lone i64 + imports wrappingAdd only",
+    formsUnsafeLine(formsOnly("P-WRAP", "")),
+    'import { wrappingAdd } from "nish:unsafe";',
+  )
+  t.eqStr(
+    "a lone i32 - * imports both",
+    formsUnsafeLine(formsOnly("P-WRAP32", "")),
+    'import { wrappingAdd, wrappingMul, wrappingSub } from "nish:unsafe";',
+  )
   t.eqStr("unsigned + imports nothing", formsUnsafeLine(formsOnly("P-WRAP", "u64")), "")
   t.eqStr("a contract with no + - * imports nothing", formsUnsafeLine(formsOnly("P-BITS", "")), "")
 }
@@ -182,7 +190,11 @@ export const main = (): i32 => {
   t.contains("i32 * wraps", p, "(mulI32(v_a, v_b) === wrappingMul(v_a, v_b))")
   t.ok("i32 * is never written bare", p.indexOf("v_y * v_y") < 0 && p.indexOf("v_a * v_b") < 0)
   t.ok("no + - * is a toI32/toI64 round trip", p.indexOf("toI32(toU32(v_") < 0 && p.indexOf("toI64(toU64(v_") < 0)
-  t.contains("the import is exactly the names used", p, 'import { wrappingAdd, wrappingMul, wrappingSub } from "nish:unsafe";\n')
+  t.contains(
+    "the import is exactly the names used",
+    p,
+    'import { wrappingAdd, wrappingMul, wrappingSub } from "nish:unsafe";\n',
+  )
   t.ok("and it is written once", formsCount(p, '"nish:unsafe"') === 1)
   t.contains("i64's maximum is built exactly", p, "toI64((toU64(2147483647) * 4294967296 + 4294967295))")
 
