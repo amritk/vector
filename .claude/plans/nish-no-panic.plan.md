@@ -263,7 +263,7 @@ The remaining std-call sites are instantiations of `map`, `some`, `filter`, `eve
   - io-exit: `orReturn` or `unwrapOr` in place of `expect`;
 - or a restructure that removes the site, such as iterating `for…of` in place of indexing.
 
-A guard whose failing branch returns a made-up value the caller cannot tell from a real one is refused in review. The failing branch returns `Err` through the function's existing `Result`, or the code is restructured so the branch does not exist. There is no `--allow-panics` in a build, no `noPanic` scoping, and no `nish:unsafe`.
+A guard whose failing branch returns a made-up value the caller cannot tell from a real one is refused in review. The failing branch returns `Err` through the function's existing `Result`, or the code is restructured so the branch does not exist. There is no `--allow-panics` in a build and no `noPanic` scoping. `nish:unsafe` is never used to silence a panic site. Owner decision (2026-11-26, replacing this run's earlier "no `nish:unsafe`" rule): a wrap that happens on purpose uses `nish:unsafe` (`wrappingAdd`, `wrappingSub`, `wrappingMul`) so it is visible at the site, never a `toI64(toU64(a) op toU64(b))` round trip. Arithmetic that never wraps (index, length and counter arithmetic) stays as it is.
 
 **Two compilers.** Until the bump, every stage must also build and pass under the pinned 0.39.0. `npm run build` and `npm test` use 0.39.0. The ratchet uses 0.47.0 from `.nish-next/`. Guards are plain TypeScript, so they compile under both.
 
@@ -391,6 +391,7 @@ This stage is sensitive and goes to a human for the merge.
 2. Switch the cli declarations to the `try*` forms, and the ParseResult accessors to the `read*` forms.
 3. Retire the ratchet (owner decision D1 on amritk/vector#215): delete `scripts/panics.mjs`, `scripts/panics.test.mjs`, `scripts/panic-baseline/**`, `.nish-next-version` and `scripts/fetch-nish-next.sh`, and their `package.json`, `.gitignore`, `biome.json`, `CLAUDE.md` and CI entries. Under the new pin, `npm run build` refuses every unproven non-OOM site and names it as `file:line:col`, so the CI Build step is the panic gate; amritk/vector#219 (run #215) adds a no-panic job and an `allow-panics` check and merges after this stage. Show in the PR body that an unguarded index in a `src/` module makes `npm run build` fail and name the site.
 4. Fix whatever else the release changed.
+5. Keep every `nish:unsafe` import that marks an on-purpose wrap (`wrappingAdd`, `wrappingSub`, `wrappingMul`), per the owner's 2026-11-26 rule above, and add none for any other reason.
 
 The PR body states the release and each change.
 
