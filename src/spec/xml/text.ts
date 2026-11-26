@@ -455,13 +455,17 @@ const xmlTrimTail = (s: string): string => {
  * @returns whether any text is left
  */
 const xmlTrimPieces = (out: string[], from: u32): boolean => {
-  // `out.length > 0` follows from the first test; it is stated for the prover.
-  while (toU32(out.length) > from && out.length > 0) {
-    const last = xmlTrimTail(out.pop())
+  // The last two tests follow from the first, since from >= 0; they are stated for the prover.
+  let top = toU32(out.length) - 1
+  while (toU32(out.length) > from && top < toU32(out.length) && out.length > 0) {
+    const piece = out[top]
+    out.pop()
+    const last = xmlTrimTail(piece)
     if (last.length > 0) {
       out.push(last)
       break
     }
+    top = toU32(out.length) - 1
   }
   let k = from
   while (k < toU32(out.length)) {
@@ -847,10 +851,16 @@ const xmlNormativeIn = (
         }
       } else {
         // Each U+0002 closes the U+0001 before it: the render fences every `<bcp14>`.
-        if (open.length < 1) {
+        const top = toU32(open.length) - 1
+        // An empty stack wraps `top` to 2^32 - 1, past its end.
+        if (top >= toU32(open.length)) {
           return Err(xmlErrorAt(head, "internal: a <bcp14> closes before it opens"))
         }
-        const o = open.pop()
+        const o = open[top]
+        // Holds after the test above; restated for the prover, which drops it at the read.
+        if (open.length > 0) {
+          open.pop()
+        }
         if (o >= toU32(end.length)) {
           return Err(xmlErrorAt(head, "internal: a <bcp14> closes one never opened"))
         }
