@@ -405,7 +405,7 @@ The PR body states the release and each change.
 
 ## Tests
 
-- `scripts/panics.test.mjs`: fixture programs and reports, table-driven, with mutation rows. It runs in CI from panic-ci on.
+- `scripts/panics.test.mjs`: fixture programs and reports, table-driven, with mutation rows. It runs in CI from panic-ci until nish-bump deletes it with the ratchet.
 - `tests/core/text_test.ts`: the text helpers against std on every byte and on UTF-8 input.
 - `tests/spec/gates/readers_test.ts` and the extract tests: the enum dispatch.
 - Every existing test, golden and dogfood test, unchanged.
@@ -415,7 +415,7 @@ The PR body states the release and each change.
 At the end of the run:
 
 ```bash
-bash scripts/fetch-nish.sh && npm run build && npm test && npm run lint && npm run tested-exports && npm run dogfood && npm run doc-caps && node scripts/gen-reference.mjs --check && npm run panics && node --test scripts/panics.test.mjs
+bash scripts/fetch-nish.sh && npm run build && npm test && npm run lint && npm run tested-exports && npm run dogfood && npm run doc-caps && node scripts/gen-reference.mjs --check && ! git grep -n -e '--allow-panics' -- scripts .github docs src package.json
 ```
 
-Then mutation-check the gate. Delete one index guard in a src/ module. `npm run panics` must exit 1 and name that site, and `npm run build` must fail. Restore the guard, and both must pass.
+Then mutation-check the gate. Delete one index guard in a src/ module. `npm run build` must fail and name that site as `file:line:col`, and so must CI's Build step on a pushed branch. Restore the guard, and both must pass.
