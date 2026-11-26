@@ -605,6 +605,7 @@ const replayTerm = (ctx: ReplayCtx, e: LangExpr, scope: ReplayScope, path: Repla
   if (toI32(args.length) < arity) {
     return new ReplayValue(`the expression has ${args.length} operand(s), not the ${arity} its kind takes`)
   }
+  // The arity check above holds each branch's operand count; the bounds are for the prover.
   if (e.kind === EXPR_UNOP && toI32(args.length) >= 1) {
     const a = replayTerm(ctx, args[0], scope, path)
     if (e.op === "not") {
@@ -882,8 +883,13 @@ const replayExpectDomain = (checks: ReplayChecks, fn: FnUnit, run: ReplayRun, re
   }
   const values = run.requires
   const clauses = fn.requires
+  // Unreachable: every run here is replayEvaluate's of fn, which records one
+  // value per requires. Unequal lengths would be a vector bug: a mismatch.
   if (values.length !== clauses.length) {
-    checks.expect(replayBool(false), `the replay has ${values.length} requires value(s) for ${clauses.length} clause(s)`)
+    checks.expect(
+      replayBool(false),
+      `the replay has ${values.length} requires value(s) for ${clauses.length} clause(s)`,
+    )
   }
   // The second bound is for the prover: unequal lengths are a mismatch above.
   for (let i = 0; i < toI32(values.length) && i < toI32(clauses.length); i++) {
@@ -965,7 +971,10 @@ export const replayHazard = (
     return new ReplayResult(REPLAY_MISMATCH, `hazard kind ${kind} is not one the script records`)
   }
   if (index < 0 || index >= toI32(hits.length)) {
-    return new ReplayResult(REPLAY_MISMATCH, `the replay records ${hits.length} such hazard(s), not ${toI64(index) + toI64(1)}`)
+    return new ReplayResult(
+      REPLAY_MISMATCH,
+      `the replay records ${hits.length} such hazard(s), not ${toI64(index) + toI64(1)}`,
+    )
   }
   const checks = new ReplayChecks()
   if (run.outOfRange !== "") {
