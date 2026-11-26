@@ -28,10 +28,10 @@ const staleIsSha = (text: string): boolean => {
 /** Whether `line` ends a block comment opened on an earlier line. */
 const staleClosesBlock = (line: string): boolean => line.indexOf("*/") >= 0
 
-/** Whether the text after the close of a block comment in `line` is code, not a comment or nothing. */
+/** Whether the text after the close of a block comment in `line`, which holds one, is code, not a comment or nothing. */
 const staleCodeAfterBlock = (line: string): boolean => {
   const close = line.indexOf("*/")
-  const rest = close >= 0 && close < line.length - 1 ? trim(line.substring(close + 2)) : ""
+  const rest = close < line.length - 1 ? trim(line.substring(close + 2)) : ""
   return rest.length > 0 && !rest.startsWith("//") && !rest.startsWith("/*")
 }
 

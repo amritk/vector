@@ -317,7 +317,7 @@ export const gitdiffParse = (text: string): Result<GitdiffFile[], string> => {
       }
       const first = hunk[0]
       const count = hunk[1]
-      if (first < 0 || first > 999999999 || count < 0 || count > 999999999) {
+      if (first > 999999999 || count > 999999999) {
         return Err(`cannot read the hunk header "${line}"`)
       }
       if (count > 0) {
@@ -660,7 +660,7 @@ const gitdiffArrowHead = (toks: LexToken[], valueStart: i32, close: i32): boolea
 
 /** Whether a `,` at `at` is followed by another declarator: a name, then `:`, `=`, `!`, `,` or the end. */
 const gitdiffNextDeclarator = (toks: LexToken[], at: i32, to: i32): boolean => {
-  if (at < 0 || at >= toks.length - 1 || !gitdiffIsIdent(toks, at + 1, to)) {
+  if (at >= toks.length - 1 || !gitdiffIsIdent(toks, at + 1, to)) {
     return false
   }
   const k = at + 2
@@ -691,7 +691,7 @@ const gitdiffDeclarators = (toks: LexToken[], from: i32, to: i32): GitdiffDecl =
   const names: string[] = []
   let i = from
   while (true) {
-    if (!gitdiffIsIdent(toks, i, to) || i < 0 || i >= toks.length) {
+    if (!gitdiffIsIdent(toks, i, to) || i >= toks.length) {
       return new GitdiffDecl(names, names.length === 0 ? GITDIFF_DECL_UNNAMED : GITDIFF_DECL_UNSPLIT)
     }
     names.push(gitdiffTok(toks, i, to))
@@ -755,7 +755,6 @@ const gitdiffDeclarators = (toks: LexToken[], from: i32, to: i32): GitdiffDecl =
 const gitdiffDeclare = (toks: LexToken[], from: i32, to: i32): GitdiffDecl => {
   let i = from
   while (
-    i >= 0 &&
     i < toks.length &&
     (gitdiffTok(toks, i, to) === "declare" ||
       gitdiffTok(toks, i, to) === "abstract" ||
@@ -768,7 +767,7 @@ const gitdiffDeclare = (toks: LexToken[], from: i32, to: i32): GitdiffDecl => {
     return new GitdiffDecl([], GITDIFF_DECL_UNNAMED)
   }
   let k = gitdiffTok(toks, i, to)
-  if (k === "const" && i < toks.length - 1 && gitdiffTok(toks, i + 1, to) === "enum") {
+  if (k === "const" && gitdiffTok(toks, i + 1, to) === "enum") {
     i = i + 1
     k = "enum"
   }
@@ -810,7 +809,7 @@ const gitdiffOutside = (toks: LexToken[], from: i32, to: i32): string =>
 
 /** The text of tokens `[from, to)`, from the first's start to the last's end. */
 const gitdiffText = (text: string, toks: LexToken[], from: i32, to: i32): Result<string, string> => {
-  if (from < 0 || from >= to || from >= toks.length || to < 1 || to > toks.length) {
+  if (from < 0 || from >= toks.length || to < 1 || to > toks.length) {
     return Err(gitdiffOutside(toks, from, to))
   }
   return Ok(text.substring(toks[from].start, toks[to - 1].end))
@@ -865,7 +864,7 @@ const gitdiffListExports = (
   const end = gitdiffStmtEnd(toks, span)
   const statement = gitdiffStmtText(text, toks, span).orReturn()
   const from = span.from
-  if (from < 0 || from >= toks.length || open < 0 || open >= end || end < 1 || end > toks.length) {
+  if (from < 0 || from >= toks.length || open >= end || end < 1) {
     return Err(gitdiffOutside(toks, from, span.to))
   }
   const line = toks[from].line
@@ -897,7 +896,7 @@ const gitdiffListExports = (
       if (gitdiffIsIdent(toks, s, b)) {
         if (s === b - 1) {
           name = gitdiffTok(toks, s, b)
-        } else if (b >= 3 && s === b - 3) {
+        } else if (s === b - 3) {
           // `s as t`: the `as` at b - 2, the exported name at b - 1.
           if (gitdiffTok(toks, b - 2, b) === "as" && gitdiffIsIdent(toks, b - 1, b)) {
             name = gitdiffTok(toks, b - 1, b)
