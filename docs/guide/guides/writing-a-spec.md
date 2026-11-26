@@ -703,12 +703,25 @@ of matching bytes:
   section prints `""` or `(0 octets)`.
 - **One test case.** The expected value may not be bound to the same label
   as an argument (a key used as the expected MAC). Strings must share a
-  printed line (`BASE64("f") = "Zg=="`). A label printed several times in
+  printed line (`BASE64("f") = "Zg=="`) or one prose example (below). A label printed several times in
   the cited section is read in rounds (the k-th `Key` goes with the k-th
   `Data` and the k-th `HMAC-SHA-256`), so citing a parent section cannot mix
   values from two test cases. A label printed once goes with the round it is
   printed among: RFC 8032 Section 7.1 prints `MESSAGE (length 0 bytes)` once,
   in TEST 1, so it is refused beside TEST 2's `SECRET KEY` and `SIGNATURE`.
+- **Prose examples.** Values that share no line but that the cited section
+  prints in prose (a string in quotes, a `0x` value, a whole integer, commas
+  allowed) are one test case when one example holds them all: a sentence,
+  or one `;` part of it, read across wrapped lines and page breaks. A
+  sentence that says `this value` or `this string` goes on the one before
+  it. RFC 6455 §4.2.2's NOTE pairs `"dGhlIHNhbXBsZSBub25jZQ=="` with
+  `"s3pPLMBiTxaQ9kYGzzhZRbK+xOo="` across three sentences; RFC 9000 §A.1
+  pairs `0x7bbd` with `15,293`, its own `;` part, and refuses
+  `0xc2197c5eff14e88c` with `494,878,333`: "never in one sentence with" it. A value printed twice in
+  the example's paragraph is refused, since nothing says which printing is
+  the case's, and so is an integer printed in prose beside the others with
+  no example holding them all. A `.` between digits (`5.2`) ends no
+  sentence; one after an abbreviation (`etc.`) does.
 - **Call labels.** A string or integer printed inside the expected
   value's label, in its `( … )` (`"passwd"`, `c=1` in
   `PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)`), is one test

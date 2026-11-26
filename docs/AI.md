@@ -86,7 +86,7 @@ vector does two things, and no model is involved in either:
 - **A contract's gates.** `spec check` runs shape, fidelity, completeness,
   provenance, coverage, typing, signatures and domain: quotes in their section,
   MUST and SHALL tested or excluded, values whole and named, one case per
-  vector (`= hex` lines, wrapped call labels in order, `With …:` headings).
+  vector (`= hex` lines, call labels in order, `With …:` headings, one sentence).
   See [The gates](guide/guides/spec-to-contract.md#the-gates).
 - **Module paths.** Two or more `/`-split segments, each
   `[a-z][a-z0-9_]*(-[a-z0-9][a-z0-9_]*)*`. See [Modules and names](guide/guides/writing-a-spec.md#modules-and-names).
