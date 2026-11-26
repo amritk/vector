@@ -86,15 +86,13 @@ class SampleSlot {
 class SampleRun {
   k: Clause
   vars: ForallVar[]
-  ranges: i64[][]
   slots: SampleSlot[]
   rnd: SamplePrng
   out: SampleOutcome
   seen: string[]
-  constructor(k: Clause, ranges: i64[][], slots: SampleSlot[], seed: string) {
+  constructor(k: Clause, slots: SampleSlot[], seed: string) {
     this.k = k
     this.vars = k.forall
-    this.ranges = ranges
     this.slots = slots
     this.rnd = new SamplePrng(seed)
     this.out = new SampleOutcome(k.id)
@@ -248,6 +246,9 @@ const sampleQueries = (run: SampleRun): SampleQuery[] => {
   return queries
 }
 
+/** A stat count plus one, in u32, which cannot overflow: a count is below the samples' length. */
+const sampleBump = (count: i32): i32 => toI32(toU32(count) + toU32(1))
+
 /**
  * Adds the boundary samples Z3's models give, in Z3's order, until the
  * property has `cap`; Ok with whether the domain is unsat.
@@ -258,7 +259,11 @@ const sampleBoundaries = (
   queries: SampleQuery[],
   cap: i32,
 ): Result<boolean, string> => {
-  const z3 = runZ3(sampleScript(run.vars, run.ranges, whereTerm, queries), queries.length).orReturn()
+  const ranges: i64[][] = []
+  for (const slot of run.slots) {
+    ranges.push([slot.lo, slot.hi])
+  }
+  const z3 = runZ3(sampleScript(run.vars, ranges, whereTerm, queries), queries.length).orReturn()
   for (const line of z3.errors) {
     if (!sampleIsModelRefusal(line)) {
       return Err(`z3 rejected the sampling script: ${line}`)
@@ -299,8 +304,7 @@ const sampleBoundaries = (
       added = sampleAdd(run, sampleFill(run, model).orReturn(), why).orReturn()
     }
     if (added) {
-      // In u32, which cannot overflow: the count is below the samples' length.
-      run.out.stat.boundary = toI32(toU32(run.out.stat.boundary) + toU32(1))
+      run.out.stat.boundary = sampleBump(run.out.stat.boundary)
     }
   }
   return Ok(z3.answers.length > 0 && z3.answers[0].result === "unsat")
@@ -316,7 +320,6 @@ const sampleBoundaries = (
  *   could not run or rejected the script
  */
 export const sampleProperty = (contract: string, k: Clause): Result<SampleOutcome, string> => {
-  const ranges: i64[][] = []
   const slots: SampleSlot[] = []
   for (const v of k.forall) {
     const r = sampleRange(v)
@@ -327,14 +330,12 @@ export const sampleProperty = (contract: string, k: Clause): Result<SampleOutcom
     }
     const range = r.value
     // sampleRange answers [lo, hi]; anything else is a bug here, not input.
-    if (range.length === 2) {
-      slots.push(new SampleSlot(v, range[0], range[1]))
-      ranges.push(range)
-    } else {
+    if (range.length !== 2) {
       return Err(`${v.name}: its range is not [lo, hi]`)
     }
+    slots.push(new SampleSlot(v, range[0], range[1]))
   }
-  const run = new SampleRun(k, ranges, slots, `${contract}/${k.id}`)
+  const run = new SampleRun(k, slots, `${contract}/${k.id}`)
   const none = new Map<string, Expr>()
   const where = k.where
   const whereTerm = where === null ? "true" : sampleBoolTerm(sampleInlineLets(where, none), run.vars)
@@ -382,8 +383,7 @@ const sampleDraw = (run: SampleRun, want: i32, total: i32): Result<boolean, stri
     left--
   ) {
     if (sampleAdd(run, sampleFill(run, new Map<string, i64>()).orReturn(), "random").orReturn()) {
-      // In u32, which cannot overflow: the count is below the samples' length.
-      run.out.stat.random = toI32(toU32(run.out.stat.random) + toU32(1))
+      run.out.stat.random = sampleBump(run.out.stat.random)
     }
   }
   return Ok(true)
@@ -399,7 +399,7 @@ const sampleDraw = (run: SampleRun, want: i32, total: i32): Result<boolean, stri
 const sampleRun = (run: SampleRun, whereTerm: string | null, queries: SampleQuery[]): Result<boolean, string> => {
   sampleInDomain(
     run,
-    sampleFill(new SampleRun(run.k, run.ranges, run.slots, "probe"), new Map<string, i64>()).orReturn(),
+    sampleFill(new SampleRun(run.k, run.slots, "probe"), new Map<string, i64>()).orReturn(),
   ).orReturn()
   const n = run.k.samples
   if (n < 0) {

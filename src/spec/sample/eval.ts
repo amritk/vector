@@ -333,15 +333,21 @@ const sampleLogic = (e: Expr, env: Map<string, SampleValue>): Result<SampleValue
 }
 
 /** An operator over bytes. */
+/** A copy of bytes, by push: `slice` is a site the panic prover cannot discharge. */
+const sampleCopyBytes = (bytes: u8[]): u8[] => {
+  const out: u8[] = []
+  for (const b of bytes) {
+    out.push(b)
+  }
+  return out
+}
+
 const sampleBytesOp = (op: string, a: SampleValue[]): Result<SampleValue, string> => {
   if (op === "len") {
     return Ok(sampleInt(toI64(sampleArg(a, 0, SampleKind.Bytes, op).orReturn().bytes.length), "i32"))
   }
   if (op === "concat") {
-    const out: u8[] = []
-    for (const b of sampleArg(a, 0, SampleKind.Bytes, op).orReturn().bytes) {
-      out.push(b)
-    }
+    const out = sampleCopyBytes(sampleArg(a, 0, SampleKind.Bytes, op).orReturn().bytes)
     for (const b of sampleArg(a, 1, SampleKind.Bytes, op).orReturn().bytes) {
       out.push(b)
     }
@@ -371,16 +377,13 @@ const sampleBytesOp = (op: string, a: SampleValue[]): Result<SampleValue, string
     return Ok(sampleBytes(out))
   }
   if (op === "flipBit") {
-    const out: u8[] = []
-    for (const b of sampleArg(a, 0, SampleKind.Bytes, op).orReturn().bytes) {
-      out.push(b)
-    }
+    const out = sampleCopyBytes(sampleArg(a, 0, SampleKind.Bytes, op).orReturn().bytes)
     const bit = sampleArg(a, 1, SampleKind.Int, op).orReturn().n
     const n = out.length
     if (n > 0) {
       // bit modulo the bit count, rounded down, in u64, which cannot
       // overflow: a negative bit counts back from the end. bits is not 0,
-      // as n is not.
+      // as n is not, but the prover cannot see that through the product.
       const zero: u64 = 0
       const eight: u64 = 8
       const bits = toU64(n) * eight
@@ -466,7 +469,12 @@ const sampleStrOp = (op: string, a: SampleValue[]): Result<SampleValue, string> 
     return Ok(sampleBytes(utf8Bytes(s)))
   }
   const i = sampleArg(a, 1, SampleKind.Int, op).orReturn().n
-  return Ok(sampleStr(i >= toI64(0) && i < toI64(s.length) ? s.substring(toI32(i)).substring(0, 1) : ""))
+  if (i >= toI64(0) && i < toI64(s.length)) {
+    const k = toI32(i)
+    // In u32, which cannot overflow: k is below the length.
+    return Ok(sampleStr(s.substring(k, toI32(toU32(k) + toU32(1)))))
+  }
+  return Ok(sampleStr(""))
 }
 
 const SAMPLE_BYTES_OPS: string =
