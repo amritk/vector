@@ -652,19 +652,27 @@ const extractEditScript = (x: string[], y: string[]): Result<ExtractOp[], string
   // x[xm..] and y[ym..] are the common tail, which does not reach into the head.
   let xm = x.length
   let ym = y.length
-  while (xm > pre && ym > pre && x[xm - 1] === y[ym - 1]) {
+  while (xm > pre && ym > pre && xm > 0 && xm <= x.length && ym > 0 && ym <= y.length && x[xm - 1] === y[ym - 1]) {
     xm = xm - 1
     ym = ym - 1
   }
-  if (!(pre >= 0 && pre <= xm && xm <= x.length && pre <= ym && ym <= y.length)) {
-    return Err(`the diff's changed lines ${pre}..${xm} and ${pre}..${ym} are out of range`)
+  const xs: string[] = []
+  for (let k = 0; k < x.length; k++) {
+    if (k >= pre && k < xm) {
+      xs.push(x[k])
+    }
   }
-  const xs = x.slice(pre, xm)
-  const ys = y.slice(pre, ym)
+  const ys: string[] = []
+  for (let k = 0; k < y.length; k++) {
+    if (k >= pre && k < ym) {
+      ys.push(y[k])
+    }
+  }
   // Past EXTRACT_DIFF_CELLS the table is not built (it would hold too much):
   // the changed lines are given as one hunk, every old line removed, then
   // every new line added.
-  const whole = xs.length > 0 && ys.length > toI32(EXTRACT_DIFF_CELLS / xs.length)
+  const n = xs.length
+  const whole = n > 0 && ys.length > toI32(EXTRACT_DIFF_CELLS / n)
   // rows[r][c]: the longest common subsequence of xs[r..] and ys[c..].
   const rows: u32[][] = []
   if (!whole) {
@@ -674,14 +682,14 @@ const extractEditScript = (x: string[], y: string[]): Result<ExtractOp[], string
     rows.push(extractZeros(ys.length))
   }
   for (let r = whole ? -1 : xs.length - 1; r >= 0; r--) {
-    if (!(r + 1 < rows.length)) {
-      return Err(`the diff table has no row ${r + 1}`)
+    if (!(r < xs.length && r < rows.length - 1)) {
+      return Err(`the diff table has no row below ${r}`)
     }
     const row = rows[r]
     const below = rows[r + 1]
     for (let c = ys.length - 1; c >= 0; c--) {
-      if (!(c + 1 < row.length && c + 1 < below.length)) {
-        return Err(`the diff table has no cell ${r},${c + 1}`)
+      if (!(c < row.length - 1 && c < below.length - 1)) {
+        return Err(`the diff table has no cell right of ${r},${c}`)
       }
       if (xs[r] === ys[c]) {
         row[c] = below[c + 1] + 1
@@ -702,12 +710,17 @@ const extractEditScript = (x: string[], y: string[]): Result<ExtractOp[], string
     }
     let remove = i < xs.length && (whole || j >= ys.length)
     if (i < xs.length && !remove) {
-      if (!(i + 1 < rows.length && j >= 0 && j + 1 < rows[i].length && j < rows[i + 1].length)) {
-        return Err(`the diff table has no cell ${i},${j + 1}`)
+      if (!(i < rows.length - 1)) {
+        return Err(`the diff table has no row below ${i}`)
       }
-      remove = rows[i + 1][j] >= rows[i][j + 1]
+      const row = rows[i]
+      const below = rows[i + 1]
+      if (!(j < row.length - 1 && j < below.length)) {
+        return Err(`the diff table has no cell right of ${i},${j}`)
+      }
+      remove = below[j] >= row[j + 1]
     }
-    if (remove) {
+    if (remove && i < xs.length) {
       // A deletion before an insertion, as diff -u prints them.
       ops.push(new ExtractOp("-", xs[i], p + toU32(i), p + toU32(j)))
       i = i + 1
@@ -718,10 +731,64 @@ const extractEditScript = (x: string[], y: string[]): Result<ExtractOp[], string
       return Err(`the diff's edit script stopped at ${i},${j}`)
     }
   }
-  for (let k = xm; k < x.length; k++) {
-    ops.push(new ExtractOp(" ", x[k], toU32(k), toU32(k) - toU32(xm) + toU32(ym)))
+  for (let k = 0; k < x.length; k++) {
+    if (k >= xm) {
+      ops.push(new ExtractOp(" ", x[k], toU32(k), toU32(k) - toU32(xm) + toU32(ym)))
+    }
   }
   return Ok(ops)
+}
+
+/**
+ * Appends to `out` the hunk whose first change is `ops[k]`: from `context`
+ * lines before it to `context` after the last change within 2 * `context`
+ * unchanged lines of the next. Returns the index past the hunk; Err names a
+ * hunk out of range, which it never reads.
+ */
+const extractHunk = (ops: ExtractOp[], k: i32, out: string[]): Result<i32, string> => {
+  const context = 3
+  if (!(k >= 0 && k < ops.length)) {
+    return Err(`the diff hunk at ${k} is out of range`)
+  }
+  const start = k > context ? k - context : 0
+  let end = k
+  for (let m = k; m < ops.length; m++) {
+    if (ops[m].op !== " ") {
+      end = m
+    } else if (toI64(m) - toI64(end) > toI64(2 * context)) {
+      break
+    }
+  }
+  // Past the last change and its `context` lines: 1 + context, written out
+  // because the checker does not carry `context` past the loop above.
+  let stop = ops.length
+  if (end < ops.length - 4) {
+    stop = end + 4
+  }
+  if (!(start >= 0 && start < stop && start < ops.length && stop <= ops.length)) {
+    return Err(`the diff hunk ${start}..${stop} is out of range`)
+  }
+  const first = ops[start]
+  const hunk: ExtractOp[] = []
+  let aCount: u32 = 0
+  let bCount: u32 = 0
+  for (let m = start; m < stop && m < ops.length; m++) {
+    const o = ops[m]
+    if (o.op !== "+") {
+      aCount = aCount + 1
+    }
+    if (o.op !== "-") {
+      bCount = bCount + 1
+    }
+    hunk.push(o)
+  }
+  const aFrom = aCount === 0 ? first.i : first.i + 1
+  const bFrom = bCount === 0 ? first.j : first.j + 1
+  out.push(`@@ -${aFrom},${aCount} +${bFrom},${bCount} @@`)
+  for (const o of hunk) {
+    out.push(extractShown(o))
+  }
+  return Ok(stop)
 }
 
 /**
@@ -729,47 +796,14 @@ const extractEditScript = (x: string[], y: string[]): Result<ExtractOp[], string
  * lines of context. Err names an op out of range, which it never reads.
  */
 const extractHunks = (ops: ExtractOp[], aName: string, bName: string): Result<string, string> => {
-  const context = 3
   const out: string[] = [`--- ${aName}`, `+++ ${bName}`]
   let k = 0
   while (k >= 0 && k < ops.length) {
     if (ops[k].op === " ") {
       k = k + 1
-      continue
+    } else {
+      k = extractHunk(ops, k, out).orReturn()
     }
-    // A hunk: from `context` lines before this change to `context` after the
-    // last change within 2 * context unchanged lines of the next.
-    const start = k > context ? k - context : 0
-    let end = k
-    for (let m = k; m < ops.length; m++) {
-      if (ops[m].op !== " ") {
-        end = m
-      } else if (m - end > 2 * context) {
-        break
-      }
-    }
-    const stop = end < ops.length - 1 - context ? end + 1 + context : ops.length
-    if (!(start < stop && stop <= ops.length)) {
-      return Err(`the diff hunk ${start}..${stop} is out of range`)
-    }
-    let aCount: u32 = 0
-    let bCount: u32 = 0
-    for (let m = start; m < stop; m++) {
-      if (ops[m].op !== "+") {
-        aCount = aCount + 1
-      }
-      if (ops[m].op !== "-") {
-        bCount = bCount + 1
-      }
-    }
-    const first = ops[start]
-    const aFrom = aCount === 0 ? first.i : first.i + 1
-    const bFrom = bCount === 0 ? first.j : first.j + 1
-    out.push(`@@ -${aFrom},${aCount} +${bFrom},${bCount} @@`)
-    for (let m = start; m < stop; m++) {
-      out.push(extractShown(ops[m]))
-    }
-    k = stop
   }
   return Ok(`${out.join("\n")}\n`)
 }
