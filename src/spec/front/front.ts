@@ -480,26 +480,20 @@ class FrontCursor {
   }
 }
 
-const frontEof = (c: FrontCursor): FrontTok => c.eof
-
 /** Token `j`, or the end of the block past it. */
 const frontTokAt = (c: FrontCursor, j: i32): FrontTok => (j >= 0 && j < c.toks.length ? c.toks[j] : c.eof)
 
 /** The next token, comments included. */
-const frontRaw = (c: FrontCursor): FrontTok => (c.err !== null ? frontEof(c) : frontTokAt(c, c.i))
+const frontRaw = (c: FrontCursor): FrontTok => (c.err !== null ? c.eof : frontTokAt(c, c.i))
 
 /** The next token past comments, which are consumed. */
 function frontPeek(c: FrontCursor): FrontTok {
   if (c.err !== null) {
-    return frontEof(c)
+    return c.eof
   }
   while (true) {
     const i = c.i
-    // The cursor stops on the end of the block, the last token, so it stays among them.
-    if (i < 0 || i >= c.toks.length) {
-      return c.eof
-    }
-    const t = c.toks[i]
+    const t = frontTokAt(c, i)
     if (t.kind !== FrontKind.Comment) {
       return t
     }
@@ -507,28 +501,30 @@ function frontPeek(c: FrontCursor): FrontTok {
       const r = frontModuleLine(t)
       if (r.isErr()) {
         c.err = r.error
-        return frontEof(c)
+        return c.eof
       }
       if (r.value.length !== 0) {
         c.err = frontRefuse(
           "a module line goes between signatures, on its own line; move it out of this one",
           frontAt(t),
         )
-        return frontEof(c)
+        return c.eof
       }
     }
-    c.i = i + 1
+    // `t` is a comment, so `i` is short of the end and this cannot wrap.
+    c.i = frontSum(i, 1)
   }
 }
 
 /** The next token past any comments, which stay unread. */
 const frontLook = (c: FrontCursor): FrontTok => {
   if (c.err !== null) {
-    return frontEof(c)
+    return c.eof
   }
   let j = c.i
-  while (j >= 0 && j < c.toks.length && c.toks[j].kind === FrontKind.Comment) {
-    j++
+  // The end of the block is not a comment, so this stops short of wrapping.
+  while (frontTokAt(c, j).kind === FrontKind.Comment) {
+    j = frontSum(j, 1)
   }
   return frontTokAt(c, j)
 }
@@ -1586,7 +1582,6 @@ class FrontCovers {
   }
 }
 
-/** `^\s*(\S+)\s+covers\s+(.*)$`, as the id and the rest, or null. */
 /** A covers line's id and the text after `covers`. */
 class FrontCoversParts {
   id: string
@@ -1597,6 +1592,7 @@ class FrontCoversParts {
   }
 }
 
+/** `^\s*(\S+)\s+covers\s+(.*)$`, as the id and the rest, or null. */
 const frontCoversOf = (value: string): FrontCoversParts | null => {
   let i = 0
   while (i < value.length && frontIsSpace(frontByte(value, i))) {
@@ -1715,10 +1711,10 @@ const frontSamplesLine = (c: FrontCursor): Result<i32, FrontRefusal> => {
     samples = frontSamplesOf(raw).orReturn()
     frontSkipRaw(c)
   }
-  // From 0, so the index is proven in range; the tokens before the cursor are skipped.
-  for (let k = 0; k < c.toks.length; k++) {
-    if (k >= c.i && frontIsSamplesLine(c.toks[k])) {
-      return Err(frontRefuse("the samples line goes on line 2, after the covers line", frontAt(c.toks[k])))
+  for (let k = c.i; k < c.toks.length; k++) {
+    const t = frontTokAt(c, k)
+    if (frontIsSamplesLine(t)) {
+      return Err(frontRefuse("the samples line goes on line 2, after the covers line", frontAt(t)))
     }
   }
   return Ok(samples)
