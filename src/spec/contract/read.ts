@@ -40,6 +40,7 @@ import {
   Param,
   Requirement,
   SourceDecl,
+  Tail,
   Tolerance,
   Truncate,
   VectorSource,
@@ -269,12 +270,14 @@ const readLiteral = (r: ContractReader, v: JsonValue, at: string): Literal | nul
   }
   let lit: Literal | null = null
   if (k === 0) {
-    readObject(r, v, at, ["hex", "repeat", "label", "unchecked"])
+    readObject(r, v, at, ["hex", "repeat", "label", "unchecked", "format"])
     const hex = readString(r, v, "hex", at, true)
     const repeat = readCount(r, v, "repeat", at, 1, 2147483647, false)
+    const format = readString(r, v, "format", at, false)
     if (hex !== null) {
       const h = new Literal(LitKind.Hex, hex)
       h.repeat = toI32(repeat)
+      h.format = format
       lit = h
     }
   } else if (k === 1) {
@@ -707,6 +710,20 @@ const readTruncate = (r: ContractReader, v: JsonValue, at: string): Truncate | n
   return new Truncate(bits / 8, "bits")
 }
 
+/** A vector's `tail`: the index of the arg the value starts with, the expect's byte count, and why. */
+const readTail = (r: ContractReader, v: JsonValue, at: string): Tail | null => {
+  if (!readObject(r, v, at, ["arg", "bytes", "reason"])) {
+    return null
+  }
+  const arg = readCount(r, v, "arg", at, 0, 255, true)
+  const bytes = readCount(r, v, "bytes", at, 1, 65536, true)
+  const reason = readRequiredString(r, v, "reason", at)
+  if (arg < 0 || bytes < 0) {
+    return null
+  }
+  return new Tail(toI32(arg), bytes, reason)
+}
+
 const readForall = (r: ContractReader, v: JsonValue, at: string): ForallVar | null => {
   if (!readIsKind(r, v, JSON_VALUE_OBJECT)) {
     readFail(r, at, "an object")
@@ -790,6 +807,7 @@ const readClause = (r: ContractReader, v: JsonValue, at: string): Clause | null 
       "tolerance",
       "iterate",
       "truncate",
+      "tail",
     ])
   } else {
     readObject(r, v, at, ["kind", "id", "title", "covers", "forall", "where", "assert", "samples"])
@@ -831,6 +849,10 @@ const readClause = (r: ContractReader, v: JsonValue, at: string): Clause | null 
     const tr = r.doc.get(v, "truncate")
     if (r.doc.kind(tr) !== JSON_VALUE_NONE) {
       c.truncate = readTruncate(r, tr, `${at}.truncate`)
+    }
+    const tl = r.doc.get(v, "tail")
+    if (r.doc.kind(tl) !== JSON_VALUE_NONE) {
+      c.tail = readTail(r, tl, `${at}.tail`)
     }
     return c
   }

@@ -73,6 +73,7 @@ import {
   OutOfScope,
   Requirement,
   SourceDecl,
+  Tail,
   Target,
   Tolerance,
   Truncate,
@@ -97,17 +98,27 @@ const PROFILE_OUT_OF_SCOPE: string = "Out of scope: "
 const PROFILE_OUT_OF_SCOPE_FORM: string = "Out of scope: <export>, <the reason no clause tests it>"
 const PROFILE_ULPS_MAX: string = "9007199254740991"
 const PROFILE_STRAY_TOLERANCE: string =
-  "this Tolerance: paragraph follows no vector table; it must directly follow the vector table or another Tolerance:, Iterate: or Truncate: paragraph"
+  "this Tolerance: paragraph follows no vector table; it must directly follow the vector table or another Tolerance:, Iterate:, Truncate:, Format: or Tail: paragraph"
 const PROFILE_ITERATE: string = "Iterate: "
 const PROFILE_ITERATE_FORM: string = "Iterate: V1 1,000 times, (k, u) <- (f(k, u), k)"
 const PROFILE_ITERATE_MAX: i64 = 1000000000
 const PROFILE_STRAY_ITERATE: string =
-  "this Iterate: paragraph follows no vector table; it must directly follow the vector table or a Tolerance:, Iterate: or Truncate: paragraph, like Iterate: V1 1,000 times, (k, u) <- (f(k, u), k)"
+  "this Iterate: paragraph follows no vector table; it must directly follow the vector table or a Tolerance:, Iterate:, Truncate:, Format: or Tail: paragraph, like Iterate: V1 1,000 times, (k, u) <- (f(k, u), k)"
 const PROFILE_TRUNCATE: string = "Truncate: "
 const PROFILE_TRUNCATE_FORM: string = "Truncate: V1 to 128 bits (or to 16 bytes)"
 const PROFILE_TRUNCATE_MAX_BYTES: i64 = 65536
 const PROFILE_STRAY_TRUNCATE: string =
-  "this Truncate: paragraph follows no vector table; it must directly follow the vector table or a Tolerance:, Iterate: or Truncate: paragraph, like Truncate: V1 to 128 bits (or to 16 bytes)"
+  "this Truncate: paragraph follows no vector table; it must directly follow the vector table or a Tolerance:, Iterate:, Truncate:, Format: or Tail: paragraph, like Truncate: V1 to 128 bits (or to 16 bytes)"
+const PROFILE_FORMAT: string = "Format: "
+const PROFILE_FORMAT_FORM: string = "Format: V1 expect.concat[0] is 04, <why the RFC does not print it>"
+const PROFILE_STRAY_FORMAT: string =
+  "this Format: paragraph follows no vector table; it must directly follow the vector table or a Tolerance:, Iterate:, Truncate:, Format: or Tail: paragraph, like Format: V1 expect.concat[0] is 04, <why the RFC does not print it>"
+const PROFILE_TAIL: string = "Tail: "
+const PROFILE_TAIL_FORM: string =
+  "Tail: V1 expect is the last 16 bytes of the value args[0] is printed in, <why the RFC prints them as one>"
+const PROFILE_TAIL_MAX_BYTES: i64 = 65536
+const PROFILE_STRAY_TAIL: string =
+  "this Tail: paragraph follows no vector table; it must directly follow the vector table or a Tolerance:, Iterate:, Truncate:, Format: or Tail: paragraph, like Tail: V1 expect is the last 16 bytes of the value args[0] is printed in, <why the RFC prints them as one>"
 const PROFILE_MAIN_KEY: string = "vector-main-"
 const PROFILE_ID_RULE: string = `is not letters, digits, ".", "_" and "-", starting with a letter or digit`
 
@@ -346,12 +357,18 @@ class ProfileTable {
   iterates: XmlNode[]
   /** The Truncate: paragraphs right after it. */
   truncates: XmlNode[]
+  /** The Format: paragraphs right after it. */
+  formats: XmlNode[]
+  /** The Tail: paragraphs right after it. */
+  tails: XmlNode[]
   constructor(node: XmlNode, section: string) {
     this.node = node
     this.section = section
     this.tolerances = []
     this.iterates = []
     this.truncates = []
+    this.formats = []
+    this.tails = []
   }
 }
 
@@ -411,6 +428,16 @@ class ProfileContext {
   truncateIds: string[]
   /** Where each truncated vector's Truncate: paragraph is. */
   truncateLocs: ProfileLoc[]
+  /** The vector of each format part read, in order. */
+  formatIds: string[]
+  /** Each format part's path in its vector (`expect.concat[0]`), alongside formatIds. */
+  formatPaths: string[]
+  /** Where each format part's Format: paragraph is, alongside formatIds. */
+  formatLocs: ProfileLoc[]
+  /** The ids of the vectors with a tail, in the order read. */
+  tailIds: string[]
+  /** Where each tail's Tail: paragraph is, alongside tailIds. */
+  tailLocs: ProfileLoc[]
   properties: Clause[]
   propertyLocs: ProfileLoc[]
   /** Each export out of scope, and (alongside) its Out of scope: paragraph. */
@@ -452,6 +479,11 @@ class ProfileContext {
     this.iterateLocs = []
     this.truncateIds = []
     this.truncateLocs = []
+    this.formatIds = []
+    this.formatPaths = []
+    this.formatLocs = []
+    this.tailIds = []
+    this.tailLocs = []
     this.properties = []
     this.propertyLocs = []
     this.outOfScope = []
@@ -1757,14 +1789,17 @@ const profileBlocks = (c: ProfileContext, parent: XmlNode, section: string): voi
   for (let i = 0; i < kids.length; i++) {
     const n = kids[i]
     if (n.name === "table") {
-      // The run of Tolerance:, Iterate: and Truncate: paragraphs right after
-      // it, in any order, goes with it; a BCP 14 keyword in one is quoted, not used.
+      // The run of Tolerance:, Iterate:, Truncate:, Format: and Tail:
+      // paragraphs right after it, in any order, goes with it; a BCP 14
+      // keyword in one is quoted, not used.
       const table = new ProfileTable(n, section)
       for (let j = i + 1; j < kids.length; j++) {
         const k = kids[j]
         const iterate = profileStartsWith(c, k, PROFILE_ITERATE)
         const truncate = profileStartsWith(c, k, PROFILE_TRUNCATE)
-        if (!iterate && !truncate && !profileStartsWith(c, k, PROFILE_TOLERANCE)) {
+        const format = profileStartsWith(c, k, PROFILE_FORMAT)
+        const tail = profileStartsWith(c, k, PROFILE_TAIL)
+        if (!iterate && !truncate && !format && !tail && !profileStartsWith(c, k, PROFILE_TOLERANCE)) {
           break
         }
         used.add(k)
@@ -1773,6 +1808,10 @@ const profileBlocks = (c: ProfileContext, parent: XmlNode, section: string): voi
           table.iterates.push(k)
         } else if (truncate) {
           table.truncates.push(k)
+        } else if (format) {
+          table.formats.push(k)
+        } else if (tail) {
+          table.tails.push(k)
         } else {
           table.tolerances.push(k)
         }
@@ -1878,6 +1917,12 @@ const profileBlocks = (c: ProfileContext, parent: XmlNode, section: string): voi
     } else if (profileStartsWith(c, n, PROFILE_TRUNCATE)) {
       profileHandle(c, n)
       profileRefuse(c, n, PROFILE_STRAY_TRUNCATE)
+    } else if (profileStartsWith(c, n, PROFILE_FORMAT)) {
+      profileHandle(c, n)
+      profileRefuse(c, n, PROFILE_STRAY_FORMAT)
+    } else if (profileStartsWith(c, n, PROFILE_TAIL)) {
+      profileHandle(c, n)
+      profileRefuse(c, n, PROFILE_STRAY_TAIL)
     }
   }
 }
@@ -1991,6 +2036,12 @@ const profileReadTable = (c: ProfileContext, t: ProfileTable): void => {
     for (const p of t.truncates) {
       profileRefuse(c, p, PROFILE_STRAY_TRUNCATE)
     }
+    for (const p of t.formats) {
+      profileRefuse(c, p, PROFILE_STRAY_FORMAT)
+    }
+    for (const p of t.tails) {
+      profileRefuse(c, p, PROFILE_STRAY_TAIL)
+    }
     return
   }
   if (header.join("|") !== want.join("|")) {
@@ -2032,6 +2083,189 @@ const profileReadTable = (c: ProfileContext, t: ProfileTable): void => {
   for (const p of t.truncates) {
     profileReadTruncate(c, p, rowIds, read)
   }
+  for (const p of t.formats) {
+    profileReadFormat(c, p, rowIds, read)
+  }
+  for (const p of t.tails) {
+    profileReadTail(c, p, rowIds, read)
+  }
+}
+
+/** A paragraph's text after `head`, split at its first ", " into the words before it and the reason after; null when it has none. */
+const profileReasoned = (c: ProfileContext, p: XmlNode, head: string): string[] | null => {
+  const text = profileTrim(profileAfter(c, p, head))
+  const comma = text.indexOf(", ")
+  // indexOf finds ", " inside `text`; `comma <= text.length - 2` is for the prover.
+  if (comma < 0 || comma > text.length - 2) {
+    return null
+  }
+  const reason = profileTrim(text.substring(comma + 2))
+  if (reason.length === 0) {
+    return null
+  }
+  const out = split(text.substring(0, comma), " ").filter((w: string): boolean => w.length > 0)
+  out.push(reason)
+  return out
+}
+
+/** An index in a path, `[<digits>]` after `name`: 0 to 999 with no leading zero; -1 when `s` is not one. */
+const profileIndexIn = (s: string, name: string): i32 => {
+  const n = name.length
+  const m = s.length
+  // `n < m - 1` follows from the brackets; it is for the prover.
+  if (!s.startsWith(`${name}[`) || !s.endsWith("]") || n >= m - 1) {
+    return -1
+  }
+  const d = s.substring(n + 1, m - 1)
+  if (d.length === 0 || d.length > 3 || !profileAllDigits(d) || (d.length > 1 && d.startsWith("0"))) {
+    return -1
+  }
+  return toI32(profileDigitsValue(d))
+}
+
+/**
+ * The literal a format path names (`expect` or `args[<i>]`, before its
+ * `.concat[<j>]`), or a refusal's text.
+ */
+const profileFormatOf = (v: Clause, path: string): Result<Literal, string> => {
+  const dot = path.indexOf(".")
+  const head = dot < 0 ? path : path.substring(0, dot)
+  let j = -1
+  if (dot >= 0 && dot < path.length) {
+    j = profileIndexIn(path.substring(dot + 1), "concat")
+  }
+  const i = head === "expect" ? 0 : profileIndexIn(head, "args")
+  if (j < 0 || i < 0) {
+    return Err(`"${path}" is no path to a concat's part; it reads expect.concat[<j>] or args[<i>].concat[<j>]`)
+  }
+  let lit: Literal | null = v.expect
+  if (head !== "expect") {
+    if (i >= v.args.length) {
+      return Err(`${v.id} has no ${head}: it has ${v.args.length} arguments`)
+    }
+    lit = v.args[i]
+  }
+  if (lit === null || lit.kind !== LitKind.Concat) {
+    return Err(`${v.id}'s ${head} is no concat; a format constant is a part of one`)
+  }
+  const parts = lit.parts
+  if (!(j >= 0 && j < parts.length)) {
+    return Err(`${v.id}'s ${head} has no part ${j}: it has ${parts.length}`)
+  }
+  for (const q of parts) {
+    if (q.format !== null) {
+      return Err(`${v.id}'s ${head} has a format part already; a concat has at most one`)
+    }
+  }
+  return Ok(parts[j])
+}
+
+/**
+ * A Format: paragraph, `<id> <path> is <hex>, <reason>`: the concat part at
+ * the path is a constant the RFC does not print (SEC1's `04` before a
+ * point's coordinates), taken on the reason.
+ */
+const profileReadFormat = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, read: Map<string, Clause>): void => {
+  const reasoned = profileReasoned(c, p, PROFILE_FORMAT)
+  const words: string[] = reasoned === null ? [] : reasoned
+  if (words.length !== 5 || words[2] !== "is") {
+    profileRefuse(c, p, `a Format: paragraph reads "<id> <path> is <hex>, <reason>": ${PROFILE_FORMAT_FORM}`)
+    return
+  }
+  const id = words[0]
+  const path = words[1]
+  const hex = words[3]
+  const reason = words[4]
+  if (!rowIds.has(id)) {
+    profileRefuse(c, p, `Format: names "${id}", which is no vector of the table: ${PROFILE_FORMAT_FORM}`)
+    return
+  }
+  const v = read.get(id)
+  if (v === undefined) {
+    return
+  }
+  const got = profileFormatOf(v, path)
+  if (got.isErr()) {
+    profileRefuse(c, p, got.error)
+    return
+  }
+  const part = got.value
+  if (part.kind !== LitKind.Hex || part.repeat >= 0 || part.label !== null) {
+    profileRefuse(c, p, `${id}'s ${path} is not a bare hex value like [04]; a format constant is one`)
+    return
+  }
+  if (part.text !== hex) {
+    profileRefuse(c, p, `${id}'s ${path} is ${part.text === "" ? "empty" : part.text}, not ${hex}`)
+    return
+  }
+  part.format = reason
+  c.formatIds.push(id)
+  c.formatPaths.push(path)
+  c.formatLocs.push(profileLocOf(p))
+}
+
+/** The words of a Tail: paragraph before its reason, `*` where the id, the length and the arg stand. */
+const PROFILE_TAIL_WORDS: string = "* expect is the last * bytes of the value * is printed in"
+
+/**
+ * A Tail: paragraph, `<id> expect is the last <N> bytes of the value
+ * args[<i>] is printed in, <reason>`: the RFC prints the argument then the
+ * expected value as one value, the expected value its last N bytes.
+ */
+const profileReadTail = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, read: Map<string, Clause>): void => {
+  const reasoned = profileReasoned(c, p, PROFILE_TAIL)
+  const words: string[] = reasoned === null ? [] : reasoned
+  const form = split(PROFILE_TAIL_WORDS, " ")
+  // The form is 14 words, and the paragraph those and its reason.
+  let fits = words.length === 15 && form.length === 14
+  for (let i = 0; fits && i < form.length && i < words.length; i++) {
+    fits = form[i] === "*" || form[i] === words[i]
+  }
+  if (!fits || words.length !== 15) {
+    profileRefuse(
+      c,
+      p,
+      `a Tail: paragraph reads "<id> expect is the last <N> bytes of the value args[<i>] is printed in, <reason>": ${PROFILE_TAIL_FORM}`,
+    )
+    return
+  }
+  const id = words[0]
+  const len = words[5]
+  const argWord = words[10]
+  const reason = words[14]
+  if (!profileAllDigits(len) || len.startsWith("0") || len.length > 7) {
+    profileRefuse(
+      c,
+      p,
+      `${id}'s tail is a whole number of at least 1 bytes in digits, with no leading zero, not "${len}": ${PROFILE_TAIL_FORM}`,
+    )
+    return
+  }
+  const bytes = profileDigitsValue(len)
+  if (bytes > PROFILE_TAIL_MAX_BYTES) {
+    profileRefuse(c, p, `${id}'s tail is ${len} bytes, more than 65536`)
+    return
+  }
+  const arg = profileIndexIn(argWord, "args")
+  if (arg < 0) {
+    profileRefuse(c, p, `"${argWord}" is no argument; it reads args[<i>]: ${PROFILE_TAIL_FORM}`)
+    return
+  }
+  if (!rowIds.has(id)) {
+    profileRefuse(c, p, `Tail: names "${id}", which is no vector of the table: ${PROFILE_TAIL_FORM}`)
+    return
+  }
+  const v = read.get(id)
+  if (v === undefined) {
+    return
+  }
+  if (v.tail !== null) {
+    profileRefuse(c, p, `${id} has a tail already; a vector has at most one Tail: paragraph`)
+    return
+  }
+  v.tail = new Tail(arg, bytes, reason)
+  c.tailIds.push(id)
+  c.tailLocs.push(profileLocOf(p))
 }
 
 /**
@@ -3201,10 +3435,18 @@ const profileShapeRefusals = (c: ProfileContext, out: Contract, clauseLocs: Prof
         const id = out.clauses[k].id
         const at = c.iterateIds.indexOf(id)
         const tr = c.truncateIds.indexOf(id)
+        const tl = c.tailIds.indexOf(id)
         if (at >= 0 && at < c.iterateLocs.length && issue.startsWith(`clauses[${k}].iterate`)) {
           loc = c.iterateLocs[at]
         } else if (tr >= 0 && tr < c.truncateLocs.length && issue.startsWith(`clauses[${k}].truncate`)) {
           loc = c.truncateLocs[tr]
+        } else if (tl >= 0 && tl < c.tailLocs.length && issue.startsWith(`clauses[${k}].tail`)) {
+          loc = c.tailLocs[tl]
+        }
+        for (let q = 0; q < c.formatIds.length && q < c.formatPaths.length && q < c.formatLocs.length; q++) {
+          if (c.formatIds[q] === id && issue.startsWith(`clauses[${k}].${c.formatPaths[q]}.format`)) {
+            loc = c.formatLocs[q]
+          }
         }
       }
     } else if (f >= 0 && f < c.fnLocs.length) {
@@ -3380,6 +3622,9 @@ export const profileRead = (
     new ProfilePairs("tolerances", c.toleranceIds.length, c.toleranceLocs.length),
     new ProfilePairs("iterates", c.iterateIds.length, c.iterateLocs.length),
     new ProfilePairs("truncates", c.truncateIds.length, c.truncateLocs.length),
+    new ProfilePairs("format parts", c.formatIds.length, c.formatLocs.length),
+    new ProfilePairs("format paths", c.formatPaths.length, c.formatLocs.length),
+    new ProfilePairs("tails", c.tailIds.length, c.tailLocs.length),
     new ProfilePairs("functions", c.functions.length, c.fnLocs.length),
     new ProfilePairs("out-of-scope exports", c.outOfScope.length, c.outOfScopeLocs.length),
   ]
@@ -3406,6 +3651,12 @@ export const profileRead = (
   }
   for (let i = 0; i < c.truncateIds.length && i < c.truncateLocs.length; i++) {
     profilePut(c, l, `${c.truncateIds[i]}.truncate`, c.truncateLocs[i])
+  }
+  for (let i = 0; i < c.formatIds.length && i < c.formatPaths.length && i < c.formatLocs.length; i++) {
+    profilePut(c, l, `${c.formatIds[i]}.${c.formatPaths[i]}`, c.formatLocs[i])
+  }
+  for (let i = 0; i < c.tailIds.length && i < c.tailLocs.length; i++) {
+    profilePut(c, l, `${c.tailIds[i]}.tail`, c.tailLocs[i])
   }
   for (let i = 0; i < c.functions.length && i < c.fnLocs.length; i++) {
     profilePut(c, l, c.functions[i].name, c.fnLocs[i])

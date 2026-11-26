@@ -22,6 +22,10 @@ expected null, true or false must be stated by a covered requirement
 (gateStatesResult). A truncated vector's length is printed there too, as
 a whole number then its unit (`128 bits`), outside a heading; its
 expected value is still a whole printed value, the truncated output.
+A concat's format part (`format`) is a constant the RFC does not print,
+taken on its reason, and only beside another part that is printed and
+bound. A tail vector's arg then its expect is one whole printed value,
+bound and paired as the expected value is, the expect its last bytes.
 
 Generated from [src/spec/gates/fidelity.ts](https://github.com/amritk/vector/blob/main/src/spec/gates/fidelity.ts).
 

@@ -139,6 +139,38 @@ as `○ 4.6-256 (first 128 bits)`, the markdown report's Clause cell the same,
 and the JSON report has `"truncations": {"4.6-256": {"bits": 128}}`, each
 length as the contract writes it, which is `{}` when no vector is truncated.
 
+### A vector's byte parts
+
+A hex part of a `concat` may carry `format`, the reason the RFC does not
+print it, and a vector may carry `tail`, when its `expect` ends the value
+`args[arg]` starts:
+
+```json
+"expect": {"concat": [{"hex": "04", "format": "SEC1 prefixes an uncompressed point with 04"}, {"hex": "60fe…", "label": "Ux"}, {"hex": "7903…", "label": "Uy"}]}
+```
+
+```json
+"expect": {"hex": "04a265ba2eff4d829058fb3f0f2496ba"},
+"tail": {"arg": 0, "bytes": 16, "reason": "the Retry Integrity Tag ends the Retry packet"}
+```
+
+- A **format** part is unlabelled, not unchecked and not a run, one to a
+  concat, beside another part; fidelity skips it, and refuses the concat
+  when no other part binds to the cited section.
+- A **tail** has `arg` 0 to 255, naming an argument, `bytes` 1 to 65,536, and
+  a reason. The vector is cited and takes no `tolerance`, `truncate` or
+  `iterate`. Fidelity joins the argument's hex and the expect's into one
+  value and binds it as a whole printed value under the argument's label;
+  the expect is exactly `bytes` long.
+
+The report names each as evidence: the text report lists `P256-PUB format
+expect.concat[0] = 04: <reason>` and `A.4-RETRY tail: expect is the last 16
+bytes of the value args[0] is printed in: <reason>` under the requirement,
+the markdown report's evidence the same, and the JSON report has
+`"byteParts": {"A.4-RETRY": {"formats": [], "tail": {"arg": 0, "bytes": 16,
+"reason": "…"}}}`, which is `{}` when no vector has either. See
+[Byte parts](writing-a-spec.md#byte-parts) for the paragraphs that write them.
+
 ## 1. Build the XML
 
 `scripts/build-spec.sh` runs only with kramdown-rfc 1.7.43 and xml2rfc 3.35.0,

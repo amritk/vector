@@ -19,6 +19,10 @@
  * (gateStatesResult). A truncated vector's length is printed there too, as
  * a whole number then its unit (`128 bits`), outside a heading; its
  * expected value is still a whole printed value, the truncated output.
+ * A concat's format part (`format`) is a constant the RFC does not print,
+ * taken on its reason, and only beside another part that is printed and
+ * bound. A tail vector's arg then its expect is one whole printed value,
+ * bound and paired as the expected value is, the expect its last bytes.
  */
 
 import { jsonStringifyString } from "nish/json"
@@ -33,10 +37,12 @@ import {
   Iterate,
   LitKind,
   Literal,
+  Tail,
   Truncate,
   VectorSourceKind,
   typesIsWords,
 } from "../contract/types"
+import { typeOfLiteral } from "../contract/typing"
 import { SourceSet, sourceFind } from "../source/load"
 import {
   HexValue,
@@ -685,8 +691,24 @@ const gateEmptyCheck = (l: GateLits, at: string, label: string): void => {
 /** Checks one literal (and a concat's parts) against the section, adding its bounds. */
 const gateLitCheck = (l: GateLits, lit: Literal, at: string): void => {
   if (lit.kind === LitKind.Concat) {
+    const before = l.bounds.length
+    let format = ""
     for (let i = 0; i < lit.parts.length; i++) {
-      gateLitCheck(l, lit.parts[i], `${at}.concat[${i}]`)
+      const part = lit.parts[i]
+      // A format constant is taken on its reason (the report names it);
+      // the parts around it are checked as any other value.
+      if (part.format !== null) {
+        format = `${at}.concat[${i}]`
+      } else {
+        gateLitCheck(l, part, `${at}.concat[${i}]`)
+      }
+    }
+    if (format.length > 0 && l.bounds.length === before) {
+      gateLitFail(
+        l,
+        format,
+        `${format} is a format constant beside no value printed in ${l.inSection}: another part of ${at} must be printed there and bound`,
+      )
     }
     return
   }
@@ -766,6 +788,56 @@ const gateLitCheck = (l: GateLits, lit: Literal, at: string): void => {
     const printed = gateF64Printed(l.lines, label)
     gateNumberCheck(l, lit, at, gateF64Has(lit, printed), printed.length)
   }
+}
+
+/**
+ * A tail: args[arg] then the expect is one whole hex value the section
+ * prints, the expect its last `bytes` bytes. The joined value is bound as
+ * the expected value is, so the other arguments pair with it as one case.
+ */
+const gateTailCheck = (l: GateLits, k: Clause, t: Tail, cited: boolean): void => {
+  const at = "tail"
+  const expect = k.expect
+  if (!cited || expect === null) {
+    gateLitFail(l, at, `a tail is the end of a value printed in ${l.inSection}: the Source cites it`)
+    return
+  }
+  // The shape gate refused an arg out of range; this guard proves the index.
+  const ai = t.arg
+  const args = k.args
+  if (!(ai >= 0 && ai < args.length)) {
+    return
+  }
+  const arg = args[ai]
+  const a = `args[${ai}]`
+  if (arg.kind !== LitKind.Hex || expect.kind !== LitKind.Hex) {
+    gateLitFail(
+      l,
+      at,
+      `${a} is ${typeOfLiteral(arg)} and the expect ${typeOfLiteral(expect)}: a tail joins two hex values`,
+    )
+    return
+  }
+  if (arg.unchecked !== null || expect.unchecked !== null) {
+    gateLitFail(l, at, `a tail's ${a} and expect are checked against the RFC as one value: drop "unchecked"`)
+    return
+  }
+  if (expect.label !== null) {
+    gateLitFail(l, at, `the joined value is found by ${a}'s label: drop the expect's "label"`)
+    return
+  }
+  const head = gateLitHex(arg)
+  const tail = gateLitHex(expect)
+  if (head.length === 0) {
+    gateLitFail(l, at, `${a} is empty: a tail ends a longer value`)
+    return
+  }
+  const n = toI64(tail.length / 2)
+  if (n !== t.bytes) {
+    gateLitFail(l, at, `the expect is ${n} bytes, not the last ${t.bytes} bytes the tail names`)
+    return
+  }
+  gateHexCheck(l, at, `${head}${tail}`, arg.label)
 }
 
 /** An empty value, or an integer without a label (`num`), that only a call label places: GateBound.loose. */
@@ -2474,8 +2546,12 @@ const gateFidelityVector = (ctx: CheckContext, out: string[], set: SourceSet, k:
   if (tc === null && loaded !== null && loaded.doc.number >= 1 && rfcHasCases(whole)) {
     l.hint = `, or name one: {{Section ${at.section} of RFC${loaded.doc.number}}}, Test Vector #N`
   }
+  const tl = k.tail
   for (let i = 0; i < k.args.length; i++) {
-    gateLitCheck(l, k.args[i], `args[${i}]`)
+    // A tail's argument is checked with the expect, as one value.
+    if (tl === null || tl.arg !== i) {
+      gateLitCheck(l, k.args[i], `args[${i}]`)
+    }
   }
   const args = l.bounds.length
   // A command or the spec vouches for the expected value instead.
@@ -2483,7 +2559,9 @@ const gateFidelityVector = (ctx: CheckContext, out: string[], set: SourceSet, k:
   const cited = src !== null && src.kind === VectorSourceKind.Cite
   const word = gateResultWord(k.expect)
   const expect = k.expect
-  if (cited && word.length === 0 && expect !== null) {
+  if (tl !== null) {
+    gateTailCheck(l, k, tl, cited && word.length === 0)
+  } else if (cited && word.length === 0 && expect !== null) {
     gateLitCheck(l, expect, "expect")
   }
   gateLabelArgs(l, args)

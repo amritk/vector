@@ -307,6 +307,7 @@ One or more of:
 | `repeat` | `integer` | no | at least 1. |
 | `label` | [`label`](#def-label) | no |  |
 | `unchecked` | `string` | no | Why this value is not printed in the cited section. Only when unavoidable; reported as a warning. |
+| `format` | `string` | no | Why this hex, a part of a concat, is a constant of the encoding that the RFC does not print (SEC1's 04 before an uncompressed point). Only on a bare hex part, without `label`, `unchecked` or `repeat`; a concat has at most one, beside another part that is printed and bound. The spec's `Format:` paragraph states the same hex; the report shows it with its reason. at least 1 characters. |
 
 No other property is allowed.
 
@@ -511,6 +512,7 @@ A known answer: call(args) == expect. The args are printed in the cited section 
 | `tolerance` | [`tolerance`](#def-tolerance) | no |  |
 | `iterate` | [`iterate`](#def-iterate) | no |  |
 | `truncate` | [`truncate`](#def-truncate) | no |  |
+| `tail` | [`tail`](#def-tail) | no |  |
 
 No other property is allowed.
 
@@ -722,6 +724,20 @@ Hold only the first bytes of the call's result to `expect`, as a spec does when 
 | --- | --- | --- | --- |
 | `bits` | `integer` | no | at least 8; at most 524288. |
 | `bytes` | `integer` | no | at least 1; at most 65536. |
+
+No other property is allowed.
+
+<a id="def-tail"></a>
+
+### `tail`
+
+The RFC prints `args[arg]` and `expect` as one value, the expect its last `bytes` bytes (RFC 9001 §A.4: a Retry packet ending in its 16-byte integrity tag). Both are hex, checked, and without a tolerance, iterate or truncate; `expect` is exactly `bytes` bytes, the argument is non-empty, and the two joined must be one whole value printed in the cited section, found by the argument's label. The report shows it with its reason.
+
+| Property | Type | Required | Description |
+| --- | --- | --- | --- |
+| `arg` | `integer` | yes | at least 0; at most 255. |
+| `bytes` | `integer` | yes | at least 1; at most 65536. |
+| `reason` | `string` | yes | at least 1 characters. |
 
 No other property is allowed.
 
