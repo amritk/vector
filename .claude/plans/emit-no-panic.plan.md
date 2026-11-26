@@ -89,19 +89,19 @@ stages:
     todos:
       - id: emit-wrap-emitter
         content: Emit wrappingAdd, wrappingSub and wrappingMul for i32 and i64 in src/spec/emit/emit.ts, importing only what a test uses — see Emitted wraps
-        status: pending
+        status: completed
       - id: emit-wrap-tests
         content: Flip the forms_test.ts round-trip and no-nish:unsafe assertions, and add rows that fail on a plain operator — see Emitted wraps
-        status: pending
+        status: completed
       - id: emit-wrap-regen
         content: Regenerate the example-hex golden, the CLI goldens and tests/dogfood from the emitter — see Emitted wraps
-        status: pending
+        status: completed
       - id: emit-wrap-docs
         content: Update docs/guide/guides/writing-a-spec.md and, if it describes emitted arithmetic, docs/AI.md — see Emitted wraps
-        status: pending
+        status: completed
       - id: emit-wrap-claude-md
         content: State the on-purpose wrap rule in CLAUDE.md under Writing Nish, in its own PR — see Emitted wraps
-        status: pending
+        status: in_progress
 ---
 
 ## Context
