@@ -61,7 +61,10 @@ export const main = (): i32 => {
   const same = stepsSampled("i64", "5", "5")
   t.ok("lo == hi adds no steps", same.length > 0 && same.every((s: string): boolean => s === "5"))
   const pair = stepsSampled("i64", "5", "6")
-  t.ok("a range of two has just its ends", pair.every((s: string): boolean => s === "5" || s === "6"))
+  t.ok(
+    "a range of two has just its ends",
+    pair.every((s: string): boolean => s === "5" || s === "6"),
+  )
 
   return t.done()
 }
