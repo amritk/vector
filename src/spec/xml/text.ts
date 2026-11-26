@@ -278,6 +278,7 @@ const xmlIsAppendix = (s: string): boolean => {
     return false
   }
   const c = s.charCodeAt(0)
+  // `s.length > 1` always holds past `s.length === 1`; it is stated for the prover.
   return c >= 65 && c <= 90 && (s.length === 1 || (s.length > 1 && s.charCodeAt(1) === 0x2e))
 }
 
@@ -329,6 +330,8 @@ const xmlTrimEnd = (s: string, start: u32, end: u32): u32 => {
   while (more && e > start) {
     more = false
     for (let w: u32 = 1; w <= 3; w++) {
+      // White space starts with a lead byte, never a continuation byte, so none can
+      // start before `start` and end at `e`; the bound keeps `e - w` from wrapping.
       if (e - start >= w && xmlSpaceWidth(s, e - w) === toI32(w)) {
         e = e - w
         more = true
@@ -452,6 +455,7 @@ const xmlTrimTail = (s: string): string => {
  * @returns whether any text is left
  */
 const xmlTrimPieces = (out: string[], from: u32): boolean => {
+  // `out.length > 0` follows from the first test; it is stated for the prover.
   while (toU32(out.length) > from && out.length > 0) {
     const last = xmlTrimTail(out.pop())
     if (last.length > 0) {
@@ -472,6 +476,7 @@ const xmlTrimPieces = (out: string[], from: u32): boolean => {
     }
     k = k + 1
   }
+  // `out.length > 0` follows from the first test; it is stated for the prover.
   while (toU32(out.length) > from && out.length > 0) {
     out.pop()
   }
@@ -836,6 +841,7 @@ const xmlNormativeIn = (
         open.push(toU32(start.length))
         start.push(length)
         end.push(length)
+        // A U+0002 follows every U+0001, so `from` is in range; stated for the prover.
         if (from < toU32(marked.length) && marked.charCodeAt(from) === 0x20) {
           from = from + 1
         }
@@ -883,6 +889,7 @@ const xmlNormativeIn = (
     }
     k = k + 1
     const pre = st - 1
+    // Past `st > 0`, pre < st <= size, the length; the bound is for the prover.
     if (
       (st > 0 && pre < toU32(text.length) && text.charCodeAt(pre) === 0x22) ||
       (en < toU32(text.length) && text.charCodeAt(en) === 0x22)
@@ -891,6 +898,7 @@ const xmlNormativeIn = (
     }
     const j = xmlNextStop(stops, toI32(st))
     const pj = j - 1
+    // Past `j > 0`, pj < j <= stops.length; the bound is for the prover.
     const after = j < toU32(stops.length) ? stops[j] : -1
     const before = after === toI32(st) ? after : j > 0 && pj < toU32(stops.length) ? stops[pj] : -1
     const key = `${level}\n${before}`
@@ -912,6 +920,7 @@ const xmlNormativeIn = (
 /** Starts a block on `out`: a blank line after the block before it, if any, recorded on `b.breaks`. */
 const xmlBlockBreak = (b: XmlLines, out: string[]): void => {
   const last = out.length - 1
+  // `last < out.length` always holds; it is stated for the prover.
   if (last >= 0 && last < out.length && out[last].length > 0) {
     b.breaks.push(out.length)
     out.push("")
