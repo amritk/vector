@@ -58,19 +58,26 @@ export const typeEnvBind = (env: TypeEnv, name: string, type: string): void => {
   env.types.push(type)
 }
 
-const typingCopy = (env: TypeEnv): TypeEnv => {
+/** A copy of `env`; null when its names and types are not parallel. */
+const typingCopy = (env: TypeEnv): TypeEnv | null => {
   const out = new TypeEnv(env.fns, env.allowCalls)
+  const names = env.names
+  const types = env.types
   // names and types are parallel: typeEnvBind pushes one of each.
-  for (let i = 0; i < env.names.length && i < env.types.length; i++) {
-    typeEnvBind(out, env.names[i], env.types[i])
+  for (let i = 0; i < names.length; i++) {
+    if (i >= types.length) {
+      return null
+    }
+    typeEnvBind(out, names[i], types[i])
   }
   return out
 }
 
 const typingVar = (env: TypeEnv, name: string): string | null => {
   for (let i = env.names.length - 1; i >= 0; i--) {
-    if (env.names[i] === name && i < env.types.length) {
-      return env.types[i]
+    if (env.names[i] === name) {
+      // A name with no type is unbound, never an outer binding's.
+      return i < env.types.length ? env.types[i] : null
     }
   }
   return null
@@ -226,7 +233,12 @@ export const typeOf = (e: Expr, env: TypeEnv, at: string, errors: string[]): str
 }
 
 const typingLet = (e: Expr, env: TypeEnv, at: string, errors: string[]): string | null => {
-  const inner = typingCopy(env)
+  const copy = typingCopy(env)
+  if (copy === null) {
+    errors.push(`${at}: the scope's names and types are not parallel`)
+    return null
+  }
+  const inner: TypeEnv = copy
   let ok = true
   for (let i = 0; i < e.binds.length; i++) {
     const b = e.binds[i]
@@ -263,14 +275,20 @@ const typingCall = (e: Expr, env: TypeEnv, at: string, errors: string[]): string
     errors.push(`${at}: unknown function "${e.name}"${form}`)
     return null
   }
-  if (e.args.length !== sig.params.length) {
-    errors.push(`${at}: ${e.name} takes ${sig.params.length} argument(s), got ${e.args.length}`)
+  const args = e.args
+  const params = sig.params
+  if (args.length !== params.length) {
+    errors.push(`${at}: ${e.name} takes ${params.length} argument(s), got ${args.length}`)
     return null
   }
   let ok = true
-  const params = sig.params
-  for (let i = 0; i < e.args.length && i < params.length; i++) {
-    const a = e.args[i]
+  for (let i = 0; i < args.length; i++) {
+    if (i >= params.length) {
+      // Unreachable: the arity check above made the lengths equal.
+      errors.push(`${at}: ${e.name} takes ${params.length} argument(s), got ${args.length}`)
+      return null
+    }
+    const a = args[i]
     const p = params[i]
     const t = typeOf(a, env, `${at}.args[${i}]`, errors)
     const want = vocabValueType(p.type)
@@ -305,10 +323,15 @@ class OpTyping {
   }
 }
 
+/** Reports that the operator does not have `n` operands. */
+const typingArity = (o: OpTyping, n: i32): void => {
+  o.errors.push(`${o.at}: ${o.op} takes ${n} argument(s), got ${o.ts.length}`)
+}
+
 /** Whether the operator has `n` operands, reporting when it has not. */
 const opWant = (o: OpTyping, n: i32): boolean => {
   if (o.ts.length !== n) {
-    o.errors.push(`${o.at}: ${o.op} takes ${n} argument(s), got ${o.ts.length}`)
+    typingArity(o, n)
     return false
   }
   return true
@@ -330,7 +353,12 @@ const opSig = (o: OpTyping, want: string[], result: string): string | null => {
   }
   let ok = true
   // opWant made the operands as many as want.
-  for (let i = 0; i < want.length && i < o.ts.length; i++) {
+  for (let i = 0; i < want.length; i++) {
+    if (i >= o.ts.length) {
+      // Unreachable: opWant made the operands as many as want. Fail loudly.
+      typingArity(o, toI32(want.length))
+      return null
+    }
     ok = opExpect(o, i, o.ts[i], want[i]) && ok
   }
   return ok ? result : null
@@ -362,8 +390,12 @@ const opSameInt = (o: OpTyping): string | null => {
  * An int literal was checked against the op's width in `typingOp`.
  */
 const opWriteInt = (o: OpTyping): string | null => {
-  // opWant answers true only for one operand.
-  if (!opWant(o, 1) || o.ts.length < 1) {
+  if (!opWant(o, 1)) {
+    return null
+  }
+  if (o.ts.length < 1) {
+    // Unreachable: opWant answers true only for one operand. Fail loudly.
+    typingArity(o, 1)
     return null
   }
   const t = o.ts[0]
@@ -428,10 +460,12 @@ const typingOp = (e: Expr, env: TypeEnv, at: string, errors: string[]): string |
   const ts = o.ts
   const args = e.args
   if (ts.length === 2 && args.length === 2) {
-    for (let i = 0; i < 2 && i < ts.length && i < args.length; i++) {
+    for (let i = 0; i < 2; i++) {
       const j = 1 - i
-      if (j >= ts.length || j >= args.length) {
-        break
+      if (i >= ts.length || i >= args.length || j >= ts.length || j >= args.length) {
+        // Unreachable: both lengths are 2. Fail closed.
+        errors.push(`${at}: ${o.op} has ${ts.length} operand type(s) for ${args.length} argument(s)`)
+        return null
       }
       const ai = args[i]
       const aj = args[j]
@@ -476,7 +510,12 @@ const typingOpResult = (o: OpTyping): string | null => {
     return opSig(o, ["bytes", "i32"], "bytes")
   }
   if (op === "unwrap" || op === "isNull" || op === "notNull") {
-    if (!opWant(o, 1) || o.ts.length < 1) {
+    if (!opWant(o, 1)) {
+      return null
+    }
+    if (o.ts.length < 1) {
+      // Unreachable: opWant answers true only for one operand. Fail loudly.
+      typingArity(o, 1)
       return null
     }
     if (!vocabIsOptional(o.ts[0])) {

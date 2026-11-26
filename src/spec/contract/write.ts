@@ -41,17 +41,25 @@ const WRITE_SCALAR: i32 = 0
 const WRITE_ARRAY: i32 = 1
 const WRITE_OBJECT: i32 = 2
 
-/** A JSON value about to be written: a scalar's text, or an array or object of nodes. */
+/** A JSON value about to be written: a scalar's text, or an array or object of entries. */
 class WriteNode {
   kind: i32
   text: string
-  keys: string[]
-  items: WriteNode[]
+  entries: WriteEntry[]
   constructor(kind: i32, text: string) {
     this.kind = kind
     this.text = text
-    this.keys = []
-    this.items = []
+    this.entries = []
+  }
+}
+
+/** One member of an array or object: its key (empty in an array) and value. */
+class WriteEntry {
+  key: string
+  value: WriteNode
+  constructor(key: string, value: WriteNode) {
+    this.key = key
+    this.value = value
   }
 }
 
@@ -61,8 +69,11 @@ const writeStr = (s: string): WriteNode => new WriteNode(WRITE_SCALAR, jsonStrin
 const writeRaw = (text: string): WriteNode => new WriteNode(WRITE_SCALAR, text)
 
 const writeSet = (o: WriteNode, key: string, v: WriteNode): void => {
-  o.keys.push(key)
-  o.items.push(v)
+  o.entries.push(new WriteEntry(key, v))
+}
+
+const writePush = (a: WriteNode, v: WriteNode): void => {
+  a.entries.push(new WriteEntry("", v))
 }
 
 const writeSetStr = (o: WriteNode, key: string, s: string | null): void => {
@@ -74,7 +85,7 @@ const writeSetStr = (o: WriteNode, key: string, s: string | null): void => {
 const writeStrings = (list: string[]): WriteNode => {
   const a = writeArr()
   for (let i = 0; i < list.length; i++) {
-    a.items.push(writeStr(list[i]))
+    writePush(a, writeStr(list[i]))
   }
   return a
 }
@@ -125,13 +136,13 @@ const writeLiteral = (lit: Literal): WriteNode => {
   } else if (typesIsWords(lit.kind)) {
     const words = writeArr()
     for (let i = 0; i < lit.words.length; i++) {
-      words.items.push(writeStr(lit.words[i]))
+      writePush(words, writeStr(lit.words[i]))
     }
     writeSet(o, typesWordsKey(lit.kind), words)
   } else {
     const parts = writeArr()
     for (let i = 0; i < lit.parts.length; i++) {
-      parts.items.push(writeLiteral(lit.parts[i]))
+      writePush(parts, writeLiteral(lit.parts[i]))
     }
     writeSet(o, "concat", parts)
   }
@@ -158,7 +169,7 @@ const writeExpr = (e: Expr): WriteNode => {
       const b = writeObj()
       writeSet(b, "name", writeStr(bind.name))
       writeSet(b, "value", writeExpr(bind.value))
-      binds.items.push(b)
+      writePush(binds, b)
     }
     writeSet(o, "let", binds)
     const body = e.body
@@ -170,7 +181,7 @@ const writeExpr = (e: Expr): WriteNode => {
   writeSet(o, e.kind === ExprKind.Call ? "call" : "op", writeStr(e.name))
   const args = writeArr()
   for (let i = 0; i < e.args.length; i++) {
-    args.items.push(writeExpr(e.args[i]))
+    writePush(args, writeExpr(e.args[i]))
   }
   writeSet(o, "args", args)
   return o
@@ -220,7 +231,7 @@ const writeIterate = (it: Iterate): WriteNode => {
   writeSet(o, "names", writeStrings(it.names))
   const next = writeArr()
   for (let i = 0; i < it.next.length; i++) {
-    next.items.push(writeExpr(it.next[i]))
+    writePush(next, writeExpr(it.next[i]))
   }
   writeSet(o, "next", next)
   if (it.slow) {
@@ -264,7 +275,7 @@ const writeClause = (c: Clause): WriteNode => {
     writeSet(o, "call", writeStr(c.call))
     const args = writeArr()
     for (let i = 0; i < c.args.length; i++) {
-      args.items.push(writeLiteral(c.args[i]))
+      writePush(args, writeLiteral(c.args[i]))
     }
     writeSet(o, "args", args)
     const expect = c.expect
@@ -287,7 +298,7 @@ const writeClause = (c: Clause): WriteNode => {
   }
   const forall = writeArr()
   for (let i = 0; i < c.forall.length; i++) {
-    forall.items.push(writeForall(c.forall[i]))
+    writePush(forall, writeForall(c.forall[i]))
   }
   writeSet(o, "forall", forall)
   const where = c.where
@@ -339,7 +350,7 @@ const writeTree = (c: Contract): WriteNode => {
       writeSetStr(d, "path", doc.path)
       writeSetStr(d, "file", doc.file)
       writeSetStr(d, "sha256", doc.sha256)
-      a.items.push(d)
+      writePush(a, d)
     }
     writeSet(root, "sources", a)
   }
@@ -358,7 +369,7 @@ const writeTree = (c: Contract): WriteNode => {
     writeSet(o, "level", writeStr(q.level))
     writeSet(o, "quote", writeStr(q.quote))
     writeSetStr(o, "note", q.note)
-    reqs.items.push(o)
+    writePush(reqs, o)
   }
   writeSet(root, "requirements", reqs)
   const exclusions = c.exclusions
@@ -372,7 +383,7 @@ const writeTree = (c: Contract): WriteNode => {
       writeSet(o, "section", writeStr(x.section))
       writeSet(o, "quote", writeStr(x.quote))
       writeSet(o, "reason", writeStr(x.reason))
-      a.items.push(o)
+      writePush(a, o)
     }
     writeSet(root, "exclusions", a)
   }
@@ -392,7 +403,7 @@ const writeTree = (c: Contract): WriteNode => {
       writeSet(p, "type", writeStr(fp.type))
       writeSetStr(p, "form", fp.form)
       writeOverrides(p, "names", fp.names)
-      params.items.push(p)
+      writePush(params, p)
     }
     writeSet(o, "params", params)
     writeSet(o, "returns", writeStr(f.returns))
@@ -404,13 +415,13 @@ const writeTree = (c: Contract): WriteNode => {
       writeSet(o, "out", b)
     }
     writeOverrides(o, "names", f.names)
-    fns.items.push(o)
+    writePush(fns, o)
   }
   writeSet(root, "functions", fns)
   const clauses = writeArr()
   const cs = c.clauses
   for (let i = 0; i < cs.length; i++) {
-    clauses.items.push(writeClause(cs[i]))
+    writePush(clauses, writeClause(cs[i]))
   }
   writeSet(root, "clauses", clauses)
   const oos = c.outOfScope
@@ -422,7 +433,7 @@ const writeTree = (c: Contract): WriteNode => {
       const o = writeObj()
       writeSet(o, "name", writeStr(os.name))
       writeSet(o, "reason", writeStr(os.reason))
-      a.items.push(o)
+      writePush(a, o)
     }
     writeSet(root, "outOfScope", a)
   }
@@ -431,7 +442,7 @@ const writeTree = (c: Contract): WriteNode => {
     const a = writeArr()
     const allowed: AllowedSurvivor[] = survivors
     for (let i = 0; i < allowed.length; i++) {
-      a.items.push(writeSurvivor(allowed[i]))
+      writePush(a, writeSurvivor(allowed[i]))
     }
     writeSet(root, "allowSurvivors", a)
   }
@@ -447,9 +458,9 @@ const writeInline = (n: WriteNode): string | null => {
     return null
   }
   let out = "["
-  const items = n.items
-  for (let i = 0; i < items.length; i++) {
-    const item = writeInline(items[i])
+  const entries = n.entries
+  for (let i = 0; i < entries.length; i++) {
+    const item = writeInline(entries[i].value)
     if (item === null) {
       return null
     }
@@ -466,9 +477,8 @@ const writeFormat = (n: WriteNode, indent: string, used: u32): string => {
   if (n.kind === WRITE_SCALAR) {
     return n.text
   }
-  const items = n.items
-  const keys = n.keys
-  const count = items.length
+  const entries = n.entries
+  const count = entries.length
   if (count === 0) {
     return n.kind === WRITE_ARRAY ? "[]" : "{}"
   }
@@ -479,17 +489,18 @@ const writeFormat = (n: WriteNode, indent: string, used: u32): string => {
     if (flat !== null && used + toU32(codePointLength(flat)) <= toU32(WRITE_LINE_WIDTH)) {
       return flat
     }
-    for (let i = 0; i < items.length; i++) {
+    for (let i = 0; i < entries.length; i++) {
       lines.push(
-        inner + writeFormat(items[i], inner, toU32(codePointLength(inner)) + writeComma(toU32(i), toU32(count))),
+        inner +
+          writeFormat(entries[i].value, inner, toU32(codePointLength(inner)) + writeComma(toU32(i), toU32(count))),
       )
     }
     return `[\n${lines.join(",\n")}\n${indent}]`
   }
-  for (let i = 0; i < items.length && i < keys.length; i++) {
-    const item = items[i]
-    const key = `${inner}${jsonStringifyString(keys[i])}: `
-    lines.push(key + writeFormat(item, inner, toU32(codePointLength(key)) + writeComma(toU32(i), toU32(count))))
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i]
+    const key = `${inner}${jsonStringifyString(entry.key)}: `
+    lines.push(key + writeFormat(entry.value, inner, toU32(codePointLength(key)) + writeComma(toU32(i), toU32(count))))
   }
   return `{\n${lines.join(",\n")}\n${indent}}`
 }

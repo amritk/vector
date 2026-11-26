@@ -224,7 +224,9 @@ const literalsHas = (r: LiteralsReader, j: i32, s: string): boolean =>
 
 /**
  * `j + n` as a wrapping add, done in u32 so the prover's overflow check does
- * not apply; positions stay far below 2^31, so it never wraps in practice.
+ * not apply. The i32 it returns is wrong only once `j + n` reaches 2^31, a
+ * position past 2 GiB of text; `j` and `n` are positions and lengths in one
+ * cell's text, which is far shorter.
  */
 const literalsPlus = (j: i32, n: i32): i32 => toI32(toU32(j) + toU32(n))
 
@@ -333,7 +335,11 @@ const literalsHex4 = (s: string, j: u32): i32 => {
   }
   // Four hex digits stay below 2^16.
   let v: u32 = 0
-  for (let k = j; k < toU32(s.length) && k < j + 4; k++) {
+  for (let k = j; k < j + 4; k++) {
+    if (k >= toU32(s.length)) {
+      // Unreachable: the length check above. Refuse all the same.
+      return -1
+    }
     const d = literalsHexValue(s.charCodeAt(k))
     if (d < 0) {
       return -1
@@ -1051,7 +1057,11 @@ export const literalsParse = (text: string): Result<RawLiteral, LiteralError> =>
  */
 export const literalsByteLength = (lit: Literal): i64 => {
   if (lit.kind === LitKind.Concat) {
-    // A sum of byte counts, in u64, which wraps rather than overflows.
+    // A sum of byte counts, in u64, which wraps rather than overflows. It is
+    // right while the parts total under 2^63 bytes (8 EiB), and past that
+    // reads as negative; a hex part counts under 2^62 (under 2^31 pairs, from
+    // under 4 GiB of text, times a repeat under 2^31), so it takes two or more
+    // such parts, from gigabytes of contract text, to get there.
     let n: u64 = 0
     for (const p of lit.parts) {
       const m = literalsByteLength(p)

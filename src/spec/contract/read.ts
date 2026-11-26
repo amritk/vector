@@ -342,6 +342,8 @@ const readLiteral = (r: ContractReader, v: JsonValue, at: string): Literal | nul
         }
         lit = w
       }
+    } else {
+      readFail(r, at, "a literal kind")
     }
   } else {
     readObject(r, v, at, ["concat"])

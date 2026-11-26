@@ -656,7 +656,10 @@ const shapeIsIterateCall = (e: Expr, call: string, names: string[]): boolean => 
     return false
   }
   const args = e.args
-  for (let i = 0; i < names.length && i < args.length; i++) {
+  for (let i = 0; i < names.length; i++) {
+    if (i >= args.length) {
+      return false
+    }
     const a = args[i]
     if (a.kind !== ExprKind.Var || a.name !== names[i]) {
       return false
@@ -712,15 +715,21 @@ const shapeIterate = (s: ShapeContext, k: Clause, it: Iterate, at: string): void
   if (arity >= 0 && it.names.length !== arity) {
     shapeFail(s, `${at}.names`, `one name per parameter of ${k.call}: ${arity}, got ${it.names.length}`)
   }
-  for (let i = 0; i < it.names.length; i++) {
-    const n = it.names[i]
+  const names = it.names
+  for (let i = 0; i < names.length; i++) {
+    const n = names[i]
     if (!charsIsIdent(n)) {
       shapeFail(s, `${at}.names[${i}]`, "an identifier")
     } else if (shapeFn(s, n) !== null) {
       shapeFail(s, `${at}.names[${i}]`, `"${n}" shadows a function`)
     }
-    for (let j = 0; j < i && j < it.names.length; j++) {
-      if (it.names[j] === n) {
+    for (let j = 0; j < i; j++) {
+      if (j >= names.length) {
+        // Unreachable: j < i < names.length. Fail closed all the same.
+        shapeFail(s, `${at}.names[${j}]`, "missing")
+        break
+      }
+      if (names[j] === n) {
         shapeFail(s, `${at}.names[${i}]`, `"${n}" repeats names[${j}]`)
       }
     }
@@ -828,18 +837,18 @@ const shapeForall = (s: ShapeContext, v: ForallVar, at: string): void => {
     }
   } else if (v.type === "f64") {
     const bounds = [v.min, v.max]
-    const keys = ["min", "max"]
     let valid = true
-    for (let i = 0; i < bounds.length && i < keys.length; i++) {
+    for (let i = 0; i < bounds.length; i++) {
+      const key = i === 0 ? "min" : "max"
       if (!charsIsF64Text(bounds[i]) || bounds[i] === "NaN") {
         valid = false
         shapeFail(
           s,
-          `${at}.${keys[i]}`,
+          `${at}.${key}`,
           "decimal text (RFC 8259 §6 number syntax), Infinity or -Infinity (a bound cannot be NaN: it orders nothing, IEEE 754-2019 §5.11)",
         )
       } else if (contractF64Overflows(bounds[i])) {
-        shapeFail(s, `${at}.${keys[i]}`, `"${bounds[i]}" ${SHAPE_OVERFLOW}`)
+        shapeFail(s, `${at}.${key}`, `"${bounds[i]}" ${SHAPE_OVERFLOW}`)
       }
     }
     if (valid && !(contractF64Parse(v.min) <= contractF64Parse(v.max))) {

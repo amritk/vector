@@ -389,7 +389,11 @@ const vocabCompareMagnitude = (a: string, b: string): i32 => {
   if (a.length !== b.length) {
     return a.length < b.length ? -1 : 1
   }
-  for (let i = 0; i < a.length && i < b.length; i++) {
+  for (let i = 0; i < a.length; i++) {
+    if (i >= b.length) {
+      // Unreachable: the lengths are equal. Were b shorter, a is the larger.
+      return 1
+    }
     const x = a.charCodeAt(i)
     const y = b.charCodeAt(i)
     if (x !== y) {
