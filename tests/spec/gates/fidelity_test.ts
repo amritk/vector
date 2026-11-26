@@ -1737,6 +1737,24 @@ const fidelityTestWrapped = (t: Suite): void => {
       one,
       "",
     ],
+    [
+      "case 1 with an unlabelled integer that only a labelled one's number prints",
+      `{"str": "passwd"}, {"str": "salt"}, {"int": 1, "label": "c"}, {"int": 1}`,
+      one,
+      `W1.args[3]: args[3] 1 is not printed in "PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)" that the expected value is printed under`,
+    ],
+    [
+      "case 1 with an unlabelled integer ahead of a labelled one that holds its number",
+      `{"str": "passwd"}, {"str": "salt"}, {"int": 64}, {"int": 64, "label": "dkLen"}`,
+      one,
+      `W1.args[2]: args[2] 64 is not printed in "PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)" that the expected value is printed under`,
+    ],
+    [
+      "case 1 with an unlabelled count beside its labelled length",
+      `{"str": "passwd"}, {"str": "salt"}, {"int": 1}, {"int": 64, "label": "dkLen"}`,
+      one,
+      "",
+    ],
   ]
   for (const r of pbRows) {
     fidelityTestRowIs(t, `7914 §11: ${r[0]}`, fidelityTestWrap("7914", scrypt, pbkdf2Fn, "11", r[1], r[2]), r[3])
@@ -2048,22 +2066,63 @@ const fidelityTestBareVariant = (t: Suite): void => {
     '   F (x="a", n=32) =',
     "   4d dc d8 f6",
     "",
-  ].join("\n")
-  const fn = `{"name": "f32", "params": [{"name": "s", "type": "string"}, {"name": "n", "type": "i32"}], "returns": "bytes"}`
-  fidelityTestRowIs(
-    t,
-    "4648 §10: a bare integer is not a variant",
-    fidelityTestWrapCall(
-      "4648",
-      rfc,
-      fn,
-      "f32",
-      "10",
-      `{"str": "a"}, {"int": 16}`,
-      `{"hex": "55ac046e", "label": "F (x=\\"a\\", n=16)"}`,
-    ),
+    "11.  Variants",
     "",
-  )
+    '   F-256 (x="a", n=16) =',
+    "   55 ac 04 6e",
+    "",
+    '   F-512 (x="a", n=32) =',
+    "   4d dc d8 f6",
+    "",
+    "12.  Signs",
+    "",
+    '   G (x="a", n=-1) =',
+    "   55 ac 04 6e",
+    "",
+    '   G (x="a", n=1) =',
+    "   4d dc d8 f6",
+    "",
+  ].join("\n")
+  // A name, the call, the section, the integer, the expected hex, its label (as JSON) and the message wanted.
+  const rows: string[][] = [
+    ["a bare integer is not a variant", "f32", "10", "16", "55ac046e", 'F (x=\\"a\\", n=16)', ""],
+    ["a bare integer, the label's own variant", "f256", "11", "16", "55ac046e", 'F-256 (x=\\"a\\", n=16)', ""],
+    [
+      "a bare integer, another variant's call",
+      "f512",
+      "11",
+      "16",
+      "55ac046e",
+      'F-256 (x=\\"a\\", n=16)',
+      'the value is printed under "F-256 (x="a", n=16)" in RFC §11 ("Variants"), but f512 names 512',
+    ],
+    ["a bare negative integer", "g", "12", "-1", "55ac046e", 'G (x=\\"a\\", n=-1)', ""],
+    [
+      "a bare integer without the sign printed before it",
+      "g",
+      "12",
+      "1",
+      "55ac046e",
+      'G (x=\\"a\\", n=-1)',
+      'args[1] 1 is not printed in "G (x="a", n=-1)"',
+    ],
+  ]
+  for (const r of rows) {
+    fidelityTestRowIs(
+      t,
+      `4648 §${r[2]}: ${r[0]}`,
+      fidelityTestWrapCall(
+        "4648",
+        rfc,
+        `{"name": "${r[1]}", "params": [{"name": "s", "type": "string"}, {"name": "n", "type": "i32"}], "returns": "bytes"}`,
+        r[1],
+        r[2],
+        `{"str": "a"}, {"int": ${r[3]}}`,
+        `{"hex": "${r[4]}", "label": "${r[5]}"}`,
+      ),
+      r[6],
+    )
+  }
 }
 
 /** The fidelity gate. */

@@ -30,6 +30,7 @@ Generated from [src/spec/gates/text.ts](https://github.com/amritk/vector/blob/ma
 - [`gateTextLines`](#gatetextlines)
 - [`gateIntRounds`](#gateintrounds)
 - [`gateIntPrinted`](#gateintprinted)
+- [`gateIntBare`](#gateintbare)
 - [`gateIntLines`](#gateintlines)
 - [`gateIntLabelCount`](#gateintlabelcount)
 - [`gateF64Printed`](#gatef64printed)
@@ -335,6 +336,35 @@ the integer, as decimal text
 <scalar-field name="returns" type="i32[]">
 
 the offset in `lines` of each printing of `n` after the label, ascending
+
+</scalar-field>
+
+### gateIntBare
+
+Where the integer `n` is printed whole, with or without a name before it,
+as offsets of its first byte: in decimal (its `-` with it) or 0x hex, not
+inside a longer word or number, so `1` is at 4 of `(c=1)`, `-1` at 4 of
+`(n=-1)`, and `1` is in neither `(n=-1)` nor `(n=10)`.
+
+```ts
+function gateIntBare(lines: string, n: string): i32[]
+```
+
+<scalar-field name="lines" type="string" required>
+
+the text, such as one call label
+
+</scalar-field>
+
+<scalar-field name="n" type="string" required>
+
+the integer, as decimal text
+
+</scalar-field>
+
+<scalar-field name="returns" type="i32[]">
+
+each offset, ascending
 
 </scalar-field>
 
