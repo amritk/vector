@@ -185,7 +185,7 @@ export class FnReport {
 export class ConformanceIssue {
   /** The function. */
   fn: string
-  /** `postcondition`, `callee-guard` or `unsampled`. */
+  /** `postcondition`, `callee-guard`, `unsampled`, or `vector-bug` when the float64 check could not run (a bug in vector). */
   kind: string
   /** The clause's axiom, `(calls F)`, or `(requires)`. */
   axiomId: string

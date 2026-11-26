@@ -21,10 +21,9 @@ Before writing Nish, read `.nish/docs/AI.md` (the language as rules, traps first
 ## Layout
 
 - `src/index.ts` is the package's entry (`@amritk/vector`, the `nish`
-  condition in `package.json`). Its `vectorRun` declares the commands, parses
-  the arguments and dispatches; it handles `--help` and `--version`; the
-  rest is a command's. `src/main.ts`, the binary's entry, hands
-  the process's arguments to `vectorRun`.
+  condition in `package.json`): its `vectorRun` declares the commands, parses
+  the arguments, handles `--help` and `--version`, and dispatches the rest.
+  `src/main.ts`, the binary's entry, passes it the process's arguments.
 - `src/cli/<command>.ts` exports `register<Command>(cli, parent)`, which
   declares its flags and arguments and returns the object whose `run(r)`
   handles it.
@@ -49,6 +48,8 @@ Before writing Nish, read `.nish/docs/AI.md` (the language as rules, traps first
   not in module-level mutable variables.
 - **Run the compiler rather than guess**: `.nish/bin/nish run <file>` says
   in seconds whether something compiles and what it does.
+- **An on-purpose wrap uses `nish:unsafe`** (`wrappingAdd`/`Sub`/`Mul`) at
+  its site, never a u64 round trip; it never silences a panic site.
 - **Every export has a doc comment**: what it is for, `@param` for each
   parameter, and `@returns` when it returns something. The generated
   reference fails on a gap, and its undocumented list only shrinks.
@@ -99,8 +100,8 @@ edit after extraction is refused.
 `docs/reference/**` and its routes in `scalar.config.json`, `tests/dogfood/**`, `contracts/*.json`
 (extracted from `specs/*.xml`) and `specs/*.xml` and fixture `.xml` (built from
 their `.md` by `scripts/build-spec.sh`). Change the source and rerun the generator.
-`CHANGELOG.md` and every version bump are release-please's: never edit the
-version or the changelog by hand.
+`CHANGELOG.md` and every version bump are release-please's: never edit
+either by hand.
 
 **A change a user sees updates its guide page and `docs/AI.md` in the same PR**:
 a command, a flag, an exit code, an install step, or a message a guide page
@@ -128,24 +129,24 @@ that `.github/workflows/release.yml` calls, pinned by commit:
 2. Merging the release PR tags `v<version>`, creates the GitHub release, and
    starts `release.yml` on the tag.
 3. That run packs `@amritk/vector` (the Nish source under `src/`, as
-   `npm publish` would), attaches it with `SHA256SUMS` to the release, and
-   publishes it to npm. Nothing is built, and no binary ships.
+   `npm publish` would), attaches it and `SHA256SUMS` to the release, and
+   publishes it to npm. Nothing is built; no binary ships.
 
 Config is `.github/release-please-config.json`, with the current version in
 `.github/.release-please-manifest.json`; the release workflow checks both on
-every pull request that touches the release. A version with a hyphen
+each PR that touches the release. A version with a hyphen
 (`1.2.0-rc.1`) is a prerelease, published under npm's `next` dist-tag.
-Attestations and npm provenance exist only while the repository is public.
+Attestations and npm provenance exist only while the repo is public.
 Dependabot (`.github/dependabot.yml`) proposes updates to the pin once a
 release is 5 days old.
 
-The release PR is opened with `GITHUB_TOKEN`, so CI does not run on it;
-close and reopen it to run the checks.
+CI skips the release PR (opened with `GITHUB_TOKEN`); close and reopen it
+to run the checks.
 
-npm publishes through trusted publishing alone: no npm token is stored
-anywhere. The trusted publisher for `@amritk/vector` on
-npmjs.com names repository `amritk/vector`, workflow file `release.yml` and
-environment `npm`, which is limited to `v*` tags in Settings, Environments.
+npm publishes by trusted publishing alone; no npm token is stored. The
+trusted publisher for `@amritk/vector` names repository `amritk/vector`,
+workflow `release.yml` and environment `npm`, limited to `v*` tags
+(Settings, Environments).
 
 ## Commits and PRs
 
