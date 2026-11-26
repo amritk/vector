@@ -111,7 +111,7 @@ const rfcIsBlank = (c: i32): boolean => c === 32 || c === 9
 /** The last place `needle` starts in `s`, or -1. */
 const rfcLastIndexOf = (s: string, needle: string): i32 => {
   for (let i = s.length - needle.length; i >= 0; i--) {
-    if (s.substring(i, i + needle.length) === needle) {
+    if (s.substring(i, toI32(toU32(i) + toU32(needle.length))) === needle) {
       return i
     }
   }
@@ -173,7 +173,7 @@ const rfcIsFooter = (line: string): boolean => {
     return false
   }
   const open = rfcLastIndexOf(t, "[Page ")
-  return open >= 0 && rfcAllDigits(t.substring(open + 6, t.length - 1))
+  return open >= 0 && rfcAllDigits(t.substring(toI32(toU32(open) + 6), t.length - 1))
 }
 
 /** Whether a line is a running header: "RFC NNNN", a gap, a title, a gap, "Month YYYY". */
@@ -189,24 +189,34 @@ const rfcIsHeader = (line: string): boolean => {
     return false
   }
   const words = splitWhitespace(line)
-  const year = words[words.length - 1]
-  return words.length >= 4 && year.length === 4 && rfcAllDigits(year)
+  const last = words.length - 1
+  return last >= 3 && last < words.length && words[last].length === 4 && rfcAllDigits(words[last])
+}
+
+/** A heading line's id and title. */
+class RfcHeadingLine {
+  id: string
+  title: string
+  constructor(id: string, title: string) {
+    this.id = id
+    this.title = title
+  }
 }
 
 /** The id and title of a heading line, or null when it is not one. */
-const rfcHeading = (line: string): string[] | null => {
+const rfcHeading = (line: string): RfcHeadingLine | null => {
   if (line.startsWith("Appendix ") && line.length > 11) {
     const c = line.charCodeAt(9)
     if (c >= 65 && c <= 90 && line.charCodeAt(10) === 46 && rfcIsBlank(line.charCodeAt(11))) {
       const title = trim(line.substring(12, line.length))
-      return title.length > 0 ? [line.substring(9, 10), title] : null
+      return title.length > 0 ? new RfcHeadingLine(line.substring(9, 10), title) : null
     }
     return null
   }
   // \d+(\.\d+)* or [A-Z](\.\d+)+, then ".", whitespace and a title.
   let i = 0
   const first = line.length > 0 ? line.charCodeAt(0) : 0
-  let parts = 0
+  let parts: u32 = 0
   if (first >= 65 && first <= 90) {
     if (line.length < 2 || line.charCodeAt(1) !== 46) {
       return null
@@ -220,7 +230,7 @@ const rfcHeading = (line: string): string[] | null => {
       i++
     }
     if (i === start) {
-      if (parts === 0 || i >= line.length || line.charCodeAt(i - 1) !== 46) {
+      if (parts === 0 || i < 1 || i >= line.length || line.charCodeAt(i - 1) !== 46) {
         return null
       }
       // The dot just read ends the id.
@@ -241,7 +251,13 @@ const rfcHeading = (line: string): string[] | null => {
     return null
   }
   const title = trim(line.substring(i, line.length))
-  return title.length > 0 ? [id, title] : null
+  return title.length > 0 ? new RfcHeadingLine(id, title) : null
+}
+
+/** Whether the last of `breaks` is `n`. */
+const rfcLastBreakIs = (breaks: i32[], n: i32): boolean => {
+  const last = breaks.length - 1
+  return last >= 0 && last < breaks.length && breaks[last] === n
 }
 
 /**
@@ -263,31 +279,33 @@ export const rfcParse = (text: string): RfcDocument => {
       l = replaceAll(l, "\f", "")
     }
     if (rfcIsFooter(l) || rfcIsHeader(l)) {
-      if (breaks.length === 0 || breaks[breaks.length - 1] !== lines.length) {
+      if (!rfcLastBreakIs(breaks, lines.length)) {
         breaks.push(lines.length)
       }
     } else {
-      if (fed && (breaks.length === 0 || breaks[breaks.length - 1] !== lines.length)) {
+      if (fed && !rfcLastBreakIs(breaks, lines.length)) {
         breaks.push(lines.length)
       }
       lines.push(l)
     }
   }
   const marker = text.indexOf("Request for Comments:")
-  if (marker >= 0) {
+  // A marker that ends the text is followed by no number.
+  if (marker >= 0 && marker < text.length - 21) {
     let i = marker + 21
     while (i < text.length && rfcIsBlank(text.charCodeAt(i))) {
       i++
     }
-    let n = 0
+    // In u32: nine digits at most stay below 2^31.
+    let n: u32 = 0
     let digits = 0
     while (i < text.length && rfcIsDigit(text.charCodeAt(i)) && digits < 9) {
-      n = n * 10 + (text.charCodeAt(i) - 48)
+      n = n * 10 + toU32(text.charCodeAt(i) - 48)
       i++
       digits++
     }
     if (digits > 0) {
-      doc.number = n
+      doc.number = toI32(n)
     }
   }
   const ids: string[] = []
@@ -296,27 +314,39 @@ export const rfcParse = (text: string): RfcDocument => {
   for (let at = 0; at < lines.length; at++) {
     const h = rfcHeading(lines[at])
     if (h !== null) {
-      ids.push(h[0])
-      titles.push(h[1])
+      ids.push(h.id)
+      titles.push(h.title)
       ats.push(at)
     }
   }
-  for (let k = 0; k < ids.length; k++) {
+  // ids, titles and ats are pushed together, so each bound is every one's.
+  for (let k = 0; k < ids.length && k < titles.length && k < ats.length; k++) {
     if (rfcSection(doc, ids[k]) !== null) {
       continue
     }
+    const id = ids[k]
+    const title = titles[k]
+    const from = ats[k]
     let end = lines.length
-    for (let j = k + 1; j < ids.length; j++) {
-      if (!ids[j].startsWith(`${ids[k]}.`)) {
+    for (let j = k + 1; j >= 0 && j < ids.length && j < ats.length; j++) {
+      if (!ids[j].startsWith(`${id}.`)) {
         end = ats[j]
         break
       }
     }
-    const ownEnd = k + 1 < ids.length ? ats[k + 1] : lines.length
-    const sec = new RfcSection(ids[k], titles[k], lines.slice(ats[k], end), lines.slice(ats[k], ownEnd))
+    const ownEnd = k < ats.length - 1 ? ats[k + 1] : lines.length
+    const all: string[] = []
+    for (let x = from; x >= 0 && x < end && x < lines.length; x++) {
+      all.push(lines[x])
+    }
+    const own: string[] = []
+    for (let x = from; x >= 0 && x < ownEnd && x < lines.length; x++) {
+      own.push(lines[x])
+    }
+    const sec = new RfcSection(id, title, all, own)
     for (const b of breaks) {
-      if (b > ats[k] && b < end) {
-        sec.pageBreaks.push(b - ats[k])
+      if (b > from && b < end) {
+        sec.pageBreaks.push(toI32(toI64(b) - toI64(from)))
       }
     }
     doc.sections.push(sec)
@@ -334,14 +364,15 @@ const rfcHeaderNumber = (line: string): i32 => {
   while (i < line.length && rfcIsBlank(line.charCodeAt(i))) {
     i++
   }
-  let n = 0
+  // In u32: nine digits at most stay below 2^31.
+  let n: u32 = 0
   let digits = 0
   while (i < line.length && rfcIsDigit(line.charCodeAt(i)) && digits < 9) {
-    n = n * 10 + (line.charCodeAt(i) - 48)
+    n = n * 10 + toU32(line.charCodeAt(i) - 48)
     i++
     digits++
   }
-  return digits > 0 ? n : -1
+  return digits > 0 ? toI32(n) : -1
 }
 
 /**
@@ -374,7 +405,7 @@ const rfcUnpaginatedProblem = (text: string, doc: RfcDocument): string | null =>
     return 'it has no "Request for Comments: N" header'
   }
   if (heading >= 0 && heading < header) {
-    return `its "Request for Comments: N" header is on line ${header + 1}, after its first section heading on line ${heading + 1}: text without form feeds must give it in its front matter`
+    return `its "Request for Comments: N" header is on line ${toI64(header) + 1}, after its first section heading on line ${toI64(heading) + 1}: text without form feeds must give it in its front matter`
   }
   doc.number = number
   return null
@@ -442,19 +473,22 @@ export const rfcSection = (doc: RfcDocument, id: string): RfcSection | null => {
 const rfcCaseHeading = (line: string): i32 => {
   const head = "Test Vector #"
   const t = trim(line)
-  if (!t.startsWith(head) || t.length === head.length || t.charCodeAt(head.length) === 0x30) {
+  const first = head.length
+  if (!t.startsWith(head) || !(first >= 0 && first < t.length) || t.charCodeAt(first) === 0x30) {
     return 0
   }
-  let n = 0
+  // In u32: six digits at most stay below 2^31.
+  let n: u32 = 0
   let i = head.length
-  for (; i < t.length && i < head.length + 6; i++) {
+  const stop = toI32(toI64(head.length) + 6)
+  for (; i < t.length && i < stop; i++) {
     const c = t.charCodeAt(i)
     if (c < 0x30 || c > 0x39) {
       break
     }
-    n = n * 10 + (c - 0x30)
+    n = n * 10 + (toU32(c) - 0x30)
   }
-  return i > head.length && i < t.length && t.charCodeAt(i) === 0x3a ? n : 0
+  return i > head.length && i < t.length && t.charCodeAt(i) === 0x3a ? toI32(n) : 0
 }
 
 /**
@@ -485,8 +519,14 @@ const rfcCaseShaped = (line: string): boolean => {
  * @param sec the section
  * @returns true when one of its own lines heads a test case
  */
-export const rfcHasCases = (sec: RfcSection): boolean =>
-  sec.ownLines.some((l: string): boolean => rfcCaseHeading(l) > 0)
+export const rfcHasCases = (sec: RfcSection): boolean => {
+  for (const l of sec.ownLines) {
+    if (rfcCaseHeading(l) > 0) {
+      return true
+    }
+  }
+  return false
+}
 
 /**
  * The words a case heading of RFC 6979 §A.2's form names its case by:
@@ -507,12 +547,12 @@ export const rfcWithHeading = (line: string): string => {
     return ""
   }
   const words = trim(t.substring(5, comma))
-  const rest = t.substring(comma + 2, t.length - 2)
+  const rest = t.substring(toI32(toU32(comma) + 2), t.length - 2)
   const eq = rest.indexOf(' = "')
   if (eq <= 0 || rest.substring(0, eq).indexOf(" ") >= 0) {
     return ""
   }
-  return rest.substring(eq + 4, rest.length).indexOf('"') >= 0 ? "" : words
+  return rest.substring(toI32(toU32(eq) + 4), rest.length).indexOf('"') >= 0 ? "" : words
 }
 
 /**
@@ -559,7 +599,7 @@ export const rfcCaseSection = (sec: RfcSection, n: i32): Result<RfcSection, stri
     return Err(`has subsections, so ${name} is not one test case of it: cite the subsection that holds it`)
   }
   let start = -1
-  let count = 0
+  let count: u32 = 0
   for (let i = 0; i < sec.lines.length; i++) {
     if (rfcCaseHeading(sec.lines[i]) === n) {
       count++
@@ -574,20 +614,23 @@ export const rfcCaseSection = (sec: RfcSection, n: i32): Result<RfcSection, stri
   if (count > 1) {
     return Err(`heads ${count} test cases "${name}:", so which one is meant is unclear`)
   }
-  let end = start + 1
-  while (end < sec.lines.length && !rfcCaseShaped(sec.lines[end])) {
+  let end = toI32(toU32(start) + 1)
+  while (end >= 0 && end < sec.lines.length && !rfcCaseShaped(sec.lines[end])) {
     end++
   }
-  const lines = sec.lines.slice(start, end)
+  const lines: string[] = []
+  for (let x = start; x >= 0 && x < end && x < sec.lines.length; x++) {
+    lines.push(sec.lines[x])
+  }
   const one = new RfcSection(sec.id, sec.title, lines, lines)
   for (const b of sec.pageBreaks) {
     if (b >= start && b < end) {
-      one.pageBreaks.push(b - start)
+      one.pageBreaks.push(toI32(toI64(b) - toI64(start)))
     }
   }
   for (const c of sec.codeLines) {
     if (c >= start && c < end) {
-      one.codeLines.push(c - start)
+      one.codeLines.push(toI32(toI64(c) - toI64(start)))
     }
   }
   return Ok(one)
@@ -632,8 +675,8 @@ export const rfcOwnSpans = (sec: RfcSection, quote: string): i32[] => {
   let at = toI32(text.indexOf(q))
   while (at >= 0) {
     spans.push(at)
-    spans.push(at + q.length)
-    at = toI32(text.indexOf(q, at + 1))
+    spans.push(toI32(toU32(at) + toU32(q.length)))
+    at = toI32(text.indexOf(q, toI32(toU32(at) + 1)))
   }
   return spans
 }
@@ -701,10 +744,10 @@ const rfcHasWord = (l: string, word: string): boolean => {
     if (at < 0) {
       return false
     }
-    if (!rfcWordByte(l, at - 1) && !rfcWordByte(l, at + word.length)) {
+    if (!rfcWordByte(l, toI32(toI64(at) - 1)) && !rfcWordByte(l, toI32(toU32(at) + toU32(word.length)))) {
       return true
     }
-    from = at + 1
+    from = toI32(toU32(at) + 1)
   }
   return false
 }
@@ -793,23 +836,24 @@ const rfcLabelLine = (line: string): string | null => {
   if (t.endsWith(":") || t.endsWith("=")) {
     return rfcLabelBefore(t)
   }
-  if (t.length === 0 || t.length > 40) {
+  if (t.length < 1 || t.length > 40) {
     return null
   }
   const first = t.charCodeAt(0)
   if (!((first >= 65 && first <= 90) || (first >= 97 && first <= 122))) {
     return null
   }
+  const lastAt = t.length - 1
   for (let i = 0; i < t.length; i++) {
     const c = t.charCodeAt(i)
     // : = ( ) [ ] " ' `
     if (c === 58 || c === 61 || c === 40 || c === 41 || c === 91 || c === 93 || c === 34 || c === 39 || c === 96) {
       return null
     }
-  }
-  const last = t.charCodeAt(t.length - 1)
-  if (last === 46 || last === 44 || last === 59 || last === 33 || last === 63) {
-    return null
+    // . , ; ! ? end a sentence, not a name.
+    if (i === lastAt && (c === 46 || c === 44 || c === 59 || c === 33 || c === 63)) {
+      return null
+    }
   }
   return rfcNormalize(t)
 }
@@ -824,7 +868,7 @@ const rfcDump = (line: string): string | null => {
   while (i < line.length && rfcIsHexDigit(line.charCodeAt(i))) {
     i++
   }
-  const offLen = i - offStart
+  const offLen = toI64(i) - toI64(offStart)
   if (offLen < 3 || offLen > 4 || i >= line.length || !rfcIsBlank(line.charCodeAt(i))) {
     return null
   }
@@ -833,7 +877,7 @@ const rfcDump = (line: string): string | null => {
   }
   const out: string[] = []
   while (true) {
-    if (i + 2 > line.length || !rfcIsHexDigit(line.charCodeAt(i)) || !rfcIsHexDigit(line.charCodeAt(i + 1))) {
+    if (i < 0 || i > line.length - 2 || !rfcIsHexDigit(line.charCodeAt(i)) || !rfcIsHexDigit(line.charCodeAt(i + 1))) {
       return null
     }
     out.push(line.substring(i, i + 2))
@@ -861,15 +905,15 @@ const rfcHexPrefixed = (r: RfcHexReader, line: string): boolean => {
   let found = false
   let from = 0
   let i = 0
-  while (i + 2 < line.length) {
+  while (i >= 0 && i < line.length - 2) {
     if (
       line.charCodeAt(i) === 48 &&
       line.charCodeAt(i + 1) === 120 &&
       rfcIsHexDigit(line.charCodeAt(i + 2)) &&
       (i === 0 || !rfcIsWordByte(line.charCodeAt(i - 1)))
     ) {
-      let end = i + 2
-      while (end < line.length && rfcIsHexDigit(line.charCodeAt(end))) {
+      let end = toI32(toU32(i) + 2)
+      while (end >= 0 && end < line.length && rfcIsHexDigit(line.charCodeAt(end))) {
         end++
       }
       rfcHexFlush(r)
@@ -887,30 +931,34 @@ const rfcHexPrefixed = (r: RfcHexReader, line: string): boolean => {
 
 /** The end of a colon run starting at `i` (h{1,2}(:h{1,2})+:?), or -1. */
 const rfcColonRunEnd = (line: string, i: number): i32 => {
-  if (i > 0 && (rfcIsWordByte(line.charCodeAt(i - 1)) || line.charCodeAt(i - 1) === 58)) {
+  const at = toI32(i)
+  if (at > 0 && at <= line.length && (rfcIsWordByte(line.charCodeAt(at - 1)) || line.charCodeAt(at - 1) === 58)) {
     return -1
   }
-  let j = toI32(i)
-  let groups = 0
+  let j = at
+  let groups: u32 = 0
   while (true) {
     const start = j
-    while (j < line.length && j - start < 2 && rfcIsHexDigit(line.charCodeAt(j))) {
+    while (j >= 0 && j < line.length && toI64(j) - toI64(start) < 2 && rfcIsHexDigit(line.charCodeAt(j))) {
       j++
     }
     if (j === start) {
       break
     }
     groups++
-    if (j < line.length && line.charCodeAt(j) === 58) {
+    if (j >= 0 && j < line.length && line.charCodeAt(j) === 58) {
       j++
     } else {
       break
     }
   }
-  if (groups < 2 && !(groups === 1 && j > 0 && line.charCodeAt(j - 1) === 58 && j - i > 1)) {
+  if (
+    groups < 2 &&
+    !(groups === 1 && j > 0 && j <= line.length && line.charCodeAt(j - 1) === 58 && toI64(j) - toI64(at) > 1)
+  ) {
     return -1
   }
-  if (j < line.length && rfcIsWordByte(line.charCodeAt(j))) {
+  if (j >= 0 && j < line.length && rfcIsWordByte(line.charCodeAt(j))) {
     return -1
   }
   return groups >= 2 ? j : -1
@@ -966,7 +1014,7 @@ const rfcHexLabelled = (r: RfcHexReader, line: string): boolean => {
   if (t.startsWith("o ")) {
     t = trim(t.substring(2, t.length))
   }
-  if (t.length === 0) {
+  if (t.length < 1) {
     return false
   }
   const first = t.charCodeAt(0)
@@ -1009,10 +1057,10 @@ const rfcDropAside = (line: string): string => {
     return line
   }
   const open = rfcLastIndexOf(t, "(")
-  if (open <= 0 || !rfcIsBlank(t.charCodeAt(open - 1))) {
+  if (open <= 0 || open > t.length || !rfcIsBlank(t.charCodeAt(open - 1))) {
     return line
   }
-  const inner = t.substring(open + 1, t.length - 1)
+  const inner = t.substring(toI32(toU32(open) + 1), t.length - 1)
   if (inner.indexOf("(") >= 0) {
     return line
   }
@@ -1072,16 +1120,17 @@ const rfcHexUnvalued = (r: RfcHexReader): void => {
 
 /** How many more `(` than `)` a text holds. */
 const rfcParenDepth = (t: string): i32 => {
-  let d = 0
+  let opens: u32 = 0
+  let closes: u32 = 0
   for (let i = 0; i < t.length; i++) {
     const c = t.charCodeAt(i)
     if (c === 40) {
-      d++
+      opens++
     } else if (c === 41) {
-      d--
+      closes++
     }
   }
-  return d
+  return toI32(toI64(opens) - toI64(closes))
 }
 
 /** The most lines a call label may wrap over. */
@@ -1107,7 +1156,7 @@ const rfcContinuedHex = (line: string): string | null => {
 const rfcStatementName = (t: string): string | null => {
   const eq = t.indexOf("=")
   const name = trim(eq < 0 ? t : t.substring(0, eq))
-  if (name.length === 0 || !rfcIsAlnum(name.charCodeAt(0)) || rfcIsDigit(name.charCodeAt(0))) {
+  if (name.length < 1 || !rfcIsAlnum(name.charCodeAt(0)) || rfcIsDigit(name.charCodeAt(0))) {
     return null
   }
   for (let i = 0; i < name.length; i++) {
@@ -1145,9 +1194,9 @@ const rfcHexText = (r: RfcHexReader, line: string): void => {
     // A line that ends in `:` or `=` and leaves the call open is a label of
     // its own, not the next line of a parenthesis left open in prose.
     const own = t.endsWith(":") || t.endsWith("=")
-    if (depth > 0 && !own && r.callSpan + 1 < RFC_CALL_LINES) {
+    if (depth > 0 && !own && toI64(r.callSpan) + 1 < toI64(RFC_CALL_LINES)) {
       r.call = joined
-      r.callSpan = r.callSpan + 1
+      r.callSpan = toI32(toI64(r.callSpan) + 1)
       // Until the call closes, the line still labels a value printed under
       // it: a parenthesis left open in prose (`The tag (computed over`)
       // leaves `Ciphertext` the next value's name.
@@ -1257,7 +1306,7 @@ export const rfcHexPrinted = (sec: RfcSection, hex: string): boolean => {
       if (at % 2 === 0) {
         return true
       }
-      at = toI32(v.hex.indexOf(want, at + 1))
+      at = toI32(v.hex.indexOf(want, toI32(toU32(at) + 1)))
     }
   }
   return false
