@@ -967,10 +967,6 @@ const gateHeadingCase = (l: GateLits, inSection: string): void => {
   }
 }
 
-/**
- * A cited vector's values are one test case: text printed on one shared line,
- * repeated labels from one round, and the expected value not an input's.
- */
 /** Whether every bound is printed the same number of times. */
 const gateSameRounds = (bs: GateBound[]): boolean => {
   if (bs.length === 0) {
@@ -980,6 +976,10 @@ const gateSameRounds = (bs: GateBound[]): boolean => {
   return bs.every((b: GateBound): boolean => b.of === of)
 }
 
+/**
+ * A cited vector's values are one test case: text printed on one shared line,
+ * repeated labels from one round, and the expected value not an input's.
+ */
 const gateOneTestCase = (l: GateLits, args: i32, sec: RfcSection): void => {
   const id = l.id
   const inSection = `${l.where} ("${sec.title}")`
