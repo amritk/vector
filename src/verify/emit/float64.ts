@@ -489,9 +489,9 @@ class F64Rng {
     return toF64(x >>> 8) / parseFloat("16777216")
   }
 
-  // An index below `n`. `next()` is below 1, so the product reaches `n` only
-  // by rounding, and then the last index is taken; the subtraction is in f64,
-  // where it cannot overflow.
+  // An index below `n`. `next()` is at most 1 - 2^-24, and its product with
+  // an i32 is exact in f64, so it never reaches `n`: the `top - 1` arm is for
+  // the prover, and is in f64, where it cannot overflow.
   pick(n: i32): i32 {
     const top = toF64(n)
     const at = Math.floor(this.next() * top)
@@ -501,10 +501,9 @@ class F64Rng {
 
 const f64List = (texts: string): f64[] => {
   const out: f64[] = []
+  // Every list below is single-spaced, so no text is empty.
   for (const text of split(texts, " ")) {
-    if (text.length > 0) {
-      out.push(parseFloat(text))
-    }
+    out.push(parseFloat(text))
   }
   return out
 }
@@ -786,7 +785,8 @@ class F64Dense {
         const at = seed.find(p.name)
         let hasSeed = false
         let seedN = f64Zero()
-        // A name with no value at its index (fields pushed by hand) is no seed.
+        // Every seed is built with `set`, which keeps `vals` as long as
+        // `names`, so the second bound is for the prover.
         if (at >= 0 && at < toI32(seed.vals.length)) {
           const v = seed.vals[at]
           hasSeed = !v.isBool
@@ -924,6 +924,8 @@ const f64Input = (params: LangParam[], env: F64Env, result: string): Counterexam
   for (const p of params) {
     const at = env.find(p.name)
     out.names.push(p.name)
+    // As in `F64Dense`: every environment here is built with `set`, so the
+    // second bound is for the prover; an unbound name is "?", as before.
     if (at >= 0 && at < toI32(env.vals.length)) {
       out.values.push(f64Render(env.vals[at]))
     } else {
@@ -1261,6 +1263,8 @@ class F64Compare {
     for (let i = 0; i < toI32(this.oldFn.params.length) && i < toI32(this.newFn.params.length); i++) {
       const name = this.newFn.params[i].name
       const at = env.find(this.oldFn.params[i].name)
+      // Every environment here is built with `set`: the second bound is for
+      // the prover.
       if (at >= 0 && at < toI32(env.vals.length)) {
         newEnv.set(name, env.vals[at])
       }
