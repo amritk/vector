@@ -1,7 +1,6 @@
 {
   "modules": {
     "src/spec/contract/shape.ts": 22,
-    "src/spec/contract/typing.ts": 16,
-    "src/spec/contract/write.ts": 28
+    "src/spec/contract/typing.ts": 16
   }
 }

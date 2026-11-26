@@ -15,6 +15,7 @@ import {
   Clause,
   ClauseKind,
   Contract,
+  Exclusion,
   Expr,
   ExprKind,
   ForallVar,
@@ -22,6 +23,8 @@ import {
   LitKind,
   Literal,
   NameOverride,
+  OutOfScope,
+  SourceDecl,
   Tolerance,
   Truncate,
   VectorSource,
@@ -83,10 +86,13 @@ const writeOverrides = (o: WriteNode, key: string, list: NameOverride[] | null):
   }
   const m = writeObj()
   const langs = vocabLanguages()
+  const overrides: NameOverride[] = list
   for (let i = 0; i < langs.length; i++) {
-    for (let j = 0; j < list.length; j++) {
-      if (list[j].language === langs[i]) {
-        writeSet(m, langs[i], writeStr(list[j].value))
+    const lang = langs[i]
+    for (let j = 0; j < overrides.length; j++) {
+      const ov = overrides[j]
+      if (ov.language === lang) {
+        writeSet(m, lang, writeStr(ov.value))
       }
     }
   }
@@ -146,10 +152,12 @@ const writeExpr = (e: Expr): WriteNode => {
   }
   if (e.kind === ExprKind.Let) {
     const binds = writeArr()
-    for (let i = 0; i < e.binds.length; i++) {
+    const lets = e.binds
+    for (let i = 0; i < lets.length; i++) {
+      const bind = lets[i]
       const b = writeObj()
-      writeSet(b, "name", writeStr(e.binds[i].name))
-      writeSet(b, "value", writeExpr(e.binds[i].value))
+      writeSet(b, "name", writeStr(bind.name))
+      writeSet(b, "value", writeExpr(bind.value))
       binds.items.push(b)
     }
     writeSet(o, "let", binds)
@@ -199,7 +207,7 @@ const writeTolerance = (t: Tolerance): WriteNode => {
 const writeTruncate = (t: Truncate): WriteNode => {
   const o = writeObj()
   if (t.unit === "bits") {
-    writeSet(o, "bits", writeRaw(`${t.bytes * 8}`))
+    writeSet(o, "bits", writeRaw(`${t.count()}`))
   } else {
     writeSet(o, "bytes", writeRaw(`${t.bytes}`))
   }
@@ -320,15 +328,17 @@ const writeTree = (c: Contract): WriteNode => {
   const sources = c.sources
   if (sources !== null) {
     const a = writeArr()
-    for (let i = 0; i < sources.length; i++) {
+    const docs: SourceDecl[] = sources
+    for (let i = 0; i < docs.length; i++) {
+      const doc = docs[i]
       const d = writeObj()
-      writeSet(d, "id", writeStr(sources[i].id))
-      if (sources[i].rfc >= 0) {
-        writeSet(d, "rfc", writeRaw(`${sources[i].rfc}`))
+      writeSet(d, "id", writeStr(doc.id))
+      if (doc.rfc >= 0) {
+        writeSet(d, "rfc", writeRaw(`${doc.rfc}`))
       }
-      writeSetStr(d, "path", sources[i].path)
-      writeSetStr(d, "file", sources[i].file)
-      writeSetStr(d, "sha256", sources[i].sha256)
+      writeSetStr(d, "path", doc.path)
+      writeSetStr(d, "file", doc.file)
+      writeSetStr(d, "sha256", doc.sha256)
       a.items.push(d)
     }
     writeSet(root, "sources", a)
@@ -338,8 +348,9 @@ const writeTree = (c: Contract): WriteNode => {
   writeOverrides(target, "modules", c.target.modules)
   writeSet(root, "target", target)
   const reqs = writeArr()
-  for (let i = 0; i < c.requirements.length; i++) {
-    const q = c.requirements[i]
+  const requirements = c.requirements
+  for (let i = 0; i < requirements.length; i++) {
+    const q = requirements[i]
     const o = writeObj()
     writeSet(o, "id", writeStr(q.id))
     writeSetStr(o, "source", q.source)
@@ -353,29 +364,34 @@ const writeTree = (c: Contract): WriteNode => {
   const exclusions = c.exclusions
   if (exclusions !== null) {
     const a = writeArr()
-    for (let i = 0; i < exclusions.length; i++) {
+    const excluded: Exclusion[] = exclusions
+    for (let i = 0; i < excluded.length; i++) {
+      const x = excluded[i]
       const o = writeObj()
-      writeSetStr(o, "source", exclusions[i].source)
-      writeSet(o, "section", writeStr(exclusions[i].section))
-      writeSet(o, "quote", writeStr(exclusions[i].quote))
-      writeSet(o, "reason", writeStr(exclusions[i].reason))
+      writeSetStr(o, "source", x.source)
+      writeSet(o, "section", writeStr(x.section))
+      writeSet(o, "quote", writeStr(x.quote))
+      writeSet(o, "reason", writeStr(x.reason))
       a.items.push(o)
     }
     writeSet(root, "exclusions", a)
   }
   const fns = writeArr()
-  for (let i = 0; i < c.functions.length; i++) {
-    const f = c.functions[i]
+  const functions = c.functions
+  for (let i = 0; i < functions.length; i++) {
+    const f = functions[i]
     const o = writeObj()
     writeSet(o, "name", writeStr(f.name))
     writeSetStr(o, "module", f.module)
     const params = writeArr()
-    for (let j = 0; j < f.params.length; j++) {
+    const fparams = f.params
+    for (let j = 0; j < fparams.length; j++) {
+      const fp = fparams[j]
       const p = writeObj()
-      writeSet(p, "name", writeStr(f.params[j].name))
-      writeSet(p, "type", writeStr(f.params[j].type))
-      writeSetStr(p, "form", f.params[j].form)
-      writeOverrides(p, "names", f.params[j].names)
+      writeSet(p, "name", writeStr(fp.name))
+      writeSet(p, "type", writeStr(fp.type))
+      writeSetStr(p, "form", fp.form)
+      writeOverrides(p, "names", fp.names)
       params.items.push(p)
     }
     writeSet(o, "params", params)
@@ -392,17 +408,20 @@ const writeTree = (c: Contract): WriteNode => {
   }
   writeSet(root, "functions", fns)
   const clauses = writeArr()
-  for (let i = 0; i < c.clauses.length; i++) {
-    clauses.items.push(writeClause(c.clauses[i]))
+  const cs = c.clauses
+  for (let i = 0; i < cs.length; i++) {
+    clauses.items.push(writeClause(cs[i]))
   }
   writeSet(root, "clauses", clauses)
   const oos = c.outOfScope
   if (oos !== null) {
     const a = writeArr()
-    for (let i = 0; i < oos.length; i++) {
+    const scoped: OutOfScope[] = oos
+    for (let i = 0; i < scoped.length; i++) {
+      const os = scoped[i]
       const o = writeObj()
-      writeSet(o, "name", writeStr(oos[i].name))
-      writeSet(o, "reason", writeStr(oos[i].reason))
+      writeSet(o, "name", writeStr(os.name))
+      writeSet(o, "reason", writeStr(os.reason))
       a.items.push(o)
     }
     writeSet(root, "outOfScope", a)
@@ -410,8 +429,9 @@ const writeTree = (c: Contract): WriteNode => {
   const survivors = c.allowSurvivors
   if (survivors !== null) {
     const a = writeArr()
-    for (let i = 0; i < survivors.length; i++) {
-      a.items.push(writeSurvivor(survivors[i]))
+    const allowed: AllowedSurvivor[] = survivors
+    for (let i = 0; i < allowed.length; i++) {
+      a.items.push(writeSurvivor(allowed[i]))
     }
     writeSet(root, "allowSurvivors", a)
   }
@@ -427,8 +447,9 @@ const writeInline = (n: WriteNode): string | null => {
     return null
   }
   let out = "["
-  for (let i = 0; i < n.items.length; i++) {
-    const item = writeInline(n.items[i])
+  const items = n.items
+  for (let i = 0; i < items.length; i++) {
+    const item = writeInline(items[i])
     if (item === null) {
       return null
     }
@@ -437,14 +458,17 @@ const writeInline = (n: WriteNode): string | null => {
   return `${out}]`
 }
 
-const writeComma = (i: i32, n: i32): i32 => (i < n - 1 ? 1 : 0)
+// In u32: `i` is below `n`, so `i + 1` does not wrap.
+const writeComma = (i: u32, n: u32): u32 => (i + 1 < n ? 1 : 0)
 
 /** `n` formatted at `indent`, with `used` columns of its line already taken. */
-const writeFormat = (n: WriteNode, indent: string, used: i32): string => {
+const writeFormat = (n: WriteNode, indent: string, used: u32): string => {
   if (n.kind === WRITE_SCALAR) {
     return n.text
   }
-  const count = n.items.length
+  const items = n.items
+  const keys = n.keys
+  const count = items.length
   if (count === 0) {
     return n.kind === WRITE_ARRAY ? "[]" : "{}"
   }
@@ -452,17 +476,20 @@ const writeFormat = (n: WriteNode, indent: string, used: i32): string => {
   const lines: string[] = []
   if (n.kind === WRITE_ARRAY) {
     const flat = writeInline(n)
-    if (flat !== null && used + codePointLength(flat) <= WRITE_LINE_WIDTH) {
+    if (flat !== null && used + toU32(codePointLength(flat)) <= toU32(WRITE_LINE_WIDTH)) {
       return flat
     }
-    for (let i = 0; i < count; i++) {
-      lines.push(inner + writeFormat(n.items[i], inner, codePointLength(inner) + writeComma(i, count)))
+    for (let i = 0; i < items.length; i++) {
+      lines.push(
+        inner + writeFormat(items[i], inner, toU32(codePointLength(inner)) + writeComma(toU32(i), toU32(count))),
+      )
     }
     return `[\n${lines.join(",\n")}\n${indent}]`
   }
-  for (let i = 0; i < count; i++) {
-    const key = `${inner}${jsonStringifyString(n.keys[i])}: `
-    lines.push(key + writeFormat(n.items[i], inner, codePointLength(key) + writeComma(i, count)))
+  for (let i = 0; i < items.length && i < keys.length; i++) {
+    const item = items[i]
+    const key = `${inner}${jsonStringifyString(keys[i])}: `
+    lines.push(key + writeFormat(item, inner, toU32(codePointLength(key)) + writeComma(toU32(i), toU32(count))))
   }
   return `{\n${lines.join(",\n")}\n${indent}}`
 }
