@@ -35,20 +35,21 @@ export const verdictStatus = (report: VerifyReport): string => {
   if (report.ok()) {
     return STATUS_PROVEN
   }
-  if (dashViolations(report) > 0) {
+  if (dashViolations(report) > toI64(0)) {
     return STATUS_REFUTED
   }
   return STATUS_UNKNOWN
 }
 
-const dashViolations = (report: VerifyReport): i32 =>
-  report.satCount +
-  report.divCount +
-  report.preCount +
-  report.rangeCount +
-  report.trivialCount +
-  report.vacuousCount +
-  toI32(report.conformance.length)
+// Summed in i64, where seven i32 counts cannot overflow.
+const dashViolations = (report: VerifyReport): i64 =>
+  toI64(report.satCount) +
+  toI64(report.divCount) +
+  toI64(report.preCount) +
+  toI64(report.rangeCount) +
+  toI64(report.trivialCount) +
+  toI64(report.vacuousCount) +
+  toI64(toI32(report.conformance.length))
 
 const dashRepeat = (s: string, n: i32): string => {
   let out = ""
@@ -63,7 +64,7 @@ const dashTake = (s: string, n: i32): string => {
   let count = 0
   for (let i = 0; i < toI32(s.length); i++) {
     if ((s.charCodeAt(i) & 0xc0) !== 0x80) {
-      if (count === n) {
+      if (count >= n) {
         return s.slice(0, i)
       }
       count = count + 1
@@ -74,12 +75,24 @@ const dashTake = (s: string, n: i32): string => {
 
 const dashRow = (text: string): string => {
   const clipped = codePointLength(text) > DASH_WIDTH - 1 ? `${dashTake(text, DASH_WIDTH - 2)}…` : text
-  return `║ ${clipped}${dashRepeat(" ", DASH_WIDTH - 1 - codePointLength(clipped))}║`
+  let pad = ""
+  for (let w = codePointLength(clipped); w < DASH_WIDTH - 1; w++) {
+    pad = `${pad} `
+  }
+  return `║ ${clipped}${pad}║`
 }
 
+// `(DASH_WIDTH - width) >> 1` spaces, counted in i64, where the difference
+// cannot overflow; a text wider than the box gets none.
 const dashCenter = (text: string): string => {
-  const pad = Math.max(0, (DASH_WIDTH - codePointLength(text)) >> 1)
-  return dashRow(dashRepeat(" ", pad) + text)
+  const spaces = (toI64(DASH_WIDTH) - toI64(codePointLength(text))) >> toI64(1)
+  let pad = ""
+  // `spaces` is at most `DASH_WIDTH >> 1`, so the first bound never ends the
+  // loop early; it is there for the prover.
+  for (let i = 0; i < DASH_WIDTH && toI64(i) < spaces; i++) {
+    pad = `${pad} `
+  }
+  return dashRow(pad + text)
 }
 
 const dashFrame = (left: string, fill: string, right: string): string =>
@@ -93,11 +106,14 @@ const dashFrame = (left: string, fill: string, right: string): string =>
  * @param width the widest line
  * @returns the lines
  */
-export const dashWrap = (text: string, width: i32): string[] => {
+export const dashWrap = (text: string, width: i32): string[] => dashWrapAt(text, toI64(width))
+
+// `dashWrap` at a width in i64, where the sums below cannot overflow.
+const dashWrapAt = (text: string, width: i64): string[] => {
   const lines: string[] = []
   let current = ""
   for (const word of split(text, " ")) {
-    if (current.length > 0 && codePointLength(current) + codePointLength(word) + 1 > width) {
+    if (current.length > 0 && toI64(codePointLength(current)) + toI64(codePointLength(word)) + toI64(1) > width) {
       lines.push(current)
       current = word
     } else if (current.length > 0) {
@@ -113,7 +129,7 @@ export const dashWrap = (text: string, width: i32): string[] => {
 }
 
 const dashPush = (lines: string[], text: string, indent: string): void => {
-  for (const line of dashWrap(text, DASH_WIDTH - 2 - codePointLength(indent))) {
+  for (const line of dashWrapAt(text, toI64(DASH_WIDTH - 2) - toI64(codePointLength(indent)))) {
     lines.push(dashRow(indent + line))
   }
 }
@@ -125,9 +141,16 @@ const dashPush = (lines: string[], text: string, indent: string): void => {
  * @returns `k = v, ...`
  */
 export const dashInputs = (cex: Counterexample): string => {
+  const names = cex.names
+  const values = cex.values
+  if (values.length < names.length) {
+    return `(a bug in vector: ${names.length} input names but ${values.length} values)`
+  }
   const parts: string[] = []
-  for (let i = 0; i < toI32(cex.names.length); i++) {
-    parts.push(`${cex.names[i]} = ${cex.values[i]}`)
+  // `values` is at least as long as `names` (checked above), so the second
+  // bound never ends the loop early; it is there for the prover.
+  for (let i = 0; i < toI32(names.length) && i < toI32(values.length); i++) {
+    parts.push(`${names[i]} = ${values[i]}`)
   }
   return parts.join(", ")
 }
@@ -240,11 +263,13 @@ export const renderDashboard = (label: string, report: VerifyReport): string => 
   dashPush(lines, `Prompt:  "${label}"`, "")
   lines.push(dashRow(`Attempt: 1/1      Solver: ${report.solver}      Status: ${status}`))
   lines.push(dashFrame("╠", "═", "╣"))
-  for (let i = 0; i < toI32(report.functions.length); i++) {
-    if (i > 0) {
+  let first = true
+  for (const fn of report.functions) {
+    if (!first) {
       lines.push(dashFrame("╟", "─", "╢"))
     }
-    dashFunction(lines, report.functions[i], report)
+    first = false
+    dashFunction(lines, fn, report)
   }
   if (report.conformance.length > 0) {
     lines.push(dashFrame("╟", "─", "╢"))

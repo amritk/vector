@@ -110,7 +110,25 @@ export const outJsonStrings = (items: string[]): OutJson => {
   return out
 }
 
-const OUT_HEX: string = "0123456789abcdef"
+// One lowercase hex digit, for `n` from 0 to 15.
+const outJsonHexDigit = (n: i32): string => {
+  if (n < 10) {
+    return `${n}`
+  }
+  if (n === 10) {
+    return "a"
+  }
+  if (n === 11) {
+    return "b"
+  }
+  if (n === 12) {
+    return "c"
+  }
+  if (n === 13) {
+    return "d"
+  }
+  return n === 14 ? "e" : "f"
+}
 
 /**
  * Quotes a string as JSON does: `"` and `\` escaped, control characters as
@@ -141,25 +159,25 @@ export const outJsonQuote = (s: string): string => {
     } else if (c === 12) {
       esc = "\\f"
     } else if (c < 32) {
-      esc = `\\u00${OUT_HEX.slice(c >> 4, (c >> 4) + 1)}${OUT_HEX.slice(c & 15, (c & 15) + 1)}`
+      esc = `\\u00${outJsonHexDigit(c >> 4)}${outJsonHexDigit(c & 15)}`
     }
     if (esc !== "") {
-      out = out + s.slice(start, i) + esc
+      // `start` is a past `i + 1`, so `start <= i`: the guard always holds.
+      if (start >= 0 && start <= i) {
+        out = out + s.slice(start, i) + esc
+      }
       start = i + 1
     }
   }
-  return `${out}${s.slice(start, n)}"`
-}
-
-const outJsonIndent = (depth: i32): string => {
-  let out = ""
-  for (let i = 0; i < depth; i++) {
-    out = `${out}  `
+  // `start` is at most the last `i + 1`, so at most `n`.
+  if (start >= 0 && start <= n) {
+    out = out + s.slice(start, n)
   }
-  return out
+  return `${out}"`
 }
 
-const outJsonWrite = (v: OutJson, depth: i32, parts: string[]): void => {
+// Writes `v` at the indentation `indent`, two spaces per level.
+const outJsonWrite = (v: OutJson, indent: string, parts: string[]): void => {
   if (v.kind === OUT_STRING) {
     parts.push(outJsonQuote(v.text))
     return
@@ -173,17 +191,23 @@ const outJsonWrite = (v: OutJson, depth: i32, parts: string[]): void => {
     parts.push(isObject ? "{}" : "[]")
     return
   }
-  const inner = outJsonIndent(depth + 1)
+  const inner = `${indent}  `
   parts.push(isObject ? "{\n" : "[\n")
   for (let i = 0; i < toI32(v.kids.length); i++) {
+    const kid = v.kids[i]
+    if (i > 0) {
+      parts.push(",\n")
+    }
     parts.push(inner)
-    if (isObject) {
+    // An object's value without a key (`add` on an object) is written bare,
+    // so the text is not JSON and every reader refuses it.
+    if (isObject && i < toI32(v.keys.length)) {
       parts.push(`${outJsonQuote(v.keys[i])}: `)
     }
-    outJsonWrite(v.kids[i], depth + 1, parts)
-    parts.push(i + 1 < toI32(v.kids.length) ? ",\n" : "\n")
+    outJsonWrite(kid, inner, parts)
   }
-  parts.push(outJsonIndent(depth))
+  parts.push("\n")
+  parts.push(indent)
   parts.push(isObject ? "}" : "]")
 }
 
@@ -195,6 +219,6 @@ const outJsonWrite = (v: OutJson, depth: i32, parts: string[]): void => {
  */
 export const outJsonRender = (v: OutJson): string => {
   const parts: string[] = []
-  outJsonWrite(v, 0, parts)
+  outJsonWrite(v, "", parts)
   return parts.join("")
 }

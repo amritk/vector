@@ -1,8 +1,5 @@
 {
   "modules": {
-    "src/verify/emit/dashboard.ts": 14,
-    "src/verify/emit/float64.ts": 50,
-    "src/verify/emit/outjson.ts": 8,
-    "src/verify/emit/typescript.ts": 2
+    "src/verify/emit/float64.ts": 50
   }
 }
