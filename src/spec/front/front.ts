@@ -12,8 +12,9 @@
  */
 
 import { JSON_VALUE_STRING } from "nish/json-value"
-import { asciiLower, replaceAll, split, splitWhitespace, trim } from "nish/text"
+import { replaceAll, split, splitWhitespace, trim } from "nish/text"
 import { newJsonDocument, parseJson } from "../../core/json"
+import { textAsciiLower } from "../../core/text"
 import { capacityNames, capacityParse, capacityShow } from "../contract/capacity"
 import { charsIsId, charsIsModule, charsIsStringText, charsSequenceLength } from "../contract/chars"
 import { SHAPE_MAX_LEN, shapeAlphabetClasses } from "../contract/shape"
@@ -174,7 +175,8 @@ class FrontLexer {
   text: string
   subset: string
   i: i32
-  line: i32
+  /** u32: it counts the line breaks of the text, so it cannot pass the text's length. */
+  line: u32
   lineStart: i32
   toks: FrontTok[]
   /** The byte frontCol last counted to, so the next count resumes there: columns cost linear time per line. */
@@ -195,14 +197,16 @@ class FrontLexer {
 
 /** The column of byte `at` on the current line, in UTF-16 units. */
 const frontCol = (lx: FrontLexer, at: i32): i32 => {
-  let col = 1
+  // u32: a column cannot pass the text's length, so it cannot overflow.
+  let col: u32 = 1
   let from = lx.lineStart
   if (lx.colAt >= lx.lineStart && lx.colAt <= at) {
-    col = lx.colOf
+    col = toU32(lx.colOf)
     from = lx.colAt
   }
   for (let k = from; k < at; k++) {
-    const b = lx.text.charCodeAt(k)
+    // from and at are byte indexes of the text, so the byte is always there.
+    const b = frontByte(lx.text, k)
     if ((b & 0xc0) !== 0x80) {
       col++
       if (b >= 0xf0) {
@@ -211,17 +215,23 @@ const frontCol = (lx: FrontLexer, at: i32): i32 => {
     }
   }
   lx.colAt = at
-  lx.colOf = col
-  return col
+  lx.colOf = toI32(col)
+  return toI32(col)
 }
 
-const frontLexPos = (lx: FrontLexer, at: i32): FrontPos => new FrontPos(lx.line, frontCol(lx, at))
+const frontLexPos = (lx: FrontLexer, at: i32): FrontPos => new FrontPos(toI32(lx.line), frontCol(lx, at))
 
 const frontPush = (lx: FrontLexer, kind: FrontKind, start: i32, end: i32, value: string): FrontTok => {
-  const t = new FrontTok(kind, lx.text.substring(start, end), value, lx.line, frontCol(lx, start))
+  const t = new FrontTok(kind, lx.text.substring(start, end), value, toI32(lx.line), frontCol(lx, start))
   lx.toks.push(t)
   return t
 }
+
+/** The byte at `i`, or -1 outside `s`: no byte class below holds -1. */
+const frontByte = (s: string, i: i32): i32 => (i >= 0 && i < s.length ? s.charCodeAt(i) : -1)
+
+/** `at + n`, an offset into a text plus a length: in u32, where it cannot wrap, as texts stay under 2^31 bytes. */
+const frontSum = (at: i32, n: i32): i32 => toI32(toU32(at) + toU32(n))
 
 const frontIsDigit = (c: i32): boolean => c >= 0x30 && c <= 0x39
 const frontIsAlpha = (c: i32): boolean => (c >= 0x41 && c <= 0x5a) || (c >= 0x61 && c <= 0x7a)
@@ -232,13 +242,13 @@ const frontIsHex = (c: i32): boolean => frontIsLowerHex(c) || (c >= 0x41 && c <=
 const frontIsSpace = (c: i32): boolean => c === 0x20 || (c >= 0x09 && c <= 0x0d)
 
 /** Whether `s` holds `p` at byte `i`. */
-const frontHas = (s: string, i: i32, p: string): boolean => s.substring(i, i + p.length) === p
+const frontHas = (s: string, i: i32, p: string): boolean => s.substring(i, frontSum(i, p.length)) === p
 
 /** The end of a `"…"` literal starting at `i` (`"(?:[^"\\\n]|\\.)*"`), or -1. */
 const frontStringEnd = (s: string, i: i32): i32 => {
-  let j = i + 1
+  let j = frontSum(i, 1)
   while (j < s.length) {
-    const c = s.charCodeAt(j)
+    const c = frontByte(s, j)
     if (c === 0x22) {
       return j + 1
     }
@@ -246,10 +256,11 @@ const frontStringEnd = (s: string, i: i32): i32 => {
       return -1
     }
     if (c === 0x5c) {
-      if (j + 1 >= s.length || s.charCodeAt(j + 1) === 0x0a) {
+      const k = j + 1
+      if (k >= s.length || frontByte(s, k) === 0x0a) {
         return -1
       }
-      j = j + 1 + charsSequenceLength(s, j + 1)
+      j = frontSum(k, charsSequenceLength(s, k))
       continue
     }
     j++
@@ -259,19 +270,19 @@ const frontStringEnd = (s: string, i: i32): i32 => {
 
 /** The end of a bytes literal at `i` (`[00 0f]`, `[]`), or -1. */
 const frontBytesEnd = (s: string, i: i32): i32 => {
-  let j = i + 1
-  if (j < s.length && s.charCodeAt(j) === 0x5d) {
+  let j = frontSum(i, 1)
+  if (j < s.length && frontByte(s, j) === 0x5d) {
     return j + 1
   }
   while (true) {
-    if (j + 1 >= s.length || !frontIsLowerHex(s.charCodeAt(j)) || !frontIsLowerHex(s.charCodeAt(j + 1))) {
+    if (j >= s.length - 1 || !frontIsLowerHex(frontByte(s, j)) || !frontIsLowerHex(frontByte(s, j + 1))) {
       return -1
     }
     j = j + 2
     if (j >= s.length) {
       return -1
     }
-    const c = s.charCodeAt(j)
+    const c = frontByte(s, j)
     if (c === 0x5d) {
       return j + 1
     }
@@ -284,11 +295,11 @@ const frontBytesEnd = (s: string, i: i32): i32 => {
 
 /** Whether `[0-9A-Fa-f ]+]` starts at `i`, the `[`. */
 const frontLooseBytes = (s: string, i: i32): boolean => {
-  let j = i + 1
-  while (j < s.length && (frontIsHex(s.charCodeAt(j)) || s.charCodeAt(j) === 0x20)) {
+  let j = frontSum(i, 1)
+  while (j < s.length && (frontIsHex(frontByte(s, j)) || frontByte(s, j) === 0x20)) {
     j++
   }
-  return j > i + 1 && j < s.length && s.charCodeAt(j) === 0x5d
+  return j > frontSum(i, 1) && j < s.length && frontByte(s, j) === 0x5d
 }
 
 /** A JSON string's value, or null when `text` is not one JSON string. */
@@ -312,49 +323,62 @@ const frontOperandPlace = (lx: FrontLexer): boolean => {
   return true
 }
 
-function frontLex(source: string, subset: string): Result<FrontTok[], FrontRefusal> {
+/** The tokens of a block, and the end-of-block token that closes them. */
+class FrontLexed {
+  toks: FrontTok[]
+  eof: FrontTok
+  constructor(toks: FrontTok[], eof: FrontTok) {
+    this.toks = toks
+    this.eof = eof
+  }
+}
+
+function frontLex(source: string, subset: string): Result<FrontLexed, FrontRefusal> {
   const lx = new FrontLexer(replaceAll(replaceAll(source, "\r\n", "\n"), "\r", "\n"), subset)
   const text = lx.text
   const puncts = frontPuncts()
-  while (lx.i < text.length) {
+  while (true) {
     const i = lx.i
-    const c = text.charCodeAt(i)
+    if (i >= text.length) {
+      break
+    }
+    const c = frontByte(text, i)
     if (c === 0x0a) {
-      lx.i = lx.i + 1
+      lx.i = i + 1
       lx.line = lx.line + 1
       lx.lineStart = lx.i
       continue
     }
     if (c === 0x20 || c === 0x09) {
-      lx.i = lx.i + 1
+      lx.i = i + 1
       continue
     }
     if (frontHas(text, i, "//")) {
       const end = text.indexOf("\n", i)
       const stop = end < 0 ? text.length : end
-      const t = frontPush(lx, FrontKind.Comment, i, stop, text.substring(i + 2, stop))
+      const t = frontPush(lx, FrontKind.Comment, i, stop, text.substring(frontSum(i, 2), stop))
       t.lineComment = true
       lx.i = stop
       continue
     }
     if (frontHas(text, i, "/*")) {
-      const end = text.indexOf("*/", i + 2)
+      const end = text.indexOf("*/", frontSum(i, 2))
       if (end < 0) {
         return Err(frontRefuse("unterminated `/*` comment", frontLexPos(lx, i)))
       }
-      frontPush(lx, FrontKind.Comment, i, end + 2, text.substring(i + 2, end))
+      frontPush(lx, FrontKind.Comment, i, frontSum(end, 2), text.substring(frontSum(i, 2), end))
       for (let k = i; k < end; k++) {
-        if (text.charCodeAt(k) === 0x0a) {
+        if (frontByte(text, k) === 0x0a) {
           lx.line = lx.line + 1
           lx.lineStart = k + 1
         }
       }
-      lx.i = end + 2
+      lx.i = frontSum(end, 2)
       continue
     }
     if (frontIsAlpha(c) || c === 0x5f) {
       let j = i + 1
-      while (j < text.length && frontIsWord(text.charCodeAt(j))) {
+      while (j < text.length && frontIsWord(frontByte(text, j))) {
         j++
       }
       frontPush(lx, FrontKind.Ident, i, j, "")
@@ -363,13 +387,13 @@ function frontLex(source: string, subset: string): Result<FrontTok[], FrontRefus
     }
     if (frontIsDigit(c)) {
       let j = i + 1
-      while (j < text.length && (frontIsWord(text.charCodeAt(j)) || text.charCodeAt(j) === 0x2e)) {
+      while (j < text.length && (frontIsWord(frontByte(text, j)) || frontByte(text, j) === 0x2e)) {
         j++
       }
       const num = text.substring(i, j)
-      let decimal = num === "0" || num.charCodeAt(0) !== 0x30
+      let decimal = num === "0" || frontByte(num, 0) !== 0x30
       for (let k = 0; k < num.length; k++) {
-        if (!frontIsDigit(num.charCodeAt(k))) {
+        if (!frontIsDigit(frontByte(num, k))) {
           decimal = false
         }
       }
@@ -418,15 +442,15 @@ function frontLex(source: string, subset: string): Result<FrontTok[], FrontRefus
       }
     }
     if (matched.length !== 0) {
-      frontPush(lx, FrontKind.Punct, i, i + matched.length, "")
-      lx.i = i + matched.length
+      frontPush(lx, FrontKind.Punct, i, frontSum(i, matched.length), "")
+      lx.i = frontSum(i, matched.length)
       continue
     }
-    const ch = text.substring(i, i + charsSequenceLength(text, i))
+    const ch = text.substring(i, frontSum(i, charsSequenceLength(text, i)))
     return Err(frontRefuse(`\`${ch}\` is not in the ${subset} subset`, frontLexPos(lx, i)))
   }
-  frontPush(lx, FrontKind.Eof, lx.i, lx.i, "")
-  return Ok(lx.toks)
+  const eof = frontPush(lx, FrontKind.Eof, lx.i, lx.i, "")
+  return Ok(new FrontLexed(lx.toks, eof))
 }
 
 // ── Cursor ─────────────────────────────────────────────────────────────────
@@ -439,29 +463,43 @@ function frontLex(source: string, subset: string): Result<FrontTok[], FrontRefus
  */
 class FrontCursor {
   toks: FrontTok[]
+  /** The last token, the end of the block: every read past it sees it again. */
+  eof: FrontTok
   i: i32
   iface: boolean
   err: FrontRefusal | null
-  constructor(toks: FrontTok[], iface: boolean) {
-    this.toks = toks
+  constructor(lexed: FrontLexed, iface: boolean) {
+    this.toks = lexed.toks
+    this.eof = lexed.eof
     this.i = 0
     this.iface = iface
     this.err = null
   }
 }
 
-const frontEof = (c: FrontCursor): FrontTok => c.toks[c.toks.length - 1]
+const frontEof = (c: FrontCursor): FrontTok => c.eof
+
+/** Token `j`, or the end of the block past it. */
+const frontTokAt = (c: FrontCursor, j: i32): FrontTok => (j >= 0 && j < c.toks.length ? c.toks[j] : c.eof)
 
 /** The next token, comments included. */
-const frontRaw = (c: FrontCursor): FrontTok => (c.err !== null ? frontEof(c) : c.toks[c.i])
+const frontRaw = (c: FrontCursor): FrontTok => (c.err !== null ? frontEof(c) : frontTokAt(c, c.i))
 
 /** The next token past comments, which are consumed. */
 function frontPeek(c: FrontCursor): FrontTok {
   if (c.err !== null) {
     return frontEof(c)
   }
-  while (c.toks[c.i].kind === FrontKind.Comment) {
-    const t = c.toks[c.i]
+  while (true) {
+    const i = c.i
+    // The cursor stops on the end of the block, the last token, so it stays among them.
+    if (i < 0 || i >= c.toks.length) {
+      return c.eof
+    }
+    const t = c.toks[i]
+    if (t.kind !== FrontKind.Comment) {
+      return t
+    }
     if (c.iface) {
       const r = frontModuleLine(t)
       if (r.isErr()) {
@@ -476,9 +514,8 @@ function frontPeek(c: FrontCursor): FrontTok {
         return frontEof(c)
       }
     }
-    c.i = c.i + 1
+    c.i = i + 1
   }
-  return c.toks[c.i]
 }
 
 /** The next token past any comments, which stay unread. */
@@ -487,16 +524,17 @@ const frontLook = (c: FrontCursor): FrontTok => {
     return frontEof(c)
   }
   let j = c.i
-  while (c.toks[j].kind === FrontKind.Comment) {
+  while (j >= 0 && j < c.toks.length && c.toks[j].kind === FrontKind.Comment) {
     j++
   }
-  return c.toks[j]
+  return frontTokAt(c, j)
 }
 
 const frontNext = (c: FrontCursor): FrontTok => {
   const t = frontPeek(c)
   if (t.kind !== FrontKind.Eof) {
-    c.i = c.i + 1
+    // Short of the end, the cursor is on a token, so this cannot wrap.
+    c.i = frontSum(c.i, 1)
   }
   return t
 }
@@ -504,7 +542,8 @@ const frontNext = (c: FrontCursor): FrontTok => {
 /** Consume the raw next token (a comment the caller has looked at). */
 const frontSkipRaw = (c: FrontCursor): void => {
   if (c.err === null) {
-    c.i = c.i + 1
+    // The caller looked at a comment there, so the cursor is on a token and this cannot wrap.
+    c.i = frontSum(c.i, 1)
   }
 }
 
@@ -715,7 +754,7 @@ const frontLooksModule = (value: string): boolean => {
     }
     i++
   }
-  if (asciiLower(value.substring(i, i + 6)) !== "module") {
+  if (textAsciiLower(value.substring(i, i + 6)) !== "module") {
     return false
   }
   i = i + 6
@@ -1616,8 +1655,9 @@ const frontSamplesLine = (c: FrontCursor): Result<i32, FrontRefusal> => {
     samples = frontSamplesOf(raw).orReturn()
     frontSkipRaw(c)
   }
-  for (let k = c.i; k < c.toks.length; k++) {
-    if (frontIsSamplesLine(c.toks[k])) {
+  // From 0, so the index is proven in range; the tokens before the cursor are skipped.
+  for (let k = 0; k < c.toks.length; k++) {
+    if (k >= c.i && frontIsSamplesLine(c.toks[k])) {
       return Err(frontRefuse("the samples line goes on line 2, after the covers line", frontAt(c.toks[k])))
     }
   }
