@@ -10,6 +10,7 @@
 
 import { Suite } from "nish/testing";
 import { hexDecode, hexEncode } from "nish/hex";
+import { wrappingMul } from "nish:unsafe";
 
 /** `bytes` as lowercase hex, the way the RFC prints them. */
 const hexOf = (bytes: u8[]): string => {
@@ -227,7 +228,7 @@ const clause_P_ENC_LEN = (t: Suite): boolean => {
   for (let i: i32 = 0; i < 2 && i < table_b.length; i += 1) {
     const r_b: string = table_b[i];
     const v_b: u8[] = unhex(r_b);
-    const holds: boolean = (toI32(hexEncode(v_b).length) === toI32(toU32(2) * toU32(toI32(v_b.length))));
+    const holds: boolean = (toI32(hexEncode(v_b).length) === wrappingMul(2, toI32(v_b.length)));
     if (!holds) {
       return t.fail("[P-ENC-LEN] two characters per byte (R-ENC-LEN)", `sample ${i + 1} of 2 (len(b) = ${toI32(v_b.length)}): the assertion is false`);
     }

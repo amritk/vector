@@ -125,6 +125,8 @@ class EmitContext {
   used: string[]
   /** What the program imports from nish:secret. */
   secretNames: string[]
+  /** What the program imports from nish:unsafe: the wrapping ops it writes. */
+  unsafeNames: string[]
   /** The `plain_` wrappers of functions that take or return a Secret, each with its text. */
   wrappers: EmitWrapper[]
   /** The names in scope: the forall variables, then let bindings. */
@@ -137,6 +139,7 @@ class EmitContext {
     this.opts = opts
     this.used = []
     this.secretNames = []
+    this.unsafeNames = []
     this.wrappers = []
     this.env = new TypeEnv(c.functions, true)
     this.errors = []
@@ -698,15 +701,12 @@ const emitOp = (ctx: EmitContext, e: Expr, want: string | null): string => {
   if (op === "+" || op === "-" || op === "*") {
     const t = emitOperands(ctx, e)
     if (t === "i32" || t === "i64") {
-      // Signed overflow is refused in Nish; the contract wraps, as evalPure
-      // and the sampler do. The low bits of + - * are the same signed or
-      // unsigned, so both sides go to the unsigned type of their width,
-      // which wraps, and the result's bits are read back as signed.
-      const u = t === "i32" ? "toU32" : "toU64"
-      const s = t === "i32" ? "toI32" : "toI64"
-      const a = `${u}(${emitArg(ctx, e, 0, t)})`
-      const b = `${u}(${emitArg(ctx, e, 1, t)})`
-      return emitConv(`${s}(${a} ${op} ${b})`, emitTypeOf(ctx, e), want)
+      // The contract wraps modulo 2^N, as evalPure and the sampler do, and
+      // Nish's signed operators refuse overflow. So the wrap is written as
+      // the nish:unsafe op that says so, imported where it is used.
+      const w = op === "+" ? "wrappingAdd" : op === "-" ? "wrappingSub" : "wrappingMul"
+      emitAddOnce(ctx.unsafeNames, w)
+      return emitConv(`${w}(${emitArg(ctx, e, 0, t)}, ${emitArg(ctx, e, 1, t)})`, emitTypeOf(ctx, e), want)
     }
     return emitConv(`(${emitArg(ctx, e, 0, t)} ${op} ${emitArg(ctx, e, 1, t)})`, emitTypeOf(ctx, e), want)
   }
@@ -1344,7 +1344,7 @@ const emitHeader = (c: Contract, opts: EmitOptions): string =>
     .map((l: string): string => (l === "" ? "//" : `// ${l}`))
     .join("\n")
 
-/** The imports: the suite, the functions called by module, then nish:secret. */
+/** The imports: the suite, the functions called by module, then nish:secret and nish:unsafe. */
 const emitImports = (ctx: EmitContext, called: string[]): string => {
   const lines: string[] = [`import { Suite } from "nish/testing";`]
   const imports: EmitImport[] = []
@@ -1375,6 +1375,9 @@ const emitImports = (ctx: EmitContext, called: string[]): string => {
   }
   if (secrets.length > 0) {
     lines.push(`import { ${secrets.join(", ")} } from "nish:secret";`)
+  }
+  if (ctx.unsafeNames.length > 0) {
+    lines.push(`import { ${emitSortedUnique(ctx.unsafeNames).join(", ")} } from "nish:unsafe";`)
   }
   return lines.join("\n")
 }
