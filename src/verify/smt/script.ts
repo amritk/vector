@@ -157,7 +157,8 @@ export class SmtScope {
    */
   lookup(name: string): string {
     for (let i = toI32(this.names.length) - 1; i >= 0; i--) {
-      if (this.names[i] === name) {
+      // bind pushes a term with each name, so `i < terms.length` always holds.
+      if (this.names[i] === name && i < toI32(this.terms.length)) {
         return this.terms[i]
       }
     }
@@ -225,7 +226,8 @@ export class SmtEmitter {
   term(e: LangExpr, scope: SmtScope, path: string[]): string {
     if (e.kind === EXPR_NUM) {
       const neg = e.value.startsWith("-")
-      const abs = neg ? e.value.slice(1) : e.value
+      // neg means e.value is at least one byte long, so substring cuts what slice did.
+      const abs = neg ? e.value.substring(1) : e.value
       let lit = abs
       if (e.numTy !== "Int" && abs.indexOf(".") < 0) {
         lit = `${abs}.0`
@@ -240,7 +242,7 @@ export class SmtEmitter {
       return bound === "" ? this.untranslatable(`unbound variable ${e.name}`) : bound
     }
     if (e.kind === EXPR_UNOP) {
-      const a = this.term(e.args[0], scope, path)
+      const a = smtOperand(this, e, 0, scope, path)
       if (e.op === "not") {
         return `(not ${a})`
       }
@@ -256,8 +258,8 @@ export class SmtEmitter {
       return `(to_real (- (to_int (- ${a}))))`
     }
     if (e.kind === EXPR_BINOP) {
-      const l = this.term(e.args[0], scope, path)
-      const r = this.term(e.args[1], scope, smtRightPath(e.op, l, path))
+      const l = smtOperand(this, e, 0, scope, path)
+      const r = smtOperand(this, e, 1, scope, smtRightPath(e.op, l, path))
       if (e.op === "/" && this.record) {
         this.divs.push(new SmtHazard(smtCopy(path), r, "", prettyMath(e)))
       }
@@ -275,24 +277,26 @@ export class SmtEmitter {
       return t
     }
     if (e.kind === EXPR_ITE) {
-      const c = this.term(e.args[0], scope, path)
+      const c = smtOperand(this, e, 0, scope, path)
       const thenPath = smtCopy(path)
       thenPath.push(c)
       const elsePath = smtCopy(path)
       elsePath.push(`(not ${c})`)
-      const t = this.term(e.args[1], scope, thenPath)
-      const f = this.term(e.args[2], scope, elsePath)
+      const t = smtOperand(this, e, 1, scope, thenPath)
+      const f = smtOperand(this, e, 2, scope, elsePath)
       return `(ite ${c} ${t} ${f})`
     }
     if (e.kind === EXPR_CALL) {
       const at = programFunctionIndex(this.program, e.name)
-      if (at < 0) {
+      // programFunctionIndex answers -1 or an index below the length.
+      if (at < 0 || at >= toI32(this.program.functions.length)) {
         return this.untranslatable(`unknown function ${e.name}`)
       }
       const callee = this.program.functions[at]
       const inner = new SmtScope()
-      for (let i = 0; i < toI32(callee.params.length) && i < toI32(e.args.length); i++) {
-        inner.bind(callee.params[i].name, this.term(e.args[i], scope, path))
+      const params = callee.params
+      for (let i = 0; i < toI32(params.length) && i < toI32(e.args.length); i++) {
+        inner.bind(params[i].name, smtOperand(this, e, i, scope, path))
       }
       // The callee's guards run in order, so each is reached only once the
       // ones before it held.
@@ -308,6 +312,15 @@ export class SmtEmitter {
     }
     return this.untranslatable(`unknown expression kind ${e.kind}`)
   }
+}
+
+// Translates operand `k` of `e`. The parser gives each kind its operands, so
+// the missing-operand error is never reached in practice.
+const smtOperand = (em: SmtEmitter, e: LangExpr, k: i32, scope: SmtScope, path: string[]): string => {
+  if (k < 0 || k >= toI32(e.args.length)) {
+    return em.untranslatable(`${e.kind} expression has no operand ${k}`)
+  }
+  return em.term(e.args[k], scope, path)
 }
 
 const smtCopy = (xs: string[]): string[] => {
@@ -447,7 +460,8 @@ export const buildVerificationScript = (program: Program): SmtScript => {
     const bindResult = `(assert (= ${res} ${em.term(fn.body, scope, smtNoPath())}))`
     em.record = false
     const ensuresScope = new SmtScope()
-    for (let i = 0; i < toI32(scope.names.length); i++) {
+    // bind pushes a term with each name, so `i < terms.length` never stops the loop.
+    for (let i = 0; i < toI32(scope.names.length) && i < toI32(scope.terms.length); i++) {
       ensuresScope.bind(scope.names[i], scope.terms[i])
     }
     ensuresScope.bind(RESULT_NAME, res)
@@ -500,7 +514,8 @@ const smtHazardQueries = (
   rangeFrom: i32,
   rangeTo: i32,
 ): void => {
-  for (let i = divFrom; i < divTo; i++) {
+  // Each range was read from its list's length, so the bounds tests never stop a loop.
+  for (let i = divFrom; i >= 0 && i < divTo && i < toI32(em.divs.length); i++) {
     const d = em.divs[i]
     w.query(
       new SmtQuery(QUERY_DIV, idx, "(division)", -1, d.pretty, ""),
@@ -508,7 +523,7 @@ const smtHazardQueries = (
       true,
     )
   }
-  for (let i = preFrom; i < preTo; i++) {
+  for (let i = preFrom; i >= 0 && i < preTo && i < toI32(em.pres.length); i++) {
     const p = em.pres[i]
     w.query(
       new SmtQuery(QUERY_PRE, idx, `(calls ${p.callee})`, -1, p.pretty, p.callee),
@@ -516,7 +531,7 @@ const smtHazardQueries = (
       true,
     )
   }
-  for (let i = rangeFrom; i < rangeTo; i++) {
+  for (let i = rangeFrom; i >= 0 && i < rangeTo && i < toI32(em.ranges.length); i++) {
     const r = em.ranges[i]
     w.query(
       new SmtQuery(QUERY_RANGE, idx, "(range)", -1, r.pretty, ""),

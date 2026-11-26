@@ -56,7 +56,8 @@ export const reportIssues = (ctx: CheckContext, report: CheckReport): ReportIssu
   const out: ReportIssue[] = []
   for (const f of report.findings) {
     let placed = false
-    for (let i = 0; i < ctx.notes.length && !placed; i++) {
+    // `used` has one entry per note, so `i < used.length` never stops the loop early.
+    for (let i = 0; i < ctx.notes.length && i < used.length && !placed; i++) {
       const n = ctx.notes[i]
       if (!used[i] && !n.warning && n.gate === f.gate && `${n.at}: ${n.message}` === f.message) {
         used[i] = true
@@ -140,12 +141,13 @@ export const reportSafe = (s: string, n: i32): string => {
 export const reportShort = (s: string, n: i32): string => {
   const t = reportOneLine(s)
   // Count characters by their first bytes; cut before the n-th.
-  let chars = 0
+  // u32 counters: neither can pass the text's length, so neither can overflow.
+  let chars: u32 = 0
   for (let i = 0; i < t.length; i++) {
     if ((t.charCodeAt(i) & 0xc0) !== 0x80) {
       chars++
-      if (chars === n) {
-        let rest = 0
+      if (chars === toU32(n)) {
+        let rest: u32 = 0
         for (let j = i; j < t.length; j++) {
           if ((t.charCodeAt(j) & 0xc0) !== 0x80) {
             rest++

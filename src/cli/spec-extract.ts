@@ -20,6 +20,7 @@ import {
   usageError,
 } from "../core/diag"
 import { dirname } from "../core/fs"
+import { utf8Bytes } from "../core/hex"
 import {
   EXTRACT_SIDECAR_SUFFIX,
   extractContract,
@@ -90,7 +91,7 @@ export class SpecExtractCommand {
     if (readers.isErr()) {
       return report(usageError(`spec extract: ${readers.error}`))
     }
-    const self = realpathSync("/proc/self/exe") ?? realpathSync(process.argv[0]) ?? "."
+    const self = realpathSync("/proc/self/exe") ?? specExtractArgv0() ?? "."
     const contractPath = outArg ?? extractDefaultContractPath(xml)
     const got = extractContract(xml, contractPath, dirname(dirname(self)), readers.value)
     if (got.errors.length > 0) {
@@ -127,9 +128,21 @@ export class SpecExtractCommand {
     if (readFileSyncOrNull(outArg) === null && realpathSync(outArg) !== null) {
       return report(usageError(`spec extract: cannot write ${outArg}`))
     }
-    writeFileSync(outArg, got.text)
+    // writeFileBytesSync writes the same bytes as writeFileSync, but answers a
+    // failure with a negative errno instead of aborting, so it is refused here.
+    if (writeFileBytesSync(outArg, utf8Bytes(got.text)) < 0) {
+      return report(usageError(`spec extract: cannot write ${outArg}`))
+    }
     return EXIT_PASS
   }
+}
+
+/** The resolved path of the process's first argument, or null when there is none or it does not resolve. */
+const specExtractArgv0 = (): string | null => {
+  for (const arg of process.argv) {
+    return realpathSync(arg)
+  }
+  return null
 }
 
 /** Prints text that ends in a newline to stdout, as it is. */
