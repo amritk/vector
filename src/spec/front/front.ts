@@ -12,8 +12,9 @@
  */
 
 import { JSON_VALUE_STRING } from "nish/json-value"
-import { asciiLower, replaceAll, split, splitWhitespace, trim } from "nish/text"
+import { replaceAll, split, splitWhitespace, trim } from "nish/text"
 import { newJsonDocument, parseJson } from "../../core/json"
+import { textAsciiLower } from "../../core/text"
 import { capacityNames, capacityParse, capacityShow } from "../contract/capacity"
 import { charsIsId, charsIsModule, charsIsStringText, charsSequenceLength } from "../contract/chars"
 import { SHAPE_MAX_LEN, shapeAlphabetClasses } from "../contract/shape"
@@ -43,7 +44,6 @@ import {
   vocabIsSecretOp,
   vocabReadOps,
   vocabValueType,
-  vocabWordTypes,
   vocabWriteOps,
 } from "../contract/vocab"
 
@@ -174,7 +174,8 @@ class FrontLexer {
   text: string
   subset: string
   i: i32
-  line: i32
+  /** u32: it counts the line breaks of the text, so it cannot pass the text's length. */
+  line: u32
   lineStart: i32
   toks: FrontTok[]
   /** The byte frontCol last counted to, so the next count resumes there: columns cost linear time per line. */
@@ -195,14 +196,16 @@ class FrontLexer {
 
 /** The column of byte `at` on the current line, in UTF-16 units. */
 const frontCol = (lx: FrontLexer, at: i32): i32 => {
-  let col = 1
+  // u32: a column cannot pass the text's length, so it cannot overflow.
+  let col: u32 = 1
   let from = lx.lineStart
   if (lx.colAt >= lx.lineStart && lx.colAt <= at) {
-    col = lx.colOf
+    col = toU32(lx.colOf)
     from = lx.colAt
   }
   for (let k = from; k < at; k++) {
-    const b = lx.text.charCodeAt(k)
+    // from and at are byte indexes of the text, so the byte is always there.
+    const b = frontByte(lx.text, k)
     if ((b & 0xc0) !== 0x80) {
       col++
       if (b >= 0xf0) {
@@ -211,17 +214,27 @@ const frontCol = (lx: FrontLexer, at: i32): i32 => {
     }
   }
   lx.colAt = at
-  lx.colOf = col
-  return col
+  lx.colOf = toI32(col)
+  return toI32(col)
 }
 
-const frontLexPos = (lx: FrontLexer, at: i32): FrontPos => new FrontPos(lx.line, frontCol(lx, at))
+const frontLexPos = (lx: FrontLexer, at: i32): FrontPos => new FrontPos(toI32(lx.line), frontCol(lx, at))
 
 const frontPush = (lx: FrontLexer, kind: FrontKind, start: i32, end: i32, value: string): FrontTok => {
-  const t = new FrontTok(kind, lx.text.substring(start, end), value, lx.line, frontCol(lx, start))
+  const t = new FrontTok(kind, lx.text.substring(start, end), value, toI32(lx.line), frontCol(lx, start))
   lx.toks.push(t)
   return t
 }
+
+/**
+ * The byte at `i`, or -1 outside `s`: no byte class below holds -1. Every
+ * caller checks `i < s.length` first, so the -1 is never read; the check only
+ * tells the prover so.
+ */
+const frontByte = (s: string, i: i32): i32 => (i >= 0 && i < s.length ? s.charCodeAt(i) : -1)
+
+/** `at + n`, an offset into a text plus a length: in u32, where it cannot wrap, as texts stay under 2^31 bytes. */
+const frontSum = (at: i32, n: i32): i32 => toI32(toU32(at) + toU32(n))
 
 const frontIsDigit = (c: i32): boolean => c >= 0x30 && c <= 0x39
 const frontIsAlpha = (c: i32): boolean => (c >= 0x41 && c <= 0x5a) || (c >= 0x61 && c <= 0x7a)
@@ -232,13 +245,13 @@ const frontIsHex = (c: i32): boolean => frontIsLowerHex(c) || (c >= 0x41 && c <=
 const frontIsSpace = (c: i32): boolean => c === 0x20 || (c >= 0x09 && c <= 0x0d)
 
 /** Whether `s` holds `p` at byte `i`. */
-const frontHas = (s: string, i: i32, p: string): boolean => s.substring(i, i + p.length) === p
+const frontHas = (s: string, i: i32, p: string): boolean => s.substring(i, frontSum(i, p.length)) === p
 
 /** The end of a `"…"` literal starting at `i` (`"(?:[^"\\\n]|\\.)*"`), or -1. */
 const frontStringEnd = (s: string, i: i32): i32 => {
-  let j = i + 1
+  let j = frontSum(i, 1)
   while (j < s.length) {
-    const c = s.charCodeAt(j)
+    const c = frontByte(s, j)
     if (c === 0x22) {
       return j + 1
     }
@@ -246,10 +259,11 @@ const frontStringEnd = (s: string, i: i32): i32 => {
       return -1
     }
     if (c === 0x5c) {
-      if (j + 1 >= s.length || s.charCodeAt(j + 1) === 0x0a) {
+      const k = j + 1
+      if (k >= s.length || frontByte(s, k) === 0x0a) {
         return -1
       }
-      j = j + 1 + charsSequenceLength(s, j + 1)
+      j = frontSum(k, charsSequenceLength(s, k))
       continue
     }
     j++
@@ -259,19 +273,19 @@ const frontStringEnd = (s: string, i: i32): i32 => {
 
 /** The end of a bytes literal at `i` (`[00 0f]`, `[]`), or -1. */
 const frontBytesEnd = (s: string, i: i32): i32 => {
-  let j = i + 1
-  if (j < s.length && s.charCodeAt(j) === 0x5d) {
+  let j = frontSum(i, 1)
+  if (j < s.length && frontByte(s, j) === 0x5d) {
     return j + 1
   }
   while (true) {
-    if (j + 1 >= s.length || !frontIsLowerHex(s.charCodeAt(j)) || !frontIsLowerHex(s.charCodeAt(j + 1))) {
+    if (j >= s.length - 1 || !frontIsLowerHex(frontByte(s, j)) || !frontIsLowerHex(frontByte(s, j + 1))) {
       return -1
     }
     j = j + 2
     if (j >= s.length) {
       return -1
     }
-    const c = s.charCodeAt(j)
+    const c = frontByte(s, j)
     if (c === 0x5d) {
       return j + 1
     }
@@ -284,11 +298,11 @@ const frontBytesEnd = (s: string, i: i32): i32 => {
 
 /** Whether `[0-9A-Fa-f ]+]` starts at `i`, the `[`. */
 const frontLooseBytes = (s: string, i: i32): boolean => {
-  let j = i + 1
-  while (j < s.length && (frontIsHex(s.charCodeAt(j)) || s.charCodeAt(j) === 0x20)) {
+  let j = frontSum(i, 1)
+  while (j < s.length && (frontIsHex(frontByte(s, j)) || frontByte(s, j) === 0x20)) {
     j++
   }
-  return j > i + 1 && j < s.length && s.charCodeAt(j) === 0x5d
+  return j > frontSum(i, 1) && j < s.length && frontByte(s, j) === 0x5d
 }
 
 /** A JSON string's value, or null when `text` is not one JSON string. */
@@ -312,49 +326,62 @@ const frontOperandPlace = (lx: FrontLexer): boolean => {
   return true
 }
 
-function frontLex(source: string, subset: string): Result<FrontTok[], FrontRefusal> {
+/** The tokens of a block, and the end-of-block token that closes them. */
+class FrontLexed {
+  toks: FrontTok[]
+  eof: FrontTok
+  constructor(toks: FrontTok[], eof: FrontTok) {
+    this.toks = toks
+    this.eof = eof
+  }
+}
+
+function frontLex(source: string, subset: string): Result<FrontLexed, FrontRefusal> {
   const lx = new FrontLexer(replaceAll(replaceAll(source, "\r\n", "\n"), "\r", "\n"), subset)
   const text = lx.text
   const puncts = frontPuncts()
-  while (lx.i < text.length) {
+  while (true) {
     const i = lx.i
-    const c = text.charCodeAt(i)
+    if (i >= text.length) {
+      break
+    }
+    const c = frontByte(text, i)
     if (c === 0x0a) {
-      lx.i = lx.i + 1
+      lx.i = i + 1
       lx.line = lx.line + 1
       lx.lineStart = lx.i
       continue
     }
     if (c === 0x20 || c === 0x09) {
-      lx.i = lx.i + 1
+      lx.i = i + 1
       continue
     }
     if (frontHas(text, i, "//")) {
       const end = text.indexOf("\n", i)
       const stop = end < 0 ? text.length : end
-      const t = frontPush(lx, FrontKind.Comment, i, stop, text.substring(i + 2, stop))
+      const t = frontPush(lx, FrontKind.Comment, i, stop, text.substring(frontSum(i, 2), stop))
       t.lineComment = true
       lx.i = stop
       continue
     }
     if (frontHas(text, i, "/*")) {
-      const end = text.indexOf("*/", i + 2)
+      const end = text.indexOf("*/", frontSum(i, 2))
       if (end < 0) {
         return Err(frontRefuse("unterminated `/*` comment", frontLexPos(lx, i)))
       }
-      frontPush(lx, FrontKind.Comment, i, end + 2, text.substring(i + 2, end))
+      frontPush(lx, FrontKind.Comment, i, frontSum(end, 2), text.substring(frontSum(i, 2), end))
       for (let k = i; k < end; k++) {
-        if (text.charCodeAt(k) === 0x0a) {
+        if (frontByte(text, k) === 0x0a) {
           lx.line = lx.line + 1
           lx.lineStart = k + 1
         }
       }
-      lx.i = end + 2
+      lx.i = frontSum(end, 2)
       continue
     }
     if (frontIsAlpha(c) || c === 0x5f) {
       let j = i + 1
-      while (j < text.length && frontIsWord(text.charCodeAt(j))) {
+      while (j < text.length && frontIsWord(frontByte(text, j))) {
         j++
       }
       frontPush(lx, FrontKind.Ident, i, j, "")
@@ -363,13 +390,13 @@ function frontLex(source: string, subset: string): Result<FrontTok[], FrontRefus
     }
     if (frontIsDigit(c)) {
       let j = i + 1
-      while (j < text.length && (frontIsWord(text.charCodeAt(j)) || text.charCodeAt(j) === 0x2e)) {
+      while (j < text.length && (frontIsWord(frontByte(text, j)) || frontByte(text, j) === 0x2e)) {
         j++
       }
       const num = text.substring(i, j)
-      let decimal = num === "0" || num.charCodeAt(0) !== 0x30
+      let decimal = num === "0" || frontByte(num, 0) !== 0x30
       for (let k = 0; k < num.length; k++) {
-        if (!frontIsDigit(num.charCodeAt(k))) {
+        if (!frontIsDigit(frontByte(num, k))) {
           decimal = false
         }
       }
@@ -418,15 +445,15 @@ function frontLex(source: string, subset: string): Result<FrontTok[], FrontRefus
       }
     }
     if (matched.length !== 0) {
-      frontPush(lx, FrontKind.Punct, i, i + matched.length, "")
-      lx.i = i + matched.length
+      frontPush(lx, FrontKind.Punct, i, frontSum(i, matched.length), "")
+      lx.i = frontSum(i, matched.length)
       continue
     }
-    const ch = text.substring(i, i + charsSequenceLength(text, i))
+    const ch = text.substring(i, frontSum(i, charsSequenceLength(text, i)))
     return Err(frontRefuse(`\`${ch}\` is not in the ${subset} subset`, frontLexPos(lx, i)))
   }
-  frontPush(lx, FrontKind.Eof, lx.i, lx.i, "")
-  return Ok(lx.toks)
+  const eof = frontPush(lx, FrontKind.Eof, lx.i, lx.i, "")
+  return Ok(new FrontLexed(lx.toks, eof))
 }
 
 // ── Cursor ─────────────────────────────────────────────────────────────────
@@ -439,64 +466,74 @@ function frontLex(source: string, subset: string): Result<FrontTok[], FrontRefus
  */
 class FrontCursor {
   toks: FrontTok[]
+  /** The last token, the end of the block: every read past it sees it again. */
+  eof: FrontTok
   i: i32
   iface: boolean
   err: FrontRefusal | null
-  constructor(toks: FrontTok[], iface: boolean) {
-    this.toks = toks
+  constructor(lexed: FrontLexed, iface: boolean) {
+    this.toks = lexed.toks
+    this.eof = lexed.eof
     this.i = 0
     this.iface = iface
     this.err = null
   }
 }
 
-const frontEof = (c: FrontCursor): FrontTok => c.toks[c.toks.length - 1]
+/** Token `j`, or the end of the block past it. */
+const frontTokAt = (c: FrontCursor, j: i32): FrontTok => (j >= 0 && j < c.toks.length ? c.toks[j] : c.eof)
 
 /** The next token, comments included. */
-const frontRaw = (c: FrontCursor): FrontTok => (c.err !== null ? frontEof(c) : c.toks[c.i])
+const frontRaw = (c: FrontCursor): FrontTok => (c.err !== null ? c.eof : frontTokAt(c, c.i))
 
 /** The next token past comments, which are consumed. */
 function frontPeek(c: FrontCursor): FrontTok {
   if (c.err !== null) {
-    return frontEof(c)
+    return c.eof
   }
-  while (c.toks[c.i].kind === FrontKind.Comment) {
-    const t = c.toks[c.i]
+  while (true) {
+    const i = c.i
+    const t = frontTokAt(c, i)
+    if (t.kind !== FrontKind.Comment) {
+      return t
+    }
     if (c.iface) {
       const r = frontModuleLine(t)
       if (r.isErr()) {
         c.err = r.error
-        return frontEof(c)
+        return c.eof
       }
       if (r.value.length !== 0) {
         c.err = frontRefuse(
           "a module line goes between signatures, on its own line; move it out of this one",
           frontAt(t),
         )
-        return frontEof(c)
+        return c.eof
       }
     }
-    c.i = c.i + 1
+    // `t` is a comment, so `i` is short of the end and this cannot wrap.
+    c.i = frontSum(i, 1)
   }
-  return c.toks[c.i]
 }
 
 /** The next token past any comments, which stay unread. */
 const frontLook = (c: FrontCursor): FrontTok => {
   if (c.err !== null) {
-    return frontEof(c)
+    return c.eof
   }
   let j = c.i
-  while (c.toks[j].kind === FrontKind.Comment) {
-    j++
+  // The end of the block is not a comment, so this stops short of wrapping.
+  while (frontTokAt(c, j).kind === FrontKind.Comment) {
+    j = frontSum(j, 1)
   }
-  return c.toks[j]
+  return frontTokAt(c, j)
 }
 
 const frontNext = (c: FrontCursor): FrontTok => {
   const t = frontPeek(c)
   if (t.kind !== FrontKind.Eof) {
-    c.i = c.i + 1
+    // Short of the end, the cursor is on a token, so this cannot wrap.
+    c.i = frontSum(c.i, 1)
   }
   return t
 }
@@ -504,7 +541,8 @@ const frontNext = (c: FrontCursor): FrontTok => {
 /** Consume the raw next token (a comment the caller has looked at). */
 const frontSkipRaw = (c: FrontCursor): void => {
   if (c.err === null) {
-    c.i = c.i + 1
+    // The caller looked at a comment there, so the cursor is on a token and this cannot wrap.
+    c.i = frontSum(c.i, 1)
   }
 }
 
@@ -539,43 +577,47 @@ const frontIdent = (c: FrontCursor, what: string): Result<FrontTok, FrontRefusal
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-/** The contract's base types, with their TypeScript spellings at the same index. */
-const frontBases = (): string[] => {
-  const out = ["bytes", "string", "bool"]
+/** A contract base type and its TypeScript spelling. */
+class FrontBase {
+  name: string
+  ts: string
+  constructor(name: string, ts: string) {
+    this.name = name
+    this.ts = ts
+  }
+}
+
+/** The contract's base types, each with its TypeScript spelling. */
+const frontBases = (): FrontBase[] => {
+  const out = [new FrontBase("bytes", "u8[]"), new FrontBase("string", "string"), new FrontBase("bool", "boolean")]
   for (const t of vocabIntTypes()) {
-    out.push(t)
+    out.push(new FrontBase(t, t))
   }
-  out.push("f64")
-  out.push("secret-bytes")
-  for (const t of vocabWordTypes()) {
-    out.push(t)
-  }
+  out.push(new FrontBase("f64", "f64"))
+  out.push(new FrontBase("secret-bytes", "Secret<u8[]>"))
+  out.push(new FrontBase("words16", "u16[]"))
+  out.push(new FrontBase("words32", "u32[]"))
+  out.push(new FrontBase("words64", "u64[]"))
   return out
 }
 
+/** The TypeScript spellings of the base types. */
 const frontTsBases = (): string[] => {
-  const out = ["u8[]", "string", "boolean"]
-  for (const t of vocabIntTypes()) {
-    out.push(t)
+  const out: string[] = []
+  for (const b of frontBases()) {
+    out.push(b.ts)
   }
-  out.push("f64")
-  out.push("Secret<u8[]>")
-  out.push("u16[]")
-  out.push("u32[]")
-  out.push("u64[]")
   return out
 }
 
 /** A contract type as the block's author wrote it: `T?` prints `T | null`. */
 const frontTsTy = (t: string): string => {
-  const bases = frontBases()
-  const ts = frontTsBases()
-  for (let k = 0; k < bases.length; k++) {
-    if (t === bases[k]) {
-      return ts[k]
+  for (const b of frontBases()) {
+    if (t === b.name) {
+      return b.ts
     }
-    if (t === `${bases[k]}?`) {
-      return `${ts[k]} | null`
+    if (t === `${b.name}?`) {
+      return `${b.ts} | null`
     }
   }
   return t
@@ -583,14 +625,12 @@ const frontTsTy = (t: string): string => {
 
 /** A signature type's contract spelling, or null when it is not one. */
 const frontSigTy = (ts: string): string | null => {
-  const bases = frontBases()
-  const tss = frontTsBases()
-  for (let k = 0; k < bases.length; k++) {
-    if (ts === tss[k]) {
-      return bases[k]
+  for (const b of frontBases()) {
+    if (ts === b.ts) {
+      return b.name
     }
-    if (ts === `${tss[k]} | null`) {
-      return `${bases[k]}?`
+    if (ts === `${b.ts} | null`) {
+      return `${b.name}?`
     }
   }
   return null
@@ -610,20 +650,22 @@ class FrontType {
 const frontReadType = (c: FrontCursor): Result<FrontType, FrontRefusal> => {
   const first = frontIdent(c, "a type").orReturn()
   const parts = [first.text]
+  // The part pushed last.
+  let last = first.text
   while (true) {
     // A comment ends the type: it may be a bounds comment.
     const t = frontRaw(c)
-    const last = parts[parts.length - 1]
     const afterSep = last === "<" || last === "|"
     if (t.kind === FrontKind.Ident && afterSep) {
-      parts.push(t.text)
+      last = t.text
     } else if (t.kind === FrontKind.Bytes && t.value.length === 0 && !afterSep) {
-      parts.push("[]")
+      last = "[]"
     } else if (t.kind === FrontKind.Punct && (t.text === "<" || t.text === ">" || t.text === "|")) {
-      parts.push(t.text)
+      last = t.text
     } else {
       break
     }
+    parts.push(last)
     frontNext(c)
   }
   const alts = split(parts.join(""), "|")
@@ -684,22 +726,22 @@ const frontCallOps = (): string[] => {
 /** The module of a `<s>module:<s><path><s>` comment value, or null. */
 const frontModuleOf = (value: string): string | null => {
   let i = 0
-  while (i < value.length && frontIsSpace(value.charCodeAt(i))) {
+  while (i < value.length && frontIsSpace(frontByte(value, i))) {
     i++
   }
   if (!frontHas(value, i, "module:")) {
     return null
   }
-  i = i + 7
-  while (i < value.length && frontIsSpace(value.charCodeAt(i))) {
+  i = frontSum(i, 7)
+  while (i < value.length && frontIsSpace(frontByte(value, i))) {
     i++
   }
   const start = i
-  while (i < value.length && !frontIsSpace(value.charCodeAt(i))) {
+  while (i < value.length && !frontIsSpace(frontByte(value, i))) {
     i++
   }
   const m = value.substring(start, i)
-  while (i < value.length && frontIsSpace(value.charCodeAt(i))) {
+  while (i < value.length && frontIsSpace(frontByte(value, i))) {
     i++
   }
   return m.length === 0 || i !== value.length ? null : m
@@ -709,29 +751,29 @@ const frontModuleOf = (value: string): string | null => {
 const frontLooksModule = (value: string): boolean => {
   let i = 0
   while (i < value.length) {
-    const c = value.charCodeAt(i)
+    const c = frontByte(value, i)
     if (!(frontIsSpace(c) || c === 0x2f || c === 0x2a)) {
       break
     }
     i++
   }
-  if (asciiLower(value.substring(i, i + 6)) !== "module") {
+  if (textAsciiLower(value.substring(i, frontSum(i, 6))) !== "module") {
     return false
   }
-  i = i + 6
-  const spaced = i < value.length && frontIsSpace(value.charCodeAt(i))
-  while (i < value.length && frontIsSpace(value.charCodeAt(i))) {
+  i = frontSum(i, 6)
+  const spaced = i < value.length && frontIsSpace(frontByte(value, i))
+  while (i < value.length && frontIsSpace(frontByte(value, i))) {
     i++
   }
-  if (i < value.length && value.charCodeAt(i) === 0x3a) {
+  if (i < value.length && frontByte(value, i) === 0x3a) {
     return true
   }
-  if (!spaced || i >= value.length || !frontIsAlpha(value.charCodeAt(i))) {
+  if (!spaced || i >= value.length || !frontIsAlpha(frontByte(value, i))) {
     return false
   }
   i++
   while (i < value.length) {
-    const c = value.charCodeAt(i)
+    const c = frontByte(value, i)
     if (c === 0x2f) {
       return true
     }
@@ -804,7 +846,7 @@ function frontParamForm(c: FrontCursor, fn: string, param: Param): Result<FrontT
   while (t.kind === FrontKind.Comment && frontModuleLine(t).orReturn().length === 0) {
     const at = `\`${fn}(${param.name})\``
     const words = splitWhitespace(t.value)
-    const isOut = !t.lineComment && words.length !== 0 && words[0] === "out"
+    const isOut = !t.lineComment && words.length > 0 && words[0] === "out"
     if (t.lineComment || (words.join(" ") !== "window" && !isOut)) {
       const shown = t.lineComment ? `//${t.value}` : `/*${t.value}*/`
       return Err(
@@ -864,7 +906,8 @@ const frontOutBuffer = (sig: FnSig, name: string, at: i32, tok: FrontTok): Resul
       ),
     )
   }
-  const text = trim(trim(tok.value).slice(3))
+  const value = trim(tok.value)
+  const text = trim(value.substring(3, value.length))
   const e = capacityParse(text)
   if (e.isErr()) {
     return Err(
@@ -1083,10 +1126,35 @@ export const frontReads = (sourcecodeType: string): boolean => {
 /** Ops whose every argument is bytes: a string literal there is ASCII bytes. */
 const frontBytesOps = (): string[] => ["concat", "xor", "bitAnd", "bitOr"]
 
-/** Methods, with their ops and argument counts at the same index. */
-const frontMethods = (): string[] => ["concat", "slice", "toLowerCase", "toUpperCase", "charAt"]
-const frontMethodOps = (): string[] => ["concat", "slice", "lower", "upper", "charAt"]
-const frontMethodArity = (): i32[] => [1, 2, 0, 0, 1]
+/** A method of the subset: its name, its op and its argument count. */
+class FrontMethod {
+  name: string
+  op: string
+  arity: i32
+  constructor(name: string, op: string, arity: i32) {
+    this.name = name
+    this.op = op
+    this.arity = arity
+  }
+}
+
+const frontMethods = (): FrontMethod[] => [
+  new FrontMethod("concat", "concat", 1),
+  new FrontMethod("slice", "slice", 2),
+  new FrontMethod("toLowerCase", "lower", 0),
+  new FrontMethod("toUpperCase", "upper", 0),
+  new FrontMethod("charAt", "charAt", 1),
+]
+
+/** The subset's method of this name, or null. */
+const frontMethodOf = (name: string): FrontMethod | null => {
+  for (const m of frontMethods()) {
+    if (m.name === name) {
+      return m
+    }
+  }
+  return null
+}
 
 /** Infix operators of TypeScript the subset leaves out, refused by name. */
 const frontNotInfix = (): string[] => [
@@ -1110,6 +1178,9 @@ const frontNotInfix = (): string[] => [
 
 /** Deeper nesting is refused, so a hostile block cannot exhaust the stack. */
 const FRONT_MAX_DEPTH: i32 = 64
+
+/** Past this, an argument index in a `typeOf` error names no argument. */
+const FRONT_INDEX_MAX: i32 = 100000000
 const FRONT_DEPTH_MESSAGE: string = "the expression nests more than 64 deep; name a part with const"
 const FRONT_COVERS_HINT: string = "missing `// P-ID covers R-ID — title` line"
 
@@ -1157,12 +1228,21 @@ export class FrontProperty {
   }
 }
 
+/** A variable in scope and its type. */
+class FrontBinding {
+  name: string
+  type: string
+  constructor(name: string, type: string) {
+    this.name = name
+    this.type = type
+  }
+}
+
 /** The property parser's state: the cursor, the functions, the variables in scope. */
 class FrontProp {
   c: FrontCursor
   fns: FnSig[]
-  names: string[]
-  types: string[]
+  vars: FrontBinding[]
   /** True while parsing `where`, which may not call the implementation. */
   inWhere: boolean
   /** How many operands are being parsed inside one another. */
@@ -1170,17 +1250,16 @@ class FrontProp {
   constructor(c: FrontCursor, fns: FnSig[]) {
     this.c = c
     this.fns = fns
-    this.names = []
-    this.types = []
+    this.vars = []
     this.inWhere = false
     this.nest = 0
   }
 }
 
 const frontVar = (p: FrontProp, name: string): string | null => {
-  for (let k = p.names.length - 1; k >= 0; k--) {
-    if (p.names[k] === name) {
-      return p.types[k]
+  for (let k = p.vars.length - 1; k >= 0; k--) {
+    if (p.vars[k].name === name) {
+      return p.vars[k].type
     }
   }
   return null
@@ -1197,8 +1276,7 @@ const frontFn = (p: FrontProp, name: string): FnSig | null => {
 }
 
 const frontSetVar = (p: FrontProp, name: string, type: string): void => {
-  p.names.push(name)
-  p.types.push(type)
+  p.vars.push(new FrontBinding(name, type))
 }
 
 /** The depth of a node over these operands, refused past the maximum. */
@@ -1209,11 +1287,10 @@ const frontDepthOver = (args: FrontV[], pos: FrontPos): Result<i32, FrontRefusal
       depth = a.depth
     }
   }
-  depth++
-  if (depth > FRONT_MAX_DEPTH) {
+  if (depth >= FRONT_MAX_DEPTH) {
     return Err(frontRefuse(FRONT_DEPTH_MESSAGE, pos))
   }
-  return Ok(depth)
+  return Ok(depth + 1)
 }
 
 /** `bytes`, `string` and `bool`, each with an optional `?`, as the author wrote them, at word boundaries. */
@@ -1221,20 +1298,20 @@ const frontTsWords = (msg: string): string => {
   let out = ""
   let i = 0
   while (i < msg.length) {
-    if (!frontIsWord(msg.charCodeAt(i))) {
+    if (!frontIsWord(frontByte(msg, i))) {
       out = out + msg.substring(i, i + 1)
       i++
       continue
     }
     let j = i
-    while (j < msg.length && frontIsWord(msg.charCodeAt(j))) {
+    while (j < msg.length && frontIsWord(frontByte(msg, j))) {
       j++
     }
     const w = msg.substring(i, j)
     if (w === "bytes" || w === "string" || w === "bool") {
-      const opt = j < msg.length && msg.charCodeAt(j) === 0x3f
+      const opt = j < msg.length && frontByte(msg, j) === 0x3f
       out = out + frontTsTy(opt ? `${w}?` : w)
-      i = opt ? j + 1 : j
+      i = opt ? frontSum(j, 1) : j
     } else {
       out = out + w
       i = j
@@ -1255,35 +1332,41 @@ const frontTyped = (
   pos: FrontPos,
 ): Result<FrontV, FrontRefusal> => {
   const env = new TypeEnv(p.fns, true)
-  for (let k = 0; k < p.names.length; k++) {
-    typeEnvBind(env, p.names[k], p.types[k])
+  for (const b of p.vars) {
+    typeEnvBind(env, b.name, b.type)
   }
   const errors: string[] = []
   const t = typeOf(e, env, "", errors)
   if (t === null) {
-    const first = errors.length === 0 ? ": cannot type this expression" : errors[0]
+    const first = errors.length > 0 ? errors[0] : ": cannot type this expression"
     let at = pos
     let msg = first
     let i = 0
     if (frontHas(first, 0, ".args[")) {
       i = 6
-      let n = 0
-      while (i < first.length && frontIsDigit(first.charCodeAt(i))) {
-        n = n * 10 + (first.charCodeAt(i) - 0x30)
+      // `typeOf` names an argument of this node, so `n` stays under a few
+      // digits: past FRONT_INDEX_MAX it stops growing and names no argument.
+      // In u32, where the step cannot wrap: under the cap, times 10, plus a digit.
+      const cap = toU32(FRONT_INDEX_MAX)
+      let n: u32 = 0
+      while (i < first.length && frontIsDigit(frontByte(first, i))) {
+        n = n < cap ? n * 10 + (toU32(frontByte(first, i)) - 0x30) : cap
         i++
       }
-      if (frontHas(first, i, "]") && n < args.length) {
-        at = args[n].pos
-        i++
+      // Under the cap, `k` is never negative: `k >= 0` only tells the prover so.
+      const k = toI32(n)
+      if (frontHas(first, i, "]") && n < cap && k >= 0 && k < args.length) {
+        at = args[k].pos
+        i = frontSum(i, 1)
       }
     }
     if (frontHas(first, i, ": ")) {
-      msg = first.substring(i + 2, first.length)
+      msg = first.substring(frontSum(i, 2), first.length)
     } else {
       // A deeper path: the refusal is this node's.
       at = pos
       const colon = first.indexOf(": ")
-      msg = colon < 0 ? first : first.substring(colon + 2, first.length)
+      msg = colon < 0 ? first : first.substring(frontSum(colon, 2), first.length)
     }
     if (frontHas(msg, 0, `${e.name} `)) {
       msg = name + msg.substring(e.name.length, msg.length)
@@ -1327,7 +1410,7 @@ const frontAsBytes = (v: FrontV): FrontV => {
 const frontDecimal = (text: string): string => {
   const neg = frontHas(text, 0, "-")
   let i = neg ? 1 : 0
-  while (i < text.length - 1 && text.charCodeAt(i) === 0x30) {
+  while (i < text.length - 1 && frontByte(text, i) === 0x30) {
     i++
   }
   const mag = text.substring(i, text.length)
@@ -1367,10 +1450,10 @@ class FrontBounds {
 const frontIntEnd = (s: string, i: i32): i32 => {
   let j = i
   if (frontHas(s, j, "-")) {
-    j++
+    j = frontSum(j, 1)
   }
   const start = j
-  while (j < s.length && frontIsDigit(s.charCodeAt(j))) {
+  while (j < s.length && frontIsDigit(frontByte(s, j))) {
     j++
   }
   return j === start ? -1 : j
@@ -1382,20 +1465,20 @@ const frontReadBounds = (s: string): FrontBounds | null => {
   if (a < 0 || !frontHas(s, a, "..")) {
     return null
   }
-  const b = frontIntEnd(s, a + 2)
+  const b = frontIntEnd(s, frontSum(a, 2))
   if (b < 0) {
     return null
   }
   const lo = frontDecimal(s.substring(0, a))
-  const hi = frontDecimal(s.substring(a + 2, b))
+  const hi = frontDecimal(s.substring(frontSum(a, 2), b))
   if (b === s.length) {
     return new FrontBounds(lo, hi, null)
   }
-  if (!frontIsSpace(s.charCodeAt(b))) {
+  if (!frontIsSpace(frontByte(s, b))) {
     return null
   }
   let k = b
-  while (k < s.length && frontIsSpace(s.charCodeAt(k))) {
+  while (k < s.length && frontIsSpace(frontByte(s, k))) {
     k++
   }
   return new FrontBounds(lo, hi, s.substring(k, s.length))
@@ -1499,42 +1582,54 @@ class FrontCovers {
   }
 }
 
+/** A covers line's id and the text after `covers`. */
+class FrontCoversParts {
+  id: string
+  rest: string
+  constructor(id: string, rest: string) {
+    this.id = id
+    this.rest = rest
+  }
+}
+
 /** `^\s*(\S+)\s+covers\s+(.*)$`, as the id and the rest, or null. */
-const frontCoversOf = (value: string): string[] | null => {
+const frontCoversOf = (value: string): FrontCoversParts | null => {
   let i = 0
-  while (i < value.length && frontIsSpace(value.charCodeAt(i))) {
+  while (i < value.length && frontIsSpace(frontByte(value, i))) {
     i++
   }
   const start = i
-  while (i < value.length && !frontIsSpace(value.charCodeAt(i))) {
+  while (i < value.length && !frontIsSpace(frontByte(value, i))) {
     i++
   }
   let j = i
-  while (j < value.length && frontIsSpace(value.charCodeAt(j))) {
+  while (j < value.length && frontIsSpace(frontByte(value, j))) {
     j++
   }
   if (start === i || j === i || !frontHas(value, j, "covers")) {
     return null
   }
-  let k = j + 6
-  while (k < value.length && frontIsSpace(value.charCodeAt(k))) {
+  const after = frontSum(j, 6)
+  let k = after
+  while (k < value.length && frontIsSpace(frontByte(value, k))) {
     k++
   }
-  if (k === j + 6) {
+  if (k === after) {
     return null
   }
-  return [value.substring(start, i), value.substring(k, value.length)]
+  return new FrontCoversParts(value.substring(start, i), value.substring(k, value.length))
 }
 
 const frontCoversLine = (p: FrontProp): Result<FrontCovers, FrontRefusal> => {
   const head = frontRaw(p.c)
-  const m: string[] | null = head.kind === FrontKind.Comment && head.lineComment ? frontCoversOf(head.value) : null
+  const m: FrontCoversParts | null =
+    head.kind === FrontKind.Comment && head.lineComment ? frontCoversOf(head.value) : null
   if (m === null || head.line !== 1) {
     return Err(frontRefuse(FRONT_COVERS_HINT, frontAt(head)))
   }
-  const rest = m[1]
+  const rest = m.rest
   const dash = rest.indexOf(" — ")
-  const title = dash < 0 ? "" : trim(rest.substring(dash + 5, rest.length))
+  const title = dash < 0 ? "" : trim(rest.substring(frontSum(dash, 5), rest.length))
   if (title.length === 0) {
     return Err(frontRefuse("missing title: end the covers line with ` — <title>`", frontAt(head)))
   }
@@ -1542,7 +1637,7 @@ const frontCoversLine = (p: FrontProp): Result<FrontCovers, FrontRefusal> => {
   for (const part of split(trim(rest.substring(0, dash)), ",")) {
     covers.push(trim(part))
   }
-  const ids = [m[0]]
+  const ids = [m.id]
   for (const id of covers) {
     ids.push(id)
   }
@@ -1552,7 +1647,7 @@ const frontCoversLine = (p: FrontProp): Result<FrontCovers, FrontRefusal> => {
     }
   }
   frontSkipRaw(p.c)
-  return Ok(new FrontCovers(m[0], title, covers))
+  return Ok(new FrontCovers(m.id, title, covers))
 }
 
 /** The most samples a property may ask for, the contract's own ceiling. */
@@ -1573,7 +1668,7 @@ const frontIsSamplesLine = (t: FrontTok): boolean => {
   }
   const word = "samples"
   for (let k = 0; k < 7; k++) {
-    if ((s.charCodeAt(k) | 0x20) !== word.charCodeAt(k)) {
+    if ((frontByte(s, k) | 0x20) !== frontByte(word, k)) {
       return false
     }
   }
@@ -1591,9 +1686,9 @@ const frontSamplesOf = (t: FrontTok): Result<i32, FrontRefusal> => {
     return Err(frontRefuse(FRONT_SAMPLES_HINT, pos))
   }
   const n = trim(s.substring(8, s.length))
-  let digits = n.length !== 0 && (n === "0" || n.charCodeAt(0) !== 0x30)
+  let digits = n.length !== 0 && (n === "0" || frontByte(n, 0) !== 0x30)
   for (let k = 0; k < n.length; k++) {
-    digits = digits && frontIsDigit(n.charCodeAt(k))
+    digits = digits && frontIsDigit(frontByte(n, k))
   }
   if (!digits) {
     return Err(frontRefuse(FRONT_SAMPLES_HINT, pos))
@@ -1617,8 +1712,9 @@ const frontSamplesLine = (c: FrontCursor): Result<i32, FrontRefusal> => {
     frontSkipRaw(c)
   }
   for (let k = c.i; k < c.toks.length; k++) {
-    if (frontIsSamplesLine(c.toks[k])) {
-      return Err(frontRefuse("the samples line goes on line 2, after the covers line", frontAt(c.toks[k])))
+    const t = frontTokAt(c, k)
+    if (frontIsSamplesLine(t)) {
+      return Err(frontRefuse("the samples line goes on line 2, after the covers line", frontAt(t)))
     }
   }
   return Ok(samples)
@@ -1725,26 +1821,28 @@ function frontBody(p: FrontProp): Result<FrontV, FrontRefusal> {
 // multiplicative unary postfix.
 
 function frontExpr(p: FrontProp): Result<FrontV, FrontRefusal> {
-  const args: FrontV[] = [frontAnd(p).orReturn()]
+  const first = frontAnd(p).orReturn()
+  const args: FrontV[] = [first]
   while (frontEat(p.c, "||")) {
     args.push(frontAnd(p).orReturn())
   }
   if (args.length === 1) {
-    return Ok(args[0])
+    return Ok(first)
   }
-  return frontTyped(p, frontOp("or", args), args, "`||`", args[0].pos)
+  return frontTyped(p, frontOp("or", args), args, "`||`", first.pos)
 }
 
 /** `a && b && c` is one n-ary `and`. */
 function frontAnd(p: FrontProp): Result<FrontV, FrontRefusal> {
-  const args: FrontV[] = [frontEquality(p).orReturn()]
+  const first = frontEquality(p).orReturn()
+  const args: FrontV[] = [first]
   while (frontEat(p.c, "&&")) {
     args.push(frontEquality(p).orReturn())
   }
   if (args.length === 1) {
-    return Ok(args[0])
+    return Ok(first)
   }
-  return frontTyped(p, frontOp("and", args), args, "`&&`", args[0].pos)
+  return frontTyped(p, frontOp("and", args), args, "`&&`", first.pos)
 }
 
 const frontIsPunct = (t: FrontTok, texts: string[]): boolean => t.kind === FrontKind.Punct && vocabHas(texts, t.text)
@@ -1839,12 +1937,13 @@ const frontRefuseInfix = (t: FrontTok): Result<boolean, FrontRefusal> => {
 
 function frontUnary(p: FrontProp): Result<FrontV, FrontRefusal> {
   const t = frontPeek(p.c)
-  p.nest = p.nest + 1
-  if (p.nest > FRONT_MAX_DEPTH) {
+  const nest = p.nest
+  if (nest >= FRONT_MAX_DEPTH) {
     return Err(frontRefuse(FRONT_DEPTH_MESSAGE, frontAt(t)))
   }
+  p.nest = nest + 1
   const v = frontOperand(p, t).orReturn()
-  p.nest = p.nest - 1
+  p.nest = nest
   return Ok(v)
 }
 
@@ -1889,12 +1988,12 @@ function frontPostfix(p: FrontProp, operand: FrontV): Result<FrontV, FrontRefusa
       v = frontTyped(p, frontOp(v.t === "string" ? "strLen" : "len", one), one, name, v.pos).orReturn()
       continue
     }
-    const k = frontMethods().indexOf(m.text)
-    if (k < 0) {
+    const method = frontMethodOf(m.text)
+    if (method === null) {
       return Err(frontRefuse(`${name} is not in the ts-property subset`, frontAt(m)))
     }
-    const op = frontMethodOps()[k]
-    const n = frontMethodArity()[k]
+    const op = method.op
+    const n = method.arity
     const argsAt = frontPeek(c)
     const args = frontArgs(p).orReturn()
     if (args.length !== n) {
@@ -2029,7 +2128,8 @@ function frontCall(p: FrontProp, sig: FnSig, pos: FrontPos): Result<FrontV, Fron
     return Err(frontRefuse(`\`${sig.name}\` takes ${sig.params.length} argument(s), got ${args.length}`, pos))
   }
   const e = new Expr(ExprKind.Call, sig.name)
-  for (let k = 0; k < args.length; k++) {
+  // The lengths are equal, checked above: `k < sig.params.length` only tells the prover so.
+  for (let k = 0; k < args.length && k < sig.params.length; k++) {
     const a = args[k]
     const want = vocabValueType(sig.params[k].type)
     if (!typeAssignable(a.t, want)) {
@@ -2061,11 +2161,11 @@ const frontPropertyIn = (p: FrontProp): Result<FrontProperty, FrontRefusal> => {
   }
   frontExpect(c, ")").orReturn()
   frontExpect(c, "=>").orReturn()
-  const outer = p.names.length
+  const outer = p.vars.length
   const assert = frontBoolean(frontBody(p).orReturn(), "the property").orReturn()
-  while (p.names.length > outer) {
-    p.names.pop()
-    p.types.pop()
+  // `outer` is a length, never negative, so `p.vars.length > 0` only tells the prover so.
+  while (p.vars.length > outer && p.vars.length > 0) {
+    p.vars.pop()
   }
   clause.assert = assert.e
   if (frontEat(c, "where")) {

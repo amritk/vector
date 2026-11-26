@@ -16,26 +16,30 @@ const strEq = (a: string | null, b: string | null): boolean => {
   if (a === null || b === null) {
     return a === null && b === null;
   }
-  const n: i32 = toI32(a.length);
-  if (n !== toI32(b.length)) {
+  const x: string = a;
+  const y: string = b;
+  if (x.length !== y.length) {
     return false;
   }
-  for (let i: i32 = 0; i < n; i += 1) {
-    if (a.charCodeAt(i) !== b.charCodeAt(i)) {
+  for (let i: i32 = 0; i < toI32(x.length); i += 1) {
+    if (i < y.length && x.charCodeAt(i) !== y.charCodeAt(i)) {
       return false;
     }
   }
   return true;
 };
 
-/** `s` with every byte in [lo, hi] moved by `delta` (ASCII case mapping). */
-const shiftCase = (s: string, lo: i32, hi: i32, delta: i32): string => {
+/** `s` with every ASCII letter in upper case, or in lower case when not `upper`. */
+const shiftCase = (s: string, upper: boolean): string => {
   const parts: string[] = [];
   const n: i32 = toI32(s.length);
   for (let i: i32 = 0; i < n; i += 1) {
     let c: i32 = toI32(s.charCodeAt(i));
-    if (c >= lo && c <= hi) {
-      c = c + delta;
+    if (upper && c >= 97 && c <= 122) {
+      c = c - 32;
+    }
+    if (!upper && c >= 65 && c <= 90) {
+      c = c + 32;
     }
     parts.push(String.fromCharCode(c));
   }
@@ -426,10 +430,11 @@ const clause_P_WORDS_KEEP_LETTERS = (t: Suite): boolean => {
     "dJVXjJBhBHhjvANb",
     "yxlyDCbD",
   ];
-  for (let i: i32 = 0; i < 29; i += 1) {
-    const v_n: string = table_n[i];
-    const v_lower: string = shiftCase(v_n, 65, 90, 32);
-    const holds: boolean = (strEq(shiftCase(langName("java", v_n, true), 65, 90, 32), v_lower) && strEq(shiftCase(langName("go", v_n, true), 65, 90, 32), v_lower) && strEq(shiftCase(langName("csharp", v_n, true), 65, 90, 32), v_lower) && strEq(shiftCase(langName("swift", v_n, false), 65, 90, 32), v_lower));
+  for (let i: i32 = 0; i < 29 && i < table_n.length; i += 1) {
+    const r_n: string = table_n[i];
+    const v_n: string = r_n;
+    const v_lower: string = shiftCase(v_n, false);
+    const holds: boolean = (strEq(shiftCase(langName("java", v_n, true), false), v_lower) && strEq(shiftCase(langName("go", v_n, true), false), v_lower) && strEq(shiftCase(langName("csharp", v_n, true), false), v_lower) && strEq(shiftCase(langName("swift", v_n, false), false), v_lower));
     if (!holds) {
       return t.fail("[P-WORDS-KEEP-LETTERS] a name of letters loses none of them (R-WORDS)", `sample ${i + 1} of 29 (len(n) = ${toI32(v_n.length)}): the assertion is false`);
     }
@@ -476,10 +481,11 @@ const clause_P_SNAKE_LOWER = (t: Suite): boolean => {
     "0Z9",
     "___cb09a",
   ];
-  for (let i: i32 = 0; i < 29; i += 1) {
-    const v_n: string = table_n[i];
+  for (let i: i32 = 0; i < 29 && i < table_n.length; i += 1) {
+    const r_n: string = table_n[i];
+    const v_n: string = r_n;
     const v_s: string = langName("python", v_n, true);
-    const holds: boolean = strEq(v_s, shiftCase(v_s, 65, 90, 32));
+    const holds: boolean = strEq(v_s, shiftCase(v_s, false));
     if (!holds) {
       return t.fail("[P-SNAKE-LOWER] a snake_case name has no capital (R-SNAKE)", `sample ${i + 1} of 29 (len(n) = ${toI32(v_n.length)}): the assertion is false`);
     }
@@ -526,8 +532,9 @@ const clause_P_SNAKE_AGREE = (t: Suite): boolean => {
     "YZ9bbXZYabZa_YXb9_",
     "cb_9999cb_bXZ0",
   ];
-  for (let i: i32 = 0; i < 29; i += 1) {
-    const v_n: string = table_n[i];
+  for (let i: i32 = 0; i < 29 && i < table_n.length; i += 1) {
+    const r_n: string = table_n[i];
+    const v_n: string = r_n;
     const v_s: string = langName("python", v_n, true);
     const holds: boolean = (strEq(langName("rust", v_n, false), v_s) && strEq(langName("ruby", v_n, true), v_s) && strEq(langName("cpp", v_n, false), v_s) && strEq(langName("c", v_n, true), v_s) && strEq(langName("zig", v_n, false), v_s));
     if (!holds) {
@@ -577,11 +584,12 @@ const clause_P_CAMEL_FIRST = (t: Suite): boolean => {
     "igTOqkkjIOgVvTFwKbR",
     "ohez",
   ];
-  for (let i: i32 = 0; i < 29; i += 1) {
-    const v_n: string = table_n[i];
+  for (let i: i32 = 0; i < 29 && i < table_n.length; i += 1) {
+    const r_n: string = table_n[i];
+    const v_n: string = r_n;
     const v_j: string = langName("java", v_n, true);
     const v_c: string = charAtStr(v_j, 0);
-    const holds: boolean = (strEq(v_c, shiftCase(v_c, 65, 90, 32)) && strEq(langName("typescript", v_n, false), v_j) && strEq(langName("zig", v_n, true), v_j));
+    const holds: boolean = (strEq(v_c, shiftCase(v_c, false)) && strEq(langName("typescript", v_n, false), v_j) && strEq(langName("zig", v_n, true), v_j));
     if (!holds) {
       return t.fail("[P-CAMEL-FIRST] a camelCase name starts in lowercase (R-CAMEL)", `sample ${i + 1} of 29 (len(n) = ${toI32(v_n.length)}): the assertion is false`);
     }
@@ -628,8 +636,9 @@ const clause_P_SHORT_CAPS_AGREE = (t: Suite): boolean => {
     "XX9bYXYYX",
     "b0_aXcX_cYX0YX9Zb0Zc",
   ];
-  for (let i: i32 = 0; i < 29; i += 1) {
-    const v_n: string = table_n[i];
+  for (let i: i32 = 0; i < 29 && i < table_n.length; i += 1) {
+    const r_n: string = table_n[i];
+    const v_n: string = r_n;
     const holds: boolean = strEq(langName("kotlin", v_n, true), langName("dart", v_n, false));
     if (!holds) {
       return t.fail("[P-SHORT-CAPS-AGREE] Kotlin and Dart name a function and a parameter alike (R-SHORT-CAPS)", `sample ${i + 1} of 29 (len(n) = ${toI32(v_n.length)}): the assertion is false`);
@@ -678,8 +687,9 @@ const clause_P_AS_WRITTEN_AGREE = (t: Suite): boolean => {
     "a0b9a0YZY_a9",
     "ZX9Yb0__9_bc_0c",
   ];
-  for (let i: i32 = 0; i < 29; i += 1) {
-    const v_n: string = table_n[i];
+  for (let i: i32 = 0; i < 29 && i < table_n.length; i += 1) {
+    const r_n: string = table_n[i];
+    const v_n: string = r_n;
     const holds: boolean = strEq(langName("php", v_n, true), langName("swift", v_n, false));
     if (!holds) {
       return t.fail("[P-AS-WRITTEN-AGREE] PHP and Swift name a function and a parameter alike (R-AS-WRITTEN)", `sample ${i + 1} of 29 (len(n) = ${toI32(v_n.length)}): the assertion is false`);
@@ -728,11 +738,12 @@ const clause_P_CSHARP = (t: Suite): boolean => {
     "TvRebYtNpfQJS",
     "wqRrhrvg",
   ];
-  for (let i: i32 = 0; i < 29; i += 1) {
-    const v_n: string = table_n[i];
+  for (let i: i32 = 0; i < 29 && i < table_n.length; i += 1) {
+    const r_n: string = table_n[i];
+    const v_n: string = r_n;
     const v_f: string = langName("csharp", v_n, true);
     const v_c: string = charAtStr(v_f, 0);
-    const holds: boolean = (strEq(v_c, shiftCase(v_c, 97, 122, -32)) && strEq(langName("csharp", v_n, false), langName("kotlin", v_n, false)));
+    const holds: boolean = (strEq(v_c, shiftCase(v_c, true)) && strEq(langName("csharp", v_n, false), langName("kotlin", v_n, false)));
     if (!holds) {
       return t.fail("[P-CSHARP] a C# method is PascalCase, a parameter is Kotlin's camelCase (R-CSHARP)", `sample ${i + 1} of 29 (len(n) = ${toI32(v_n.length)}): the assertion is false`);
     }
@@ -781,11 +792,12 @@ const clause_P_GO_EXPORTED = (t: Suite): boolean => {
     "cHq",
     "cpUnVDTF",
   ];
-  for (let i: i32 = 0; i < 29; i += 1) {
-    const v_n: string = table_n[i];
+  for (let i: i32 = 0; i < 29 && i < table_n.length; i += 1) {
+    const r_n: string = table_n[i];
+    const v_n: string = r_n;
     const v_g: string = langName("go", v_n, true);
     const v_c: string = charAtStr(v_g, 0);
-    const holds: boolean = strEq(v_c, shiftCase(v_c, 97, 122, -32));
+    const holds: boolean = strEq(v_c, shiftCase(v_c, true));
     if (!holds) {
       return t.fail("[P-GO-EXPORTED] a Go function is exported (R-GO)", `sample ${i + 1} of 29 (len(n) = ${toI32(v_n.length)}): the assertion is false`);
     }
@@ -832,8 +844,9 @@ const clause_P_UNKNOWN = (t: Suite): boolean => {
     "/a9Yb9Xc/bc_99a9cXb0_",
     "Z_aZ0bZ_cb",
   ];
-  for (let i: i32 = 0; i < 29; i += 1) {
-    const v_n: string = table_n[i];
+  for (let i: i32 = 0; i < 29 && i < table_n.length; i += 1) {
+    const r_n: string = table_n[i];
+    const v_n: string = r_n;
     const holds: boolean = (strEq(langName("cobol", v_n, true), v_n) && strEq(langModule("cobol", v_n), v_n));
     if (!holds) {
       return t.fail("[P-UNKNOWN] an unknown language changes nothing (R-UNKNOWN)", `sample ${i + 1} of 29 (len(n) = ${toI32(v_n.length)}): the assertion is false`);
@@ -885,8 +898,9 @@ const clause_P_MODULE_FILES = (t: Suite): boolean => {
     "acab_a",
     "ccab/c",
   ];
-  for (let i: i32 = 0; i < 29; i += 1) {
-    const v_m: string = table_m[i];
+  for (let i: i32 = 0; i < 29 && i < table_m.length; i += 1) {
+    const r_m: string = table_m[i];
+    const v_m: string = r_m;
     const holds: boolean = (strEq(langModule("zig", v_m), `${v_m}${".zig"}`) && strEq(langModule("c", v_m), `${v_m}${".h"}`));
     if (!holds) {
       return t.fail("[P-MODULE-FILES] Zig and C name a module by its file (R-MODULE)", `sample ${i + 1} of 29 (len(m) = ${toI32(v_m.length)}): the assertion is false`);
@@ -973,9 +987,11 @@ const clause_P_QUALIFY_DOT = (t: Suite): boolean => {
     "DVJcFxqIJ",
     "KGBu",
   ];
-  for (let i: i32 = 0; i < 33; i += 1) {
-    const v_m: string = table_m[i];
-    const v_n: string = table_n[i];
+  for (let i: i32 = 0; i < 33 && i < table_m.length && i < table_n.length; i += 1) {
+    const r_m: string = table_m[i];
+    const r_n: string = table_n[i];
+    const v_m: string = r_m;
+    const v_n: string = r_n;
     const holds: boolean = (strEq(langQualify("java", v_m, v_n), `${`${v_m}${"."}`}${v_n}`) && strEq(langQualify("python", v_m, v_n), `${`${v_m}${"."}`}${v_n}`) && strEq(langQualify("rust", v_m, v_n), `${`${v_m}${"::"}`}${v_n}`));
     if (!holds) {
       return t.fail("[P-QUALIFY-DOT] the dotted languages put a dot between the module and the name (R-QUALIFY)", `sample ${i + 1} of 33 (len(m) = ${toI32(v_m.length)}, len(n) = ${toI32(v_n.length)}): the assertion is false`);
@@ -1062,9 +1078,11 @@ const clause_P_QUALIFY_PHP = (t: Suite): boolean => {
     "CPe",
     "Qa",
   ];
-  for (let i: i32 = 0; i < 33; i += 1) {
-    const v_m: string = table_m[i];
-    const v_n: string = table_n[i];
+  for (let i: i32 = 0; i < 33 && i < table_m.length && i < table_n.length; i += 1) {
+    const r_m: string = table_m[i];
+    const r_n: string = table_n[i];
+    const v_m: string = r_m;
+    const v_n: string = r_n;
     const holds: boolean = strEq(langQualify("php", v_m, v_n), `${`${`${"\\"}${v_m}`}${"::"}`}${v_n}`);
     if (!holds) {
       return t.fail("[P-QUALIFY-PHP] PHP calls a static method from the global namespace (R-QUALIFY)", `sample ${i + 1} of 33 (len(m) = ${toI32(v_m.length)}, len(n) = ${toI32(v_n.length)}): the assertion is false`);
@@ -1117,7 +1135,8 @@ export const main = (): i32 => {
   ran = `${ran}${clause_P_QUALIFY_DOT(t) ? "1" : "0"}`;
   ran = `${ran}${clause_P_QUALIFY_PHP(t) ? "1" : "0"}`;
   const code: i32 = t.done();
-  const nonce: string = toI32(process.argv.length) > 1 ? process.argv[1] : "-";
+  const argv: string[] = process.argv;
+  const nonce: string = 1 < argv.length ? argv[1] : "-";
   console.log(`vector-done ${nonce} ${ran}`);
   return code;
 };

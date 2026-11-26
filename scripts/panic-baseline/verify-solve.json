@@ -1,6 +1,0 @@
-{
-  "modules": {
-    "src/verify/solve/replay.ts": 46,
-    "src/verify/solve/report.ts": 29
-  }
-}

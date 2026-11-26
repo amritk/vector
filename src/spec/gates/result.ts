@@ -12,17 +12,27 @@
  * a false refusal costs a rewording, a false pass breaks the gate.
  */
 
-import { asciiLower, split, trim } from "nish/text"
+import { split, trim } from "nish/text"
+import { textAsciiLower } from "../../core/text"
 import { Citation, Clause, Contract, LitKind, Literal } from "../contract/types"
 import { SourceSet, sourceFind } from "../source/load"
 import { RfcSection, rfcNormalize, rfcSection } from "../source/rfc"
 import { GATE_CLAUSE_GOES_ON, GATE_DENY, GATE_HEDGE, GATE_RETRACT, gateWordFind, gateWordLeads } from "./text"
 
+/** A sentence's start and end offsets in the prose. */
+class GateSpan {
+  start: i32
+  end: i32
+  constructor(start: i32, end: i32) {
+    this.start = start
+    this.end = end
+  }
+}
+
 /** The section's prose sentences, joined by one space, and where each is. */
 class GateProse {
   text: string
-  /** Start and end offsets, two per sentence. */
-  spans: i32[]
+  spans: GateSpan[]
   constructor() {
     this.text = ""
     this.spans = []
@@ -34,24 +44,47 @@ const gateResultIsAlnum = (c: i32): boolean => (c >= 48 && c <= 57) || (c >= 65 
 /** The byte at `i`, or -1 outside `s`. */
 const gateResultByte = (s: string, i: i32): i32 => (i >= 0 && i < s.length ? s.charCodeAt(i) : -1)
 
+/**
+ * `a + b` for two offsets whose sum is itself an offset into a string the
+ * caller names, so it fits an i32; the sum is taken wide so it is not checked.
+ */
+const gateResultPlus = (a: i32, b: i32): i32 => toI32(toI64(a) + toI64(b))
+
+/** The `n` bytes of `s` from `j` (n >= 0), cut at its end as substring cuts them. */
+const gateResultAt = (s: string, j: i32, n: i32): string => {
+  const e = toI64(j) + toI64(n)
+  return s.substring(j, e > toI64(s.length) ? s.length : toI32(e))
+}
+
+/** The offset after the spaces at `i` of `s`. */
+const gateResultSkip = (s: string, i: i32): i32 => {
+  let j = i
+  while (j >= 0 && j < s.length && s.charCodeAt(j) === 32) {
+    j++
+  }
+  return j
+}
+
 /** Whether a sentence ends at `i` of normalized text: . ; ! ? then the end, or a space and a capital, quote or bracket. */
 const gateSentenceEnds = (t: string, i: i32): boolean => {
   const c = gateResultByte(t, i)
   if (c !== 0x2e && c !== 0x3b && c !== 0x21 && c !== 0x3f) {
     return false
   }
-  let j = i + 1
-  while (gateResultByte(t, j) === 32) {
-    j = j + 1
+  // c is a byte of t, so i is an offset of t and i + 1 fits.
+  if (!(i >= 0 && i < t.length)) {
+    return false
   }
+  const next = i + 1
+  const j = gateResultSkip(t, next)
   if (j === t.length) {
     return true
   }
-  if (j === i + 1) {
+  if (j === next) {
     return false
   }
   const n = gateResultByte(t, j)
-  return (n >= 65 && n <= 90) || n === 0x22 || n === 0x27 || n === 0x28 || n === 0x5b || t.substring(j, j + 3) === "“"
+  return (n >= 65 && n <= 90) || n === 0x22 || n === 0x27 || n === 0x28 || n === 0x5b || gateResultAt(t, j, 3) === "“"
 }
 
 /**
@@ -60,28 +93,35 @@ const gateSentenceEnds = (t: string, i: i32): boolean => {
  * and sentences.
  */
 const gateProse = (sec: RfcSection): GateProse => {
-  const paras: string[][] = [[], []]
+  const lines = sec.lines
   const code: boolean[] = []
-  for (let i = 0; i < sec.lines.length; i++) {
+  for (let i = 0; i < lines.length; i++) {
     code.push(false)
   }
   for (const i of sec.codeLines) {
-    code[i] = true
+    // The source marks only its own lines, so `i` is always one of them.
+    if (i >= 0 && i < code.length) {
+      code[i] = true
+    }
   }
-  for (let i = 0; i < sec.lines.length; i++) {
-    const raw = sec.lines[i]
+  const head: string[] = []
+  let para: string[] = []
+  const paras: string[][] = [head, para]
+  for (let i = 0; i < lines.length && i < code.length; i++) {
+    const raw = lines[i]
     const l = code[i] || trim(raw).startsWith(">") ? "" : raw
     if (i === 0) {
-      paras[0].push(l)
+      head.push(l)
     } else if (trim(l).length === 0) {
-      paras.push([])
+      para = []
+      paras.push(para)
     } else {
-      paras[paras.length - 1].push(l)
+      para.push(l)
     }
   }
   const sentences: string[] = []
-  for (const para of paras) {
-    const t = rfcNormalize(para.join("\n"))
+  for (const one of paras) {
+    const t = rfcNormalize(one.join("\n"))
     let from = 0
     for (let i = 0; i < t.length; i++) {
       if (gateSentenceEnds(t, i)) {
@@ -93,27 +133,29 @@ const gateProse = (sec: RfcSection): GateProse => {
   }
   const p = new GateProse()
   const kept: string[] = []
+  // The joined text holds every kept sentence and a space after each but the
+  // last, so each offset is within its length, an i32.
   let at = 0
   for (const s of sentences) {
     if (s.length > 0) {
       kept.push(s)
-      p.spans.push(at)
-      p.spans.push(at + s.length)
-      at = at + s.length + 1
+      const end = gateResultPlus(at, s.length)
+      p.spans.push(new GateSpan(at, end))
+      at = gateResultPlus(end, 1)
     }
   }
   p.text = kept.join(" ")
   return p
 }
 
-/** The sentence span holding offset `i`: its start and end; [i, i] outside every one. */
-const gateSpanAt = (p: GateProse, i: i32): i32[] => {
-  for (let k = 0; k < p.spans.length; k += 2) {
-    if (i >= p.spans[k] && i < p.spans[k + 1]) {
-      return [p.spans[k], p.spans[k + 1]]
+/** The sentence span holding offset `i`; [i, i] outside every one. */
+const gateSpanAt = (p: GateProse, i: i32): GateSpan => {
+  for (const sp of p.spans) {
+    if (i >= sp.start && i < sp.end) {
+      return sp
     }
   }
-  return [i, i]
+  return new GateSpan(i, i)
 }
 
 /** Where one of the phrases (separated by "|") matches `s` at `i`, case-sensitive, followed by spaces; -1 when none. */
@@ -124,26 +166,23 @@ const gatePhraseAt = (s: string, i: i32, phrases: string): i32 => {
     let j = start
     let ok = true
     for (let w = 0; w < words.length && ok; w++) {
+      const word = words[w]
       if (w > 0) {
         if (gateResultByte(s, j) !== 32) {
           ok = false
           break
         }
-        while (gateResultByte(s, j) === 32) {
-          j = j + 1
-        }
+        j = gateResultSkip(s, j)
       }
-      if (s.substring(j, j + words[w].length) !== words[w]) {
+      if (gateResultAt(s, j, word.length) !== word) {
         ok = false
       } else {
-        j = j + words[w].length
+        // The word is in `s` at `j`, so its end is an offset of `s`.
+        j = gateResultPlus(j, word.length)
       }
     }
     if (ok && gateResultByte(s, j) === 32) {
-      while (gateResultByte(s, j) === 32) {
-        j = j + 1
-      }
-      return j
+      return gateResultSkip(s, j)
     }
   }
   start = -1
@@ -153,13 +192,22 @@ const gatePhraseAt = (s: string, i: i32, phrases: string): i32 => {
 /** Whether `c` is a backtick, a star or an underscore, which may wrap a value. */
 const gateIsMark = (c: i32): boolean => c === 0x60 || c === 0x2a || c === 0x5f
 
+/** The offset after the marks at `i` of `s`. */
+const gateResultSkipMarks = (s: string, i: i32): i32 => {
+  let j = i
+  while (j >= 0 && j < s.length && gateIsMark(s.charCodeAt(j))) {
+    j++
+  }
+  return j
+}
+
 /**
  * The affirmative statement of `word` starting at `i` of `q`: a keyword at a
  * word start, optionally "always", a result verb, then the value (in any
  * case, in code or emphasis) as a whole word. Its end, or -1.
  */
 const gateStatementAt = (q: string, i: i32, word: string): i32 => {
-  if (gateResultIsAlnum(gateResultByte(q, i - 1))) {
+  if (i > 0 && gateResultIsAlnum(gateResultByte(q, i - 1))) {
     return -1
   }
   let j = gatePhraseAt(q, i, "MUST|SHALL|REQUIRED to")
@@ -174,70 +222,57 @@ const gateStatementAt = (q: string, i: i32, word: string): i32 => {
   if (j < 0) {
     return -1
   }
-  while (gateIsMark(gateResultByte(q, j))) {
-    j = j + 1
-  }
-  if (asciiLower(q.substring(j, j + word.length)) !== word) {
+  j = gateResultSkipMarks(q, j)
+  if (textAsciiLower(gateResultAt(q, j, word.length)) !== word) {
     return -1
   }
-  j = j + word.length
-  while (gateIsMark(gateResultByte(q, j))) {
-    j = j + 1
-  }
+  // The word is in `q` at `j`, so its end is an offset of `q`.
+  j = gateResultSkipMarks(q, gateResultPlus(j, word.length))
   return gateResultIsAlnum(gateResultByte(q, j)) ? -1 : j
 }
 
-/** Whether `s` at `i` starts a hyphen of any kind: -, U+2010 to U+2015, U+2212. */
-const gateHyphenAt = (s: string, i: i32): boolean => {
-  if (gateResultByte(s, i) === 0x2d || gateResultByte(s, i) === 0x2f) {
-    return true
+/** The width of the hyphen at `i` of `s` (-, U+2010 to U+2015, U+2212, or a slash); 0 when none. */
+const gateHyphenAt = (s: string, i: i32): i32 => {
+  if (!(i >= 0 && i < s.length)) {
+    return 0
   }
-  if (gateResultByte(s, i) !== 0xe2) {
-    return false
+  const c = s.charCodeAt(i)
+  if (c === 0x2d || c === 0x2f) {
+    return 1
   }
-  const b1 = gateResultByte(s, i + 1)
-  const b2 = gateResultByte(s, i + 2)
-  return (b1 === 0x80 && b2 >= 0x90 && b2 <= 0x95) || (b1 === 0x88 && b2 === 0x92)
+  if (c !== 0xe2 || i >= s.length - 2) {
+    return 0
+  }
+  const b1 = s.charCodeAt(i + 1)
+  const b2 = s.charCodeAt(i + 2)
+  return (b1 === 0x80 && b2 >= 0x90 && b2 <= 0x95) || (b1 === 0x88 && b2 === 0x92) ? 3 : 0
 }
 
 /** The alternative right after a value ("or throw", ", and 5", "-terminated"): its end, or -1. */
 const gateAlternativeEnd = (rest: string): i32 => {
-  let j = 0
-  while (gateResultByte(rest, j) === 32) {
-    j = j + 1
-  }
+  let j = gateResultSkip(rest, 0)
   const c = gateResultByte(rest, j)
   if (c === 0x2c || c === 0x3a || c === 0x3b || c === 0x28 || c === 0x5b) {
-    j = j + 1
-    while (gateResultByte(rest, j) === 32) {
-      j = j + 1
-    }
+    // `c` is a byte of `rest` at `j`, so the offset after it is one of `rest`.
+    j = gateResultSkip(rest, gateResultPlus(j, 1))
   }
-  if (gateHyphenAt(rest, j)) {
-    return gateResultByte(rest, j) === 0xe2 ? j + 3 : j + 1
-  }
-  if (j > 0 && gateResultByte(rest, j - 1) !== 32 && gateResultAlnumStart(rest, j)) {
-    const end = gateWordLeads(rest.substring(j, rest.length), "or|and|else|alternatively|either")
-    return end >= 0 ? j + end : -1
+  // A hyphen or a word found in `rest` from `j` ends at an offset of `rest`.
+  const hyphen = gateHyphenAt(rest, j)
+  if (hyphen > 0) {
+    return gateResultPlus(j, hyphen)
   }
   const end = gateWordLeads(rest.substring(j, rest.length), "or|and|else|alternatively|either")
-  return end >= 0 ? j + end : -1
+  return end >= 0 ? gateResultPlus(j, end) : -1
 }
-
-/** Whether a letter or digit is at `j`. */
-const gateResultAlnumStart = (s: string, j: i32): boolean => gateResultIsAlnum(gateResultByte(s, j))
 
 /** Whether the value's clause ends right after it: punctuation, the end, or a connective after a space. */
 const gateClauseEnds = (rest: string): boolean => {
-  let j = 0
-  while (gateResultByte(rest, j) === 32) {
-    j = j + 1
-  }
+  const j = gateResultSkip(rest, 0)
   if (j === rest.length) {
     return true
   }
   const c = gateResultByte(rest, j)
-  if (".,;:!?()[]".indexOf(rest.substring(j, j + 1)) >= 0 && c < 128) {
+  if (".,;:!?()[]".indexOf(gateResultAt(rest, j, 1)) >= 0 && c < 128) {
     return true
   }
   return j > 0 && gateWordLeads(rest, GATE_CLAUSE_GOES_ON) >= 0
@@ -245,10 +280,7 @@ const gateClauseEnds = (rest: string): boolean => {
 
 /** The word right after a value, up to a space or punctuation. */
 const gateNextWord = (rest: string): string => {
-  let j = 0
-  while (gateResultByte(rest, j) === 32) {
-    j = j + 1
-  }
+  let j = gateResultSkip(rest, 0)
   const from = j
   while (j < rest.length && " .,;:!?)]".indexOf(rest.substring(j, j + 1)) < 0) {
     j = j + 1
@@ -260,7 +292,7 @@ const gateNextWord = (rest: string): string => {
 const gateClauseOf = (tail: string): string => {
   for (let i = 0; i < tail.length; i++) {
     const c = tail.charCodeAt(i)
-    if ((c === 0x2e || c === 0x21 || c === 0x3f) && (i + 1 === tail.length || tail.charCodeAt(i + 1) === 32)) {
+    if ((c === 0x2e || c === 0x21 || c === 0x3f) && (i + 1 >= tail.length || tail.charCodeAt(i + 1) === 32)) {
       return tail.substring(0, i)
     }
   }
@@ -274,8 +306,8 @@ const gateOtherResult = (clause: string, word: string): string => {
       continue
     }
     let j = i
-    while (gateResultIsAlnum(gateResultByte(clause, j))) {
-      j = j + 1
+    while (j >= 0 && j < clause.length && gateResultIsAlnum(clause.charCodeAt(j))) {
+      j++
     }
     const w = clause.substring(i, j)
     const result = (w === "true" || w === "false" || w === "null") && w !== word
@@ -293,11 +325,16 @@ const gateOtherResult = (clause: string, word: string): string => {
   return ""
 }
 
+/** The text `found` names in `s`, gateWordFind's start and end; "" when it found nothing. */
+const gateResultFound = (s: string, found: i32[]): string => (found.length > 1 ? s.substring(found[0], found[1]) : "")
+
 /** Why the quote's occurrence at `p` of the prose does not state `word`; null when it does. */
 const gateOccurrence = (p: GateProse, q: string, at: i32, word: string): string | null => {
   const text = p.text
   let why = `does not require "${word}" as the result (an affirmative MUST, SHALL or REQUIRED to, a result verb, then "${word}")`
-  const last = gateSpanAt(p, at + q.length - 1)[1]
+  // The quote (never empty) is in the text at `at`, so `at` plus an offset
+  // into it, or its length, is an offset of the text.
+  const last = gateSpanAt(p, gateResultPlus(at, gateResultPlus(q.length, -1))).end
   let i = 0
   while (i < q.length) {
     const end = gateStatementAt(q, i, word)
@@ -305,14 +342,16 @@ const gateOccurrence = (p: GateProse, q: string, at: i32, word: string): string 
       i = i + 1
       continue
     }
-    const from = at + i
-    const to = at + end
+    const from = gateResultPlus(at, i)
+    const to = gateResultPlus(at, end)
     i = end
-    const start = gateSpanAt(p, from)[0]
-    const deny = gateWordFind(text.substring(start, from), GATE_DENY)
+    const start = gateSpanAt(p, from).start
+    const before = text.substring(start, from)
+    const deny = gateWordFind(before, GATE_DENY)
     if (deny.length > 0) {
-      if (start + deny[1] <= at) {
-        const d = text.substring(start + deny[0], start + deny[1])
+      // The denial is in `before`, which starts at `start`.
+      if (deny.length > 1 && gateResultPlus(start, deny[1]) <= at) {
+        const d = gateResultFound(before, deny)
         why = `is cut from a sentence that qualifies it before the quote ("${d}"), so the sentence does not require "${word}"`
       }
       continue
@@ -327,17 +366,18 @@ const gateOccurrence = (p: GateProse, q: string, at: i32, word: string): string 
       why = `continues past "${word}" ("${word} ${gateNextWord(rest)}"), so "${word}" is a word in a longer phrase, not the stated result (end the clause after it, or follow it with a condition such as "when …")`
       continue
     }
-    const stop = gateSpanAt(p, to - 1)[1]
+    // The statement ends after its keyword, so `to` is at least 1.
+    const stop = gateSpanAt(p, gateResultPlus(to, -1)).end
     const tail = text.substring(to, last > stop ? last : stop)
     const retract = gateWordFind(tail, GATE_RETRACT)
     if (retract.length > 0) {
-      why = `retracts "${word}" after stating it ("${tail.substring(retract[0], retract[1])}")`
+      why = `retracts "${word}" after stating it ("${gateResultFound(tail, retract)}")`
       continue
     }
     const clause = gateClauseOf(tail)
     const hedge = gateWordFind(clause, GATE_HEDGE)
     if (hedge.length > 0) {
-      why = `hedges "${word}" after stating it ("${clause.substring(hedge[0], hedge[1])}"), so it is not the result each time`
+      why = `hedges "${word}" after stating it ("${gateResultFound(clause, hedge)}"), so it is not the result each time`
       continue
     }
     const other = gateOtherResult(clause, word)
@@ -378,7 +418,7 @@ export const gateStatesResult = (
   }
   const pr = gateProse(sec)
   const reasons: string[] = []
-  let covered = 0
+  let covered = false
   for (const r of c.requirements) {
     const own = r.source
     const rs = own !== null ? own : set.main
@@ -389,24 +429,25 @@ export const gateStatesResult = (
     if (rsec === null || rsec.id !== sec.id) {
       continue
     }
-    covered = covered + 1
+    covered = true
     const q = rfcNormalize(r.quote)
     if (q.length === 0 || pr.text.indexOf(q) < 0) {
       reasons.push(`${r.id} is not in its prose (only in code, a blockquote or a table)`)
       continue
     }
+    const text = pr.text
     let why: string | null = null
-    let p = toI32(pr.text.indexOf(q))
-    while (p >= 0 && why === null) {
+    let p = toI32(text.indexOf(q))
+    while (p >= 0 && p < text.length && why === null) {
       why = gateOccurrence(pr, q, p, word)
-      p = toI32(pr.text.indexOf(q, p + 1))
+      p = toI32(text.indexOf(q, p + 1))
     }
     if (why === null) {
       return null
     }
     reasons.push(`${r.id} ${why}`)
   }
-  if (covered === 0) {
+  if (!covered) {
     return `${k.id} covers no requirement cited to it, so nothing there requires the result "${word}"`
   }
   return reasons.join("; ")

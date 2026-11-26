@@ -10,10 +10,11 @@
  * is never contained. The caller is warned before any command runs.
  */
 
-import { asciiLower, splitLines, trim } from "nish/text"
+import { splitLines, trim } from "nish/text"
 import { dirname } from "../../core/fs"
 import { toHex } from "../../core/hex"
 import { runProcess } from "../../core/process"
+import { textAsciiLower } from "../../core/text"
 import { CheckContext, CheckSourceRun } from "../check"
 import { Clause, ClauseKind, Contract, Literal, VectorSourceKind } from "../contract/types"
 import { SampleKind, SampleValue, sampleLiteral } from "../sample/eval"
@@ -53,7 +54,8 @@ const gateRunShort = (s: string): string => {
 /** The last non-empty line of a text, or "". */
 const gateRunLastLine = (s: string): string => {
   const lines = splitLines(trim(s))
-  return lines.length === 0 ? "" : trim(lines[lines.length - 1])
+  const n = lines.length
+  return n > 0 ? trim(lines[n - 1]) : ""
 }
 
 /**
@@ -112,7 +114,7 @@ export const gateRunJudge = (
   const want = bytes ? toHex(v.value.bytes) : gateRunText(e, v.value)
   const printed = trim(stdout)
   // Hex is compared case-blind; nothing else is.
-  const got = bytes ? asciiLower(printed) : printed
+  const got = bytes ? textAsciiLower(printed) : printed
   if (got === want) {
     return new CheckSourceRun(k.id, command, "pass", "")
   }
@@ -154,8 +156,16 @@ export const gateRunSources = (ctx: CheckContext): string[] => {
       ctx.sourceRuns.push(new CheckSourceRun(k.id, command, "not run", ""))
       continue
     }
+    const limit = ctx.runTimeoutMs
+    // The outer limit must fit an i32: 2147483647 less the slack.
+    if (limit > 2147478647) {
+      const why = `a limit of ${limit} ms is over 2147478647 ms`
+      ctx.toolFailure = `${k.id}: source command: ${why}`
+      ctx.sourceRuns.push(new CheckSourceRun(k.id, command, "not run", why))
+      continue
+    }
     const started = monotonicNanos()
-    const r = runProcess(gateRunArgv(command, dir, ctx.runTimeoutMs), "", ctx.runTimeoutMs + GATE_RUN_SLACK_MS)
+    const r = runProcess(gateRunArgv(command, dir, limit), "", limit + GATE_RUN_SLACK_MS)
     if (r.isErr()) {
       ctx.toolFailure = `${k.id}: source command: ${r.error}`
       ctx.sourceRuns.push(new CheckSourceRun(k.id, command, "not run", r.error))
@@ -164,9 +174,11 @@ export const gateRunSources = (ctx: CheckContext): string[] => {
     const p = r.value
     // `timeout` exits 137 when its KILL ended the command; so does a command
     // that died of KILL itself, so the clock decides which.
-    const elapsedMs = (monotonicNanos() - started) / 1000000
-    const killed = p.timedOut || (p.status === 137 && elapsedMs >= toI64(ctx.runTimeoutMs))
-    ctx.sourceRuns.push(gateRunJudge(k, p.status, p.stdout, p.stderr, killed, ctx.runTimeoutMs))
+    // A clock that reads earlier than `started` shows no deadline passed.
+    const now = monotonicNanos()
+    const late = started >= 0 && now >= started && (now - started) / 1000000 >= toI64(limit)
+    const killed = p.timedOut || (p.status === 137 && late)
+    ctx.sourceRuns.push(gateRunJudge(k, p.status, p.stdout, p.stderr, killed, limit))
   }
   return []
 }

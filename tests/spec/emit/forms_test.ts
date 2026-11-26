@@ -91,9 +91,9 @@ const formsIterate = (t: Suite, c: Contract, p: string): void => {
   t.contains(
     "a loop runs steps 1 to count − 1",
     p,
-    "for (let it_i: i64 = 1; it_i < toI64(3); it_i += 1) {\n    const it_s = xorB(it_a0, it_a1);\n    const it_n0 = it_s;\n    const it_n1 = it_a0;\n    it_a0 = it_n0;\n    it_a1 = it_n1;\n  }\n  const it_r = xorB(it_a0, it_a1);",
+    "for (let it_i: i64 = 1; it_i < 3; it_i += 1) {\n    const it_s = xorB(it_a0, it_a1);\n    const it_n0 = it_s;\n    const it_n1 = it_a0;\n    it_a0 = it_n0;\n    it_a1 = it_n1;\n  }\n  const it_r = xorB(it_a0, it_a1);",
   )
-  t.contains("an i64 beyond 2^53 is split", p, "(toI64(302395254) * 4294967296 + 2425370821)")
+  t.contains("an i64 beyond 2^53 is split", p, "toI64((toU64(302395254) * 4294967296 + 2425370821))")
   t.contains("a null mid-loop names its step", p, "`step ${it_i} of 5: nonEmpty returned null`")
   t.contains("and a null last step", p, "`step 5 of 5: nonEmpty returned null`")
   t.contains("a secret step goes through its wrapper", p, "const it_s = plain_keep(it_a0, it_a1);")
@@ -127,17 +127,17 @@ export const main = (): i32 => {
   // mod-zero: % is remI32, which answers 0 for a zero (or -1) divisor.
   t.ok("remI32 is defined once", formsCount(p, "const remI32 = ") === 1)
   t.contains("a zero divisor is remI32's", p, "remI32(idI32(v_x), 0) === 0")
-  t.contains("a computed divisor too", p, "remI32(v_x, wrappingMul(v_y, v_y))")
+  t.contains("a computed divisor too", p, "remI32(v_x, toI32(toU32(v_y) * toU32(v_y)))")
   t.ok("% is never written bare", p.indexOf("v_x %") < 0 && p.indexOf("v_y %") < 0)
 
-  // i64 and i32 + - * wrap through nish:unsafe, as the sampler does.
-  t.contains("i64 + wraps", p, "(addI64(v_a, v_b) === wrappingAdd(v_a, v_b))")
-  t.contains("i32 + wraps", p, "(addI32(v_a, v_b) === wrappingAdd(v_a, v_b))")
-  t.contains("i32 - wraps", p, "(subI32(v_a, v_b) === wrappingSub(v_a, v_b))")
-  t.contains("i32 * wraps", p, "(mulI32(v_a, v_b) === wrappingMul(v_a, v_b))")
+  // i64 and i32 + - * wrap in the unsigned type of their width, as the sampler does.
+  t.contains("i64 + wraps", p, "(addI64(v_a, v_b) === toI64(toU64(v_a) + toU64(v_b)))")
+  t.contains("i32 + wraps", p, "(addI32(v_a, v_b) === toI32(toU32(v_a) + toU32(v_b)))")
+  t.contains("i32 - wraps", p, "(subI32(v_a, v_b) === toI32(toU32(v_a) - toU32(v_b)))")
+  t.contains("i32 * wraps", p, "(mulI32(v_a, v_b) === toI32(toU32(v_a) * toU32(v_b)))")
   t.ok("i32 * is never written bare", p.indexOf("v_y * v_y") < 0 && p.indexOf("v_a * v_b") < 0)
-  t.contains("nish:unsafe is imported", p, 'import { wrappingAdd, wrappingMul, wrappingSub } from "nish:unsafe";')
-  t.contains("i64's maximum is built exactly", p, "(toI64(2147483647) * 4294967296 + 4294967295)")
+  t.ok("nothing is imported from nish:unsafe", p.indexOf("nish:unsafe") < 0)
+  t.contains("i64's maximum is built exactly", p, "toI64((toU64(2147483647) * 4294967296 + 4294967295))")
 
   // rfc-bitwise: xor, bitAnd and bitOr are one helper, chosen by its third argument.
   t.ok("bitwiseBytes is defined once", formsCount(p, "const bitwiseBytes = ") === 1)
@@ -171,11 +171,15 @@ export const main = (): i32 => {
 
   // Every sample row, in order: a dropped or reordered row fails here.
   t.contains("P-MOD's rows", p, "const table_x: i32[] = [-7, -7, 50];\n  const table_y: i32[] = [0, 3, -5];\n")
-  t.contains("P-MOD's three rows run", p, "for (let i: i32 = 0; i < 3; i += 1) {\n    const v_x: i32 = table_x[i];")
+  t.contains(
+    "P-MOD's three rows run",
+    p,
+    "for (let i: i32 = 0; i < 3 && i < table_x.length && i < table_y.length; i += 1) {\n    const r_x: i32 = table_x[i];\n    const r_y: i32 = table_y[i];\n    const v_x: i32 = r_x;",
+  )
   t.contains(
     "P-WRAP's rows",
     p,
-    "const table_a: i64[] = [(toI64(2147483647) * 4294967296 + 4294967295), (toI64(-2147483648) * 4294967296 + 0)];\n  const table_b: i64[] = [toI64(1), toI64(-1)];\n",
+    "const table_a: i64[] = [toI64((toU64(2147483647) * 4294967296 + 4294967295)), toI64(((toU64(0) + 2147483648) * 4294967296 + 0))];\n  const table_b: i64[] = [toI64(1), toI64(-1)];\n",
   )
   t.contains(
     "P-WRAP32's rows",
@@ -203,7 +207,7 @@ export const main = (): i32 => {
 
   // binary64: bit-exact unless the vector gives a tolerance.
   t.contains("an exact f64", p, "eqF64Bits(t, ")
-  t.contains("-0 from its bits", p, "bitsToF64((toI64(-2147483648) * 4294967296 + 0))")
+  t.contains("-0 from its bits", p, "bitsToF64(toI64(((toU64(0) + 2147483648) * 4294967296 + 0)))")
   t.contains("an absolute tolerance", p, "t.nearF64(")
   t.contains("a tolerance in ulps", p, "nearUlpsF64(t, ")
   t.contains("u64's maximum", p, "isMax(((toU64(0) + 4294967295) * 4294967296 + 4294967295))")
@@ -235,7 +239,7 @@ const formsWithout = (t: Suite, c: Contract): void => {
   t.ok("example-hex emits", plain.isOk())
   t.ok("no % means no remI32", text.indexOf("remI32") < 0)
   t.ok("no secret means no nish:secret", text.indexOf("nish:secret") < 0)
-  t.ok("no sampled + - * means no nish:unsafe", text.indexOf("nish:unsafe") < 0)
+  t.ok("example-hex imports nothing from nish:unsafe", text.indexOf("nish:unsafe") < 0)
 
   c.clauses[0].id = "P-a"
   c.clauses[1].id = "P_a"
