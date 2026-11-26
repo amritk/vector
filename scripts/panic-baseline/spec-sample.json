@@ -1,9 +1,6 @@
 {
   "modules": {
-    "src/spec/sample/eval.ts": 22,
-    "src/spec/sample/ints.ts": 3,
-    "src/spec/sample/prng.ts": 1,
-    "src/spec/sample/property.ts": 15,
+    "src/spec/sample/eval.ts": 18,
     "src/spec/sample/smt.ts": 42
   }
 }

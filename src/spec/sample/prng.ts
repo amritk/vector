@@ -58,7 +58,8 @@ export const sampleNext = (r: SamplePrng): f64 => {
  */
 export const sampleBelow = (r: SamplePrng, n: i32): i32 => {
   const x = toI32(Math.floor(sampleNext(r) * toF64(n)))
-  return x < n ? x : n - 1
+  // n - 1 in u32, which cannot overflow; it is the same value for n of at least 1.
+  return x < n ? x : toI32(toU32(n) - toU32(1))
 }
 
 /**

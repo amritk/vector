@@ -192,11 +192,13 @@ const sampleEqual = (x: SampleValue, y: SampleValue): boolean => {
     return x.n === y.n
   }
   if (x.kind === SampleKind.Bytes) {
-    if (x.bytes.length !== y.bytes.length) {
+    const xb = x.bytes
+    const yb = y.bytes
+    if (xb.length !== yb.length) {
       return false
     }
-    for (let i = 0; i < x.bytes.length; i++) {
-      if (x.bytes[i] !== y.bytes[i]) {
+    for (let i = 0; i < xb.length; i++) {
+      if (xb[i] !== yb[i]) {
         return false
       }
     }
@@ -219,10 +221,13 @@ const sampleClamp = (x: i64, lo: i64, hi: i64): i64 => (x < lo ? lo : x > hi ? h
 
 /** An operand that must be of one kind. */
 const sampleArg = (args: SampleValue[], i: i32, kind: SampleKind, op: string): Result<SampleValue, string> => {
-  if (i >= args.length || args[i].kind !== kind) {
-    return Err(`${op}: operand ${i} has the wrong kind`)
+  if (i >= 0 && i < args.length) {
+    const x = args[i]
+    if (x.kind === kind) {
+      return Ok(x)
+    }
   }
-  return Ok(args[i])
+  return Err(`${op}: operand ${i} has the wrong kind`)
 }
 
 /**
@@ -231,10 +236,14 @@ const sampleArg = (args: SampleValue[], i: i32, kind: SampleKind, op: string): R
  * divisor held as -1 is the u64 maximum, and divides as itself.
  */
 const sampleRem = (x: i64, y: i64, ty: string): i64 => {
-  if (y === toI64(0) || (y === toI64(-1) && ty !== "u64")) {
+  if (ty === "u64") {
+    const uy = toU64(y)
+    return uy === toU64(0) ? 0 : toI64(toU64(x) % uy)
+  }
+  if (y === toI64(0) || y === toI64(-1)) {
     return 0
   }
-  return ty === "u64" ? toI64(toU64(x) % toU64(y)) : x % y
+  return x % y
 }
 
 /** + - * % over two integers of one type. */
@@ -285,7 +294,8 @@ const sampleMapCase = (s: string, lo: i32, hi: i32, delta: i32): string => {
   let out = ""
   for (let i = 0; i < s.length; i++) {
     const c = s.charCodeAt(i)
-    out = out + String.fromCharCode(c >= lo && c <= hi ? c + delta : c)
+    // The sum in i64, where two i32s cannot overflow; it is a char code.
+    out = out + String.fromCharCode(c >= lo && c <= hi ? toI32(toI64(c) + toI64(delta)) : c)
   }
   return out
 }
