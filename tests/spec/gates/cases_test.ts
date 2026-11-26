@@ -28,7 +28,7 @@ const CASES_TEST_BARE2: string = "FFEEDDCCBBAA99887766554433221100FFEEDDCCBBAA99
  * cases on the next, so the last "sample" case and the first "test" case are
  * split only by a page break. A section with no headings follows, and a
  * parent §A.5 whose subsections each hold a key and its cases, split by a
- * page break.
+ * page break, and §A.6, whose headings each hold a call label.
  */
 const casesTestRfc = (): string =>
   [
@@ -134,6 +134,16 @@ const casesTestRfc = (): string =>
     '   With SHA-256, message = "test":',
     `   r = ${CASES_TEST_R256T}`,
     `     = ${CASES_TEST_BARE2}`,
+    "",
+    "A.6.  Calls",
+    "",
+    '   With SHA-256, message = "sample":',
+    '   F (n=3, m="sample") =',
+    `   ${CASES_TEST_BARE1}`,
+    "",
+    '   With SHA-512, message = "sample":',
+    '   F (n=5, m="sample") =',
+    `   ${CASES_TEST_BARE2}`,
     "",
   ].join("\n")
 
@@ -365,6 +375,31 @@ const casesTestNoHeadingRows = (t: Suite): void => {
     ),
     'args[0] in RFC §A.4 ("Counted") is not placed by its line, so nothing says which case heading it is under',
   )
+  // An unlabelled integer has no line to place: it is warned about, not refused.
+  casesTestRowIs(
+    t,
+    "6979 §A.4: headings, and an unlabelled integer",
+    casesTestRunWith(nm, "sign512", "A.4", `{"int": 5}, {"str": "sample"}`, s512),
+    'not checked against the RFC: the integer 5 has no "label" to find it by',
+  )
+  // One its expected value's call label pairs is placed on that label's lines.
+  const f3 = casesTestHex(CASES_TEST_BARE1, 'F (n=3, m=\\"sample\\")')
+  casesTestRowIs(
+    t,
+    "6979 §A.6: headings, and an unlabelled integer a call label pairs",
+    casesTestRunWith(nm, "sign256", "A.6", `{"int": 3}, {"str": "sample"}`, f3),
+    "",
+  )
+  // Refused first; the variant warning that follows is for a bound nothing pairs.
+  const other = casesTestRunWith(nm, "sign256", "A.6", `{"int": 5}, {"str": "sample"}`, f3)
+  const otherName = "6979 §A.6: headings, and an unlabelled integer of the other heading's call label"
+  const otherOk =
+    other.length > 0 &&
+    other[0].indexOf('args[0] 5 is not printed in "F (n=3, m="sample")" that the expected value is printed under') >= 0
+  t.ok(otherName, otherOk)
+  if (!otherOk) {
+    console.log(`${otherName}:\n${other.join("\n")}`)
+  }
 }
 
 /**

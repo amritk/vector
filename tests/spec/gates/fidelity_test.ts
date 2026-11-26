@@ -1700,6 +1700,61 @@ const fidelityTestWrapped = (t: Suite): void => {
       two,
       `W1.args[0]: args[0] "passwd" is printed in the call label "PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)" in RFC §11 ("Test Vectors for PBKDF2 with HMAC-SHA-256"), not in "PBKDF2-HMAC-SHA-256 (P="Password", S="NaCl", c=80000, dkLen=64)" that the expected value is printed under: they are different test cases`,
     ],
+    [
+      "case 1 with its strings swapped",
+      `{"str": "salt"}, {"str": "passwd"}, {"int": 1, "label": "c"}, {"int": 64, "label": "dkLen"}`,
+      one,
+      `W1.args[1]: args[1] "passwd" is printed in the call label "PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)" in RFC §11 ("Test Vectors for PBKDF2 with HMAC-SHA-256") only before args[0], which the contract passes ahead of it: the arguments are not in the order the label prints them`,
+    ],
+    [
+      "case 2 with its salt passed twice",
+      `{"str": "NaCl"}, {"str": "NaCl"}, {"int": 80000, "label": "c"}, {"int": 64, "label": "dkLen"}`,
+      two,
+      `W1.args[1]: args[1] "NaCl" is printed in the call label "PBKDF2-HMAC-SHA-256 (P="Password", S="NaCl", c=80000, dkLen=64)" in RFC §11 ("Test Vectors for PBKDF2 with HMAC-SHA-256") only before args[0]`,
+    ],
+    ["case 1 with its integers unlabelled", `{"str": "passwd"}, {"str": "salt"}, {"int": 1}, {"int": 64}`, one, ""],
+    [
+      "case 1 with its unlabelled integers swapped",
+      `{"str": "passwd"}, {"str": "salt"}, {"int": 64}, {"int": 1}`,
+      one,
+      `W1.args[3]: args[3] 1 is printed in the call label "PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)" in RFC §11 ("Test Vectors for PBKDF2 with HMAC-SHA-256") only before args[2], which the contract passes ahead of it`,
+    ],
+    [
+      "case 1 with an unlabelled integer it does not print",
+      `{"str": "passwd"}, {"str": "salt"}, {"int": 2}, {"int": 64}`,
+      one,
+      `W1.args[2]: args[2] 2 is not printed in "PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)" that the expected value is printed under in RFC §11 ("Test Vectors for PBKDF2 with HMAC-SHA-256"), so nothing pairs it with that test case`,
+    ],
+    [
+      "case 1 with its labelled integers swapped",
+      `{"str": "passwd"}, {"str": "salt"}, {"int": 64, "label": "dkLen"}, {"int": 1, "label": "c"}`,
+      one,
+      "",
+    ],
+    [
+      "case 1 with a labelled integer ahead of an unlabelled one it prints after",
+      `{"str": "passwd"}, {"str": "salt"}, {"int": 64, "label": "dkLen"}, {"int": 1}`,
+      one,
+      "",
+    ],
+    [
+      "case 1 with an unlabelled integer that only a labelled one's number prints",
+      `{"str": "passwd"}, {"str": "salt"}, {"int": 1, "label": "c"}, {"int": 1}`,
+      one,
+      `W1.args[3]: args[3] 1 is not printed in "PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)" that the expected value is printed under`,
+    ],
+    [
+      "case 1 with an unlabelled integer ahead of a labelled one that holds its number",
+      `{"str": "passwd"}, {"str": "salt"}, {"int": 64}, {"int": 64, "label": "dkLen"}`,
+      one,
+      `W1.args[2]: args[2] 64 is not printed in "PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)" that the expected value is printed under`,
+    ],
+    [
+      "case 1 with an unlabelled count beside its labelled length",
+      `{"str": "passwd"}, {"str": "salt"}, {"int": 1}, {"int": 64, "label": "dkLen"}`,
+      one,
+      "",
+    ],
   ]
   for (const r of pbRows) {
     fidelityTestRowIs(t, `7914 §11: ${r[0]}`, fidelityTestWrap("7914", scrypt, pbkdf2Fn, "11", r[1], r[2]), r[3])
@@ -1929,14 +1984,152 @@ const fidelityTestWrapped = (t: Suite): void => {
     s3,
     `W1.args[2]: args[2] N=1048576 is printed in the call label "scrypt (P="pleaseletmein", S="SodiumChloride", N=1048576, r=8, p=1, dkLen=64)" in RFC §12 ("Test Vectors for scrypt"), not in "scrypt (P="pleaseletmein", S="SodiumChloride", N=16384, r=8, p=1, dkLen=64)" that the expected value is printed under`,
   ])
+  scRows.push([
+    "case 2 with case 1's empty password",
+    `{"str": ""}, {"str": "NaCl"}, {"int": 1024, "label": "N"}, {"int": 8, "label": "r"}, {"int": 16, "label": "p"}, {"int": 64, "label": "dkLen"}`,
+    s2,
+    `W1.args[0]: args[0] "" is not printed in "scrypt (P="password", S="NaCl", N=1024, r=8, p=16, dkLen=64)" that the expected value is printed under in RFC §12 ("Test Vectors for scrypt"), so nothing pairs it with that test case`,
+  ])
   for (const r of scRows) {
     fidelityTestRowIs(t, `7914 §12: ${r[0]}`, fidelityTestWrap("7914", scrypt, scryptFn, "12", r[1], r[2]), r[3])
+  }
+}
+
+/**
+ * RFC 4648 §10, one test case a line, a page break between two of them: a
+ * value pairs only with the one printed on its line, not the line beside it.
+ */
+const fidelityTestBase64 = (t: Suite): void => {
+  const rfc = [
+    "Request for Comments: 4648",
+    "",
+    "1.  Rules",
+    "",
+    "   It MUST derive.",
+    "",
+    "10.  Test Vectors",
+    "",
+    '      BASE64("") = ""',
+    "",
+    '      BASE64("f") = "Zg=="',
+    "",
+    '      BASE64("fo") = "Zm8="',
+    fidelityTestBreak("4648", 12),
+    '      BASE64("foo") = "Zm9v"',
+    "",
+  ].join("\n")
+  const fn = `{"name": "f", "params": [{"name": "s", "type": "string"}], "returns": "string"}`
+  const rows: string[][] = [
+    ["a value and its encoding", "f", "Zg==", ""],
+    [
+      "a value and the next line's encoding",
+      "f",
+      "Zm8=",
+      `W1: args[0] "f", expect "Zm8=" are each printed in RFC §10 ("Test Vectors"), but never on one line together, so nothing pairs them as one test case`,
+    ],
+    ["a value and its encoding, past the page break", "foo", "Zm9v", ""],
+    [
+      "a value and the encoding past the page break",
+      "fo",
+      "Zm9v",
+      `W1: args[0] "fo", expect "Zm9v" are each printed in RFC §10 ("Test Vectors"), but never on one line together, so nothing pairs them as one test case`,
+    ],
+    ["the empty value and its encoding", "", "", ""],
+  ]
+  for (const r of rows) {
+    fidelityTestRowIs(
+      t,
+      `4648 §10: ${r[0]}`,
+      fidelityTestWrap("4648", rfc, fn, "10", `{"str": "${r[1]}"}`, `{"str": "${r[2]}"}`),
+      r[3],
+    )
+  }
+}
+
+/**
+ * A call label's unlabelled integer is an argument, not a variant: its digits
+ * are cut from the label before the variants are read.
+ */
+const fidelityTestBareVariant = (t: Suite): void => {
+  const rfc = [
+    "Request for Comments: 4648",
+    "",
+    "1.  Rules",
+    "",
+    "   It MUST derive.",
+    "",
+    "10.  Test Vectors",
+    "",
+    '   F (x="a", n=16) =',
+    "   55 ac 04 6e",
+    "",
+    '   F (x="a", n=32) =',
+    "   4d dc d8 f6",
+    "",
+    "11.  Variants",
+    "",
+    '   F-256 (x="a", n=16) =',
+    "   55 ac 04 6e",
+    "",
+    '   F-512 (x="a", n=32) =',
+    "   4d dc d8 f6",
+    "",
+    "12.  Signs",
+    "",
+    '   G (x="a", n=-1) =',
+    "   55 ac 04 6e",
+    "",
+    '   G (x="a", n=1) =',
+    "   4d dc d8 f6",
+    "",
+  ].join("\n")
+  // A name, the call, the section, the integer, the expected hex, its label (as JSON) and the message wanted.
+  const rows: string[][] = [
+    ["a bare integer is not a variant", "f32", "10", "16", "55ac046e", 'F (x=\\"a\\", n=16)', ""],
+    ["a bare integer, the label's own variant", "f256", "11", "16", "55ac046e", 'F-256 (x=\\"a\\", n=16)', ""],
+    [
+      "a bare integer, another variant's call",
+      "f512",
+      "11",
+      "16",
+      "55ac046e",
+      'F-256 (x=\\"a\\", n=16)',
+      'the value is printed under "F-256 (x="a", n=16)" in RFC §11 ("Variants"), but f512 names 512',
+    ],
+    ["a bare negative integer", "g", "12", "-1", "55ac046e", 'G (x=\\"a\\", n=-1)', ""],
+    [
+      "a bare integer without the sign printed before it",
+      "g",
+      "12",
+      "1",
+      "55ac046e",
+      'G (x=\\"a\\", n=-1)',
+      'args[1] 1 is not printed in "G (x="a", n=-1)"',
+    ],
+  ]
+  for (const r of rows) {
+    fidelityTestRowIs(
+      t,
+      `4648 §${r[2]}: ${r[0]}`,
+      fidelityTestWrapCall(
+        "4648",
+        rfc,
+        `{"name": "${r[1]}", "params": [{"name": "s", "type": "string"}, {"name": "n", "type": "i32"}], "returns": "bytes"}`,
+        r[1],
+        r[2],
+        `{"str": "a"}, {"int": ${r[3]}}`,
+        `{"hex": "${r[4]}", "label": "${r[5]}"}`,
+      ),
+      r[6],
+    )
   }
 }
 
 /** The fidelity gate. */
 export const main = (): i32 => {
   const t = new Suite("spec/gates/fidelity")
+  fidelityTestBase64(t)
+  fidelityTestBareVariant(t)
   const all = gateFidelity(fidelityTestCtx("r.txt"))
   t.ok("a quote that is there", !fidelityTestHas(all, "R1:", ""))
   t.ok(

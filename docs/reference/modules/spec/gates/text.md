@@ -26,8 +26,11 @@ Generated from [src/spec/gates/text.ts](https://github.com/amritk/vector/blob/ma
 - [`gateKeywordName`](#gatekeywordname)
 - [`gateLines`](#gatelines)
 - [`gateQuotePairs`](#gatequotepairs)
+- [`gateTextStarts`](#gatetextstarts)
 - [`gateTextLines`](#gatetextlines)
 - [`gateIntRounds`](#gateintrounds)
+- [`gateIntPrinted`](#gateintprinted)
+- [`gateIntBare`](#gateintbare)
 - [`gateIntLines`](#gateintlines)
 - [`gateIntLabelCount`](#gateintlabelcount)
 - [`gateF64Printed`](#gatef64printed)
@@ -213,6 +216,33 @@ the quotes, opening at each even index and closing after it
 
 </scalar-field>
 
+### gateTextStarts
+
+Where a value is printed whole (as gateTextLines reads it), as offsets:
+`salt` is printed at 16 of `(P="passwd", S="salt")`, and `pass` nowhere.
+
+```ts
+function gateTextStarts(lines: string, value: string): i32[]
+```
+
+<scalar-field name="lines" type="string" required>
+
+the section's lines (gateLines), or one label
+
+</scalar-field>
+
+<scalar-field name="value" type="string" required>
+
+the value, whitespace normalized
+
+</scalar-field>
+
+<scalar-field name="returns" type="i32[]">
+
+the offset in `lines` of each whole printing, ascending; empty for ""
+
+</scalar-field>
+
 ### gateTextLines
 
 The lines on which a value is printed whole: in quotes, as a whole line,
@@ -273,6 +303,68 @@ the integer, as decimal text
 <scalar-field name="returns" type="i32[]">
 
 the printings that carry it; empty when none
+
+</scalar-field>
+
+### gateIntPrinted
+
+Where a label is printed with the integer `n` after it, as offsets of the
+integer: `c=1` of `(P="passwd", c=1, dkLen=64)` is at 15.
+
+```ts
+function gateIntPrinted(lines: string, label: string, n: string): i32[]
+```
+
+<scalar-field name="lines" type="string" required>
+
+the section's lines (gateLines), or one label
+
+</scalar-field>
+
+<scalar-field name="label" type="string" required>
+
+the label
+
+</scalar-field>
+
+<scalar-field name="n" type="string" required>
+
+the integer, as decimal text
+
+</scalar-field>
+
+<scalar-field name="returns" type="i32[]">
+
+the offset in `lines` of each printing of `n` after the label, ascending
+
+</scalar-field>
+
+### gateIntBare
+
+Where the integer `n` is printed whole, with or without a name before it,
+as offsets of its first byte: in decimal (its `-` with it) or 0x hex, not
+inside a longer word or number, so `1` is at 4 of `(c=1)`, `-1` at 4 of
+`(n=-1)`, and `1` is in neither `(n=-1)` nor `(n=10)`.
+
+```ts
+function gateIntBare(lines: string, n: string): i32[]
+```
+
+<scalar-field name="lines" type="string" required>
+
+the text, such as one call label
+
+</scalar-field>
+
+<scalar-field name="n" type="string" required>
+
+the integer, as decimal text
+
+</scalar-field>
+
+<scalar-field name="returns" type="i32[]">
+
+each offset, ascending
 
 </scalar-field>
 

@@ -26,7 +26,7 @@ vector does two things, and no model is involved in either:
    not prove. See
    [Proving a function](guide/guides/proving.md#the-verdicts).
 3. **`diff` exits 2 for `INVALID` and `ERROR`**, not 1 as `verify` does.
-   So does `MISMATCH`, as for `verify`: a witness that did not replay.
+   So does `MISMATCH`.
    `EQUIVALENT` exits 0; `DIFFERENT` and `UNDECIDED` exit 1. Do not report `UNDECIDED` as equivalent. See
    [Exit codes](guide/guides/exit-codes.md#by-command).
 4. **The proof is over exact rationals, and an `Int` is unbounded there.**
@@ -49,8 +49,7 @@ vector does two things, and no model is involved in either:
    each `requires` after the first lean only on the checks before them.
    So `x != 0 and 1 / x > 0` is safe; `1 / x > 0 and x != 0` is a
    division hazard.
-9. **`--emit` writes only on `PROVEN`.** Else it writes nothing, leaving
-   an existing file alone.
+9. **`--emit` writes only on `PROVEN`**, leaving an existing file alone.
 10. **`spec run` `SATISFIED` is evidence, not proof.** The implementation
    returned the printed vectors and held each property at its samples.
    `spec mutate` (no `--nish` on an install or a `build/seed` checkout)
@@ -87,7 +86,7 @@ vector does two things, and no model is involved in either:
 - **A contract's gates.** `spec check` runs shape, fidelity, completeness,
   provenance, coverage, typing, signatures and domain: quotes in their section,
   MUST and SHALL tested or excluded, values whole and named, one case per
-  vector.
+  vector (`= hex` lines, wrapped call labels in order, `With …:` headings).
   See [The gates](guide/guides/spec-to-contract.md#the-gates).
 - **Module paths.** Two or more `/`-split segments, each
   `[a-z][a-z0-9_]*(-[a-z0-9][a-z0-9_]*)*`. See [Modules and names](guide/guides/writing-a-spec.md#modules-and-names).
