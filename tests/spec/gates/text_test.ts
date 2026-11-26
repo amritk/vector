@@ -6,6 +6,7 @@ import {
   GATE_RETRACT,
   gateByteLists,
   gateF64Printed,
+  gateIntBare,
   gateIntLabelCount,
   gateIntLines,
   gateIntPrinted,
@@ -95,9 +96,28 @@ export const main = (): i32 => {
     [label, "dkLen", "6", ""],
     ["(xc=1, c=1)", "c", "1", "9"],
     ["(c=1, c=2, c=1)", "c", "1", "3,13"],
+    // An empty value is no integer, though any byte ends one.
+    ['(P="a", S="b")', "P", "", ""],
   ]
   for (const r of printed) {
     t.eqStr(`gateIntPrinted ${r[0]} ${r[1]}=${r[2]}`, textTestNums(gateIntPrinted(r[0], r[1], r[2])), r[3])
+  }
+  const bare: string[][] = [
+    ["(c=1)", "1", "3"],
+    ["(c=1, n=1)", "1", "3,8"],
+    ["(n=-1)", "-1", "3"],
+    ["(n=-1)", "1", ""],
+    ["(n=10)", "1", ""],
+    ["(n=0x10)", "16", "3"],
+    ["(n=0x10)", "10", ""],
+    ["(x1=2)", "1", ""],
+    ["(v=1.5)", "5", ""],
+    ["(v=1.5)", "1", ""],
+    ["(a_1=2)", "1", ""],
+    ["(n=1)", "", ""],
+  ]
+  for (const r of bare) {
+    t.eqStr(`gateIntBare ${r[0]} ${r[1]}`, textTestNums(gateIntBare(r[0], r[1])), r[2])
   }
   t.eqStr("f64s as printed", gateF64Printed("x = 1.5\nx: -0\nx NaN\nx = 1.5.2", "x").join("|"), "1.5|-0|NaN")
   t.eqStr("the sentence around an offset", gateSentenceAt("One. It MUST hold. Two.", [], 8), "It MUST hold.")

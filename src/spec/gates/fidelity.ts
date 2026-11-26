@@ -58,6 +58,7 @@ import { gateResultWord, gateStatesResult } from "./result"
 import {
   gateByteLists,
   gateF64Printed,
+  gateIntBare,
   gateIntLabelCount,
   gateIntLines,
   gateIntPrinted,
@@ -109,6 +110,8 @@ class GateBound {
    * printed under (gateLabelArgs), and not by line or round otherwise.
    */
   loose: boolean
+  /** For a paired unlabelled integer: the name its call label prints it after (`dkLen` of `dkLen=64`), or null. */
+  callName: string | null
   /** For a hex value or labelled integer: the section line of each printing that is it. */
   shown: i32[]
   /** For a hex value: its lowercase hex, found in prose as `0x` and it (gateProseCount); "" otherwise. */
@@ -125,6 +128,7 @@ class GateBound {
     this.call = []
     this.other = false
     this.loose = false
+    this.callName = null
     this.of = 0
     this.has = []
     this.printed = []
@@ -811,16 +815,32 @@ const gateLabelStarts = (b: GateBound, label: string): i32[] => {
     return out
   }
   if (b.loose) {
-    const spans = gateFidSpans(s)
-    for (let i = 0; i >= 0 && i < spans.length - 1; i = gateFidPlus(i, 2)) {
-      const a = spans[i]
-      if (s.substring(a, spans[i + 1]) === b.num) {
-        out.push(a)
-      }
-    }
-    return out
+    return gateIntBare(s, b.num)
   }
   return name !== null ? gateIntPrinted(s, name, b.num) : out
+}
+
+/**
+ * The name a call label prints before offset `p` with `=` (`dkLen` of
+ * `dkLen=64`, `p` at `64`), spaces allowed around the `=`; null when none.
+ */
+const gateBareName = (s: string, p: i32): string | null => {
+  let i = p
+  while (i > 0 && i <= s.length && s.charCodeAt(i - 1) === 32) {
+    i = i - 1
+  }
+  if (!(i > 0 && i <= s.length && s.charCodeAt(i - 1) === 61)) {
+    return null
+  }
+  i = i - 1
+  while (i > 0 && i <= s.length && s.charCodeAt(i - 1) === 32) {
+    i = i - 1
+  }
+  const end = i
+  while (i > 0 && i <= s.length && gateNameChar(s.charCodeAt(i - 1))) {
+    i = i - 1
+  }
+  return i < end ? s.substring(i, end) : null
 }
 
 /**
@@ -920,10 +940,23 @@ const gateLabelArgs = (l: GateLits, args: i32): void => {
     // that printing's lines: the contract's label is bound to it ignoring case.
     let prev = -1
     let prevAt = ""
+    // The numbers labelled integers are printed as, after their names: an
+    // unlabelled integer does not pair with one (`1` with the `1` of `c=1`).
+    const claimed: i32[] = []
+    for (let a = 0; a < late.length && a < bounds.length; a++) {
+      const b = bounds[a]
+      if (b.label !== null && b.lines === null && !b.loose) {
+        for (const p of gateLabelStarts(b, vl)) {
+          claimed.push(p)
+        }
+      }
+    }
     // late holds one entry per argument, and bounds holds more than args.
     for (let a = 0; a < late.length && a < bounds.length; a++) {
       const b = bounds[a]
-      const at = gateLabelStarts(b, vl)
+      const at = b.loose
+        ? gateLabelStarts(b, vl).filter((p: i32): boolean => claimed.indexOf(p) < 0)
+        : gateLabelStarts(b, vl)
       if (at.length === 0) {
         continue
       }
@@ -947,6 +980,9 @@ const gateLabelArgs = (l: GateLits, args: i32): void => {
       if (!named) {
         prev = next
         prevAt = b.at
+      }
+      if (b.loose && b.num.length > 0) {
+        b.callName = gateBareName(rfcNormalize(vl), next)
       }
       b.paired = true
       e.callArgs = true
@@ -1065,6 +1101,9 @@ const gateSecLine = (l: GateLits, k: i32): i32 => {
  * is not placed by line (a decimal fraction, a block of words).
  */
 const gateBoundSecLines = (l: GateLits, b: GateBound): i32[] | null => {
+  if (b.loose && b.paired) {
+    return b.call.map((k: i32): i32 => gateSecLine(l, k))
+  }
   if (b.lines !== null) {
     return gateBoundPlaces(b).map((k: i32): i32 => gateSecLine(l, k))
   }
@@ -1117,6 +1156,11 @@ const gateHeadingCase = (l: GateLits, inSection: string): void => {
   const cases: i32[][] = []
   const lost: string[] = []
   for (const b of l.bounds) {
+    // An unplaced loose bound was warned about (gateLooseWarn), or is an
+    // empty value found printed: it says nothing of the case.
+    if (b.loose && !b.paired) {
+      continue
+    }
     const at = gateBoundSecLines(l, b)
     if (at === null) {
       lost.push(b.at)
@@ -2184,7 +2228,14 @@ const gateCallHead = (l: GateLits, b: GateBound, label: string): string => {
         out = gateLabelUnText(out, a.text)
       }
     } else if (a.loose && a.paired && a.num.length > 0) {
-      out = gateLabelUnBare(out, a.num)
+      // Cut by the name it is printed after, in every label, so a sibling
+      // printing another number there is still a sibling.
+      const named = a.callName
+      if (named !== null) {
+        names.push(named)
+      } else {
+        out = gateLabelUnBare(out, a.num)
+      }
     } else if ((a.paired || a.other) && name !== null) {
       // An integer the vector binds and a call label prints (its own, or
       // another case's) is an argument wherever that name is printed,
