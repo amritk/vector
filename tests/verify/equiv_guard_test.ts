@@ -130,6 +130,16 @@ const eqgPairing = (t: Suite): void => {
   const removed = pairFunctions(one, empty)
   t.eqI32("only in the old version: removed", toI32(removed.removed.length), 1)
   t.eqI32("only in the old version: not added", toI32(removed.added.length), 0)
+  // Two new functions named f: the old f pairs with the first, here the
+  // two-parameter one, so the pairing is a signature change.
+  if (one.functions.length > 0 && two.functions.length > 0) {
+    const twice = new Program("versions")
+    twice.functions.push(two.functions[0])
+    twice.functions.push(one.functions[0])
+    const first = pairFunctions(one, twice)
+    t.eqI32("a name twice: the first is paired, not comparable", toI32(first.comparable.length), 0)
+    t.eqI32("a name twice: the first is paired, a signature change", toI32(first.signatureChanged.length), 1)
+  }
 }
 
 // emitDiffScript gives a pair whose old version has fewer parameters no
@@ -161,6 +171,24 @@ const eqgShortPair = (t: Suite): void => {
   t.ok("a short pair: assembleDiffs refuses", refused.isErr())
   if (refused.isErr()) {
     t.eqStr("a short pair: the count message", refused.error, "diff: 4 answers for 4 queries over 2 pairs")
+  }
+  // A caller whose counts are consistent with a short pair: refused on the
+  // parameters, where the old code read past the old version's.
+  const consistent = assembleDiffs([short], eqgQueries(4), eqgAnswers(4))
+  t.ok("a short pair, consistent counts: refused", consistent.isErr())
+  if (consistent.isErr()) {
+    t.eqStr(
+      "a short pair, consistent counts: the parameter message",
+      consistent.error,
+      "diff: f has 2 parameters but its old version has 1",
+    )
+  }
+  const same = assembleDiffs([equal], eqgQueries(4), eqgAnswers(4))
+  t.ok("the same parameters, consistent counts: accepted", same.isOk())
+  const longer = assembleDiffs([long], eqgQueries(4), eqgAnswers(4))
+  t.ok("an old version with more parameters, consistent counts: accepted", longer.isOk())
+  if (longer.isOk()) {
+    t.eqI32("an old version with more parameters: no rename", toI32(longer.value[0].paramRenames.length), 0)
   }
 }
 
@@ -402,9 +430,18 @@ const eqgRender = (t: Suite): void => {
   delta.newResult = "4"
   report.float64Deltas.push(new Float64Diff("g", other))
   report.float64Deltas.push(new Float64Diff("f", delta))
+  // A second delta under the same name: the first one is rendered.
+  const later = new Float64Delta()
+  later.found = true
+  later.inputs.names.push("w")
+  later.inputs.values.push("6")
+  later.oldResult = "5"
+  later.newResult = "4"
+  report.float64Deltas.push(new Float64Diff("f", later))
   const text = renderDiffSummary(DIFF_DIFFERENT, report)
   t.contains("f's own delta, every input", text, "float64: at x = 1, y = 2 → old = 3, new = 4")
   t.ok("not another function's delta", text.indexOf("z = 9") < 0)
+  t.ok("a name twice: not the later delta", text.indexOf("w = 6") < 0)
   t.eqStr("a delta by name: DIFFERENT", diffPairStatus(report, report.matched[0]), DIFF_DIFFERENT)
   t.eqStr("no delta by that name: EQUIVALENT", diffPairStatus(report, report.matched[1]), DIFF_EQUIVALENT)
   const json = outJsonRender(diffReportJson(report))

@@ -275,9 +275,10 @@ export const emitDiffScript = (pairs: FunctionPair[], oldProgram: Program, newPr
     const oldFn = pairs[idx].oldFn
     const newFn = pairs[idx].newFn
     // pairFunctions never pairs an old version with fewer parameters than
-    // the new one: such a pair gets no queries, so the query count that
-    // assembleDiffs checks refuses the script rather than leave a new
-    // parameter unbound in the old version.
+    // the new one. Skipping such a pair, rather than leaving a new parameter
+    // unbound in the old version, is safe only because assembleDiffs refuses
+    // it: its query count no longer matches the pairs, and assembleDiffs
+    // checks the parameter counts again before reading renames.
     if (oldFn.params.length < newFn.params.length) {
       continue
     }
@@ -638,9 +639,16 @@ export const assembleDiffs = (
       diffCheck(q2, a2),
     )
     m.sharedDomain = diffCheck(q3, a3)
-    // Renames pair parameters by position; a pair with fewer old parameters
-    // has no rename past the old ones (emitDiffScript gives it no queries,
-    // so the count check above has already refused it).
+    // Renames pair parameters by position, so every new parameter needs an
+    // old one. emitDiffScript gives a shorter old version no queries, so the
+    // count check above refuses its script; this refuses a caller whose
+    // counts are consistent anyway. With it, the second bound below never
+    // stops the loop early.
+    if (oldFn.params.length < newFn.params.length) {
+      return Err(
+        `diff: ${newFn.name} has ${newFn.params.length} parameters but its old version has ${oldFn.params.length}`,
+      )
+    }
     for (let i = 0; i < toI32(newFn.params.length) && i < toI32(oldFn.params.length); i++) {
       const oldName = oldFn.params[i].name
       const newName = newFn.params[i].name
