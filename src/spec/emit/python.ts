@@ -299,10 +299,39 @@ const emitPyOperands = (ctx: EmitPyContext, e: Expr): string => {
       }
     }
   }
-  return emitPyTypeOf(ctx, e.args[0])
+  return emitPyArgType(ctx, e, 0)
 }
 
-const emitPyArg = (ctx: EmitPyContext, e: Expr, i: i32, want: string | null): string => emitPyExpr(ctx, e.args[i], want)
+/** Records `msg` in `errors` unless it is already there. */
+const emitPyAddOnce = (errors: string[], msg: string): void => {
+  if (errors.indexOf(msg) < 0) {
+    errors.push(msg)
+  }
+}
+
+/**
+ * Argument `i` of an op, or null once its absence is recorded: a checked
+ * contract gives every op its arity, so only a contract built by hand lacks one.
+ */
+const emitPyArgAt = (ctx: EmitPyContext, e: Expr, i: i32): Expr | null => {
+  if (i >= 0 && i < e.args.length) {
+    return e.args[i]
+  }
+  emitPyAddOnce(ctx.errors, `${e.name} has no argument ${i}`)
+  return null
+}
+
+/** The type of argument `i` of an op ("null" once its absence is recorded). */
+const emitPyArgType = (ctx: EmitPyContext, e: Expr, i: i32): string => {
+  const x = emitPyArgAt(ctx, e, i)
+  return x === null ? "null" : emitPyTypeOf(ctx, x)
+}
+
+/** Argument `i` of an op, wanted at `want` ("" once its absence is recorded). */
+const emitPyArg = (ctx: EmitPyContext, e: Expr, i: i32, want: string | null): string => {
+  const x = emitPyArgAt(ctx, e, i)
+  return x === null ? "" : emitPyExpr(ctx, x, want)
+}
 
 /** An expression where a value of type `want` goes (null: its own type). */
 const emitPyExpr = (ctx: EmitPyContext, e: Expr, want: string | null): string => {
@@ -315,9 +344,15 @@ const emitPyExpr = (ctx: EmitPyContext, e: Expr, want: string | null): string =>
       ctx.errors.push(`unknown function ${e.name}`)
       return ""
     }
+    // typingCall checks a call's arity at extraction; this guards a contract built by hand.
+    if (e.args.length !== sig.params.length) {
+      ctx.errors.push(`${e.name} takes ${sig.params.length} arguments, got ${e.args.length}`)
+      return ""
+    }
     const args: string[] = []
-    for (let i = 0; i < e.args.length; i++) {
-      args.push(emitPyExpr(ctx, e.args[i], vocabValueType(sig.params[i].type)))
+    const params = sig.params
+    for (let i = 0; i < e.args.length && i < params.length; i++) {
+      args.push(emitPyExpr(ctx, e.args[i], vocabValueType(params[i].type)))
     }
     return emitPyCall(sig, args)
   }
@@ -344,17 +379,13 @@ const emitPyHelperOp = (ctx: EmitPyContext, e: Expr): string | null => {
     const signed = vocabReadType(op).startsWith("i") ? "True" : "False"
     return `_bytes_int(u, ${emitPyArg(ctx, e, 0, null)}, ${vocabByteWidth(op)}, "${order}", ${signed})`
   }
-  const one = ["zeros", "utf8", "ascii", "strLen"]
-  const oneHelper = ["_fill(0, ", "_utf8(", "_ascii(", "_str_len("]
-  const at = one.indexOf(op)
-  if (at >= 0) {
-    return `${oneHelper[at]}${emitPyArg(ctx, e, 0, null)})`
+  if (op === "zeros" || op === "utf8" || op === "ascii" || op === "strLen") {
+    const helper = op === "zeros" ? "_fill(0, " : op === "utf8" ? "_utf8(" : op === "ascii" ? "_ascii(" : "_str_len("
+    return `${helper}${emitPyArg(ctx, e, 0, null)})`
   }
-  const two = ["fill", "flipBit", "charAt"]
-  const twoHelper = ["_fill", "_flip_bit", "_char_at"]
-  const at2 = two.indexOf(op)
-  if (at2 >= 0) {
-    return `${twoHelper[at2]}(${emitPyArg(ctx, e, 0, null)}, ${emitPyArg(ctx, e, 1, null)})`
+  if (op === "fill" || op === "flipBit" || op === "charAt") {
+    const helper = op === "fill" ? "_fill" : op === "flipBit" ? "_flip_bit" : "_char_at"
+    return `${helper}(${emitPyArg(ctx, e, 0, null)}, ${emitPyArg(ctx, e, 1, null)})`
   }
   if (op === "concat" || op === "strConcat") {
     return `(${emitPyArg(ctx, e, 0, null)} + ${emitPyArg(ctx, e, 1, null)})`
@@ -387,7 +418,7 @@ const emitPyOp = (ctx: EmitPyContext, e: Expr, want: string | null): string => {
     return emitPyConv(`len(${emitPyArg(ctx, e, 0, null)})`, "i32", want)
   }
   if (op === "unwrap") {
-    const empty = emitPyTypeOf(ctx, e.args[0]) === "string?" ? `""` : `b""`
+    const empty = emitPyArgType(ctx, e, 0) === "string?" ? `""` : `b""`
     return `u.get(${emitPyArg(ctx, e, 0, null)}, ${empty})`
   }
   if (op === "isNull") {
@@ -408,8 +439,8 @@ const emitPyOp = (ctx: EmitPyContext, e: Expr, want: string | null): string => {
     return emitPyConv(s, emitPyTypeOf(ctx, e), want)
   }
   if (op === "<" || op === "<=" || op === ">" || op === ">=" || op === "==" || op === "!=") {
-    const l = emitPyTypeOf(ctx, e.args[0])
-    const side = l === "null" ? emitPyTypeOf(ctx, e.args[1]) : l
+    const l = emitPyArgType(ctx, e, 0)
+    const side = l === "null" ? emitPyArgType(ctx, e, 1) : l
     const t: string | null = vocabIsIntType(side) ? emitPyOperands(ctx, e) : null
     return `(${emitPyArg(ctx, e, 0, t)} ${op} ${emitPyArg(ctx, e, 1, t)})`
   }
@@ -519,8 +550,9 @@ const emitPyIterate = (k: Clause, sig: FnSig, args: string[], name: string): str
   const lines: string[] = []
   const vars: string[] = []
   for (let i = 0; i < args.length; i++) {
+    const a = args[i]
     vars.push(`it_a${i}`)
-    lines.push(`    it_a${i} = ${args[i]}`)
+    lines.push(`    it_a${i} = ${a}`)
   }
   const optional = vocabIsOptional(vocabValueType(sig.returns))
   lines.push(`    for it_i in range(1, ${it.count}):`)
@@ -564,9 +596,21 @@ const emitPyVectorF64 = (k: Clause, expect: Literal, name: string, call: string)
 }
 
 /** One forall variable's sample table, as a list. */
-const emitPyTable = (name: string, type: string, j: i32, samples: Sample[], out: string[]): void => {
+const emitPyTable = (
+  ctx: EmitPyContext,
+  name: string,
+  type: string,
+  j: i32,
+  samples: Sample[],
+  out: string[],
+): void => {
   const vals: string[] = []
   for (const s of samples) {
+    // The sampler gives every sample a value for each variable; this guards a table built by hand.
+    if (j < 0 || j >= s.args.length) {
+      emitPyAddOnce(ctx.errors, `a sample has no value for ${name}`)
+      return
+    }
     const lit = s.args[j]
     if (vocabIsIntType(type)) {
       vals.push(emitPyInt(lit.text))
@@ -597,7 +641,7 @@ const emitPyProperty = (ctx: EmitPyContext, k: Clause, samples: Sample[]): strin
   }
   for (let j = 0; j < k.forall.length; j++) {
     const v = k.forall[j]
-    emitPyTable(v.name, v.type, j, samples, out)
+    emitPyTable(ctx, v.name, v.type, j, samples, out)
   }
   const undefinedWhy = emitUndefinedWhy(assert)
   const usesUnwrap = undefinedWhy !== null
@@ -632,6 +676,19 @@ const emitPyProperty = (ctx: EmitPyContext, k: Clause, samples: Sample[]): strin
   return out.join("\n")
 }
 
+/**
+ * Where the test finds `module` when it is one of `localModules`, or null
+ * when it is not one (`emitPyProgram` refuses options whose two lists differ in length).
+ */
+const emitPyLocalImport = (opts: EmitOptions, module: string): string | null => {
+  for (let i = 0; i < opts.localModules.length && i < opts.localImports.length; i++) {
+    if (opts.localModules[i] === module) {
+      return opts.localImports[i]
+    }
+  }
+  return null
+}
+
 /** The imports of the functions under test, by module: by dotted path, or loaded from the file a package places. */
 const emitPyImports = (ctx: EmitPyContext, called: string[]): string => {
   const fns: FnSig[] = []
@@ -648,19 +705,20 @@ const emitPyImports = (ctx: EmitPyContext, called: string[]): string => {
   }
   const lines: string[] = []
   for (let i = 0; i < modules.length; i++) {
+    const mod = modules[i]
     const names: string[] = []
     for (const f of fns) {
-      if ((f.module ?? ctx.c.target.module) === modules[i]) {
+      if ((f.module ?? ctx.c.target.module) === mod) {
         names.push(emitPyName(f))
       }
     }
-    const dotted = emitPyModule(ctx.c, modules[i])
-    const local = ctx.opts.localModules.indexOf(modules[i])
-    if (local < 0) {
+    const dotted = emitPyModule(ctx.c, mod)
+    const local = emitPyLocalImport(ctx.opts, mod)
+    if (local === null) {
       lines.push(`from ${dotted} import ${names.join(", ")}`)
     } else {
       const m = `_m${i}`
-      lines.push(`${m} = _load(${emitQuote(dotted)}, ${emitQuote(`${ctx.opts.localImports[local]}.py`)})`)
+      lines.push(`${m} = _load(${emitQuote(dotted)}, ${emitQuote(`${local}.py`)})`)
       for (const n of names) {
         lines.push(`${n} = ${m}.${n}`)
       }
@@ -965,6 +1023,9 @@ export const emitPyProgram = (
   opts: EmitOptions,
   harness: string,
 ): Result<string, string[]> => {
+  if (opts.localImports.length !== opts.localModules.length) {
+    return Err([`${opts.localModules.length} local modules but ${opts.localImports.length} import paths`])
+  }
   const refused = emitPyRefusals(c)
   if (refused.length > 0) {
     return Err(refused)

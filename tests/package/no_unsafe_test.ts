@@ -51,6 +51,7 @@ export const main = (): i32 => {
     ["// the nish:unsafe module wraps", "no"],
     ['const s = "nish:unsafe is named here"', "no"],
     ['import { x } from "./nish:unsafe-notes"', "no"],
+    ['import { x } from "./a" // was "nish:unsafe"', "no"],
   ]
   for (const r of rows) {
     t.ok(`matcher: ${r[0]}`, unsafeImports(r[0]) === (r[1] === "yes"))

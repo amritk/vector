@@ -44,9 +44,12 @@ const SAMPLE_QUERY_SLACK_MS: i32 = 10000
  * @returns the per-query timeout in milliseconds
  */
 export const sampleQueryTimeout = (queryCount: i32): i32 => {
-  const n = queryCount > 0 ? queryCount : 1
-  const share = (z3Timeout(queryCount) - SAMPLE_QUERY_SLACK_MS) / n
-  return share < SAMPLE_QUERY_MAX_MS ? share : SAMPLE_QUERY_MAX_MS
+  // In i64, where neither the difference nor the quotient of two i32s can
+  // overflow; the quotient truncates as the i32 one does.
+  const total = toI64(z3Timeout(queryCount)) - toI64(SAMPLE_QUERY_SLACK_MS)
+  const n = toI64(queryCount)
+  const share = n > 0 ? total / n : total
+  return share < toI64(SAMPLE_QUERY_MAX_MS) ? toI32(share) : SAMPLE_QUERY_MAX_MS
 }
 
 /** The six comparison operators. */
@@ -99,8 +102,12 @@ export const sampleSmtName = (v: ForallVar): string => (vocabIsIntType(v.type) ?
 
 /** The variable named `name`, or null. */
 const sampleVar = (vars: ForallVar[], name: string): ForallVar | null => {
-  const i = vars.findIndex((v: ForallVar): boolean => v.name === name)
-  return i < 0 ? null : vars[i]
+  for (const v of vars) {
+    if (v.name === name) {
+      return v
+    }
+  }
+  return null
 }
 
 /**
@@ -352,25 +359,28 @@ export const sampleIntTerm = (e: Expr, vars: ForallVar[], ty: string): string | 
     const v = sampleVar(vars, e.name)
     return v !== null && v.type === ty ? sampleSmtName(v) : null
   }
-  if (e.kind !== ExprKind.Op || e.args.length === 0) {
+  const args = e.args
+  if (e.kind !== ExprKind.Op || args.length < 1) {
     return null
   }
+  const first = args[0]
   if (e.name === "len" || e.name === "strLen") {
-    return ty === "i32" ? sampleLenTerm(e.args[0], vars) : null
+    return ty === "i32" ? sampleLenTerm(first, vars) : null
   }
   if (vocabHas(vocabReadOps(), e.name)) {
-    return ty === vocabReadType(e.name) ? sampleReadTerm(e, vars) : null
+    return ty === vocabReadType(e.name) ? sampleReadTerm(e.name, first, vars) : null
   }
-  if (e.args.length !== 2) {
+  if (args.length !== 2) {
     return null
   }
-  const l = sampleIntTerm(e.args[0], vars, ty)
-  const r = sampleIntTerm(e.args[1], vars, ty)
+  const second = args[1]
+  const l = sampleIntTerm(first, vars, ty)
+  const r = sampleIntTerm(second, vars, ty)
   if (l === null || r === null) {
     return null
   }
   if (sampleIsBv(ty)) {
-    return sampleBvArith(e.name, l, r, e.args[1], ty)
+    return sampleBvArith(e.name, l, r, second, ty)
   }
   if (e.name === "+" || e.name === "-" || e.name === "*") {
     return `(${e.name} ${l} ${r})`
@@ -379,8 +389,8 @@ export const sampleIntTerm = (e: Expr, vars: ForallVar[], ty: string): string | 
     // Z3's mod is Euclidean and % truncates; they agree for a positive
     // literal divisor once the dividend's sign is pinned. A computed divisor,
     // which may be 0, stays outside the skeleton.
-    const d = e.args[1].lit
-    if (!sampleIsIntLit(e.args[1]) || d === null) {
+    const d = second.lit
+    if (!sampleIsIntLit(second) || d === null) {
       return null
     }
     const dv = sampleParseInt(d.text)
@@ -398,13 +408,18 @@ export const sampleIntTerm = (e: Expr, vars: ForallVar[], ty: string): string | 
  * differ, read as the read's type. Any other read is outside the skeleton,
  * since the skeleton models no bytes beyond their lengths.
  */
-const sampleReadTerm = (e: Expr, vars: ForallVar[]): string | null => {
-  const w = vocabByteWidth(e.name)
-  const arg = e.args[0]
+const sampleReadTerm = (op: string, arg: Expr, vars: ForallVar[]): string | null => {
+  const w = vocabByteWidth(op)
   if (arg.kind !== ExprKind.Op || !vocabHas(vocabWriteOps(), arg.name) || vocabByteWidth(arg.name) !== w) {
     return null
   }
-  const inner = arg.args[0]
+  // The contract's typing refuses a write without its operand; the skeleton
+  // models no such read.
+  const wargs = arg.args
+  if (wargs.length < 1) {
+    return null
+  }
+  const inner = wargs[0]
   const it = sampleIntTypeOf(inner, vars)
   if (it === null || it === "") {
     return null
@@ -414,18 +429,22 @@ const sampleReadTerm = (e: Expr, vars: ForallVar[]): string | null => {
     return null
   }
   let b = it === "i32" ? `((_ int2bv 32) ${x})` : x
-  const grow = w * 8 - sampleIntWidth(it)
+  // In u32, which cannot overflow: widths are at most 64 bits, so the
+  // difference is the i32 one.
+  const grow = toI32(toU32(w) * toU32(8) - toU32(sampleIntWidth(it)))
   if (grow > 0) {
     b = `((_ ${sampleIntSigned(it) ? "sign_extend" : "zero_extend"} ${grow}) ${b})`
   }
-  if (vocabBigEndian(e.name) !== vocabBigEndian(arg.name)) {
+  if (vocabBigEndian(op) !== vocabBigEndian(arg.name)) {
     const parts: string[] = []
     for (let i = 0; i < w; i++) {
-      parts.push(`((_ extract ${i * 8 + 7} ${i * 8}) ${b})`)
+      // In u32, which cannot overflow: i is a byte index below w.
+      const at = toU32(i) * toU32(8)
+      parts.push(`((_ extract ${at + toU32(7)} ${at}) ${b})`)
     }
     b = `(concat ${parts.join(" ")})`
   }
-  if (vocabReadType(e.name) !== "i32") {
+  if (vocabReadType(op) !== "i32") {
     return b
   }
   return `(ite (bvslt ${b} #x00000000) (- (bv2int ${b}) 4294967296) (bv2int ${b}))`
@@ -491,7 +510,12 @@ export const sampleWrapsOnInt = (e: Expr, vars: ForallVar[]): boolean => {
       return true
     }
   }
-  return e.args.some((a: Expr): boolean => sampleWrapsOnInt(a, vars))
+  for (const a of e.args) {
+    if (sampleWrapsOnInt(a, vars)) {
+      return true
+    }
+  }
+  return false
 }
 
 /** `t` clamped below at 0, or null. */
@@ -509,7 +533,8 @@ export const sampleLenTerm = (e: Expr, vars: ForallVar[]): string | null => {
   const lit = e.lit
   if (e.kind === ExprKind.Lit && lit !== null) {
     if (lit.kind === LitKind.Hex) {
-      return `${(lit.text.length / 2) * Math.max(lit.repeat, 1)}`
+      // In i64, where the product of two i32s cannot overflow.
+      return `${toI64(lit.text.length / 2) * toI64(Math.max(lit.repeat, 1))}`
     }
     if (lit.kind === LitKind.Str || lit.kind === LitKind.Ascii) {
       return `${lit.text.length}`
@@ -520,31 +545,34 @@ export const sampleLenTerm = (e: Expr, vars: ForallVar[]): string | null => {
     const v = sampleVar(vars, e.name)
     return v !== null && (v.type === "bytes" || v.type === "string") ? sampleSmtName(v) : null
   }
-  if (e.kind !== ExprKind.Op || e.args.length === 0) {
+  const args = e.args
+  if (e.kind !== ExprKind.Op || args.length < 1) {
     return null
   }
+  const first = args[0]
   const op = e.name
   if (vocabHas(vocabWriteOps(), op)) {
     return `${vocabByteWidth(op)}`
   }
   if (op === "flipBit" || op === "lower" || op === "upper" || op === "utf8") {
-    return sampleLenTerm(e.args[0], vars)
+    return sampleLenTerm(first, vars)
   }
   if (op === "zeros") {
-    return sampleNonNeg(sampleIntTerm(e.args[0], vars, "i32"))
+    return sampleNonNeg(sampleIntTerm(first, vars, "i32"))
   }
-  if (e.args.length < 2) {
+  if (args.length < 2) {
     return null
   }
+  const second = args[1]
   if (op === "fill") {
-    return sampleNonNeg(sampleIntTerm(e.args[1], vars, "i32"))
+    return sampleNonNeg(sampleIntTerm(second, vars, "i32"))
   }
-  const l = sampleLenTerm(e.args[0], vars)
+  const l = sampleLenTerm(first, vars)
   if (op === "charAt") {
-    const i = sampleIntTerm(e.args[1], vars, "i32")
+    const i = sampleIntTerm(second, vars, "i32")
     return l === null || i === null ? null : `(ite (and (>= ${i} 0) (< ${i} ${l})) 1 0)`
   }
-  const r = sampleLenTerm(e.args[1], vars)
+  const r = sampleLenTerm(second, vars)
   if (l === null || r === null) {
     return null
   }
@@ -557,23 +585,40 @@ export const sampleLenTerm = (e: Expr, vars: ForallVar[]): string | null => {
   return null
 }
 
+/** Both sides of an integer comparison as terms, and their type. */
+class SampleSides {
+  l: string
+  r: string
+  ty: string
+  constructor(l: string, r: string, ty: string) {
+    this.l = l
+    this.r = r
+    this.ty = ty
+  }
+}
+
 /** Both sides of an integer comparison as terms, then their type; null when either is outside the skeleton. */
-const sampleCompared = (e: Expr, vars: ForallVar[]): string[] | null => {
-  if (e.args.length !== 2) {
+const sampleCompared = (e: Expr, vars: ForallVar[]): SampleSides | null => {
+  const args = e.args
+  if (args.length !== 2) {
     return null
   }
-  const typed = e.args.findIndex((a: Expr): boolean => !sampleIsIntLit(a))
+  const left = args[0]
+  const right = args[1]
+  // The type of the first side that is not a bare literal; i32 when both are.
   let ty: string | null = "i32"
-  if (typed >= 0) {
-    ty = sampleIntTypeOf(e.args[typed], vars)
+  if (!sampleIsIntLit(left)) {
+    ty = sampleIntTypeOf(left, vars)
+  } else if (!sampleIsIntLit(right)) {
+    ty = sampleIntTypeOf(right, vars)
   }
   if (ty === null) {
     return null
   }
   const t = ty === "" ? "i32" : ty
-  const l = sampleIntTerm(e.args[0], vars, t)
-  const r = sampleIntTerm(e.args[1], vars, t)
-  return l === null || r === null ? null : [l, r, t]
+  const l = sampleIntTerm(left, vars, t)
+  const r = sampleIntTerm(right, vars, t)
+  return l === null || r === null ? null : new SampleSides(l, r, t)
 }
 
 /** A comparison's SMT operator in a type: `bvslt` and the like for a signed bit-vector, `bvult` for an unsigned one. */
@@ -611,12 +656,12 @@ export const sampleBoolTerm = (e: Expr, vars: ForallVar[]): string | null => {
       return null
     }
     if (op === "==") {
-      return `(= ${c[0]} ${c[1]})`
+      return `(= ${c.l} ${c.r})`
     }
     if (op === "!=") {
-      return `(not (= ${c[0]} ${c[1]}))`
+      return `(not (= ${c.l} ${c.r}))`
     }
-    return `(${sampleCompareOp(op, c[2])} ${c[0]} ${c[1]})`
+    return `(${sampleCompareOp(op, c.ty)} ${c.l} ${c.r})`
   }
   if (op === "and" || op === "or" || op === "not" || op === "implies") {
     const ts: string[] = []
@@ -655,11 +700,12 @@ export const sampleEdges = (e: Expr, vars: ForallVar[], out: SampleEdge[]): void
   if (e.kind === ExprKind.Op && sampleIsComparison(e.name)) {
     const c = sampleCompared(e, vars)
     if (c !== null) {
-      let edge = new SampleEdge(`(- ${c[0]} ${c[1]})`, ["(- 1)", "0", "1"])
-      if (sampleIsBv(c[2])) {
-        const ext = sampleIntSigned(c[2]) ? "sign_extend" : "zero_extend"
-        const w = sampleIntWidth(c[2]) + 2
-        edge = new SampleEdge(`(bvsub ((_ ${ext} 2) ${c[0]}) ((_ ${ext} 2) ${c[1]}))`, [
+      let edge = new SampleEdge(`(- ${c.l} ${c.r})`, ["(- 1)", "0", "1"])
+      if (sampleIsBv(c.ty)) {
+        const ext = sampleIntSigned(c.ty) ? "sign_extend" : "zero_extend"
+        // In u32, which cannot overflow: a width is at most 64.
+        const w = toU32(sampleIntWidth(c.ty)) + toU32(2)
+        edge = new SampleEdge(`(bvsub ((_ ${ext} 2) ${c.l}) ((_ ${ext} 2) ${c.r}))`, [
           `(bvneg (_ bv1 ${w}))`,
           `(_ bv0 ${w})`,
           `(_ bv1 ${w})`,
@@ -718,22 +764,34 @@ export const sampleScript = (
   let s = `(set-option :produce-models true)\n(set-option :timeout ${sampleQueryTimeout(queries.length)})\n(set-logic ALL)\n`
   const names: string[] = []
   for (let i = 0; i < vars.length; i++) {
-    const n = sampleSmtName(vars[i])
+    const v = vars[i]
+    const n = sampleSmtName(v)
     names.push(n)
-    s = `${s}(declare-const ${n} ${sampleSort(vars[i])})\n`
-    const ty = vars[i].type
-    const lo = sampleSmtLit(ranges[i][0], ty)
-    const hi = sampleSmtLit(ranges[i][1], ty)
-    const le = sampleCompareOp("<=", ty)
-    s = `${s}(assert (and (${le} ${lo} ${n}) (${le} ${n} ${hi})))\n`
+    s = `${s}(declare-const ${n} ${sampleSort(v)})\n`
+    // Only a caller that pairs vars and ranges wrongly finds no range. The
+    // script has no Err, so it carries an assertion z3 refuses (an
+    // undeclared name), and the run that sends it fails loudly.
+    let bound = `(sample-range-missing ${n})`
+    if (i < ranges.length) {
+      const range = ranges[i]
+      if (range.length >= 2) {
+        const ty = v.type
+        const lo = sampleSmtLit(range[0], ty)
+        const hi = sampleSmtLit(range[1], ty)
+        const le = sampleCompareOp("<=", ty)
+        bound = `(and (${le} ${lo} ${n}) (${le} ${n} ${hi}))`
+      }
+    }
+    s = `${s}(assert ${bound})\n`
   }
   if (whereTerm !== null) {
     s = `${s}(assert ${whereTerm})\n`
   }
   for (let i = 0; i < queries.length; i++) {
+    const q = queries[i]
     s = `${s}(push 1)\n`
-    if (queries[i].extra !== "") {
-      s = `${s}(assert ${queries[i].extra})\n`
+    if (q.extra !== "") {
+      s = `${s}(assert ${q.extra})\n`
     }
     s = `${s}(echo "@@Q${i}")\n(check-sat)\n`
     if (names.length > 0) {
