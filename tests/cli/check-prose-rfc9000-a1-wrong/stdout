@@ -1,0 +1,16 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ rfc9000-a1-wrong · RFC 9000 (QUIC: A UDP-Based Multiplexed and Secure Transport) · nish/quic/varint
+ Status: INVALID
+
+ Gate failures
+  ✘ fidelity A1-WRONG.expect: the integer 494878333 is printed in RFC §A.1 ("Sample Variable-Length Integer Decoding"), but never in one sentence with args[0] 0xc2197c5eff14e88c, so nothing pairs it with them as one test case
+
+ Requirements
+  ○ R-A1  §A.1 DEFINITION  "For example, the eight-byte sequence 0xc2197c5eff14e88c decodes…"
+      ○ A1-WRONG
+
+ Warnings
+  ! clauses: no property clauses: the contract checks only the RFC's own vectors
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

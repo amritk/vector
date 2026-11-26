@@ -1,0 +1,13 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ rfc6455-accept · RFC 6455 (The WebSocket Protocol) · nish/ws
+ Status: CONTRACT_VALID
+
+ Requirements
+  ○ R-ACC  §4.2.2 DEFINITION  "As an example, if the value of the |Sec-WebSocket-Key| header f…"
+      ○ ACC
+
+ Warnings
+  ! clauses: no property clauses: the contract checks only the RFC's own vectors
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run
