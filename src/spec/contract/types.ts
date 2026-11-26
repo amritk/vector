@@ -416,8 +416,7 @@ export class Truncate {
    * @returns the count of bits or bytes, as `unit` says
    */
   count(): i64 {
-    // In u64: a length read from bits is a whole number of bytes, so × 8 fits.
-    return this.unit === "bytes" ? this.bytes : toI64(toU64(this.bytes) * 8)
+    return this.unit === "bytes" ? this.bytes : this.bytes << 3
   }
 }
 

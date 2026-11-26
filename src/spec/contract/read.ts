@@ -262,9 +262,8 @@ const readLiteral = (r: ContractReader, v: JsonValue, at: string): Literal | nul
     readFail(r, at, "a literal object")
     return null
   }
-  const kinds = vocabLiteralKinds()
   const k = readLiteralKind(r, v)
-  if (k < 0 || k >= kinds.length) {
+  if (k < 0) {
     readFail(r, at, "not a literal (hex, ascii, str, int, f64, bool, null, concat, words16, words32, words64)")
     return null
   }
@@ -321,24 +320,28 @@ const readLiteral = (r: ContractReader, v: JsonValue, at: string): Literal | nul
       readFail(r, `${at}.null`, "must be true")
     }
   } else if (k >= 8) {
-    const key = kinds[k]
-    readObject(r, v, at, [key, "label", "unchecked"])
-    const itemsOrNull = readArray(r, v, key, at, true)
-    if (itemsOrNull !== null) {
-      const items: JsonValue[] = itemsOrNull
-      const w = new Literal(k === 8 ? LitKind.Words16 : k === 9 ? LitKind.Words32 : LitKind.Words64, "")
-      if (items.length === 0) {
-        readFail(r, `${at}.${key}`, "a non-empty array")
-      }
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i]
-        if (readIsKind(r, item, JSON_VALUE_STRING)) {
-          w.words.push(r.doc.string(item))
-        } else {
-          readFail(r, `${at}.${key}[${i}]`, "a string")
+    // Always true: readLiteralKind returns an index into these kinds.
+    const kinds = vocabLiteralKinds()
+    if (k < kinds.length) {
+      const key = kinds[k]
+      readObject(r, v, at, [key, "label", "unchecked"])
+      const itemsOrNull = readArray(r, v, key, at, true)
+      if (itemsOrNull !== null) {
+        const items: JsonValue[] = itemsOrNull
+        const w = new Literal(k === 8 ? LitKind.Words16 : k === 9 ? LitKind.Words32 : LitKind.Words64, "")
+        if (items.length === 0) {
+          readFail(r, `${at}.${key}`, "a non-empty array")
         }
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i]
+          if (readIsKind(r, item, JSON_VALUE_STRING)) {
+            w.words.push(r.doc.string(item))
+          } else {
+            readFail(r, `${at}.${key}[${i}]`, "a string")
+          }
+        }
+        lit = w
       }
-      lit = w
     }
   } else {
     readObject(r, v, at, ["concat"])
@@ -427,14 +430,11 @@ const readExpr = (r: ContractReader, v: JsonValue, at: string, letOk: boolean): 
     const head = isCall ? "call" : "op"
     readObject(r, v, at, [head, "args"])
     const e = new Expr(isCall ? ExprKind.Call : ExprKind.Op, readRequiredString(r, v, head, at))
-    const argsOrNull = readArray(r, v, "args", at, true)
-    if (argsOrNull !== null) {
-      const args: JsonValue[] = argsOrNull
-      for (let i = 0; i < args.length; i++) {
-        const a = readExpr(r, args[i], `${at}.args[${i}]`, false)
-        if (a !== null) {
-          e.args.push(a)
-        }
+    const args: JsonValue[] = readArray(r, v, "args", at, true) ?? []
+    for (let i = 0; i < args.length; i++) {
+      const a = readExpr(r, args[i], `${at}.args[${i}]`, false)
+      if (a !== null) {
+        e.args.push(a)
       }
     }
     return e
@@ -501,11 +501,7 @@ const readTarget = (r: ContractReader, root: JsonValue, c: Contract): void => {
 }
 
 const readRequirements = (r: ContractReader, root: JsonValue, c: Contract): void => {
-  const itemsOrNull = readArray(r, root, "requirements", "contract", true)
-  if (itemsOrNull === null) {
-    return
-  }
-  const items: JsonValue[] = itemsOrNull
+  const items: JsonValue[] = readArray(r, root, "requirements", "contract", true) ?? []
   for (let i = 0; i < items.length; i++) {
     const item = items[i]
     const at = `requirements[${i}]`
@@ -562,11 +558,7 @@ const readOut = (r: ContractReader, o: JsonValue, at: string): OutBuffer | null 
 }
 
 const readFunctions = (r: ContractReader, root: JsonValue, c: Contract): void => {
-  const itemsOrNull = readArray(r, root, "functions", "contract", true)
-  if (itemsOrNull === null) {
-    return
-  }
-  const items: JsonValue[] = itemsOrNull
+  const items: JsonValue[] = readArray(r, root, "functions", "contract", true) ?? []
   for (let i = 0; i < items.length; i++) {
     const item = items[i]
     const at = `functions[${i}]`
@@ -577,20 +569,17 @@ const readFunctions = (r: ContractReader, root: JsonValue, c: Contract): void =>
       f.returns = readRequiredString(r, item, "returns", at)
       f.out = readOut(r, item, at)
       f.names = readOverrides(r, item, "names", at)
-      const paramsOrNull = readArray(r, item, "params", at, true)
-      if (paramsOrNull !== null) {
-        const params: JsonValue[] = paramsOrNull
-        for (let j = 0; j < params.length; j++) {
-          const param = params[j]
-          const pat = `${at}.params[${j}]`
-          if (readObject(r, param, pat, ["name", "type", "form", "names"])) {
-            const p = new Param()
-            p.name = readRequiredString(r, param, "name", pat)
-            p.type = readRequiredString(r, param, "type", pat)
-            p.form = readString(r, param, "form", pat, false)
-            p.names = readOverrides(r, param, "names", pat)
-            f.params.push(p)
-          }
+      const params: JsonValue[] = readArray(r, item, "params", at, true) ?? []
+      for (let j = 0; j < params.length; j++) {
+        const param = params[j]
+        const pat = `${at}.params[${j}]`
+        if (readObject(r, param, pat, ["name", "type", "form", "names"])) {
+          const p = new Param()
+          p.name = readRequiredString(r, param, "name", pat)
+          p.type = readRequiredString(r, param, "type", pat)
+          p.form = readString(r, param, "form", pat, false)
+          p.names = readOverrides(r, param, "names", pat)
+          f.params.push(p)
         }
       }
       c.functions.push(f)
@@ -672,14 +661,11 @@ const readIterate = (r: ContractReader, v: JsonValue, at: string): Iterate | nul
   const it = new Iterate()
   it.count = readCount(r, v, "count", at, 1, 1000000000, true)
   it.names = readStrings(r, v, "names", at, true) ?? []
-  const nextOrNull = readArray(r, v, "next", at, true)
-  if (nextOrNull !== null) {
-    const next: JsonValue[] = nextOrNull
-    for (let i = 0; i < next.length; i++) {
-      const e = readExpr(r, next[i], `${at}.next[${i}]`, false)
-      if (e !== null) {
-        it.next.push(e)
-      }
+  const next: JsonValue[] = readArray(r, v, "next", at, true) ?? []
+  for (let i = 0; i < next.length; i++) {
+    const e = readExpr(r, next[i], `${at}.next[${i}]`, false)
+    if (e !== null) {
+      it.next.push(e)
     }
   }
   const slow = r.doc.get(v, "slow")
@@ -819,14 +805,11 @@ const readClause = (r: ContractReader, v: JsonValue, at: string): Clause | null 
     c.section = readString(r, v, "section", at, false)
     c.sectionSource = readString(r, v, "sectionSource", at, false)
     c.call = readRequiredString(r, v, "call", at)
-    const argsOrNull = readArray(r, v, "args", at, true)
-    if (argsOrNull !== null) {
-      const args: JsonValue[] = argsOrNull
-      for (let i = 0; i < args.length; i++) {
-        const a = readLiteral(r, args[i], `${at}.args[${i}]`)
-        if (a !== null) {
-          c.args.push(a)
-        }
+    const args: JsonValue[] = readArray(r, v, "args", at, true) ?? []
+    for (let i = 0; i < args.length; i++) {
+      const a = readLiteral(r, args[i], `${at}.args[${i}]`)
+      if (a !== null) {
+        c.args.push(a)
       }
     }
     const expect = r.doc.get(v, "expect")
@@ -849,14 +832,11 @@ const readClause = (r: ContractReader, v: JsonValue, at: string): Clause | null 
     }
     return c
   }
-  const forallOrNull = readArray(r, v, "forall", at, true)
-  if (forallOrNull !== null) {
-    const forall: JsonValue[] = forallOrNull
-    for (let i = 0; i < forall.length; i++) {
-      const x = readForall(r, forall[i], `${at}.forall[${i}]`)
-      if (x !== null) {
-        c.forall.push(x)
-      }
+  const forall: JsonValue[] = readArray(r, v, "forall", at, true) ?? []
+  for (let i = 0; i < forall.length; i++) {
+    const x = readForall(r, forall[i], `${at}.forall[${i}]`)
+    if (x !== null) {
+      c.forall.push(x)
     }
   }
   const where = r.doc.get(v, "where")
@@ -874,11 +854,7 @@ const readClause = (r: ContractReader, v: JsonValue, at: string): Clause | null 
 }
 
 const readClauses = (r: ContractReader, root: JsonValue, c: Contract): void => {
-  const itemsOrNull = readArray(r, root, "clauses", "contract", true)
-  if (itemsOrNull === null) {
-    return
-  }
-  const items: JsonValue[] = itemsOrNull
+  const items: JsonValue[] = readArray(r, root, "clauses", "contract", true) ?? []
   for (let i = 0; i < items.length; i++) {
     const k = readClause(r, items[i], `clauses[${i}]`)
     if (k !== null) {

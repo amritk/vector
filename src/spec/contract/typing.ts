@@ -428,7 +428,6 @@ const typingOp = (e: Expr, env: TypeEnv, at: string, errors: string[]): string |
   const ts = o.ts
   const args = e.args
   if (ts.length === 2 && args.length === 2) {
-    // Both have two elements throughout: the loop only replaces ts[i].
     for (let i = 0; i < 2 && i < ts.length && i < args.length; i++) {
       const j = 1 - i
       if (j >= ts.length || j >= args.length) {
@@ -443,9 +442,7 @@ const typingOp = (e: Expr, env: TypeEnv, at: string, errors: string[]): string |
           errors.push(`${at}.args[${i}]: ${v} is outside ${other}`)
           return null
         }
-        if (i < ts.length) {
-          ts[i] = other
-        }
+        ts[i] = other
       }
     }
   }

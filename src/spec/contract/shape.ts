@@ -687,11 +687,10 @@ const shapeTruncate = (s: ShapeContext, k: Clause, t: Truncate, at: string): voi
   if (n < 0) {
     shapeFail(s, at, `a truncated vector's expect is bytes, not ${typeOfLiteral(expect)}`)
   } else if (n !== t.bytes) {
-    // In i64, and shifted: an i32 count of bytes is exact as bits there.
     shapeFail(
       s,
       at,
-      `the expect is ${n} bytes, so the truncation is ${n} bytes (${toI64(n) << toI64(3)} bits), not ${t.bytes} bytes (${toI64(t.bytes) << toI64(3)} bits)`,
+      `the expect is ${n} bytes, so the truncation is ${n} bytes (${n << 3} bits), not ${t.bytes} bytes (${t.bytes << 3} bits)`,
     )
   }
 }

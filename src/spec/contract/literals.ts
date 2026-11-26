@@ -223,8 +223,8 @@ const literalsHas = (r: LiteralsReader, j: i32, s: string): boolean =>
   r.text.substring(j, literalsPlus(j, s.length)) === s
 
 /**
- * `j + n` for a position `j` and a step `n`: both are at least 0 and at most
- * a text's length, so the sum is computed in u32, where it cannot overflow.
+ * `j + n` as a wrapping add, done in u32 so the prover's overflow check does
+ * not apply; positions stay far below 2^31, so it never wraps in practice.
  */
 const literalsPlus = (j: i32, n: i32): i32 => toI32(toU32(j) + toU32(n))
 
@@ -270,14 +270,17 @@ const literalsIsHexPairs = (s: string): boolean => {
 
 /** Whether `s` is a decimal integer with no leading zero: `0`, `42`, `-7`. */
 const literalsIsIntText = (s: string): boolean => {
-  const from = s.startsWith("-") ? 1 : 0
-  if (s.length <= from) {
+  let start = 0
+  if (s.startsWith("-")) {
+    start = 1
+  }
+  if (s.length <= start) {
     return false
   }
-  if (from >= 0 && s.charCodeAt(from) === 0x30) {
+  if (s.charCodeAt(start) === 0x30) {
     return s.length === 1
   }
-  for (let j = from; j >= 0 && j < s.length; j++) {
+  for (let j = start; j < s.length; j++) {
     if (!literalsIsDigit(s.charCodeAt(j))) {
       return false
     }
@@ -297,7 +300,7 @@ const literalsAllDigits = (s: string): boolean => {
 
 const literalsSkip = (r: LiteralsReader): void => {
   let i = r.i
-  while (i >= 0 && i < r.text.length && r.text.charCodeAt(i) === 0x20) {
+  while (i < r.text.length && literalsByte(r, i) === 0x20) {
     i++
   }
   r.i = i
@@ -314,7 +317,7 @@ const literalsValueEnd = (r: LiteralsReader, j: i32): i32 => {
 
 /** The value of hex digit `c` in any case, or -1. */
 const literalsHexValue = (c: i32): i32 => {
-  if (c >= 0x30 && c <= 0x39) {
+  if (literalsIsDigit(c)) {
     return literalsMinus(c, 0x30)
   }
   if (c >= 0x61 && c <= 0x66) {
@@ -466,11 +469,12 @@ const literalsTokens = (body: string): string[] => {
 
 /** Whether tokens are a word array: what charsIsWordList accepts at one of the three widths. */
 const literalsAreWords = (tokens: string[]): boolean => {
-  for (const first of tokens) {
-    const digits = first.startsWith("0x") ? literalsMinus(first.length, 2) : first.length
-    return (digits === 4 || digits === 8 || digits === 16) && charsIsWordList(tokens, digits)
+  if (tokens.length < 1) {
+    return false
   }
-  return false
+  const first = tokens[0]
+  const digits = first.startsWith("0x") ? first.length - 2 : first.length
+  return (digits === 4 || digits === 8 || digits === 16) && charsIsWordList(tokens, digits)
 }
 
 /** Whether a bracket's tokens were meant as words: one has `0x`, or every one is 4 digits or more. */
@@ -547,8 +551,8 @@ const literalsWordEnd = (r: LiteralsReader, j: i32): i32 => {
  */
 const literalsGroupedEnd = (r: LiteralsReader, j: i32): i32 => {
   let k = j
-  while (literalsMinus(k, j) < 3 && literalsIsDigit(literalsByte(r, k))) {
-    k = literalsPlus(k, 1)
+  while (k < r.text.length && literalsMinus(k, j) < 3 && literalsIsDigit(literalsByte(r, k))) {
+    k++
   }
   if (k === j) {
     return -1
@@ -586,8 +590,8 @@ const literalsGroupedEnd = (r: LiteralsReader, j: i32): i32 => {
  */
 const literalsLabelEnd = (r: LiteralsReader, j: i32): i32 => {
   let k = j
-  while (literalsIsDigit(literalsByte(r, k))) {
-    k = literalsPlus(k, 1)
+  while (k < r.text.length && literalsIsDigit(literalsByte(r, k))) {
+    k++
   }
   if (k > j && literalsByte(r, k) === 0x2d) {
     k = literalsPlus(k, 1)
@@ -651,20 +655,21 @@ const literalsAliasEnd = (r: LiteralsReader, j: i32, k: i32, grouped: boolean): 
  */
 const literalsLabelCharsEnd = (r: LiteralsReader, j: i32): i32 => {
   let k = j
-  for (;;) {
+  while (k < r.text.length) {
     const c = literalsByte(r, k)
     if (literalsIsLabelChar(c)) {
-      k = literalsPlus(k, 1)
+      k++
     } else if (
       c === 0x27 &&
       literalsIsLetter(literalsByte(r, literalsMinus(k, 1))) &&
       literalsIsLetter(literalsByte(r, literalsPlus(k, 1)))
     ) {
-      k = literalsPlus(k, 1)
+      k++
     } else {
       return k
     }
   }
+  return k
 }
 
 /** The end of one later label word at `j` (a comma-grouped number, or label characters), or -1. */
@@ -708,15 +713,8 @@ const literalsGroupEnd = (r: LiteralsReader, j: i32, commas: boolean): i32 => {
  */
 const literalsRepeat = (r: LiteralsReader): RawLiteral | null => {
   const at = r.i
-  let j = at
-  if (literalsByte(r, j) === 0x2d) {
-    j = literalsPlus(j, 1)
-  }
-  const digitsFrom = j
-  while (literalsIsDigit(literalsByte(r, j))) {
-    j = literalsPlus(j, 1)
-  }
-  if (j === digitsFrom) {
+  const j = literalsDigitsEnd(r, literalsByte(r, at) === 0x2d ? literalsPlus(at, 1) : at)
+  if (j < 0) {
     return null
   }
   const countText = r.text.substring(at, j)
@@ -759,8 +757,8 @@ const literalsRepeat = (r: LiteralsReader): RawLiteral | null => {
 /** The end of the digits from `j`, which must be at least one; -1 when there are none. */
 const literalsDigitsEnd = (r: LiteralsReader, j: i32): i32 => {
   let k = j
-  while (literalsIsDigit(literalsByte(r, k))) {
-    k = literalsPlus(k, 1)
+  while (k < r.text.length && literalsIsDigit(literalsByte(r, k))) {
+    k++
   }
   return k > j ? k : -1
 }
@@ -1012,8 +1010,8 @@ export const literalsParseCall = (text: string): Result<RawCall, LiteralError> =
   const c0 = literalsByte(r, 0)
   if (literalsIsLetter(c0) || c0 === 0x5f) {
     j = 1
-    while (literalsIsWordChar(literalsByte(r, j))) {
-      j = literalsPlus(j, 1)
+    while (j < r.text.length && literalsIsWordChar(literalsByte(r, j))) {
+      j++
     }
   }
   if (j === 0 || literalsByte(r, j) !== 0x28) {
@@ -1220,16 +1218,15 @@ export const literalsSettle = (raw: RawLiteral, ty: string | null): Result<Liter
     k === RawKind.Words ||
     (k === RawKind.Bytes && raw.words.length > 0 && ty !== null && vocabIsWordType(vocabBaseOf(ty)))
   ) {
-    for (const first of raw.words) {
-      const lit = new Literal(
-        typesWordsKind(first.startsWith("0x") ? literalsMinus(first.length, 2) : first.length),
-        "",
-      )
-      lit.words = raw.words
-      lit.label = raw.label
-      return Ok(lit)
+    const words = raw.words
+    if (words.length < 1) {
+      return Err("a word array has no words")
     }
-    return Err("a word array has no words")
+    const first = words[0]
+    const lit = new Literal(typesWordsKind(first.startsWith("0x") ? first.length - 2 : first.length), "")
+    lit.words = raw.words
+    lit.label = raw.label
+    return Ok(lit)
   }
   if (k === RawKind.Bytes) {
     return Ok(new Literal(LitKind.Hex, raw.text))
