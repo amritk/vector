@@ -136,6 +136,7 @@ export const main = (): i32 => {
   t.ok("a directory with no compiler is not a seed", runSeedOf("tests").isErr())
   runTestTail(t, c)
   runTestInPlace(t, c)
+  runTestNoRelax(t, c)
   runTestLinks(t)
   runTestMarkdown(t)
   runTestSlow(t, nonce)
@@ -232,6 +233,30 @@ const runTestInPlace = (t: Suite, c: Contract): void => {
   )
   t.ok("the test's directory is left alone", isDirectorySync(dir))
   t.ok("runRemove removes it", runRemove(dir).isOk() && !isDirectorySync(dir))
+}
+
+/**
+ * Every build runTestFile starts keeps the no-panic rule: the compiler it
+ * starts, a stub that prints its whole argv, is never given --allow-panics,
+ * plain or optimized.
+ */
+const runTestNoRelax = (t: Suite, c: Contract): void => {
+  const dir = makeTempDir("vector-no-relax-").expect("a temp dir")
+  const fake = `${dir}/nish`
+  runTestSh(`printf '#!/bin/sh\\necho "$*"\\n' > ${fake} && chmod 755 ${fake}`)
+  const file = `${dir}/main_test.ts`
+  // [what, whether slow vectors run, the argv the compiler is given, up to the nonce]
+  const rows: string[][] = [
+    ["a plain build", "", `run ${file}`],
+    ["a slow build", "slow", `run --profile speed ${file}`],
+  ]
+  for (const r of rows) {
+    const ran = runTestFile(c, file, fake, 10000, r[1] === "slow")
+    const argv = ran.isOk() ? splitLines(ran.value.stdout)[0] : ran.error
+    t.ok(`${r[0]} is started with its file`, argv.startsWith(`${r[2]} `))
+    t.ok(`${r[0]} keeps the no-panic rule: ${argv}`, argv.indexOf("--allow-panics") < 0 && argv.indexOf("--allow") < 0)
+  }
+  t.ok("its directory is removed", runRemove(dir).isOk())
 }
 
 /** A run that prints past 64 KiB keeps its last 64 KiB, cut at a line's start. */

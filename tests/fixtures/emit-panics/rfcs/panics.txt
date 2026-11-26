@@ -1,0 +1,63 @@
+Test Fixture                                                      vector
+Request for Comments: 99998                               Not an RFC
+Category: Informational                                  November 2026
+
+
+              Emit Panics: Every Clause Kind and Type
+
+Abstract
+
+   This text is a test fixture for the Nish tests vector emits, laid
+   out as an RFC's plain text so that vector reads it.  It is not an
+   RFC.
+
+1.  Stubs
+
+   Each stub function MUST return what it is given.
+
+   The bytes stubs are run on these values:
+
+      Bytes = 00ff10
+      Long = 000102030405060708090a0b0c0d0e0f1011121314151617
+      Pair = c0de
+      One = 7f
+      Key = a1b2
+
+   with Long's result truncated to 128 bits, and Pair's run 3 times
+   and 1,000 times.  The string stubs are run on "abc", on "xyz" and
+   on "" (0 octets), the window stubs on "sum" and on "hello".
+
+   The words stubs are run on these 16-bit words:
+
+      a = 0x0001
+      b = 0xffff
+
+   on these 32-bit words:
+
+      c = 0x00000001
+      d = 0xffffffff
+
+   and on these 64-bit words:
+
+      e = 0x0000000000000001
+      f = 0xffffffffffffffff
+
+   and they return these 16-bit words:
+
+      g = 0xffff
+      h = 0x0001
+
+   these 32-bit words:
+
+      i = 0xffffffff
+      j = 0x00000001
+
+   and these 64-bit words:
+
+      k = 0xffffffffffffffff
+      l = 0x0000000000000001
+
+
+
+vector                        Informational                     [Page 1]
+

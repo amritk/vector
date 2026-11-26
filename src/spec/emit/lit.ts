@@ -44,7 +44,8 @@ const emitParseU64 = (digits: string): u64 => {
  * literal is an i32 unless its context types it, and exact only up to 2^53,
  * so: an i32 is the literal; a value that fits i32 is converted; a larger one
  * is typed by a `toT(0) +` beside it; one past 2^53 is built as
- * hi * 2^32 + lo, each part exact and no step out of the type's range.
+ * hi * 2^32 + lo in u64, each part exact, and an i64 is that u64's two's
+ * complement bits read back with toI64, so no signed step can overflow.
  *
  * @param text the value in decimal, within `ty`'s range
  * @param ty an integer type other than i8 and i16
@@ -64,18 +65,17 @@ export const emitIntLit = (text: string, ty: string): string => {
     return `(${to}(0) + ${emitNeg(text)})`
   }
   const m = emitParseU64(mag)
+  if (ty === "i64") {
+    // Signed arithmetic must be proven to fit, and hi * 2^32 + lo is not:
+    // the value's two's complement bits are built in u64, which wraps, and
+    // toI64 reads them back as they are.
+    const bits: u64 = negative ? ~m + toU64(1) : m
+    return `toI64(${emitIntLit(`${bits}`, "u64")})`
+  }
   const q: u64 = m >> toU64(32)
   const low32: u64 = (toU64(1) << toU64(32)) - toU64(1)
   const r: u64 = m & low32
-  if (!negative) {
-    return `(${emitIntLit(`${q}`, ty)} * 4294967296 + ${r})`
-  }
-  // -m = hi * 2^32 + lo with 0 <= lo < 2^32: hi rounds -m / 2^32 down.
-  if (r === toU64(0)) {
-    return `(${emitIntLit(`-${q}`, ty)} * 4294967296 + 0)`
-  }
-  const lo: u64 = low32 - r + toU64(1)
-  return `(${emitIntLit(`-${q + toU64(1)}`, ty)} * 4294967296 + ${lo})`
+  return `(${emitIntLit(`${q}`, ty)} * 4294967296 + ${r})`
 }
 
 /** Whether 16 hex digits of binary64 bits are a NaN or an infinity. */
