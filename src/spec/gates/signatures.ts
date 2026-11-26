@@ -59,13 +59,17 @@ const gateSigSkip = (s: string, i: i32): i32 => {
 const gateSigParams = (s: string, open: i32, types: string[]): i32 => {
   // Each character moves `depth` by one at most, so it stays within s.length
   // of zero: it neither passes s.length nor drops below -s.length.
+  // The caller found `(` at open, so it is an offset of s and open + 1 fits.
+  if (!(open >= 0 && open < s.length)) {
+    return -1
+  }
   let depth = 0
   let start = open + 1
-  for (let i = open + 1; i < s.length; i++) {
+  for (let i = open + 1; i >= 0 && i < s.length; i++) {
     const c = s.charCodeAt(i)
     if (c === 0x28 || c === 0x3c || c === 0x5b || c === 0x7b) {
       depth = toI32(toI64(depth) + toI64(1))
-    } else if (c === 0x3e && s.charCodeAt(i - 1) === 0x3d) {
+    } else if (c === 0x3e && i > 0 && s.charCodeAt(i - 1) === 0x3d) {
       // `=>` inside a function-typed parameter is not a closing `>`.
     } else if (c === 0x3e || c === 0x5d || c === 0x7d) {
       depth = toI32(toI64(depth) - toI64(1))

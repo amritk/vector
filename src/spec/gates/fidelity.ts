@@ -969,7 +969,7 @@ const gateHeadingCase = (l: GateLits, inSection: string): void => {
 
 /** Whether every bound is printed the same number of times. */
 const gateSameRounds = (bs: GateBound[]): boolean => {
-  if (bs.length === 0) {
+  if (bs.length < 1) {
     return true
   }
   const of = bs[0].of
@@ -1206,7 +1206,7 @@ const gateCounts = (labels: string[], i: i32): boolean => {
   const ns: f64[] = []
   for (const l of labels) {
     const d = gateDigitRuns(l)
-    if (i >= d.length) {
+    if (!(i >= 0 && i < d.length)) {
       return false
     }
     const n = parseFloat(d[i])

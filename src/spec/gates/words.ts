@@ -121,7 +121,8 @@ const gateWordsLine = (line: string): GateWordsLine | null => {
 
 /** Whether every word has `digits` digits and the spelling (`0x` or not) of the first. */
 const gateWordsOneKind = (words: string[], digits: i32): boolean => {
-  const prefixed = words[0].startsWith("0x")
+  // No words have every kind; the first is read only when there is one.
+  const prefixed = words.length > 0 && words[0].startsWith("0x")
   return words.every((w: string): boolean => gateWordsDigits(w) === digits && w.startsWith("0x") === prefixed)
 }
 
@@ -141,7 +142,7 @@ const gateWordsIsSectionNumber = (t: string): boolean => {
 
 /** The label printed above the block starting at line `start`, or null. */
 const gateWordsLabelAbove = (lines: string[], start: i32): string | null => {
-  for (let i = start - 1; i >= 0 && i < lines.length; i--) {
+  for (let i = start > 0 ? start - 1 : -1; i >= 0 && i < lines.length; i--) {
     const above = rfcNormalize(lines[i])
     if (above.length === 0) {
       continue

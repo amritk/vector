@@ -1,9 +1,5 @@
 {
   "modules": {
-    "src/spec/gates/fidelity.ts": 2,
-    "src/spec/gates/result.ts": 2,
-    "src/spec/gates/signatures.ts": 4,
-    "src/spec/gates/text.ts": 8,
-    "src/spec/gates/words.ts": 2
+    "src/spec/gates/text.ts": 1
   }
 }

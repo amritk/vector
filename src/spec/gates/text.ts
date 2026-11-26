@@ -51,6 +51,12 @@ const gateByte = (s: string, i: i32): i32 => (i >= 0 && i < s.length ? s.charCod
 /** Whether a letter or digit is at `i` of `s`; false outside it. */
 const gateAlnumAt = (s: string, i: i32): boolean => gateIsAlnum(gateByte(s, i))
 
+/** The byte `k` before offset `i` of `s`, taken wide so `i - k` cannot overflow; -1 outside it. */
+const gateByteBefore = (s: string, i: i32, k: i32): i32 => {
+  const at = toI64(i) - toI64(k)
+  return at >= toI64(0) && at < toI64(s.length) ? gateByte(s, toI32(at)) : -1
+}
+
 /**
  * `a + b` for two offsets whose sum is itself an offset into a string the
  * caller names, so it fits an i32; the sum is taken wide so it is not checked.
@@ -64,7 +70,7 @@ const gateTextAt = (s: string, j: i32, n: i32): string => {
 }
 
 /** Whether `i` is a word start: no letter or digit just before it. */
-const gateWordStart = (s: string, i: i32): boolean => !gateAlnumAt(s, i - 1)
+const gateWordStart = (s: string, i: i32): boolean => !gateIsAlnum(gateByteBefore(s, i, 1))
 
 /** Where an apostrophe (' or ’) at `i` ends, or -1 when there is none. */
 const gateApostropheEnd = (s: string, i: i32): i32 => {
@@ -85,7 +91,7 @@ const gateEntryEnd = (lower: string, i: i32, w: string): i32 => {
     while (j >= 0 && j < lower.length && gateIsLetter(lower.charCodeAt(j))) {
       j++
     }
-    if (j - i < 2 || gateByte(lower, j - 1) !== 0x6e) {
+    if (toI64(j) - toI64(i) < toI64(2) || gateByteBefore(lower, j, 1) !== 0x6e) {
       return -1
     }
     const a = gateApostropheEnd(lower, j)
@@ -241,7 +247,8 @@ const gateWhole = (lines: string, p: i32, e: i32): boolean => {
   for (let q = 0; q >= 0 && q < quotes.length - 1; q += 2) {
     const open = quotes[q]
     const close = quotes[q + 1]
-    const before = p >= open.length ? lines.substring(p - open.length, p) : ""
+    const from = toI64(p) - toI64(open.length)
+    const before = from >= toI64(0) ? lines.substring(toI32(from), p) : ""
     if (before === open && gateTextAt(lines, e, close.length) === close) {
       return true
     }
@@ -250,11 +257,11 @@ const gateWhole = (lines: string, p: i32, e: i32): boolean => {
   if (!endsLine) {
     return false
   }
-  if (p === 0 || gateByte(lines, p - 1) === 10) {
+  if (p === 0 || gateByteBefore(lines, p, 1) === 10) {
     return true
   }
-  const b = gateByte(lines, p - 1)
-  return gateIsSep(b) || (b === 32 && gateIsSep(gateByte(lines, p - 2)))
+  const b = gateByteBefore(lines, p, 1)
+  return gateIsSep(b) || (b === 32 && gateIsSep(gateByteBefore(lines, p, 2)))
 }
 
 /** The line of `lines` that offset `at` is on, counting from 0. */

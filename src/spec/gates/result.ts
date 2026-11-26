@@ -71,11 +71,16 @@ const gateSentenceEnds = (t: string, i: i32): boolean => {
   if (c !== 0x2e && c !== 0x3b && c !== 0x21 && c !== 0x3f) {
     return false
   }
-  const j = gateResultSkip(t, i + 1)
+  // c is a byte of t, so i is an offset of t and i + 1 fits.
+  if (!(i >= 0 && i < t.length)) {
+    return false
+  }
+  const next = i + 1
+  const j = gateResultSkip(t, next)
   if (j === t.length) {
     return true
   }
-  if (j === i + 1) {
+  if (j === next) {
     return false
   }
   const n = gateResultByte(t, j)
