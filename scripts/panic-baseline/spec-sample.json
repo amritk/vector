@@ -1,6 +1,0 @@
-{
-  "modules": {
-    "src/spec/sample/eval.ts": 18,
-    "src/spec/sample/smt.ts": 42
-  }
-}
