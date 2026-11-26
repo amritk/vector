@@ -1,6 +1,5 @@
 {
   "modules": {
-    "src/spec/emit/emit.ts": 25,
     "src/spec/emit/file.ts": 3,
     "src/spec/emit/go.ts": 22,
     "src/spec/emit/lit.ts": 5,
