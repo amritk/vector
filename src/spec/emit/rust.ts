@@ -748,7 +748,7 @@ const emitRsIterate = (ctx: EmitRsContext, k: Clause, sig: FnSig, name: string):
     return []
   }
   const n = it.names.length
-  if (it.next.length !== n || sig.params.length !== n || k.args.length !== n) {
+  if (it.next.length !== n || sig.params.length !== n) {
     ctx.errors.push(
       `${k.id}: the iterate has ${n} names and ${it.next.length} next for ${sig.params.length} parameters`,
     )

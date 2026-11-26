@@ -178,6 +178,22 @@ const guardsIterate = (t: Suite): void => {
     t0,
     "IT-FIB: the iterate has 2 names and 3 next for 2 parameters",
   )
+  const both = guardsOnly("IT-FIB")
+  if (both !== null) {
+    const it = both.clauses[0].iterate
+    if (it !== null) {
+      it.names.pop()
+      it.next.pop()
+    }
+  }
+  guardsIn(
+    t,
+    guardsIndexing(true),
+    "an iterate one name and one next short",
+    both,
+    t0,
+    "IT-FIB: the iterate has 1 names and 1 next for 2 parameters",
+  )
 }
 
 /** A sample with a value for every forall variable, and one short of them. */
@@ -249,6 +265,12 @@ const guardsPackages = (t: Suite): void => {
   for (const f of refused) {
     t.ok(`--package ${f} is refused`, emitParsePackages([f], "go").isErr())
   }
+  const empty = emitParsePackages(["=b"], "go")
+  t.eqStr(
+    "--package =b: no name before the =",
+    empty.isErr() ? empty.error : "ok",
+    "--package =b: expected <name>=<dir>",
+  )
   const ok = emitParsePackages(["a=b", "c==d", "x/y=z/w"], "go")
   t.ok("a=b, c==d and x/y=z/w are read", ok.isOk())
   if (ok.isOk()) {
