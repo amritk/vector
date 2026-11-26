@@ -1421,7 +1421,16 @@ const profileReadInterface = (c: ProfileContext, code: XmlNode[]): void => {
   profileCheckText(c, profileLocOf(iface), "the ts-interface block's module", c.module)
   const names = shapeTestNames()
   const prefixes = shapeTestPrefixes()
-  // frontParseInterface gives a line per function, so `i < locs.length` is for the prover.
+  // frontParseInterface gives a line per function, so no block reaches this.
+  if (locs.length !== fns.length) {
+    profileRefuse(
+      c,
+      iface,
+      `the ts-interface block read ${fns.length} functions at ${locs.length} lines; a line per function is a vector bug`,
+    )
+    return
+  }
+  // The lengths are equal; `i < locs.length` is for the prover.
   for (let i = 0; i < fns.length && i < locs.length; i++) {
     const name = fns[i].name
     const loc = locs[i]
@@ -1714,7 +1723,16 @@ const profileReadOutOfScope = (c: ProfileContext, n: XmlNode): void => {
  * function a property calls (a vector calls only functions under test).
  */
 const profileCheckOutOfScope = (c: ProfileContext): void => {
-  // outOfScopeLocs gets a place with each push to outOfScope; `i < c.outOfScopeLocs.length` is for the prover.
+  // outOfScopeLocs gets a place with each push to outOfScope, so no spec reaches this.
+  if (c.outOfScopeLocs.length !== c.outOfScope.length) {
+    profileRefuse(
+      c,
+      c.doc.root,
+      `${c.outOfScope.length} out-of-scope exports have ${c.outOfScopeLocs.length} places; a place per export is a vector bug`,
+    )
+    return
+  }
+  // The lengths are equal; the second compare is for the prover.
   for (let i = 0; i < c.outOfScope.length && i < c.outOfScopeLocs.length; i++) {
     const name = c.outOfScope[i].name
     const loc = c.outOfScopeLocs[i]
@@ -2096,8 +2114,8 @@ const profileReadTruncate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>,
 
 /**
  * `bytes * 8` in decimal, for a count of 0 or more. It is worked on the
- * digits, so a count past 2^60 (a hex literal's repeat can make one) prints
- * exactly rather than overflowing i64.
+ * digits, so it is exact for any i64 count, with no bound for the prover to
+ * carry from where the count was read.
  */
 const profileBits = (bytes: i64): string => {
   const d = `${bytes}`
@@ -2988,7 +3006,16 @@ const profileCheckCoverage = (c: ProfileContext): void => {
       targets.push(f.name)
     }
   }
-  // propertyLocs gets a place with each property; `i < c.propertyLocs.length` is for the prover.
+  // propertyLocs gets a place with each property, so no spec reaches this.
+  if (c.propertyLocs.length !== c.properties.length) {
+    profileRefuse(
+      c,
+      c.doc.root,
+      `${c.properties.length} properties have ${c.propertyLocs.length} places; a place per property is a vector bug`,
+    )
+    return
+  }
+  // The lengths are equal; the second compare is for the prover.
   for (let i = 0; i < c.properties.length && i < c.propertyLocs.length; i++) {
     const k = c.properties[i]
     const at = c.propertyLocs[i]
@@ -3214,6 +3241,18 @@ const profileSorted = (c: ProfileContext): Result<ProfileRead, ProfileRefusal[]>
   return Err(out)
 }
 
+/** A list's length and its places' length, which profileRead checks are equal. */
+class ProfilePairs {
+  what: string
+  items: i32
+  places: i32
+  constructor(what: string, items: i32, places: i32) {
+    this.what = what
+    this.items = items
+    this.places = places
+  }
+}
+
 /**
  * Reads a contract from a spec under the vector profile.
  *
@@ -3335,7 +3374,27 @@ export const profileRead = (
   for (const q of c.exclusions) {
     profilePut(c, l, `exclusion §${q.section}`, q.loc)
   }
-  // Each list below has its places pushed with it; the second compare is for the prover.
+  // Each list below has its places pushed with it, so no spec reaches this.
+  const pairs: ProfilePairs[] = [
+    new ProfilePairs("clauses", out.clauses.length, clauseLocs.length),
+    new ProfilePairs("tolerances", c.toleranceIds.length, c.toleranceLocs.length),
+    new ProfilePairs("iterates", c.iterateIds.length, c.iterateLocs.length),
+    new ProfilePairs("truncates", c.truncateIds.length, c.truncateLocs.length),
+    new ProfilePairs("functions", c.functions.length, c.fnLocs.length),
+    new ProfilePairs("out-of-scope exports", c.outOfScope.length, c.outOfScopeLocs.length),
+  ]
+  for (const q of pairs) {
+    if (q.items !== q.places) {
+      return Err([
+        profileRefusalAt(
+          profileWhereOf(c, profileLocOf(doc.root)),
+          0,
+          `${q.items} ${q.what} have ${q.places} places; a place for each is a vector bug`,
+        ),
+      ])
+    }
+  }
+  // The lengths are equal; the second compare in each loop is for the prover.
   for (let i = 0; i < out.clauses.length && i < clauseLocs.length; i++) {
     profilePut(c, l, out.clauses[i].id, clauseLocs[i])
   }
@@ -3348,7 +3407,6 @@ export const profileRead = (
   for (let i = 0; i < c.truncateIds.length && i < c.truncateLocs.length; i++) {
     profilePut(c, l, `${c.truncateIds[i]}.truncate`, c.truncateLocs[i])
   }
-  // fnLocs has one per function (profileReadInterface).
   for (let i = 0; i < c.functions.length && i < c.fnLocs.length; i++) {
     profilePut(c, l, c.functions[i].name, c.fnLocs[i])
   }
