@@ -7,8 +7,8 @@
     "src/spec/contract/read.ts": 59,
     "src/spec/contract/shape.ts": 22,
     "src/spec/contract/types.ts": 1,
-    "src/spec/contract/typing.ts": 14,
+    "src/spec/contract/typing.ts": 16,
     "src/spec/contract/vocab.ts": 3,
-    "src/spec/contract/write.ts": 27
+    "src/spec/contract/write.ts": 28
   }
 }

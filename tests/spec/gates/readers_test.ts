@@ -3,10 +3,9 @@ import { joinPath, makeTempDir, mkdirAll } from "../../../src/core/fs"
 import { CheckContext, checkAddReader } from "../../../src/spec/check"
 import { Contract, SourceDecl } from "../../../src/spec/contract/types"
 import { gateSources } from "../../../src/spec/gates/cite"
-import { sourceFind } from "../../../src/spec/source/load"
-import { RfcDocument, rfcRead } from "../../../src/spec/source/rfc"
+import { SourceReaderKind, sourceFind } from "../../../src/spec/source/load"
 
-/** A spec's text, which the test's `.adoc` reader reads as an RFC's. */
+/** A spec's text, which a `.adoc` added as SourceReaderKind.Rfc reads as an RFC's. */
 const READERS_TEST_SPEC: string = `Request for Comments: 5555
 \f
 1.  Intro
@@ -17,9 +16,6 @@ const READERS_TEST_SPEC: string = `Request for Comments: 5555
 /** The same spec as RFC XML v3, which the default readers read. */
 const READERS_TEST_XML: string =
   '<rfc number="5555"><middle><section anchor="intro" numbered="true"><name>Intro</name><t>It MUST work.</t></section></middle></rfc>\n'
-
-/** A stand-in `.adoc` reader: the RFC text reader under another name. */
-const readersTestAdoc = (text: string, name: string): Result<RfcDocument, string> => rfcRead(text, name)
 
 /** A contract whose one source is `file`, beside it. */
 const readersTestContract = (file: string): Contract => {
@@ -68,13 +64,13 @@ export const main = (): i32 => {
 
   const ctx = new CheckContext(contractPath, root)
   ctx.contract = readersTestContract("spec.adoc")
-  t.ok("a reader is added", checkAddReader(ctx, ".adoc", readersTestAdoc).isOk())
+  t.ok("a reader is added", checkAddReader(ctx, ".adoc", SourceReaderKind.Rfc).isOk())
   const found: string[] = []
   const read = sourceFind(gateSources(ctx, found, "fidelity"), "x")
   t.eqStr("the gates read with it", found.join(" | "), "")
   t.ok("and the source is read", read !== null && read.doc.number === 5555 && read.doc.sections.length === 1)
   t.ok("the other context still has only the default", plain.readers.entries.length === 2)
-  const bad = checkAddReader(ctx, "adoc", readersTestAdoc)
+  const bad = checkAddReader(ctx, "adoc", SourceReaderKind.Rfc)
   t.eqStr(
     "an extension without its dot is refused",
     bad.isErr() ? bad.error : "",
