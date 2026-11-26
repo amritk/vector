@@ -4,7 +4,8 @@
 
 import { sha256 } from "nish/crypto/sha256"
 
-const HEX_DIGITS: string = "0123456789abcdef"
+/** The lowercase hex digit of a nibble (0 to 15), in u32 so the add cannot overflow. */
+const hexDigit = (nibble: u32): u8 => toU8(nibble < 10 ? nibble + 48 : nibble + 87)
 
 /**
  * Writes bytes as lowercase hex, two digits a byte.
@@ -13,25 +14,26 @@ const HEX_DIGITS: string = "0123456789abcdef"
  * @returns the hex text, twice as long as `bytes`
  */
 export const toHex = (bytes: u8[]): string => {
-  const out: u8[] = new Array<u8>(bytes.length * 2)
-  for (let i = 0; i < bytes.length; i++) {
-    out[i * 2] = toU8(HEX_DIGITS.charCodeAt(toI32(bytes[i] >> 4)))
-    out[i * 2 + 1] = toU8(HEX_DIGITS.charCodeAt(toI32(bytes[i] & 15)))
+  const out: u8[] = []
+  for (const b of bytes) {
+    out.push(hexDigit(toU32(b >> 4)))
+    out.push(hexDigit(toU32(b & 15)))
   }
   return String.fromBytes(out, 0, toI32(out.length))
 }
 
-const hexNibble = (c: i32): i32 => {
+/** The value (0 to 15) of a hex digit, or 16 when `c` is not one; in u32, so no step can overflow. */
+const hexNibble = (c: i32): u32 => {
   if (c >= 48 && c <= 57) {
-    return c - 48
+    return toU32(c) - 48
   }
   if (c >= 97 && c <= 102) {
-    return c - 87
+    return toU32(c) - 87
   }
   if (c >= 65 && c <= 70) {
-    return c - 55
+    return toU32(c) - 55
   }
-  return -1
+  return 16
 }
 
 /**
@@ -45,14 +47,15 @@ export const fromHex = (text: string): Result<u8[], string> => {
   if (n % 2 !== 0) {
     return Err(`hex text has an odd number of digits (${n})`)
   }
-  const out: u8[] = new Array<u8>(n / 2)
-  for (let i = 0; i < n; i += 2) {
+  const out: u8[] = []
+  // n is even, so i < n - 1 visits the same pairs as i < n.
+  for (let i = 0; i < n - 1; i += 2) {
     const hi = hexNibble(text.charCodeAt(i))
     const lo = hexNibble(text.charCodeAt(i + 1))
-    if (hi < 0 || lo < 0) {
-      return Err(`not a hex digit at offset ${hi < 0 ? i : i + 1}`)
+    if (hi > 15 || lo > 15) {
+      return Err(`not a hex digit at offset ${hi > 15 ? i : i + 1}`)
     }
-    out[i / 2] = toU8(hi * 16 + lo)
+    out.push(toU8(hi * 16 + lo))
   }
   return Ok(out)
 }
@@ -64,9 +67,9 @@ export const fromHex = (text: string): Result<u8[], string> => {
  * @returns one byte per byte of `text`
  */
 export const utf8Bytes = (text: string): u8[] => {
-  const out: u8[] = new Array<u8>(text.length)
+  const out: u8[] = []
   for (let i = 0; i < toI32(text.length); i++) {
-    out[i] = toU8(text.charCodeAt(i))
+    out.push(toU8(text.charCodeAt(i)))
   }
   return out
 }

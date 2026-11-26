@@ -10,12 +10,10 @@
     "src/cli/spec-run.ts": 21,
     "src/cli/spec-stale.ts": 6,
     "src/cli/verify.ts": 12,
-    "src/core/fs.ts": 12,
-    "src/core/hex.ts": 16,
-    "src/core/json.ts": 5,
-    "src/core/process.ts": 3,
+    "src/core/fs.ts": 1,
+    "src/core/hex.ts": 1,
+    "src/core/json.ts": 4,
     "src/core/smt.ts": 31,
-    "src/core/z3.ts": 4,
     "src/index.ts": 1,
     "src/lang/names.ts": 21,
     "src/main.ts": 1,
@@ -23,5 +21,6 @@
     "src/spec/report/markdown.ts": 2,
     "src/verify/smt/script.ts": 13,
     "src/verify/verify.ts": 2
-  }
+  },
+  "waiting": "nish-bump (Cli and ParseResult calls); amritk/nish#2322 (sha256, JsonDocument.stringify, regexCompile)"
 }

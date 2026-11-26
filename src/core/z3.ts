@@ -28,7 +28,19 @@ export const z3Timeout = (queryCount: i32): i32 => {
   if (queryCount >= (Z3_TIMEOUT_CAP_MS - Z3_BASE_TIMEOUT_MS) / Z3_PER_QUERY_MS) {
     return Z3_TIMEOUT_CAP_MS
   }
-  return Z3_BASE_TIMEOUT_MS + Math.max(queryCount, 0) * Z3_PER_QUERY_MS
+  if (queryCount <= 0) {
+    return Z3_BASE_TIMEOUT_MS
+  }
+  // queryCount is 1 to 79 here, so the sum fits; u32 arithmetic cannot overflow.
+  return toI32(toU32(Z3_BASE_TIMEOUT_MS) + toU32(queryCount) * toU32(Z3_PER_QUERY_MS))
+}
+
+/** `argv[0]` resolved, or null when it does not resolve (or, never in practice, is absent). */
+const z3SelfFromArgv = (): string | null => {
+  for (const arg of process.argv) {
+    return realpathSync(arg)
+  }
+  return null
 }
 
 /**
@@ -47,7 +59,7 @@ export const resolveZ3 = (): Result<string, string> => {
   }
   // argv[0] is the name as typed: a bare `vector` found on PATH does not
   // resolve, so ask the kernel for the running binary first (Linux).
-  const self = realpathSync("/proc/self/exe") ?? realpathSync(process.argv[0])
+  const self = realpathSync("/proc/self/exe") ?? z3SelfFromArgv()
   if (self !== null) {
     const beside = joinPath(dirname(dirname(self)), ".z3/z3")
     if (isExecutableSync(beside)) {
@@ -152,6 +164,6 @@ export const runZ3 = (script: string, queryCount: i32): Result<Z3Run, string> =>
     return Err(`failed to run z3 (${bin}): ${ran.error}`)
   }
   const answers = z3Verdicts(ran.value, bin, queryCount, limitMs).orReturn()
-  const millis = toI32((monotonicNanos() - started) / 1000000)
+  const millis = toI32((toU64(monotonicNanos()) - toU64(started)) / 1000000)
   return Ok(new Z3Run(answers, smtErrors(ran.value.stdout), millis))
 }

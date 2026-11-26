@@ -65,7 +65,7 @@ export const writeJsonFile = (doc: JsonDocument, v: JsonValue, path: string): Re
   const text = `${doc.stringify(v)}\n`
   const written = writeFileSyncMode(path, text, 0o644)
   if (written < 0) {
-    return Err(`${path}: cannot write file (errno ${-written})`)
+    return Err(`${path}: cannot write file (errno ${-toI64(written)})`)
   }
   return Ok(true)
 }

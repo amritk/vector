@@ -44,9 +44,10 @@ export class ProcessResult {
  *   or `Err` when it could not be run or wrote more than 16 MiB
  */
 export const runProcess = (argv: string[], stdin: string, timeoutMs: i32): Result<ProcessResult, string> => {
-  if (argv.length === 0) {
+  if (argv.length <= 0) {
     return Err("runProcess: no program given")
   }
+  const program = argv[0]
   if (timeoutMs <= 0) {
     return Err(`runProcess: the time limit must be positive, not ${timeoutMs}`)
   }
@@ -55,10 +56,10 @@ export const runProcess = (argv: string[], stdin: string, timeoutMs: i32): Resul
   const status = spawnPipedWithin(argv, utf8Bytes(stdin), out, err, timeoutMs)
   const timedOut = status === -3
   if (status === -2) {
-    return Err(`${argv[0]} wrote more than 16 MiB`)
+    return Err(`${program} wrote more than 16 MiB`)
   }
   if (status < 0 && !timedOut) {
-    return Err(`cannot run ${argv[0]} (errno ${-status})`)
+    return Err(`cannot run ${program} (errno ${-toI64(status)})`)
   }
   return Ok(
     new ProcessResult(

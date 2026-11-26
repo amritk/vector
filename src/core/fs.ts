@@ -35,17 +35,19 @@ export const dirname = (path: string): string => {
   while (end > 1 && path.charCodeAt(end - 1) === 47) {
     end = end - 1
   }
-  let i = end - 1
-  while (i >= 0 && path.charCodeAt(i) !== 47) {
-    i = i - 1
+  // `after` is one past the last `/` before `end`, or 0 when there is none.
+  let after = end
+  while (after > 0 && path.charCodeAt(after - 1) !== 47) {
+    after = after - 1
   }
-  if (i < 0) {
+  if (after <= 0) {
     return "."
   }
+  let i = after - 1
   while (i > 0 && path.charCodeAt(i - 1) === 47) {
     i = i - 1
   }
-  return i === 0 ? "/" : path.slice(0, i)
+  return i === 0 ? "/" : path.substring(0, i)
 }
 
 /**
@@ -60,29 +62,35 @@ export const basename = (path: string): string => {
   while (end > 1 && path.charCodeAt(end - 1) === 47) {
     end = end - 1
   }
-  if (end === 1 && path.charCodeAt(0) === 47) {
+  if (end === 1 && path.length > 0 && path.charCodeAt(0) === 47) {
     return "/"
   }
-  let i = end - 1
-  while (i >= 0 && path.charCodeAt(i) !== 47) {
-    i = i - 1
+  // `after` is one past the last `/` before `end`, or 0 when there is none.
+  let after = end
+  while (after > 0 && path.charCodeAt(after - 1) !== 47) {
+    after = after - 1
   }
-  return path.slice(i + 1, end)
+  return path.substring(after, end)
+}
+
+/** Adds `part` to `out` unless it is empty or `.`. */
+const fsKeepPart = (out: string[], part: string): void => {
+  if (part.length > 0 && part !== ".") {
+    out.push(part)
+  }
 }
 
 /** A path's parts between slashes, with empty and `.` parts dropped. */
 const fsParts = (path: string): string[] => {
   const out: string[] = []
   let start = 0
-  for (let i = 0; i <= toI32(path.length); i++) {
-    if (i === toI32(path.length) || path.charCodeAt(i) === 47) {
-      const p = path.substring(start, i)
-      if (p.length > 0 && p !== ".") {
-        out.push(p)
-      }
+  for (let i = 0; i < toI32(path.length); i++) {
+    if (path.charCodeAt(i) === 47) {
+      fsKeepPart(out, path.substring(start, i))
       start = i + 1
     }
   }
+  fsKeepPart(out, path.substring(start, toI32(path.length)))
   return out
 }
 
@@ -113,7 +121,7 @@ export const relativePath = (from: string, to: string): string => {
   if (parts.length === 0) {
     return "."
   }
-  return parts[0] === ".." ? parts.join("/") : `./${parts.join("/")}`
+  return parts.length > 0 && parts[0] === ".." ? parts.join("/") : `./${parts.join("/")}`
 }
 
 /**
@@ -139,7 +147,7 @@ export const mkdirAll = (path: string, mode: i32): Result<boolean, string> => {
   if (status === 0 || isDirectorySync(path)) {
     return Ok(true)
   }
-  return Err(`cannot make directory ${path} (errno ${-status})`)
+  return Err(`cannot make directory ${path} (errno ${-toI64(status)})`)
 }
 
 /**
@@ -161,7 +169,7 @@ export const makeTempDir = (prefix: string): Result<string, string> => {
       return Ok(path)
     }
     if (status !== -17) {
-      return Err(`cannot make a temporary directory in ${root} (errno ${-status})`)
+      return Err(`cannot make a temporary directory in ${root} (errno ${-toI64(status)})`)
     }
   }
   return Err(`cannot find a free temporary directory name in ${root}`)
