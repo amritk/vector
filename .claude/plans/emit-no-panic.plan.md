@@ -43,6 +43,27 @@ stages:
       - id: mutation-check
         content: Delete each guard added in turn and record in the PR body that the panic test fails for each — see Panic test
         status: completed
+  - id: sampler-no-unsafe
+    title: Sampler without nish:unsafe
+    goal: vector's property sampler does its wrapping arithmetic with provable unsigned or widened forms, and a test refuses any nish:unsafe import under src/
+    verification: grep finds no nish:unsafe under src/, the new test fails on main and passes on the branch, node tests/run.mjs gates/sample passes, and npm run build, npm test, npm run lint, npm run tested-exports, npm run panics, npm run dogfood are green
+    status: pending
+    todos:
+      - id: ints-no-unsafe
+        content: Replace wrappingAdd in the negative branch of the int parser in src/spec/sample/ints.ts with unsigned arithmetic, i64 MIN included — see Sampler without nish:unsafe
+        status: pending
+      - id: property-no-unsafe
+        content: Replace wrappingAdd and wrappingSub in the boundary steps of src/spec/sample/property.ts with unsigned arithmetic, byte-identical results — see Sampler without nish:unsafe
+        status: pending
+      - id: sampler-rows
+        content: Add table-driven rows at i64 MIN, the u64 bit boundary and their neighbours in tests/spec/gates/sample_test.ts — see Sampler without nish:unsafe
+        status: pending
+      - id: no-unsafe-test
+        content: Add a test that refuses any nish:unsafe import in a file under src/, failing on main — see Sampler without nish:unsafe
+        status: pending
+      - id: sampler-mutation
+        content: Mutation-check each replacement and record the failing row for each in the PR body — see Sampler without nish:unsafe
+        status: pending
 ---
 
 ## Context
@@ -129,12 +150,31 @@ Add table-driven rows to [tests/spec/emit/run_test.ts](tests/spec/emit/run_test.
 - If a guide page or [docs/AI.md](docs/AI.md) shows emitted Nish code, update it. Run `npm run doc-caps` and shorten text in place if a doc goes over its cap.
 - PR body note: nish's `test/spec/*.ts` (amritk/nish) were emitted by the old vector and need regenerating in a nish spec-side PR after this merges.
 
+## Sampler without nish:unsafe
+
+**Owns:** [src/spec/sample/ints.ts](src/spec/sample/ints.ts), [src/spec/sample/property.ts](src/spec/sample/property.ts), [tests/spec/gates/sample_test.ts](tests/spec/gates/sample_test.ts) (the sampler's existing tests), and one new test refusing `nish:unsafe` under `src/` (the worker picks its place, such as `tests/package/`). **Model:** sonnet. Added at the user's request after `emit-no-panic` merged. **Merges after** PR 233 (run 217), which rewrites `src/spec/sample` and keeps both imports; this stage keeps its diff to the two sites and merges main in once PR 233 lands.
+
+Sites on main:
+
+| File | Site | Now |
+| --- | --- | --- |
+| `ints.ts` | negative branch of the int parser, `mag <= 2^63` | `wrappingAdd(toI64(~mag), toI64(1))` |
+| `property.ts` | boundary steps inside `[lo, hi]` when `lo < hi` | `wrappingAdd(lo, toI64(1))`, `wrappingSub(hi, toI64(1))` |
+
+Use the form #221 emits: do the arithmetic in `u64`, which always wraps, and convert back with `toI64` (for example `toI64(~mag + toU64(1))`, `toI64(toU64(lo) + toU64(1))`). Check each with `.nish/bin/nish run` and the 0.47.0 prover. Results stay bit-identical, so no golden or dogfood file moves.
+
+Rows, table-driven, through the sampler's real entry points: parsing `-9223372036854775808` gives i64 MIN, `-9223372036854775807`, `-1` and `-0` give what main gives, `-9223372036854775809` is refused. A u64 range held as bits with `lo` at i64 MAX steps to `0x8000000000000000`, a range with `hi` at `0x8000000000000000` steps down to i64 MAX, and an i64 range at `[MIN, MAX]` steps without a panic. Mutation-check each replacement (drop the `+ 1`, swap `+` for `-`) and list the failing row in the PR body.
+
+The no-unsafe test reads every `.ts` under `src/` and fails naming each file that imports from `nish:unsafe`. It fails on main (both sampler files) and passes on the branch. `npm run panics` stays at or under its baseline, and once PR 233 is in, shows 0 sites under `src/spec/sample`.
+
 ## Out of scope
 
 - Moving `.nish-version` off 0.39.0, or making vector's own source prover-clean.
 - Panics inside the module under test, such as nish std's `sha1` or `x25519`. Those are fixed in nish.
 - Changes to nish's repository, including regenerating its `test/spec/*.ts`.
 - The go, python, rust and typescript emitters, beyond regenerating goldens a shared change moves.
+- `nish:unsafe` in the hand-written fixture [tests/spec/emit/fixtures/forms.ts](tests/spec/emit/fixtures/forms.ts), and `--allow-panics` in [scripts/panics.mjs](scripts/panics.mjs), which needs it to count sites.
+- The rest of `src/spec/sample`, which PR 233 rewrites.
 
 ## Tests
 
@@ -144,6 +184,8 @@ Add table-driven rows to [tests/spec/emit/run_test.ts](tests/spec/emit/run_test.
 | `tests/spec/emit/run_test.ts` | `runNishArgv` never contains `--allow-panics` |
 | mutate argv test (next to the existing `mutaterun` coverage) | mutate build argv never contains `--allow-panics` |
 | existing `tests/spec/emit/*_test.ts`, `tests/cli/emit-run-nish-*` | the emitted tests still compile under 0.39.0 and reach the same verdicts |
+| `tests/spec/gates/sample_test.ts` (new rows) | the int parser at i64 MIN and its neighbours; boundary steps across the u64 bit boundary |
+| no-`nish:unsafe` test (new) | no file under `src/` imports `nish:unsafe` |
 
 ## Verification
 
@@ -166,3 +208,11 @@ for c in rfc6234-sha1 rfc7748-x25519; do dist/vector spec emit <nish>/contracts/
 ```
 
 Both builds exit 0 with no flags. Each `--emit-panics` list holds only `oom` sites and calls into `sha1`/`x25519`.
+
+Sampler stage (lead, after it merges):
+
+```bash
+! grep -rln 'nish:unsafe' src/
+node tests/run.mjs gates/sample
+npm run panics
+```
