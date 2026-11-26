@@ -154,6 +154,14 @@ export const main = (): i32 => {
     const r = sampleEval(guardsOp("flipBit", ["x", "y"]), guardsEnv(two, sampleInt(flips[i], "i64")))
     t.eqStr(`flipBit ${flips[i]}`, r.isOk() ? guardsJoin(r.value.bytes) : r.error, flipped[i])
   }
+  const single = sampleEval(guardsOp("flipBit", ["x", "y"]), guardsEnv(sampleBytes([0]), guardsI64(3)))
+  t.eqStr("flipBit of one byte", single.isOk() ? guardsJoin(single.value.bytes) : single.error, "8")
+  // 24 bits: a negative bit counts back from 24, not from 2^64.
+  const three0 = sampleBytes([0, 0, 0])
+  const back = sampleEval(guardsOp("flipBit", ["x", "y"]), guardsEnv(three0, guardsI64(-1)))
+  t.eqStr("flipBit -1 of three bytes", back.isOk() ? guardsJoin(back.value.bytes) : back.error, "0,0,128")
+  const far = sampleEval(guardsOp("flipBit", ["x", "y"]), guardsEnv(three0, sampleInt(min, "i64")))
+  t.eqStr("flipBit of the minimum, three bytes", far.isOk() ? guardsJoin(far.value.bytes) : far.error, "0,0,1")
   const empty = sampleEval(guardsOp("flipBit", ["x", "y"]), guardsEnv(sampleBytes([]), sampleInt(toI64(-1), "i64")))
   t.ok("flipBit of no bytes is no bytes", empty.isOk() && empty.value.bytes.length === 0)
 

@@ -222,6 +222,7 @@ const sampleClamp = (x: i64, lo: i64, hi: i64): i64 => (x < lo ? lo : x > hi ? h
 
 /** An operand that must be of one kind. */
 const sampleArg = (args: SampleValue[], i: i32, kind: SampleKind, op: string): Result<SampleValue, string> => {
+  // Every caller passes a literal index, never below 0.
   if (i >= 0 && i < args.length) {
     const x = args[i]
     if (x.kind === kind) {
@@ -241,11 +242,8 @@ const sampleRem = (x: i64, y: i64, ty: string): i64 => {
     const uy = toU64(y)
     return uy === toU64(0) ? 0 : toI64(toU64(x) % uy)
   }
-  if (y === toI64(0) || y === toI64(-1)) {
-    return 0
-  }
   // |x| % |y| in u64, which cannot overflow, signed as x: the truncating
-  // remainder. ay is not 0, as y is not.
+  // remainder. A divisor of -1 leaves 0, and one of 0 is guarded.
   const zero: u64 = 0
   const ax = x < 0 ? zero - toU64(x) : toU64(x)
   const ay = y < 0 ? zero - toU64(y) : toU64(y)
