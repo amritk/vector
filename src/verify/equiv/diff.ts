@@ -125,20 +125,23 @@ export class FunctionPairing {
   }
 }
 
-const diffFind = (program: Program, name: string): i32 => {
-  for (let i = 0; i < toI32(program.functions.length); i++) {
-    if (program.functions[i].name === name) {
-      return i
+// The first function of a program with this name, or null.
+const diffFind = (program: Program, name: string): FnUnit | null => {
+  for (const f of program.functions) {
+    if (f.name === name) {
+      return f
     }
   }
-  return -1
+  return null
 }
 
 const diffCompatible = (a: FnUnit, b: FnUnit): boolean => {
   if (a.returnType !== b.returnType || a.params.length !== b.params.length) {
     return false
   }
-  for (let i = 0; i < toI32(a.params.length); i++) {
+  // The length check above makes the two bounds equal; the second is the
+  // prover's.
+  for (let i = 0; i < toI32(a.params.length) && i < toI32(b.params.length); i++) {
     if (a.params[i].ty !== b.params[i].ty) {
       return false
     }
@@ -158,17 +161,16 @@ const diffCompatible = (a: FnUnit, b: FnUnit): boolean => {
 export const pairFunctions = (oldProgram: Program, newProgram: Program): FunctionPairing => {
   const out = new FunctionPairing()
   for (const f of newProgram.functions) {
-    if (diffFind(oldProgram, f.name) < 0) {
+    if (diffFind(oldProgram, f.name) === null) {
       out.added.push(f)
     }
   }
   for (const oldFn of oldProgram.functions) {
-    const at = diffFind(newProgram, oldFn.name)
-    if (at < 0) {
+    const newFn = diffFind(newProgram, oldFn.name)
+    if (newFn === null) {
       out.removed.push(oldFn)
       continue
     }
-    const newFn = newProgram.functions[at]
     if (diffCompatible(oldFn, newFn)) {
       out.comparable.push(new FunctionPair(oldFn, newFn))
     } else {
@@ -272,19 +274,28 @@ export const emitDiffScript = (pairs: FunctionPair[], oldProgram: Program, newPr
   for (let idx = 0; idx < toI32(pairs.length); idx++) {
     const oldFn = pairs[idx].oldFn
     const newFn = pairs[idx].newFn
+    // pairFunctions never pairs an old version with fewer parameters than
+    // the new one: such a pair gets no queries, so the query count that
+    // assembleDiffs checks refuses the script rather than leave a new
+    // parameter unbound in the old version.
+    if (oldFn.params.length < newFn.params.length) {
+      continue
+    }
     // The `x` and `r` infixes keep parameters and results apart: a parameter
     // could itself be named `r_old`.
     const smtNames: string[] = []
     const names: string[] = []
     const oldScope = new SmtScope()
     const newScope = new SmtScope()
-    for (let i = 0; i < toI32(newFn.params.length); i++) {
+    // The check above makes the second bound never stop the loop early.
+    for (let i = 0; i < toI32(newFn.params.length) && i < toI32(oldFn.params.length); i++) {
       const p = newFn.params[i]
+      const oldName = oldFn.params[i].name
       const v = `d${idx}x${i}_${p.name}`
       smtNames.push(v)
       names.push(p.name)
       lines.push(`(declare-const ${v} ${p.ty})`)
-      oldScope.bind(oldFn.params[i].name, v)
+      oldScope.bind(oldName, v)
       newScope.bind(p.name, v)
     }
     const oldResult = `d${idx}r_old`
@@ -374,10 +385,13 @@ const diffCheck = (q: DiffQuery, a: QueryAnswer): DiffCheck => {
     return new DiffCheck(CHECK_UNKNOWN)
   }
   const out = new DiffCheck(CHECK_WITNESS)
-  for (let i = 0; i < toI32(q.smtNames.length); i++) {
+  // assembleDiffs refuses a query with fewer names than constants, so the
+  // second bound never stops the loop early.
+  for (let i = 0; i < toI32(q.smtNames.length) && i < toI32(q.names.length); i++) {
+    const name = q.names[i]
     const v = a.value(q.smtNames[i]) ?? ""
     if (v !== "") {
-      out.inputs.names.push(q.names[i])
+      out.inputs.names.push(name)
       out.inputs.values.push(v)
     }
   }
@@ -516,17 +530,20 @@ export const diffReplayWitnesses = (
   pairs: FunctionPair[],
   matched: MatchedFunctionDiff[],
 ): i32 => {
-  let mismatches = 0
+  const mismatched: DiffCheck[] = []
   for (let i = 0; i < toI32(matched.length) && i < toI32(pairs.length); i++) {
     const m = matched[i]
-    diffReplayCheck(oldProgram, pairs[i], newProgram, REPLAY_NARROWED, m.domainNarrowed)
-    diffReplayCheck(oldProgram, pairs[i], newProgram, REPLAY_WIDENED, m.domainWidened)
-    diffReplayCheck(oldProgram, pairs[i], newProgram, REPLAY_VALUE, m.valueDiff)
+    const pair = pairs[i]
+    diffReplayCheck(oldProgram, pair, newProgram, REPLAY_NARROWED, m.domainNarrowed)
+    diffReplayCheck(oldProgram, pair, newProgram, REPLAY_WIDENED, m.domainWidened)
+    diffReplayCheck(oldProgram, pair, newProgram, REPLAY_VALUE, m.valueDiff)
     for (const c of [m.domainNarrowed, m.domainWidened, m.valueDiff]) {
-      mismatches = mismatches + (c.replay === REPLAY_MISMATCH ? 1 : 0)
+      if (c.replay === REPLAY_MISMATCH) {
+        mismatched.push(c)
+      }
     }
   }
-  return mismatches
+  return toI32(mismatched.length)
 }
 
 // The clauses of `a` whose math rendering `b` lacks, each once.
@@ -570,26 +587,48 @@ export const assembleDiffs = (
   queries: DiffQuery[],
   answers: QueryAnswer[],
 ): Result<MatchedFunctionDiff[], string> => {
-  if (queries.length !== pairs.length * 4 || answers.length !== queries.length) {
-    return Err(`diff: ${answers.length} answers for ${queries.length} queries over ${pairs.length} pairs`)
+  // `queries.length` is four per pair, computed without the product's overflow.
+  const countErr = `diff: ${answers.length} answers for ${queries.length} queries over ${pairs.length} pairs`
+  if (queries.length % 4 !== 0 || queries.length / 4 !== pairs.length || answers.length !== queries.length) {
+    return Err(countErr)
+  }
+  for (const q of queries) {
+    if (q.names.length < q.smtNames.length) {
+      return Err(`diff: a query has ${q.names.length} names for ${q.smtNames.length} constants`)
+    }
   }
   const out: MatchedFunctionDiff[] = []
   for (let idx = 0; idx < toI32(pairs.length); idx++) {
     const oldFn = pairs[idx].oldFn
     const newFn = pairs[idx].newFn
+    // The count check above puts four queries and answers at `idx * 4` for
+    // every pair, so this refusal never fires; it is the prover's, which
+    // cannot carry that product through the loop.
+    if (idx > 536870910) {
+      return Err(countErr)
+    }
     const base = idx * 4
-    const m = new MatchedFunctionDiff(
-      newFn.name,
-      signatureOf(newFn),
-      diffCheck(queries[base], answers[base]),
-      diffCheck(queries[base + 1], answers[base + 1]),
-      diffCheck(queries[base + 2], answers[base + 2]),
-    )
-    m.sharedDomain = diffCheck(queries[base + 3], answers[base + 3])
-    for (let i = 0; i < toI32(newFn.params.length); i++) {
+    if (!(base >= 0 && base + 3 < toI32(queries.length) && base + 3 < toI32(answers.length))) {
+      return Err(countErr)
+    }
+    const q0 = queries[base]
+    const q1 = queries[base + 1]
+    const q2 = queries[base + 2]
+    const q3 = queries[base + 3]
+    const a0 = answers[base]
+    const a1 = answers[base + 1]
+    const a2 = answers[base + 2]
+    const a3 = answers[base + 3]
+    const m = new MatchedFunctionDiff(newFn.name, signatureOf(newFn), diffCheck(q0, a0), diffCheck(q1, a1), diffCheck(q2, a2))
+    m.sharedDomain = diffCheck(q3, a3)
+    // Renames pair parameters by position; a pair with fewer old parameters
+    // has no rename past the old ones (emitDiffScript gives it no queries,
+    // so the count check above has already refused it).
+    for (let i = 0; i < toI32(newFn.params.length) && i < toI32(oldFn.params.length); i++) {
       const oldName = oldFn.params[i].name
-      if (oldName !== newFn.params[i].name) {
-        m.paramRenames.push(new ParamRename(oldName, newFn.params[i].name))
+      const newName = newFn.params[i].name
+      if (oldName !== newName) {
+        m.paramRenames.push(new ParamRename(oldName, newName))
       }
     }
     const oldReq = diffPrettyRequires(oldFn)
@@ -788,26 +827,43 @@ export const diffDecide = (
   report: ProgramDiffReport,
 ): DiffOutcome => {
   const mismatches = diffReplayWitnesses(oldProgram, newProgram, pairing.comparable, report.matched)
+  // A verdict with no pair, or a shared-domain witness with a name and no
+  // value, is a vector bug that assembleDiffs and diffCheck never make: it is
+  // a MISMATCH, never a float64 comparison that skips it.
+  let unpaired = false
   // Equal over the rationals is not equal in the emitted code: run every
   // rational-equivalent pair in float64.
   for (let i = 0; i < toI32(report.matched.length); i++) {
-    if (report.matched[i].equivalent) {
-      const pair = pairing.comparable[i]
-      const domain = report.matched[i].sharedDomain
-      const seed: string[] = []
-      for (const p of pair.newFn.params) {
-        const at = toI32(domain.inputs.names.indexOf(p.name))
-        seed.push(at < 0 ? "" : domain.inputs.values[at])
+    const m = report.matched[i]
+    if (!m.equivalent) {
+      continue
+    }
+    if (i >= toI32(pairing.comparable.length)) {
+      unpaired = true
+      continue
+    }
+    const pair = pairing.comparable[i]
+    const domain = m.sharedDomain
+    const seed: string[] = []
+    for (const p of pair.newFn.params) {
+      const at = toI32(domain.inputs.names.indexOf(p.name))
+      if (at < 0) {
+        seed.push("")
+      } else if (at < toI32(domain.inputs.values.length)) {
+        seed.push(domain.inputs.values[at])
+      } else {
+        unpaired = true
+        seed.push("")
       }
-      const delta = findFloat64Delta(oldProgram, pair.oldFn, newProgram, pair.newFn, seed)
-      if (delta.found) {
-        report.float64Deltas.push(new Float64Diff(report.matched[i].name, delta))
-      } else if (delta.compared === 0 && domain.status !== CHECK_NONE) {
-        // Fail closed: equal over the reals says nothing about float64, and
-        // no input both versions accept was run. Only an empty shared domain
-        // (unsat) makes zero comparisons vacuous.
-        report.float64Unsampled.push(report.matched[i].name)
-      }
+    }
+    const delta = findFloat64Delta(oldProgram, pair.oldFn, newProgram, pair.newFn, seed)
+    if (delta.found) {
+      report.float64Deltas.push(new Float64Diff(m.name, delta))
+    } else if (delta.compared === 0 && domain.status !== CHECK_NONE) {
+      // Fail closed: equal over the reals says nothing about float64, and
+      // no input both versions accept was run. Only an empty shared domain
+      // (unsat) makes zero comparisons vacuous.
+      report.float64Unsampled.push(m.name)
     }
   }
   for (const f of pairing.added) {
@@ -826,7 +882,7 @@ export const diffDecide = (
   }
   unknown = unknown || report.float64Unsampled.length > 0
   let status = DIFF_EQUIVALENT
-  if (mismatches > 0) {
+  if (mismatches > 0 || unpaired) {
     status = DIFF_MISMATCH
   } else if (different) {
     status = DIFF_DIFFERENT
@@ -841,19 +897,21 @@ export const diffDecide = (
 
 const diffInputs = (cex: Counterexample): string => {
   const parts: string[] = []
-  for (let i = 0; i < toI32(cex.names.length); i++) {
+  // A counterexample holds one value per name, so the second bound never stops the loop early.
+  for (let i = 0; i < toI32(cex.names.length) && i < toI32(cex.values.length); i++) {
     parts.push(`${cex.names[i]} = ${cex.values[i]}`)
   }
   return parts.join(", ")
 }
 
-const diffFloat64Of = (report: ProgramDiffReport, name: string): i32 => {
-  for (let i = 0; i < toI32(report.float64Deltas.length); i++) {
-    if (report.float64Deltas[i].name === name) {
-      return i
+// The first float64 delta of the function with this name, or null.
+const diffFloat64Of = (report: ProgramDiffReport, name: string): Float64Diff | null => {
+  for (const d of report.float64Deltas) {
+    if (d.name === name) {
+      return d
     }
   }
-  return -1
+  return null
 }
 
 const diffDomainLines = (lines: string[], c: DiffCheck, was: string, now: string, what: string): void => {
@@ -867,8 +925,8 @@ const diffDomainLines = (lines: string[], c: DiffCheck, was: string, now: string
 const diffMatchedLines = (lines: string[], report: ProgramDiffReport, m: MatchedFunctionDiff): void => {
   const f = diffFloat64Of(report, m.name)
   const unsampled = report.float64Unsampled.indexOf(m.name) >= 0
-  if (m.equivalent && f >= 0) {
-    const d = report.float64Deltas[f].delta
+  if (m.equivalent && f !== null) {
+    const d = f.delta
     lines.push(` ✘ ${m.signature} — equal over the reals, but the emitted float64 code DIFFERS`)
     lines.push(`     float64: at ${diffInputs(d.inputs)} → old = ${d.oldResult}, new = ${d.newResult}`)
   } else if (m.equivalent && unsampled) {
@@ -981,7 +1039,8 @@ export const renderDiffSummary = (status: string, report: ProgramDiffReport): st
 
 const diffInputsJson = (cex: Counterexample): OutJson => {
   const out = outJsonObject()
-  for (let i = 0; i < toI32(cex.names.length); i++) {
+  // A counterexample holds one value per name, so the second bound never stops the loop early.
+  for (let i = 0; i < toI32(cex.names.length) && i < toI32(cex.values.length); i++) {
     out.put(cex.names[i], outJsonString(cex.values[i]))
   }
   return out
@@ -1013,7 +1072,7 @@ export const diffPairStatus = (report: ProgramDiffReport, m: MatchedFunctionDiff
   if (m.mismatched()) {
     return DIFF_MISMATCH
   }
-  if (m.any(CHECK_WITNESS) || diffFloat64Of(report, m.name) >= 0) {
+  if (m.any(CHECK_WITNESS) || diffFloat64Of(report, m.name) !== null) {
     return DIFF_DIFFERENT
   }
   if (m.any(CHECK_UNKNOWN) || report.float64Unsampled.indexOf(m.name) >= 0) {
