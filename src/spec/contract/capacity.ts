@@ -52,10 +52,10 @@ export class CapacityExpr {
 class CapacityCursor {
   /** The tokens, in order. */
   toks: string[]
-  /** The next token's index. */
-  pos: i32
-  /** How many parentheses are open. */
-  depth: i32
+  /** The next token's index: u32, as it never passes the token count. */
+  pos: u32
+  /** How many parentheses are open: u32, as it never passes CAPACITY_MAX_DEPTH. */
+  depth: u32
   /**
    * Starts at the first token.
    *
@@ -76,8 +76,8 @@ const capacityIsIdentStart = (c: i32): boolean => (c >= 65 && c <= 90) || (c >= 
 const capacityLex = (text: string, max: i32): string[] => {
   const out: string[] = []
   let i: i32 = 0
-  const n: i32 = toI32(text.length)
-  while (i < n && toI32(out.length) <= max) {
+  const n: i32 = text.length
+  while (i >= 0 && i < n && toI32(out.length) <= max) {
     const c: i32 = toI32(text.charCodeAt(i))
     if (c === 32 || c === 9 || c === 10 || c === 13) {
       i += 1
@@ -90,7 +90,7 @@ const capacityLex = (text: string, max: i32): string[] => {
         }
         j += 1
       }
-      out.push(text.slice(i, j))
+      out.push(text.substring(i, j))
       i = j
     } else {
       out.push(text.slice(i, i + 1))
@@ -100,7 +100,11 @@ const capacityLex = (text: string, max: i32): string[] => {
   return out
 }
 
-const capacityPeek = (c: CapacityCursor): string => (c.pos < c.toks.length ? c.toks[c.pos] : "")
+const capacityPeek = (c: CapacityCursor): string => {
+  const toks = c.toks
+  const pos = c.pos
+  return pos < toU32(toks.length) ? toks[pos] : ""
+}
 
 /** Where the parser stopped, as a refusal says it: `stops at <token>` or `stops at the end`. */
 const capacityStop = (c: CapacityCursor): string => {
@@ -111,7 +115,7 @@ const capacityStop = (c: CapacityCursor): string => {
 const capacityAtom = (c: CapacityCursor): Result<CapacityExpr, string> => {
   const t = capacityPeek(c)
   if (t === "(") {
-    if (c.depth >= CAPACITY_MAX_DEPTH) {
+    if (c.depth >= toU32(CAPACITY_MAX_DEPTH)) {
       return Err(`nests parentheses deeper than ${CAPACITY_MAX_DEPTH}`)
     }
     c.pos += 1
@@ -124,7 +128,7 @@ const capacityAtom = (c: CapacityCursor): Result<CapacityExpr, string> => {
     c.depth -= 1
     return Ok(e)
   }
-  if (t.length === 0) {
+  if (t.length < 1) {
     return Err(capacityStop(c))
   }
   const first: i32 = toI32(t.charCodeAt(0))
@@ -137,11 +141,12 @@ const capacityAtom = (c: CapacityCursor): Result<CapacityExpr, string> => {
     if ((t.length > 1 && first === 48) || t.length > 7) {
       return Err(capacityStop(c))
     }
-    let v: i32 = 0
+    // In u32: seven digits at most.
+    let v: u32 = 0
     for (let i: i32 = 0; i < toI32(t.length); i++) {
-      v = v * 10 + toI32(t.charCodeAt(i)) - 48
+      v = v * 10 + toU32(t.charCodeAt(i)) - 48
     }
-    if (v > CAPACITY_MAX_LITERAL) {
+    if (v > toU32(CAPACITY_MAX_LITERAL)) {
       return Err(capacityStop(c))
     }
     c.pos += 1
@@ -232,7 +237,7 @@ export const capacityParse = (text: string): Result<CapacityExpr, string> => {
   }
   const c = new CapacityCursor(toks)
   const e = capacitySum(c).orReturn()
-  if (c.pos < c.toks.length) {
+  if (c.pos < toU32(c.toks.length)) {
     return Err(capacityStop(c))
   }
   const floor = capacityFloor(e)

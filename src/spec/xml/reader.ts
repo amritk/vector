@@ -163,8 +163,10 @@ export const xmlErrorSee = (n: XmlNode, message: string, see: XmlNode): XmlError
 /** The reader's state over one input. */
 class XmlReader {
   src: string
-  pos: i32
-  lineStarts: i32[]
+  /** The byte the reader is at; the input is capped at XML_MAX_INPUT_BYTES, so it never nears 2^32. */
+  pos: u32
+  /** Where each line starts; always holds 0, the first line's. */
+  lineStarts: u32[]
   /** Whether an unsigned `<?line N?>` has been met. */
   piSeen: boolean
   /** The N of the last unsigned `<?line N?>`, corrections applied; a correction can take it below 1. */
@@ -181,6 +183,8 @@ class XmlReader {
   pieces: string[]
   /** The open text node the pieces belong to; null when none is open. */
   piecesNode: XmlNode | null = null
+  /** The byte the open text node starts at. */
+  piecesAt: u32
   ids: i32
   /** @param src the input, line ends already LF */
   constructor(src: string) {
@@ -199,23 +203,43 @@ class XmlReader {
     this.entities.set("apos", "'")
     this.declared = 0
     this.pieces = []
+    this.piecesAt = 0
     this.ids = 0
   }
 }
 
-/** The 1-based line of byte `at`. */
-const xmlLineOf = (r: XmlReader, at: i32): i32 => {
-  let lo = 0
-  let hi = r.lineStarts.length - 1
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1
-    if (r.lineStarts[mid] <= at) {
+/** A byte's 1-based line and column. */
+class XmlPlace {
+  line: i32
+  col: i32
+  /**
+   * @param line the 1-based line
+   * @param col the 1-based column, in bytes
+   */
+  constructor(line: i32, col: i32) {
+    this.line = line
+    this.col = col
+  }
+}
+
+/** The 1-based line and column of byte `at`. */
+const xmlPlaceOf = (r: XmlReader, at: u32): XmlPlace => {
+  const starts = r.lineStarts
+  // The last line starting at or before `at`: starts[lo] <= at, and starts[hi] > at or hi is the length.
+  let lo: u32 = 0
+  let hi: u32 = toU32(starts.length)
+  while (lo + 1 < hi) {
+    const mid = lo + ((hi - lo) >> 1)
+    // `mid` is below `hi`, which is at most the length, so the first test always holds.
+    if (mid < toU32(starts.length) && starts[mid] <= at) {
       lo = mid
     } else {
-      hi = mid - 1
+      hi = mid
     }
   }
-  return lo + 1
+  // lineStarts always holds 0, so `lo` (0, or a `mid` that was in range) is in range.
+  const start: u32 = lo < toU32(starts.length) ? starts[lo] : toU32(0)
+  return new XmlPlace(toI32(lo + 1), toI32(at - start + 1))
 }
 
 /** The last `<?line N?>`'s markdown line, or -1 before any. */
@@ -228,17 +252,17 @@ const xmlMarkMd = (r: XmlReader): i32 => {
 }
 
 /** A refusal at byte `at`. */
-const xmlErrAt = (r: XmlReader, message: string, at: i32): XmlError => {
-  const line = xmlLineOf(r, at)
-  return new XmlError(line, at - r.lineStarts[line - 1] + 1, xmlMarkMd(r), r.piLine, message)
+const xmlErrAt = (r: XmlReader, message: string, at: u32): XmlError => {
+  const place = xmlPlaceOf(r, at)
+  return new XmlError(place.line, place.col, xmlMarkMd(r), r.piLine, message)
 }
 
 /** A new node starting at byte `at`. */
-const xmlNodeAt = (r: XmlReader, name: string, at: i32): XmlNode => {
-  const line = xmlLineOf(r, at)
-  r.ids = r.ids + 1
-  const n = new XmlNode(name, line, xmlMarkMd(r), r.piLine, r.ids)
-  n.col = at - r.lineStarts[line - 1] + 1
+const xmlNodeAt = (r: XmlReader, name: string, at: u32): XmlNode => {
+  const place = xmlPlaceOf(r, at)
+  r.ids = toI32(toU32(r.ids) + 1)
+  const n = new XmlNode(name, place.line, xmlMarkMd(r), r.piLine, r.ids)
+  n.col = place.col
   return n
 }
 
@@ -269,43 +293,45 @@ const xmlIsChar = (c: i32): boolean =>
   (c >= 0xe000 && c <= 0xfffd) ||
   (c >= 0x10000 && c <= 0x10ffff)
 
-/** Where the input is not UTF-8 or holds a character XML does not allow; -1 when nowhere. Sets `why`. */
-const xmlCheckChars = (r: XmlReader, why: string[]): i32 => {
+/** The byte at `i` of `s`, or -1 past its end. */
+const xmlByteAt = (s: string, i: u32): i32 => (i < toU32(s.length) ? s.charCodeAt(i) : -1)
+
+/** Where the input is not UTF-8 or holds a character XML does not allow, refused; null when nowhere. */
+const xmlCheckChars = (r: XmlReader): XmlError | null => {
   const s = r.src
-  let i = 0
-  while (i < s.length) {
+  let i: u32 = 0
+  while (i < toU32(s.length)) {
     const b = s.charCodeAt(i)
     if (b >= 0x20 && b < 0x80) {
       i = i + 1
       continue
     }
-    const n = charsSequenceLength(s, i)
+    const n = charsSequenceLength(s, toI32(i))
     if (b >= 0x80 && n === 1) {
-      why.push(`the input is not UTF-8: byte ${b} starts no well-formed sequence`)
-      return i
+      return xmlErrAt(r, `the input is not UTF-8: byte ${b} starts no well-formed sequence`, i)
     }
-    const c = charsCodePointAt(s, i)
+    const c = charsCodePointAt(s, toI32(i))
     // U+FFFD also stands for an overlong form or a surrogate; only EF BF BD is the real one.
-    if (c === 0xfffd && !(n === 3 && s.charCodeAt(i + 1) === 0xbf && s.charCodeAt(i + 2) === 0xbd && b === 0xef)) {
-      why.push("the input is not UTF-8: an overlong form or a surrogate")
-      return i
+    if (c === 0xfffd && !(n === 3 && xmlByteAt(s, i + 1) === 0xbf && xmlByteAt(s, i + 2) === 0xbd && b === 0xef)) {
+      return xmlErrAt(r, "the input is not UTF-8: an overlong form or a surrogate", i)
     }
     if (!xmlIsChar(c)) {
-      why.push(`${charsName(c)} is not an XML character`)
-      return i
+      return xmlErrAt(r, `${charsName(c)} is not an XML character`, i)
     }
-    i = i + n
+    i = i + toU32(n)
   }
-  return -1
+  return null
 }
 
 /** Whether the input continues with `s` at the reader's position. */
 const xmlAt = (r: XmlReader, s: string): boolean => {
-  if (r.pos + s.length > r.src.length) {
+  const src = r.src
+  const p = r.pos
+  if (p + toU32(s.length) > toU32(src.length)) {
     return false
   }
-  for (let k = 0; k < s.length; k++) {
-    if (r.src.charCodeAt(r.pos + k) !== s.charCodeAt(k)) {
+  for (let k: u32 = 0; k < toU32(s.length); k++) {
+    if (xmlByteAt(src, p + k) !== s.charCodeAt(k)) {
       return false
     }
   }
@@ -316,11 +342,14 @@ const xmlIsSpace = (c: i32): boolean => c === 0x20 || c === 0x09 || c === 0x0a |
 
 /** Skips whitespace; whether there was any. */
 const xmlSkipWs = (r: XmlReader): boolean => {
+  const s = r.src
   const from = r.pos
-  while (r.pos < r.src.length && xmlIsSpace(r.src.charCodeAt(r.pos))) {
-    r.pos = r.pos + 1
+  let p = from
+  while (p < toU32(s.length) && xmlIsSpace(s.charCodeAt(p))) {
+    p = p + 1
   }
-  return r.pos > from
+  r.pos = p
+  return p > from
 }
 
 const xmlIsNameStart = (c: i32): boolean => (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95 || c === 58
@@ -328,15 +357,15 @@ const xmlIsNameStart = (c: i32): boolean => (c >= 65 && c <= 90) || (c >= 97 && 
 const xmlIsNameChar = (c: i32): boolean => xmlIsNameStart(c) || (c >= 48 && c <= 57) || c === 46 || c === 45
 
 /** The name at `i` of `s`, ASCII letters, digits, "_", ":", "." and "-"; "" when none starts there. */
-const xmlNameIn = (s: string, i: i32): string => {
-  if (i >= s.length || !xmlIsNameStart(s.charCodeAt(i))) {
+const xmlNameIn = (s: string, i: u32): string => {
+  if (i >= toU32(s.length) || !xmlIsNameStart(s.charCodeAt(i))) {
     return ""
   }
   let j = i + 1
-  while (j < s.length && xmlIsNameChar(s.charCodeAt(j))) {
+  while (j < toU32(s.length) && xmlIsNameChar(s.charCodeAt(j))) {
     j = j + 1
   }
-  return s.substring(i, j)
+  return s.substring(toI32(i), toI32(j))
 }
 
 /** Reads a name, moving past it. */
@@ -345,7 +374,7 @@ const xmlName = (r: XmlReader, where: string): Result<string, XmlError> => {
   if (name.length === 0) {
     return Err(xmlErrAt(r, `malformed XML: expected a name ${where}`, r.pos))
   }
-  r.pos = r.pos + name.length
+  r.pos = r.pos + toU32(name.length)
   return Ok(name)
 }
 
@@ -354,24 +383,24 @@ const xmlExpect = (r: XmlReader, s: string, where: string): Result<boolean, XmlE
   if (!xmlAt(r, s)) {
     return Err(xmlErrAt(r, `malformed XML: expected "${s}" ${where}`, r.pos))
   }
-  r.pos = r.pos + s.length
+  r.pos = r.pos + toU32(s.length)
   return Ok(true)
 }
 
 /** The text up to `end`, moving past it. */
 const xmlUntil = (r: XmlReader, end: string, what: string): Result<string, XmlError> => {
-  const stop = r.src.indexOf(end, r.pos)
+  const stop = r.src.indexOf(end, toI32(r.pos))
   if (stop < 0) {
     return Err(xmlErrAt(r, `malformed XML: unterminated ${what}`, r.pos))
   }
-  const s = r.src.substring(r.pos, stop)
-  r.pos = stop + end.length
+  const s = r.src.substring(toI32(r.pos), stop)
+  r.pos = toU32(stop) + toU32(end.length)
   return Ok(s)
 }
 
 /** A quoted value, moving past it. */
 const xmlQuoted = (r: XmlReader, where: string): Result<string, XmlError> => {
-  const q = r.pos < r.src.length ? r.src.charCodeAt(r.pos) : 0
+  const q = xmlByteAt(r.src, r.pos)
   if (q !== 0x22 && q !== 0x27) {
     return Err(xmlErrAt(r, `malformed XML: expected a quoted value ${where}`, r.pos))
   }
@@ -382,30 +411,31 @@ const xmlQuoted = (r: XmlReader, where: string): Result<string, XmlError> => {
 const xmlIsDigit = (c: i32): boolean => c >= 48 && c <= 57
 
 const xmlHexValue = (c: i32): i32 =>
-  xmlIsDigit(c) ? c - 48 : c >= 97 && c <= 102 ? c - 87 : c >= 65 && c <= 70 ? c - 55 : -1
+  c >= 48 && c <= 57 ? c - 48 : c >= 97 && c <= 102 ? c - 87 : c >= 65 && c <= 70 ? c - 55 : -1
 
 /**
- * The code point a character reference's digits name, from `i` of `s` up to
- * `end`; -1 when they are not all digits of the base or name a number past
+ * The code point a character reference's digits name, from `i` of `s` to its
+ * end; -1 when they are not all digits of the base or name a number past
  * U+10FFFF.
  */
-const xmlRefValue = (s: string, i: i32, end: i32, hex: boolean): i32 => {
-  if (i >= end) {
+const xmlRefValue = (s: string, i: u32, hex: boolean): i32 => {
+  if (i >= toU32(s.length)) {
     return -1
   }
-  let v = 0
-  for (let k = i; k < end; k++) {
+  let v: u32 = 0
+  for (let k = i; k < toU32(s.length); k++) {
     const c = s.charCodeAt(k)
-    const d = hex ? xmlHexValue(c) : xmlIsDigit(c) ? c - 48 : -1
+    const d = hex ? xmlHexValue(c) : c >= 48 && c <= 57 ? c - 48 : -1
     if (d < 0) {
       return -1
     }
-    v = v * (hex ? 16 : 10) + d
+    // `v` is at most 0x10FFFF here and `d` at most 15, so this stays far inside u32.
+    v = v * (hex ? 16 : 10) + toU32(d)
     if (v > 0x10ffff) {
       return -1
     }
   }
-  return v
+  return toI32(v)
 }
 
 /** Encodes a code point as UTF-8. */
@@ -438,7 +468,7 @@ const xmlCharRef = (body: string): string => {
     return ""
   }
   const hex = body.charCodeAt(1) === 0x78
-  const c = xmlRefValue(body, hex ? 2 : 1, body.length, hex)
+  const c = xmlRefValue(body, hex ? 2 : 1, hex)
   if (c < 0 || !xmlIsChar(c)) {
     return ""
   }
@@ -446,7 +476,7 @@ const xmlCharRef = (body: string): string => {
 }
 
 /** Resolves the references in character data or an attribute value; `from` is where `raw` starts. */
-const xmlDecode = (r: XmlReader, raw: string, from: i32): Result<string, XmlError> => {
+const xmlDecode = (r: XmlReader, raw: string, from: u32): Result<string, XmlError> => {
   let amp = raw.indexOf("&")
   if (amp < 0) {
     return Ok(raw)
@@ -455,25 +485,28 @@ const xmlDecode = (r: XmlReader, raw: string, from: i32): Result<string, XmlErro
   let i = 0
   while (amp >= 0) {
     parts.push(raw.substring(i, amp))
-    const semi = raw.indexOf(";", amp + 1)
-    const body = semi < 0 ? "" : raw.substring(amp + 1, semi)
+    // `amp` is an index of `raw`, so these adds stay far inside u32 and i32.
+    const at = from + toU32(amp)
+    const semi = raw.indexOf(";", toI32(toU32(amp) + 1))
+    const body = semi < 0 ? "" : raw.substring(toI32(toU32(amp) + 1), semi)
     if (body.length > 0 && body.charCodeAt(0) === 0x23) {
       const c = xmlCharRef(body)
       if (c.length === 0) {
-        return Err(xmlErrAt(r, `character reference &${body}; names no XML character`, from + amp))
+        return Err(xmlErrAt(r, `character reference &${body}; names no XML character`, at))
       }
       parts.push(c)
     } else {
       if (body.length === 0 || xmlNameIn(body, 0).length !== body.length) {
-        return Err(xmlErrAt(r, 'malformed XML: "&" starts no entity or character reference', from + amp))
+        return Err(xmlErrAt(r, 'malformed XML: "&" starts no entity or character reference', at))
       }
       const k = r.entities.get(body)
       if (k === undefined) {
-        return Err(xmlErrAt(r, `undefined entity &${body};`, from + amp))
+        return Err(xmlErrAt(r, `undefined entity &${body};`, at))
       }
       parts.push(k)
     }
-    i = semi + 1
+    // An empty body was refused above, so `semi` is an index of `raw` here.
+    i = toI32(toU32(semi) + 1)
     amp = raw.indexOf("&", i)
   }
   parts.push(raw.substring(i, raw.length))
@@ -511,14 +544,16 @@ const xmlPi = (r: XmlReader): Result<boolean, XmlError> => {
   if (digits.length > 9) {
     return Err(xmlErrAt(r, `<?${trim(body)}?> names a line past 999999999`, at))
   }
-  const n = parseInt(digits)
+  // N has at most nine digits and the correction stays within ±999999999 (the cap below), so each
+  // sum's exact value fits i32 and the u32 add or subtract, two's complement, yields it.
+  const n = toU32(parseInt(digits))
+  const correction = toU32(r.correction)
   if (sign === 0) {
     r.piSeen = true
-    r.piN = n + r.correction
-    r.piLine = xmlLineOf(r, at)
+    r.piN = toI32(correction + n)
+    r.piLine = xmlPlaceOf(r, at).line
   } else {
-    // Each N is at most 999999999 and so is the sum so far, so this add stays in i32; the cap keeps it there.
-    const sum = r.correction + sign * n
+    const sum = toI32(sign < 0 ? correction - n : correction + n)
     if (sum > 999999999 || sum < -999999999) {
       return Err(xmlErrAt(r, `<?${trim(body)}?> corrects lines by more than 999999999 in all`, at))
     }
@@ -538,7 +573,7 @@ const xmlComment = (r: XmlReader): Result<boolean, XmlError> => {
 const xmlInternalSubset = (r: XmlReader): Result<boolean, XmlError> => {
   while (true) {
     xmlSkipWs(r)
-    if (r.pos >= r.src.length) {
+    if (r.pos >= toU32(r.src.length)) {
       return Err(xmlErrAt(r, "malformed XML: unterminated DOCTYPE", r.pos))
     }
     if (xmlAt(r, "]")) {
@@ -560,10 +595,11 @@ const xmlInternalSubset = (r: XmlReader): Result<boolean, XmlError> => {
     if (xmlAt(r, "%")) {
       return Err(xmlErrAt(r, "a parameter entity (<!ENTITY %) is refused", at))
     }
-    if (r.declared >= XML_MAX_ENTITIES) {
+    const declared = r.declared
+    if (declared >= XML_MAX_ENTITIES) {
       return Err(xmlErrAt(r, `the DOCTYPE declares more than ${XML_MAX_ENTITIES} entities (XML_MAX_ENTITIES)`, at))
     }
-    r.declared = r.declared + 1
+    r.declared = declared + 1
     const name = xmlName(r, "in <!ENTITY").orReturn()
     xmlSkipWs(r)
     if (xmlAt(r, "SYSTEM") || xmlAt(r, "PUBLIC")) {
@@ -575,7 +611,7 @@ const xmlInternalSubset = (r: XmlReader): Result<boolean, XmlError> => {
     // One reference: `&`, then the only `;`, at the end; "&#160;&#160;" is two.
     const ok = value.length > 3 && value.charCodeAt(0) === 0x26 && value.indexOf(";") === value.length - 1
     const c = ok ? xmlCharRef(value.substring(1, value.length - 1)) : ""
-    if (!ok || value.charCodeAt(1) !== 0x23) {
+    if (!ok || xmlByteAt(value, 1) !== 0x23) {
       return Err(xmlErrAt(r, `entity &${name}; must be a single numeric character reference such as "&#160;"`, at))
     }
     if (c.length === 0) {
@@ -616,14 +652,16 @@ const xmlDoctype = (r: XmlReader): Result<boolean, XmlError> => {
  */
 export const xmlAttr = (n: XmlNode, name: string): string | null => {
   const k = n.attrNames.indexOf(name)
-  return k < 0 ? null : n.attrValues[k]
+  const values = n.attrValues
+  // The reader pushes a name and its value together; a name with no value is not carried.
+  return k >= 0 && k < values.length ? values[k] : null
 }
 
 /** Whether an element name is `include` in any namespace. */
 const xmlIsInclude = (name: string): boolean => name === "include" || name.endsWith(":include")
 
 /** Refuses an include that would fetch. */
-const xmlChecked = (r: XmlReader, node: XmlNode, at: i32): Result<boolean, XmlError> => {
+const xmlChecked = (r: XmlReader, node: XmlNode, at: u32): Result<boolean, XmlError> => {
   const href = xmlAttr(node, "href") ?? ""
   if (xmlIsInclude(node.name) && href.length > 0) {
     return Err(
@@ -639,15 +677,15 @@ const xmlChecked = (r: XmlReader, node: XmlNode, at: i32): Result<boolean, XmlEr
 
 /** Character data from the position up to the next "<", decoded. */
 const xmlText = (r: XmlReader): Result<string, XmlError> => {
-  const stop = r.src.indexOf("<", r.pos)
+  const stop = r.src.indexOf("<", toI32(r.pos))
   const end = stop < 0 ? r.src.length : stop
   const from = r.pos
-  r.pos = end
-  return xmlDecode(r, r.src.substring(from, end), from)
+  r.pos = toU32(end)
+  return xmlDecode(r, r.src.substring(toI32(from), end), from)
 }
 
 /** Reads an element's start tag and attributes; whether it was empty (`/>`). */
-const xmlStartTag = (r: XmlReader, node: XmlNode, at: i32): Result<boolean, XmlError> => {
+const xmlStartTag = (r: XmlReader, node: XmlNode, at: u32): Result<boolean, XmlError> => {
   const name = node.name
   while (true) {
     const ws = xmlSkipWs(r)
@@ -661,7 +699,7 @@ const xmlStartTag = (r: XmlReader, node: XmlNode, at: i32): Result<boolean, XmlE
       xmlChecked(r, node, at).orReturn()
       return Ok(false)
     }
-    if (r.pos >= r.src.length) {
+    if (r.pos >= toU32(r.src.length)) {
       return Err(xmlErrAt(r, `malformed XML: <${name}> is never closed`, at))
     }
     if (!ws) {
@@ -702,7 +740,7 @@ const xmlCloseText = (r: XmlReader): XmlNode | null => {
     if (r.pieces.length > 1) {
       t.text = r.pieces.join("")
     }
-    t.raw = r.src.substring(r.lineStarts[t.line - 1] + t.col - 1, r.pos)
+    t.raw = r.src.substring(toI32(r.piecesAt), toI32(r.pos))
   }
   r.piecesNode = null
   r.pieces = []
@@ -710,7 +748,7 @@ const xmlCloseText = (r: XmlReader): XmlNode | null => {
 }
 
 /** Appends `text` to the text node `open` (making it at `at` when null); the node now open. */
-const xmlAddText = (r: XmlReader, parent: XmlNode, open: XmlNode | null, text: string, at: i32): XmlNode => {
+const xmlAddText = (r: XmlReader, parent: XmlNode, open: XmlNode | null, text: string, at: u32): XmlNode => {
   if (open !== null) {
     r.pieces.push(text)
     return open
@@ -720,6 +758,7 @@ const xmlAddText = (r: XmlReader, parent: XmlNode, open: XmlNode | null, text: s
   t.text = text
   xmlAppend(parent, t)
   r.piecesNode = t
+  r.piecesAt = at
   r.pieces = [text]
   return t
 }
@@ -736,11 +775,18 @@ const xmlElement = (r: XmlReader): Result<XmlNode, XmlError> => {
     return Ok(root)
   }
   let node = root
-  let depth = 1
+  // At most XML_MAX_DEPTH, and at least 1 while an element is open.
+  let depth: u32 = 1
   let open: XmlNode | null = null
   while (true) {
-    if (r.pos >= r.src.length) {
-      return Err(xmlErrAt(r, `malformed XML: <${node.name}> is never closed`, r.lineStarts[node.line - 1]))
+    if (r.pos >= toU32(r.src.length)) {
+      const starts = r.lineStarts
+      // A node's line is 1 or more and one the reader has seen.
+      const line = toU32(node.line) - 1
+      if (line >= toU32(starts.length)) {
+        return Err(xmlErrAt(r, `internal: <${node.name}> is on no line`, r.pos))
+      }
+      return Err(xmlErrAt(r, `malformed XML: <${node.name}> is never closed`, starts[line]))
     }
     if (xmlAt(r, "</")) {
       open = xmlCloseText(r)
@@ -775,7 +821,7 @@ const xmlElement = (r: XmlReader): Result<XmlNode, XmlError> => {
     } else if (xmlAt(r, "<")) {
       open = xmlCloseText(r)
       const at = r.pos
-      if (depth >= XML_MAX_DEPTH) {
+      if (depth >= toU32(XML_MAX_DEPTH)) {
         return Err(xmlErrAt(r, `elements nest deeper than ${XML_MAX_DEPTH} (XML_MAX_DEPTH)`, at))
       }
       r.pos = r.pos + 1
@@ -800,7 +846,7 @@ const xmlDocument = (r: XmlReader): Result<XmlNode, XmlError> => {
   let doctype = false
   while (true) {
     xmlSkipWs(r)
-    if (r.pos >= r.src.length) {
+    if (r.pos >= toU32(r.src.length)) {
       break
     }
     if (xmlAt(r, "<?")) {
@@ -848,13 +894,14 @@ export const xmlParse = (text: string): Result<XmlNode, XmlError> => {
   const r = new XmlReader(replaceAll(replaceAll(text, "\r\n", "\n"), "\r", "\n"))
   let nl = r.src.indexOf("\n")
   while (nl >= 0) {
-    r.lineStarts.push(nl + 1)
-    nl = r.src.indexOf("\n", nl + 1)
+    // `nl` is an index of the input, so the add stays far inside u32 and i32.
+    const next = toU32(nl) + 1
+    r.lineStarts.push(next)
+    nl = r.src.indexOf("\n", toI32(next))
   }
-  const why: string[] = []
-  const bad = xmlCheckChars(r, why)
-  if (bad >= 0) {
-    return Err(xmlErrAt(r, why[0], bad))
+  const bad = xmlCheckChars(r)
+  if (bad !== null) {
+    return Err(bad)
   }
   if (xmlAt(r, "\u{feff}")) {
     r.pos = 3

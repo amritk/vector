@@ -17,11 +17,12 @@ Generated from [src/spec/source/load.ts](https://github.com/amritk/vector/blob/m
 
 ## Exports
 
-- [`SourceReader`](#sourcereader)
+- [`SourceReaderKind`](#sourcereaderkind)
 - [`SourceReaderEntry`](#sourcereaderentry)
 - [`SourceReaders`](#sourcereaders)
 - [`sourceReadersAdd`](#sourcereadersadd)
 - [`sourceReadersDefault`](#sourcereadersdefault)
+- [`sourceDecodedProblem`](#sourcedecodedproblem)
 - [`sourceReaderFor`](#sourcereaderfor)
 - [`LoadedSource`](#loadedsource)
 - [`SourceSet`](#sourceset)
@@ -34,13 +35,25 @@ Generated from [src/spec/source/load.ts](https://github.com/amritk/vector/blob/m
 
 ## Declarations
 
-### SourceReader
+### SourceReaderKind
 
-Reads a source's text into sections; `name` names it in messages.
+The format a source reader reads: which reader sourceReaderRead runs.
 
 ```ts
-type SourceReader = (text: string, name: string) => Result<RfcDocument, string>
+enum SourceReaderKind
 ```
+
+<scalar-field name="Rfc" type="1">
+
+An RFC's plain text, read by rfcRead.
+
+</scalar-field>
+
+<scalar-field name="Xml" type="2">
+
+The XML of an RFC or a spec (RFC XML v3), read by xmlRead.
+
+</scalar-field>
 
 ### SourceReaderEntry
 
@@ -55,7 +68,7 @@ class SourceReaderEntry
 Makes an entry.
 
 ```ts
-new SourceReaderEntry(ext: string, read: SourceReader): SourceReaderEntry
+new SourceReaderEntry(ext: string, kind: SourceReaderKind): SourceReaderEntry
 ```
 
 <scalar-field name="ext" type="string" required>
@@ -64,9 +77,9 @@ the extension, with its dot
 
 </scalar-field>
 
-<scalar-field name="read" type="SourceReader" required>
+<scalar-field name="kind" type="SourceReaderKind" required>
 
-the reader
+the format files with that extension are read as
 
 </scalar-field>
 
@@ -78,13 +91,39 @@ The extension, with its dot: ".txt".
 ext: string
 ```
 
-#### SourceReaderEntry.read
+#### SourceReaderEntry.kind
 
-The reader for files with that extension.
+The format files with that extension are read as.
 
 ```ts
-read: SourceReader
+kind: SourceReaderKind
 ```
+
+#### SourceReaderEntry.read
+
+Reads a source's text into sections with this entry's reader.
+
+```ts
+read(text: string, name: string): Result<RfcDocument, string>
+```
+
+<scalar-field name="text" type="string" required>
+
+the source's text
+
+</scalar-field>
+
+<scalar-field name="name" type="string" required>
+
+what messages call it
+
+</scalar-field>
+
+<scalar-field name="returns" type="Result&lt;RfcDocument, string&gt;">
+
+the document, or the reader's refusal
+
+</scalar-field>
 
 ### SourceReaders
 
@@ -118,7 +157,7 @@ Registers a reader for an extension, replacing one already there.
 function sourceReadersAdd(
   readers: SourceReaders,
   ext: string,
-  read: SourceReader,
+  kind: SourceReaderKind,
 ): Result<boolean, string>
 ```
 
@@ -134,9 +173,9 @@ the extension, with its leading dot: ".xml"
 
 </scalar-field>
 
-<scalar-field name="read" type="SourceReader" required>
+<scalar-field name="kind" type="SourceReaderKind" required>
 
-the reader
+the format files with that extension are read as
 
 </scalar-field>
 
@@ -163,6 +202,35 @@ function sourceReadersDefault(): SourceReaders
 <scalar-field name="returns" type="SourceReaders">
 
 a registry holding `.txt` and `.xml`
+
+</scalar-field>
+
+### sourceDecodedProblem
+
+Why a document's text, as its reader decoded it, hides text from the gates:
+the hidden-text check (hiddenProblem) run on every section's title, lines
+and own lines, since a reader that decodes escapes (`&#1058;` to a Cyrillic
+Т) can make what its raw bytes never showed.
+
+```ts
+function sourceDecodedProblem(doc: RfcDocument, shown: string): string | null
+```
+
+<scalar-field name="doc" type="RfcDocument" required>
+
+the document a reader returned
+
+</scalar-field>
+
+<scalar-field name="shown" type="string" required>
+
+what messages call the source
+
+</scalar-field>
+
+<scalar-field name="returns" type="string | null">
+
+the problem, or null when the decoded text hides nothing
 
 </scalar-field>
 

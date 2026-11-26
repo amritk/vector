@@ -77,7 +77,9 @@ export const exportsDiff = (before: string, after: string): ExportsChange[] => {
   for (const e of now) {
     if (e.name.length === 0) {
       if (!exportsHasUnnamed(old, e.body)) {
-        const first = trim(splitLines(e.body)[0])
+        // An empty body has no lines; its first line is then empty.
+        const lines = splitLines(e.body)
+        const first = trim(lines.length > 0 ? lines[0] : "")
         out.push(new ExportsChange(first, "unnamed", `line ${e.line}: ${e.problem}`))
       }
       continue

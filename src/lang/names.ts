@@ -23,7 +23,8 @@
  * the test it emits from it.
  */
 
-import { asciiLower, asciiUpper, split } from "nish/text"
+import { split } from "nish/text"
+import { textAsciiLower, textAsciiUpper } from "../core/text"
 import { NameOverride } from "../spec/contract/types"
 
 const langIsUpper = (c: i32): boolean => c >= 65 && c <= 90
@@ -33,7 +34,8 @@ const langNameIsDigit = (c: i32): boolean => c >= 48 && c <= 57
 /** The end of the run from `i` of capitals (kind 0), lowercase letters (1) or digits (2). */
 const langRunEnd = (s: string, i: i32, kind: i32): i32 => {
   let j = i
-  while (j < s.length) {
+  // Callers start at 0 or later, so `j >= 0` never stops the loop.
+  while (j >= 0 && j < s.length) {
     const c = s.charCodeAt(j)
     const ok = kind === 0 ? langIsUpper(c) : kind === 1 ? langIsLower(c) : langNameIsDigit(c)
     if (!ok) {
@@ -55,12 +57,14 @@ export const langWords = (contractName: string): string[] => {
   for (const part of split(contractName, "_")) {
     let i = 0
     let first = true
-    while (i < part.length) {
+    // i only grows from 0, so `i >= 0` never stops the loop.
+    while (i >= 0 && i < part.length) {
       const c = part.charCodeAt(i)
       let end = i + 1
       if (langIsUpper(c)) {
         const caps = langRunEnd(part, i, 0)
-        if (caps < part.length && langIsLower(part.charCodeAt(caps))) {
+        // langRunEnd answers i or later, so `caps >= 0` always holds.
+        if (caps >= 0 && caps < part.length && langIsLower(part.charCodeAt(caps))) {
           end = caps - i > 1 ? caps - 1 : langRunEnd(part, caps, 1)
         } else {
           end = caps
@@ -74,8 +78,10 @@ export const langWords = (contractName: string): string[] => {
         continue
       }
       const token = part.substring(i, end)
-      if (!first && langNameIsDigit(c)) {
-        out[out.length - 1] = out[out.length - 1] + token
+      // A word was pushed before whenever !first, so `out.length > 0` then always holds.
+      if (!first && langNameIsDigit(c) && out.length > 0) {
+        const prev = out.pop()
+        out.push(prev + token)
       } else {
         out.push(token)
       }
@@ -108,11 +114,11 @@ export const langIsAcronym = (word: string): boolean => {
  * @returns `Sha256` for `sha256`, `Http` for `HTTP`
  */
 export const langCapitalize = (word: string): string =>
-  word.length === 0 ? "" : asciiUpper(word.substring(0, 1)) + asciiLower(word.substring(1, word.length))
+  word.length === 0 ? "" : textAsciiUpper(word.substring(0, 1)) + textAsciiLower(word.substring(1, word.length))
 
 /** `word` with only its first letter made a capital. */
 const langUpperFirst = (word: string): string =>
-  word.length === 0 ? "" : asciiUpper(word.substring(0, 1)) + word.substring(1, word.length)
+  word.length === 0 ? "" : textAsciiUpper(word.substring(0, 1)) + word.substring(1, word.length)
 
 /**
  * A contract name in lower snake_case: every word lowercase, joined by `_`.
@@ -124,7 +130,7 @@ export const langSnake = (contractName: string): string => {
   const ws = langWords(contractName)
   const out: string[] = []
   for (const w of ws) {
-    out.push(asciiLower(w))
+    out.push(textAsciiLower(w))
   }
   return out.join("_")
 }
@@ -161,7 +167,7 @@ export const langCamel = (contractName: string, rule: LangCase): string => {
   const ws = langWords(contractName)
   let out = ""
   for (let i = 0; i < ws.length; i++) {
-    out = out + (i === 0 ? asciiLower(ws[i]) : langCaseWord(ws[i], rule))
+    out = out + (i === 0 ? textAsciiLower(ws[i]) : langCaseWord(ws[i], rule))
   }
   return out
 }
@@ -227,9 +233,11 @@ const langLastIndex = (s: string, ch: i32): i32 => {
  */
 export const langBasename = (path: string): string => {
   const slash = langLastIndex(path, 47)
-  const last = slash < 0 ? path : path.substring(slash + 1, path.length)
+  // langLastIndex answers -1 or an index below the length, so the length
+  // tests never change the answer.
+  const last = slash < 0 || slash >= path.length ? path : path.substring(slash + 1, path.length)
   const dot = langLastIndex(last, 46)
-  if (dot < 0 || dot === last.length - 1) {
+  if (dot < 0 || dot >= last.length - 1) {
     return last
   }
   for (let i = dot + 1; i < last.length; i++) {
@@ -248,12 +256,19 @@ export const langBasename = (path: string): string => {
  * @returns `nish.crypto.Hkdf`; `nish.net_io.QuicPacket` for `nish/net-io/quic-packet`
  */
 export const langPackageClass = (module: string): string => {
-  const s = split(module, "/")
-  for (let i = 0; i < s.length - 1; i++) {
-    s[i] = langUnderscored(s[i])
+  // Each segment is underscored once the next is seen; the last is a class.
+  const out: string[] = []
+  let last: string | null = null
+  for (const seg of split(module, "/")) {
+    if (last !== null) {
+      out.push(langUnderscored(last))
+    }
+    last = seg
   }
-  s[s.length - 1] = langPascalSegment(s[s.length - 1])
-  return s.join(".")
+  if (last !== null) {
+    out.push(langPascalSegment(last))
+  }
+  return out.join(".")
 }
 
 /**
@@ -311,9 +326,9 @@ const langGoName = (contractName: string, exported: boolean): string => {
   for (let i = 0; i < ws.length; i++) {
     const w = ws[i]
     if (i === 0 && !exported) {
-      out = out + asciiLower(w)
-    } else if (langIsAcronym(w) || initialisms.indexOf(asciiUpper(w)) >= 0) {
-      out = out + asciiUpper(w)
+      out = out + textAsciiLower(w)
+    } else if (langIsAcronym(w) || initialisms.indexOf(textAsciiUpper(w)) >= 0) {
+      out = out + textAsciiUpper(w)
     } else {
       out = out + langCapitalize(w)
     }
@@ -403,7 +418,8 @@ export const langModule = (lang: string, module: string): string => {
   if (lang === "dart") {
     const slash = module.indexOf("/")
     const pkg = slash < 0 ? module : module.substring(0, slash)
-    const rest = slash < 0 ? module : module.substring(slash + 1, module.length)
+    // indexOf answers -1 or an index below the length, so the length test never fails.
+    const rest = slash < 0 || slash >= module.length ? module : module.substring(slash + 1, module.length)
     return `package:${langUnderscored(pkg)}/${rest}.dart`
   }
   return module
