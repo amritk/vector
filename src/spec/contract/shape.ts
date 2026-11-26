@@ -25,9 +25,11 @@ import {
 import { contractF64Bits, contractF64FromBits, contractF64IsNaN, contractF64Overflows, contractF64Parse } from "./f64"
 import { LITERALS_PRINTABLE, literalsByteLength, literalsPrintable } from "./literals"
 import {
+  AllowedSurvivor,
   Clause,
   ClauseKind,
   Contract,
+  Exclusion,
   Expr,
   ExprKind,
   FnSig,
@@ -37,6 +39,8 @@ import {
   Literal,
   NameOverride,
   OutBuffer,
+  OutOfScope,
+  SourceDecl,
   Tolerance,
   Truncate,
   VectorSourceKind,
@@ -152,11 +156,18 @@ export const shapeAlphabetClasses = (): string[] => [
 /** The characters lo..hi, then lo2..hi2 (none when lo2 > hi2). */
 const shapeRange = (lo: i32, hi: i32, lo2: i32, hi2: i32): string[] => {
   const out: string[] = []
-  for (let c = lo; c <= hi; c++) {
+  // c stops below hi and hi is pushed on its own, so c++ cannot pass it.
+  for (let c = lo; c < hi; c++) {
     out.push(String.fromCharCode(c))
   }
-  for (let c = lo2; c <= hi2; c++) {
+  if (lo <= hi) {
+    out.push(String.fromCharCode(hi))
+  }
+  for (let c = lo2; c < hi2; c++) {
     out.push(String.fromCharCode(c))
+  }
+  if (lo2 <= hi2) {
+    out.push(String.fromCharCode(hi2))
   }
   return out
 }
@@ -205,18 +216,8 @@ export const shapeNishModuleFile = (module: string): string | null => {
     return null
   }
   const rest = module.substring(5, module.length)
-  if (rest.length === 0 || rest.indexOf("\\") >= 0) {
+  if (rest.length === 0 || !shapeIsRepoPath(rest)) {
     return null
-  }
-  let start = 0
-  for (let i = 0; i <= rest.length; i++) {
-    if (i === rest.length || rest.charCodeAt(i) === 0x2f) {
-      const part = rest.substring(start, i)
-      if (part === "" || part === "." || part === "..") {
-        return null
-      }
-      start = i + 1
-    }
   }
   return `std/${rest}.ts`
 }
@@ -376,11 +377,12 @@ const shapeExpr = (s: ShapeContext, e: Expr, at: string): void => {
   }
   if (e.kind === ExprKind.Let) {
     for (let i = 0; i < e.binds.length; i++) {
+      const b = e.binds[i]
       const bat = `${at}.let[${i}]`
-      if (!charsIsIdent(e.binds[i].name)) {
+      if (!charsIsIdent(b.name)) {
         shapeFail(s, `${bat}.name`, "an identifier")
       }
-      shapeExpr(s, e.binds[i].value, `${bat}.value`)
+      shapeExpr(s, b.value, `${bat}.value`)
     }
     const body = e.body
     if (body !== null) {
@@ -434,8 +436,9 @@ const shapeSources = (s: ShapeContext): void => {
     shapeFail(s, "contract.sources", "a non-empty array")
     return
   }
-  for (let i = 0; i < decls.length; i++) {
-    const d = decls[i]
+  const ds: SourceDecl[] = decls
+  for (let i = 0; i < ds.length; i++) {
+    const d = ds[i]
     const at = `sources[${i}]`
     if (!charsIsId(d.id)) {
       shapeFail(s, `${at}.id`, "an id")
@@ -479,22 +482,25 @@ const shapeSources = (s: ShapeContext): void => {
   }
 }
 
+/** A path part that is not empty, `.` or `..`. */
+const shapeIsPathPart = (part: string): boolean => part !== "" && part !== "." && part !== ".."
+
 /** A repo-relative path: `/`-separated, no empty, `.` or `..` part, no backslash. */
 const shapeIsRepoPath = (p: string): boolean => {
   if (p.indexOf("\\") >= 0) {
     return false
   }
+  // Each part ends at a "/" or at the end of `p`.
   let start = 0
-  for (let i = 0; i <= p.length; i++) {
-    if (i === p.length || p.charCodeAt(i) === 0x2f) {
-      const part = p.substring(start, i)
-      if (part === "" || part === "." || part === "..") {
+  for (let i = 0; i < p.length; i++) {
+    if (p.charCodeAt(i) === 0x2f) {
+      if (!shapeIsPathPart(p.substring(start, i))) {
         return false
       }
       start = i + 1
     }
   }
-  return true
+  return shapeIsPathPart(p.substring(start, p.length))
 }
 
 const shapeFunctions = (s: ShapeContext): void => {
@@ -610,8 +616,9 @@ const shapeRequirements = (s: ShapeContext): void => {
   if (xs === null) {
     return
   }
-  for (let i = 0; i < xs.length; i++) {
-    const x = xs[i]
+  const ys: Exclusion[] = xs
+  for (let i = 0; i < ys.length; i++) {
+    const x = ys[i]
     const at = `exclusions[${i}]`
     shapeSourceRef(s, x.source, `${at}.source`)
     shapeSection(s, x.section, `${at}.section`)
@@ -648,8 +655,10 @@ const shapeIsIterateCall = (e: Expr, call: string, names: string[]): boolean => 
   if (e.kind !== ExprKind.Call || e.name !== call || e.args.length !== names.length) {
     return false
   }
-  for (let i = 0; i < names.length; i++) {
-    if (e.args[i].kind !== ExprKind.Var || e.args[i].name !== names[i]) {
+  const args = e.args
+  for (let i = 0; i < names.length && i < args.length; i++) {
+    const a = args[i]
+    if (a.kind !== ExprKind.Var || a.name !== names[i]) {
       return false
     }
   }
@@ -678,10 +687,11 @@ const shapeTruncate = (s: ShapeContext, k: Clause, t: Truncate, at: string): voi
   if (n < 0) {
     shapeFail(s, at, `a truncated vector's expect is bytes, not ${typeOfLiteral(expect)}`)
   } else if (n !== t.bytes) {
+    // In i64, and shifted: an i32 count of bytes is exact as bits there.
     shapeFail(
       s,
       at,
-      `the expect is ${n} bytes, so the truncation is ${n} bytes (${n * 8} bits), not ${t.bytes} bytes (${t.bytes * 8} bits)`,
+      `the expect is ${n} bytes, so the truncation is ${n} bytes (${toI64(n) << toI64(3)} bits), not ${t.bytes} bytes (${toI64(t.bytes) << toI64(3)} bits)`,
     )
   }
 }
@@ -710,7 +720,7 @@ const shapeIterate = (s: ShapeContext, k: Clause, it: Iterate, at: string): void
     } else if (shapeFn(s, n) !== null) {
       shapeFail(s, `${at}.names[${i}]`, `"${n}" shadows a function`)
     }
-    for (let j = 0; j < i; j++) {
+    for (let j = 0; j < i && j < it.names.length; j++) {
       if (it.names[j] === n) {
         shapeFail(s, `${at}.names[${i}]`, `"${n}" repeats names[${j}]`)
       }
@@ -719,7 +729,7 @@ const shapeIterate = (s: ShapeContext, k: Clause, it: Iterate, at: string): void
   if (arity >= 0 && it.next.length !== arity) {
     shapeFail(s, `${at}.next`, `one element per parameter of ${k.call}: ${arity}, got ${it.next.length}`)
   }
-  let calls = 0
+  let calls: u32 = 0
   for (let i = 0; i < it.next.length; i++) {
     const e = it.next[i]
     if (e.kind === ExprKind.Var) {
@@ -821,7 +831,7 @@ const shapeForall = (s: ShapeContext, v: ForallVar, at: string): void => {
     const bounds = [v.min, v.max]
     const keys = ["min", "max"]
     let valid = true
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < bounds.length && i < keys.length; i++) {
       if (!charsIsF64Text(bounds[i]) || bounds[i] === "NaN") {
         valid = false
         shapeFail(
@@ -845,8 +855,9 @@ const shapeForall = (s: ShapeContext, v: ForallVar, at: string): void => {
       if (alphabet.length === 0) {
         shapeFail(s, `${at}.alphabet`, "a non-empty array of characters and classes")
       }
-      for (let i = 0; i < alphabet.length; i++) {
-        if (shapeAlphabetChars(alphabet[i]) === null) {
+      const chars: string[] = alphabet
+      for (let i = 0; i < chars.length; i++) {
+        if (shapeAlphabetChars(chars[i]) === null) {
           shapeFail(
             s,
             `${at}.alphabet[${i}]`,
@@ -932,8 +943,9 @@ const shapeOutOfScope = (s: ShapeContext): void => {
   }
   const tested = shapeTested(s.c)
   const seen: string[] = []
-  for (let i = 0; i < xs.length; i++) {
-    const x = xs[i]
+  const ys: OutOfScope[] = xs
+  for (let i = 0; i < ys.length; i++) {
+    const x = ys[i]
     const at = `outOfScope[${i}]`
     shapeText(s, x.reason, `${at}.reason`)
     if (!charsIsIdent(x.name)) {
@@ -957,8 +969,9 @@ const shapeAllowSurvivors = (s: ShapeContext): void => {
   }
   const target = shapeNishModuleFile(s.c.target.module)
   const seen: string[] = []
-  for (let i = 0; i < xs.length; i++) {
-    const x = xs[i]
+  const ys: AllowedSurvivor[] = xs
+  for (let i = 0; i < ys.length; i++) {
+    const x = ys[i]
     const at = `allowSurvivors[${i}]`
     shapeText(s, x.file, `${at}.file`)
     shapeText(s, x.reason, `${at}.reason`)
