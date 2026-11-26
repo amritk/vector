@@ -99,13 +99,15 @@ const extractDiffBoundsWhole = (t: Suite): void => {
   t.eqStr("every middle line added", `${extractDiffBoundsCount(d, "+")}`, "2001")
   t.ok("removals come before additions", d.indexOf("-a2001\n") < d.indexOf("+b1\n"))
   t.ok("the head and tail are context", d.indexOf(" h1\n h2\n-a1\n") > 0 && d.endsWith("+b2001\n t1\n"))
-  const c = `h1\nh2\n${extractDiffBoundsLines("a", 1999)}t1\n`
-  const e = `h1\nh2\n${extractDiffBoundsLines("a", 1000)}m\n${extractDiffBoundsLines("a", 1999).substring(extractDiffBoundsLines("a", 1000).length, extractDiffBoundsLines("a", 1999).length)}t1\n`
-  t.eqStr(
-    "under the limit one inserted line is one addition",
-    `${extractDiffBoundsCount(extractUnifiedDiff(c, e, "x", "y"), "+")}`,
-    "1",
+  // 2000 lines against 2001 is one column past the limit: the shared line goes too.
+  const f = extractUnifiedDiff(
+    `m\n${extractDiffBoundsLines("a", 1999)}`,
+    `${extractDiffBoundsLines("b", 2000)}m\n`,
+    "x",
+    "y",
   )
+  t.eqStr("one column past the limit, the shared line is removed", `${extractDiffBoundsCount(f, "-")}`, "2000")
+  t.eqStr("one column past the limit, the shared line is added", `${extractDiffBoundsCount(f, "+")}`, "2001")
 }
 
 /** At exactly the cell limit the table is still built, so a line both middles share is kept. */
