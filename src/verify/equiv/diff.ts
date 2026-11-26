@@ -385,8 +385,8 @@ const diffCheck = (q: DiffQuery, a: QueryAnswer): DiffCheck => {
     return new DiffCheck(CHECK_UNKNOWN)
   }
   const out = new DiffCheck(CHECK_WITNESS)
-  // assembleDiffs refuses a query with fewer names than constants, so the
-  // second bound never stops the loop early.
+  // assembleDiffs refuses a model value past the names, so every constant
+  // the second bound stops before has an empty value and is skipped anyway.
   for (let i = 0; i < toI32(q.smtNames.length) && i < toI32(q.names.length); i++) {
     const name = q.names[i]
     const v = a.value(q.smtNames[i]) ?? ""
@@ -592,9 +592,18 @@ export const assembleDiffs = (
   if (queries.length % 4 !== 0 || queries.length / 4 !== pairs.length || answers.length !== queries.length) {
     return Err(countErr)
   }
-  for (const q of queries) {
-    if (q.names.length < q.smtNames.length) {
-      return Err(`diff: a query has ${q.names.length} names for ${q.smtNames.length} constants`)
+  // A model value for a constant with no name to report it under: the
+  // constants past the names must all be empty, as diffCheck reads them.
+  for (let i = 0; i < toI32(queries.length) && i < toI32(answers.length); i++) {
+    const q = queries[i]
+    const a = answers[i]
+    if (a.result !== "sat") {
+      continue
+    }
+    for (let j = toI32(q.names.length); j < toI32(q.smtNames.length); j++) {
+      if ((a.value(q.smtNames[j]) ?? "") !== "") {
+        return Err(`diff: a query has ${q.names.length} names for ${q.smtNames.length} constants`)
+      }
     }
   }
   const out: MatchedFunctionDiff[] = []

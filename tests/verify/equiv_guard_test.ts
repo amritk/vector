@@ -204,42 +204,72 @@ const eqgCounts = (t: Suite): void => {
   }
 }
 
-// A query with fewer names than constants is refused; as many or more is not.
+/** One shared-domain query and z3's answer to it. */
+class EqgNamesCase {
+  constants: string[]
+  names: string[]
+  result: string
+  valued: string[]
+  refusal: string
+  witness: string
+
+  constructor(
+    constants: string[],
+    names: string[],
+    result: string,
+    valued: string[],
+    refusal: string,
+    witness: string,
+  ) {
+    this.constants = constants
+    this.names = names
+    this.result = result
+    this.valued = valued
+    this.refusal = refusal
+    this.witness = witness
+  }
+}
+
+// A model value for a constant past the query's names is refused, as the old
+// code panicked on it; a short query z3 gave no such value is read as before.
 const eqgNames = (t: Suite): void => {
   const one = eqgProgram(t, ["x:Int"], "0", "1")
   if (one.functions.length === 0) {
     return
   }
   const pair = new FunctionPair(one.functions[0], one.functions[0])
-  const shapes: string[][][] = [
-    [["a"], []],
-    [["a", "b"], ["x"]],
-    [["a"], ["x"]],
-    [["a"], ["x", "y"]],
-    [[], []],
+  const cases: EqgNamesCase[] = [
+    new EqgNamesCase(["a"], [], "sat", ["a"], "diff: a query has 0 names for 1 constants", ""),
+    new EqgNamesCase(["a", "b"], ["x"], "sat", ["a", "b"], "diff: a query has 1 names for 2 constants", ""),
+    new EqgNamesCase(["a", "b"], ["x"], "sat", ["b"], "diff: a query has 1 names for 2 constants", ""),
+    new EqgNamesCase(["a", "b"], ["x"], "sat", ["a"], "", "x=3"),
+    new EqgNamesCase(["a"], [], "sat", [], "", ""),
+    new EqgNamesCase(["a"], [], "unsat", ["a"], "", ""),
+    new EqgNamesCase(["a"], [], "unknown", ["a"], "", ""),
+    new EqgNamesCase(["a"], ["x"], "sat", ["a"], "", "x=3"),
+    new EqgNamesCase(["a"], ["x", "y"], "sat", ["a"], "", "x=3"),
+    new EqgNamesCase([], [], "sat", [], "", ""),
   ]
-  const want: string[] = [
-    "diff: a query has 0 names for 1 constants",
-    "diff: a query has 1 names for 2 constants",
-    "",
-    "",
-    "",
-  ]
-  for (let i = 0; i < toI32(shapes.length) && i < toI32(want.length); i++) {
+  for (const c of cases) {
     const queries = eqgQueries(3)
-    queries.push(new DiffQuery(0, shapes[i][0], shapes[i][1], "o", "n"))
+    queries.push(new DiffQuery(0, c.constants, c.names, "o", "n"))
     const answers = eqgAnswers(3)
-    const sat = new QueryAnswer("sat")
-    sat.names.push("a")
-    sat.values.push("3")
-    answers.push(sat)
+    const last = new QueryAnswer(c.result)
+    for (const v of c.valued) {
+      last.names.push(v)
+      last.values.push("3")
+    }
+    answers.push(last)
     const got = assembleDiffs([pair], queries, answers)
-    const label = `${shapes[i][0].length} constants, ${shapes[i][1].length} names`
-    t.eqStr(`${label}: refusal`, got.isOk() ? "" : got.error, want[i])
-    if (got.isOk() && got.value.length === 1 && shapes[i][1].length > 0) {
+    const label = `${c.result}, constants [${c.constants.join(",")}], names [${c.names.join(",")}], values for [${c.valued.join(",")}]`
+    t.eqStr(`${label}: refusal`, got.isOk() ? "" : got.error, c.refusal)
+    if (got.isOk() && got.value.length === 1) {
       const inputs = got.value[0].sharedDomain.inputs
-      t.eqStr(`${label}: the witness names the first parameter`, inputs.names.join(","), shapes[i][1][0])
-      t.eqStr(`${label}: at its value`, inputs.values.join(","), "3")
+      const pairs: string[] = []
+      for (let i = 0; i < toI32(inputs.names.length) && i < toI32(inputs.values.length); i++) {
+        pairs.push(`${inputs.names[i]}=${inputs.values[i]}`)
+      }
+      t.eqStr(`${label}: the witness`, pairs.join(","), c.witness)
     }
   }
 }
