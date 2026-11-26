@@ -1,6 +1,5 @@
 {
   "modules": {
-    "src/spec/xml/doc.ts": 24,
-    "src/spec/xml/reader.ts": 71
+    "src/spec/xml/doc.ts": 24
   }
 }

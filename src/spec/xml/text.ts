@@ -883,8 +883,10 @@ const xmlNormativeIn = (
     }
     k = k + 1
     const pre = st - 1
-    if ((st > 0 && pre < toU32(text.length) && text.charCodeAt(pre) === 0x22) ||
-      (en < toU32(text.length) && text.charCodeAt(en) === 0x22)) {
+    if (
+      (st > 0 && pre < toU32(text.length) && text.charCodeAt(pre) === 0x22) ||
+      (en < toU32(text.length) && text.charCodeAt(en) === 0x22)
+    ) {
       continue
     }
     const j = xmlNextStop(stops, toI32(st))
