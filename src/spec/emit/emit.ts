@@ -998,7 +998,9 @@ const emitIterateSteps = (ctx: EmitContext, k: Clause, sig: FnSig, args: string[
   }
   const n = it.names.length
   if (it.next.length !== n || sig.params.length !== n || args.length !== n) {
-    ctx.errors.push(`${k.id}: the iterate has ${n} names and ${it.next.length} next for ${sig.params.length} parameters`)
+    ctx.errors.push(
+      `${k.id}: the iterate has ${n} names and ${it.next.length} next for ${sig.params.length} parameters`,
+    )
     return []
   }
   const lines: string[] = []

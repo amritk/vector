@@ -84,11 +84,15 @@ export const emitTargetParse = (lang: string | null, harness: string | null): Re
     }
     return Err(`--lang ${l}: not a language (vector emits: ${emitTargetLanguages().join(", ")})`)
   }
-  const h = harness ?? harnesses[0]
-  if (harnesses.indexOf(h) < 0) {
-    return Err(`--harness ${h}: ${l} tests run ${harnesses.join(" or ")}`)
+  for (const first of harnesses) {
+    const h = harness ?? first
+    if (harnesses.indexOf(h) < 0) {
+      return Err(`--harness ${h}: ${l} tests run ${harnesses.join(" or ")}`)
+    }
+    return Ok(new EmitTarget(l, h))
   }
-  return Ok(new EmitTarget(l, h))
+  // Unreachable: the list was refused above when empty.
+  return Err(`--lang ${l}: not a language (vector emits: ${emitTargetLanguages().join(", ")})`)
 }
 
 /**
@@ -100,7 +104,11 @@ export const emitTargetParse = (lang: string | null, harness: string | null): Re
  */
 export const emitTargetFlags = (t: EmitTarget): string => {
   const lang = t.lang === "nish" ? "" : ` --lang ${t.lang}`
-  const harness = t.harness === emitTargetHarnesses(t.lang)[0] ? "" : ` --harness ${t.harness}`
+  // A target from emitTargetParse names a language with a harness, so the
+  // list is empty only for one built by hand, whose harness is no default.
+  const harnesses = emitTargetHarnesses(t.lang)
+  const isDefault = harnesses.length > 0 && t.harness === harnesses[0]
+  const harness = isDefault ? "" : ` --harness ${t.harness}`
   return `${lang}${harness}${t.slow ? " --slow" : ""}`
 }
 

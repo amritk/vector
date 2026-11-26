@@ -163,12 +163,15 @@ export const emitGoRefusals = (c: Contract): string[] => {
 
 /** `n` as `width` lowercase hex digits. */
 const emitGoHex = (n: i32, width: i32): string => {
-  const out: string[] = []
-  for (let i = width - 1; i >= 0; i--) {
-    const d = (n >> (4 * i)) & 15
-    out.push("0123456789abcdef".substring(d, d + 1))
+  // From the lowest digit up, each put in front, so no step can overflow.
+  let out = ""
+  let v = n
+  for (let i = 0; i < width; i++) {
+    const d = v & 15
+    out = `${"0123456789abcdef".substring(d, d + 1)}${out}`
+    v = v >> 4
   }
-  return out.join("")
+  return out
 }
 
 /**
@@ -182,12 +185,13 @@ const emitGoHex = (n: i32, width: i32): string => {
  */
 export const emitGoQuote = (s: string): string => {
   const out: string[] = ['"']
-  let j = 0
-  while (j < s.length) {
-    const cp = charsCodePointAt(s, j)
-    const n = charsSequenceLength(s, j)
+  // In u32, so the steps cannot overflow: each is 1 to 4 bytes, inside the text.
+  let j: u32 = 0
+  while (j < toU32(s.length)) {
+    const cp = charsCodePointAt(s, toI32(j))
+    const n = toU32(charsSequenceLength(s, toI32(j)))
     if (cp === 0x22 || cp === 0x5c) {
-      out.push(`\\${s.substring(j, j + 1)}`)
+      out.push(`\\${s.substring(toI32(j), toI32(j + 1))}`)
     } else if (cp === 0x0a) {
       out.push("\\n")
     } else if (cp === 0x09) {
@@ -201,7 +205,7 @@ export const emitGoQuote = (s: string): string => {
     } else if (cp < 0x20 || cp >= 0x7f) {
       out.push(`\\u${emitGoHex(cp, 4)}`)
     } else {
-      out.push(s.substring(j, j + n))
+      out.push(s.substring(toI32(j), toI32(j + n)))
     }
     j += n
   }
@@ -329,10 +333,35 @@ const emitGoOperands = (ctx: EmitGoContext, e: Expr): string => {
       }
     }
   }
-  return emitGoTypeOf(ctx, e.args[0])
+  return emitGoArgType(ctx, e, 0)
 }
 
-const emitGoArg = (ctx: EmitGoContext, e: Expr, i: i32, want: string | null): string => emitGoExpr(ctx, e.args[i], want)
+/**
+ * Argument `i` of an op, or null once its absence is recorded: a checked
+ * contract gives every op its arity, so only a contract built by hand lacks one.
+ */
+const emitGoArgAt = (ctx: EmitGoContext, e: Expr, i: i32): Expr | null => {
+  if (i >= 0 && i < e.args.length) {
+    return e.args[i]
+  }
+  const msg = `${e.name} has no argument ${i}`
+  if (ctx.errors.indexOf(msg) < 0) {
+    ctx.errors.push(msg)
+  }
+  return null
+}
+
+/** The type of argument `i` of an op ("null" once its absence is recorded). */
+const emitGoArgType = (ctx: EmitGoContext, e: Expr, i: i32): string => {
+  const x = emitGoArgAt(ctx, e, i)
+  return x === null ? "null" : emitGoTypeOf(ctx, x)
+}
+
+/** Argument `i` of an op, wanted at `want` ("" once its absence is recorded). */
+const emitGoArg = (ctx: EmitGoContext, e: Expr, i: i32, want: string | null): string => {
+  const x = emitGoArgAt(ctx, e, i)
+  return x === null ? "" : emitGoExpr(ctx, x, want)
+}
 
 /** An argument passed to a parameter of type `ty`; a present value meeting an optional parameter is pointed at. */
 const emitGoCallArg = (ctx: EmitGoContext, e: Expr, ty: string): string => {
@@ -369,9 +398,14 @@ const emitGoExpr = (ctx: EmitGoContext, e: Expr, want: string | null): string =>
       ctx.errors.push(`unknown function ${e.name}`)
       return ""
     }
+    if (e.args.length !== sig.params.length) {
+      ctx.errors.push(`${e.name} takes ${sig.params.length} arguments, got ${e.args.length}`)
+      return ""
+    }
     const args: string[] = []
-    for (let i = 0; i < e.args.length; i++) {
-      args.push(emitGoCallArg(ctx, e.args[i], sig.params[i].type))
+    const params = sig.params
+    for (let i = 0; i < e.args.length && i < params.length; i++) {
+      args.push(emitGoCallArg(ctx, e.args[i], params[i].type))
     }
     return emitGoConv(emitGoCall(ctx, sig, args), emitGoVt(sig.returns), want)
   }
@@ -393,7 +427,10 @@ const emitGoHelperOp = (ctx: EmitGoContext, e: Expr): string | null => {
     return `_fill(int64(0), ${emitGoArg(ctx, e, 0, null)})`
   }
   if (vocabHas(vocabWriteOps(), op)) {
-    const x = e.args[0]
+    const x = emitGoArgAt(ctx, e, 0)
+    if (x === null) {
+      return ""
+    }
     const lit = x.lit
     const natural = lit !== null ? (lit.text.startsWith("-") ? "i64" : "u64") : emitGoTypeOf(ctx, x)
     return `_intBytes(${emitGoExpr(ctx, x, natural)}, ${vocabByteWidth(op)}, ${vocabBigEndian(op)})`
@@ -403,18 +440,16 @@ const emitGoHelperOp = (ctx: EmitGoContext, e: Expr): string | null => {
     const ty = vocabReadType(op)
     return ty === "u64" ? read : `${emitGoIntType(ty)}(${read})`
   }
-  const one = ["utf8", "ascii", "strLen", "lower", "upper"]
-  const oneHelper = ["_utf8(", "_ascii(", "_strLen(", "_shiftCase(", "_shiftCase("]
-  const oneTail = [")", ")", ")", ", 65, 90, 32)", ", 97, 122, -32)"]
-  const at = one.indexOf(op)
-  if (at >= 0) {
-    return `${oneHelper[at]}${emitGoArg(ctx, e, 0, null)}${oneTail[at]}`
+  if (op === "lower" || op === "upper") {
+    const tail = op === "lower" ? ", 65, 90, 32)" : ", 97, 122, -32)"
+    return `_shiftCase(${emitGoArg(ctx, e, 0, null)}${tail}`
   }
-  const two = ["fill", "flipBit", "charAt", "concat", "strConcat"]
-  const twoHelper = ["_fill", "_flipBit", "_charAt", "_concat", "_strConcat"]
-  const at2 = two.indexOf(op)
-  if (at2 >= 0) {
-    return `${twoHelper[at2]}(${emitGoArg(ctx, e, 0, null)}, ${emitGoArg(ctx, e, 1, null)})`
+  // These ops' helpers are named for them.
+  if (op === "utf8" || op === "ascii" || op === "strLen") {
+    return `_${op}(${emitGoArg(ctx, e, 0, null)})`
+  }
+  if (["fill", "flipBit", "charAt", "concat", "strConcat"].indexOf(op) >= 0) {
+    return `_${op}(${emitGoArg(ctx, e, 0, null)}, ${emitGoArg(ctx, e, 1, null)})`
   }
   if (op === "slice") {
     const b = emitGoArg(ctx, e, 0, null)
@@ -439,10 +474,15 @@ const emitGoIsNullLit = (e: Expr): boolean => {
  * plain value meeting an optional pointed at first.
  */
 const emitGoCompare = (ctx: EmitGoContext, e: Expr, op: string): string => {
-  const l = emitGoTypeOf(ctx, e.args[0])
-  const r = emitGoTypeOf(ctx, e.args[1])
-  if (emitGoIsNullLit(e.args[1]) || emitGoIsNullLit(e.args[0])) {
-    const other = emitGoIsNullLit(e.args[1]) ? 0 : 1
+  const x0 = emitGoArgAt(ctx, e, 0)
+  const x1 = emitGoArgAt(ctx, e, 1)
+  if (x0 === null || x1 === null) {
+    return ""
+  }
+  const l = emitGoTypeOf(ctx, x0)
+  const r = emitGoTypeOf(ctx, x1)
+  if (emitGoIsNullLit(x1) || emitGoIsNullLit(x0)) {
+    const other = emitGoIsNullLit(x1) ? 0 : 1
     return `(${emitGoArg(ctx, e, other, null)} ${op} nil)`
   }
   const side = l === "null" ? r : l
@@ -482,7 +522,7 @@ const emitGoOp = (ctx: EmitGoContext, e: Expr, want: string | null): string => {
     return emitGoConv(`int32(len(${emitGoArg(ctx, e, 0, null)}))`, "i32", want)
   }
   if (op === "unwrap") {
-    const get = emitGoTypeOf(ctx, e.args[0]) === "string?" ? "s" : "b"
+    const get = emitGoArgType(ctx, e, 0) === "string?" ? "s" : "b"
     return `u.${get}(${emitGoArg(ctx, e, 0, null)})`
   }
   if (op === "isNull") {
@@ -491,10 +531,9 @@ const emitGoOp = (ctx: EmitGoContext, e: Expr, want: string | null): string => {
   if (op === "notNull") {
     return `(${emitGoArg(ctx, e, 0, null)} != nil)`
   }
-  const arith = ["+", "-", "*", "%"].indexOf(op)
-  if (arith >= 0) {
+  if (op === "+" || op === "-" || op === "*" || op === "%") {
     const t = emitGoOperands(ctx, e)
-    const helper = ["_add", "_sub", "_mul", "_rem"][arith]
+    const helper = op === "+" ? "_add" : op === "-" ? "_sub" : op === "*" ? "_mul" : "_rem"
     return emitGoConv(`${helper}(${emitGoArg(ctx, e, 0, t)}, ${emitGoArg(ctx, e, 1, t)})`, t, want)
   }
   if (op === "<" || op === "<=" || op === ">" || op === ">=" || op === "==" || op === "!=") {
@@ -563,9 +602,14 @@ const emitGoVector = (ctx: EmitGoContext, k: Clause): string => {
   if ((it?.slow ?? false) && !ctx.opts.slow) {
     return `func ${emitClauseFn(k)}(t *Suite) bool {\n\treturn t.skip(${name}, "${EMIT_SLOW_SKIP}")\n}`
   }
+  if (k.args.length !== sig.params.length) {
+    ctx.errors.push(`${k.id}: ${k.call} takes ${sig.params.length} arguments, got ${k.args.length}`)
+    return ""
+  }
   const args: string[] = []
-  for (let i = 0; i < k.args.length; i++) {
-    args.push(emitGoLitArg(k.args[i], sig.params[i].type))
+  const params = sig.params
+  for (let i = 0; i < k.args.length && i < params.length; i++) {
+    args.push(emitGoLitArg(k.args[i], params[i].type))
   }
   const steps: string[] = it === null ? [] : emitGoIterate(ctx, k, sig, args, name)
   const call = it === null ? emitGoCall(ctx, sig, args) : "it_r"
@@ -607,14 +651,24 @@ const emitGoIterate = (ctx: EmitGoContext, k: Clause, sig: FnSig, args: string[]
   if (it === null) {
     return []
   }
+  const n = it.names.length
+  if (it.next.length !== n || sig.params.length !== n || args.length !== n) {
+    ctx.errors.push(
+      `${k.id}: the iterate has ${n} names and ${it.next.length} next for ${sig.params.length} parameters`,
+    )
+    return []
+  }
   const lines: string[] = []
   const types: string[] = []
   const vars: string[] = []
-  for (let i = 0; i < it.names.length; i++) {
-    const t = emitGoVt(sig.params[i].type)
+  const params = sig.params
+  for (let i = 0; i < it.names.length && i < params.length && i < args.length; i++) {
+    const p = params[i]
+    const a = args[i]
+    const t = emitGoVt(p.type)
     types.push(t)
     vars.push(`it_a${i}`)
-    lines.push(`\tvar it_a${i} ${emitGoType(t) ?? ""} = ${args[i]}`)
+    lines.push(`\tvar it_a${i} ${emitGoType(t) ?? ""} = ${a}`)
   }
   const optional = vocabIsOptional(emitGoVt(sig.returns))
   lines.push(`\tfor it_i := 1; it_i < ${it.count}; it_i++ {`)
@@ -624,11 +678,13 @@ const emitGoIterate = (ctx: EmitGoContext, k: Clause, sig: FnSig, args: string[]
     lines.push(`\t\t\treturn t.fail(${name}, fmt.Sprintf("step %d of ${it.count}: ${sig.name} returned null", it_i))`)
     lines.push("\t\t}")
   }
-  for (let i = 0; i < it.next.length; i++) {
-    const e = it.next[i]
+  const next = it.next
+  for (let i = 0; i < next.length && i < types.length; i++) {
+    const e = next[i]
+    const t = types[i]
     let v = `it_a${toI32(it.names.indexOf(e.name))}`
     if (e.kind === ExprKind.Call) {
-      v = optional && !vocabIsOptional(types[i]) ? "*it_s" : "it_s"
+      v = optional && !vocabIsOptional(t) ? "*it_s" : "it_s"
     }
     lines.push(`\t\tit_n${i} := ${v}`)
   }
@@ -662,10 +718,24 @@ const emitGoVectorF64 = (k: Clause, expect: Literal, name: string, call: string)
 }
 
 /** One forall variable's sample table, as a slice: integers and bools as they are, bytes as hex, strings quoted. */
-const emitGoTable = (name: string, type: string, j: i32, samples: Sample[], out: string[]): void => {
+const emitGoTable = (
+  ctx: EmitGoContext,
+  name: string,
+  type: string,
+  j: i32,
+  samples: Sample[],
+  out: string[],
+): void => {
   const vals: string[] = []
   let elem = "string"
   for (const s of samples) {
+    if (j < 0 || j >= s.args.length) {
+      const msg = `a sample has no value for ${name}`
+      if (ctx.errors.indexOf(msg) < 0) {
+        ctx.errors.push(msg)
+      }
+      return
+    }
     const lit = s.args[j]
     if (vocabIsIntType(type)) {
       elem = emitGoIntType(type)
@@ -699,7 +769,7 @@ const emitGoProperty = (ctx: EmitGoContext, k: Clause, samples: Sample[]): strin
   }
   for (let j = 0; j < k.forall.length; j++) {
     const v = k.forall[j]
-    emitGoTable(v.name, v.type, j, samples, out)
+    emitGoTable(ctx, v.name, v.type, j, samples, out)
   }
   const undefinedWhy = emitUndefinedWhy(assert)
   const usesUnwrap = undefinedWhy !== null

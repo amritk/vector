@@ -126,12 +126,12 @@ export const emitWriteFile = (path: string, data: string): Result<boolean, strin
       // A failed write may leave the temporary behind; its name is random
       // and ours, so removing it whether or not it was made is safe.
       unlinkSync(temp)
-      return Err(`${path}: cannot write file (errno ${-written})`)
+      return Err(`${path}: cannot write file (errno ${-toI64(written)})`)
     }
     const renamed = renameSync(temp, path)
     if (renamed < 0) {
       unlinkSync(temp)
-      return Err(`${path}: cannot write file (errno ${-renamed})`)
+      return Err(`${path}: cannot write file (errno ${-toI64(renamed)})`)
     }
     return Ok(true)
   }

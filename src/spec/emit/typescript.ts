@@ -334,10 +334,35 @@ const emitTsOperands = (ctx: EmitTsContext, e: Expr): string => {
       }
     }
   }
-  return emitTsTypeOf(ctx, e.args[0])
+  return emitTsArgType(ctx, e, 0)
 }
 
-const emitTsArg = (ctx: EmitTsContext, e: Expr, i: i32, want: string | null): string => emitTsExpr(ctx, e.args[i], want)
+/**
+ * Argument `i` of an op, or null once its absence is recorded: a checked
+ * contract gives every op its arity, so only a contract built by hand lacks one.
+ */
+const emitTsArgAt = (ctx: EmitTsContext, e: Expr, i: i32): Expr | null => {
+  if (i >= 0 && i < e.args.length) {
+    return e.args[i]
+  }
+  const msg = `${e.name} has no argument ${i}`
+  if (ctx.errors.indexOf(msg) < 0) {
+    ctx.errors.push(msg)
+  }
+  return null
+}
+
+/** The type of argument `i` of an op ("null" once its absence is recorded). */
+const emitTsArgType = (ctx: EmitTsContext, e: Expr, i: i32): string => {
+  const x = emitTsArgAt(ctx, e, i)
+  return x === null ? "null" : emitTsTypeOf(ctx, x)
+}
+
+/** Argument `i` of an op, wanted at `want` ("" once its absence is recorded). */
+const emitTsArg = (ctx: EmitTsContext, e: Expr, i: i32, want: string | null): string => {
+  const x = emitTsArgAt(ctx, e, i)
+  return x === null ? "" : emitTsExpr(ctx, x, want)
+}
 
 /** Whether a literal is the null literal. */
 const emitTsIsNullLit = (e: Expr): boolean => {
@@ -377,9 +402,14 @@ const emitTsExpr = (ctx: EmitTsContext, e: Expr, want: string | null): string =>
       ctx.errors.push(`unknown function ${e.name}`)
       return ""
     }
+    if (e.args.length !== sig.params.length) {
+      ctx.errors.push(`${e.name} takes ${sig.params.length} arguments, got ${e.args.length}`)
+      return ""
+    }
     const args: string[] = []
-    for (let i = 0; i < e.args.length; i++) {
-      args.push(emitTsCallArg(ctx, e.args[i], sig.params[i].type))
+    const params = sig.params
+    for (let i = 0; i < e.args.length && i < params.length; i++) {
+      args.push(emitTsCallArg(ctx, e.args[i], params[i].type))
     }
     return emitTsConv(emitTsCall(sig, args), emitTsVt(sig.returns), want)
   }
@@ -404,17 +434,22 @@ const emitTsHelperOp = (ctx: EmitTsContext, e: Expr): string | null => {
     const b = emitTsArg(ctx, e, 0, null)
     return `_bytes_int(u, ${b}, ${vocabByteWidth(op)}, ${vocabBigEndian(op)}, "${vocabReadType(op)}")`
   }
-  const one = ["zeros", "utf8", "ascii", "strLen"]
-  const oneHelper = ["_fill(0, ", "_utf8(", "_ascii(", "_str_len("]
-  const at = one.indexOf(op)
-  if (at >= 0) {
-    return `${oneHelper[at]}${emitTsArg(ctx, e, 0, null)})`
+  if (op === "zeros" || op === "utf8" || op === "ascii" || op === "strLen") {
+    const helper = op === "zeros" ? "_fill(0, " : op === "utf8" ? "_utf8(" : op === "ascii" ? "_ascii(" : "_str_len("
+    return `${helper}${emitTsArg(ctx, e, 0, null)})`
   }
-  const two = ["fill", "flipBit", "charAt", "concat", "strConcat"]
-  const twoHelper = ["_fill", "_flip_bit", "_char_at", "_concat", "_str_concat"]
-  const at2 = two.indexOf(op)
-  if (at2 >= 0) {
-    return `${twoHelper[at2]}(${emitTsArg(ctx, e, 0, null)}, ${emitTsArg(ctx, e, 1, null)})`
+  if (op === "fill" || op === "flipBit" || op === "charAt" || op === "concat" || op === "strConcat") {
+    const helper =
+      op === "fill"
+        ? "_fill"
+        : op === "flipBit"
+          ? "_flip_bit"
+          : op === "charAt"
+            ? "_char_at"
+            : op === "concat"
+              ? "_concat"
+              : "_str_concat"
+    return `${helper}(${emitTsArg(ctx, e, 0, null)}, ${emitTsArg(ctx, e, 1, null)})`
   }
   if (op === "slice") {
     const b = emitTsArg(ctx, e, 0, null)
@@ -435,8 +470,8 @@ const emitTsHelperOp = (ctx: EmitTsContext, e: Expr): string | null => {
 
 /** A comparison: an order between integers as it is, an equality by value (bytes byte for byte). */
 const emitTsCompare = (ctx: EmitTsContext, e: Expr, op: string): string => {
-  const l = emitTsTypeOf(ctx, e.args[0])
-  const side = l === "null" ? emitTsTypeOf(ctx, e.args[1]) : l
+  const l = emitTsArgType(ctx, e, 0)
+  const side = l === "null" ? emitTsArgType(ctx, e, 1) : l
   const t: string | null = vocabIsIntType(side) ? emitTsOperands(ctx, e) : null
   const a = emitTsArg(ctx, e, 0, t)
   const b = emitTsArg(ctx, e, 1, t)
@@ -460,7 +495,7 @@ const emitTsOp = (ctx: EmitTsContext, e: Expr, want: string | null): string => {
     return emitTsConv(`${emitTsArg(ctx, e, 0, null)}.length`, "i32", want)
   }
   if (op === "unwrap") {
-    const empty = emitTsTypeOf(ctx, e.args[0]) === "string?" ? `""` : "new Uint8Array(0)"
+    const empty = emitTsArgType(ctx, e, 0) === "string?" ? `""` : "new Uint8Array(0)"
     return `u.get(${emitTsArg(ctx, e, 0, null)}, ${empty})`
   }
   if (op === "isNull") {
@@ -535,9 +570,14 @@ const emitTsVector = (ctx: EmitTsContext, k: Clause): string => {
     ctx.errors.push(`${k.id}: no function ${k.call} or no expected value`)
     return ""
   }
+  if (k.args.length !== sig.params.length) {
+    ctx.errors.push(`${k.id}: ${k.call} takes ${sig.params.length} arguments, got ${k.args.length}`)
+    return ""
+  }
   const args: string[] = []
-  for (let i = 0; i < k.args.length; i++) {
-    args.push(emitTsLitArg(k.args[i], sig.params[i].type))
+  const params = sig.params
+  for (let i = 0; i < k.args.length && i < params.length; i++) {
+    args.push(emitTsLitArg(k.args[i], params[i].type))
   }
   const name = emitQuote(emitTestName(k))
   const it = k.iterate
@@ -588,8 +628,9 @@ const emitTsIterate = (k: Clause, sig: FnSig, args: string[], name: string): str
   const lines: string[] = []
   const vars: string[] = []
   for (let i = 0; i < args.length; i++) {
+    const a = args[i]
     vars.push(`it_a${i}`)
-    lines.push(`  let it_a${i} = ${args[i]}`)
+    lines.push(`  let it_a${i} = ${a}`)
   }
   const optional = vocabIsOptional(emitTsVt(sig.returns))
   lines.push(`  for (let it_i = 1; it_i < ${it.count}; it_i += 1) {`)
@@ -597,8 +638,9 @@ const emitTsIterate = (k: Clause, sig: FnSig, args: string[], name: string): str
   if (optional) {
     emitTsIterateNull(lines, "    ", name, "it_s", `" + it_i + " of ${it.count}`, sig.name)
   }
-  for (let i = 0; i < it.next.length; i++) {
-    const e = it.next[i]
+  const next = it.next
+  for (let i = 0; i < next.length; i++) {
+    const e = next[i]
     lines.push(`    const it_n${i} = ${e.kind === ExprKind.Call ? "it_s" : `it_a${toI32(it.names.indexOf(e.name))}`}`)
   }
   for (let i = 0; i < it.next.length; i++) {
@@ -636,10 +678,24 @@ const emitTsVectorF64 = (k: Clause, expect: Literal, name: string, call: string)
 }
 
 /** One forall variable's sample table, as an array: integers and bools as they are, bytes as hex, strings quoted. */
-const emitTsTable = (name: string, type: string, j: i32, samples: Sample[], out: string[]): void => {
+const emitTsTable = (
+  ctx: EmitTsContext,
+  name: string,
+  type: string,
+  j: i32,
+  samples: Sample[],
+  out: string[],
+): void => {
   const vals: string[] = []
   let elem = "string"
   for (const s of samples) {
+    if (j < 0 || j >= s.args.length) {
+      const msg = `a sample has no value for ${name}`
+      if (ctx.errors.indexOf(msg) < 0) {
+        ctx.errors.push(msg)
+      }
+      return
+    }
     const lit = s.args[j]
     if (vocabIsIntType(type)) {
       elem = emitTsIsBig(type) ? "bigint" : "number"
@@ -673,7 +729,7 @@ const emitTsProperty = (ctx: EmitTsContext, k: Clause, samples: Sample[]): strin
   }
   for (let j = 0; j < k.forall.length; j++) {
     const v = k.forall[j]
-    emitTsTable(v.name, v.type, j, samples, out)
+    emitTsTable(ctx, v.name, v.type, j, samples, out)
   }
   const undefinedWhy = emitUndefinedWhy(assert)
   const usesUnwrap = undefinedWhy !== null
@@ -713,6 +769,19 @@ const emitTsProperty = (ctx: EmitTsContext, k: Clause, samples: Sample[]): strin
   return out.join("\n")
 }
 
+/**
+ * Where the test finds `module` when it is one of `localModules`, or null
+ * when it is not one (`emitTsProgram` refuses options whose two lists differ in length).
+ */
+const emitTsLocalImport = (opts: EmitOptions, module: string): string | null => {
+  for (let i = 0; i < opts.localModules.length && i < opts.localImports.length; i++) {
+    if (opts.localModules[i] === module) {
+      return opts.localImports[i]
+    }
+  }
+  return null
+}
+
 /** The imports of the functions under test, by module: from its path, or from the `.ts` file a package places. */
 const emitTsImports = (ctx: EmitTsContext, called: string[]): string => {
   const fns: FnSig[] = []
@@ -735,8 +804,8 @@ const emitTsImports = (ctx: EmitTsContext, called: string[]): string => {
         names.push(emitTsName(f))
       }
     }
-    const local = ctx.opts.localModules.indexOf(mod)
-    const from = local < 0 ? emitTsModule(ctx.c, mod) : `${ctx.opts.localImports[local]}.ts`
+    const local = emitTsLocalImport(ctx.opts, mod)
+    const from = local === null ? emitTsModule(ctx.c, mod) : `${local}.ts`
     lines.push(`import { ${names.join(", ")} } from ${emitQuote(from)}`)
   }
   return lines.join("\n")
@@ -1154,6 +1223,9 @@ export const emitTsProgram = (
   opts: EmitOptions,
   harness: string,
 ): Result<string, string[]> => {
+  if (opts.localImports.length !== opts.localModules.length) {
+    return Err([`${opts.localModules.length} local modules but ${opts.localImports.length} import paths`])
+  }
   const refused = emitTsRefusals(c)
   if (refused.length > 0) {
     return Err(refused)

@@ -238,7 +238,11 @@ export const emitRsRefusals = (c: Contract): string[] => {
   return out
 }
 
-const emitRsHexDigit = (n: i32): string => "0123456789abcdef".substring(n, n + 1)
+/** The low hex digit of `n`. */
+const emitRsHexDigit = (n: i32): string => {
+  const d = n & 15
+  return "0123456789abcdef".substring(d, d + 1)
+}
 
 /**
  * Text as a Rust string literal: `"` and `\` escaped, newline, tab and
@@ -250,12 +254,13 @@ const emitRsHexDigit = (n: i32): string => "0123456789abcdef".substring(n, n + 1
  */
 export const emitRsQuote = (s: string): string => {
   const out: string[] = ['"']
-  let j = 0
-  while (j < s.length) {
-    const cp = charsCodePointAt(s, j)
-    const n = charsSequenceLength(s, j)
+  // In u32, so the steps cannot overflow: each is 1 to 4 bytes, inside the text.
+  let j: u32 = 0
+  while (j < toU32(s.length)) {
+    const cp = charsCodePointAt(s, toI32(j))
+    const n = toU32(charsSequenceLength(s, toI32(j)))
     if (cp === 0x22 || cp === 0x5c) {
-      out.push(`\\${s.substring(j, j + 1)}`)
+      out.push(`\\${s.substring(toI32(j), toI32(j + 1))}`)
     } else if (cp === 0x0a) {
       out.push("\\n")
     } else if (cp === 0x09) {
@@ -265,7 +270,7 @@ export const emitRsQuote = (s: string): string => {
     } else if (cp < 0x20 || cp === 0x7f) {
       out.push(`\\u{${emitRsHexDigit(cp >> 4)}${emitRsHexDigit(cp & 15)}}`)
     } else {
-      out.push(s.substring(j, j + n))
+      out.push(s.substring(toI32(j), toI32(j + n)))
     }
     j += n
   }
@@ -376,10 +381,53 @@ const emitRsOperands = (ctx: EmitRsContext, e: Expr): string => {
       }
     }
   }
-  return emitRsTypeOf(ctx, e.args[0])
+  return emitRsArgType(ctx, e, 0)
 }
 
-const emitRsArg = (ctx: EmitRsContext, e: Expr, i: i32, want: string | null): string => emitRsExpr(ctx, e.args[i], want)
+/**
+ * Argument `i` of an op, or null once its absence is recorded: a checked
+ * contract gives every op its arity, so only a contract built by hand lacks one.
+ */
+const emitRsArgAt = (ctx: EmitRsContext, e: Expr, i: i32): Expr | null => {
+  if (i >= 0 && i < e.args.length) {
+    return e.args[i]
+  }
+  const msg = `${e.name} has no argument ${i}`
+  if (ctx.errors.indexOf(msg) < 0) {
+    ctx.errors.push(msg)
+  }
+  return null
+}
+
+/** The type of argument `i` of an op ("null" once its absence is recorded). */
+const emitRsArgType = (ctx: EmitRsContext, e: Expr, i: i32): string => {
+  const x = emitRsArgAt(ctx, e, i)
+  return x === null ? "null" : emitRsTypeOf(ctx, x)
+}
+
+/** Argument `i` of an op, wanted at `want` ("" once its absence is recorded). */
+const emitRsArg = (ctx: EmitRsContext, e: Expr, i: i32, want: string | null): string => {
+  const x = emitRsArgAt(ctx, e, i)
+  return x === null ? "" : emitRsExpr(ctx, x, want)
+}
+
+/** Argument `i` of an op as a place ("" once its absence is recorded). */
+const emitRsPlaceArg = (ctx: EmitRsContext, e: Expr, i: i32): string => {
+  const x = emitRsArgAt(ctx, e, i)
+  return x === null ? "" : emitRsPlace(ctx, x)
+}
+
+/** A borrow of argument `i` of an op ("" once its absence is recorded). */
+const emitRsRefArg = (ctx: EmitRsContext, e: Expr, i: i32): string => {
+  const x = emitRsArgAt(ctx, e, i)
+  return x === null ? "" : emitRsRef(ctx, x)
+}
+
+/** Argument `i` of an op widened to i128 ("" once its absence is recorded). */
+const emitRsWideArg = (ctx: EmitRsContext, e: Expr, i: i32): string => {
+  const x = emitRsArgAt(ctx, e, i)
+  return x === null ? "" : emitRsWide(ctx, x)
+}
 
 /** An expression as a place a method can be called on or borrowed: a variable as it is, anything else in parentheses. */
 const emitRsPlace = (ctx: EmitRsContext, e: Expr): string =>
@@ -438,9 +486,14 @@ const emitRsExpr = (ctx: EmitRsContext, e: Expr, want: string | null): string =>
       ctx.errors.push(`unknown function ${e.name}`)
       return ""
     }
+    if (e.args.length !== sig.params.length) {
+      ctx.errors.push(`${e.name} takes ${sig.params.length} arguments, got ${e.args.length}`)
+      return ""
+    }
     const args: string[] = []
-    for (let i = 0; i < e.args.length; i++) {
-      args.push(emitRsCallArg(ctx, e.args[i], sig.params[i].type))
+    const params = sig.params
+    for (let i = 0; i < e.args.length && i < params.length; i++) {
+      args.push(emitRsCallArg(ctx, e.args[i], params[i].type))
     }
     return emitRsConv(emitRsCall(sig, args), emitRsVt(sig.returns), want)
   }
@@ -459,41 +512,42 @@ const emitRsExpr = (ctx: EmitRsContext, e: Expr, want: string | null): string =>
 const emitRsHelperOp = (ctx: EmitRsContext, e: Expr): string | null => {
   const op = e.name
   if (op === "zeros") {
-    return `_fill(0, ${emitRsWide(ctx, e.args[0])})`
+    return `_fill(0, ${emitRsWideArg(ctx, e, 0)})`
   }
   if (vocabHas(vocabWriteOps(), op)) {
-    return `_int_bytes(${emitRsWide(ctx, e.args[0])}, ${vocabByteWidth(op)}, ${vocabBigEndian(op)})`
+    return `_int_bytes(${emitRsWideArg(ctx, e, 0)}, ${vocabByteWidth(op)}, ${vocabBigEndian(op)})`
   }
   if (vocabHas(vocabReadOps(), op)) {
-    const read = `_bytes_int(&u, ${emitRsRef(ctx, e.args[0])}, ${vocabByteWidth(op)}, ${vocabBigEndian(op)})`
+    const read = `_bytes_int(&u, ${emitRsRefArg(ctx, e, 0)}, ${vocabByteWidth(op)}, ${vocabBigEndian(op)})`
     const ty = vocabReadType(op)
     return ty === "u64" ? read : `(${read} as ${ty})`
   }
-  const one = ["utf8", "ascii", "strLen", "lower", "upper"]
-  const oneHelper = ["_utf8(", "_ascii(", "_str_len(", "_shift_case(", "_shift_case("]
-  const oneTail = [")", ")", ")", ", 65, 90, 32)", ", 97, 122, -32)"]
-  const at = one.indexOf(op)
-  if (at >= 0) {
-    return `${oneHelper[at]}${emitRsRef(ctx, e.args[0])}${oneTail[at]}`
+  if (op === "lower" || op === "upper") {
+    const tail = op === "lower" ? ", 65, 90, 32)" : ", 97, 122, -32)"
+    return `_shift_case(${emitRsRefArg(ctx, e, 0)}${tail}`
+  }
+  if (op === "utf8" || op === "ascii" || op === "strLen") {
+    const helper = op === "utf8" ? "_utf8" : op === "ascii" ? "_ascii" : "_str_len"
+    return `${helper}(${emitRsRefArg(ctx, e, 0)})`
   }
   if (op === "fill") {
-    return `_fill(${emitRsWide(ctx, e.args[0])}, ${emitRsWide(ctx, e.args[1])})`
+    return `_fill(${emitRsWideArg(ctx, e, 0)}, ${emitRsWideArg(ctx, e, 1)})`
   }
   if (op === "flipBit" || op === "charAt") {
     const helper = op === "flipBit" ? "_flip_bit" : "_char_at"
-    return `${helper}(${emitRsRef(ctx, e.args[0])}, ${emitRsWide(ctx, e.args[1])})`
+    return `${helper}(${emitRsRefArg(ctx, e, 0)}, ${emitRsWideArg(ctx, e, 1)})`
   }
   if (op === "concat" || op === "strConcat") {
     const helper = op === "concat" ? "_concat" : "_str_concat"
-    return `${helper}(${emitRsRef(ctx, e.args[0])}, ${emitRsRef(ctx, e.args[1])})`
+    return `${helper}(${emitRsRefArg(ctx, e, 0)}, ${emitRsRefArg(ctx, e, 1)})`
   }
   if (op === "slice") {
-    const b = emitRsRef(ctx, e.args[0])
-    return `_slice(${b}, ${emitRsWide(ctx, e.args[1])}, ${emitRsWide(ctx, e.args[2])})`
+    const b = emitRsRefArg(ctx, e, 0)
+    return `_slice(${b}, ${emitRsWideArg(ctx, e, 1)}, ${emitRsWideArg(ctx, e, 2)})`
   }
   const bitwise = ["xor", "bitAnd", "bitOr"].indexOf(op)
   if (bitwise >= 0) {
-    return `_bitwise(${emitRsRef(ctx, e.args[0])}, ${emitRsRef(ctx, e.args[1])}, ${bitwise})`
+    return `_bitwise(${emitRsRefArg(ctx, e, 0)}, ${emitRsRefArg(ctx, e, 1)}, ${bitwise})`
   }
   return null
 }
@@ -506,16 +560,21 @@ const emitRsIsNullLit = (e: Expr): boolean => {
 
 /** A comparison; an optional side met by a plain value compares with that value in `Some`. */
 const emitRsCompare = (ctx: EmitRsContext, e: Expr, op: string): string => {
-  const l = emitRsTypeOf(ctx, e.args[0])
-  const r = emitRsTypeOf(ctx, e.args[1])
+  const x0 = emitRsArgAt(ctx, e, 0)
+  const x1 = emitRsArgAt(ctx, e, 1)
+  if (x0 === null || x1 === null) {
+    return ""
+  }
+  const l = emitRsTypeOf(ctx, x0)
+  const r = emitRsTypeOf(ctx, x1)
   const side = l === "null" ? r : l
   const t: string | null = vocabIsIntType(side) ? emitRsOperands(ctx, e) : null
   let a = emitRsArg(ctx, e, 0, t)
   let b = emitRsArg(ctx, e, 1, t)
-  if (vocabIsOptional(l) && !vocabIsOptional(r) && !emitRsIsNullLit(e.args[1])) {
+  if (vocabIsOptional(l) && !vocabIsOptional(r) && !emitRsIsNullLit(x1)) {
     b = `Some(${b})`
   }
-  if (vocabIsOptional(r) && !vocabIsOptional(l) && !emitRsIsNullLit(e.args[0])) {
+  if (vocabIsOptional(r) && !vocabIsOptional(l) && !emitRsIsNullLit(x0)) {
     a = `Some(${a})`
   }
   return `(${a} ${op} ${b})`
@@ -529,17 +588,17 @@ const emitRsOp = (ctx: EmitRsContext, e: Expr, want: string | null): string => {
     return emitRsConv(viaHelper, emitRsTypeOf(ctx, e), want)
   }
   if (op === "len") {
-    return emitRsConv(`(${emitRsPlace(ctx, e.args[0])}.len() as i32)`, "i32", want)
+    return emitRsConv(`(${emitRsPlaceArg(ctx, e, 0)}.len() as i32)`, "i32", want)
   }
   if (op === "unwrap") {
-    const get = emitRsTypeOf(ctx, e.args[0]) === "string?" ? "s" : "b"
+    const get = emitRsArgType(ctx, e, 0) === "string?" ? "s" : "b"
     return `u.${get}(${emitRsArg(ctx, e, 0, null)})`
   }
   if (op === "isNull") {
-    return `${emitRsPlace(ctx, e.args[0])}.is_none()`
+    return `${emitRsPlaceArg(ctx, e, 0)}.is_none()`
   }
   if (op === "notNull") {
-    return `${emitRsPlace(ctx, e.args[0])}.is_some()`
+    return `${emitRsPlaceArg(ctx, e, 0)}.is_some()`
   }
   if (op === "+" || op === "-" || op === "*") {
     const t = emitRsOperands(ctx, e)
@@ -614,11 +673,16 @@ const emitRsVector = (ctx: EmitRsContext, k: Clause): string => {
   if ((it?.slow ?? false) && !ctx.opts.slow) {
     return `fn ${emitClauseFn(k)}(t: &mut Suite) -> bool {\n    t.skip(${name}, "${EMIT_SLOW_SKIP}")\n}`
   }
-  const args: string[] = []
-  for (let i = 0; i < k.args.length; i++) {
-    args.push(emitRsLitArg(k.args[i], sig.params[i].type))
+  if (k.args.length !== sig.params.length) {
+    ctx.errors.push(`${k.id}: ${k.call} takes ${sig.params.length} arguments, got ${k.args.length}`)
+    return ""
   }
-  const steps: string[] = it === null ? [] : emitRsIterate(k, sig, name)
+  const args: string[] = []
+  const params = sig.params
+  for (let i = 0; i < k.args.length && i < params.length; i++) {
+    args.push(emitRsLitArg(k.args[i], params[i].type))
+  }
+  const steps: string[] = it === null ? [] : emitRsIterate(ctx, k, sig, name)
   const call = it === null ? emitRsCall(sig, args) : "it_r"
   const ret = emitRsVt(sig.returns)
   let body = ""
@@ -678,18 +742,28 @@ const emitRsVarArg = (v: string, t: string): string => {
  * to its `next` after each call; a None result at any step fails the clause,
  * naming the step.
  */
-const emitRsIterate = (k: Clause, sig: FnSig, name: string): string[] => {
+const emitRsIterate = (ctx: EmitRsContext, k: Clause, sig: FnSig, name: string): string[] => {
   const it = k.iterate
   if (it === null) {
+    return []
+  }
+  const n = it.names.length
+  if (it.next.length !== n || sig.params.length !== n || k.args.length !== n) {
+    ctx.errors.push(
+      `${k.id}: the iterate has ${n} names and ${it.next.length} next for ${sig.params.length} parameters`,
+    )
     return []
   }
   const lines: string[] = []
   const types: string[] = []
   const vars: string[] = []
-  for (let i = 0; i < it.names.length; i++) {
-    const t = emitRsVt(sig.params[i].type)
+  const params = sig.params
+  const kargs = k.args
+  for (let i = 0; i < it.names.length && i < params.length && i < kargs.length; i++) {
+    const p = params[i]
+    const lit = kargs[i]
+    const t = emitRsVt(p.type)
     types.push(t)
-    const lit = k.args[i]
     const init =
       vocabIsOptional(t) && lit.kind !== LitKind.Null
         ? `Some(${emitRsLiteral(lit, vocabBaseOf(t))})`
@@ -709,11 +783,13 @@ const emitRsIterate = (k: Clause, sig: FnSig, name: string): string[] => {
   } else {
     lines.push(`        let it_s = ${emitRsCall(sig, vars)};`)
   }
-  for (let i = 0; i < it.next.length; i++) {
-    const e = it.next[i]
+  const next = it.next
+  for (let i = 0; i < next.length && i < types.length; i++) {
+    const e = next[i]
+    const t = types[i]
     const from = e.kind === ExprKind.Call ? "it_s" : `it_a${toI32(it.names.indexOf(e.name))}`
-    const v = emitRsIsOwned(types[i]) ? `${from}.clone()` : from
-    const wrap = e.kind === ExprKind.Call && vocabIsOptional(types[i]) ? `Some(${v})` : v
+    const v = emitRsIsOwned(t) ? `${from}.clone()` : from
+    const wrap = e.kind === ExprKind.Call && vocabIsOptional(t) ? `Some(${v})` : v
     lines.push(`        let it_n${i} = ${wrap};`)
   }
   for (let i = 0; i < it.next.length; i++) {
@@ -746,10 +822,24 @@ const emitRsVectorF64 = (k: Clause, expect: Literal, name: string, call: string)
 }
 
 /** One forall variable's sample table, as a slice: integers and bools as they are, bytes as hex, strings quoted. */
-const emitRsTable = (name: string, type: string, j: i32, samples: Sample[], out: string[]): void => {
+const emitRsTable = (
+  ctx: EmitRsContext,
+  name: string,
+  type: string,
+  j: i32,
+  samples: Sample[],
+  out: string[],
+): void => {
   const vals: string[] = []
   let elem = "&str"
   for (const s of samples) {
+    if (j < 0 || j >= s.args.length) {
+      const msg = `a sample has no value for ${name}`
+      if (ctx.errors.indexOf(msg) < 0) {
+        ctx.errors.push(msg)
+      }
+      return
+    }
     const lit = s.args[j]
     if (vocabIsIntType(type)) {
       elem = type
@@ -783,7 +873,7 @@ const emitRsProperty = (ctx: EmitRsContext, k: Clause, samples: Sample[]): strin
   }
   for (let j = 0; j < k.forall.length; j++) {
     const v = k.forall[j]
-    emitRsTable(v.name, v.type, j, samples, out)
+    emitRsTable(ctx, v.name, v.type, j, samples, out)
   }
   const undefinedWhy = emitUndefinedWhy(assert)
   const usesUnwrap = undefinedWhy !== null
@@ -832,6 +922,19 @@ const emitRsProperty = (ctx: EmitRsContext, k: Clause, samples: Sample[]): strin
 }
 
 /** The uses of the functions under test, by module: by crate path, or a `#[path]` module of the file a package places. */
+/**
+ * Where the test finds `module` when it is one of `localModules`, or null
+ * when it is not one (`emitRsProgram` refuses options whose two lists differ in length).
+ */
+const emitRsLocalImport = (opts: EmitOptions, module: string): string | null => {
+  for (let i = 0; i < opts.localModules.length && i < opts.localImports.length; i++) {
+    if (opts.localModules[i] === module) {
+      return opts.localImports[i]
+    }
+  }
+  return null
+}
+
 const emitRsImports = (ctx: EmitRsContext, called: string[]): string => {
   const fns: FnSig[] = []
   const modules: string[] = []
@@ -847,18 +950,19 @@ const emitRsImports = (ctx: EmitRsContext, called: string[]): string => {
   }
   const lines: string[] = []
   for (let i = 0; i < modules.length; i++) {
+    const mod = modules[i]
     const names: string[] = []
     for (const f of fns) {
-      if ((f.module ?? ctx.c.target.module) === modules[i]) {
+      if ((f.module ?? ctx.c.target.module) === mod) {
         names.push(emitRsName(f))
       }
     }
-    const local = ctx.opts.localModules.indexOf(modules[i])
-    if (local < 0) {
-      lines.push(`use ${emitRsModule(ctx.c, modules[i])}::{${names.join(", ")}};`)
+    const local = emitRsLocalImport(ctx.opts, mod)
+    if (local === null) {
+      lines.push(`use ${emitRsModule(ctx.c, mod)}::{${names.join(", ")}};`)
     } else {
       const m = `_m${i}`
-      lines.push(`#[path = ${emitRsQuote(`${ctx.opts.localImports[local]}.rs`)}]`)
+      lines.push(`#[path = ${emitRsQuote(`${local}.rs`)}]`)
       lines.push(`mod ${m};`)
       lines.push(`use ${m}::{${names.join(", ")}};`)
     }
@@ -1228,6 +1332,9 @@ export const emitRsProgram = (
   opts: EmitOptions,
   harness: string,
 ): Result<string, string[]> => {
+  if (opts.localImports.length !== opts.localModules.length) {
+    return Err([`${opts.localModules.length} local modules but ${opts.localImports.length} import paths`])
+  }
   const refused = emitRsRefusals(c)
   if (refused.length > 0) {
     return Err(refused)
