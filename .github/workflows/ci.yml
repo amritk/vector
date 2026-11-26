@@ -88,8 +88,9 @@ jobs:
         with:
           path: |
             .nish
+            .nish-next
             .z3
-          key: toolchain-${{ runner.os }}-${{ hashFiles('.nish-version', 'scripts/fetch-nish.sh', 'scripts/fetch-z3.sh') }}
+          key: toolchain-${{ runner.os }}-${{ hashFiles('.nish-version', 'scripts/fetch-nish.sh', 'scripts/fetch-z3.sh', '.nish-next-version', 'scripts/fetch-nish-next.sh') }}
 
       - name: Fetch the pinned nish compiler
         run: bash scripts/fetch-nish.sh
@@ -99,6 +100,18 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Fetch the next nish compiler
+        run: bash scripts/fetch-nish-next.sh
+
+      # The ratchet compiles src/ with the next nish (.nish-next-version) and
+      # exits 1 when a module has more unproven panic sites than its baseline
+      # in scripts/panic-baseline/, 2 when it cannot count them.
+      - name: No module has more panic sites than its baseline
+        run: npm run panics
+
+      - name: The panic ratchet tests itself
+        run: node --test scripts/panics.test.mjs
 
       - name: Test
         run: npm test

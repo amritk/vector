@@ -1,6 +1,6 @@
 /**
  * `spec/source/fold` — GENERATED; do not edit it by hand. Regenerate it with
- * src/spec/source/fold_gen.mjs (this copy: node v22.23.4, Unicode
+ * src/spec/source/fold_gen.mjs (this copy: node v22.23.5, Unicode
  * 17.0). Each non-ASCII code point whose NFKD form,
  * with its combining marks removed, is a single ASCII letter, and that
  * letter: the precomposed Latin and Greek letters, superscripts, subscripts,
@@ -196,18 +196,25 @@ export const foldTable = (): i32[] => [
  * @returns the ASCII letter's code, or -1 when it folds to none
  */
 export const foldAsciiLetter = (table: i32[], cp: i32): i32 => {
-  let lo = 0
-  let hi = table.length / 2 - 1
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1
-    const at = table[mid * 2]
-    if (at === cp) {
-      return table[mid * 2 + 1]
-    }
-    if (at < cp) {
-      lo = mid + 1
+  // In u32, so no step can overflow; the search keeps lo <= hi <= length / 2.
+  let lo: u32 = 0
+  let hi: u32 = toU32(table.length) / 2
+  while (lo < hi) {
+    const mid = lo + (hi - lo) / 2
+    const at = mid * 2
+    const letter = at + 1
+    if (toU32(at) < toU32(table.length) && toU32(letter) < toU32(table.length)) {
+      if (table[at] === cp) {
+        return table[letter]
+      }
+      if (table[at] < cp) {
+        lo = mid + 1
+      } else {
+        hi = mid
+      }
     } else {
-      hi = mid - 1
+      // mid < length / 2 puts both reads in range; this only ends the search.
+      hi = mid
     }
   }
   return -1

@@ -143,12 +143,12 @@ const verifyWriteAtomic = (path: string, data: string): string => {
       if (written === -28 || written === -5 || written === -27) {
         unlinkSync(temp)
       }
-      return `verify: ${path}: cannot write file (errno ${-written})`
+      return `verify: ${path}: cannot write file (errno ${-toI64(written)})`
     }
     const renamed = renameSync(temp, path)
     if (renamed < 0) {
       unlinkSync(temp)
-      return `verify: ${path}: cannot write file (errno ${-renamed})`
+      return `verify: ${path}: cannot write file (errno ${-toI64(renamed)})`
     }
     return ""
   }

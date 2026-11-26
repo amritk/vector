@@ -90,8 +90,10 @@ const frozenMainPinned = (c: Contract): boolean => {
 }
 
 /** `path` from the repository's top when it is inside it, else as given. */
-const frozenShown = (path: string, top: string): string =>
-  path.startsWith(`${top}/`) ? path.substring(top.length + 1) : path
+const frozenShown = (path: string, top: string): string => {
+  const pre = `${top}/`
+  return path.startsWith(pre) ? path.substring(pre.length) : path
+}
 
 /** Whether `path` is itself a symbolic link. */
 const frozenIsLink = (path: string): boolean => {
@@ -102,7 +104,7 @@ const frozenIsLink = (path: string): boolean => {
 /** `path`, under `top`, unless it or a directory between them is a symbolic link. */
 const frozenUnlinked = (top: string, path: string): Result<string, string> => {
   let at = top
-  for (const seg of split(path.substring(top.length + 1), "/")) {
+  for (const seg of split(path.substring(`${top}/`.length), "/")) {
     if (seg.length === 0) {
       continue
     }
@@ -123,7 +125,7 @@ const frozenUnlinked = (top: string, path: string): Result<string, string> => {
  * to the top is resolved: a link below it is still refused.
  */
 const frozenUnderTop = (top: string, given: string): string | null => {
-  for (let at = given.indexOf("/", 1); at > 0; at = given.indexOf("/", at + 1)) {
+  for (let at = given.indexOf("/", 1); at > 0 && at < given.length; at = given.indexOf("/", at + 1)) {
     const real = realpathSync(given.substring(0, at))
     if (real !== null && real === top) {
       return `${top}${given.substring(at)}`

@@ -1,0 +1,6 @@
+{
+  "modules": {
+    "src/spec/pr/cli.ts": 2
+  },
+  "waiting": "src/spec/pr/cli.ts: ParseResult.value(i32) panics on a bad handle under the pinned nish 0.39, and its checked fields are private; the panic-free readValue(CliFlag) is 0.47's, and taking it changes the i32 flag of the exported prCliFormat and prCliBase, so these two clear with the compiler bump"
+}

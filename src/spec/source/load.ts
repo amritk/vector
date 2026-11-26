@@ -17,24 +17,50 @@ import { hiddenDropBreaks, hiddenProblem } from "./hidden"
 import { SourceRead, sourceCandidate, sourceLabel, sourceReadConfined } from "./path"
 import { RfcDocument, rfcRead } from "./rfc"
 
-/** Reads a source's text into sections; `name` names it in messages. */
-export type SourceReader = (text: string, name: string) => Result<RfcDocument, string>
+/** The format a source reader reads: which reader sourceReaderRead runs. */
+export enum SourceReaderKind {
+  /** An RFC's plain text, read by rfcRead. */
+  Rfc = 1,
+  /** The XML of an RFC or a spec (RFC XML v3), read by xmlRead. */
+  Xml = 2,
+}
+
+/** Reads `text` into sections with the reader `kind` names; `name` names it in messages. */
+const sourceReaderRead = (kind: SourceReaderKind, text: string, name: string): Result<RfcDocument, string> => {
+  switch (kind) {
+    case SourceReaderKind.Rfc:
+      return rfcRead(text, name)
+    default:
+      return xmlRead(text, name)
+  }
+}
 
 /** A reader and the file extension it reads. */
 export class SourceReaderEntry {
   /** The extension, with its dot: ".txt". */
   ext: string
-  /** The reader for files with that extension. */
-  read: SourceReader
+  /** The format files with that extension are read as. */
+  kind: SourceReaderKind
   /**
    * Makes an entry.
    *
    * @param ext the extension, with its dot
-   * @param read the reader
+   * @param kind the format files with that extension are read as
    */
-  constructor(ext: string, read: SourceReader) {
+  constructor(ext: string, kind: SourceReaderKind) {
     this.ext = ext
-    this.read = read
+    this.kind = kind
+  }
+
+  /**
+   * Reads a source's text into sections with this entry's reader.
+   *
+   * @param text the source's text
+   * @param name what messages call it
+   * @returns the document, or the reader's refusal
+   */
+  read(text: string, name: string): Result<RfcDocument, string> {
+    return sourceReaderRead(this.kind, text, name)
   }
 }
 
@@ -53,23 +79,27 @@ export class SourceReaders {
  *
  * @param readers the registry
  * @param ext the extension, with its leading dot: ".xml"
- * @param read the reader
+ * @param kind the format files with that extension are read as
  * @returns `Ok(true)` when registered, `Err` when `ext` is not one leading dot
  *   and a name without another dot or a slash (sourceReaderFor could never
  *   select it). A caller must check it: on `Err` nothing is registered, and
  *   a source with that extension stays unreadable.
  */
-export const sourceReadersAdd = (readers: SourceReaders, ext: string, read: SourceReader): Result<boolean, string> => {
+export const sourceReadersAdd = (
+  readers: SourceReaders,
+  ext: string,
+  kind: SourceReaderKind,
+): Result<boolean, string> => {
   if (ext.length < 2 || ext.charCodeAt(0) !== 0x2e || ext.indexOf("/") >= 0 || ext.indexOf(".", 1) >= 0) {
     return Err(`a reader's extension is "${ext}": give it with its leading dot and nothing else, as ".xml"`)
   }
   for (const e of readers.entries) {
     if (e.ext === ext) {
-      e.read = read
+      e.kind = kind
       return Ok(true)
     }
   }
-  readers.entries.push(new SourceReaderEntry(ext, read))
+  readers.entries.push(new SourceReaderEntry(ext, kind))
   return Ok(true)
 }
 
@@ -83,8 +113,8 @@ export const sourceReadersAdd = (readers: SourceReaders, ext: string, read: Sour
  */
 export const sourceReadersDefault = (): SourceReaders => {
   const r = new SourceReaders()
-  r.entries.push(new SourceReaderEntry(".txt", rfcRead))
-  r.entries.push(new SourceReaderEntry(".xml", xmlRead))
+  r.entries.push(new SourceReaderEntry(".txt", SourceReaderKind.Rfc))
+  r.entries.push(new SourceReaderEntry(".xml", SourceReaderKind.Xml))
   return r
 }
 
@@ -122,6 +152,19 @@ const sourceDecodedText = (doc: RfcDocument): string => {
   }
   return parts.join("\n")
 }
+
+/**
+ * Why a document's text, as its reader decoded it, hides text from the gates:
+ * the hidden-text check (hiddenProblem) run on every section's title, lines
+ * and own lines, since a reader that decodes escapes (`&#1058;` to a Cyrillic
+ * Т) can make what its raw bytes never showed.
+ *
+ * @param doc the document a reader returned
+ * @param shown what messages call the source
+ * @returns the problem, or null when the decoded text hides nothing
+ */
+export const sourceDecodedProblem = (doc: RfcDocument, shown: string): string | null =>
+  hiddenProblem(sourceDecodedText(doc), `${shown} as its reader decoded it`)
 
 /** The extension of the last component of `path`, with its dot; "" without one. */
 const sourceExtOf = (path: string): string => {
@@ -316,7 +359,7 @@ const sourceLoadOne = (
   if (doc.isErr()) {
     return Err(`source ${decl.id}: ${doc.error}`)
   }
-  const decoded = hiddenProblem(sourceDecodedText(doc.value), `${shown} as its reader decoded it`)
+  const decoded = sourceDecodedProblem(doc.value, shown)
   if (decoded !== null) {
     return Err(`source ${decl.id}: ${decoded}`)
   }

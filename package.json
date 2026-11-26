@@ -29,7 +29,8 @@
     "format": "biome check --write .",
     "tested-exports": "node scripts/tested-exports.mjs",
     "dogfood": "node scripts/dogfood.mjs",
-    "doc-caps": "node scripts/doc-caps.mjs"
+    "doc-caps": "node scripts/doc-caps.mjs",
+    "panics": "node scripts/panics.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "1.8.3",
