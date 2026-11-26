@@ -78,20 +78,16 @@ export const emitTargetHarnesses = (lang: string): string[] => {
 export const emitTargetParse = (lang: string | null, harness: string | null): Result<EmitTarget, string> => {
   const l = lang ?? "nish"
   const harnesses = emitTargetHarnesses(l)
-  if (harnesses.length === 0) {
-    if (vocabLanguages().indexOf(l) >= 0) {
-      return Err(`--lang ${l}: vector has no emitter for ${l} yet (it has: ${emitTargetLanguages().join(", ")})`)
-    }
-    return Err(`--lang ${l}: not a language (vector emits: ${emitTargetLanguages().join(", ")})`)
-  }
-  for (const first of harnesses) {
-    const h = harness ?? first
+  if (harnesses.length > 0) {
+    const h = harness ?? harnesses[0]
     if (harnesses.indexOf(h) < 0) {
       return Err(`--harness ${h}: ${l} tests run ${harnesses.join(" or ")}`)
     }
     return Ok(new EmitTarget(l, h))
   }
-  // Unreachable: the list was refused above when empty.
+  if (vocabLanguages().indexOf(l) >= 0) {
+    return Err(`--lang ${l}: vector has no emitter for ${l} yet (it has: ${emitTargetLanguages().join(", ")})`)
+  }
   return Err(`--lang ${l}: not a language (vector emits: ${emitTargetLanguages().join(", ")})`)
 }
 

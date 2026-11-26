@@ -337,6 +337,13 @@ const emitTsOperands = (ctx: EmitTsContext, e: Expr): string => {
   return emitTsArgType(ctx, e, 0)
 }
 
+/** Records `msg` in `errors` unless it is already there. */
+const emitTsAddOnce = (errors: string[], msg: string): void => {
+  if (errors.indexOf(msg) < 0) {
+    errors.push(msg)
+  }
+}
+
 /**
  * Argument `i` of an op, or null once its absence is recorded: a checked
  * contract gives every op its arity, so only a contract built by hand lacks one.
@@ -345,10 +352,7 @@ const emitTsArgAt = (ctx: EmitTsContext, e: Expr, i: i32): Expr | null => {
   if (i >= 0 && i < e.args.length) {
     return e.args[i]
   }
-  const msg = `${e.name} has no argument ${i}`
-  if (ctx.errors.indexOf(msg) < 0) {
-    ctx.errors.push(msg)
-  }
+  emitTsAddOnce(ctx.errors, `${e.name} has no argument ${i}`)
   return null
 }
 
@@ -693,10 +697,7 @@ const emitTsTable = (
   for (const s of samples) {
     // The sampler gives every sample a value for each variable; this guards a table built by hand.
     if (j < 0 || j >= s.args.length) {
-      const msg = `a sample has no value for ${name}`
-      if (ctx.errors.indexOf(msg) < 0) {
-        ctx.errors.push(msg)
-      }
+      emitTsAddOnce(ctx.errors, `a sample has no value for ${name}`)
       return
     }
     const lit = s.args[j]

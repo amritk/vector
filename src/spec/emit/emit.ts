@@ -1273,11 +1273,21 @@ export const emitRefusals = (c: Contract, local: string[]): string[] => {
       out.push(why)
     }
   }
+  // The test defines clause_* and plain_* functions beside the contract's
+  // own: none may take a name a contract function already has.
+  const names: string[] = []
+  for (const f of c.functions) {
+    names.push(f.name)
+  }
   const fns: string[] = []
+  const clashes: string[] = []
   for (const k of c.clauses) {
     const fn = emitClauseFn(k)
     if (fns.indexOf(fn) >= 0) {
       out.push(`${k.id}: its check would be ${fn}, which an earlier clause's id already makes`)
+    }
+    if (names.indexOf(fn) >= 0) {
+      clashes.push(`${k.id}: its check would be ${fn}, which is a contract function's name`)
     }
     fns.push(fn)
     for (const v of k.forall) {
@@ -1288,22 +1298,13 @@ export const emitRefusals = (c: Contract, local: string[]): string[] => {
       }
     }
   }
-  // The test defines clause_* and plain_* functions beside the contract's
-  // own: none may take a name a contract function already has.
-  const names: string[] = []
-  for (const f of c.functions) {
-    names.push(f.name)
-  }
   for (const f of c.functions) {
     if (emitWraps(f) && names.indexOf(`plain_${f.name}`) >= 0) {
       out.push(`${f.name}: its wrapper would be plain_${f.name}, which is a contract function's name`)
     }
   }
-  for (const k of c.clauses) {
-    const fn = emitClauseFn(k)
-    if (names.indexOf(fn) >= 0) {
-      out.push(`${k.id}: its check would be ${fn}, which is a contract function's name`)
-    }
+  for (const m of clashes) {
+    out.push(m)
   }
   return out
 }
