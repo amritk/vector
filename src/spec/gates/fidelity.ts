@@ -736,15 +736,17 @@ const gateLabelStarts = (b: GateBound, label: string): i32[] => {
     let p = toI32(s.indexOf('""'))
     while (p >= 0) {
       out.push(p)
-      p = toI32(s.indexOf('""', p + 2))
+      // p is an offset in s, under 2^31, so the u32 add is exact.
+      p = toI32(s.indexOf('""', toI32(toU32(p) + 2)))
     }
     return out
   }
   if (b.loose) {
     const spans = gateFidSpans(s)
-    for (let i = 0; i + 1 < spans.length; i += 2) {
-      if (s.substring(spans[i], spans[i + 1]) === b.num) {
-        out.push(spans[i])
+    for (let i = 0; i < spans.length - 1; i += 2) {
+      const a = spans[i]
+      if (s.substring(a, spans[i + 1]) === b.num) {
+        out.push(a)
       }
     }
     return out
@@ -829,6 +831,7 @@ const gateLabelArgs = (l: GateLits, args: i32): void => {
   for (let a = 0; a < args; a++) {
     late.push("")
   }
+  const bounds = l.bounds
   for (const v of e.held) {
     const vl = v.label
     if (vl === null) {
@@ -838,8 +841,9 @@ const gateLabelArgs = (l: GateLits, args: i32): void => {
     // that printing's lines: the contract's label is bound to it ignoring case.
     let prev = -1
     let prevAt = ""
-    for (let a = 0; a < args; a++) {
-      const b = l.bounds[a]
+    // late holds one entry per argument, and bounds holds more than args.
+    for (let a = 0; a < late.length && a < bounds.length; a++) {
+      const b = bounds[a]
       const at = gateLabelStarts(b, vl)
       if (at.length === 0) {
         continue
@@ -847,15 +851,23 @@ const gateLabelArgs = (l: GateLits, args: i32): void => {
       // A labelled argument's name binds it, wherever the label prints it.
       const named = b.label !== null
       const after = named ? -1 : prev
-      const next = at.filter((p: i32): boolean => p > after)
-      if (next.length === 0) {
-        late[a] =
-          `${gateArgText(b)} is printed in the call label "${rfcNormalize(vl)}" in ${l.inSection} only before ${prevAt}, which the contract passes ahead of it: the arguments are not in the order the label prints them`
+      let next = -1
+      for (const p of at) {
+        if (p > after) {
+          next = p
+          break
+        }
+      }
+      if (next < 0) {
+        const why = `${gateArgText(b)} is printed in the call label "${rfcNormalize(vl)}" in ${l.inSection} only before ${prevAt}, which the contract passes ahead of it: the arguments are not in the order the label prints them`
+        if (a < late.length) {
+          late[a] = why
+        }
         continue
       }
       if (!named) {
-        prev = next[0]
-        prevAt = l.bounds[a].at
+        prev = next
+        prevAt = b.at
       }
       b.paired = true
       e.callArgs = true
@@ -864,8 +876,8 @@ const gateLabelArgs = (l: GateLits, args: i32): void => {
       }
     }
   }
-  for (let a = 0; a < args; a++) {
-    const b = l.bounds[a]
+  for (let a = 0; a < late.length && a < bounds.length; a++) {
+    const b = bounds[a]
     if (b.paired) {
       continue
     }
@@ -907,9 +919,11 @@ const gateLabelArgs = (l: GateLits, args: i32): void => {
 
 /** The warning for each loose bound from `from` on, which no call label places: gateLooseOne. */
 const gateLooseWarn = (l: GateLits, from: i32): void => {
-  for (let a = from; a < l.bounds.length; a++) {
-    if (l.bounds[a].loose) {
-      gateLooseOne(l, l.bounds[a])
+  const bounds = l.bounds
+  for (let a = from; a >= 0 && a < bounds.length; a++) {
+    const b = bounds[a]
+    if (b.loose) {
+      gateLooseOne(l, b)
     }
   }
 }
@@ -1590,7 +1604,7 @@ const gateLabelUnBare = (label: string, num: string): string => {
   const spans = gateFidSpans(label)
   let out = ""
   let from = 0
-  for (let i = 0; i + 1 < spans.length; i += 2) {
+  for (let i = 0; i < spans.length - 1; i += 2) {
     if (label.substring(spans[i], spans[i + 1]) === num) {
       out = `${out}${label.substring(from, spans[i])}`
       from = spans[i + 1]

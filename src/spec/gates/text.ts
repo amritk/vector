@@ -268,10 +268,11 @@ export const gateTextStarts = (lines: string, value: string): i32[] => {
   const text = flat.join("")
   let p = toI32(text.indexOf(value))
   while (p >= 0) {
-    if (gateWhole(lines, p, p + value.length)) {
+    // p and value.length are offsets and lengths of strings, so the u32 adds are exact.
+    if (gateWhole(lines, p, toI32(toU32(p) + toU32(value.length)))) {
       out.push(p)
     }
-    p = toI32(text.indexOf(value, p + 1))
+    p = toI32(text.indexOf(value, toI32(toU32(p) + 1)))
   }
   return out
 }
@@ -291,10 +292,11 @@ export const gateTextLines = (lines: string, value: string): i32[] => {
   const starts = gateTextStarts(lines, value)
   for (let i = 0; i < starts.length; i++) {
     const p = starts[i]
-    const last = gateLineOf(lines, p + value.length - 1)
-    for (let l = gateLineOf(lines, p); l <= last; l++) {
-      if (out.indexOf(l) < 0) {
-        out.push(l)
+    // value is not empty, and p is an offset in lines: the u32 sum is exact and at least 1.
+    const last = toU32(gateLineOf(lines, toI32(toU32(p) + toU32(value.length) - 1)))
+    for (let l = toU32(gateLineOf(lines, p)); l <= last; l++) {
+      if (out.indexOf(toI32(l)) < 0) {
+        out.push(toI32(l))
       }
     }
   }
@@ -463,8 +465,15 @@ export const gateIntRounds = (lines: string, label: string, n: string): i32[] =>
  * @param n the integer, as decimal text
  * @returns the offset in `lines` of each printing of `n` after the label, ascending
  */
-export const gateIntPrinted = (lines: string, label: string, n: string): i32[] =>
-  gateLabelEnds(lines, label).filter((j: i32): boolean => gateIntAt(lines, j, n))
+export const gateIntPrinted = (lines: string, label: string, n: string): i32[] => {
+  const out: i32[] = []
+  for (const j of gateLabelEnds(lines, label)) {
+    if (gateIntAt(lines, j, n)) {
+      out.push(j)
+    }
+  }
+  return out
+}
 
 /**
  * The lines a label is printed on with the integer `n` after it, for
