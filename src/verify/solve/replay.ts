@@ -13,6 +13,7 @@
  * verdict.
  */
 
+import { wrappingAdd, wrappingSub } from "nish:unsafe"
 import { trim } from "nish/text"
 import { Sexp, parseSexp } from "../../core/smt"
 import { VOCAB_JSON_SAFE_MAX } from "../../spec/contract/vocab"
@@ -144,7 +145,7 @@ const replayBool = (truth: boolean): ReplayValue => {
 const replayMag = (a: i64): u64 => (a < 0 ? toU64(0) - toU64(a) : toU64(a))
 
 // -a, wrapping: REPLAY_OVER, the one i64 with no negation, stays itself.
-const replayNeg = (a: i64): i64 => toI64(toU64(0) - toU64(a))
+const replayNeg = (a: i64): i64 => wrappingSub(toI64(0), a)
 
 // |a|, wrapping like replayNeg.
 const replayAbs = (a: i64): i64 => toI64(replayMag(a))
@@ -170,7 +171,7 @@ const replayAdd64 = (a: i64, b: i64): i64 => {
   }
   // The wrapped sum is the sum unless the signs agree and it does not; a
   // sum of REPLAY_OVER (below -REPLAY_MAX) is the mark itself.
-  const s = toI64(toU64(a) + toU64(b))
+  const s = wrappingAdd(a, b)
   if (a < 0 === b < 0 && s < 0 !== a < 0) {
     return REPLAY_OVER
   }

@@ -5,7 +5,7 @@
  * held by its bits, so it compares unsigned and prints unsigned.
  */
 
-import { wrappingAdd } from "nish:unsafe"
+import { wrappingAdd, wrappingSub } from "nish:unsafe"
 
 /**
  * An integer type's width in bits.
@@ -38,11 +38,11 @@ export const sampleIntWrap = (x: i64, ty: string): i64 => {
   }
   const one: i64 = 1
   const span = one << toI64(w)
-  // In u64, which wraps, so the mask and the difference have the i64 bits
-  // without an overflow at w = 63.
-  const low = x & toI64(toU64(span) - toU64(1))
+  // Wrapping, so the mask and the difference have the i64 bits without an
+  // overflow at w = 63, where `span` is i64 MIN.
+  const low = x & wrappingSub(span, toI64(1))
   if (sampleIntSigned(ty) && low >= one << (toI64(w) - one)) {
-    return toI64(toU64(low) - toU64(span))
+    return wrappingSub(low, span)
   }
   return low
 }

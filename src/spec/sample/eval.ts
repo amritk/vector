@@ -5,6 +5,8 @@
  * and `unwrap(null)` is undefined, which makes `where` false.
  */
 
+import { wrappingAdd, wrappingMul, wrappingSub } from "nish:unsafe"
+
 import { fromHex, toHex, utf8Bytes } from "../../core/hex"
 import { SHAPE_MAX_LEN } from "../contract/shape"
 import { Expr, ExprKind, LitKind, Literal, typesIsWords } from "../contract/types"
@@ -256,11 +258,11 @@ const sampleArith = (op: string, x: SampleValue, y: SampleValue): SampleValue =>
   const ty = sampleOpType(x, y)
   let r: i64 = 0
   if (op === "+") {
-    r = toI64(toU64(x.n) + toU64(y.n))
+    r = wrappingAdd(x.n, y.n)
   } else if (op === "-") {
-    r = toI64(toU64(x.n) - toU64(y.n))
+    r = wrappingSub(x.n, y.n)
   } else if (op === "*") {
-    r = toI64(toU64(x.n) * toU64(y.n))
+    r = wrappingMul(x.n, y.n)
   } else {
     r = sampleRem(x.n, y.n, ty)
   }
