@@ -952,7 +952,10 @@ const rfcColonRunEnd = (line: string, i: number): i32 => {
       break
     }
   }
-  if (groups < 2 && !(groups === 1 && j > 0 && j <= line.length && line.charCodeAt(j - 1) === 58 && toI64(j) - toI64(at) > 1)) {
+  if (
+    groups < 2 &&
+    !(groups === 1 && j > 0 && j <= line.length && line.charCodeAt(j - 1) === 58 && toI64(j) - toI64(at) > 1)
+  ) {
     return -1
   }
   if (j >= 0 && j < line.length && rfcIsWordByte(line.charCodeAt(j))) {
