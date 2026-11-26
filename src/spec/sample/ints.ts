@@ -5,6 +5,8 @@
  * held by its bits, so it compares unsigned and prints unsigned.
  */
 
+import { wrappingAdd } from "nish:unsafe"
+
 /**
  * An integer type's width in bits.
  *
@@ -103,7 +105,7 @@ export const sampleParseInt = (text: string): Result<i64, string> => {
     if (mag > one << toU64(63)) {
       return Err(`out of range: ${text}`)
     }
-    return Ok(toI64(~mag + toU64(1)))
+    return Ok(wrappingAdd(toI64(~mag), toI64(1)))
   }
   return Ok(toI64(mag))
 }

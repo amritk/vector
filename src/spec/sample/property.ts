@@ -6,6 +6,7 @@
  * hold vacuously, so it is refused.
  */
 
+import { wrappingAdd, wrappingSub } from "nish:unsafe"
 import { jsonStringifyString } from "nish/json"
 import { runZ3 } from "../../core/z3"
 import { CheckSampleStat, Sample } from "../check"
@@ -213,15 +214,15 @@ const sampleQueries = (run: SampleRun): SampleQuery[] => {
   }
   for (const slot of run.slots) {
     const v = slot.v
-    // A u64 is held by its bits: compare unsigned, and step in u64, which
-    // wraps and is never checked (only inside the range, so a step never wraps).
+    // A u64 is held by its bits: compare unsigned, step with wrapping (only
+    // inside the range, so a step never actually wraps).
     const ty = vocabIsIntType(v.type) ? v.type : "i64"
     const lo = slot.lo
     const hi = slot.hi
     const at: i64[] = [lo]
     if (sampleIntLess(lo, hi, ty)) {
-      at.push(toI64(toU64(lo) + toU64(1)))
-      at.push(toI64(toU64(hi) - toU64(1)))
+      at.push(wrappingAdd(lo, toI64(1)))
+      at.push(wrappingSub(hi, toI64(1)))
     }
     at.push(hi)
     if (vocabIsIntType(v.type)) {
