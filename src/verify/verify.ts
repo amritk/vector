@@ -239,7 +239,9 @@ export const collectFeedbackItems = (report: VerifyReport): FeedbackItem[] => {
   for (const c of report.conformance) {
     let hint =
       "Proven over exact reals but FALSE when the emitted float64 code runs on the input shown. Avoid exact `==`/`!=` over Real results (float rounding); use an inequality/tolerance, or move to Int where the value is genuinely discrete."
-    if (c.kind === "unsampled") {
+    if (c.kind === "vector-bug") {
+      hint = `vector could not run the float64 check of this function (${c.pretty}): this is a bug in vector, not in your program — please report it.`
+    } else if (c.kind === "unsampled") {
       hint =
         "No float64 input satisfied this function's preconditions, so the emitted code could not be checked against its contract. Widen the requires (or use bounds a double can represent) so real inputs exist."
     } else if (c.kind === "callee-guard") {
@@ -267,8 +269,9 @@ export const formatReportFeedback = (report: VerifyReport): string => {
 }
 
 /**
- * One line per counterexample whose replay was a mismatch: z3 said it breaks
- * the program, and exact evaluation says it does not.
+ * One line per counterexample whose replay was a mismatch (z3 said it breaks
+ * the program, and exact evaluation says it does not), and one per float64
+ * check that could not run (a `vector-bug` conformance issue).
  *
  * @param report the report, after `replayReport`
  * @returns the lines, in function order
@@ -292,6 +295,13 @@ export const verifyMismatchLines = (report: VerifyReport): string[] => {
           )
         }
       }
+    }
+  }
+  for (const c of report.conformance) {
+    if (c.kind === "vector-bug") {
+      lines.push(
+        `MISMATCH  vector could not run the float64 check of ${c.fn} (${c.pretty}): this is a bug in vector, not in your program — please report it`,
+      )
     }
   }
   return lines
@@ -338,6 +348,10 @@ const verifyFeedbackLines = (report: VerifyReport): string[] => {
   }
   for (const c of report.conformance) {
     const inputs = dashInputs(c.input)
+    // verifyMismatchLines, which leads the block, already names a vector bug.
+    if (c.kind === "vector-bug") {
+      continue
+    }
     if (c.kind === "unsampled") {
       lines.push(
         `Function ${c.fn}: no float64 input satisfies its requires (${c.pretty}), so the emitted code could not be checked — widen the requires or use float-representable bounds.`,

@@ -13,7 +13,7 @@
 | `UNKNOWN` | z3 could not decide, usually for non-linear arithmetic; restate the clause with variables multiplied only by literal constants | 1 |
 | `INVALID` | the files are not a well-formed spec plan and program; the problems print as `Validation failed:` | 1 |
 | `ERROR` | z3 failed or rejected the script; the message prints as `Solver error: …` | 1 |
-| `MISMATCH` | a counterexample z3 gave does not do what z3 said when vector replays it: a bug in vector, not in your program | 2 |
+| `MISMATCH` | a counterexample z3 gave does not do what z3 said when vector replays it, or vector could not run its float64 check of a proven function: a bug in vector, not in your program | 2 |
 
 Only `PROVEN` exits 0: none of the others proved anything, so each refuses the program. Exit 2 is kept for bad usage, a file that cannot be read, an `--emit` file that cannot be written, and `MISMATCH`.
 
@@ -32,6 +32,12 @@ MISMATCH  z3's counterexample does not reach the hazard <fn> <hazard> when repla
 ```
 
 The dashboard's status is `MISMATCH`, its verdict counts the counterexamples that did not replay, and each is marked `✘ DOES NOT REPLAY (a bug in vector)`. `MISMATCH` exits 2 and `--emit` writes nothing.
+
+A proven function's emitted float64 code is then run on sampled inputs. If vector cannot run that check, because it meets an expression or input the typechecker refuses, that is `MISMATCH` too. The FEEDBACK block names it, and the dashboard marks it `✘ <fn> not conformance-checked, a bug in vector: <what>`:
+
+```text
+MISMATCH  vector could not run the float64 check of <fn> (<what>): this is a bug in vector, not in your program — please report it
+```
 
 `diff` replays its witnesses the same way, through both versions: a witness that does not do what z3 said is diff's `MISMATCH`, which also exits 2. See [Compare two versions](#compare-two-versions).
 

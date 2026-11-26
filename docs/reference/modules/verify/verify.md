@@ -408,8 +408,9 @@ the lines, joined by newlines
 
 ### verifyMismatchLines
 
-One line per counterexample whose replay was a mismatch: z3 said it breaks
-the program, and exact evaluation says it does not.
+One line per counterexample whose replay was a mismatch (z3 said it breaks
+the program, and exact evaluation says it does not), and one per float64
+check that could not run (a `vector-bug` conformance issue).
 
 ```ts
 function verifyMismatchLines(report: VerifyReport): string[]

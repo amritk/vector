@@ -21,8 +21,8 @@ vector does two things, and no model is involved in either:
    with `tail`'s status, 0. Run it bare or check `$?`/`PIPESTATUS`.
 2. **Only `PROVEN` passes `verify`.** `REFUTED`, `UNKNOWN`, `INVALID` and
    `ERROR` all exit 1. Exit 2 is bad usage, an unreadable file, an unwritable
-   `--emit` file, or `MISMATCH`: a counterexample that did not
-   replay, a vector bug, not a refusal. Never present code a run did
+   `--emit` file, or `MISMATCH`: a vector bug, not a
+   refusal. Never present code a run did
    not prove. See
    [Proving a function](guide/guides/proving.md#the-verdicts).
 3. **`diff` exits 2 for `INVALID` and `ERROR`**, not 1 as `verify` does.

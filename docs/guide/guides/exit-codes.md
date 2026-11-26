@@ -7,7 +7,7 @@ can act on the status alone:
 | --- | --- |
 | 0 | the check ran and passed |
 | 1 | the check ran and refused the input |
-| 2 | the command could not run: bad usage, a file that cannot be read or written, or a tool (z3, git, nish) that failed; or `MISMATCH`, a counterexample or witness that does not replay: a bug in vector to report |
+| 2 | the command could not run: bad usage, a file that cannot be read or written, or a tool (z3, git, nish) that failed; or `MISMATCH`, a counterexample or witness that does not replay, or a float64 check vector cannot run: a bug in vector to report |
 
 The [command-line reference](../../reference/command-line.md#exit-codes) is
 the normative list. Read a check by its status, never by the tail of its
@@ -17,7 +17,7 @@ output: `vector spec check … | tail` exits with `tail`'s status, 0.
 
 | Command | 0 | 1 | 2 |
 | --- | --- | --- | --- |
-| `verify` | `PROVEN` | `REFUTED`, `UNKNOWN`, `INVALID`, `ERROR` (z3 failed) | bad usage, an unreadable file, an `--emit` file that cannot be written, `MISMATCH` (a counterexample that does not replay: a bug in vector) |
+| `verify` | `PROVEN` | `REFUTED`, `UNKNOWN`, `INVALID`, `ERROR` (z3 failed) | bad usage, an unreadable file, an `--emit` file that cannot be written, `MISMATCH` (a counterexample that does not replay, or a float64 check vector cannot run: a bug in vector) |
 | `diff` | `EQUIVALENT` | `DIFFERENT`, `UNDECIDED` | bad usage, an unreadable file, `INVALID`, `ERROR` (z3 failed), `MISMATCH` (a witness that does not replay: a bug in vector) |
 | `spec extract` | written, or up to date with `--check` | refusals, or a difference with `--check` | bad usage, an unreadable file, a missing RFC, a z3 failure |
 | `spec check` | `CONTRACT_VALID` | `INVALID` | bad usage, an unreadable file, a missing RFC, a z3 failure |

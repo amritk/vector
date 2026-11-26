@@ -21,9 +21,10 @@ export const STATUS_MISMATCH: string = "MISMATCH"
 const DASH_WIDTH: i32 = 68
 
 /**
- * The report's verdict. A counterexample that did not replay comes first:
- * then the fault is vector's, not the program's. Every other failure except
- * a bare solver `unknown` is a concrete defect, so it refutes.
+ * The report's verdict. A counterexample that did not replay, or a float64
+ * check that met a form the typechecker refuses (a `vector-bug` issue), comes
+ * first: then the fault is vector's, not the program's. Every other failure
+ * except a bare solver `unknown` is a concrete defect, so it refutes.
  *
  * @param report the report, after the replay filled in its `mismatchCount`
  * @returns `STATUS_MISMATCH`, `STATUS_PROVEN`, `STATUS_REFUTED` or `STATUS_UNKNOWN`
@@ -31,6 +32,11 @@ const DASH_WIDTH: i32 = 68
 export const verdictStatus = (report: VerifyReport): string => {
   if (report.mismatchCount > 0) {
     return STATUS_MISMATCH
+  }
+  for (const c of report.conformance) {
+    if (c.kind === "vector-bug") {
+      return STATUS_MISMATCH
+    }
   }
   if (report.ok()) {
     return STATUS_PROVEN
