@@ -180,8 +180,8 @@ stages:
         status: pending
   - id: nish-bump
     title: Move .nish-version to the latest nish release
-    goal: .nish-version names the latest amritk/nish release, npm run build passes with no flags under it, 0.39.0 is dropped, and the ratchet runs on the pinned compiler with an empty baseline
-    verification: bash scripts/fetch-nish.sh && npm run build && npm test && npm run lint && npm run tested-exports && npm run dogfood && npm run doc-caps && node scripts/gen-reference.mjs --check && npm run panics && node --test scripts/panics.test.mjs
+    goal: .nish-version names the latest amritk/nish release, npm run build passes with no flags under it, 0.39.0 is dropped, and the ratchet and its --allow-panics are gone because the build itself refuses every unproven site
+    verification: bash scripts/fetch-nish.sh && npm run build && npm test && npm run lint && npm run tested-exports && npm run dogfood && npm run doc-caps && node scripts/gen-reference.mjs --check && ! git grep -n -e '--allow-panics' -- scripts .github docs src package.json
     todos:
       - id: pin
         content: .nish-version and the package.json nish engine move to the release that fixes amritk/nish#2322, and the installation guide line names it
@@ -193,7 +193,7 @@ stages:
         content: the sha256 and JsonDocument.stringify sites clear on the release that fixes amritk/nish#2322, and the last baseline file is deleted
         status: pending
       - id: retire-next
-        content: panics.mjs runs .nish/bin/nish, and .nish-next-version, fetch-nish-next.sh and the .nish-next CI cache entry are removed
+        content: the ratchet is retired (amritk/vector#215 D1, owner decision): scripts/panics.mjs, scripts/panics.test.mjs, the panics package.json script, scripts/panic-baseline/**, .nish-next-version, fetch-nish-next.sh, the .nish-next .gitignore entry and biome ignore, and the CI fetch, ratchet and self-test steps and .nish-next cache entry are removed; CLAUDE.md's npm run panics row goes; no --allow-panics is left in scripts/, .github/, docs/, src/ or package.json
         status: pending
       - id: release-fixes
         content: whatever else the new release changed is fixed, and the PR body states the release and each change
@@ -379,8 +379,8 @@ The baseline keeps only these sites: `Cli.*` declarations, `ParseResult` accesso
 - `package.json` (the nish engine) and `docs/guide/getting-started/installation.md`;
 - `docs/AI.md`, if the release changes a fact it states;
 - `src/cli/**` and `src/index.ts` (the `try*` declarations);
-- `scripts/panics.mjs`, `scripts/panics.test.mjs`, `scripts/fetch-nish-next.sh` (deleted) and `scripts/panic-baseline/**` (deleted);
-- `.gitignore`, and `.github/workflows/ci.yml` (removing the `.nish-next` step and cache);
+- `scripts/panics.mjs`, `scripts/panics.test.mjs`, `scripts/fetch-nish-next.sh` and `scripts/panic-baseline/**`, all deleted, and the `panics` script in `package.json`;
+- `.gitignore`, `biome.json`, `CLAUDE.md` (the `npm run panics` row), and `.github/workflows/ci.yml` (removing the `.nish-next` fetch, the ratchet and self-test steps, and the cache entry);
 - `tests/**` where the release changes behaviour.
 
 This stage is sensitive and goes to a human for the merge.
@@ -389,12 +389,12 @@ This stage is sensitive and goes to a human for the merge.
 
 1. Set `.nish-version` and the `package.json` nish engine to that release, and drop 0.39.0. THIRD_PARTY_NOTICES.md keeps its x25519 fixture provenance (nish v0.39.0), because that is a historical fact, not a pin.
 2. Switch the cli declarations to the `try*` forms, and the ParseResult accessors to the `read*` forms.
-3. Point `panics.mjs` at `.nish/bin/nish`, and delete the last baseline file.
+3. Retire the ratchet (owner decision D1 on amritk/vector#215): delete `scripts/panics.mjs`, `scripts/panics.test.mjs`, `scripts/panic-baseline/**`, `.nish-next-version` and `scripts/fetch-nish-next.sh`, and their `package.json`, `.gitignore`, `biome.json`, `CLAUDE.md` and CI entries. Under the new pin, `npm run build` refuses every unproven non-OOM site and names it as `file:line:col`, so the CI Build step is the panic gate; amritk/vector#219 (run #215) adds a no-panic job and an `allow-panics` check and merges after this stage. Show in the PR body that an unguarded index in a `src/` module makes `npm run build` fail and name the site.
 4. Fix whatever else the release changed.
 
 The PR body states the release and each change.
 
-**Verification**: `bash scripts/fetch-nish.sh && npm run build && npm test && npm run lint && npm run tested-exports && npm run dogfood && npm run doc-caps && node scripts/gen-reference.mjs --check && npm run panics && node --test scripts/panics.test.mjs`
+**Verification**: `bash scripts/fetch-nish.sh && npm run build && npm test && npm run lint && npm run tested-exports && npm run dogfood && npm run doc-caps && node scripts/gen-reference.mjs --check`, and `git grep -n -e '--allow-panics' -- scripts .github docs src package.json` finds nothing.
 
 ## Out of scope
 
