@@ -86,23 +86,28 @@ export class XmlNormative {
   }
 }
 
-/** The bytes at `i` a collapse reads specially: 4 * kind + length, 0 for none. */
-const xmlSpecialAt = (s: string, i: i32): i32 => {
-  const c = s.charCodeAt(i)
+/**
+ * The bytes at `i` a collapse reads specially, whose first is `c`: 4 * kind +
+ * length, 0 for none.
+ */
+const xmlSpecialAt = (s: string, i: u32, c: i32): i32 => {
   if (c === 0x20 || (c >= 0x09 && c <= 0x0d)) {
     return 4 + 1
   }
-  if (c < 0xc2 || i + 1 >= s.length) {
+  // In u32: `i` is below the length, so neither sum wraps.
+  const at1 = i + 1
+  const at2 = i + 2
+  if (c < 0xc2 || at1 >= toU32(s.length)) {
     return 0
   }
-  const c1 = s.charCodeAt(i + 1)
+  const c1 = s.charCodeAt(at1)
   if (c === 0xc2) {
     return c1 === 0xa0 ? 4 + 2 : 0
   }
-  if (i + 2 >= s.length) {
+  if (at2 >= toU32(s.length)) {
     return 0
   }
-  const c2 = s.charCodeAt(i + 2)
+  const c2 = s.charCodeAt(at2)
   if (c === 0xe1) {
     return c1 === 0x9a && c2 === 0x80 ? 4 + 3 : 0
   }
@@ -149,22 +154,23 @@ const xmlClean = (s: string): string => {
   let gap = false
   let any = false
   let run = -1
-  let i = 0
-  while (i < s.length) {
-    const sp = xmlSpecialAt(s, i)
+  // In u32: below the length, plus at most 3, it never wraps.
+  let i: u32 = 0
+  while (i < toU32(s.length)) {
+    const sp = xmlSpecialAt(s, i, s.charCodeAt(i))
     if (sp === 0) {
       if (run < 0) {
         if (gap && any) {
           out.push(" ")
         }
         gap = false
-        run = i
+        run = toI32(i)
       }
       i = i + 1
       continue
     }
     if (run >= 0) {
-      out.push(s.substring(run, i))
+      out.push(s.substring(run, toI32(i)))
       any = true
       run = -1
     }
@@ -179,7 +185,7 @@ const xmlClean = (s: string): string => {
       out.push("-")
       any = true
     }
-    i = i + (sp & 3)
+    i = i + toU32(sp & 3)
   }
   if (run >= 0) {
     if (gap && any) {
@@ -268,26 +274,33 @@ const xmlStartsDigit = (s: string): boolean => s.length > 0 && s.charCodeAt(0) >
 
 /** Whether a section number names an appendix: a capital letter, alone or before a dot. */
 const xmlIsAppendix = (s: string): boolean => {
-  if (s.length === 0) {
+  if (s.length < 1) {
     return false
   }
   const c = s.charCodeAt(0)
-  return c >= 65 && c <= 90 && (s.length === 1 || s.charCodeAt(1) === 0x2e)
+  return c >= 65 && c <= 90 && (s.length === 1 || (s.length > 1 && s.charCodeAt(1) === 0x2e))
 }
 
 /**
  * How many bytes of white space, as JS `String.prototype.trim` counts it
  * (ECMAScript WhiteSpace and LineTerminator), start at byte `i` of `s`; 0
  * when none does. Nish's `trim` strips only space, tab, LF and CR, and the
- * old extractor trimmed NBSP, U+3000, U+FEFF and the rest too.
+ * old extractor trimmed NBSP, U+3000, U+FEFF and the rest too. None starts
+ * at or past the end of `s`.
  */
-const xmlSpaceWidth = (s: string, i: i32): i32 => {
+const xmlSpaceWidth = (s: string, i: u32): i32 => {
+  if (i >= toU32(s.length)) {
+    return 0
+  }
   const b = s.charCodeAt(i)
   if (b === 32 || (b >= 9 && b <= 13)) {
     return 1
   }
-  const b1 = i + 1 < s.length ? s.charCodeAt(i + 1) : -1
-  const b2 = i + 2 < s.length ? s.charCodeAt(i + 2) : -1
+  // In u32: `i` is below the length, so neither sum wraps.
+  const at1 = i + 1
+  const at2 = i + 2
+  const b1 = at1 < toU32(s.length) ? s.charCodeAt(at1) : -1
+  const b2 = at2 < toU32(s.length) ? s.charCodeAt(at2) : -1
   if (b === 0xc2 && b1 === 0xa0) {
     return 2
   }
@@ -309,6 +322,23 @@ const xmlSpaceWidth = (s: string, i: i32): i32 => {
   return 0
 }
 
+/** Where the white space ending `s` before `end` starts, but not before `start`. */
+const xmlTrimEnd = (s: string, start: u32, end: u32): u32 => {
+  let e = end
+  let more = true
+  while (more && e > start) {
+    more = false
+    for (let w: u32 = 1; w <= 3; w++) {
+      if (e - start >= w && xmlSpaceWidth(s, e - w) === toI32(w)) {
+        e = e - w
+        more = true
+        break
+      }
+    }
+  }
+  return e
+}
+
 /**
  * `s` without leading and trailing white space, as JS `String.prototype.trim`
  * strips it: ASCII space, tab, LF, VT, FF and CR, and NBSP, U+1680,
@@ -318,27 +348,18 @@ const xmlSpaceWidth = (s: string, i: i32): i32 => {
  * @returns it trimmed
  */
 export const xmlTrim = (s: string): string => {
-  let start = 0
-  let end = s.length
+  // In u32: below the length, plus at most 3, it never wraps.
+  let start: u32 = 0
+  let end = toU32(s.length)
   while (start < end) {
     const w = xmlSpaceWidth(s, start)
     if (w === 0) {
       break
     }
-    start = start + w
+    start = start + toU32(w)
   }
-  let more = true
-  while (more && end > start) {
-    more = false
-    for (let w = 1; w <= 3; w++) {
-      if (end - w >= start && xmlSpaceWidth(s, end - w) === w) {
-        end = end - w
-        more = true
-        break
-      }
-    }
-  }
-  return s.substring(start, end)
+  end = xmlTrimEnd(s, start, end)
+  return s.substring(toI32(start), toI32(end))
 }
 
 /**
@@ -393,32 +414,21 @@ const xmlErefWrap = (e: XmlNode, has: boolean): string[] => {
 
 /** `s` without leading white space, as JS `trimStart` strips it; `s` itself when it has none. */
 const xmlTrimLead = (s: string): string => {
-  let start = 0
-  while (start < s.length) {
+  let start: u32 = 0
+  while (start < toU32(s.length)) {
     const w = xmlSpaceWidth(s, start)
     if (w === 0) {
       break
     }
-    start = start + w
+    start = start + toU32(w)
   }
-  return start === 0 ? s : s.substring(start, s.length)
+  return start === 0 ? s : s.substring(toI32(start), s.length)
 }
 
 /** `s` without trailing white space, as JS `trimEnd` strips it; `s` itself when it has none. */
 const xmlTrimTail = (s: string): string => {
-  let end = s.length
-  let more = true
-  while (more && end > 0) {
-    more = false
-    for (let w = 1; w <= 3; w++) {
-      if (end - w >= 0 && xmlSpaceWidth(s, end - w) === w) {
-        end = end - w
-        more = true
-        break
-      }
-    }
-  }
-  return end === s.length ? s : s.substring(0, end)
+  const end = xmlTrimEnd(s, 0, toU32(s.length))
+  return end === toU32(s.length) ? s : s.substring(0, toI32(end))
 }
 
 /**
