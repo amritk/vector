@@ -4,24 +4,16 @@
     "src/cli/spec-check.ts": 13,
     "src/cli/spec-emit.ts": 18,
     "src/cli/spec-exports.ts": 7,
-    "src/cli/spec-extract.ts": 9,
+    "src/cli/spec-extract.ts": 7,
     "src/cli/spec-frozen.ts": 7,
-    "src/cli/spec-mutate.ts": 16,
+    "src/cli/spec-mutate.ts": 15,
     "src/cli/spec-run.ts": 21,
     "src/cli/spec-stale.ts": 6,
-    "src/cli/verify.ts": 12,
-    "src/core/fs.ts": 12,
-    "src/core/hex.ts": 16,
-    "src/core/json.ts": 5,
-    "src/core/process.ts": 3,
-    "src/core/smt.ts": 31,
-    "src/core/z3.ts": 4,
-    "src/index.ts": 1,
-    "src/lang/names.ts": 21,
-    "src/main.ts": 1,
-    "src/spec/report/common.ts": 3,
-    "src/spec/report/markdown.ts": 2,
-    "src/verify/smt/script.ts": 13,
-    "src/verify/verify.ts": 2
-  }
+    "src/cli/verify.ts": 10,
+    "src/core/fs.ts": 1,
+    "src/core/hex.ts": 1,
+    "src/core/json.ts": 2,
+    "src/index.ts": 1
+  },
+  "waiting": "nish-bump (Cli and ParseResult calls); amritk/nish#2322 (sha256, JsonDocument.stringify, JsonDocument.parseText, crypto.getRandomValues, regexCompile)"
 }

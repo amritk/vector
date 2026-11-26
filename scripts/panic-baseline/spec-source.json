@@ -1,8 +1,7 @@
 {
+  "waiting": "amritk/nish#2322",
   "modules": {
-    "src/spec/source/fold.ts": 6,
-    "src/spec/source/hidden.ts": 21,
-    "src/spec/source/path.ts": 9,
-    "src/spec/source/rfc.ts": 66
+    "src/spec/source/hidden.ts": 4,
+    "src/spec/source/path.ts": 1
   }
 }

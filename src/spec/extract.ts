@@ -189,13 +189,16 @@ const extractAbsolute = (path: string): string => {
 const extractParts = (path: string): string[] => {
   const out: string[] = []
   let start = 0
-  for (let i = 0; i <= path.length; i++) {
-    if (i === path.length || path.charCodeAt(i) === 0x2f) {
+  for (let i = 0; i < path.length; i++) {
+    if (path.charCodeAt(i) === 0x2f) {
       if (i > start) {
         out.push(path.substring(start, i))
       }
       start = i + 1
     }
+  }
+  if (path.length > start) {
+    out.push(path.substring(start, path.length))
   }
   return out
 }
@@ -578,13 +581,17 @@ const extractFinish = (ctx: ExtractContext, read: ProfileRead, specSha: string):
 /** Marks a last line that has no newline; JSON text holds no NUL. */
 const EXTRACT_NO_EOL: string = "\u0000"
 
-/** One line of an edit script: " ", "-" or "+", the line, and each side's index. */
+/**
+ * One line of an edit script: " ", "-" or "+", the line, and each side's
+ * index. The indexes are u32: each is below its side's i32 line count, so a
+ * sum of two of them, or one plus one, fits.
+ */
 class ExtractOp {
   op: string
   line: string
-  i: i32
-  j: i32
-  constructor(op: string, line: string, i: i32, j: i32) {
+  i: u32
+  j: u32
+  constructor(op: string, line: string, i: u32, j: u32) {
     this.op = op
     this.line = line
     this.i = i
@@ -596,18 +603,18 @@ const extractLines = (s: string): string[] => {
   if (s.length === 0) {
     return []
   }
-  const body = s.endsWith("\n") ? s.substring(0, s.length - 1) : s
+  const eol = s.endsWith("\n")
+  const body = eol ? s.substring(0, s.length - 1) : s
   const lines: string[] = []
   let start = 0
-  for (let k = 0; k <= body.length; k++) {
-    if (k === body.length || body.charCodeAt(k) === 10) {
+  for (let k = 0; k < body.length; k++) {
+    if (body.charCodeAt(k) === 10) {
       lines.push(body.substring(start, k))
       start = k + 1
     }
   }
-  if (!s.endsWith("\n")) {
-    lines[lines.length - 1] = `${lines[lines.length - 1]}${EXTRACT_NO_EOL}`
-  }
+  const last = body.substring(start, body.length)
+  lines.push(eol ? last : `${last}${EXTRACT_NO_EOL}`)
   return lines
 }
 
@@ -618,6 +625,231 @@ const extractShown = (o: ExtractOp): string => {
 
 /** The most cells extractUnifiedDiff's table may hold, past which it diffs the changed lines whole. */
 const EXTRACT_DIFF_CELLS: i32 = 4000000
+
+/** One line of the old side's changed middle, and at each column of the new side whether to remove it there. */
+class ExtractRow {
+  line: string
+  remove: boolean[]
+  constructor(line: string, remove: boolean[]) {
+    this.line = line
+    this.remove = remove
+  }
+}
+
+/** A row of `n + 1` zeros. */
+const extractZeros = (n: i32): u32[] => {
+  const row: u32[] = []
+  for (let c = 0; c < n; c++) {
+    row.push(0)
+  }
+  row.push(0)
+  return row
+}
+
+/** `a`, last element first. */
+const extractReversed = <T>(a: T[]): T[] => {
+  const out: T[] = []
+  for (let k = a.length; k > 0 && k <= a.length; k--) {
+    out.push(a[k - 1])
+  }
+  return out
+}
+
+/**
+ * One row per line of `xs`, in order, each recording where the longest common
+ * subsequence of `xs` and `ys` removes it rather than adds the line of `ys`.
+ * Built from the last line up, each row from the one below it, with both
+ * rows' columns kept last column first so every cell reads only the cells
+ * pushed before it. With `whole`, no choices are kept: every row removes.
+ */
+const extractTable = (xs: string[], ys: string[], whole: boolean): ExtractRow[] => {
+  const ry = extractReversed(ys)
+  const up: ExtractRow[] = []
+  // below[t]: the longest common subsequence of the row below and ys[m - t..].
+  let below = extractZeros(ys.length)
+  for (let r = xs.length; r > 0 && r <= xs.length; r--) {
+    const line = xs[r - 1]
+    const row: u32[] = [0]
+    const remove: boolean[] = []
+    if (!whole) {
+      let left: u32 = 0
+      for (let t = 0; t < ry.length && t + 1 < below.length; t++) {
+        if (ry[t] === line) {
+          left = below[t] + 1
+          remove.push(false)
+        } else {
+          const drop = below[t + 1] >= left
+          left = drop ? below[t + 1] : left
+          remove.push(drop)
+        }
+        row.push(left)
+      }
+    }
+    below = row
+    up.push(new ExtractRow(line, extractReversed(remove)))
+  }
+  return extractReversed(up)
+}
+
+/**
+ * The edit script of `x` against `y`: their common head and tail as context,
+ * and between them each line kept, removed or added, matched by the longest
+ * common subsequence.
+ */
+const extractEditScript = (x: string[], y: string[]): ExtractOp[] => {
+  const ops: ExtractOp[] = []
+  let pre = 0
+  while (pre < x.length && pre < y.length && x[pre] === y[pre]) {
+    ops.push(new ExtractOp(" ", x[pre], toU32(pre), toU32(pre)))
+    pre = pre + 1
+  }
+  // x[xm..] and y[ym..] are the common tail, which does not reach into the head.
+  let xm = x.length
+  let ym = y.length
+  while (xm > pre && ym > pre && xm > 0 && xm <= x.length && ym > 0 && ym <= y.length && x[xm - 1] === y[ym - 1]) {
+    xm = xm - 1
+    ym = ym - 1
+  }
+  const xs: string[] = []
+  for (let k = 0; k < x.length; k++) {
+    if (k >= pre && k < xm) {
+      xs.push(x[k])
+    }
+  }
+  const ys: string[] = []
+  for (let k = 0; k < y.length; k++) {
+    if (k >= pre && k < ym) {
+      ys.push(y[k])
+    }
+  }
+  // Past EXTRACT_DIFF_CELLS the table is not built (it would hold too much):
+  // the changed lines are given as one hunk, every old line removed, then
+  // every new line added.
+  const n = xs.length
+  const whole = n > 0 && ys.length > toI32(EXTRACT_DIFF_CELLS / n)
+  const p = toU32(pre)
+  let i: u32 = 0
+  let j = 0
+  rows: for (const row of extractTable(xs, ys, whole)) {
+    while (j < ys.length) {
+      if (row.line === ys[j]) {
+        ops.push(new ExtractOp(" ", row.line, p + i, p + toU32(j)))
+        i = i + 1
+        j = j + 1
+        continue rows
+      }
+      if (j >= row.remove.length || row.remove[j]) {
+        break
+      }
+      ops.push(new ExtractOp("+", ys[j], p + i, p + toU32(j)))
+      j = j + 1
+    }
+    // A deletion before an insertion, as diff -u prints them.
+    ops.push(new ExtractOp("-", row.line, p + i, p + toU32(j)))
+    i = i + 1
+  }
+  for (; j < ys.length; j++) {
+    ops.push(new ExtractOp("+", ys[j], p + i, p + toU32(j)))
+  }
+  for (let k = 0; k < x.length; k++) {
+    if (k >= xm) {
+      ops.push(new ExtractOp(" ", x[k], toU32(k), toU32(k) - toU32(xm) + toU32(ym)))
+    }
+  }
+  return ops
+}
+
+/** The last three ops of `ops`, or all of them when it holds fewer. */
+const extractLast3 = (ops: ExtractOp[]): ExtractOp[] => {
+  const out: ExtractOp[] = []
+  let k = 0
+  if (ops.length > 3) {
+    k = ops.length - 3
+  }
+  for (; k >= 0 && k < ops.length; k++) {
+    out.push(ops[k])
+  }
+  return out
+}
+
+/**
+ * Appends to `out` the header and lines of `hunk`, a run of ops that holds a
+ * change, closed by the first three unchanged lines of `after`.
+ */
+const extractHunkOut = (hunk: ExtractOp[], after: ExtractOp[], out: string[]): void => {
+  for (let k = 0; k < 3 && k < after.length; k++) {
+    hunk.push(after[k])
+  }
+  let started = false
+  let aFirst: u32 = 0
+  let bFirst: u32 = 0
+  let aCount: u32 = 0
+  let bCount: u32 = 0
+  for (const o of hunk) {
+    if (!started) {
+      aFirst = o.i
+      bFirst = o.j
+      started = true
+    }
+    if (o.op !== "+") {
+      aCount = aCount + 1
+    }
+    if (o.op !== "-") {
+      bCount = bCount + 1
+    }
+  }
+  const aFrom = aCount === 0 ? aFirst : aFirst + 1
+  const bFrom = bCount === 0 ? bFirst : bFirst + 1
+  out.push(`@@ -${aFrom},${aCount} +${bFrom},${bCount} @@`)
+  for (const o of hunk) {
+    out.push(extractShown(o))
+  }
+}
+
+/**
+ * `ops` as unified diff hunks under `--- aName` and `+++ bName`, with three
+ * lines of context: a hunk runs from three unchanged lines before its first
+ * change to three after its last, and two changes with at most six unchanged
+ * lines between them share one.
+ */
+const extractHunks = (ops: ExtractOp[], aName: string, bName: string): string => {
+  const out: string[] = [`--- ${aName}`, `+++ ${bName}`]
+  // The open hunk, empty when none is; the unchanged lines after its last
+  // change; and, with no hunk open, the last three unchanged lines.
+  let hunk: ExtractOp[] = []
+  let after: ExtractOp[] = []
+  let before: ExtractOp[] = []
+  for (const o of ops) {
+    if (o.op !== " ") {
+      if (hunk.length === 0) {
+        hunk = before
+        before = []
+      }
+      for (const a of after) {
+        hunk.push(a)
+      }
+      after = []
+      hunk.push(o)
+    } else if (hunk.length === 0) {
+      before.push(o)
+      if (before.length > 3) {
+        before = extractLast3(before)
+      }
+    } else {
+      after.push(o)
+      if (after.length > 6) {
+        extractHunkOut(hunk, after, out)
+        hunk = []
+        before = extractLast3(after)
+        after = []
+      }
+    }
+  }
+  if (hunk.length !== 0) {
+    extractHunkOut(hunk, after, out)
+  }
+  return `${out.join("\n")}\n`
+}
 
 /**
  * A unified diff of `a` (the file `aName`) against `b` (`bName`), with three
@@ -634,109 +866,5 @@ export const extractUnifiedDiff = (a: string, b: string, aName: string, bName: s
   if (a === b) {
     return ""
   }
-  const x = extractLines(a)
-  const y = extractLines(b)
-  let pre = 0
-  while (pre < x.length && pre < y.length && x[pre] === y[pre]) {
-    pre = pre + 1
-  }
-  let suf = 0
-  while (suf < x.length - pre && suf < y.length - pre && x[x.length - 1 - suf] === y[y.length - 1 - suf]) {
-    suf = suf + 1
-  }
-  const xm = x.length - suf
-  const ym = y.length - suf
-  const w = ym - pre + 1
-  // Past EXTRACT_DIFF_CELLS the table is not built (its i32 size could wrap, and
-  // it would hold too much): the changed lines are given as one hunk, every
-  // old line removed, then every new line added.
-  const whole = xm - pre > 0 && ym - pre > toI32(EXTRACT_DIFF_CELLS / (xm - pre))
-  // lcs[(i - pre) * w + (j - pre)]: the longest common subsequence of x[i..xm] and y[j..ym].
-  const lcs: i32[] = []
-  const cells = whole ? 0 : (xm - pre + 1) * w
-  for (let k = 0; k < cells; k++) {
-    lcs.push(0)
-  }
-  for (let i = whole ? pre - 1 : xm - 1; i >= pre; i--) {
-    for (let j = ym - 1; j >= pre; j--) {
-      const here = (i - pre) * w + (j - pre)
-      if (x[i] === y[j]) {
-        lcs[here] = lcs[here + w + 1] + 1
-      } else {
-        const down = lcs[here + w]
-        const right = lcs[here + 1]
-        lcs[here] = down >= right ? down : right
-      }
-    }
-  }
-  const ops: ExtractOp[] = []
-  for (let k = 0; k < pre; k++) {
-    ops.push(new ExtractOp(" ", x[k], k, k))
-  }
-  let i = pre
-  let j = pre
-  while (i < xm || j < ym) {
-    if (i < xm && j < ym && x[i] === y[j]) {
-      ops.push(new ExtractOp(" ", x[i], i, j))
-      i = i + 1
-      j = j + 1
-    } else if (
-      i < xm &&
-      (whole || j === ym || lcs[(i + 1 - pre) * w + (j - pre)] >= lcs[(i - pre) * w + (j + 1 - pre)])
-    ) {
-      // A deletion before an insertion, as diff -u prints them.
-      ops.push(new ExtractOp("-", x[i], i, j))
-      i = i + 1
-    } else {
-      ops.push(new ExtractOp("+", y[j], i, j))
-      j = j + 1
-    }
-  }
-  for (let k = 0; k < suf; k++) {
-    ops.push(new ExtractOp(" ", x[xm + k], xm + k, ym + k))
-  }
-  const context = 3
-  const out: string[] = [`--- ${aName}`, `+++ ${bName}`]
-  let k = 0
-  while (k < ops.length) {
-    if (ops[k].op === " ") {
-      k = k + 1
-      continue
-    }
-    // A hunk: from `context` lines before this change to `context` after the
-    // last change within 2 * context unchanged lines of the next.
-    const start = k - context > 0 ? k - context : 0
-    let end = k
-    let quiet = 0
-    for (let m = k; m < ops.length; m++) {
-      if (ops[m].op === " ") {
-        quiet = quiet + 1
-        if (quiet > 2 * context) {
-          break
-        }
-      } else {
-        quiet = 0
-        end = m
-      }
-    }
-    const stop = end + 1 + context < ops.length ? end + 1 + context : ops.length
-    let aCount = 0
-    let bCount = 0
-    for (let m = start; m < stop; m++) {
-      if (ops[m].op !== "+") {
-        aCount = aCount + 1
-      }
-      if (ops[m].op !== "-") {
-        bCount = bCount + 1
-      }
-    }
-    const aFrom = aCount === 0 ? ops[start].i : ops[start].i + 1
-    const bFrom = bCount === 0 ? ops[start].j : ops[start].j + 1
-    out.push(`@@ -${aFrom},${aCount} +${bFrom},${bCount} @@`)
-    for (let m = start; m < stop; m++) {
-      out.push(extractShown(ops[m]))
-    }
-    k = stop
-  }
-  return `${out.join("\n")}\n`
+  return extractHunks(extractEditScript(extractLines(a), extractLines(b)), aName, bName)
 }

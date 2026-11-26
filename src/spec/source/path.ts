@@ -42,8 +42,10 @@ export const sourceRootOf = (self: string | null): string => (self === null ? ".
  *
  * @returns the root
  */
-export const sourceInstallRoot = (): string =>
-  sourceRootOf(realpathSync("/proc/self/exe") ?? realpathSync(process.argv[0]))
+export const sourceInstallRoot = (): string => {
+  const argv = process.argv
+  return sourceRootOf(realpathSync("/proc/self/exe") ?? (argv.length > 0 ? realpathSync(argv[0]) : null))
+}
 
 /**
  * Where an RFC's plain text is fetched to (sourceFetchHint).
@@ -109,7 +111,7 @@ const sourceBelow = (dir: string, path: string): string | null => {
   if (dir === "/") {
     return path.startsWith("/") && path.length > 1 ? path.substring(1) : null
   }
-  return path.startsWith(`${dir}/`) ? path.substring(dir.length + 1) : null
+  return path.startsWith(`${dir}/`) ? path.substring(toI32(toU32(dir.length) + 1)) : null
 }
 
 /**
@@ -343,29 +345,53 @@ export class SourceRead {
   }
 }
 
+/** How many bytes sourceReadFd asks for in one read. */
+const SOURCE_CHUNK: i32 = 65536
+
+/** Reads up to `want` bytes of `fd` from `at` into the start of `chunk`. */
+const sourceReadChunk = (fd: i32, chunk: u8[], want: i32, at: i64, name: string): Result<i32, string> => {
+  if (want >= 0 && want <= chunk.length) {
+    return Ok(fileReadAt(fd, chunk, 0, want, at))
+  }
+  return Err(`cannot read ${name}`)
+}
+
 /** Reads all of `fd`, at most SOURCE_MAX_BYTES; `name` names it in errors. */
 const sourceReadFd = (fd: i32, name: string): Result<u8[], string> => {
   const size = fileSize(fd)
-  if (size < 0) {
-    return Err(`cannot read ${name}`)
-  }
   if (size > SOURCE_MAX_BYTES) {
     return Err(`${name} is ${size} bytes, more than a source may be (${SOURCE_MAX_BYTES})`)
   }
   const n = toI32(size)
-  const buf: u8[] = new Array<u8>(n)
-  let got = 0
-  while (got < n) {
-    const k = fileReadAt(fd, buf, got, n - got, toI64(got))
-    if (k < 0) {
-      return Err(`cannot read ${name} (errno ${-k})`)
-    }
-    if (k === 0) {
-      break
-    }
-    got = got + k
+  if (size < 0 || n < 0) {
+    return Err(`cannot read ${name}`)
   }
-  if (got !== n) {
+  const buf: u8[] = new Array<u8>(n)
+  const chunk: u8[] = new Array<u8>(SOURCE_CHUNK)
+  // In u32, so the count cannot overflow; a read that ends early or past what
+  // was asked stops the loop, and the length check below refuses it.
+  let got: u32 = 0
+  let more = true
+  while (more && got < toU32(buf.length)) {
+    more = false
+    const rest = toU32(buf.length) - got
+    const want = toI32(rest < toU32(chunk.length) ? rest : toU32(chunk.length))
+    const k = sourceReadChunk(fd, chunk, want, toI64(got), name).orReturn()
+    if (k < 0) {
+      return Err(`cannot read ${name} (errno ${-toI64(k)})`)
+    }
+    if (k > 0 && k <= want) {
+      more = true
+      for (let j = 0; j < k && j < chunk.length; j++) {
+        const at = toI32(got)
+        if (at >= 0 && at < buf.length) {
+          buf[at] = chunk[j]
+        }
+        got = got + 1
+      }
+    }
+  }
+  if (got !== toU32(n)) {
     return Err(`${name} changed while it was being read`)
   }
   return Ok(buf)
@@ -407,7 +433,7 @@ export const sourceReadConfined = (
     if (fd === -22) {
       return Err(`source ${decl.id}: ${shown}: not a regular file`)
     }
-    return Err(`source ${decl.id}: cannot read ${shown} (errno ${-fd})`)
+    return Err(`source ${decl.id}: cannot read ${shown} (errno ${-toI64(fd)})`)
   }
   const opened = realpathSync(`/proc/self/fd/${fd}`)
   if (opened === null) {

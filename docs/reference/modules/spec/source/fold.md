@@ -3,7 +3,7 @@
 # spec/source/fold
 
 `spec/source/fold` — GENERATED; do not edit it by hand. Regenerate it with
-src/spec/source/fold_gen.mjs (this copy: node v22.23.4, Unicode
+src/spec/source/fold_gen.mjs (this copy: node v22.23.5, Unicode
 17.0). Each non-ASCII code point whose NFKD form,
 with its combining marks removed, is a single ASCII letter, and that
 letter: the precomposed Latin and Greek letters, superscripts, subscripts,

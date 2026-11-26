@@ -145,7 +145,8 @@ const verifyCexOrNone = (hasCex: boolean, cex: Counterexample): string =>
 // `(calls f)` → `f`.
 const verifyCallee = (axiomId: string): string => {
   if (axiomId.startsWith("(calls ") && axiomId.endsWith(")")) {
-    return axiomId.slice(7, toI32(axiomId.length) - 1)
+    // The prefix and suffix are 8 bytes, so 7 <= length - 1 and substring cuts as slice did.
+    return axiomId.substring(7, toI32(axiomId.length) - 1)
   }
   return axiomId
 }
@@ -464,7 +465,8 @@ export const verifyReportOutcome = (
  */
 export const counterexampleJson = (cex: Counterexample): OutJson => {
   const inputs = outJsonObject()
-  for (let i = 0; i < toI32(cex.names.length); i++) {
+  // A counterexample holds one value per name, so the second bound never stops the loop early.
+  for (let i = 0; i < toI32(cex.names.length) && i < toI32(cex.values.length); i++) {
     inputs.put(cex.names[i], outJsonString(cex.values[i]))
   }
   const out = outJsonObject().put("inputs", inputs)

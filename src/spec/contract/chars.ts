@@ -17,6 +17,10 @@ const CHARS_BAD: i32 = 0xfffd
  * @returns the code point
  */
 export const charsCodePointAt = (s: string, i: i32): i32 => {
+  // A byte index past the end starts no sequence, like a truncated one.
+  if (i < 0 || i >= s.length) {
+    return CHARS_BAD
+  }
   const b0 = s.charCodeAt(i)
   if (b0 < 0x80) {
     return b0
@@ -26,8 +30,9 @@ export const charsCodePointAt = (s: string, i: i32): i32 => {
     return CHARS_BAD
   }
   let cp: i32 = b0 & (n === 2 ? 0x1f : n === 3 ? 0x0f : 0x07)
-  for (let k = 1; k < n; k++) {
-    cp = (cp << 6) | (s.charCodeAt(i + k) & 0x3f)
+  // charsSequenceLength answers n > 1 only when all n bytes are in `s`.
+  for (let j = i + 1; j < s.length && j - i < n; j++) {
+    cp = (cp << 6) | (s.charCodeAt(j) & 0x3f)
   }
   const min: i32 = n === 2 ? 0x80 : n === 3 ? 0x800 : 0x10000
   if (cp < min || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)) {
@@ -45,14 +50,18 @@ export const charsCodePointAt = (s: string, i: i32): i32 => {
  * @returns 1 to 4
  */
 export const charsSequenceLength = (s: string, i: i32): i32 => {
+  // A byte index past the end starts no sequence, like a truncated one.
+  if (i < 0 || i >= s.length) {
+    return 1
+  }
   const b0 = s.charCodeAt(i)
   const n: i32 =
     b0 < 0x80 ? 1 : b0 >= 0xc2 && b0 <= 0xdf ? 2 : b0 >= 0xe0 && b0 <= 0xef ? 3 : b0 >= 0xf0 && b0 <= 0xf4 ? 4 : 1
-  if (i + n > s.length) {
+  if (n > s.length - i) {
     return 1
   }
-  for (let k = 1; k < n; k++) {
-    if ((s.charCodeAt(i + k) & 0xc0) !== 0x80) {
+  for (let j = i + 1; j < s.length && j - i < n; j++) {
+    if ((s.charCodeAt(j) & 0xc0) !== 0x80) {
       return 1
     }
   }
@@ -120,13 +129,14 @@ export const charsIsControl = (cp: i32): boolean =>
  * @returns its name, such as `U+000A`, or null when `s` has none
  */
 export const charsFirstControl = (s: string): string | null => {
-  let i = 0
-  while (i < s.length) {
-    const cp = charsCodePointAt(s, i)
+  // In u32: a sequence is 1 to 4 bytes, so the sum stays below 2^31 + 4.
+  let i: u32 = 0
+  while (i < toU32(s.length)) {
+    const cp = charsCodePointAt(s, toI32(i))
     if (charsIsControl(cp)) {
       return charsName(cp)
     }
-    i += charsSequenceLength(s, i)
+    i += toU32(charsSequenceLength(s, toI32(i)))
   }
   return null
 }
@@ -222,18 +232,19 @@ export const charsIsIdent = (s: string): boolean => {
  */
 export const charsTestVector = (s: string): i32 => {
   const head = "Test Vector #"
-  if (!s.startsWith(head) || s.length === head.length || s.length > head.length + 6) {
+  if (!s.startsWith(head) || s.length === head.length || s.length - head.length > 6) {
     return 0
   }
-  let n = 0
+  // In u32: six digits at most.
+  let n: u32 = 0
   for (let i = head.length; i < s.length; i++) {
     const c = s.charCodeAt(i)
     if (!charsIsDigit(c) || (i === head.length && c === 0x30)) {
       return 0
     }
-    n = n * 10 + (c - 0x30)
+    n = n * 10 + toU32(c) - 0x30
   }
-  return n
+  return toI32(n)
 }
 
 /**
@@ -244,13 +255,13 @@ export const charsTestVector = (s: string): i32 => {
  * @returns true for a section number
  */
 export const charsIsSection = (s: string): boolean => {
-  if (s.length === 0) {
+  if (s.length < 1) {
     return false
   }
   let i = 0
   if (charsIsUpper(s.charCodeAt(0))) {
     i = 1
-    if (s.length === 1) {
+    if (s.length < 2) {
       return true
     }
     if (s.charCodeAt(1) !== 0x2e) {
@@ -259,7 +270,7 @@ export const charsIsSection = (s: string): boolean => {
     i = 2
   }
   // Now one or more digit runs separated by single dots.
-  let run = 0
+  let run: u32 = 0
   for (; i < s.length; i++) {
     const c = s.charCodeAt(i)
     if (charsIsDigit(c)) {
@@ -280,7 +291,7 @@ export const charsIsSection = (s: string): boolean => {
  */
 const charsNumberEnd = (s: string, from: i32): i32 => {
   let i = from
-  if (i >= s.length || !charsIsDigit(s.charCodeAt(i))) {
+  if (i < 0 || i >= s.length || !charsIsDigit(s.charCodeAt(i))) {
     return -1
   }
   if (s.charCodeAt(i) === 0x30) {
@@ -349,9 +360,9 @@ export const charsIsF64Text = (s: string): boolean => {
  * @returns true for a module path like `nish/crypto/hkdf` or `nish/net/quic-packet`
  */
 export const charsIsModule = (s: string): boolean => {
-  let segments = 0
+  let segments: u32 = 0
   // The bytes of the current word, and whether it is its segment's first.
-  let word = 0
+  let word: u32 = 0
   let first = true
   for (let i = 0; i < s.length; i++) {
     const c = s.charCodeAt(i)
@@ -398,7 +409,7 @@ export const charsHasLetter = (s: string): boolean => {
  * @returns true when the words are a non-empty, consistently spelled array
  */
 export const charsIsWordList = (words: string[], digits: i32): boolean => {
-  if (words.length === 0) {
+  if (words.length < 1) {
     return false
   }
   const prefixed = words[0].startsWith("0x")
