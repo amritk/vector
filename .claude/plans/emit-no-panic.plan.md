@@ -6,7 +6,7 @@ stages:
     title: Install main's 0.47.0 pin in cloud sessions
     goal: The SessionStart hook installs the 0.47.0 compiler that main already pins as .nish-next, so the panic test can run in cloud sessions; CI's fetch is run 217's PR 220
     verification: bash -n on the hook exits 0, the hook installs .nish-next/bin/nish reporting 0.47.0, and npm run lint passes with .nish-next present once PR 220's biome ignore is on main
-    status: in_progress
+    status: completed
     todos:
       - id: prover-version-file
         content: Add a separate 0.47.0 pin file — cancelled, main's .nish-next-version (PR 218) already pins it — see Prover pin
@@ -16,7 +16,7 @@ stages:
         status: cancelled
       - id: prover-hook-ci
         content: Run scripts/fetch-nish-next.sh in .claude/hooks/session-start.sh (PR 216); the CI fetch is PR 220 — see Prover pin
-        status: in_progress
+        status: completed
       - id: prover-docs
         content: Add a CLAUDE.md row for the second pin — cancelled, PR 220 adds the npm run panics row — see Prover pin
         status: cancelled
@@ -27,22 +27,22 @@ stages:
     todos:
       - id: panic-test
         content: Add tests/spec/emit/panics_test.ts — emits a fixture spec covering every clause kind and type via spec emit, builds it with .nish-next/bin/nish --emit-panics, and refuses any unproven non-OOM site the emitter wrote — see Panic test
-        status: in_progress
+        status: completed
       - id: helper-guards
         content: Make every helper in src/spec/emit/helpers.ts prover-clean (unhex, nibble, bytesEq, sliceBytes, fillBytes, flipBit, bitwiseBytes, remI32, concat and the wordsHex family) — see Emitter guards
-        status: in_progress
+        status: completed
       - id: emit-guards
         content: Make the templates in src/spec/emit/emit.ts prover-clean (property tables and samplers, iterate and repeat loops, window and out CAP expansions, truncate, nonce and vector-done epilogue) — see Emitter guards
-        status: in_progress
+        status: completed
       - id: argv-no-relax
         content: Assert no argv built by runNishArgv (src/spec/run/run.ts) or the mutate build (src/spec/pr/mutaterun.ts) contains --allow-panics — see No relax flag
-        status: in_progress
+        status: completed
       - id: regen-goldens
         content: Regenerate the tests/cli emit and run golden cases and tests/dogfood with their generators, never by hand — see Regenerated files
-        status: in_progress
+        status: completed
       - id: mutation-check
         content: Delete each guard added in turn and record in the PR body that the panic test fails for each — see Panic test
-        status: in_progress
+        status: completed
 ---
 
 ## Context
