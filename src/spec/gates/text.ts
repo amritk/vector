@@ -802,10 +802,10 @@ const gateByteListAt = (line: string, open: i32, out: string[]): i32 => {
     gateHexDigit(line.charCodeAt(i)) >= 0 &&
     gateHexDigit(line.charCodeAt(i + 1)) >= 0
   ) {
-    hex = `${hex}${textAsciiLower(line.substring(i, i + 2))}`
+    hex = `${hex}${line.substring(i, i + 2)}`
     i = i + 2
     if (i >= 0 && i < line.length && line.charCodeAt(i) === 93) {
-      out.push(hex)
+      out.push(textAsciiLower(hex))
       return i + 1
     }
     // 32 is a space, 44 a comma: what may part two bytes.

@@ -125,7 +125,7 @@ export const gateModuleSignatures = (source: string): GateModuleSig[] => {
         }
       }
     }
-    at = source.indexOf(key, toI32(toI64(at) + toI64(key.length)))
+    at = source.indexOf(key, nameStart)
   }
   return out
 }

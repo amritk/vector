@@ -392,7 +392,7 @@ const gateWordsAcross = (blocks: GateWordBlock[], want: string[]): boolean => {
     }
     while (block.joinsNext && e >= 0 && e < blocks.length - 1) {
       joins.push(words.length)
-      const next = toI32(toI64(e) + toI64(1))
+      const next = gateFidPlus(e, 1)
       if (!(next >= 0 && next < blocks.length)) {
         break
       }

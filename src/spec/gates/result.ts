@@ -334,7 +334,7 @@ const gateOccurrence = (p: GateProse, q: string, at: i32, word: string): string 
   let why = `does not require "${word}" as the result (an affirmative MUST, SHALL or REQUIRED to, a result verb, then "${word}")`
   // The quote (never empty) is in the text at `at`, so `at` plus an offset
   // into it, or its length, is an offset of the text.
-  const last = gateSpanAt(p, gateResultPlus(at, toI32(toI64(q.length) - toI64(1)))).end
+  const last = gateSpanAt(p, gateResultPlus(at, gateResultPlus(q.length, -1))).end
   let i = 0
   while (i < q.length) {
     const end = gateStatementAt(q, i, word)
@@ -367,7 +367,7 @@ const gateOccurrence = (p: GateProse, q: string, at: i32, word: string): string 
       continue
     }
     // The statement ends after its keyword, so `to` is at least 1.
-    const stop = gateSpanAt(p, toI32(toI64(to) - toI64(1))).end
+    const stop = gateSpanAt(p, gateResultPlus(to, -1)).end
     const tail = text.substring(to, last > stop ? last : stop)
     const retract = gateWordFind(tail, GATE_RETRACT)
     if (retract.length > 0) {
