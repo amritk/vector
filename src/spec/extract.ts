@@ -29,10 +29,10 @@ import {
   profileWhereText,
 } from "./profile/profile"
 import { hiddenDropBreaks, hiddenProblem } from "./source/hidden"
-import { SourceReaders, sourceReaderFor, sourceReadersAdd, sourceReadersDefault } from "./source/load"
+import { SourceReaderKind, SourceReaders, sourceReaderFor, sourceReadersAdd, sourceReadersDefault } from "./source/load"
 import { SourceRead, sourceCandidate, sourceLabel, sourceReadConfined } from "./source/path"
 import { RfcDocument } from "./source/rfc"
-import { xmlDocParse, xmlRead } from "./xml/doc"
+import { xmlDocParse } from "./xml/doc"
 
 /** The suffix of the file beside a contract that holds its allowSurvivors. */
 export const EXTRACT_SIDECAR_SUFFIX: string = ".survivors.json"
@@ -99,7 +99,7 @@ class ExtractContext {
  */
 export const extractReaders = (): Result<SourceReaders, string> => {
   const readers = sourceReadersDefault()
-  sourceReadersAdd(readers, ".xml", xmlRead).orReturn()
+  sourceReadersAdd(readers, ".xml", SourceReaderKind.Xml).orReturn()
   return Ok(readers)
 }
 
@@ -550,7 +550,7 @@ const extractFinish = (ctx: ExtractContext, read: ProfileRead, specSha: string):
     return out
   }
   const check = new CheckContext(ctx.contractPath, ctx.root)
-  const added = checkAddReader(check, ".xml", xmlRead)
+  const added = checkAddReader(check, ".xml", SourceReaderKind.Xml)
   if (added.isErr()) {
     out.errors.push(added.error)
     return out

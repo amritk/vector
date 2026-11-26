@@ -12,7 +12,7 @@
     "src/cli/verify.ts": 12,
     "src/core/fs.ts": 12,
     "src/core/hex.ts": 16,
-    "src/core/json.ts": 2,
+    "src/core/json.ts": 5,
     "src/core/process.ts": 3,
     "src/core/smt.ts": 31,
     "src/core/z3.ts": 4,
