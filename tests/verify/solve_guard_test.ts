@@ -16,6 +16,7 @@ import {
   REPLAY_NOT_REPLAYED,
   replayClause,
   replayEvaluate,
+  replayValueText,
   replayWitness,
 } from "../../src/verify/solve/replay"
 import {
@@ -279,11 +280,98 @@ const guardReport = (t: Suite): void => {
   }
 }
 
+// One i64 step at an edge of the range the replay computes in: its exact
+// value, or "?" when it leaves the range and the replay says so.
+class EdgeCase {
+  op: string
+  x: string
+  y: string
+  want: string
+
+  constructor(op: string, x: string, y: string, want: string) {
+    this.op = op
+    this.x = x
+    this.y = y
+    this.want = want
+  }
+}
+
+const guardEdges = (t: Suite): void => {
+  const max = "9223372036854775807"
+  const r = "3037000499"
+  const r2 = "9223372030926249001"
+  const s = "3037000500"
+  const cases: EdgeCase[] = [
+    new EdgeCase("+", "9223372036854775806", "1", max),
+    new EdgeCase("+", max, "1", "?"),
+    new EdgeCase("+", "1", max, "?"),
+    new EdgeCase("+", max, "0", max),
+    new EdgeCase("+", max, "-1", "9223372036854775806"),
+    new EdgeCase("+", `-${max}`, "-1", "?"),
+    new EdgeCase("+", "-1", `-${max}`, "?"),
+    new EdgeCase("+", `-${max}`, "0", `-${max}`),
+    new EdgeCase("+", max, "2", "?"),
+    new EdgeCase("+", max, max, "?"),
+    new EdgeCase("+", `-${max}`, "-2", "?"),
+    new EdgeCase("+", `-${max}`, `-${max}`, "?"),
+    new EdgeCase("+", "1", "-2", "-1"),
+    new EdgeCase("+", "-1", "2", "1"),
+    new EdgeCase("half+", "1", max, "?"),
+    new EdgeCase("+half", max, "1", "?"),
+    new EdgeCase("half+", "1", "-1", "-1/2"),
+    new EdgeCase("+", `-${max}`, "1", "-9223372036854775806"),
+    new EdgeCase("+", max, `-${max}`, "0"),
+    new EdgeCase("*", r, r, r2),
+    new EdgeCase("*", s, s, "?"),
+    new EdgeCase("*", `-${r}`, r, `-${r2}`),
+    new EdgeCase("*", r, `-${r}`, `-${r2}`),
+    new EdgeCase("*", `-${r}`, `-${r}`, r2),
+    new EdgeCase("*", `-${s}`, s, "?"),
+    new EdgeCase("*", s, `-${s}`, "?"),
+    new EdgeCase("*", `-${s}`, `-${s}`, "?"),
+    new EdgeCase("*", max, "1", max),
+    new EdgeCase("*", max, "-1", `-${max}`),
+    new EdgeCase("*", `-${max}`, "-1", max),
+    new EdgeCase("*", max, "2", "?"),
+    new EdgeCase("*", "0", max, "0"),
+    new EdgeCase("neg", `-${max}`, "", max),
+    new EdgeCase("neg", max, "", `-${max}`),
+  ]
+  for (const c of cases) {
+    const b = new BCase("edge")
+    const x = bVar("x")
+    const y = bVar("y")
+    // half+ is x/2 + y and +half is x + y/2: a sum whose cross product can
+    // overflow inside the addition, on either operand.
+    const body =
+      c.op === "neg"
+        ? bUn("neg", x)
+        : c.op === "half+"
+          ? bBin("+", bBin("/", x, bNum("2")), y)
+          : c.op === "+half"
+            ? bBin("+", x, bBin("/", y, bNum("2")))
+            : bBin(c.op, x, y)
+    b.fn("edge", 1, ["x:Real", "y:Real"], "Real", guardNone(), guardTrue(), body)
+    const program = guardProgram(t, b)
+    if (program.functions.length === 0) {
+      continue
+    }
+    const run = replayEvaluate(program, program.functions[0], ["x", "y"], [c.x, c.y === "" ? "0" : c.y])
+    const label = `${c.x} ${c.op} ${c.y}`
+    t.eqStr(`${label}: bound`, run.unbound, "")
+    t.eqStr(`${label}: value`, replayValueText(run.body), c.want)
+    if (c.want === "?") {
+      t.contains(`${label}: why`, run.body.why, "i64 range")
+    }
+  }
+}
+
 export const main = (): i32 => {
   const t = new Suite("verify/solve_guard")
   guardArity(t)
   guardCallArity(t)
   guardByName(t)
   guardReport(t)
+  guardEdges(t)
   return t.done()
 }
