@@ -167,7 +167,8 @@ const xmlDocNumber = (
   numbered: boolean,
 ): Result<XmlSectionInfo[], XmlError> => {
   const subs: XmlSectionInfo[] = []
-  let i = 0
+  // A count of elements, so far under 2^32: the input is capped at XML_MAX_INPUT_BYTES.
+  let i: u32 = 0
   for (const s of xmlElements(parent)) {
     if (s.name !== "section") {
       continue
@@ -177,7 +178,7 @@ const xmlDocNumber = (
     if (top && i > 26) {
       return Err(xmlErrorAt(s, "<back> has more than 26 sections; appendix letters run out at Z"))
     }
-    const n = top ? String.fromCharCode(64 + i) : `${i}`
+    const n = top ? String.fromCharCode(toI32(64 + i)) : `${i}`
     const id = prefix.length > 0 ? `${prefix}.${n}` : n
     const on = numbered && (xmlAttr(s, "numbered") ?? "") !== "false"
     const info = new XmlSectionInfo(id, s, on, back)
@@ -231,10 +232,11 @@ const xmlDocWalk = (c: XmlDocContext, n: XmlNode, inCell: boolean): Result<boole
     c.xrefs.push(n)
   }
   if (n.name === "figure") {
-    c.figures.set(n, c.figures.size + 1)
+    // One entry per element, so the size is far under 2^31 and the u32 add is exact.
+    c.figures.set(n, toI32(toU32(c.figures.size) + 1))
   }
   if (isTable) {
-    c.tables.set(n, c.tables.size + 1)
+    c.tables.set(n, toI32(toU32(c.tables.size) + 1))
   }
   if (n.name === "displayreference") {
     const target = xmlAttr(n, "target")
@@ -320,8 +322,10 @@ const xmlDocDerived = (c: XmlDocContext, x: XmlNode, t: XmlNode | null, referenc
 
 /** Works out each xref's text, within the budget. */
 const xmlDocXrefs = (c: XmlDocContext, inputLength: i32): Result<boolean, XmlError> => {
-  const budget = inputLength + XML_MAX_XREF_TEXT
-  let spent = 0
+  // The input passed xmlParse's XML_MAX_INPUT_BYTES cap, so the sum fits i32 and the u32 add is exact.
+  const budget = toI32(toU32(inputLength) + toU32(XML_MAX_XREF_TEXT))
+  // spent is at most budget before each add, and a string's length is under 2^31: no wrap.
+  let spent: u32 = 0
   for (const x of c.xrefs) {
     const target = xmlAttr(x, "target") ?? ""
     const found = c.byAnchor.get(target)
@@ -331,8 +335,8 @@ const xmlDocXrefs = (c: XmlDocContext, inputLength: i32): Result<boolean, XmlErr
     }
     const reference = t !== null && (t.name === "reference" || t.name === "referencegroup")
     const reftext = xmlAttr(x, "derivedContent") === null ? xmlDocDerived(c, x, t, reference) : ""
-    spent = spent + reftext.length
-    if (spent > budget) {
+    spent = spent + toU32(reftext.length)
+    if (spent > toU32(budget)) {
       return Err(
         xmlErrorAt(
           x,
@@ -357,16 +361,19 @@ const xmlDocLay = (
   from: Map<XmlSectionInfo, i32>,
   to: Map<XmlSectionInfo, i32>,
 ): void => {
-  if (s.own.length > 0 && all.length > 0 && all[all.length - 1].length > 0) {
+  const last = toU32(all.length) - 1
+  if (s.own.length > 0 && last < toU32(all.length) && all[last].length > 0) {
     breaks.push(all.length)
     all.push("")
   }
   from.set(s, all.length)
+  // Line numbers within the input's lines, so each sum fits i32 and the u32 add is exact.
+  const base = toU32(all.length)
   for (const i of s.code) {
-    code.push(all.length + i)
+    code.push(toI32(base + toU32(i)))
   }
   for (const i of s.breaks) {
-    breaks.push(all.length + i)
+    breaks.push(toI32(base + toU32(i)))
   }
   for (const l of s.own) {
     all.push(l)
@@ -378,12 +385,12 @@ const xmlDocLay = (
 }
 
 /** The first index of ascending `xs` whose value is at least `v` (xs.length when none), found by halving. */
-const xmlDocFirstAtLeast = (xs: i32[], v: i32): i32 => {
-  let lo = 0
-  let hi = xs.length
+const xmlDocFirstAtLeast = (xs: i32[], v: i32): u32 => {
+  let lo: u32 = 0
+  let hi = toU32(xs.length)
   while (lo < hi) {
     const mid = lo + ((hi - lo) >> 1)
-    if (xs[mid] < v) {
+    if (mid < toU32(xs.length) && xs[mid] < v) {
       lo = mid + 1
     } else {
       hi = mid
@@ -411,26 +418,37 @@ const xmlDocSections = (c: XmlDocContext): Result<boolean, XmlError> => {
       xmlDocLay(s, all, code, breaks, from, to)
     }
   }
-  const isBreak: boolean[] = []
-  for (let i = 0; i < all.length; i++) {
-    isBreak.push(false)
-  }
+  const isBreak = new Set<i32>()
   for (const i of breaks) {
-    isBreak[i] = true
+    isBreak.add(i)
   }
+  // texts[i] counts the lines before line i that are not breaks; a count of lines, so no wrap.
   const texts: i32[] = [0]
+  let count: u32 = 0
   for (let i = 0; i < all.length; i++) {
-    texts.push(texts[i] + (isBreak[i] ? 0 : 1))
+    if (!isBreak.has(i)) {
+      count = count + 1
+    }
+    texts.push(toI32(count))
   }
-  let held = 0
+  // held is at most XML_MAX_SECTION_LINES before each add, and a run's count is a count of lines: no wrap.
+  let held: u32 = 0
   for (const s of c.infos) {
     if (!s.numbered) {
       continue
     }
     const a = from.get(s) ?? 0
     const z = to.get(s) ?? 0
-    held = held + (texts[z] - texts[a])
-    if (held > XML_MAX_SECTION_LINES) {
+    // xmlDocLay recorded every section's run, within the lines it laid out; unreachable otherwise.
+    if (a < 0 || z < 0 || a > z || z > all.length || a >= texts.length || z >= texts.length) {
+      return Err(xmlErrorAt(s.node, `internal: section ${s.id} has no run of lines`))
+    }
+    const before = texts[a]
+    const through = texts[z]
+    const lines = all.slice(a, z)
+    // texts never decreases, so the run's count is the u32 difference, exact.
+    held = held + (toU32(through) - toU32(before))
+    if (held > toU32(XML_MAX_SECTION_LINES)) {
       return Err(
         xmlErrorAt(
           s.node,
@@ -440,9 +458,10 @@ const xmlDocSections = (c: XmlDocContext): Result<boolean, XmlError> => {
     }
     const name = xmlDocChild(c, s.node, "name")
     const title = name !== null ? xmlPlainText(c.doc.text, name) : ""
-    const sec = new RfcSection(s.id, title, all.slice(a, z), s.own)
-    for (let k = xmlDocFirstAtLeast(code, a); k < code.length && code[k] < z; k++) {
-      sec.codeLines.push(code[k] - a)
+    const sec = new RfcSection(s.id, title, lines, s.own)
+    // code[k] is at least a here, so the u32 difference is exact.
+    for (let k = xmlDocFirstAtLeast(code, a); k < toU32(code.length) && code[k] < z; k++) {
+      sec.codeLines.push(toI32(toU32(code[k]) - toU32(a)))
     }
     c.doc.sections.push(sec)
     const anchor = xmlAttr(s.node, "anchor")
