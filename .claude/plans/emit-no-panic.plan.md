@@ -68,20 +68,20 @@ stages:
     title: On-purpose wraps through nish:unsafe
     goal: Every site under src that relies on a signed value wrapping does it with wrappingAdd, wrappingSub or wrappingMul from nish:unsafe instead of a u64 round trip, with byte-identical results
     verification: the eight sites in the table use nish:unsafe, a row at each wrap edge fails when its wrapping op is replaced by the plain operator, no golden or dogfood file changes, and npm run build, npm test, npm run lint, npm run tested-exports, npm run panics are green
-    status: in_progress
+    status: completed
     todos:
       - id: wrap-eval
         content: Use wrappingAdd, wrappingSub and wrappingMul in sampleArith in src/spec/sample/eval.ts — see On-purpose wraps
-        status: pending
+        status: completed
       - id: wrap-ints-prng
         content: Use wrappingSub in sampleIntWrap (src/spec/sample/ints.ts) and wrappingAdd in the wide branch of sampleIntIn (src/spec/sample/prng.ts) — see On-purpose wraps
-        status: pending
+        status: completed
       - id: wrap-replay
         content: Use wrappingSub in replayNeg and wrappingAdd in replayAdd64 in src/verify/solve/replay.ts — see On-purpose wraps
-        status: pending
+        status: completed
       - id: wrap-rows
         content: Add an exact-edge row for each converted site where main has none, and mutation-check each — see On-purpose wraps
-        status: pending
+        status: completed
 ---
 
 ## Context
