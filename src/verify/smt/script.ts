@@ -157,7 +157,8 @@ export class SmtScope {
    */
   lookup(name: string): string {
     for (let i = toI32(this.names.length) - 1; i >= 0; i--) {
-      if (this.names[i] === name) {
+      // bind pushes a term with each name, so `i < terms.length` always holds.
+      if (this.names[i] === name && i < toI32(this.terms.length)) {
         return this.terms[i]
       }
     }
@@ -225,7 +226,8 @@ export class SmtEmitter {
   term(e: LangExpr, scope: SmtScope, path: string[]): string {
     if (e.kind === EXPR_NUM) {
       const neg = e.value.startsWith("-")
-      const abs = neg ? e.value.slice(1) : e.value
+      // neg means e.value is at least one byte long, so substring cuts what slice did.
+      const abs = neg ? e.value.substring(1) : e.value
       let lit = abs
       if (e.numTy !== "Int" && abs.indexOf(".") < 0) {
         lit = `${abs}.0`
@@ -240,7 +242,7 @@ export class SmtEmitter {
       return bound === "" ? this.untranslatable(`unbound variable ${e.name}`) : bound
     }
     if (e.kind === EXPR_UNOP) {
-      const a = this.term(e.args[0], scope, path)
+      const a = smtOperand(this, e, 0, scope, path)
       if (e.op === "not") {
         return `(not ${a})`
       }
@@ -256,8 +258,8 @@ export class SmtEmitter {
       return `(to_real (- (to_int (- ${a}))))`
     }
     if (e.kind === EXPR_BINOP) {
-      const l = this.term(e.args[0], scope, path)
-      const r = this.term(e.args[1], scope, smtRightPath(e.op, l, path))
+      const l = smtOperand(this, e, 0, scope, path)
+      const r = smtOperand(this, e, 1, scope, smtRightPath(e.op, l, path))
       if (e.op === "/" && this.record) {
         this.divs.push(new SmtHazard(smtCopy(path), r, "", prettyMath(e)))
       }
@@ -275,24 +277,26 @@ export class SmtEmitter {
       return t
     }
     if (e.kind === EXPR_ITE) {
-      const c = this.term(e.args[0], scope, path)
+      const c = smtOperand(this, e, 0, scope, path)
       const thenPath = smtCopy(path)
       thenPath.push(c)
       const elsePath = smtCopy(path)
       elsePath.push(`(not ${c})`)
-      const t = this.term(e.args[1], scope, thenPath)
-      const f = this.term(e.args[2], scope, elsePath)
+      const t = smtOperand(this, e, 1, scope, thenPath)
+      const f = smtOperand(this, e, 2, scope, elsePath)
       return `(ite ${c} ${t} ${f})`
     }
     if (e.kind === EXPR_CALL) {
       const at = programFunctionIndex(this.program, e.name)
-      if (at < 0) {
+      // programFunctionIndex answers -1 or an index below the length.
+      if (at < 0 || at >= toI32(this.program.functions.length)) {
         return this.untranslatable(`unknown function ${e.name}`)
       }
       const callee = this.program.functions[at]
       const inner = new SmtScope()
-      for (let i = 0; i < toI32(callee.params.length) && i < toI32(e.args.length); i++) {
-        inner.bind(callee.params[i].name, this.term(e.args[i], scope, path))
+      const params = callee.params
+      for (let i = 0; i < toI32(params.length) && i < toI32(e.args.length); i++) {
+        inner.bind(params[i].name, smtOperand(this, e, i, scope, path))
       }
       // The callee's guards run in order, so each is reached only once the
       // ones before it held.
@@ -308,6 +312,15 @@ export class SmtEmitter {
     }
     return this.untranslatable(`unknown expression kind ${e.kind}`)
   }
+}
+
+// Translates operand `k` of `e`. The parser gives each kind its operands, so
+// the missing-operand error is never reached in practice.
+const smtOperand = (em: SmtEmitter, e: LangExpr, k: i32, scope: SmtScope, path: string[]): string => {
+  if (k < 0 || k >= toI32(e.args.length)) {
+    return em.untranslatable(`${e.kind} expression has no operand ${k}`)
+  }
+  return em.term(e.args[k], scope, path)
 }
 
 const smtCopy = (xs: string[]): string[] => {
@@ -441,27 +454,28 @@ export const buildVerificationScript = (program: Program): SmtScript => {
     for (const c of fn.requires) {
       requires.push(em.term(c.expr, scope, smtCopy(requires)))
     }
-    const guardDivs = toI32(em.divs.length)
-    const guardPres = toI32(em.pres.length)
-    const guardRanges = toI32(em.ranges.length)
+    // Take the hazards the requires recorded; the body's go into fresh lists.
+    const guardDivs = em.divs
+    const guardPres = em.pres
+    const guardRanges = em.ranges
+    em.divs = []
+    em.pres = []
+    em.ranges = []
     const bindResult = `(assert (= ${res} ${em.term(fn.body, scope, smtNoPath())}))`
     em.record = false
-    const ensuresScope = new SmtScope()
-    for (let i = 0; i < toI32(scope.names.length); i++) {
-      ensuresScope.bind(scope.names[i], scope.terms[i])
-    }
-    ensuresScope.bind(RESULT_NAME, res)
+    // lookup searches from the last binding, so `result` shadows a parameter of that name.
+    scope.bind(RESULT_NAME, res)
 
     // Before the requires are asserted: each guard hazard carries the
     // requires before it in its own path.
-    smtHazardQueries(w, idx, em, bindResult, 0, guardDivs, 0, guardPres, 0, guardRanges)
+    smtHazardQueries(w, idx, bindResult, guardDivs, guardPres, guardRanges)
     for (const t of requires) {
       w.lines.push(`(assert ${t})`)
     }
     w.query(new SmtQuery(QUERY_REACHABLE, idx, "(reachable)", -1, "requires are satisfiable", ""), [bindResult], true)
     for (let ci = 0; ci < toI32(fn.ensures.length); ci++) {
       const clause = fn.ensures[ci]
-      const t = em.term(clause.expr, ensuresScope, smtNoPath())
+      const t = em.term(clause.expr, scope, smtNoPath())
       const pretty = prettyMath(clause.expr)
       w.query(
         new SmtQuery(QUERY_ENSURES, idx, clause.axiomId, ci, pretty, ""),
@@ -470,54 +484,36 @@ export const buildVerificationScript = (program: Program): SmtScript => {
       )
       w.query(new SmtQuery(QUERY_TRIVIAL, idx, clause.axiomId, ci, pretty, ""), [`(assert (not ${t}))`], false)
     }
-    smtHazardQueries(
-      w,
-      idx,
-      em,
-      bindResult,
-      guardDivs,
-      toI32(em.divs.length),
-      guardPres,
-      toI32(em.pres.length),
-      guardRanges,
-      toI32(em.ranges.length),
-    )
+    smtHazardQueries(w, idx, bindResult, em.divs, em.pres, em.ranges)
     w.lines.push("(pop 1)")
   }
   return new SmtScript(`${smtPreamble()}${w.lines.join("\n")}\n`, w.queries)
 }
 
-// One query per recorded hazard in the given index ranges of the emitter's lists.
+// One query per hazard in the given lists.
 const smtHazardQueries = (
   w: SmtWriter,
   idx: i32,
-  em: SmtEmitter,
   bindResult: string,
-  divFrom: i32,
-  divTo: i32,
-  preFrom: i32,
-  preTo: i32,
-  rangeFrom: i32,
-  rangeTo: i32,
+  divs: SmtHazard[],
+  pres: SmtHazard[],
+  ranges: SmtHazard[],
 ): void => {
-  for (let i = divFrom; i < divTo; i++) {
-    const d = em.divs[i]
+  for (const d of divs) {
     w.query(
       new SmtQuery(QUERY_DIV, idx, "(division)", -1, d.pretty, ""),
       smtHazardAsserts(bindResult, d, `(assert (= ${d.term} 0))`),
       true,
     )
   }
-  for (let i = preFrom; i < preTo; i++) {
-    const p = em.pres[i]
+  for (const p of pres) {
     w.query(
       new SmtQuery(QUERY_PRE, idx, `(calls ${p.callee})`, -1, p.pretty, p.callee),
       smtHazardAsserts(bindResult, p, `(assert (not ${p.term}))`),
       true,
     )
   }
-  for (let i = rangeFrom; i < rangeTo; i++) {
-    const r = em.ranges[i]
+  for (const r of ranges) {
     w.query(
       new SmtQuery(QUERY_RANGE, idx, "(range)", -1, r.pretty, ""),
       smtHazardAsserts(

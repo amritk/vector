@@ -123,8 +123,10 @@ const specMutateCount = (v: string | null, fallback: i32): i32 => {
   if (v.length === 0 || v.length > 6) {
     return -1
   }
-  for (let i = 0; i < v.length; i++) {
-    const c = v.charCodeAt(i)
+  // A plain string local, so the prover keeps the loop's bound on it.
+  const s: string = v
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i)
     if (c < 48 || c > 57) {
       return -1
     }
