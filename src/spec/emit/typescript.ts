@@ -402,6 +402,7 @@ const emitTsExpr = (ctx: EmitTsContext, e: Expr, want: string | null): string =>
       ctx.errors.push(`unknown function ${e.name}`)
       return ""
     }
+    // typingCall checks a call's arity at extraction; this guards a contract built by hand.
     if (e.args.length !== sig.params.length) {
       ctx.errors.push(`${e.name} takes ${sig.params.length} arguments, got ${e.args.length}`)
       return ""
@@ -570,6 +571,7 @@ const emitTsVector = (ctx: EmitTsContext, k: Clause): string => {
     ctx.errors.push(`${k.id}: no function ${k.call} or no expected value`)
     return ""
   }
+  // literalsSettleVector checks a vector's arity at extraction; this guards a contract built by hand.
   if (k.args.length !== sig.params.length) {
     ctx.errors.push(`${k.id}: ${k.call} takes ${sig.params.length} arguments, got ${k.args.length}`)
     return ""
@@ -689,6 +691,7 @@ const emitTsTable = (
   const vals: string[] = []
   let elem = "string"
   for (const s of samples) {
+    // The sampler gives every sample a value for each variable; this guards a table built by hand.
     if (j < 0 || j >= s.args.length) {
       const msg = `a sample has no value for ${name}`
       if (ctx.errors.indexOf(msg) < 0) {

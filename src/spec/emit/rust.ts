@@ -486,6 +486,7 @@ const emitRsExpr = (ctx: EmitRsContext, e: Expr, want: string | null): string =>
       ctx.errors.push(`unknown function ${e.name}`)
       return ""
     }
+    // typingCall checks a call's arity at extraction; this guards a contract built by hand.
     if (e.args.length !== sig.params.length) {
       ctx.errors.push(`${e.name} takes ${sig.params.length} arguments, got ${e.args.length}`)
       return ""
@@ -673,6 +674,7 @@ const emitRsVector = (ctx: EmitRsContext, k: Clause): string => {
   if ((it?.slow ?? false) && !ctx.opts.slow) {
     return `fn ${emitClauseFn(k)}(t: &mut Suite) -> bool {\n    t.skip(${name}, "${EMIT_SLOW_SKIP}")\n}`
   }
+  // literalsSettleVector checks a vector's arity at extraction; this guards a contract built by hand.
   if (k.args.length !== sig.params.length) {
     ctx.errors.push(`${k.id}: ${k.call} takes ${sig.params.length} arguments, got ${k.args.length}`)
     return ""
@@ -748,6 +750,7 @@ const emitRsIterate = (ctx: EmitRsContext, k: Clause, sig: FnSig, name: string):
     return []
   }
   const n = it.names.length
+  // shapeIterate refuses names, next and parameters of different counts at extraction; this guards a contract built by hand.
   if (it.next.length !== n || sig.params.length !== n) {
     ctx.errors.push(
       `${k.id}: the iterate has ${n} names and ${it.next.length} next for ${sig.params.length} parameters`,
@@ -833,6 +836,7 @@ const emitRsTable = (
   const vals: string[] = []
   let elem = "&str"
   for (const s of samples) {
+    // The sampler gives every sample a value for each variable; this guards a table built by hand.
     if (j < 0 || j >= s.args.length) {
       const msg = `a sample has no value for ${name}`
       if (ctx.errors.indexOf(msg) < 0) {
@@ -921,7 +925,6 @@ const emitRsProperty = (ctx: EmitRsContext, k: Clause, samples: Sample[]): strin
   return out.join("\n")
 }
 
-/** The uses of the functions under test, by module: by crate path, or a `#[path]` module of the file a package places. */
 /**
  * Where the test finds `module` when it is one of `localModules`, or null
  * when it is not one (`emitRsProgram` refuses options whose two lists differ in length).
@@ -935,6 +938,7 @@ const emitRsLocalImport = (opts: EmitOptions, module: string): string | null => 
   return null
 }
 
+/** The uses of the functions under test, by module: by crate path, or a `#[path]` module of the file a package places. */
 const emitRsImports = (ctx: EmitRsContext, called: string[]): string => {
   const fns: FnSig[] = []
   const modules: string[] = []
