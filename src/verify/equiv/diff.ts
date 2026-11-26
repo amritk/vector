@@ -530,6 +530,8 @@ export const diffReplayWitnesses = (
   pairs: FunctionPair[],
   matched: MatchedFunctionDiff[],
 ): i32 => {
+  // Collected rather than counted: a `+ 1` counter is an overflow site the
+  // prover cannot bound.
   const mismatched: DiffCheck[] = []
   for (let i = 0; i < toI32(matched.length) && i < toI32(pairs.length); i++) {
     const m = matched[i]

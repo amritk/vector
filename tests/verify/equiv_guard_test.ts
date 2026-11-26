@@ -162,8 +162,6 @@ const eqgShortPair = (t: Suite): void => {
   if (refused.isErr()) {
     t.eqStr("a short pair: the count message", refused.error, "diff: 4 answers for 4 queries over 2 pairs")
   }
-  const alone = assembleDiffs([short], eqgQueries(0), eqgAnswers(0))
-  t.ok("a short pair alone: assembleDiffs refuses", alone.isErr())
 }
 
 const eqgCounts = (t: Suite): void => {
@@ -175,6 +173,7 @@ const eqgCounts = (t: Suite): void => {
   const cases: EqgCountCase[] = [
     new EqgCountCase(0, 0, 0, true),
     new EqgCountCase(0, 4, 4, false),
+    new EqgCountCase(1, 0, 0, false),
     new EqgCountCase(1, 3, 3, false),
     new EqgCountCase(1, 4, 4, true),
     new EqgCountCase(1, 5, 5, false),
@@ -274,6 +273,21 @@ const eqgNames = (t: Suite): void => {
   }
 }
 
+/** One shared-domain witness and the verdict diffDecide gives it. */
+class EqgDomainCase {
+  names: string[]
+  values: string[]
+  want: string
+  label: string
+
+  constructor(names: string[], values: string[], want: string, label: string) {
+    this.names = names
+    this.values = values
+    this.want = want
+    this.label = label
+  }
+}
+
 // A verdict with no comparable pair, or a shared-domain witness that names a
 // parameter with no value, is a MISMATCH; the old code panicked on both.
 const eqgDecide = (t: Suite): void => {
@@ -321,24 +335,18 @@ const eqgDecide = (t: Suite): void => {
     DIFF_UNDECIDED,
   )
 
-  const names: string[][] = [["x"], ["x"], ["y"], []]
-  const values: string[][] = [[], ["3"], [], []]
-  const want: string[] = [DIFF_MISMATCH, DIFF_EQUIVALENT, DIFF_EQUIVALENT, DIFF_EQUIVALENT]
-  const labels: string[] = [
-    "a shared-domain name with no value: MISMATCH",
-    "a shared-domain name with its value: EQUIVALENT",
-    "a shared-domain name that is no parameter: EQUIVALENT",
-    "a shared domain z3 left empty: EQUIVALENT",
+  const cases: EqgDomainCase[] = [
+    new EqgDomainCase(["x"], [], DIFF_MISMATCH, "a shared-domain name with no value"),
+    new EqgDomainCase(["x"], ["3"], DIFF_EQUIVALENT, "a shared-domain name with its value"),
+    new EqgDomainCase(["y"], [], DIFF_EQUIVALENT, "a shared-domain name that is no parameter"),
+    new EqgDomainCase([], [], DIFF_EQUIVALENT, "a shared domain z3 left empty"),
   ]
-  for (let i = 0; i < toI32(names.length) && i < toI32(values.length); i++) {
-    if (i >= toI32(want.length) || i >= toI32(labels.length)) {
-      break
-    }
+  for (const c of cases) {
     const report = new ProgramDiffReport("versions", "versions")
     const m = eqgEquivalent("f")
-    m.sharedDomain = eqgWitness(names[i], values[i])
+    m.sharedDomain = eqgWitness(c.names, c.values)
     report.matched.push(m)
-    t.eqStr(labels[i], diffDecide(was, now, pairing, report).status, want[i])
+    t.eqStr(`${c.label}: ${c.want}`, diffDecide(was, now, pairing, report).status, c.want)
   }
 }
 
