@@ -60,7 +60,11 @@ export const main = (): i32 => {
   t.eqStr("a float64 counterexample is REFUTED", verdictStatus(post), STATUS_REFUTED)
   t.eqI32("a float64 counterexample exits 1", verifyExitCode(verdictStatus(post)), 1)
   t.eqI32("it has no MISMATCH line", verifyMismatchLines(post).length, 0)
-  t.contains("its prose is the float64 one", formatReportFeedback(post), "proven over reals but FALSE in float64 at x = 0.5")
+  t.contains(
+    "its prose is the float64 one",
+    formatReportFeedback(post),
+    "proven over reals but FALSE in float64 at x = 0.5",
+  )
 
   const unsampled = vectorBugReport("unsampled", "x > 0")
   t.eqStr("an unsampled function is REFUTED", verdictStatus(unsampled), STATUS_REFUTED)
