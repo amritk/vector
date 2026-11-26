@@ -1,6 +1,5 @@
 {
   "modules": {
-    "src/spec/contract/capacity.ts": 17,
     "src/spec/contract/literals.ts": 102,
     "src/spec/contract/read.ts": 59,
     "src/spec/contract/shape.ts": 22,
