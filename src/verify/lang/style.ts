@@ -44,10 +44,14 @@ const styleIsResult = (e: LangExpr): boolean => e.kind === EXPR_VAR && e.name ==
 // A composite computes something: anything but a literal or a variable.
 const styleIsComposite = (e: LangExpr): boolean => toI32(e.args.length) > 0 || e.kind > EXPR_VAR
 
+// A `==` node with fewer than two operands is not definitional, and its
+// operands are still searched. The reader never builds one and
+// typecheckProgram refuses one, so only an unchecked hand-built tree has it.
 const styleDefinitional = (e: LangExpr): boolean => {
-  if (e.kind === EXPR_BINOP && e.op === "==") {
-    const l = e.args[0]
-    const r = e.args[1]
+  const args = e.args
+  if (e.kind === EXPR_BINOP && e.op === "==" && toI32(args.length) >= 2) {
+    const l = args[0]
+    const r = args[1]
     if ((styleIsResult(l) && styleIsComposite(r)) || (styleIsResult(r) && styleIsComposite(l))) {
       return true
     }

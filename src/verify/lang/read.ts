@@ -106,7 +106,9 @@ const langIsDecimal = (s: string): boolean => {
       i = i + 1
     }
   }
-  if (i === n) {
+  // `>=`, not `===`: the scans above never pass n, but the prover needs
+  // `i < n` below.
+  if (i >= n) {
     return true
   }
   if (s.charCodeAt(i) !== 46) {
@@ -126,8 +128,10 @@ const langIsDecimal = (s: string): boolean => {
 }
 
 // A decimal as sign, significant digits and the exponent of the last digit,
-// so "1.50", "1.5" and "15e-1" compare equal.
-const langCanonicalDecimal = (text: string): string => {
+// so "1.50", "1.5" and "15e-1" compare equal. Null only where a bound the
+// scans already keep fails (the exponent past the text, the digits' slice),
+// which no text reaches; langRoundTrips reads it as a refusal.
+const langCanonicalDecimal = (text: string): string | null => {
   let i = 0
   const n = toI32(text.length)
   let sign = ""
@@ -136,46 +140,53 @@ const langCanonicalDecimal = (text: string): string => {
     i = i + 1
   }
   let digits = ""
-  let fracLen = 0
-  let inFrac = false
+  // The digits before the first ".", or -1 with no "."; every digit after
+  // it is a fraction digit.
+  let intLen = -1
   while (i < n && text.charCodeAt(i) !== 101 && text.charCodeAt(i) !== 69) {
     const c = text.charCodeAt(i)
     if (c === 46) {
-      inFrac = true
+      if (intLen < 0) {
+        intLen = toI32(digits.length)
+      }
     } else {
       digits = `${digits}${text.slice(i, i + 1)}`
-      if (inFrac) {
-        fracLen = fracLen + 1
-      }
     }
     i = i + 1
   }
-  let exp = 0
+  const len = toI32(digits.length)
+  // The exponent as written, and whether it is negative.
+  let e = 0
+  let neg = false
   if (i < n) {
     let j = i + 1
-    let neg = false
     if (j < n && (text.charCodeAt(j) === 43 || text.charCodeAt(j) === 45)) {
       neg = text.charCodeAt(j) === 45
       j = j + 1
     }
-    exp = parseInt(text.slice(j, n))
-    if (neg) {
-      exp = -exp
+    if (j > n) {
+      return null
     }
+    e = parseInt(text.slice(j, n))
   }
-  exp = exp - fracLen
   let start = 0
-  while (start < toI32(digits.length) && digits.charCodeAt(start) === 48) {
+  while (start < len && digits.charCodeAt(start) === 48) {
     start = start + 1
   }
-  let end = toI32(digits.length)
-  while (end > start && digits.charCodeAt(end - 1) === 48) {
+  let end = len
+  while (end > start && end > 0 && digits.charCodeAt(end - 1) === 48) {
     end = end - 1
-    exp = exp + 1
   }
   if (end === start) {
     return "0"
   }
+  if (!(start >= 0 && start <= end && end <= len)) {
+    return null
+  }
+  // The last kept digit's exponent: the integer digits' count less its own
+  // end, plus the written exponent. Three i32 terms always fit an i64.
+  const point = intLen >= 0 ? intLen : len
+  const exp = neg ? toI64(point) - toI64(end) - toI64(e) : toI64(point) - toI64(end) + toI64(e)
   return `${sign}${digits.slice(start, end)}e${exp}`
 }
 
@@ -194,7 +205,9 @@ export const langRoundTrips = (text: string): boolean => {
   if (!(v - v === v - v)) {
     return false
   }
-  return langCanonicalDecimal(text) === langCanonicalDecimal(`${v}`)
+  const own = langCanonicalDecimal(text)
+  const back = langCanonicalDecimal(`${v}`)
+  return own !== null && back !== null && own === back
 }
 
 // Reads JSON into the AST, collecting every shape error.
@@ -230,13 +243,26 @@ class LangReader {
     }
   }
 
+  // An integer from 1 to 1000000 written as one (no sign, fraction or
+  // exponent), else 0. JSON writes no leading zero, so it is one to seven
+  // digits, read from the number's own text.
   layer(o: JsonValue): i32 {
     const v = this.doc.get(o, "layer")
-    if (this.doc.kind(v) !== JSON_VALUE_NUMBER || !this.doc.isI64(v)) {
+    if (this.doc.kind(v) !== JSON_VALUE_NUMBER) {
       return 0
     }
-    const n = this.doc.i64(v)
-    return n < 1 || n > 1000000 ? 0 : toI32(n)
+    const text = this.doc.numberText(v)
+    const n = toI32(text.length)
+    if (n < 1 || n > 7) {
+      return 0
+    }
+    for (let i = 0; i < n; i++) {
+      if (!langIsDigit(text.charCodeAt(i))) {
+        return 0
+      }
+    }
+    const layer = parseInt(text)
+    return layer < 1 || layer > 1000000 ? 0 : layer
   }
 
   expr(v: JsonValue, where: string): LangExpr {
