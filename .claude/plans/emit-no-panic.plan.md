@@ -47,7 +47,7 @@ stages:
     title: Pin the sampler's wrapping edges
     goal: Rows pin the sampler's two on-purpose wraps (the int parser at i64 MIN, the boundary steps across the u64 bit boundary), which stay wrappingAdd and wrappingSub from nish:unsafe under the owner's rule
     verification: the PR diff is tests only, the new rows fail on a broken wrap site, and npm run build, node tests/run.mjs spec/sample, npm run lint, npm run tested-exports are green
-    status: in_progress
+    status: completed
     todos:
       - id: ints-no-unsafe
         content: Replace wrappingAdd in the int parser — cancelled, the owner's rule keeps a wrap that is meant to happen visible as nish:unsafe — see Sampler wrapping edges
@@ -57,18 +57,18 @@ stages:
         status: cancelled
       - id: sampler-rows
         content: Add table-driven rows at i64 MIN, the u64 bit boundary and their neighbours in tests/spec/sample/steps_test.ts — see Sampler wrapping edges
-        status: in_progress
+        status: completed
       - id: no-unsafe-test
         content: Add a test refusing nish:unsafe under src — cancelled, same rule — see Sampler wrapping edges
         status: cancelled
       - id: sampler-mutation
         content: Mutation-check both wrap sites and record the failing row for each in the PR body — see Sampler wrapping edges
-        status: in_progress
+        status: completed
   - id: purposeful-wrap
     title: On-purpose wraps through nish:unsafe
     goal: Every site under src that relies on a signed value wrapping does it with wrappingAdd, wrappingSub or wrappingMul from nish:unsafe instead of a u64 round trip, with byte-identical results
     verification: the eight sites in the table use nish:unsafe, a row at each wrap edge fails when its wrapping op is replaced by the plain operator, no golden or dogfood file changes, and npm run build, npm test, npm run lint, npm run tested-exports, npm run panics are green
-    status: pending
+    status: in_progress
     todos:
       - id: wrap-eval
         content: Use wrappingAdd, wrappingSub and wrappingMul in sampleArith in src/spec/sample/eval.ts — see On-purpose wraps
