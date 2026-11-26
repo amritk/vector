@@ -232,6 +232,16 @@ const runEmitAndRun = (req: RunRequest, target: EmitTarget, tempDir: string | nu
   if (ran.isErr()) {
     return report(usageError(`spec run: ${ran.error}`))
   }
+  const v = ran.value.verdict
+  // runJudge gives each requirement one outcome, so no run reaches this: a
+  // verdict whose lists differ is a vector bug, which exits 2, never a pass.
+  if (v.outcomes.length !== v.requirements.length) {
+    return report(
+      usageError(
+        `spec run: MISMATCH: ${v.requirements.length} requirement(s) but ${v.outcomes.length} outcome(s), a bug in vector`,
+      ),
+    )
+  }
   console.log(runFormat(ran.value, req.format))
   return ran.value.verdict.status === "SATISFIED" ? EXIT_PASS : EXIT_REFUSED
 }

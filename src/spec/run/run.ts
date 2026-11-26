@@ -892,12 +892,15 @@ const runTail = (text: string): string[] => {
 
 /**
  * The name of a verdict's `i`th requirement's outcome. runJudge gives each
- * requirement one outcome; a verdict whose lists differ is a vector bug, and
- * its requirement shows MISMATCH rather than drop out of the report.
+ * requirement one outcome, and `spec run` exits 2 on a verdict whose lists
+ * differ before it formats one, so the MISMATCH here is reached only by a
+ * caller that formats such a verdict itself: it keeps the requirement in the
+ * report rather than index past the outcomes.
  */
 const runOutcomeAt = (v: RunVerdict, i: i32): string => {
   const outcomes = v.outcomes
-  // Every caller counts i up from 0, so only the upper bound can fail.
+  // Every caller counts i up from 0, but the prover sees only an i32: without
+  // the lower bound, outcomes[i] is an unproven index.
   if (i >= 0 && i < outcomes.length) {
     return runOutcomeName(outcomes[i])
   }

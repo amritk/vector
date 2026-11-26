@@ -4,6 +4,7 @@ import { makeTempDir } from "../../../src/core/fs"
 import { runProcess } from "../../../src/core/process"
 import { contractLoadFile } from "../../../src/spec/contract/contract"
 import { Contract } from "../../../src/spec/contract/types"
+import { RunRequest, runCommand } from "../../../src/spec/run/command"
 import {
   RunOutcome,
   RunResult,
@@ -290,17 +291,46 @@ const guardsCompilerTail = (t: Suite): void => {
   }
 }
 
-/** A verdict with fewer outcomes than requirements shows MISMATCH for the rest, in every format. */
+/**
+ * The formats keep a requirement with no outcome as MISMATCH rather than index
+ * past the outcomes. `spec run` never formats such a verdict: runJudge pairs
+ * the lists, and the command exits 2 on lists that differ.
+ */
 const guardsMismatch = (t: Suite): void => {
   const r = new RunResult("c", 0, "", "")
-  r.verdict.status = "SATISFIED"
+  r.verdict.status = "ERROR"
   r.verdict.requirements = ["R-A", "R-B"]
   r.verdict.outcomes = [RunOutcome.Pass]
-  t.eqLines("text", runFormatText(r), ["SATISFIED: c (exit 0)", "  pass  R-A", "  MISMATCH  R-B"])
+  t.contains("text", runFormatText(r).join("\n"), "  pass  R-A\n  MISMATCH  R-B")
   t.contains("markdown", runFormatMarkdown(r), "| R-A | pass |\n| R-B | MISMATCH |\n")
   t.contains("json", runFormatJson(r), `"requirements": {"R-A": "pass", "R-B": "MISMATCH"}`)
   r.verdict.outcomes = [RunOutcome.Fail, RunOutcome.Skip]
-  t.eqLines("lists that pair", runFormatText(r), ["SATISFIED: c (exit 0)", "  fail  R-A", "  skip  R-B"])
+  t.contains("lists that pair", runFormatText(r).join("\n"), "  fail  R-A\n  skip  R-B")
+}
+
+/** `spec run` on a fake compiler that passes every clause: a paired verdict is reported, and exits 0. */
+const guardsCommandPaired = (t: Suite, c: Contract): Result<boolean, string> => {
+  const made = makeTempDir("vector-run-guards-").orReturn()
+  const fake = `${made}/nish`
+  const lines: string[] = ["#!/bin/sh", 'for n; do nonce="$n"; done']
+  let bits = ""
+  for (const k of c.clauses) {
+    lines.push(`echo 'PASS  [${k.id}] ok'`)
+    bits = `${bits}1`
+  }
+  lines.push(`echo "vector-done $nonce ${bits}"`)
+  const script = `${lines.join("\n")}\n`
+  const wrote = runProcess(
+    ["sh", "-c", 'printf "%s" "$1" > "$2" && chmod 755 "$2"', "sh", script, fake],
+    "",
+    10000,
+  ).orReturn()
+  t.eqI32("the fake compiler is written", wrote.status, 0)
+  const req = new RunRequest("contracts/example-hex.json")
+  req.nish = fake
+  t.eqI32("a paired SATISFIED verdict exits 0", runCommand(req), 0)
+  runRemove(made).orReturn()
+  return Ok(true)
 }
 
 /** Checks the guards that prove src/spec/run cannot panic, at their edges. */
@@ -322,5 +352,9 @@ export const main = (): i32 => {
   guardsEscape(t)
   guardsCompilerTail(t)
   guardsMismatch(t)
+  const paired = guardsCommandPaired(t, c)
+  if (paired.isErr()) {
+    t.fail("spec run", paired.error)
+  }
   return t.done()
 }
