@@ -67,9 +67,9 @@ export const fromHex = (text: string): Result<u8[], string> => {
  * @returns one byte per byte of `text`
  */
 export const utf8Bytes = (text: string): u8[] => {
-  const out: u8[] = []
-  for (let i = 0; i < toI32(text.length); i++) {
-    out.push(toU8(text.charCodeAt(i)))
+  const out: u8[] = new Array<u8>(toI32(text.length))
+  for (let i = 0; i < toI32(out.length) && i < toI32(text.length); i++) {
+    out[i] = toU8(text.charCodeAt(i))
   }
   return out
 }

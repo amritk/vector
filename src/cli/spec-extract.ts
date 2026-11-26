@@ -19,7 +19,6 @@ import {
   report,
   usageError,
 } from "../core/diag"
-import { dirname } from "../core/fs"
 import { utf8Bytes } from "../core/hex"
 import {
   EXTRACT_SIDECAR_SUFFIX,
@@ -28,6 +27,7 @@ import {
   extractReaders,
   extractUnifiedDiff,
 } from "../spec/extract"
+import { sourceInstallRoot } from "../spec/source/path"
 
 /** The id `vector spec extract` is parsed to. */
 export const SPEC_EXTRACT_ID: i32 = 3
@@ -91,9 +91,8 @@ export class SpecExtractCommand {
     if (readers.isErr()) {
       return report(usageError(`spec extract: ${readers.error}`))
     }
-    const self = realpathSync("/proc/self/exe") ?? specExtractArgv0() ?? "."
     const contractPath = outArg ?? extractDefaultContractPath(xml)
-    const got = extractContract(xml, contractPath, dirname(dirname(self)), readers.value)
+    const got = extractContract(xml, contractPath, sourceInstallRoot(), readers.value)
     if (got.errors.length > 0) {
       for (const e of got.errors) {
         console.error(formatDiagnostic(usageError(`spec extract: ${e}`)))
@@ -124,25 +123,19 @@ export class SpecExtractCommand {
       specExtractPrint(diff)
       return report(refusal(outArg, 0, `is not what ${xml} states; run: vector spec extract ${xml} -o ${outArg}`))
     }
-    // writeFileSync aborts the process on failure, so refuse what is there but not a readable file first.
+    // A target there but not readable (a directory, say) keeps its usage error and exit 2; only a
+    // write that fails after this takes writeFileSync's old abort path below.
     if (readFileSyncOrNull(outArg) === null && realpathSync(outArg) !== null) {
       return report(usageError(`spec extract: cannot write ${outArg}`))
     }
-    // writeFileBytesSync writes the same bytes as writeFileSync, but answers a
-    // failure with a negative errno instead of aborting, so it is refused here.
+    // writeFileBytesSync writes the same bytes as writeFileSync, but answers a failure with a
+    // negative errno instead of aborting; this prints and exits as writeFileSync's abort did.
     if (writeFileBytesSync(outArg, utf8Bytes(got.text)) < 0) {
-      return report(usageError(`spec extract: cannot write ${outArg}`))
+      console.error(`nish: cannot write ${outArg}`)
+      return EXIT_REFUSED
     }
     return EXIT_PASS
   }
-}
-
-/** The resolved path of the process's first argument, or null when there is none or it does not resolve. */
-const specExtractArgv0 = (): string | null => {
-  for (const arg of process.argv) {
-    return realpathSync(arg)
-  }
-  return null
 }
 
 /** Prints text that ends in a newline to stdout, as it is. */

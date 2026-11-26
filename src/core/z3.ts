@@ -35,14 +35,6 @@ export const z3Timeout = (queryCount: i32): i32 => {
   return toI32(toU32(Z3_BASE_TIMEOUT_MS) + toU32(queryCount) * toU32(Z3_PER_QUERY_MS))
 }
 
-/** `argv[0]` resolved, or null when it does not resolve (or, never in practice, is absent). */
-const z3SelfFromArgv = (): string | null => {
-  for (const arg of process.argv) {
-    return realpathSync(arg)
-  }
-  return null
-}
-
 /**
  * Finds the z3 executable to run.
  *
@@ -59,7 +51,8 @@ export const resolveZ3 = (): Result<string, string> => {
   }
   // argv[0] is the name as typed: a bare `vector` found on PATH does not
   // resolve, so ask the kernel for the running binary first (Linux).
-  const self = realpathSync("/proc/self/exe") ?? z3SelfFromArgv()
+  const argv = process.argv
+  const self = realpathSync("/proc/self/exe") ?? (argv.length > 0 ? realpathSync(argv[0]) : null)
   if (self !== null) {
     const beside = joinPath(dirname(dirname(self)), ".z3/z3")
     if (isExecutableSync(beside)) {

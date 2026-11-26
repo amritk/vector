@@ -454,28 +454,28 @@ export const buildVerificationScript = (program: Program): SmtScript => {
     for (const c of fn.requires) {
       requires.push(em.term(c.expr, scope, smtCopy(requires)))
     }
-    const guardDivs = toI32(em.divs.length)
-    const guardPres = toI32(em.pres.length)
-    const guardRanges = toI32(em.ranges.length)
+    // Take the hazards the requires recorded; the body's go into fresh lists.
+    const guardDivs = em.divs
+    const guardPres = em.pres
+    const guardRanges = em.ranges
+    em.divs = []
+    em.pres = []
+    em.ranges = []
     const bindResult = `(assert (= ${res} ${em.term(fn.body, scope, smtNoPath())}))`
     em.record = false
-    const ensuresScope = new SmtScope()
-    // bind pushes a term with each name, so `i < terms.length` never stops the loop.
-    for (let i = 0; i < toI32(scope.names.length) && i < toI32(scope.terms.length); i++) {
-      ensuresScope.bind(scope.names[i], scope.terms[i])
-    }
-    ensuresScope.bind(RESULT_NAME, res)
+    // lookup searches from the last binding, so `result` shadows a parameter of that name.
+    scope.bind(RESULT_NAME, res)
 
     // Before the requires are asserted: each guard hazard carries the
     // requires before it in its own path.
-    smtHazardQueries(w, idx, em, bindResult, 0, guardDivs, 0, guardPres, 0, guardRanges)
+    smtHazardQueries(w, idx, bindResult, guardDivs, guardPres, guardRanges)
     for (const t of requires) {
       w.lines.push(`(assert ${t})`)
     }
     w.query(new SmtQuery(QUERY_REACHABLE, idx, "(reachable)", -1, "requires are satisfiable", ""), [bindResult], true)
     for (let ci = 0; ci < toI32(fn.ensures.length); ci++) {
       const clause = fn.ensures[ci]
-      const t = em.term(clause.expr, ensuresScope, smtNoPath())
+      const t = em.term(clause.expr, scope, smtNoPath())
       const pretty = prettyMath(clause.expr)
       w.query(
         new SmtQuery(QUERY_ENSURES, idx, clause.axiomId, ci, pretty, ""),
@@ -484,55 +484,36 @@ export const buildVerificationScript = (program: Program): SmtScript => {
       )
       w.query(new SmtQuery(QUERY_TRIVIAL, idx, clause.axiomId, ci, pretty, ""), [`(assert (not ${t}))`], false)
     }
-    smtHazardQueries(
-      w,
-      idx,
-      em,
-      bindResult,
-      guardDivs,
-      toI32(em.divs.length),
-      guardPres,
-      toI32(em.pres.length),
-      guardRanges,
-      toI32(em.ranges.length),
-    )
+    smtHazardQueries(w, idx, bindResult, em.divs, em.pres, em.ranges)
     w.lines.push("(pop 1)")
   }
   return new SmtScript(`${smtPreamble()}${w.lines.join("\n")}\n`, w.queries)
 }
 
-// One query per recorded hazard in the given index ranges of the emitter's lists.
+// One query per hazard in the given lists.
 const smtHazardQueries = (
   w: SmtWriter,
   idx: i32,
-  em: SmtEmitter,
   bindResult: string,
-  divFrom: i32,
-  divTo: i32,
-  preFrom: i32,
-  preTo: i32,
-  rangeFrom: i32,
-  rangeTo: i32,
+  divs: SmtHazard[],
+  pres: SmtHazard[],
+  ranges: SmtHazard[],
 ): void => {
-  // Each range was read from its list's length, so the bounds tests never stop a loop.
-  for (let i = divFrom; i >= 0 && i < divTo && i < toI32(em.divs.length); i++) {
-    const d = em.divs[i]
+  for (const d of divs) {
     w.query(
       new SmtQuery(QUERY_DIV, idx, "(division)", -1, d.pretty, ""),
       smtHazardAsserts(bindResult, d, `(assert (= ${d.term} 0))`),
       true,
     )
   }
-  for (let i = preFrom; i >= 0 && i < preTo && i < toI32(em.pres.length); i++) {
-    const p = em.pres[i]
+  for (const p of pres) {
     w.query(
       new SmtQuery(QUERY_PRE, idx, `(calls ${p.callee})`, -1, p.pretty, p.callee),
       smtHazardAsserts(bindResult, p, `(assert (not ${p.term}))`),
       true,
     )
   }
-  for (let i = rangeFrom; i >= 0 && i < rangeTo && i < toI32(em.ranges.length); i++) {
-    const r = em.ranges[i]
+  for (const r of ranges) {
     w.query(
       new SmtQuery(QUERY_RANGE, idx, "(range)", -1, r.pretty, ""),
       smtHazardAsserts(

@@ -62,6 +62,7 @@ export const basename = (path: string): string => {
   while (end > 1 && path.charCodeAt(end - 1) === 47) {
     end = end - 1
   }
+  // end === 1 implies a non-empty path; the length test lets the read be proven.
   if (end === 1 && path.length > 0 && path.charCodeAt(0) === 47) {
     return "/"
   }
@@ -121,6 +122,7 @@ export const relativePath = (from: string, to: string): string => {
   if (parts.length === 0) {
     return "."
   }
+  // parts is not empty here; the length test lets the read be proven.
   return parts.length > 0 && parts[0] === ".." ? parts.join("/") : `./${parts.join("/")}`
 }
 

@@ -4,7 +4,7 @@
  * `(echo "@@Q<i>")` markers the script writes before each `(check-sat)`.
  */
 
-import { indexOfAny, trim } from "nish/text"
+import { indexOfAny, split, trim } from "nish/text"
 
 /** One s-expression: an atom, or a list of s-expressions. */
 export class Sexp {
@@ -154,8 +154,8 @@ export const normalizeValue = (value: string): string => {
   if (dot <= 0) {
     return v
   }
-  // dot > 0, so v has a first character; the length test lets the read be proven.
   const len = toI32(v.length)
+  // dot > 0, so v has a first character; the length test lets the read be proven.
   let i = v.length > 0 && v.charCodeAt(0) === 45 ? 1 : 0
   if (i === dot) {
     return v
@@ -311,21 +311,10 @@ const smtMarker = (stdout: string, from: i32): i32 => {
  */
 export const smtErrors = (stdout: string): string[] => {
   const out: string[] = []
-  const n = toI32(stdout.length)
-  let start = 0
-  while (start < n) {
-    const nl = indexOfAny(stdout, "\n", start)
-    // indexOfAny answers -1 or start <= nl < n, so `nl > n` never holds and
-    // substring cuts what slice did.
-    const end = nl < 0 || nl > n ? n : nl
-    const line = stdout.substring(start, end)
+  for (const line of split(stdout, "\n")) {
     if (line.startsWith("(error")) {
       out.push(line)
     }
-    if (end >= n) {
-      break
-    }
-    start = end + 1
   }
   return out
 }
@@ -377,13 +366,11 @@ export const parseZ3Output = (stdout: string, queryCount: i32): QueryAnswer[] =>
     const body = stdout.substring(bodyStart, next < 0 ? n : next)
     if (digitsEnd > at + 3) {
       const qid = parseInt(stdout.substring(at + 3, digitsEnd))
-      if (qid < queryCount) {
-        const answer = smtAnswer(body)
-        // answers holds queryCount entries and qid is a digit run, so this
-        // test never fails.
-        if (qid >= 0 && qid < toI32(answers.length)) {
-          answers[qid] = answer
-        }
+      // answers holds queryCount entries, so the test is the old `qid < queryCount`; it sits
+      // right above the write, after the call, so the prover keeps it.
+      const answer = smtAnswer(body)
+      if (qid >= 0 && qid < toI32(answers.length)) {
+        answers[qid] = answer
       }
     }
     at = next
