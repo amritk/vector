@@ -599,6 +599,7 @@ export const runWriteInside = (
   for (const rel of paths) {
     runCheckInside(base, rel, where, what).orReturn()
   }
+  // The lengths are equal, checked above: `i < texts.length` only proves texts[i].
   for (let i = 0; i < paths.length && i < texts.length; i++) {
     const target = joinPath(base, paths[i])
     const text = texts[i]
@@ -896,6 +897,7 @@ const runTail = (text: string): string[] => {
  */
 const runOutcomeAt = (v: RunVerdict, i: i32): string => {
   const outcomes = v.outcomes
+  // Every caller counts i up from 0, so only the upper bound can fail.
   if (i >= 0 && i < outcomes.length) {
     return runOutcomeName(outcomes[i])
   }
