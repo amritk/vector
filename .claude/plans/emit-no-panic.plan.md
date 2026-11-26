@@ -44,25 +44,43 @@ stages:
         content: Delete each guard added in turn and record in the PR body that the panic test fails for each — see Panic test
         status: completed
   - id: sampler-no-unsafe
-    title: Sampler without nish:unsafe
-    goal: vector's property sampler does its wrapping arithmetic with provable unsigned or widened forms, and a test refuses any nish:unsafe import under src/
-    verification: grep finds no nish:unsafe under src/, the new test fails on main and passes on the branch, node tests/run.mjs gates/sample passes, and npm run build, npm test, npm run lint, npm run tested-exports, npm run panics, npm run dogfood are green
-    status: pending
+    title: Pin the sampler's wrapping edges
+    goal: Rows pin the sampler's two on-purpose wraps (the int parser at i64 MIN, the boundary steps across the u64 bit boundary), which stay wrappingAdd and wrappingSub from nish:unsafe under the owner's rule
+    verification: the PR diff is tests only, the new rows fail on a broken wrap site, and npm run build, node tests/run.mjs spec/sample, npm run lint, npm run tested-exports are green
+    status: in_progress
     todos:
       - id: ints-no-unsafe
-        content: Replace wrappingAdd in the negative branch of the int parser in src/spec/sample/ints.ts with unsigned arithmetic, i64 MIN included — see Sampler without nish:unsafe
-        status: pending
+        content: Replace wrappingAdd in the int parser — cancelled, the owner's rule keeps a wrap that is meant to happen visible as nish:unsafe — see Sampler wrapping edges
+        status: cancelled
       - id: property-no-unsafe
-        content: Replace wrappingAdd and wrappingSub in the boundary steps of src/spec/sample/property.ts with unsigned arithmetic, byte-identical results — see Sampler without nish:unsafe
-        status: pending
+        content: Replace wrappingAdd and wrappingSub in the boundary steps — cancelled, same rule — see Sampler wrapping edges
+        status: cancelled
       - id: sampler-rows
-        content: Add table-driven rows at i64 MIN, the u64 bit boundary and their neighbours in tests/spec/gates/sample_test.ts — see Sampler without nish:unsafe
-        status: pending
+        content: Add table-driven rows at i64 MIN, the u64 bit boundary and their neighbours in tests/spec/sample/steps_test.ts — see Sampler wrapping edges
+        status: in_progress
       - id: no-unsafe-test
-        content: Add a test that refuses any nish:unsafe import in a file under src/, failing on main — see Sampler without nish:unsafe
-        status: pending
+        content: Add a test refusing nish:unsafe under src — cancelled, same rule — see Sampler wrapping edges
+        status: cancelled
       - id: sampler-mutation
-        content: Mutation-check each replacement and record the failing row for each in the PR body — see Sampler without nish:unsafe
+        content: Mutation-check both wrap sites and record the failing row for each in the PR body — see Sampler wrapping edges
+        status: in_progress
+  - id: purposeful-wrap
+    title: On-purpose wraps through nish:unsafe
+    goal: Every site under src that relies on a signed value wrapping does it with wrappingAdd, wrappingSub or wrappingMul from nish:unsafe instead of a u64 round trip, with byte-identical results
+    verification: the eight sites in the table use nish:unsafe, a row at each wrap edge fails when its wrapping op is replaced by the plain operator, no golden or dogfood file changes, and npm run build, npm test, npm run lint, npm run tested-exports, npm run panics are green
+    status: pending
+    todos:
+      - id: wrap-eval
+        content: Use wrappingAdd, wrappingSub and wrappingMul in sampleArith in src/spec/sample/eval.ts — see On-purpose wraps
+        status: pending
+      - id: wrap-ints-prng
+        content: Use wrappingSub in sampleIntWrap (src/spec/sample/ints.ts) and wrappingAdd in the wide branch of sampleIntIn (src/spec/sample/prng.ts) — see On-purpose wraps
+        status: pending
+      - id: wrap-replay
+        content: Use wrappingSub in replayNeg and wrappingAdd in replayAdd64 in src/verify/solve/replay.ts — see On-purpose wraps
+        status: pending
+      - id: wrap-rows
+        content: Add an exact-edge row for each converted site where main has none, and mutation-check each — see On-purpose wraps
         status: pending
 ---
 
@@ -150,22 +168,43 @@ Add table-driven rows to [tests/spec/emit/run_test.ts](tests/spec/emit/run_test.
 - If a guide page or [docs/AI.md](docs/AI.md) shows emitted Nish code, update it. Run `npm run doc-caps` and shorten text in place if a doc goes over its cap.
 - PR body note: nish's `test/spec/*.ts` (amritk/nish) were emitted by the old vector and need regenerating in a nish spec-side PR after this merges.
 
-## Sampler without nish:unsafe
+## Sampler wrapping edges
 
-**Owns:** [src/spec/sample/ints.ts](src/spec/sample/ints.ts), [src/spec/sample/property.ts](src/spec/sample/property.ts), [tests/spec/gates/sample_test.ts](tests/spec/gates/sample_test.ts) (the sampler's existing tests), and one new test refusing `nish:unsafe` under `src/` (the worker picks its place, such as `tests/package/`). **Model:** sonnet. Added at the user's request after `emit-no-panic` merged. **Merges after** PR 233 (run 217), which rewrites `src/spec/sample` and keeps both imports; this stage keeps its diff to the two sites and merges main in once PR 233 lands.
+**Owns:** [tests/spec/sample/steps_test.ts](tests/spec/sample/steps_test.ts) (new). **Model:** sonnet. Added at the user's request after `emit-no-panic` merged; re-scoped to tests only by the owner on 2026-11-26.
 
-Sites on main:
+The stage first set out to remove `nish:unsafe` from the sampler. Probing the 0.47.0 prover with full-range inputs showed that both sites wrap on purpose: `lo + 1` and `hi - 1` are not provable behind `lo < hi`, and the int parser's `~mag + 1` is i64 MIN's only route. The owner then set the rule: **a wrap that is meant to happen uses `nish:unsafe`**, so it is visible at the site. A `toI64(toU64(a) + toU64(b))` round trip hides it. Both sites therefore stay as they are on main:
 
-| File | Site | Now |
+| File | Site | Stays |
 | --- | --- | --- |
 | `ints.ts` | negative branch of the int parser, `mag <= 2^63` | `wrappingAdd(toI64(~mag), toI64(1))` |
 | `property.ts` | boundary steps inside `[lo, hi]` when `lo < hi` | `wrappingAdd(lo, toI64(1))`, `wrappingSub(hi, toI64(1))` |
 
-Use the form #221 emits: do the arithmetic in `u64`, which always wraps, and convert back with `toI64` (for example `toI64(~mag + toU64(1))`, `toI64(toU64(lo) + toU64(1))`). Check each with `.nish/bin/nish run` and the 0.47.0 prover. Results stay bit-identical, so no golden or dogfood file moves.
+What lands is the rows, table-driven, through the sampler's real entry points: parsing `-9223372036854775808` gives i64 MIN; `-9223372036854775807`, `-1` and `-0` give what main gives; a u64 range with `lo` at i64 MAX steps to `0x8000000000000000`; a range with `hi` at `0x8000000000000000` steps down to i64 MAX; and an i64 range at `[MIN, MAX]` steps without a panic. Each wrap site is mutation-checked (drop the `+ 1`, swap add and sub), and the PR body lists the failing row. Criterion 9 (no `nish:unsafe` under `src/`) is dropped.
 
-Rows, table-driven, through the sampler's real entry points: parsing `-9223372036854775808` gives i64 MIN, `-9223372036854775807`, `-1` and `-0` give what main gives, `-9223372036854775809` is refused. A u64 range held as bits with `lo` at i64 MAX steps to `0x8000000000000000`, a range with `hi` at `0x8000000000000000` steps down to i64 MAX, and an i64 range at `[MIN, MAX]` steps without a panic. Mutation-check each replacement (drop the `+ 1`, swap `+` for `-`) and list the failing row in the PR body.
+## On-purpose wraps
 
-The no-unsafe test reads every `.ts` under `src/` and fails naming each file that imports from `nish:unsafe`. It fails on main (both sampler files) and passes on the branch. `npm run panics` stays at or under its baseline, and once PR 233 is in, shows 0 sites under `src/spec/sample`.
+**Owns:** [src/spec/sample/eval.ts](src/spec/sample/eval.ts), [src/spec/sample/ints.ts](src/spec/sample/ints.ts), [src/spec/sample/prng.ts](src/spec/sample/prng.ts), [src/verify/solve/replay.ts](src/verify/solve/replay.ts), and new test files under `tests/spec/sample/` and `tests/verify/` (`solve_*_test.ts`). **Model:** sonnet. Added at the owner's request ("change it anywhere else we have it").
+
+A site counts as **on purpose** when the signed result can fall outside its type and the code relies on the two's-complement wrap. Those sites move to `nish:unsafe`:
+
+| File | Function | Now | Becomes |
+| --- | --- | --- | --- |
+| `eval.ts` | `sampleArith`, `+` `-` `*` (the type's wrapping arithmetic, reduced by `sampleIntWrap`) | `toI64(toU64(x.n) op toU64(y.n))` | `wrappingAdd` / `wrappingSub` / `wrappingMul(x.n, y.n)` |
+| `ints.ts` | `sampleIntWrap` mask; `span` is i64 MIN at `w = 63` | `toI64(toU64(span) - toU64(1))` | `wrappingSub(span, toI64(1))` |
+| `ints.ts` | `sampleIntWrap` sign; `low - span` overflows at `w = 63` | `toI64(toU64(low) - toU64(span))` | `wrappingSub(low, span)` |
+| `prng.ts` | `sampleIntIn`, wide branch; the offset may exceed i64 MAX | `toI64(span === 0 ? draw : toU64(lo) + (draw % span))` | `span === 0 ? toI64(draw) : wrappingAdd(lo, toI64(draw % span))` |
+| `replay.ts` | `replayNeg`, i64 MIN stays itself | `toI64(toU64(0) - toU64(a))` | `wrappingSub(toI64(0), a)` |
+| `replay.ts` | `replayAdd64`, wrapped sum then the sign test | `toI64(toU64(a) + toU64(b))` | `wrappingAdd(a, b)` |
+
+**Left as they are**, because no wrap happens in the value they compute:
+
+- *Never wraps:* the signed result always fits, and the `u32`/`u64` detour only satisfies the prover. These are index and length arithmetic, and counters (`rfc.ts`, `xml/*`, `hidden.ts`, `path.ts`, `lex.ts`, `front.ts`, `literals.ts`, `z3.ts`, `report.ts`, `property.ts` `sampleBump`, `eval.ts:475`, `prng.ts:64`), plus `prng.ts:80/105/107` (offset within `[lo, hi]`), `replay.ts:194` (`-p` with `p <= REPLAY_MAX`) and `smt.ts:434` (a small signed difference). `wrappingAdd` there would say that a wrap is intended when it is not.
+- *Unsigned by nature:* `u64` remainders, magnitudes and PRNG state (`eval.ts:243-255`, `replayMag`, `prng.ts`'s draws).
+- *The emitter:* `src/spec/emit/**` writes no signed round trip into emitted tests (`git grep` for `toI64(toU64(` under it finds none), so the emitted code keeps the original rule of no `nish:unsafe`.
+
+Results stay bit-identical, so no golden or dogfood file moves. Rows: add an exact-edge row where main has none, through the real entry points. Examples: `sampleArith` at i64 MAX + 1, MIN - 1, MAX * 2, and in `u64` at `2^64 - 1 + 1`; `sampleIntWrap` at `w = 63`, signed and unsigned; `sampleIntIn` over `[MIN, MAX]` and over a span above `2^63`; `replayNeg(MIN)`; `replayAdd64` at MAX - 1 + 1 and MAX + 1. #233 and #235 added some of these, so the worker lists which rows already exist. Mutation: replace each wrapping op with the plain operator (0.39.0 then aborts on overflow) and swap add and sub; the PR body names the failing row for each. `npm run panics` shows no new site.
+
+**Note for run #217:** its acceptance criterion 2 asks for no `nish:unsafe` anywhere in `src/**`. The owner's rule contradicts that, and the conflict is reported to that run's lead.
 
 ## Out of scope
 
@@ -174,7 +213,7 @@ The no-unsafe test reads every `.ts` under `src/` and fails naming each file tha
 - Changes to nish's repository, including regenerating its `test/spec/*.ts`.
 - The go, python, rust and typescript emitters, beyond regenerating goldens a shared change moves.
 - `nish:unsafe` in the hand-written fixture [tests/spec/emit/fixtures/forms.ts](tests/spec/emit/fixtures/forms.ts), and `--allow-panics` in [scripts/panics.mjs](scripts/panics.mjs), which needs it to count sites.
-- The rest of `src/spec/sample`, which PR 233 rewrites.
+- Sites that never wrap, and values that are unsigned by nature (see On-purpose wraps).
 
 ## Tests
 
@@ -185,7 +224,8 @@ The no-unsafe test reads every `.ts` under `src/` and fails naming each file tha
 | mutate argv test (next to the existing `mutaterun` coverage) | mutate build argv never contains `--allow-panics` |
 | existing `tests/spec/emit/*_test.ts`, `tests/cli/emit-run-nish-*` | the emitted tests still compile under 0.39.0 and reach the same verdicts |
 | `tests/spec/gates/sample_test.ts` (new rows) | the int parser at i64 MIN and its neighbours; boundary steps across the u64 bit boundary |
-| no-`nish:unsafe` test (new) | no file under `src/` imports `nish:unsafe` |
+| `tests/spec/sample/steps_test.ts` (new) | the sampler's two wrap sites at their edges |
+| new `tests/spec/sample/` and `tests/verify/solve_*_test.ts` rows | each on-purpose wrap at its edge |
 
 ## Verification
 
@@ -209,10 +249,11 @@ for c in rfc6234-sha1 rfc7748-x25519; do dist/vector spec emit <nish>/contracts/
 
 Both builds exit 0 with no flags. Each `--emit-panics` list holds only `oom` sites and calls into `sha1`/`x25519`.
 
-Sampler stage (lead, after it merges):
+Sampler and on-purpose-wrap stages (lead, after each merges). The grep must print nothing, because no on-purpose wrap is left as a u64 round trip in the six converted functions:
 
 ```bash
-! grep -rln 'nish:unsafe' src/
-node tests/run.mjs gates/sample
+git grep -n 'toI64(toU64(.*) [-+*] toU64(' src/spec/sample/eval.ts src/spec/sample/ints.ts src/verify/solve/replay.ts
+node tests/run.mjs spec/sample
+node tests/run.mjs verify
 npm run panics
 ```
