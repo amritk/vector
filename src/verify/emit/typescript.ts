@@ -27,6 +27,8 @@ const tsIsSpace = (c: i32): boolean => c === 32 || c === 9 || c === 10 || c === 
 export const jsdocSafe = (text: string): string => {
   let out = ""
   let pendingSpace = false
+  // Whether `out` ends in `*`, so a `/` after it would close the comment.
+  let afterStar = false
   for (let i = 0; i < toI32(text.length); i++) {
     const c = text.charCodeAt(i)
     if (tsIsSpace(c)) {
@@ -35,12 +37,14 @@ export const jsdocSafe = (text: string): string => {
       if (pendingSpace) {
         out = `${out} `
         pendingSpace = false
+        afterStar = false
       }
-      if (c === 47 && out.length > 0 && out.charCodeAt(toI32(out.length) - 1) === 42) {
+      if (c === 47 && afterStar) {
         out = `${out}\\/`
       } else {
         out = out + text.slice(i, i + 1)
       }
+      afterStar = c === 42
     }
   }
   return out
@@ -102,13 +106,11 @@ export const functionsByLayer = (program: Program): FnUnit[] => {
   for (const fn of program.functions) {
     layer = Math.min(layer, fn.layer)
   }
-  let placed = 0
-  while (placed < toI32(program.functions.length)) {
+  while (toI32(out.length) < toI32(program.functions.length)) {
     let next = 0x7fffffff
     for (const fn of program.functions) {
       if (fn.layer === layer) {
         out.push(fn)
-        placed = placed + 1
       } else if (fn.layer > layer) {
         next = Math.min(next, fn.layer)
       }
