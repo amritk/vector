@@ -619,7 +619,13 @@ export const assembleDiffs = (
     const a1 = answers[base + 1]
     const a2 = answers[base + 2]
     const a3 = answers[base + 3]
-    const m = new MatchedFunctionDiff(newFn.name, signatureOf(newFn), diffCheck(q0, a0), diffCheck(q1, a1), diffCheck(q2, a2))
+    const m = new MatchedFunctionDiff(
+      newFn.name,
+      signatureOf(newFn),
+      diffCheck(q0, a0),
+      diffCheck(q1, a1),
+      diffCheck(q2, a2),
+    )
     m.sharedDomain = diffCheck(q3, a3)
     // Renames pair parameters by position; a pair with fewer old parameters
     // has no rename past the old ones (emitDiffScript gives it no queries,
