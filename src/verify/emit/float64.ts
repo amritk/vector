@@ -83,11 +83,19 @@ export class F64Env {
    * @param v its value
    */
   set(name: string, v: F64Val): void {
-    // `set` and `copy` keep `vals` as long as `names`; the second bound is for
-    // the prover, and for an environment whose fields were pushed by hand.
-    for (let i = 0; i < toI32(this.names.length) && i < toI32(this.vals.length); i++) {
-      if (this.names[i] === name) {
-        this.vals[i] = v
+    // A name with no value at its index (fields pushed by hand) is unbound:
+    // drop it, so every name left has its value and the binding below pairs.
+    const vals = this.vals
+    const n = toI32(vals.length)
+    if (toI32(this.names.length) > n) {
+      this.names = this.names.slice(0, n)
+    }
+    // `names` is at most `n` long now, so the second bound never ends the loop
+    // early; it is there for the prover.
+    const names = this.names
+    for (let i = 0; i < toI32(names.length) && i < toI32(vals.length); i++) {
+      if (names[i] === name) {
+        vals[i] = v
         return
       }
     }
@@ -137,8 +145,8 @@ export class F64Env {
    */
   copy(): F64Env {
     const out = new F64Env()
-    // As in `set`: the second bound ends the loop early only on fields pushed
-    // by hand, where the copy keeps the pairs that have both halves.
+    // As in `set`, a name with no value is unbound: the second bound ends the
+    // loop early only on fields pushed by hand, and leaves such names out.
     for (let i = 0; i < toI32(this.names.length) && i < toI32(this.vals.length); i++) {
       const v = this.vals[i]
       out.names.push(this.names[i])
@@ -489,9 +497,10 @@ class F64Rng {
     return toF64(x >>> 8) / parseFloat("16777216")
   }
 
-  // An index below `n`. `next()` is at most 1 - 2^-24, and its product with
-  // an i32 is exact in f64, so it never reaches `n`: the `top - 1` arm is for
-  // the prover, and is in f64, where it cannot overflow.
+  // An index below `n`. `next()` is at most 1 - 2^-24, so the exact product
+  // is at most n - n·2^-24; rounding it to f64 moves it by under n·2^-53, so
+  // it never reaches `n`: the `top - 1` arm is for the prover, and is in f64,
+  // where it cannot overflow.
   pick(n: i32): i32 {
     const top = toF64(n)
     const at = Math.floor(this.next() * top)

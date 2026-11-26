@@ -59,7 +59,9 @@ const dashRepeat = (s: string, n: i32): string => {
   return out
 }
 
-// The first `n` code points of `s`.
+// The first `n` code points of `s`. The only caller passes `DASH_WIDTH - 2`,
+// so `n >= 0`, and `count >= n` first holds where `count === n` would; `>=`
+// is what bounds `count`, for the prover.
 const dashTake = (s: string, n: i32): string => {
   let count = 0
   for (let i = 0; i < toI32(s.length); i++) {

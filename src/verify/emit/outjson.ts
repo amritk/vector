@@ -162,7 +162,7 @@ export const outJsonQuote = (s: string): string => {
       esc = `\\u00${outJsonHexDigit(c >> 4)}${outJsonHexDigit(c & 15)}`
     }
     if (esc !== "") {
-      // `start` is a past `i + 1`, so `start <= i`: the guard always holds.
+      // `start` is a previous `i + 1`, so `start <= i`: the guard always holds.
       if (start >= 0 && start <= i) {
         out = out + s.slice(start, i) + esc
       }
@@ -199,8 +199,9 @@ const outJsonWrite = (v: OutJson, indent: string, parts: string[]): void => {
       parts.push(",\n")
     }
     parts.push(inner)
-    // An object's value without a key (`add` on an object) is written bare,
-    // so the text is not JSON and every reader refuses it.
+    // An object's value without a key (`add` on an object, which no caller
+    // does) is written bare, so the text is not JSON and every reader refuses
+    // it: loud, with no made-up key.
     if (isObject && i < toI32(v.keys.length)) {
       parts.push(`${outJsonQuote(v.keys[i])}: `)
     }
