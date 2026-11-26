@@ -139,40 +139,58 @@ const replayBool = (truth: boolean): ReplayValue => {
   return v
 }
 
-const replayAbs = (a: i64): i64 => (a < toI64(0) ? -a : a)
+// The magnitude of an i64, exact for every one: |REPLAY_OVER| is 2^63.
+const replayMag = (a: i64): u64 => (a < 0 ? toU64(0) - toU64(a) : toU64(a))
+
+// -a, wrapping: REPLAY_OVER, the one i64 with no negation, stays itself.
+const replayNeg = (a: i64): i64 => toI64(toU64(0) - toU64(a))
+
+// |a|, wrapping like replayNeg.
+const replayAbs = (a: i64): i64 => toI64(replayMag(a))
+
+// a / g for a gcd g. A gcd is never negative, and 0 only when both of its
+// operands are, where replayMulR has always kept a undivided.
+const replayQuot = (a: i64, g: i64): i64 => (g > 0 ? a / g : a)
 
 const replayGcd = (x: i64, y: i64): i64 => {
-  let a = replayAbs(x)
-  let b = replayAbs(y)
-  while (b !== toI64(0)) {
+  let a = replayMag(x)
+  let b = replayMag(y)
+  while (b !== toU64(0)) {
     const t = a % b
     a = b
     b = t
   }
-  return a
+  return toI64(a)
 }
 
 const replayAdd64 = (a: i64, b: i64): i64 => {
   if (a === REPLAY_OVER || b === REPLAY_OVER) {
     return REPLAY_OVER
   }
-  if ((b > toI64(0) && a > REPLAY_MAX - b) || (b < toI64(0) && a < -REPLAY_MAX - b)) {
+  // The wrapped sum is the sum unless the signs agree and it does not; a
+  // sum of REPLAY_OVER (below -REPLAY_MAX) is the mark itself.
+  const s = toI64(toU64(a) + toU64(b))
+  if (a < 0 === b < 0 && s < 0 !== a < 0) {
     return REPLAY_OVER
   }
-  return a + b
+  return s
 }
 
 const replayMul64 = (a: i64, b: i64): i64 => {
   if (a === REPLAY_OVER || b === REPLAY_OVER) {
     return REPLAY_OVER
   }
-  if (a === toI64(0) || b === toI64(0)) {
+  const ma = replayMag(a)
+  const mb = replayMag(b)
+  if (ma === toU64(0) || mb === toU64(0)) {
     return toI64(0)
   }
-  if (replayAbs(b) > REPLAY_MAX / replayAbs(a)) {
+  // |a|·|b| > REPLAY_MAX, as |b| > REPLAY_MAX / |a|.
+  if (mb > toU64(REPLAY_MAX) / ma) {
     return REPLAY_OVER
   }
-  return a * b
+  const p = ma * mb
+  return a < 0 === b < 0 ? toI64(p) : toI64(toU64(0) - p)
 }
 
 // num/den in lowest terms, den > 0; unknown on an overflow. den must not be 0.
@@ -181,9 +199,14 @@ const replayRational = (num: i64, den: i64): ReplayValue => {
     return new ReplayValue(REPLAY_WHY_OVERFLOW)
   }
   const g = replayGcd(num, den)
+  // Unreachable: every caller passes a nonzero den, so g divides |den| ≥ 1.
+  if (g < 1) {
+    return new ReplayValue(REPLAY_WHY_DIV_ZERO)
+  }
   const v = new ReplayValue("")
   v.known = true
-  v.num = den < toI64(0) ? -(num / g) : num / g
+  const n = num / g
+  v.num = den < 0 ? replayNeg(n) : n
   v.den = replayAbs(den / g)
   return v
 }
@@ -198,11 +221,11 @@ const replayAddR = (a: ReplayValue, b: ReplayValue): ReplayValue => {
     return new ReplayValue(replayEither(a, b).why)
   }
   const g = replayGcd(a.den, b.den)
-  const num = replayAdd64(replayMul64(a.num, b.den / g), replayMul64(b.num, a.den / g))
-  return replayRational(num, replayMul64(a.den / g, b.den))
+  const num = replayAdd64(replayMul64(a.num, replayQuot(b.den, g)), replayMul64(b.num, replayQuot(a.den, g)))
+  return replayRational(num, replayMul64(replayQuot(a.den, g), b.den))
 }
 
-const replayNegR = (a: ReplayValue): ReplayValue => (a.known ? replayRational(-a.num, a.den) : a)
+const replayNegR = (a: ReplayValue): ReplayValue => (a.known ? replayRational(replayNeg(a.num), a.den) : a)
 
 const replayMulR = (a: ReplayValue, b: ReplayValue): ReplayValue => {
   if (!a.known || !b.known) {
@@ -210,10 +233,10 @@ const replayMulR = (a: ReplayValue, b: ReplayValue): ReplayValue => {
   }
   const g1 = replayGcd(a.num, b.den)
   const g2 = replayGcd(b.num, a.den)
-  const n1 = g1 === toI64(0) ? a.num : a.num / g1
-  const d2 = g1 === toI64(0) ? b.den : b.den / g1
-  const n2 = g2 === toI64(0) ? b.num : b.num / g2
-  const d1 = g2 === toI64(0) ? a.den : a.den / g2
+  const n1 = replayQuot(a.num, g1)
+  const d2 = replayQuot(b.den, g1)
+  const n2 = replayQuot(b.num, g2)
+  const d1 = replayQuot(a.den, g2)
   return replayRational(replayMul64(n1, n2), replayMul64(d1, d2))
 }
 
@@ -241,11 +264,14 @@ const replayFloor = (a: ReplayValue): ReplayValue => {
   if (!a.known) {
     return a
   }
-  let q = a.num / a.den
-  if (a.num < toI64(0) && a.num % a.den !== toI64(0)) {
-    q = q - toI64(1)
+  const n = a.num
+  const d = a.den
+  // Unreachable: a known value's den is at least 1 (replayRational, replayBool).
+  if (d < 1) {
+    return new ReplayValue(REPLAY_WHY_DIV_ZERO)
   }
-  return replayInt(q)
+  const q = n / d
+  return replayInt(n < 0 && n % d !== 0 ? replayAdd64(q, -1) : q)
 }
 
 const replayNot = (a: ReplayValue): ReplayValue => (a.known ? replayBool(!a.truth) : a)
