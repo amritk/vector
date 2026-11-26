@@ -246,13 +246,16 @@ const mutaterunBaseline = (run: MutateRun, dir: string, limitMs: i32): Result<Mu
   return Ok(new MutaterunBaseline((now - start) / toI64(1000000), ""))
 }
 
-/** Writes `text` to `path`, or `Err` naming the errno. */
-const mutaterunWrite = (path: string, text: string): Result<boolean, string> => {
-  const n = writeFileSyncMode(path, text, 0o644)
-  if (n < 0) {
-    return Err(`cannot write ${path} (errno ${mutaterunErrno(n)})`)
+/**
+ * Writes `text` to `path`. writeFileSyncMode writes what writeFileSync did, but
+ * answers a failure with a negative errno instead of aborting; this prints and
+ * exits as writeFileSync's abort did.
+ */
+const mutaterunWrite = (path: string, text: string): void => {
+  if (writeFileSyncMode(path, text, 0o644) < 0) {
+    console.error(`nish: cannot write ${path}`)
+    process.exit(1)
   }
-  return Ok(true)
 }
 
 /** A negative errno's number, without the sign; `${-n}` would overflow at the least i32. */
@@ -271,10 +274,10 @@ const MUTATERUN_CANARY: string = "\n)vector mutate canary(\n"
  */
 const mutaterunCanary = (run: MutateRun, dir: string, text: string, limitMs: i32): Result<boolean, string> => {
   const module = joinPath(dir, run.file)
-  mutaterunWrite(module, `${text}${MUTATERUN_CANARY}`).orReturn()
+  mutaterunWrite(module, `${text}${MUTATERUN_CANARY}`)
   unlinkSync(joinPath(dir, "mutant.bin"))
   const build = runProcess(mutaterunBuildArgv(run, dir), "", limitMs)
-  mutaterunWrite(module, text).orReturn()
+  mutaterunWrite(module, text)
   const b = build.orReturn()
   if (b.timedOut) {
     return Err(`the canary build (the module made unparseable) ran past ${limitMs} ms: ${mutaterunLogTail(dir)}`)
@@ -558,12 +561,10 @@ const mutaterunLoop = (
   while (failure.length === 0 && (next < mutants.length || busy > 0)) {
     for (const slot of slots) {
       if (slot.pid === 0 && next < mutants.length && failure.length === 0) {
-        const written = mutaterunWrite(joinPath(slot.dir, run.file), mutateApply(text, mutants[next]))
+        mutaterunWrite(joinPath(slot.dir, run.file), mutateApply(text, mutants[next]))
         slot.mutant = toI32(next)
         next++
-        const started = written.isErr()
-          ? written
-          : mutaterunStart(slot, mutaterunBuildArgv(run, slot.dir), true, limitMs)
+        const started = mutaterunStart(slot, mutaterunBuildArgv(run, slot.dir), true, limitMs)
         if (started.isErr()) {
           failure = started.error
         } else {

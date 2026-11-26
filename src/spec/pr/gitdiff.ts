@@ -950,7 +950,8 @@ const gitdiffLexLine = (message: string): i32 => {
     if (d < 0 || d > 9) {
       break
     }
-    // A line past i32 is past any module the lexer reads.
+    // Unreachable: the lexer names a line of a module it read, far below
+    // i32. The bound keeps n * 10 + d in i32 for the prover.
     if (n < 0 || n > 214748363) {
       return 1
     }

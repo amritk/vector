@@ -214,6 +214,8 @@ const MUTATE_COMMENT: i32 = 3
 
 /** Marks `[from, to)` of `kinds` as `kind`. */
 const mutateMark = (kinds: i32[], from: i32, to: i32, kind: i32): void => {
+  // Unreachable bounds, for the prover: mutateCode passes a token's span or a
+  // comment inside a gap, so 0 <= from and to <= text.length < kinds.length.
   for (let i = from; i >= 0 && i < to && i < kinds.length; i++) {
     kinds[i] = kind
   }
@@ -221,6 +223,9 @@ const mutateMark = (kinds: i32[], from: i32, to: i32, kind: i32): void => {
 
 /** Marks the comments in `[from, to)`, a gap between tokens, which the lexer read as only spaces and comments. */
 const mutateMarkComments = (text: string, kinds: i32[], from: i32, to: i32): void => {
+  // Unreachable, for the prover: mutateCode passes a gap from 0 or a token's
+  // end to a token's start or the text's length, so 0 <= from and
+  // to <= text.length, and the `i >= 0` below always holds too.
   if (to > text.length) {
     return
   }
@@ -275,7 +280,11 @@ export const mutateCode = (text: string): Result<i32[][], string> => {
     // splitLines splits at each line break and nowhere else, so every line
     // and the break after it lie in `kinds`.
     const end = toI64(start) + toI64(line.length) + 1
+    if (end > toI64(kinds.length)) {
+      return Err(`the line at offset ${start} runs past the module's text`)
+    }
     const row: i32[] = []
+    // After the check above, `k < kinds.length` always holds: it is for the prover.
     for (let k = start; k >= 0 && toI64(k) < end && k < kinds.length; k++) {
       row.push(kinds[k])
     }
@@ -350,6 +359,7 @@ export const mutateLine = (text: string, line: i32, kinds: i32[]): MutateMutant[
   }
   const swaps = mutateSwaps()
   let i = 0
+  // `i >= 0` always holds: i starts at 0 and only grows. It is for the prover.
   while (i >= 0 && i < text.length) {
     const c = text.charCodeAt(i)
     if (mutateKind(kinds, i) !== MUTATE_CODE) {
@@ -357,6 +367,8 @@ export const mutateLine = (text: string, line: i32, kinds: i32[]): MutateMutant[
       continue
     }
     const k = mutateSwapAt(text, i, swaps)
+    // mutateSwapAt answers -1, or the first of a triple, so k >= 0 alone
+    // decides; `k < swaps.length - 2` always holds then, for the prover.
     if (k >= 0 && k < swaps.length - 2) {
       const op = swaps[k]
       if (op !== "|" || !mutateNullUnion(text, i)) {
@@ -444,10 +456,14 @@ export class MutateSites {
 export const mutateSites = (text: string, changed: GitdiffFile, roots: string[]): Result<MutateSites, string> => {
   const lines = splitLines(text)
   const kinds = mutateCode(text).orReturn()
+  if (kinds.length !== lines.length) {
+    return Err(`the lexer read ${kinds.length} lines where there are ${lines.length}`)
+  }
   const scope: ScopeModule = scopeReach(text, roots)
   const out = new MutateSites(scope.whole)
   // At most one per line, so it never wraps.
   let outside: u32 = 0
+  // After the check above, `i < kinds.length` always holds: it is for the prover.
   for (let i = 0; i < lines.length && i < kinds.length; i++) {
     const n = i + 1
     if (gitdiffTouches(changed, n)) {
