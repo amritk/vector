@@ -135,10 +135,46 @@ export const jsonStringMember = (doc: JsonDocument, o: JsonValue, key: string): 
  */
 export const jsonIntMember = (doc: JsonDocument, o: JsonValue, key: string): Result<i64, string> => {
   const v = jsonMember(doc, o, key, JSON_VALUE_NUMBER).orReturn()
-  if (!doc.isI64(v)) {
-    return Err(`"${key}" must be an integer, found ${doc.numberText(v)}`)
+  const text = doc.numberText(v)
+  const n = jsonReadI64(text)
+  if (n.isErr()) {
+    return Err(`"${key}" must be an integer, found ${text}`)
   }
-  return Ok(doc.i64(v))
+  return Ok(n.value)
+}
+
+// A number's text as `isI64` and `i64` read it: `-?digits` with no fraction or
+// exponent, whose value fits an i64; `-0` is 0. The magnitude is kept in u64,
+// which holds 2^63, the one i64 magnitude with no positive counterpart.
+const jsonReadI64 = (text: string): Result<i64, string> => {
+  const negative = text.length > 0 && text.charCodeAt(0) === 45
+  const start = negative ? 1 : 0
+  if (start >= toI32(text.length)) {
+    return Err("not an integer")
+  }
+  // (2^63 - 8) / 10, the largest magnitude a digit may still be added to, and
+  // 2^63 - 1, the largest i64: built from parts, since a literal past 2^53
+  // cannot be written exactly.
+  const stepLimit: u64 = toU64(922337203) * 1000000000 + 685477580
+  const i64Max: u64 = stepLimit * 10 + 7
+  const max: u64 = negative ? i64Max + 1 : i64Max
+  let magnitude: u64 = 0
+  for (let i = start; i >= 0 && i < toI32(text.length); i++) {
+    const c = text.charCodeAt(i)
+    if (c < 48 || c > 57) {
+      return Err("not an integer")
+    }
+    // Past the step limit, ten times the magnitude is past 2^63.
+    if (magnitude > stepLimit) {
+      return Err("out of range")
+    }
+    magnitude = magnitude * 10 + toU64(c - 48)
+    if (magnitude > max) {
+      return Err("out of range")
+    }
+  }
+  // u64 subtraction wraps, so 0 - magnitude is -magnitude's bits, -2^63 included.
+  return Ok(toI64(negative ? 0 - magnitude : magnitude))
 }
 
 /**
