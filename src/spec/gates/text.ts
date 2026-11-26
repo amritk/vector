@@ -10,7 +10,8 @@
  * follow it, and the entry `*n't` is any word ending in n't (with ' or ’).
  */
 
-import { asciiLower, split, splitWhitespace } from "nish/text"
+import { split, splitWhitespace } from "nish/text"
+import { textAsciiLower } from "../../core/text"
 import { rfcNormalize } from "../source/rfc"
 
 /** Words that, before a stated result in its sentence, deny or condition it. */
@@ -50,15 +51,34 @@ const gateByte = (s: string, i: i32): i32 => (i >= 0 && i < s.length ? s.charCod
 /** Whether a letter or digit is at `i` of `s`; false outside it. */
 const gateAlnumAt = (s: string, i: i32): boolean => gateIsAlnum(gateByte(s, i))
 
+/** The byte `k` before offset `i` of `s`, taken wide so `i - k` cannot overflow; -1 outside it. */
+const gateByteBefore = (s: string, i: i32, k: i32): i32 => {
+  const at = toI64(i) - toI64(k)
+  return at >= toI64(0) && at < toI64(s.length) ? gateByte(s, toI32(at)) : -1
+}
+
+/**
+ * `a + b` for two offsets whose sum is itself an offset into a string the
+ * caller names, so it fits an i32; the sum is taken wide so it is not checked.
+ */
+const gateTextPlus = (a: i32, b: i32): i32 => toI32(toI64(a) + toI64(b))
+
+/** The `n` bytes of `s` from `j` (n >= 0), cut at its end as substring cuts them. */
+const gateTextAt = (s: string, j: i32, n: i32): string => {
+  const e = toI64(j) + toI64(n)
+  return s.substring(j, e > toI64(s.length) ? s.length : toI32(e))
+}
+
 /** Whether `i` is a word start: no letter or digit just before it. */
-const gateWordStart = (s: string, i: i32): boolean => !gateAlnumAt(s, i - 1)
+const gateWordStart = (s: string, i: i32): boolean => !gateIsAlnum(gateByteBefore(s, i, 1))
 
 /** Where an apostrophe (' or ’) at `i` ends, or -1 when there is none. */
 const gateApostropheEnd = (s: string, i: i32): i32 => {
-  if (gateByte(s, i) === 0x27) {
+  if (i >= 0 && i < s.length && s.charCodeAt(i) === 0x27) {
     return i + 1
   }
-  if (s.substring(i, i + 3) === "’") {
+  // The curly apostrophe is three bytes.
+  if (i >= 0 && i < s.length - 2 && s.substring(i, i + 3) === "’") {
     return i + 3
   }
   return -1
@@ -68,27 +88,28 @@ const gateApostropheEnd = (s: string, i: i32): i32 => {
 const gateEntryEnd = (lower: string, i: i32, w: string): i32 => {
   if (w === "*n't") {
     let j = i
-    while (gateIsLetter(gateByte(lower, j))) {
-      j = j + 1
+    while (j >= 0 && j < lower.length && gateIsLetter(lower.charCodeAt(j))) {
+      j++
     }
-    if (j - i < 2 || gateByte(lower, j - 1) !== 0x6e) {
+    if (toI64(j) - toI64(i) < toI64(2) || gateByteBefore(lower, j, 1) !== 0x6e) {
       return -1
     }
     const a = gateApostropheEnd(lower, j)
-    if (a < 0 || gateByte(lower, a) !== 0x74 || gateAlnumAt(lower, a + 1)) {
+    if (!(a >= 0 && a < lower.length) || lower.charCodeAt(a) !== 0x74 || gateAlnumAt(lower, a + 1)) {
       return -1
     }
     return a + 1
   }
   const star = w.endsWith("*")
   const lit = star ? w.substring(0, w.length - 1) : w
-  if (lower.substring(i, i + lit.length) !== lit) {
+  if (gateTextAt(lower, i, lit.length) !== lit) {
     return -1
   }
-  let j = i + lit.length
+  // lit is in lower at i, so the sum is at most lower.length.
+  let j = gateTextPlus(i, lit.length)
   if (star) {
-    while (gateIsLetter(gateByte(lower, j))) {
-      j = j + 1
+    while (j >= 0 && j < lower.length && gateIsLetter(lower.charCodeAt(j))) {
+      j++
     }
   }
   return gateAlnumAt(lower, j) ? -1 : j
@@ -104,7 +125,7 @@ const gateEntryEnd = (lower: string, i: i32, w: string): i32 => {
  */
 export const gateWordFind = (text: string, list: string): i32[] => {
   const words = split(list, "|")
-  const lower = asciiLower(text)
+  const lower = textAsciiLower(text)
   for (let i = 0; i < lower.length; i++) {
     if (!gateWordStart(lower, i) || !gateAlnumAt(lower, i)) {
       continue
@@ -129,10 +150,10 @@ export const gateWordFind = (text: string, list: string): i32[] => {
  */
 export const gateWordLeads = (text: string, list: string): i32 => {
   const words = split(list, "|")
-  const lower = asciiLower(text)
+  const lower = textAsciiLower(text)
   let i = 0
-  while (gateByte(lower, i) === 32) {
-    i = i + 1
+  while (i >= 0 && i < lower.length && lower.charCodeAt(i) === 32) {
+    i++
   }
   if (!gateAlnumAt(lower, i)) {
     return -1
@@ -158,18 +179,22 @@ export const gateWordLeads = (text: string, list: string): i32 => {
 export const gateKeywordUses = (text: string): i32[] => {
   const out: i32[] = []
   let i = 0
-  while (i < text.length) {
+  while (i >= 0 && i < text.length) {
     const prev = gateByte(text, i - 1)
     let end = -1
     if (prev !== 0x22 && !gateIsAlnum(prev)) {
       const kws = split(GATE_KEYWORDS, "|")
       for (let k = 0; k < kws.length && end < 0; k++) {
         const kw = kws[k]
-        const next = gateByte(text, i + kw.length)
-        if (text.substring(i, i + kw.length) === kw && next !== 0x22 && !gateIsAlnum(next)) {
-          out.push(i)
-          out.push(k)
-          end = i + kw.length
+        if (gateTextAt(text, i, kw.length) === kw) {
+          // kw is in text at i, so the sum is at most text.length.
+          const e = gateTextPlus(i, kw.length)
+          const next = gateByte(text, e)
+          if (next !== 0x22 && !gateIsAlnum(next)) {
+            out.push(i)
+            out.push(k)
+            end = e
+          }
         }
       }
     }
@@ -182,9 +207,12 @@ export const gateKeywordUses = (text: string): i32[] => {
  * A keyword's text by the index gateKeywordUses gives.
  *
  * @param k the index
- * @returns the keyword, such as "MUST NOT"
+ * @returns the keyword, such as "MUST NOT", or null when `k` is not a keyword's index
  */
-export const gateKeywordName = (k: i32): string => split(GATE_KEYWORDS, "|")[k]
+export const gateKeywordName = (k: i32): string | null => {
+  const ks = split(GATE_KEYWORDS, "|")
+  return k >= 0 && k < ks.length ? ks[k] : null
+}
 
 /**
  * A section's lines as the value checks read them: each whitespace
@@ -219,10 +247,12 @@ export const gateQuotePairs = (): string[] => split(GATE_QUOTES, "|")
 /** Whether `value` at `p..e` of `lines` is printed whole there. */
 const gateWhole = (lines: string, p: i32, e: i32): boolean => {
   const quotes = gateQuotePairs()
-  for (let q = 0; q < quotes.length; q += 2) {
+  for (let q = 0; q >= 0 && q < quotes.length - 1; q += 2) {
     const open = quotes[q]
     const close = quotes[q + 1]
-    if (lines.substring(p - open.length, p) === open && lines.substring(e, e + close.length) === close) {
+    const from = toI64(p) - toI64(open.length)
+    const before = from >= toI64(0) ? lines.substring(toI32(from), p) : ""
+    if (before === open && gateTextAt(lines, e, close.length) === close) {
       return true
     }
   }
@@ -230,19 +260,21 @@ const gateWhole = (lines: string, p: i32, e: i32): boolean => {
   if (!endsLine) {
     return false
   }
-  if (p === 0 || gateByte(lines, p - 1) === 10) {
+  if (p === 0 || gateByteBefore(lines, p, 1) === 10) {
     return true
   }
-  const b = gateByte(lines, p - 1)
-  return gateIsSep(b) || (b === 32 && gateIsSep(gateByte(lines, p - 2)))
+  const b = gateByteBefore(lines, p, 1)
+  return gateIsSep(b) || (b === 32 && gateIsSep(gateByteBefore(lines, p, 2)))
 }
 
 /** The line of `lines` that offset `at` is on, counting from 0. */
 const gateLineOf = (lines: string, at: i32): i32 => {
   let n = 0
+  // An offset past the end is on the last line: counting stops at the end.
   for (let i = 0; i < at && i < lines.length; i++) {
     if (lines.charCodeAt(i) === 10) {
-      n = n + 1
+      // n counts bytes of lines, so it fits.
+      n = gateTextPlus(n, 1)
     }
   }
   return n
@@ -270,16 +302,18 @@ export const gateTextLines = (lines: string, value: string): i32[] => {
   const text = flat.join("")
   let p = toI32(text.indexOf(value))
   while (p >= 0) {
-    const e = p + value.length
+    // value is in text at p, so p + value.length is at most text.length.
+    const e = gateTextPlus(p, value.length)
     if (gateWhole(lines, p, e)) {
-      const last = gateLineOf(lines, e - 1)
-      for (let l = gateLineOf(lines, p); l <= last; l++) {
+      const last = gateLineOf(lines, gateTextPlus(e, -1))
+      // A line number is under lines.length, so the next one fits.
+      for (let l = gateLineOf(lines, p); l <= last; l = gateTextPlus(l, 1)) {
         if (out.indexOf(l) < 0) {
           out.push(l)
         }
       }
     }
-    p = toI32(text.indexOf(value, p + 1))
+    p = toI32(text.indexOf(value, gateTextPlus(p, 1)))
   }
   return out.sort((a: i32, b: i32): i32 => (a > b ? 1 : a < b ? -1 : 0))
 }
@@ -290,14 +324,13 @@ const gateLabelEdge = (c: i32): boolean => !(gateIsAlnum(c) || c === 0x5f || c =
 /** Where the separator after a label at `e` ends: blanks, or blanks, = or :, blanks; -1 when none. */
 const gateAfterLabel = (lines: string, e: i32): i32 => {
   let j = e
-  while (gateIsBlank(gateByte(lines, j))) {
-    j = j + 1
+  while (j >= 0 && j < lines.length && gateIsBlank(lines.charCodeAt(j))) {
+    j++
   }
-  const c = gateByte(lines, j)
-  if (c === 0x3d || c === 0x3a) {
-    j = j + 1
-    while (gateIsBlank(gateByte(lines, j))) {
-      j = j + 1
+  if (j >= 0 && j < lines.length && gateIsSep(lines.charCodeAt(j))) {
+    j++
+    while (j >= 0 && j < lines.length && gateIsBlank(lines.charCodeAt(j))) {
+      j++
     }
     return j
   }
@@ -313,12 +346,13 @@ const gateLabelEnds = (lines: string, label: string): i32[] => {
   }
   let p = toI32(lines.indexOf(l))
   while (p >= 0) {
-    const after = gateLabelEdge(gateByte(lines, p - 1)) ? gateAfterLabel(lines, p + l.length) : -1
+    // l is in lines at p, so both sums are at most lines.length.
+    const after = gateLabelEdge(gateByte(lines, p - 1)) ? gateAfterLabel(lines, gateTextPlus(p, l.length)) : -1
     if (after >= 0) {
       out.push(after)
       p = toI32(lines.indexOf(l, after))
     } else {
-      p = toI32(lines.indexOf(l, p + 1))
+      p = toI32(lines.indexOf(l, gateTextPlus(p, 1)))
     }
   }
   return out
@@ -331,28 +365,32 @@ const gateNumberEnds = (lines: string, j: i32): boolean => {
     return false
   }
   const runOn = c === 0x2e || c === 0x2c || c === 0x3a || c === 0x2f || c === 0x2d || c === 32 || c === 9
-  return !(runOn && gateIsDigit(gateByte(lines, j + 1)))
+  // A run-on byte is in lines at j, so j + 1 fits.
+  return !(runOn && gateIsDigit(gateByte(lines, gateTextPlus(j, 1))))
 }
 
 /** Whether an integer starts at `j`: an optional -, an optional 0x, hex digits ending in a decimal digit. */
 const gateIntStarts = (lines: string, j: i32): boolean => {
   let i = j
-  if (gateByte(lines, i) === 0x2d) {
-    i = i + 1
+  if (i >= 0 && i < lines.length && lines.charCodeAt(i) === 0x2d) {
+    i++
   }
-  if (gateByte(lines, i) === 0x30 && (gateByte(lines, i + 1) === 0x78 || gateByte(lines, i + 1) === 0x58)) {
-    i = i + 2
+  if (i >= 0 && i < lines.length - 1 && lines.charCodeAt(i) === 0x30) {
+    const x = lines.charCodeAt(i + 1)
+    if (x === 0x78 || x === 0x58) {
+      i = i + 2
+    }
   }
   let sawDigit = false
-  while (true) {
-    const c = gateByte(lines, i)
+  while (i >= 0 && i < lines.length) {
+    const c = lines.charCodeAt(i)
     const hexLetter = (c >= 97 && c <= 102) || (c >= 65 && c <= 70)
     if (gateIsDigit(c)) {
       sawDigit = true
     } else if (!hexLetter) {
       break
     }
-    i = i + 1
+    i++
   }
   return sawDigit
 }
@@ -363,53 +401,56 @@ const gateDecimalHex = (dec: string): string => {
   for (let i = 0; i < dec.length; i++) {
     digits.push(dec.charCodeAt(i) - 48)
   }
-  const out: string[] = []
+  let out = ""
   const hex = "0123456789abcdef"
   while (digits.length > 0) {
     const next: i32[] = []
     let rem = 0
     for (const d of digits) {
-      const cur = rem * 10 + d
+      // rem is under 16 and d a digit, so cur fits; it is taken wide so it is not checked.
+      const cur = toI32(toI64(rem) * toI64(10) + toI64(d))
       const q = toI32(cur / 16)
-      rem = cur - q * 16
+      rem = cur % 16
       if (next.length > 0 || q > 0) {
         next.push(q)
       }
     }
-    out.push(hex.substring(rem, rem + 1))
+    // rem is under 16.
+    out = `${hex.substring(rem, gateTextPlus(rem, 1))}${out}`
     digits = next
   }
   if (out.length === 0) {
     return "0"
   }
-  const rev: string[] = []
-  for (let i = out.length - 1; i >= 0; i--) {
-    rev.push(out[i])
-  }
-  return rev.join("")
+  return out
 }
 
 /** Whether the integer `n` (decimal text) is printed at `j`, in decimal or 0x hex, and ends there. */
 const gateIntAt = (lines: string, j: i32, n: string): boolean => {
-  if (lines.substring(j, j + n.length) === n && gateNumberEnds(lines, j + n.length)) {
+  // Each sum below follows a match of its value in lines, so it is at most lines.length.
+  if (gateTextAt(lines, j, n.length) === n && gateNumberEnds(lines, gateTextPlus(j, n.length))) {
     return true
   }
-  if (n.startsWith("-")) {
+  if (n.startsWith("-") || !(j >= 0 && j < lines.length - 1)) {
     return false
   }
-  const x = gateByte(lines, j + 1)
-  if (gateByte(lines, j) !== 0x30 || (x !== 0x78 && x !== 0x58)) {
+  const x = lines.charCodeAt(j + 1)
+  if (lines.charCodeAt(j) !== 0x30 || (x !== 0x78 && x !== 0x58)) {
     return false
   }
-  let i = j + 2
-  while (gateByte(lines, i) === 0x30) {
-    i = i + 1
+  const digits = j + 2
+  let i = digits
+  while (i >= 0 && i < lines.length && lines.charCodeAt(i) === 0x30) {
+    i++
   }
   const want = gateDecimalHex(n)
-  if (asciiLower(lines.substring(i, i + want.length)) === want && gateNumberEnds(lines, i + want.length)) {
+  if (
+    textAsciiLower(gateTextAt(lines, i, want.length)) === want &&
+    gateNumberEnds(lines, gateTextPlus(i, want.length))
+  ) {
     return true
   }
-  return want === "0" && i > j + 2 && gateNumberEnds(lines, i)
+  return want === "0" && i > digits && gateNumberEnds(lines, i)
 }
 
 /**
@@ -432,7 +473,8 @@ export const gateIntRounds = (lines: string, label: string, n: string): i32[] =>
     if (gateIntAt(lines, j, n)) {
       out.push(round)
     }
-    round = round + 1
+    // round counts printings in lines, so it fits.
+    round = gateTextPlus(round, 1)
   }
   return out
 }
@@ -450,13 +492,7 @@ export const gateIntLines = (lines: string, label: string, n: string): i32[] => 
   const out: i32[] = []
   for (const j of gateLabelEnds(lines, label)) {
     if (gateIntAt(lines, j, n)) {
-      let k = 0
-      for (let i = 0; i < j; i++) {
-        if (lines.charCodeAt(i) === 10) {
-          k = k + 1
-        }
-      }
-      out.push(k)
+      out.push(gateLineOf(lines, j))
     }
   }
   return out
@@ -473,7 +509,8 @@ export const gateIntLabelCount = (lines: string, label: string): i32 => {
   let n = 0
   for (const j of gateLabelEnds(lines, label)) {
     if (gateIntStarts(lines, j)) {
-      n = n + 1
+      // n counts printings in lines, so it fits.
+      n = gateTextPlus(n, 1)
     }
   }
   return n
@@ -482,45 +519,52 @@ export const gateIntLabelCount = (lines: string, label: string): i32 => {
 /** Where a decimal number (or Infinity or NaN) printed at `j` ends; -1 when none is. */
 const gateF64End = (lines: string, j: i32): i32 => {
   let i = j
-  const s = gateByte(lines, i)
-  if (s === 0x2b || s === 0x2d) {
-    i = i + 1
+  if (i >= 0 && i < lines.length) {
+    const s = lines.charCodeAt(i)
+    if (s === 0x2b || s === 0x2d) {
+      i++
+    }
   }
   for (const word of ["Infinity", "NaN"]) {
-    if (lines.substring(i, i + word.length) === word) {
-      return i + word.length
+    if (gateTextAt(lines, i, word.length) === word) {
+      // word is in lines at i, so the sum is at most lines.length.
+      return gateTextPlus(i, word.length)
     }
   }
   const start = i
-  while (gateIsDigit(gateByte(lines, i))) {
-    i = i + 1
+  while (i >= 0 && i < lines.length && gateIsDigit(lines.charCodeAt(i))) {
+    i++
   }
-  const intDigits = i - start
-  if (gateByte(lines, i) === 0x2e) {
-    i = i + 1
+  const sawInt = i > start
+  if (i >= 0 && i < lines.length && lines.charCodeAt(i) === 0x2e) {
+    i++
     const frac = i
-    while (gateIsDigit(gateByte(lines, i))) {
-      i = i + 1
+    while (i >= 0 && i < lines.length && gateIsDigit(lines.charCodeAt(i))) {
+      i++
     }
-    if (intDigits === 0 && i === frac) {
+    if (!sawInt && i === frac) {
       return -1
     }
-  } else if (intDigits === 0) {
+  } else if (!sawInt) {
     return -1
   }
-  const e = gateByte(lines, i)
-  if (e === 0x65 || e === 0x45) {
-    let k = i + 1
-    const sign = gateByte(lines, k)
-    if (sign === 0x2b || sign === 0x2d) {
-      k = k + 1
-    }
-    const from = k
-    while (gateIsDigit(gateByte(lines, k))) {
-      k = k + 1
-    }
-    if (k > from) {
-      i = k
+  if (i >= 0 && i < lines.length) {
+    const e = lines.charCodeAt(i)
+    if (e === 0x65 || e === 0x45) {
+      let k = i + 1
+      if (k >= 0 && k < lines.length) {
+        const sign = lines.charCodeAt(k)
+        if (sign === 0x2b || sign === 0x2d) {
+          k++
+        }
+      }
+      const from = k
+      while (k >= 0 && k < lines.length && gateIsDigit(lines.charCodeAt(k))) {
+        k++
+      }
+      if (k > from) {
+        i = k
+      }
     }
   }
   return i
@@ -550,21 +594,24 @@ const GATE_ABBREVIATIONS: string = "|e.g|i.e|etc|vs|cf|fig|sec|al|a.k.a|"
 
 /** The length of a list bullet (`o `, `* `, `- `) at an offset, or 0. */
 const gateBulletLen = (text: string, at: i32): i32 => {
-  const b = text.substring(at, at + 2)
-  return b === "o " || b === "* " || b === "- " ? 2 : 0
+  if (at >= 0 && at < text.length - 1) {
+    const b = text.substring(at, at + 2)
+    return b === "o " || b === "* " || b === "- " ? 2 : 0
+  }
+  return 0
 }
 
 /** Whether the period at an offset ends an abbreviation such as "e.g". */
 const gateAbbreviationEnds = (text: string, at: i32): boolean => {
-  let j = at - 1
-  while (j >= 0) {
-    const c = text.charCodeAt(j)
+  let j = at
+  while (j > 0 && j <= text.length) {
+    const c = text.charCodeAt(j - 1)
     if (!(c === 46 || (c >= 65 && c <= 90) || (c >= 97 && c <= 122))) {
       break
     }
-    j = j - 1
+    j--
   }
-  return j + 1 < at && GATE_ABBREVIATIONS.indexOf(`|${asciiLower(text.substring(j + 1, at))}|`) >= 0
+  return j < at && GATE_ABBREVIATIONS.indexOf(`|${textAsciiLower(text.substring(j, at))}|`) >= 0
 }
 
 /**
@@ -585,13 +632,14 @@ export const gateParagraphStarts = (lines: string[]): i32[] => {
       blank = off > 0
       continue
     }
+    // off is an offset of the lines' normalized text, so each sum fits.
     if (off > 0) {
-      off = off + 1
+      off = gateTextPlus(off, 1)
       if (blank) {
         out.push(off)
       }
     }
-    off = off + words.join(" ").length
+    off = gateTextPlus(off, words.join(" ").length)
     blank = false
   }
   return out
@@ -601,12 +649,12 @@ export const gateParagraphStarts = (lines: string[]): i32[] => {
 const gateTerminatorStart = (text: string, start: i32, end: i32): i32 => {
   let stop = end
   let more = true
-  while (more && stop > start) {
+  while (more && stop > start && stop > 0 && stop <= text.length) {
     const c = text.charCodeAt(stop - 1)
     // 46 is `.`, 63 `?`, 34 `"`; a closing curly quote is three bytes.
     if (c === 46 || c === 63 || c === 34) {
-      stop = stop - 1
-    } else if (stop - 3 >= start && text.substring(stop - 3, stop) === "\u201d") {
+      stop--
+    } else if (stop > 2 && stop - 3 >= start && text.substring(stop - 3, stop) === "\u201d") {
       stop = stop - 3
     } else {
       more = false
@@ -635,44 +683,46 @@ export const gateSentenceBreaks = (text: string, paras: i32[]): i32[] => {
   const out: i32[] = []
   let p = 0
   let i = 0
-  while (i + 1 < text.length) {
+  while (i >= 0 && i < text.length - 1) {
     while (p < paras.length && paras[p] <= i) {
-      p = p + 1
+      p++
     }
     const c = text.charCodeAt(i)
     // 46 is `.`, 63 `?`, 59 `;`, 58 `:`; 34 is `"`.
     if (c === 46 || c === 63 || c === 59 || c === 58) {
       let k = i + 1
-      if (text.charCodeAt(k) === 34) {
-        k = k + 1
-      } else if (text.substring(k, k + 3) === "\u201d") {
+      if (k < text.length && text.charCodeAt(k) === 34) {
+        k++
+      } else if (k < text.length - 2 && text.substring(k, k + 3) === "\u201d") {
         k = k + 3
       }
-      if (k + 1 < text.length && text.charCodeAt(k) === 32) {
+      if (k < text.length - 1 && text.charCodeAt(k) === 32) {
         const bullet = gateBulletLen(text, k + 1)
         let ends = bullet > 0 || c === 63 || (p < paras.length && paras[p] === k + 1)
         if (c === 46 && !ends) {
           ends = !gateAbbreviationEnds(text, i)
         }
         if (ends) {
+          // A bullet is 0 or 2 bytes of text, so the sum fits.
+          const next = gateTextPlus(k + 1, bullet)
           out.push(i)
           out.push(k)
-          out.push(k + 1 + bullet)
-          i = k + 1 + bullet
+          out.push(next)
+          i = next
           continue
         }
       }
     }
     if (c === 32 && p < paras.length && paras[p] === i + 1) {
       // A paragraph ends here, with or without a terminator.
-      const bullet = gateBulletLen(text, i + 1)
+      const next = gateTextPlus(i + 1, gateBulletLen(text, i + 1))
       out.push(gateTerminatorStart(text, 0, i))
       out.push(i)
-      out.push(i + 1 + bullet)
-      i = i + 1 + bullet
+      out.push(next)
+      i = next
       continue
     }
-    if (c === 32 && text.substring(i + 1, i + 3) === "o ") {
+    if (c === 32 && i < text.length - 2 && text.substring(i + 1, i + 3) === "o ") {
       // A bullet with no punctuation before it still starts an item.
       out.push(i)
       out.push(i)
@@ -680,7 +730,7 @@ export const gateSentenceBreaks = (text: string, paras: i32[]): i32[] => {
       i = i + 3
       continue
     }
-    i = i + 1
+    i++
   }
   return out
 }
@@ -702,7 +752,7 @@ export const gateSentenceSpan = (text: string, paras: i32[], at: i32): i32[] => 
   let stop = -1
   let end = text.length
   const breaks = gateSentenceBreaks(text, paras)
-  for (let i = 0; i + 2 < breaks.length; i += 3) {
+  for (let i = 0; i >= 0 && i < breaks.length - 2; i += 3) {
     if (breaks[i + 2] <= at) {
       start = breaks[i + 2]
     } else if (breaks[i] >= at) {
@@ -747,19 +797,25 @@ const gateHexDigit = (c: i32): i32 => {
 
 /** The end of the byte list whose `[` is at an offset, its bytes pushed to `out`; -1 when it is not one. */
 const gateByteListAt = (line: string, open: i32, out: string[]): i32 => {
-  let i = open + 1
+  // open is an offset of line, so open + 1 fits.
+  let i = gateTextPlus(open, 1)
   let hex = ""
-  while (i + 1 < line.length && gateHexDigit(line.charCodeAt(i)) >= 0 && gateHexDigit(line.charCodeAt(i + 1)) >= 0) {
-    hex = `${hex}${asciiLower(line.substring(i, i + 2))}`
+  while (
+    i >= 0 &&
+    i < line.length - 1 &&
+    gateHexDigit(line.charCodeAt(i)) >= 0 &&
+    gateHexDigit(line.charCodeAt(i + 1)) >= 0
+  ) {
+    hex = `${hex}${line.substring(i, i + 2)}`
     i = i + 2
-    if (i < line.length && line.charCodeAt(i) === 93) {
-      out.push(hex)
+    if (i >= 0 && i < line.length && line.charCodeAt(i) === 93) {
+      out.push(textAsciiLower(hex))
       return i + 1
     }
     // 32 is a space, 44 a comma: what may part two bytes.
     const from = i
-    while (i < line.length && (line.charCodeAt(i) === 32 || line.charCodeAt(i) === 44)) {
-      i = i + 1
+    while (i >= 0 && i < line.length && (line.charCodeAt(i) === 32 || line.charCodeAt(i) === 44)) {
+      i++
     }
     if (i === from) {
       return -1
@@ -779,10 +835,11 @@ const gateByteListAt = (line: string, open: i32, out: string[]): i32 => {
  */
 export const gateByteLists = (line: string): string[] => {
   const out: string[] = []
-  let at = line.indexOf("[")
+  let at = toI32(line.indexOf("["))
   while (at >= 0) {
-    const end = gateByteListAt(line, toI32(at), out)
-    at = line.indexOf("[", end > 0 ? end : at + 1)
+    const end = gateByteListAt(line, at, out)
+    // at is an offset of line, so at + 1 fits.
+    at = toI32(line.indexOf("[", end > 0 ? end : gateTextPlus(at, 1)))
   }
   return out
 }

@@ -40,7 +40,10 @@ export const main = (): i32 => {
 
   const uses = gateKeywordUses('The key words "MUST" here. It MUST NOT fail and SHALL be REQUIRED.')
   t.eqStr("keywords, not in quotes, longest first", textTestNums(uses), "30,0,48,3,57,4")
-  t.eqStr("a keyword's name", gateKeywordName(0), "MUST NOT")
+  t.eqStr("a keyword's name", gateKeywordName(0) ?? "null", "MUST NOT")
+  t.eqStr("the last keyword's name", gateKeywordName(4) ?? "null", "REQUIRED")
+  t.eqStr("no name past the last keyword", gateKeywordName(5) ?? "null", "null")
+  t.eqStr("no name for a negative index", gateKeywordName(-1) ?? "null", "null")
   t.eqStr("not inside a word", textTestNums(gateKeywordUses("MUSTARD and SHALLOW")), "")
 
   const lines = gateLines(["  Hash = SHA-256  ", "", "IKM  = 0x0b0b", "L    = 42", "okm: 'Zg=='", "Count 0x2A"])

@@ -209,13 +209,13 @@ the text, whitespace collapsed
 
 <scalar-field name="q" type="string" required>
 
-the quote, whitespace collapsed and non-empty
+the quote, whitespace collapsed
 
 </scalar-field>
 
 <scalar-field name="returns" type="boolean">
 
-true when some occurrence is word-bounded
+true when some occurrence is word-bounded; false for an empty quote, which quotes nothing
 
 </scalar-field>
 

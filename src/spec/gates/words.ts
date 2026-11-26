@@ -121,7 +121,8 @@ const gateWordsLine = (line: string): GateWordsLine | null => {
 
 /** Whether every word has `digits` digits and the spelling (`0x` or not) of the first. */
 const gateWordsOneKind = (words: string[], digits: i32): boolean => {
-  const prefixed = words[0].startsWith("0x")
+  // No words have every kind; the first is read only when there is one.
+  const prefixed = words.length > 0 && words[0].startsWith("0x")
   return words.every((w: string): boolean => gateWordsDigits(w) === digits && w.startsWith("0x") === prefixed)
 }
 
@@ -141,28 +142,27 @@ const gateWordsIsSectionNumber = (t: string): boolean => {
 
 /** The label printed above the block starting at line `start`, or null. */
 const gateWordsLabelAbove = (lines: string[], start: i32): string | null => {
-  let i = start - 1
-  while (i >= 0 && rfcNormalize(lines[i]).length === 0) {
-    i = i - 1
-  }
-  if (i < 0) {
-    return null
-  }
-  const above = rfcNormalize(lines[i])
-  if (above.length > GATE_WORDS_LABEL_MAX || above.endsWith(".") || above.endsWith(":") || above.endsWith(",")) {
-    return null
-  }
-  const ts = splitWhitespace(above)
-  if (gateWordsIsSectionNumber(ts[0])) {
-    return null
-  }
-  for (const t of ts) {
-    const w = t.startsWith("*") ? t.substring(1, t.length) : t
-    if (gateWordsDigits(w) > 0) {
+  for (let i = start > 0 ? start - 1 : -1; i >= 0 && i < lines.length; i--) {
+    const above = rfcNormalize(lines[i])
+    if (above.length === 0) {
+      continue
+    }
+    if (above.length > GATE_WORDS_LABEL_MAX || above.endsWith(".") || above.endsWith(":") || above.endsWith(",")) {
       return null
     }
+    const ts = splitWhitespace(above)
+    if (ts.length > 0 && gateWordsIsSectionNumber(ts[0])) {
+      return null
+    }
+    for (const t of ts) {
+      const w = t.startsWith("*") ? t.substring(1, t.length) : t
+      if (gateWordsDigits(w) > 0) {
+        return null
+      }
+    }
+    return above
   }
-  return above
+  return null
 }
 
 /** Whether a page break was removed in the lines from `from` to `to`, both included. */
@@ -177,9 +177,72 @@ const gateWordsBreakIn = (pageBreaks: i32[], from: i32, to: i32): boolean => {
 
 /** Whether two lines of words could be rows of one block: the same width and spelling. */
 const gateWordsSameKind = (a: GateWordsLine, b: GateWordsLine): boolean => {
-  const x = a.words[0]
-  const y = b.words[0]
+  const aw = a.words
+  const bw = b.words
+  if (aw.length < 1 || bw.length < 1) {
+    return false
+  }
+  const x = aw[0]
+  const y = bw[0]
   return gateWordsDigits(x) === gateWordsDigits(y) && x.startsWith("0x") === y.startsWith("0x")
+}
+
+/** One run of non-blank lines: where it starts and ends, its first and last lines read as words, and the block it is. */
+class GateWordsRun {
+  /** Its first line. */
+  start: i32
+  /** The line after its last. */
+  end: i32
+  /** Its first line's words; null when that line is not a row of words. */
+  first: GateWordsLine | null
+  /** Its last line's words; null when that line is not a row of words. */
+  last: GateWordsLine | null
+  /** The block it is; null when it is none. */
+  block: GateWordBlock | null
+  constructor(
+    start: i32,
+    end: i32,
+    first: GateWordsLine | null,
+    last: GateWordsLine | null,
+    block: GateWordBlock | null,
+  ) {
+    this.start = start
+    this.end = end
+    this.first = first
+    this.last = last
+    this.block = block
+  }
+}
+
+/** The block the lines `read` of a run starting at line `start` print, or null when they print none. */
+const gateWordsBlockOf = (lines: string[], start: i32, read: GateWordsLine[]): GateWordBlock | null => {
+  const words: string[] = []
+  const names: string[] = []
+  for (const r of read) {
+    for (const w of r.words) {
+      words.push(w)
+    }
+    const n = r.name
+    if (n !== null) {
+      names.push(n)
+    }
+  }
+  if (words.length < 1) {
+    return null
+  }
+  const digits = gateWordsDigits(words[0])
+  if (!gateWordsOneKind(words, digits)) {
+    return null
+  }
+  let label: string | null = null
+  if (names.length > 0) {
+    if (read.length === 1) {
+      label = names[0]
+    }
+  } else {
+    label = gateWordsLabelAbove(lines, start)
+  }
+  return new GateWordBlock(words, label, digits)
 }
 
 /**
@@ -192,10 +255,8 @@ const gateWordsSameKind = (a: GateWordsLine, b: GateWordsLine): boolean => {
  */
 export const gateWordBlocks = (lines: string[], pageBreaks: i32[]): GateWordBlock[] => {
   const out: GateWordBlock[] = []
-  // Each run of non-blank lines, which a page break ends as a blank line does: its first line, the line after its last, and the block it is (-1 when none).
-  const starts: i32[] = []
-  const ends: i32[] = []
-  const of: i32[] = []
+  // Each run of non-blank lines, which a page break ends as a blank line does.
+  const runs: GateWordsRun[] = []
   let i = 0
   while (i < lines.length) {
     if (rfcNormalize(lines[i]).length === 0) {
@@ -205,12 +266,18 @@ export const gateWordBlocks = (lines: string[], pageBreaks: i32[]): GateWordBloc
     const start = i
     let block = true
     const read: GateWordsLine[] = []
-    while (
-      i < lines.length &&
-      rfcNormalize(lines[i]).length > 0 &&
-      (i === start || !gateWordsBreakIn(pageBreaks, i, i))
-    ) {
-      const w = gateWordsLine(lines[i])
+    let first: GateWordsLine | null = null
+    let last: GateWordsLine | null = null
+    while (i < lines.length) {
+      const line = lines[i]
+      if (rfcNormalize(line).length === 0 || (i !== start && gateWordsBreakIn(pageBreaks, i, i))) {
+        break
+      }
+      const w = gateWordsLine(line)
+      if (i === start) {
+        first = w
+      }
+      last = w
       if (w === null) {
         block = false
       } else {
@@ -218,56 +285,33 @@ export const gateWordBlocks = (lines: string[], pageBreaks: i32[]): GateWordBloc
       }
       i = i + 1
     }
-    starts.push(start)
-    ends.push(i)
-    of.push(-1)
-    if (!block) {
-      continue
+    const one: GateWordBlock | null = block ? gateWordsBlockOf(lines, start, read) : null
+    if (one !== null) {
+      out.push(one)
     }
-    const words: string[] = []
-    const names: string[] = []
-    for (const r of read) {
-      for (const w of r.words) {
-        words.push(w)
-      }
-      const n = r.name
-      if (n !== null) {
-        names.push(n)
-      }
-    }
-    const digits = gateWordsDigits(words[0])
-    if (!gateWordsOneKind(words, digits)) {
-      continue
-    }
-    let label: string | null = null
-    if (names.length === 0) {
-      label = gateWordsLabelAbove(lines, start)
-    } else if (read.length === 1) {
-      label = names[0]
-    }
-    of[of.length - 1] = out.length
-    const one = new GateWordBlock(words, label, digits)
-    out.push(one)
+    runs.push(new GateWordsRun(start, i, first, last, one))
   }
-  for (let r = 0; r + 1 < starts.length; r++) {
-    if (!gateWordsBreakIn(pageBreaks, ends[r], starts[r + 1])) {
+  for (let r = 1; r < runs.length; r++) {
+    const x = runs[r - 1]
+    const y = runs[r]
+    if (!gateWordsBreakIn(pageBreaks, x.end, y.start)) {
       continue
     }
-    const before = gateWordsLine(lines[ends[r] - 1])
-    const after = gateWordsLine(lines[starts[r + 1]])
+    const before = x.last
+    const after = y.first
     if (before === null || after === null || !gateWordsSameKind(before, after)) {
       continue
     }
-    const a = of[r]
-    const b = of[r + 1]
-    if (a >= 0) {
-      out[a].atBreak = true
+    const a = x.block
+    const b = y.block
+    if (a !== null) {
+      a.atBreak = true
     }
-    if (b >= 0) {
-      out[b].atBreak = true
+    if (b !== null) {
+      b.atBreak = true
     }
-    if (a >= 0 && b >= 0) {
-      out[a].joinsNext = true
+    if (a !== null && b !== null) {
+      a.joinsNext = true
     }
   }
   return out
