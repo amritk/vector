@@ -15,7 +15,7 @@
         },
         "result": "0",
         "replay": "not-replayed",
-        "replayDetail": "a value depends on a division by zero, which z3 leaves unspecified"
+        "replayDetail": "a value depends on the division by zero a / b in ratio, which z3 leaves unspecified"
       },
       "hint": "The postcondition is false for the input shown. Fix the body or tighten a requires clause so it holds for all remaining inputs."
     },
