@@ -13,6 +13,7 @@
  * reproducible.
  */
 
+import { split } from "nish/text"
 import {
   EXPR_BINOP,
   EXPR_BOOL,
@@ -82,7 +83,9 @@ export class F64Env {
    * @param v its value
    */
   set(name: string, v: F64Val): void {
-    for (let i = 0; i < toI32(this.names.length); i++) {
+    // `set` and `copy` keep `vals` as long as `names`; the second bound is for
+    // the prover, and for an environment whose fields were pushed by hand.
+    for (let i = 0; i < toI32(this.names.length) && i < toI32(this.vals.length); i++) {
       if (this.names[i] === name) {
         this.vals[i] = v
         return
@@ -134,9 +137,12 @@ export class F64Env {
    */
   copy(): F64Env {
     const out = new F64Env()
-    for (let i = 0; i < toI32(this.names.length); i++) {
+    // As in `set`: the second bound ends the loop early only on fields pushed
+    // by hand, where the copy keeps the pairs that have both halves.
+    for (let i = 0; i < toI32(this.names.length) && i < toI32(this.vals.length); i++) {
+      const v = this.vals[i]
       out.names.push(this.names[i])
-      out.vals.push(this.vals[i])
+      out.vals.push(v)
     }
     return out
   }
@@ -249,7 +255,8 @@ const f64IsSafeInteger = (x: f64): boolean =>
 const f64DomainViolation = (params: LangParam[], env: F64Env): string => {
   for (const p of params) {
     const at = env.find(p.name)
-    if (at < 0) {
+    // A name with no value at its index (fields pushed by hand) is unbound.
+    if (at < 0 || at >= toI32(env.vals.length)) {
       return `${p.name} is bound`
     }
     const v = env.vals[at]
@@ -277,12 +284,17 @@ const f64Eval = (ctx: F64Ctx, e: LangExpr, env: F64Env): F64Val => {
   }
   if (e.kind === EXPR_VAR) {
     const at = env.find(e.name)
-    if (at < 0) {
+    if (at < 0 || at >= toI32(env.vals.length)) {
       return ctx.fail()
     }
     return env.vals[at]
   }
+  // The typechecker gives every operator its operands; an expression built
+  // short of them throws here, as a missing name does.
   if (e.kind === EXPR_UNOP) {
+    if (toI32(e.args.length) < 1) {
+      return ctx.fail()
+    }
     const a = f64Eval(ctx, e.args[0], env)
     if (ctx.threw) {
       return a
@@ -302,10 +314,15 @@ const f64Eval = (ctx: F64Ctx, e: LangExpr, env: F64Env): F64Val => {
     return f64Num(Math.ceil(a.n))
   }
   if (e.kind === EXPR_BINOP) {
+    if (toI32(e.args.length) < 2) {
+      return ctx.fail()
+    }
+    const left = e.args[0]
+    const right = e.args[1]
     // The connectives are lazy, like the emitted && / || / !a || b: a callee
     // guard in the right operand must not fire where the code short-circuits.
     if (e.op === "and" || e.op === "or" || e.op === "implies") {
-      const l = f64Eval(ctx, e.args[0], env)
+      const l = f64Eval(ctx, left, env)
       if (ctx.threw) {
         return l
       }
@@ -318,13 +335,13 @@ const f64Eval = (ctx: F64Ctx, e: LangExpr, env: F64Env): F64Val => {
       if (e.op === "implies" && !l.b) {
         return f64Bool(true)
       }
-      return f64Eval(ctx, e.args[1], env)
+      return f64Eval(ctx, right, env)
     }
-    const l = f64Eval(ctx, e.args[0], env)
+    const l = f64Eval(ctx, left, env)
     if (ctx.threw) {
       return l
     }
-    const r = f64Eval(ctx, e.args[1], env)
+    const r = f64Eval(ctx, right, env)
     if (ctx.threw) {
       return r
     }
@@ -365,25 +382,32 @@ const f64Eval = (ctx: F64Ctx, e: LangExpr, env: F64Env): F64Val => {
     return f64Bool(!same)
   }
   if (e.kind === EXPR_ITE) {
+    if (toI32(e.args.length) < 3) {
+      return ctx.fail()
+    }
+    const then = e.args[1]
+    const otherwise = e.args[2]
     const c = f64Eval(ctx, e.args[0], env)
     if (ctx.threw) {
       return c
     }
-    return f64Eval(ctx, c.b ? e.args[1] : e.args[2], env)
+    return f64Eval(ctx, c.b ? then : otherwise, env)
   }
   if (e.kind === EXPR_CALL) {
     const at = programFunctionIndex(ctx.program, e.name)
-    if (at < 0) {
+    // programFunctionIndex answers -1 or an index below the length.
+    if (at < 0 || at >= toI32(ctx.program.functions.length)) {
       return ctx.fail()
     }
     const callee = ctx.program.functions[at]
     const inner = new F64Env()
     for (let i = 0; i < toI32(callee.params.length) && i < toI32(e.args.length); i++) {
+      const name = callee.params[i].name
       const v = f64Eval(ctx, e.args[i], env)
       if (ctx.threw) {
         return v
       }
-      inner.set(callee.params[i].name, v)
+      inner.set(name, v)
     }
     // The emitted callee runs its domain guards first, then its requires, and
     // throws on either: a float64 argument that overflowed, rounded or left
@@ -465,25 +489,22 @@ class F64Rng {
     return toF64(x >>> 8) / parseFloat("16777216")
   }
 
+  // An index below `n`. `next()` is below 1, so the product reaches `n` only
+  // by rounding, and then the last index is taken; the subtraction is in f64,
+  // where it cannot overflow.
   pick(n: i32): i32 {
-    const at = toI32(Math.floor(this.next() * toF64(n)))
-    return at >= n ? n - 1 : at
+    const top = toF64(n)
+    const at = Math.floor(this.next() * top)
+    return toI32(at >= top ? top - parseFloat("1") : at)
   }
 }
 
 const f64List = (texts: string): f64[] => {
   const out: f64[] = []
-  let start = 0
-  const n = toI32(texts.length)
-  while (start <= n) {
-    let end = texts.indexOf(" ", start)
-    if (end < 0) {
-      end = n
+  for (const text of split(texts, " ")) {
+    if (text.length > 0) {
+      out.push(parseFloat(text))
     }
-    if (end > start) {
-      out.push(parseFloat(texts.slice(start, end)))
-    }
-    start = end + 1
   }
   return out
 }
@@ -512,48 +533,63 @@ const f64RandomMagnitude = (rand: F64Rng): f64 => {
   return sign * mantissa * Math.pow(parseFloat("10"), exp)
 }
 
-const f64PoolSize = (p: LangParam): i32 => {
+// A parameter's boundary pool: true then false, or the Int or Real pool.
+const f64Pool = (p: LangParam, real: f64[], ints: f64[]): F64Val[] => {
+  const out: F64Val[] = []
   if (p.ty === "Bool") {
-    return 2
+    out.push(f64Bool(true))
+    out.push(f64Bool(false))
+    return out
   }
-  return p.ty === "Int" ? toI32(f64IntPool().length) : toI32(f64RealPool().length)
-}
-
-const f64PoolValue = (p: LangParam, real: f64[], ints: f64[], k: i32): F64Val => {
-  if (p.ty === "Bool") {
-    return f64Bool(k === 0)
+  for (const x of p.ty === "Int" ? ints : real) {
+    out.push(f64Num(x))
   }
-  return f64Num(p.ty === "Int" ? ints[k] : real[k])
+  return out
 }
 
 const f64Samples = (params: LangParam[], rand: F64Rng): F64Env[] => {
   const real = f64RealPool()
   const ints = f64IntPool()
-  const out: F64Env[] = []
-  // The full product of the pools when it is small enough; else random picks.
-  let product = 1
+  const pools: F64Val[][] = []
+  // The product is counted in f64, where it is exact this far and cannot
+  // overflow.
+  let product = parseFloat("1")
   for (const p of params) {
-    product = product * f64PoolSize(p)
-    if (product > F64_MAX_SAMPLES) {
-      break
-    }
+    const pool = f64Pool(p, real, ints)
+    pools.push(pool)
+    product = product * toF64(pool.length)
   }
-  if (product <= F64_MAX_SAMPLES) {
-    for (let i = 0; i < product; i++) {
-      const env = new F64Env()
-      let rem = i
-      for (const p of params) {
-        const size = f64PoolSize(p)
-        env.set(p.name, f64PoolValue(p, real, ints, rem % size))
-        rem = toI32(rem / size)
+  // The full product of the pools when it is small enough, the first
+  // parameter varying fastest; else random picks.
+  let out: F64Env[] = []
+  if (product <= toF64(F64_MAX_SAMPLES)) {
+    out.push(new F64Env())
+    // `pools` holds one pool per parameter, so the second bound never ends
+    // the loop early; it is there for the prover.
+    for (let k = 0; k < toI32(params.length) && k < toI32(pools.length); k++) {
+      const name = params[k].name
+      const grown: F64Env[] = []
+      for (const v of pools[k]) {
+        for (const env of out) {
+          const next = env.copy()
+          next.set(name, v)
+          grown.push(next)
+        }
       }
-      out.push(env)
+      out = grown
     }
   } else {
     for (let i = 0; i < F64_MAX_SAMPLES; i++) {
       const env = new F64Env()
-      for (const p of params) {
-        env.set(p.name, f64PoolValue(p, real, ints, rand.pick(f64PoolSize(p))))
+      // As above, one pool per parameter.
+      for (let k = 0; k < toI32(params.length) && k < toI32(pools.length); k++) {
+        const name = params[k].name
+        const pool = pools[k]
+        const at = rand.pick(toI32(pool.length))
+        // No pool is empty, and `pick` answers an index below its length.
+        if (at >= 0 && at < toI32(pool.length)) {
+          env.set(name, pool[at])
+        }
       }
       out.push(env)
     }
@@ -611,8 +647,17 @@ const f64Sort = (xs: f64[]): f64[] => {
     return xs
   }
   const mid = n >> 1
-  const left = f64Sort(xs.slice(0, mid))
-  const right = f64Sort(xs.slice(mid, n))
+  const firstHalf: f64[] = []
+  const secondHalf: f64[] = []
+  for (const x of xs) {
+    if (toI32(firstHalf.length) < mid) {
+      firstHalf.push(x)
+    } else {
+      secondHalf.push(x)
+    }
+  }
+  const left = f64Sort(firstHalf)
+  const right = f64Sort(secondHalf)
   const out: f64[] = []
   let i = 0
   let j = 0
@@ -646,9 +691,13 @@ const f64Unique = (xs: f64[]): f64[] => {
   }
   const sorted = f64Sort(finite)
   const out: f64[] = []
+  let has = false
+  let last = f64Zero()
   for (const x of sorted) {
-    if (out.length === 0 || out[toI32(out.length) - 1] !== x) {
+    if (!has || last !== x) {
       out.push(x)
+      last = x
+      has = true
     }
   }
   return out
@@ -679,12 +728,17 @@ const f64DenseValues = (literals: f64[], hasSeed: boolean, seed: f64, rand: F64R
     out.push(a / parseFloat("2"))
     out.push(a * parseFloat("2"))
   }
-  for (let i = 0; i + 1 < toI32(anchors.length); i++) {
-    const lo = anchors[i]
-    const hi = anchors[i + 1]
-    for (let k = 1; k < 16; k++) {
-      out.push(lo + ((hi - lo) * toF64(k)) / parseFloat("16"))
+  // Each adjacent pair of anchors, `lo` the one before `hi`.
+  let hasLo = false
+  let lo = f64Zero()
+  for (const hi of anchors) {
+    if (hasLo) {
+      for (let k = 1; k < 16; k++) {
+        out.push(lo + ((hi - lo) * toF64(k)) / parseFloat("16"))
+      }
     }
+    lo = hi
+    hasLo = true
   }
   for (let k = -1000; k <= 1000; k++) {
     out.push(toF64(k) / parseFloat("100"))
@@ -730,8 +784,15 @@ class F64Dense {
         this.dense.push(none)
       } else {
         const at = seed.find(p.name)
-        const hasSeed = at >= 0 && !seed.vals[at].isBool
-        let vals = f64DenseValues(literals, hasSeed, hasSeed ? seed.vals[at].n : f64Zero(), rand)
+        let hasSeed = false
+        let seedN = f64Zero()
+        // A name with no value at its index (fields pushed by hand) is no seed.
+        if (at >= 0 && at < toI32(seed.vals.length)) {
+          const v = seed.vals[at]
+          hasSeed = !v.isBool
+          seedN = hasSeed ? v.n : f64Zero()
+        }
+        let vals = f64DenseValues(literals, hasSeed, seedN, rand)
         if (p.ty === "Int") {
           const rounded: f64[] = []
           for (const x of vals) {
@@ -748,32 +809,51 @@ class F64Dense {
     this.combos = params.length > 1 ? 2000 : 0
   }
 
+  // `base`, `param` and `val` only count up from 0, and the constructor
+  // pushes one `dense` list per parameter: the `< 0` and `dense.length`
+  // bounds below never decide anything; they are there for the prover.
   next(): F64Env | null {
-    while (this.base < toI32(this.bases.length)) {
-      if (this.param >= toI32(this.params.length)) {
-        this.base = this.base + 1
+    const bases = this.bases
+    const params = this.params
+    let b = this.base
+    while (b >= 0 && b < toI32(bases.length)) {
+      const k = this.param
+      const j = this.val
+      if (k < 0 || k >= toI32(params.length) || k >= toI32(this.dense.length)) {
+        b = b + 1
+        this.base = b
         this.param = 0
         this.val = 0
-      } else if (this.val >= toI32(this.dense[this.param].length)) {
-        this.param = this.param + 1
-        this.val = 0
       } else {
-        const env = this.bases[this.base].copy()
-        env.setNum(this.params[this.param].name, this.dense[this.param][this.val])
-        this.val = this.val + 1
-        return env
+        const vals = this.dense[k]
+        if (j < 0 || j >= toI32(vals.length)) {
+          this.param = k + 1
+          this.val = 0
+        } else {
+          const name = params[k].name
+          const x = vals[j]
+          const env = bases[b].copy()
+          env.setNum(name, x)
+          this.val = j + 1
+          return env
+        }
       }
     }
-    if (this.combos > 0) {
-      this.combos = this.combos - 1
+    const left = this.combos
+    if (left > 0) {
+      this.combos = left - 1
       const env = new F64Env()
-      for (let i = 0; i < toI32(this.params.length); i++) {
+      for (let i = 0; i < toI32(this.params.length) && i < toI32(this.dense.length); i++) {
         const p = this.params[i]
         const vals = this.dense[i]
         if (p.ty === "Bool") {
           env.setBool(p.name, this.rand.next() < parseFloat("0.5"))
         } else if (vals.length > 0) {
-          env.setNum(p.name, vals[this.rand.pick(toI32(vals.length))])
+          const at = this.rand.pick(toI32(vals.length))
+          // `pick` answers an index below the length it is given.
+          if (at >= 0 && at < toI32(vals.length)) {
+            env.setNum(p.name, vals[at])
+          }
         }
       }
       return env
@@ -786,16 +866,21 @@ const f64IsDigits = (s: string, allowDot: boolean): boolean => {
   if (s.length === 0) {
     return false
   }
-  let dots = 0
+  // A second dot refuses the text, as a non-digit does.
+  let dotted = false
   for (let i = 0; i < toI32(s.length); i++) {
+    const inner = i > 0 && i + 1 < toI32(s.length)
     const c = s.charCodeAt(i)
-    if (c === 46 && allowDot && i > 0 && i + 1 < toI32(s.length)) {
-      dots = dots + 1
+    if (c === 46 && allowDot && inner) {
+      if (dotted) {
+        return false
+      }
+      dotted = true
     } else if (c < 48 || c > 57) {
       return false
     }
   }
-  return dots <= 1
+  return true
 }
 
 /**
@@ -808,10 +893,22 @@ const f64IsDigits = (s: string, allowDot: boolean): boolean => {
 export const float64ParseModel = (text: string): f64 => {
   const nan = f64Zero() / f64Zero()
   const neg = text.startsWith("-")
-  const body = neg ? text.slice(1) : text
-  const slash = toI32(body.indexOf("/"))
-  const num = slash < 0 ? body : body.slice(0, slash)
-  const den = slash < 0 ? "1" : body.slice(slash + 1)
+  let body = text
+  // A text that starts with "-" has a first character to drop.
+  if (neg && text.length > 0) {
+    body = text.slice(1)
+  }
+  // `num/den`; a second slash is in no numeral.
+  const parts = split(body, "/")
+  let num = body
+  let den = "1"
+  if (toI32(parts.length) > 2) {
+    return nan
+  }
+  if (toI32(parts.length) === 2) {
+    num = parts[0]
+    den = parts[1]
+  }
   if (!f64IsDigits(num, true) || !f64IsDigits(den, true)) {
     return nan
   }
@@ -827,7 +924,11 @@ const f64Input = (params: LangParam[], env: F64Env, result: string): Counterexam
   for (const p of params) {
     const at = env.find(p.name)
     out.names.push(p.name)
-    out.values.push(at < 0 ? "?" : f64Render(env.vals[at]))
+    if (at >= 0 && at < toI32(env.vals.length)) {
+      out.values.push(f64Render(env.vals[at]))
+    } else {
+      out.values.push("?")
+    }
   }
   return out
 }
@@ -840,7 +941,7 @@ class F64Check {
   pending: string[]
   bodyHasCalls: boolean
   seenGuards: string[]
-  inRegion: i32
+  inRegion: boolean
   bases: F64Env[]
   issues: ConformanceIssue[]
 
@@ -850,7 +951,7 @@ class F64Check {
     this.pending = pending
     this.bodyHasCalls = f64ContainsCall(fn.body)
     this.seenGuards = []
-    this.inRegion = 0
+    this.inRegion = false
     this.bases = []
     this.issues = issues
   }
@@ -868,7 +969,7 @@ class F64Check {
         return true
       }
     }
-    this.inRegion = this.inRegion + 1
+    this.inRegion = true
     if (this.bases.length < 3) {
       this.bases.push(env)
     }
@@ -966,7 +1067,12 @@ export const checkConformance = (program: Program, report: VerifyReport): Confor
     let seedComplete = fr.witness.names.length > 0
     for (const p of fn.params) {
       const at = toI32(fr.witness.names.indexOf(p.name))
-      const raw = at < 0 ? "" : fr.witness.values[at]
+      let raw = ""
+      // A witness short of values (a bug in vector) gives no seed, as a
+      // missing name does.
+      if (at >= 0 && at < toI32(fr.witness.values.length)) {
+        raw = fr.witness.values[at]
+      }
       if (p.ty === "Bool") {
         seed.setBool(p.name, raw === "true")
       } else {
@@ -1016,7 +1122,7 @@ export const checkConformance = (program: Program, report: VerifyReport): Confor
         env = dense.next()
       }
     }
-    if (checker.inRegion === 0) {
+    if (!checker.inRegion) {
       const parts: string[] = []
       for (const c of fn.requires) {
         parts.push(prettyMath(c.expr))
@@ -1153,9 +1259,10 @@ class F64Compare {
   compare(env: F64Env, out: Float64Delta): boolean {
     const newEnv = new F64Env()
     for (let i = 0; i < toI32(this.oldFn.params.length) && i < toI32(this.newFn.params.length); i++) {
+      const name = this.newFn.params[i].name
       const at = env.find(this.oldFn.params[i].name)
-      if (at >= 0) {
-        newEnv.set(this.newFn.params[i].name, env.vals[at])
+      if (at >= 0 && at < toI32(env.vals.length)) {
+        newEnv.set(name, env.vals[at])
       }
     }
     const a = f64Run(this.oldProgram, this.oldFn, env)
@@ -1164,7 +1271,12 @@ class F64Compare {
     if (a.skip || b.skip || (!a.ok && !b.ok)) {
       return false
     }
-    out.compared = out.compared + 1
+    // A sample count stays far below the i32 range; the cap is for the
+    // prover.
+    const compared = out.compared
+    if (compared < 0x7fffffff) {
+      out.compared = compared + 1
+    }
     if (this.bases.length < 3) {
       this.bases.push(env)
     }
