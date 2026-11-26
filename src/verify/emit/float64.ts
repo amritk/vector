@@ -85,6 +85,8 @@ export class F64Env {
   set(name: string, v: F64Val): void {
     // A name with no value at its index (fields pushed by hand) is unbound:
     // drop it, so every name left has its value and the binding below pairs.
+    // Unreachable in a run: vector binds only through `set`, which keeps the
+    // two in step; only a test pushes the fields by hand.
     const vals = this.vals
     const n = toI32(vals.length)
     if (toI32(this.names.length) > n) {
@@ -147,6 +149,7 @@ export class F64Env {
     const out = new F64Env()
     // As in `set`, a name with no value is unbound: the second bound ends the
     // loop early only on fields pushed by hand, and leaves such names out.
+    // Unreachable in a run, as there: only a test pushes the fields by hand.
     for (let i = 0; i < toI32(this.names.length) && i < toI32(this.vals.length); i++) {
       const v = this.vals[i]
       out.names.push(this.names[i])
@@ -156,14 +159,17 @@ export class F64Env {
   }
 }
 
-// What one evaluation did besides return a value: whether it threw, and when
-// a callee's guard was what threw, which guard.
+// What one evaluation did besides return a value: whether it threw, when a
+// callee's guard was what threw, which guard, and when the expression itself
+// was malformed (a bug in vector, not in the program), what was wrong.
 class F64Ctx {
   program: Program
   threw: boolean
   guard: boolean
   guardCallee: string
   guardPretty: string
+  bug: boolean
+  bugWhat: string
 
   constructor(program: Program) {
     this.program = program
@@ -171,6 +177,8 @@ class F64Ctx {
     this.guard = false
     this.guardCallee = ""
     this.guardPretty = ""
+    this.bug = false
+    this.bugWhat = ""
   }
 
   reset(): void {
@@ -178,10 +186,16 @@ class F64Ctx {
     this.guard = false
     this.guardCallee = ""
     this.guardPretty = ""
+    this.bug = false
+    this.bugWhat = ""
   }
 
-  fail(): F64Val {
+  // The typechecker refuses every form this reports, so it is a bug in vector.
+  // It throws, as the emitted code would on a name it cannot resolve.
+  failBug(what: string): F64Val {
     this.threw = true
+    this.bug = true
+    this.bugWhat = what
     return f64Bool(false)
   }
 
@@ -293,15 +307,15 @@ const f64Eval = (ctx: F64Ctx, e: LangExpr, env: F64Env): F64Val => {
   if (e.kind === EXPR_VAR) {
     const at = env.find(e.name)
     if (at < 0 || at >= toI32(env.vals.length)) {
-      return ctx.fail()
+      return ctx.failBug(`${e.name} is unbound`)
     }
     return env.vals[at]
   }
   // The typechecker gives every operator its operands; an expression built
-  // short of them throws here, as a missing name does.
+  // short of them is a bug in vector, as a missing name is.
   if (e.kind === EXPR_UNOP) {
     if (toI32(e.args.length) < 1) {
-      return ctx.fail()
+      return ctx.failBug(`${e.op} has ${e.args.length} of 1 operands`)
     }
     const a = f64Eval(ctx, e.args[0], env)
     if (ctx.threw) {
@@ -323,7 +337,7 @@ const f64Eval = (ctx: F64Ctx, e: LangExpr, env: F64Env): F64Val => {
   }
   if (e.kind === EXPR_BINOP) {
     if (toI32(e.args.length) < 2) {
-      return ctx.fail()
+      return ctx.failBug(`${e.op} has ${e.args.length} of 2 operands`)
     }
     const left = e.args[0]
     const right = e.args[1]
@@ -391,7 +405,7 @@ const f64Eval = (ctx: F64Ctx, e: LangExpr, env: F64Env): F64Val => {
   }
   if (e.kind === EXPR_ITE) {
     if (toI32(e.args.length) < 3) {
-      return ctx.fail()
+      return ctx.failBug(`ite has ${e.args.length} of 3 operands`)
     }
     const then = e.args[1]
     const otherwise = e.args[2]
@@ -405,9 +419,14 @@ const f64Eval = (ctx: F64Ctx, e: LangExpr, env: F64Env): F64Val => {
     const at = programFunctionIndex(ctx.program, e.name)
     // programFunctionIndex answers -1 or an index below the length.
     if (at < 0 || at >= toI32(ctx.program.functions.length)) {
-      return ctx.fail()
+      return ctx.failBug(`${e.name} is not a function`)
     }
     const callee = ctx.program.functions[at]
+    // A call short of arguments would leave a parameter unbound, which the
+    // domain guard below would misreport as the callee's guard.
+    if (toI32(e.args.length) < toI32(callee.params.length)) {
+      return ctx.failBug(`${e.name} has ${e.args.length} of ${callee.params.length} arguments`)
+    }
     const inner = new F64Env()
     for (let i = 0; i < toI32(callee.params.length) && i < toI32(e.args.length); i++) {
       const name = callee.params[i].name
@@ -435,7 +454,7 @@ const f64Eval = (ctx: F64Ctx, e: LangExpr, env: F64Env): F64Val => {
     }
     return f64Eval(ctx, callee.body, inner)
   }
-  return ctx.fail()
+  return ctx.failBug(`an expression of kind ${e.kind}`)
 }
 
 /**
@@ -594,7 +613,8 @@ const f64Samples = (params: LangParam[], rand: F64Rng): F64Env[] => {
         const name = params[k].name
         const pool = pools[k]
         const at = rand.pick(toI32(pool.length))
-        // No pool is empty, and `pick` answers an index below its length.
+        // No pool is empty, and `pick` answers an index below its length;
+        // a parameter left unbound here is recorded by `F64Check.check`.
         if (at >= 0 && at < toI32(pool.length)) {
           env.set(name, pool[at])
         }
@@ -859,7 +879,9 @@ class F64Dense {
           env.setBool(p.name, this.rand.next() < parseFloat("0.5"))
         } else if (vals.length > 0) {
           const at = this.rand.pick(toI32(vals.length))
-          // `pick` answers an index below the length it is given.
+          // `pick` answers an index below the length it is given. Were it
+          // not, or were `dense` short, the parameter would be left unbound,
+          // which `F64Check.check` records as a bug in vector.
           if (at >= 0 && at < toI32(vals.length)) {
             env.setNum(p.name, vals[at])
           }
@@ -928,13 +950,24 @@ export const float64ParseModel = (text: string): f64 => {
   return f64IsFinite(v) ? v : nan
 }
 
+// The first parameter with no value in `env`, or "".
+const f64Unbound = (params: LangParam[], env: F64Env): string => {
+  for (const p of params) {
+    const at = env.find(p.name)
+    if (at < 0 || at >= toI32(env.vals.length)) {
+      return p.name
+    }
+  }
+  return ""
+}
+
 const f64Input = (params: LangParam[], env: F64Env, result: string): Counterexample => {
   const out = new Counterexample(result)
   for (const p of params) {
     const at = env.find(p.name)
     out.names.push(p.name)
-    // As in `F64Dense`: every environment here is built with `set`, so the
-    // second bound is for the prover; an unbound name is "?", as before.
+    // Only the report of an unbound parameter (a bug in vector) meets one,
+    // which it writes "?", as before; `check` refuses every other such input.
     if (at >= 0 && at < toI32(env.vals.length)) {
       out.values.push(f64Render(env.vals[at]))
     } else {
@@ -967,15 +1000,46 @@ class F64Check {
     this.issues = issues
   }
 
+  // Records a malformed expression or input, once per what was wrong: a bug
+  // in vector, which fails the check closed rather than passing the input.
+  bug(what: string, env: F64Env): void {
+    const key = `bug|${what}`
+    if (this.seenGuards.indexOf(key) < 0) {
+      this.seenGuards.push(key)
+      this.issues.push(
+        new ConformanceIssue(
+          this.fn.name,
+          "vector-bug",
+          "(a bug in vector)",
+          what,
+          f64Input(this.fn.params, env, `(a bug in vector: ${what})`),
+        ),
+      )
+    }
+  }
+
   // Returns false once every proven clause has a witness and there is nothing
   // left to learn.
   check(env: F64Env): boolean {
+    // Unreachable through `checkConformance`: every sample binds every
+    // parameter. Were one left unbound, the input would be checked short of
+    // it, so it is recorded as a bug in vector instead of passed.
+    const unbound = f64Unbound(this.fn.params, env)
+    if (unbound !== "") {
+      this.bug(`${unbound} is unbound`, env)
+      return true
+    }
     if (f64DomainViolation(this.fn.params, env) !== "") {
       return true
     }
     const ctx = new F64Ctx(this.program)
     for (const c of this.fn.requires) {
       const ok = f64Eval(ctx, c.expr, env)
+      // A callee guard in the requires is the emitted code refusing the input;
+      // a malformed expression is not.
+      if (ctx.bug) {
+        this.bug(ctx.bugWhat, env)
+      }
       if (ctx.threw || !ok.b) {
         return true
       }
@@ -1002,6 +1066,9 @@ class F64Check {
             ),
           )
         }
+      } else {
+        // Every other throw is `failBug`'s.
+        this.bug(ctx.bugWhat, env)
       }
       return true
     }
@@ -1012,7 +1079,9 @@ class F64Check {
       if (at >= 0) {
         ctx.reset()
         const holds = f64Eval(ctx, clause.expr, ensuresEnv)
-        if (ctx.threw || !holds.b) {
+        if (ctx.bug) {
+          this.bug(ctx.bugWhat, ensuresEnv)
+        } else if (ctx.threw || !holds.b) {
           this.issues.push(
             new ConformanceIssue(
               this.fn.name,
@@ -1076,11 +1145,27 @@ export const checkConformance = (program: Program, report: VerifyReport): Confor
     // starting point, since a witness on an open boundary can round outside.
     const seed = new F64Env()
     let seedComplete = fr.witness.names.length > 0
+    // The solver writes a value for each name; a witness that does not pair
+    // is a bug in vector, recorded so the check fails closed, and no seed.
+    const nNames = toI32(fr.witness.names.length)
+    const nValues = toI32(fr.witness.values.length)
+    if (nNames !== nValues) {
+      seedComplete = false
+      issues.push(
+        new ConformanceIssue(
+          fn.name,
+          "vector-bug",
+          "(a bug in vector)",
+          `the solver's witness has ${nNames} names but ${nValues} values`,
+          new Counterexample("(a bug in vector: an unpaired witness)"),
+        ),
+      )
+    }
     for (const p of fn.params) {
       const at = toI32(fr.witness.names.indexOf(p.name))
       let raw = ""
-      // A witness short of values (a bug in vector) gives no seed, as a
-      // missing name does.
+      // Unreachable when the witness pairs, as checked above; the second bound
+      // is for the prover, and a short witness gives no seed.
       if (at >= 0 && at < toI32(fr.witness.values.length)) {
         raw = fr.witness.values[at]
       }

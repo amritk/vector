@@ -261,7 +261,11 @@ const f64npWitness = (t: Suite): void => {
   witness.values = []
   const short = f64npIssues(checkConformance(program.value, report.value))
   t.ok("a witness without the name finds the gap", missing.indexOf("addTenths_E0") >= 0)
-  t.eqStr("a witness short of values seeds as a missing name", short, missing)
+  t.eqStr(
+    "a witness short of values is a bug, and seeds as a missing name",
+    short,
+    `vector-bug (a bug in vector) =; ${missing}`,
+  )
   witness.values = ["5"]
   t.ok("a witness with its value finds the gap", f64npIssues(checkConformance(program.value, report.value)) !== "")
 }

@@ -199,9 +199,9 @@ const outJsonWrite = (v: OutJson, indent: string, parts: string[]): void => {
       parts.push(",\n")
     }
     parts.push(inner)
-    // An object's value without a key (`add` on an object, which no caller
-    // does) is written bare, so the text is not JSON and every reader refuses
-    // it: loud, with no made-up key.
+    // Unreachable: an object's value without a key comes only from `add` on
+    // an object, which no caller does. It is written bare, so the text is not
+    // JSON and every reader refuses it: loud, with no made-up key.
     if (isObject && i < toI32(v.keys.length)) {
       parts.push(`${outJsonQuote(v.keys[i])}: `)
     }

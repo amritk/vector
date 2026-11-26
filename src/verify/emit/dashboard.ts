@@ -283,6 +283,8 @@ export const renderDashboard = (label: string, report: VerifyReport): string => 
         text = `✘ ${c.fn} no float64 input satisfies requires (${c.pretty}) — emitted code unchecked`
       } else if (c.kind === "callee-guard") {
         text = `✘ ${c.fn} ${c.axiomId} throws in float64 at ${at}: guard ${c.pretty}`
+      } else if (c.kind === "vector-bug") {
+        text = `✘ ${c.fn} not conformance-checked, a bug in vector: ${c.pretty}`
       } else {
         text = `✘ ${c.fn} ${c.axiomId} (${c.pretty}) proven over reals but FALSE at ${at} → result = ${c.input.result}`
       }
