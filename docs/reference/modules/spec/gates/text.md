@@ -161,7 +161,7 @@ for each use, its offset and then the index of its keyword in
 A keyword's text by the index gateKeywordUses gives.
 
 ```ts
-function gateKeywordName(k: i32): string
+function gateKeywordName(k: i32): string | null
 ```
 
 <scalar-field name="k" type="i32" required>
@@ -170,9 +170,9 @@ the index
 
 </scalar-field>
 
-<scalar-field name="returns" type="string">
+<scalar-field name="returns" type="string | null">
 
-the keyword, such as "MUST NOT"
+the keyword, such as "MUST NOT", or null when `k` is not a keyword's index
 
 </scalar-field>
 

@@ -175,6 +175,8 @@ class GateLits {
     this.headLines = []
     const lines = sec.lines
     for (const h of rfcWithHeadings(sec)) {
+      // rfcWithHeadings gives line indices of sec, so this always holds; a
+      // constructor has no finding to report, and heads stays parallel to headLines.
       if (h >= 0 && h < lines.length) {
         const line = lines[h]
         this.heads.push(h)
@@ -252,6 +254,20 @@ const gateLitHex = (lit: Literal): string => {
 /** A finding about one literal, at `${id}.${at}`. */
 const gateLitFail = (l: GateLits, at: string, message: string): void => {
   gateNote(l, `${l.id}.${at}`, message, false)
+}
+
+/**
+ * Refuses the vector when an invariant the gate's own reading keeps does not
+ * hold (two lists that are parallel, an index into a list): a vector bug, so
+ * the vector fails closed instead of being checked on a guess.
+ */
+const gateLitBroken = (l: GateLits, what: string): void => {
+  gateNote(
+    l,
+    l.id,
+    `the fidelity gate's reading of ${l.inSection} is inconsistent (${what}): refused, not checked`,
+    false,
+  )
 }
 
 /** A finding (or, with `warning`, a warning) about the vector, at `at`. */
@@ -502,7 +518,8 @@ const gateWordsCheck = (l: GateLits, lit: Literal, at: string): void => {
   const blocks = l.blocks
   for (const e of exact) {
     if (!(e >= 0 && e < blocks.length)) {
-      continue
+      gateLitBroken(l, `block ${e} of ${blocks.length}`)
+      return
     }
     const bl = blocks[e].label
     if (bl !== null) {
@@ -615,8 +632,12 @@ const gateEmptyCheck = (l: GateLits, at: string, label: string): void => {
   }
   const names = rfcUnvaluedLabels(l.sec)
   const lines = rfcUnvaluedLines(l.sec)
+  if (names.length !== lines.length) {
+    gateLitBroken(l, `${names.length} unvalued labels on ${lines.length} lines`)
+    return
+  }
   const b = new GateBound(at, label)
-  // The two lists are parallel: one line per label.
+  // The two lists are parallel (checked above): one line per label.
   for (let i = 0; i < names.length && i < lines.length; i++) {
     const line = lines[i]
     if (gateSameLabel(names[i], label)) {
@@ -791,7 +812,12 @@ const gateArgText = (b: GateBound): string => {
 const gateLabelArgs = (l: GateLits, args: i32): void => {
   // Every bound past the args is the expected value's.
   const bounds = l.bounds
+  if (args < 0 || args > bounds.length) {
+    gateLitBroken(l, `${args} arguments of ${bounds.length} bounds`)
+    return
+  }
   const last = bounds.length - 1
+  // No expected value is bound; with one, last is an index (args checked above).
   if (last < args || !(last >= 0 && last < bounds.length)) {
     return
   }
@@ -808,6 +834,7 @@ const gateLabelArgs = (l: GateLits, args: i32): void => {
       under.push(rfcNormalize(vl))
     }
   }
+  // args <= bounds.length (checked above).
   for (let a = 0; a < args && a < bounds.length; a++) {
     const b = bounds[a]
     // Paired only by the label the RFC prints over the value, and placed on
@@ -932,6 +959,13 @@ const gateHeadingCase = (l: GateLits, inSection: string): void => {
     )
     return
   }
+  if (placed.length !== cases.length || l.heads.length !== l.headLines.length) {
+    gateLitBroken(
+      l,
+      `${cases.length} cases for ${placed.length} values, ${l.headLines.length} lines for ${l.heads.length} headings`,
+    )
+    return
+  }
   const shared: i32[] = []
   for (let h = 0; h < l.heads.length; h++) {
     const hNow = h
@@ -941,7 +975,8 @@ const gateHeadingCase = (l: GateLits, inSection: string): void => {
   }
   if (shared.length === 0) {
     const each: string[] = []
-    // cases is parallel to placed, and holds indices into heads.
+    // cases is parallel to placed, and headLines to heads (checked above);
+    // gateBoundCases gives indices into heads.
     for (let i = 0; i < placed.length && i < cases.length; i++) {
       const at = placed[i].at
       const under = cases[i]
@@ -949,9 +984,11 @@ const gateHeadingCase = (l: GateLits, inSection: string): void => {
         const heads: string[] = []
         const headLines = l.headLines
         for (const h of under) {
-          if (h >= 0 && h < headLines.length) {
-            heads.push(gateHeadingText(headLines[h]))
+          if (!(h >= 0 && h < headLines.length)) {
+            gateLitBroken(l, `heading ${h} of ${headLines.length}`)
+            return
           }
+          heads.push(gateHeadingText(headLines[h]))
         }
         each.push(`${at} is under ${heads.join(" or ")}`)
       }
@@ -981,6 +1018,10 @@ const gateSameRounds = (bs: GateBound[]): boolean => {
  * repeated labels from one round, and the expected value not an input's.
  */
 const gateOneTestCase = (l: GateLits, args: i32, sec: RfcSection): void => {
+  if (args < 0 || args > l.bounds.length) {
+    gateLitBroken(l, `${args} arguments of ${l.bounds.length} bounds`)
+    return
+  }
   const id = l.id
   const inSection = `${l.where} ("${sec.title}")`
   // A paired argument is placed by its call label's lines, so it is still
@@ -1048,6 +1089,7 @@ const gateOneTestCase = (l: GateLits, args: i32, sec: RfcSection): void => {
       )
     }
   }
+  // 0 <= args <= bounds.length (checked above), so each bound is reached.
   const bounds = l.bounds
   for (let e = args; e >= 0 && e < bounds.length; e++) {
     const be = bounds[e]
@@ -1101,6 +1143,8 @@ const gateOnceRound = (l: GateLits, repeated: GateBound[], shared: i32[], inSect
   const first = repeated[0]
   const rounds = first.of
   if (repeated.some((b: GateBound): boolean => b.printed.length !== rounds)) {
+    // Repeated labels printed a different number of times have no rounds to
+    // place a once-printed label in: none is tied (fidelity_test's RFC 4231 §4 rows).
     return
   }
   const start: i32[] = []
@@ -1641,10 +1685,14 @@ const gateVariantNote = (
   for (const s of siblings) {
     all.push(s)
   }
+  if (shownAll.length !== gateFidPlus(siblings.length, 1)) {
+    gateLitBroken(l, `${shownAll.length} printed labels for ${siblings.length} siblings`)
+    return
+  }
   const own: string[] = []
   const theirs: string[] = []
   const from: string[] = []
-  // shownAll is the label, then each sibling as it is printed.
+  // shownAll is the label, then each sibling as it is printed (checked above).
   for (let si = 0; si < siblings.length && si < shownAll.length - 1; si++) {
     const shown = shownAll[si + 1]
     const ds = gateDigitRuns(siblings[si])
@@ -1666,7 +1714,8 @@ const gateVariantNote = (
   if (own.every((d: string): boolean => named.indexOf(d) >= 0)) {
     return
   }
-  // from is parallel to theirs: where each other variant's number is printed.
+  // from is parallel to theirs, pushed together above: where each other
+  // variant's number is printed.
   let other: string | null = null
   let otherFrom = ""
   for (let i = 0; i < theirs.length && i < from.length && other === null; i++) {

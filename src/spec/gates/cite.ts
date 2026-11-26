@@ -159,10 +159,13 @@ const gateCutsAt = (text: string, inner: i32, after: boolean): boolean => {
  * the text.
  *
  * @param text the text, whitespace collapsed
- * @param q the quote, whitespace collapsed and non-empty
- * @returns true when some occurrence is word-bounded
+ * @param q the quote, whitespace collapsed
+ * @returns true when some occurrence is word-bounded; false for an empty quote, which quotes nothing
  */
 export const gateQuoteWhole = (text: string, q: string): boolean => {
+  if (q.length === 0) {
+    return false
+  }
   let at = toI32(text.indexOf(q))
   while (at >= 0 && at < text.length && q.length <= text.length - at) {
     // Below text.length, so it fits an i32.

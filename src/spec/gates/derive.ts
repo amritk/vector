@@ -67,6 +67,7 @@ const deriveSame = (x: SampleValue, y: SampleValue): boolean => {
     }
     const xb = x.bytes
     const yb = y.bytes
+    // The lengths are equal (checked above); `i < yb.length` is the prover's bound.
     for (let i = 0; i < xb.length && i < yb.length; i++) {
       if (xb[i] !== yb[i]) {
         return false
@@ -134,6 +135,7 @@ const deriveArgs = (p: Clause, sibs: Clause[], args: Expr[], vals: SampleValue[]
     m.why = `${p.id} passes ${args.length} arguments where ${vals.length} are given`
     return
   }
+  // The counts are equal (checked above); `i < vals.length` is the prover's bound.
   for (let i = 0; i < args.length && i < vals.length && m.why === null; i++) {
     deriveUnify(p, sibs, args[i], vals[i], m, depth)
   }

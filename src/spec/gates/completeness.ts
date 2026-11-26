@@ -66,6 +66,7 @@ const gateSameSections = (a: RfcSection[], b: RfcSection[]): boolean => {
   if (a.length !== b.length) {
     return false
   }
+  // The lengths are equal here; `i < b.length` is the bound the prover reads.
   for (let i = 0; i < a.length && i < b.length; i++) {
     const x = a[i]
     const y = b[i]
@@ -200,13 +201,18 @@ const gateSectionComplete = (
     const end = b[2]
     const start = gateSentenceStart(sec, text, paras, b[0])
     if (!gateSpanHolds(spans, start, stop)) {
+      const name = gateKeywordName(keyword)
+      if (name === null) {
+        ctx.toolFailure = `§${sec.id}: keyword ${keyword} is not one gateKeywordUses gives`
+        return
+      }
       const sentence = text.substring(start, end)
       gateIssue(
         ctx,
         out,
         GATE_COMPLETENESS,
         `§${sec.id}`,
-        `${gateKeywordName(keyword)} sentence is neither a requirement nor an exclusion: ${jsonStringifyString(sentence)}`,
+        `${name} sentence is neither a requirement nor an exclusion: ${jsonStringifyString(sentence)}`,
       )
     }
   }

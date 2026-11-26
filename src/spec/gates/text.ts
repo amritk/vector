@@ -207,9 +207,12 @@ export const gateKeywordUses = (text: string): i32[] => {
  * A keyword's text by the index gateKeywordUses gives.
  *
  * @param k the index
- * @returns the keyword, such as "MUST NOT"
+ * @returns the keyword, such as "MUST NOT", or null when `k` is not a keyword's index
  */
-export const gateKeywordName = (k: i32): string => split(GATE_KEYWORDS, "|")[k]
+export const gateKeywordName = (k: i32): string | null => {
+  const ks = split(GATE_KEYWORDS, "|")
+  return k >= 0 && k < ks.length ? ks[k] : null
+}
 
 /**
  * A section's lines as the value checks read them: each whitespace
@@ -267,6 +270,7 @@ const gateWhole = (lines: string, p: i32, e: i32): boolean => {
 /** The line of `lines` that offset `at` is on, counting from 0. */
 const gateLineOf = (lines: string, at: i32): i32 => {
   let n = 0
+  // An offset past the end is on the last line: counting stops at the end.
   for (let i = 0; i < at && i < lines.length; i++) {
     if (lines.charCodeAt(i) === 10) {
       // n counts bytes of lines, so it fits.

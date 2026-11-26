@@ -22,6 +22,7 @@ const gateCoverageCite = (ctx: CheckContext, r: Requirement): string => {
 
 /** Byte order of two names, for sorting. */
 const gateCoverageOrder = (x: string, y: string): i32 => {
+  // The common prefix decides; past it, the shorter name sorts first.
   for (let i = 0; i < x.length && i < y.length; i++) {
     const d = x.charCodeAt(i) - y.charCodeAt(i)
     if (d !== 0) {
