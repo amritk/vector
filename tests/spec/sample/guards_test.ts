@@ -252,6 +252,37 @@ export const main = (): i32 => {
   full.args.push(guardsOp("le32", ["n"]))
   const fullTerm = sampleIntTerm(full, ivars, "u32")
   t.ok("a read of a write", fullTerm !== null)
+  // A read of a write, by its exact term: the byte swap's extract bounds and
+  // the extension's width, which is negative, so absent, for a wider operand.
+  const rv = [guardsVar("n", "u32"), guardsVar("w", "u64"), guardsVar("h", "u16"), guardsVar("s", "i16")]
+  const swapped = new Expr(ExprKind.Op, "beU32")
+  swapped.args.push(guardsOp("le32", ["n"]))
+  t.ok(
+    "a read with the other byte order",
+    (sampleIntTerm(swapped, rv, "u32") ?? "null") ===
+      "(concat ((_ extract 7 0) v_n) ((_ extract 15 8) v_n) ((_ extract 23 16) v_n) ((_ extract 31 24) v_n))",
+  )
+  const wider = new Expr(ExprKind.Op, "leU32")
+  wider.args.push(guardsOp("le32", ["w"]))
+  t.ok("a write of a wider operand", (sampleIntTerm(wider, rv, "u32") ?? "null") === "v_w")
+  const widerSwapped = new Expr(ExprKind.Op, "beU32")
+  widerSwapped.args.push(guardsOp("le32", ["w"]))
+  t.ok(
+    "a swapped write of a wider operand",
+    (sampleIntTerm(widerSwapped, rv, "u32") ?? "null") ===
+      "(concat ((_ extract 7 0) v_w) ((_ extract 15 8) v_w) ((_ extract 23 16) v_w) ((_ extract 31 24) v_w))",
+  )
+  const narrower = new Expr(ExprKind.Op, "leU32")
+  narrower.args.push(guardsOp("le32", ["h"]))
+  t.ok("a write of a narrower operand", (sampleIntTerm(narrower, rv, "u32") ?? "null") === "((_ zero_extend 16) v_h)")
+  const signed = new Expr(ExprKind.Op, "leI32")
+  signed.args.push(guardsOp("le32", ["s"]))
+  const ext = "((_ sign_extend 16) v_s)"
+  t.ok(
+    "a write of a narrower signed operand",
+    (sampleIntTerm(signed, rv, "i32") ?? "null") ===
+      `(ite (bvslt ${ext} #x00000000) (- (bv2int ${ext}) 4294967296) (bv2int ${ext}))`,
+  )
   const noRead = new Expr(ExprKind.Op, "leU32")
   t.ok("a read with no operand", sampleIntTerm(noRead, ivars, "u32") === null)
 
