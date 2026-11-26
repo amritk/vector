@@ -2,10 +2,8 @@
 
 vector is written in [Nish](https://github.com/amritk/nish), a static subset
 of TypeScript compiled to a native binary, `dist/vector`. The
-compiler is pinned in `.nish-version` (read by `scripts/fetch-nish.sh`) and
-lives in `.nish/`; z3 is
-pinned in `scripts/fetch-z3.sh` and lives in `.z3/`. Before writing Nish,
-read `.nish/docs/AI.md` (the language as rules, traps first).
+compiler is pinned in `.nish-version` and z3 in `scripts/fetch-z3.sh`.
+Before writing Nish, read `.nish/docs/AI.md` (the language as rules, traps first).
 
 | Command | What it does |
 | --- | --- |
@@ -18,17 +16,18 @@ read `.nish/docs/AI.md` (the language as rules, traps first).
 | `npm run tested-exports` | refuse an exported function no test calls by name |
 | `npm run dogfood` | refuse a `tests/dogfood/` test that is not what vector emits from its spec now |
 | `npm run doc-caps` | refuse an agent-facing doc over its byte cap in `scripts/doc-caps.json` |
+| `npm run panics` | refuse a `src/` module over its unproven panic sites in `scripts/panic-baseline/` |
 
 ## Layout
 
 - `src/index.ts` is the package's entry (`@amritk/vector`, the `nish`
   condition in `package.json`). Its `vectorRun` declares the commands, parses
-  the arguments and dispatches; it handles `--help` and `--version`, and
-  everything else is a command's. `src/main.ts`, the binary's entry, hands
+  the arguments and dispatches; it handles `--help` and `--version`; the
+  rest is a command's. `src/main.ts`, the binary's entry, hands
   the process's arguments to `vectorRun`.
 - `src/cli/<command>.ts` exports `register<Command>(cli, parent)`, which
-  declares the command's flags and arguments and returns the object whose
-  `run(r)` is its handler.
+  declares its flags and arguments and returns the object whose `run(r)`
+  handles it.
 - `src/core/` holds what every command shares: paths and files, JSON, hex
   and SHA-256, child processes, z3, and diagnostics.
 - `tests/<area>/*_test.ts` are Nish programs built on `nish/testing`.
