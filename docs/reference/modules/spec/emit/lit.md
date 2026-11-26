@@ -58,7 +58,8 @@ The integer `text` as a Nish expression of type `ty`. A Nish numeric
 literal is an i32 unless its context types it, and exact only up to 2^53,
 so: an i32 is the literal; a value that fits i32 is converted; a larger one
 is typed by a `toT(0) +` beside it; one past 2^53 is built as
-hi * 2^32 + lo, each part exact and no step out of the type's range.
+hi * 2^32 + lo in u64, each part exact, and an i64 is that u64's two's
+complement bits read back with toI64, so no signed step can overflow.
 
 ```ts
 function emitIntLit(text: string, ty: string): string

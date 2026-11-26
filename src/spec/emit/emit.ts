@@ -25,6 +25,7 @@ import {
   vocabBaseOf,
   vocabBigEndian,
   vocabByteWidth,
+  vocabFitsInt,
   vocabHas,
   vocabIsIntType,
   vocabIsOptional,
@@ -81,9 +82,8 @@ class EmitContext {
   opts: EmitOptions
   /** The helpers used, in first-use order. */
   used: string[]
-  /** What the program imports from nish:secret and nish:unsafe. */
+  /** What the program imports from nish:secret. */
   secretNames: string[]
-  unsafeNames: string[]
   /** The `plain_` wrappers of functions that take or return a Secret, with their text. */
   wrapperNames: string[]
   wrapperTexts: string[]
@@ -97,7 +97,6 @@ class EmitContext {
     this.opts = opts
     this.used = []
     this.secretNames = []
-    this.unsafeNames = []
     this.wrapperNames = []
     this.wrapperTexts = []
     this.env = new TypeEnv(c.functions, true)
@@ -344,7 +343,9 @@ const emitOutBody = (
     return
   }
   body.push(`  const o_cap: i32 = of.cap("${sig.name}", ${capacityNish(cap.value, "a_")});`)
-  body.push("  if (o_cap < 0) {")
+  // of.cap returns -1 past 2^20; the bound is repeated here, where the
+  // checker reads it, so that o_cap + 2 * at is proven to fit.
+  body.push("  if (o_cap < 0 || o_cap > 1048576) {")
   for (const w of wipes) {
     body.push(`  ${w}`)
   }
@@ -554,10 +555,10 @@ const emitHelperOp = (ctx: EmitContext, e: Expr): string | null => {
     return `\`\${${emitArg(ctx, e, 0, null)}}\${${emitArg(ctx, e, 1, null)}}\``
   }
   if (op === "lower") {
-    return `${emitUse(ctx, "shiftCase")}(${emitArg(ctx, e, 0, null)}, 65, 90, 32)`
+    return `${emitUse(ctx, "shiftCase")}(${emitArg(ctx, e, 0, null)}, false)`
   }
   if (op === "upper") {
-    return `${emitUse(ctx, "shiftCase")}(${emitArg(ctx, e, 0, null)}, 97, 122, -32)`
+    return `${emitUse(ctx, "shiftCase")}(${emitArg(ctx, e, 0, null)}, true)`
   }
   if (op === "utf8") {
     return `${emitUse(ctx, "utf8Bytes")}(${emitArg(ctx, e, 0, null)})`
@@ -603,12 +604,15 @@ const emitOp = (ctx: EmitContext, e: Expr, want: string | null): string => {
   if (op === "+" || op === "-" || op === "*") {
     const t = emitOperands(ctx, e)
     if (t === "i32" || t === "i64") {
-      // Signed overflow panics in Nish; the contract wraps, as evalPure and
-      // the sampler do, so i32 and i64 go through nish:unsafe's
-      // two's-complement wrap. The unsigned words already wrap.
-      const w = op === "+" ? "wrappingAdd" : op === "-" ? "wrappingSub" : "wrappingMul"
-      emitAddOnce(ctx.unsafeNames, w)
-      return emitConv(`${w}(${emitArg(ctx, e, 0, t)}, ${emitArg(ctx, e, 1, t)})`, emitTypeOf(ctx, e), want)
+      // Signed overflow is refused in Nish; the contract wraps, as evalPure
+      // and the sampler do. The low bits of + - * are the same signed or
+      // unsigned, so both sides go to the unsigned type of their width,
+      // which wraps, and the result's bits are read back as signed.
+      const u = t === "i32" ? "toU32" : "toU64"
+      const s = t === "i32" ? "toI32" : "toI64"
+      const a = `${u}(${emitArg(ctx, e, 0, t)})`
+      const b = `${u}(${emitArg(ctx, e, 1, t)})`
+      return emitConv(`${s}(${a} ${op} ${b})`, emitTypeOf(ctx, e), want)
     }
     return emitConv(`(${emitArg(ctx, e, 0, t)} ${op} ${emitArg(ctx, e, 1, t)})`, emitTypeOf(ctx, e), want)
   }
@@ -897,7 +901,8 @@ const emitIterateSteps = (ctx: EmitContext, k: Clause, sig: FnSig, args: string[
     vars.push(`it_a${i}`)
     lines.push(`  let it_a${i}: ${emitNishType(vocabValueType(sig.params[i].type))} = ${args[i]};`)
   }
-  const count = emitIntLit(`${it.count}`, "i64")
+  // A bare literal where it fits, which the no-panic checker reads as the counter's bound.
+  const count = vocabFitsInt(`${it.count}`, "i32") ? `${it.count}` : emitIntLit(`${it.count}`, "i64")
   const optional = vocabIsOptional(vocabValueType(sig.returns))
   lines.push(`  for (let it_i: i64 = 1; it_i < ${count}; it_i += 1) {`)
   lines.push(`    const it_s = ${emitCall(ctx, sig, vars)};`)
@@ -1045,15 +1050,22 @@ const emitProperty = (ctx: EmitContext, k: Clause, samples: Sample[]): string =>
   }
   const undefinedWhy = emitUndefinedWhy(assert)
   const usesUnwrap = undefinedWhy !== null
-  out.push(`  for (let i: i32 = 0; i < ${count}; i += 1) {`)
+  // Each table's length bounds the index too, so the no-panic checker proves every table_x[i].
+  const inTables = k.forall.map((v) => ` && i < table_${v.name}.length`).join("")
+  out.push(`  for (let i: i32 = 0; i < ${count}${inTables}; i += 1) {`)
   ctx.env = new TypeEnv(ctx.c.functions, true)
   const shown: string[] = []
+  // Every row is read before any call, which would drop the loop bound's facts about the tables.
+  for (const v of k.forall) {
+    const raw = v.type === "bytes" ? "string" : v.type
+    out.push(`    const r_${v.name}: ${raw} = table_${v.name}[i];`)
+  }
   for (const v of k.forall) {
     typeEnvBind(ctx.env, v.name, v.type)
     if (v.type === "bytes") {
-      out.push(`    const v_${v.name}: u8[] = unhex(table_${v.name}[i]);`)
+      out.push(`    const v_${v.name}: u8[] = unhex(r_${v.name});`)
     } else {
-      out.push(`    const v_${v.name}: ${v.type} = table_${v.name}[i];`)
+      out.push(`    const v_${v.name}: ${v.type} = r_${v.name};`)
     }
     shown.push(
       vocabIsIntType(v.type) ? `${v.name} = \${v_${v.name}}` : `len(${v.name}) = \${toI32(v_${v.name}.length)}`,
@@ -1212,7 +1224,7 @@ const emitHeader = (c: Contract, opts: EmitOptions): string =>
     .map((l: string): string => (l === "" ? "//" : `// ${l}`))
     .join("\n")
 
-/** The imports: the suite, the functions called by module, then nish:secret and nish:unsafe. */
+/** The imports: the suite, the functions called by module, then nish:secret. */
 const emitImports = (ctx: EmitContext, called: string[]): string => {
   const lines: string[] = [`import { Suite } from "nish/testing";`]
   const modules: string[] = []
@@ -1243,9 +1255,6 @@ const emitImports = (ctx: EmitContext, called: string[]): string => {
   if (secrets.length > 0) {
     lines.push(`import { ${secrets.join(", ")} } from "nish:secret";`)
   }
-  if (ctx.unsafeNames.length > 0) {
-    lines.push(`import { ${emitSortedUnique(ctx.unsafeNames).join(", ")} } from "nish:unsafe";`)
-  }
   return lines.join("\n")
 }
 
@@ -1267,7 +1276,8 @@ const emitMain = (c: Contract): string => {
     lines.push(`  ran = \`\${ran}\${${emitClauseFn(k)}(t) ? "1" : "0"}\`;`)
   }
   lines.push("  const code: i32 = t.done();")
-  lines.push(`  const nonce: string = toI32(process.argv.length) > 1 ? process.argv[1] : "-";`)
+  lines.push("  const argv: string[] = process.argv;")
+  lines.push(`  const nonce: string = 1 < argv.length ? argv[1] : "-";`)
   lines.push("  console.log(`vector-done ${nonce} ${ran}`);")
   lines.push("  return code;")
   lines.push("};")

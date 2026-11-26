@@ -419,7 +419,8 @@ lives ([Test your own modules](testing.md#test-your-own-modules)).
 - The test defines helpers of its own, such as `utf8Bytes` and `bytesEq`, and
   Nish has no import aliasing, so a function under test cannot share one of
   their names; `spec extract` names the clash.
-- A 64-bit int is written as `hi·2^32 + lo`, so no literal passes 2^53.
+- A 64-bit int past 2^53 is written as `hi·2^32 + lo`, so no literal passes
+  2^53; an `i64` builds those bits in `u64` and reads them back with `toI64`.
 - A word is a typed literal (`toU32(0) + 0x01020304`); a `u64` word past 32
   bits is its two halves, shifted and joined. A word-array result is
   compared as its words in hex, so a failure prints both arrays. Only the
@@ -427,9 +428,10 @@ lives ([Test your own modules](testing.md#test-your-own-modules)).
   `typescript` refuse a function that takes or returns one.
 - An f64 is its shortest round-tripping decimal, or, for `-0`, `NaN` and the
   infinities, its bits.
-- `i32` and `i64` `+ - *` are emitted as `wrappingAdd`, `wrappingSub` and
-  `wrappingMul` from `nish:unsafe`, since Nish's signed operators panic on
-  overflow. `u8`, `u16`, `u32` and `u64` are emitted as plain operators,
+- `i32` and `i64` `+ - *` are computed in `u32` and `u64` and read back with
+  `toI32` and `toI64` (`toI32(toU32(a) + toU32(b))`), since Nish's signed
+  operators panic on overflow; the test imports nothing from `nish:unsafe`.
+  `u8`, `u16`, `u32` and `u64` are emitted as plain operators,
   which wrap in Nish. So for every integer type the test can hold, a sample
   that overflows wraps, as it does in the evaluator and the sampler.
 
