@@ -362,12 +362,23 @@ export const xmlTrim = (s: string): string => {
   return s.substring(toI32(start), toI32(end))
 }
 
+/** What an `<xref>` or `<eref>` puts before and after its content. */
+class XmlWrap {
+  before: string
+  after: string
+
+  constructor(before: string, after: string) {
+    this.before = before
+    this.after = after
+  }
+}
+
 /**
  * xml2rfc's text writer for an `<xref>`: what goes before and after its
  * content, which is already rendered and trimmed. With no content, the two
  * joined are the whole of it.
  */
-const xmlXrefWrap = (t: XmlText, x: XmlNode, has: boolean): string[] => {
+const xmlXrefWrap = (t: XmlText, x: XmlNode, has: boolean): XmlWrap => {
   const info = t.xrefs.get(x)
   let reference = false
   let worked: string | null = null
@@ -382,34 +393,34 @@ const xmlXrefWrap = (t: XmlText, x: XmlNode, has: boolean): string[] => {
     const label = xmlStartsDigit(section) ? "Section" : xmlIsAppendix(section) ? "Appendix" : "Part"
     const fmt = xmlAttr(x, "sectionFormat") ?? "of"
     if (fmt === "comma") {
-      return ["", `${gap}[${reftext}], ${label} ${section}`]
+      return new XmlWrap("", `${gap}[${reftext}], ${label} ${section}`)
     }
     if (fmt === "parens") {
-      return ["", `${gap}[${reftext}] (${label} ${section})`]
+      return new XmlWrap("", `${gap}[${reftext}] (${label} ${section})`)
     }
     if (fmt === "bare") {
-      return has ? [`${section} (`, ")"] : [section, ""]
+      return has ? new XmlWrap(`${section} (`, ")") : new XmlWrap(section, "")
     }
-    return [`${label} ${section} of `, `${gap}[${reftext}]`]
+    return new XmlWrap(`${label} ${section} of `, `${gap}[${reftext}]`)
   }
   const format = xmlAttr(x, "format") ?? "default"
   if (reftext.length === 0 || format === "none") {
-    return ["", ""]
+    return new XmlWrap("", "")
   }
   const bracket = reference && format !== "title"
   if (has) {
-    return ["", bracket ? ` [${reftext}]` : ` (${reftext})`]
+    return new XmlWrap("", bracket ? ` [${reftext}]` : ` (${reftext})`)
   }
-  return ["", bracket ? `[${reftext}]` : reftext]
+  return new XmlWrap("", bracket ? `[${reftext}]` : reftext)
 }
 
 /** xml2rfc's text writer for an `<eref>`: what goes before and after its trimmed content. */
-const xmlErefWrap = (e: XmlNode, has: boolean): string[] => {
+const xmlErefWrap = (e: XmlNode, has: boolean): XmlWrap => {
   const target = xmlAttr(e, "target") ?? ""
   if ((xmlAttr(e, "brackets") ?? "") === "none") {
-    return has ? ["", ` (${target})`] : ["", target]
+    return has ? new XmlWrap("", ` (${target})`) : new XmlWrap("", target)
   }
-  return has ? ["", ` <${target}>`] : ["", `<${target}>`]
+  return has ? new XmlWrap("", ` <${target}>`) : new XmlWrap("", `<${target}>`)
 }
 
 /** `s` without leading white space, as JS `trimStart` strips it; `s` itself when it has none. */
@@ -440,27 +451,28 @@ const xmlTrimTail = (s: string): string => {
  *
  * @returns whether any text is left
  */
-const xmlTrimPieces = (out: string[], from: i32): boolean => {
-  while (out.length > from) {
-    const last = xmlTrimTail(out[out.length - 1])
+const xmlTrimPieces = (out: string[], from: u32): boolean => {
+  while (toU32(out.length) > from && out.length > 0) {
+    const last = xmlTrimTail(out.pop())
     if (last.length > 0) {
-      out[out.length - 1] = last
+      out.push(last)
       break
     }
-    out.pop()
   }
   let k = from
-  while (k < out.length) {
+  while (k < toU32(out.length)) {
     const first = xmlTrimLead(out[k])
+    out[k] = ""
     if (first.length > 0) {
-      out[k] = ""
-      out[from] = first
+      // `from` is at most `k`, which is below the length.
+      if (from < toU32(out.length)) {
+        out[from] = first
+      }
       return true
     }
-    out[k] = ""
     k = k + 1
   }
-  while (out.length > from) {
+  while (toU32(out.length) > from && out.length > 0) {
     out.pop()
   }
   return false
@@ -477,14 +489,18 @@ const xmlInner = (t: XmlText, n: XmlNode, found: XmlNode[] | null, out: string[]
 
 /** An `<xref>` or `<eref>` rendered onto `out`: its content trimmed where it lies, then wrapped. */
 const xmlRenderLink = (t: XmlText, n: XmlNode, found: XmlNode[] | null, out: string[]): void => {
-  const at = out.length
+  // In u32: an array's length is below 2^31, so the sum never wraps.
+  const at = toU32(out.length)
   out.push("")
   xmlInner(t, n, found, out)
   const has = xmlTrimPieces(out, at + 1)
   const wrap = n.name === "xref" ? xmlXrefWrap(t, n, has) : xmlErefWrap(n, has)
-  out[at] = wrap[0]
-  if (wrap[1].length > 0) {
-    out.push(wrap[1])
+  // The trim keeps every piece up to `at`, so the slot pushed is still there.
+  if (at < toU32(out.length)) {
+    out[at] = wrap.before
+  }
+  if (wrap.after.length > 0) {
+    out.push(wrap.after)
   }
 }
 
@@ -630,8 +646,9 @@ export const xmlCodeOf = (n: XmlNode): XmlCode => {
     text = text.substring(0, end - 1)
   }
   const base = first ?? n
-  const skip = lead > 0 ? 1 : 0
-  return new XmlCode(xmlAttr(n, "type"), text, base.line + skip, base.mdLine, base.markLine)
+  // In u32: a line number is below the input's length, so the sum never wraps.
+  const line = toI32(toU32(base.line) + (lead > 0 ? 1 : 0))
+  return new XmlCode(xmlAttr(n, "type"), text, line, base.mdLine, base.markLine)
 }
 
 /** A table cell, and whether it is a header cell. */
@@ -762,12 +779,14 @@ const xmlCut = (s: string, n: i32): string => {
 }
 
 /** The index of the first of `stops` at or after `at`. */
-const xmlNextStop = (stops: i32[], at: i32): i32 => {
-  let lo = 0
-  let hi = stops.length
+const xmlNextStop = (stops: i32[], at: i32): u32 => {
+  // In u32: `lo` and `hi` stay at most the length, so no sum wraps.
+  let lo: u32 = 0
+  let hi = toU32(stops.length)
   while (lo < hi) {
-    const mid = (lo + hi) >> 1
-    if (stops[mid] < at) {
+    const mid = lo + ((hi - lo) >> 1)
+    // `mid` is below `hi`, which is at most the length: the first test always holds.
+    if (mid < toU32(stops.length) && stops[mid] < at) {
       lo = mid + 1
     } else {
       hi = mid
@@ -791,78 +810,94 @@ const xmlNormativeIn = (
 ): Result<boolean, XmlError> => {
   const found: XmlNode[] = []
   const marked = xmlRunText(b.t, nodes, found)
-  if (found.length === 0) {
+  if (found.length < 1) {
     return Ok(true)
   }
+  const head = found[0]
   const parts: string[] = []
-  const start: i32[] = []
-  const end: i32[] = []
-  const open: i32[] = []
-  let length = 0
-  let from = 0
-  let i = 0
-  while (i < marked.length) {
+  const start: u32[] = []
+  const end: u32[] = []
+  const open: u32[] = []
+  // In u32: every count below is at most the length of `marked`, so no sum wraps.
+  let length: u32 = 0
+  let from: u32 = 0
+  let i: u32 = 0
+  while (i < toU32(marked.length)) {
     const ch = marked.charCodeAt(i)
     if (ch === 1 || ch === 2) {
-      parts.push(marked.substring(from, i))
-      length = length + (i - from)
+      let piece = marked.substring(toI32(from), toI32(i))
+      if (ch === 2 && piece.endsWith(" ")) {
+        piece = piece.substring(0, toI32(toU32(piece.length) - 1))
+      }
+      parts.push(piece)
+      length = length + toU32(piece.length)
       from = i + 1
       if (ch === 1) {
-        open.push(start.length)
+        open.push(toU32(start.length))
         start.push(length)
         end.push(length)
-        if (i + 1 < marked.length && marked.charCodeAt(i + 1) === 0x20) {
+        if (from < toU32(marked.length) && marked.charCodeAt(from) === 0x20) {
           from = from + 1
         }
       } else {
-        const last = parts[parts.length - 1]
-        if (last.endsWith(" ")) {
-          parts[parts.length - 1] = last.substring(0, last.length - 1)
-          length = length - 1
+        // Each U+0002 closes the U+0001 before it: the render fences every `<bcp14>`.
+        if (open.length < 1) {
+          return Err(xmlErrorAt(head, "internal: a <bcp14> closes before it opens"))
         }
-        const o = open.length > 0 ? open[open.length - 1] : 0
-        if (open.length > 0) {
-          open.pop()
+        const o = open.pop()
+        if (o >= toU32(end.length)) {
+          return Err(xmlErrorAt(head, "internal: a <bcp14> closes one never opened"))
         }
         end[o] = length
       }
     }
     i = i + 1
   }
-  parts.push(marked.substring(from, marked.length))
+  parts.push(marked.substring(toI32(from), marked.length))
   const text = parts.join("")
+  const size = toU32(text.length)
   const stops: i32[] = []
   let s = text.indexOf(". ")
   while (s >= 0) {
     stops.push(s)
-    s = text.indexOf(". ", s + 1)
+    s = text.indexOf(". ", toI32(toU32(s) + 1))
   }
   const seen = new Set<string>()
-  let k = 0
-  while (k < found.length) {
+  let k: u32 = 0
+  while (k < toU32(found.length)) {
     const bn = found[k]
+    // One U+0001 is pushed per `<bcp14>` found, and each closes after it opens.
+    if (k >= toU32(start.length) || k >= toU32(end.length)) {
+      return Err(xmlErrorAt(bn, "internal: a <bcp14> has no span"))
+    }
     const st = start[k]
     const en = end[k]
-    const word: string | null = en - st > 15 ? null : text.substring(st, en)
+    if (en < st || en > size) {
+      return Err(xmlErrorAt(bn, "internal: a <bcp14> span is out of order"))
+    }
+    const word: string | null = en - st > 15 ? null : text.substring(toI32(st), toI32(en))
     const level = word !== null && word === "NOT RECOMMENDED" ? "SHOULD NOT" : word
     if (level === null || !xmlIsKeyword(level)) {
-      const shown = word ?? `${trimEnd(xmlCut(text.substring(st, text.length), 40))}...`
+      const shown = word ?? `${trimEnd(xmlCut(text.substring(toI32(st), text.length), 40))}...`
       return Err(xmlErrorAt(bn, `<bcp14> holds "${shown}", which is not a BCP 14 keyword`))
     }
     k = k + 1
-    if ((st > 0 && text.charCodeAt(st - 1) === 0x22) || (en < text.length && text.charCodeAt(en) === 0x22)) {
+    const pre = st - 1
+    if ((st > 0 && pre < toU32(text.length) && text.charCodeAt(pre) === 0x22) ||
+      (en < toU32(text.length) && text.charCodeAt(en) === 0x22)) {
       continue
     }
-    const j = xmlNextStop(stops, st)
-    const after = j < stops.length ? stops[j] : -1
-    const before = after === st ? after : j > 0 ? stops[j - 1] : -1
+    const j = xmlNextStop(stops, toI32(st))
+    const pj = j - 1
+    const after = j < toU32(stops.length) ? stops[j] : -1
+    const before = after === toI32(st) ? after : j > 0 && pj < toU32(stops.length) ? stops[pj] : -1
     const key = `${level}\n${before}`
     if (seen.has(key)) {
       continue
     }
     seen.add(key)
-    const first = before < 0 ? 0 : before + 2
-    const last = after < 0 ? text.length : after + 1
+    const first = before < 0 ? 0 : toI32(toU32(before) + 2)
+    const last = after < 0 ? text.length : toI32(toU32(after) + 1)
     const entry = new XmlNormative(section, level, text.substring(first, last), bn)
     entry.line = line
     entry.start = first
@@ -874,7 +909,8 @@ const xmlNormativeIn = (
 
 /** Starts a block on `out`: a blank line after the block before it, if any, recorded on `b.breaks`. */
 const xmlBlockBreak = (b: XmlLines, out: string[]): void => {
-  if (out.length > 0 && out[out.length - 1].length > 0) {
+  const last = out.length - 1
+  if (last >= 0 && last < out.length && out[last].length > 0) {
     b.breaks.push(out.length)
     out.push("")
   }
@@ -931,7 +967,8 @@ const xmlBlock = (
     while (nl >= 0) {
       b.code.push(out.length)
       out.push(code.text.substring(at, nl))
-      at = nl + 1
+      // In u32: `nl` is below the length, so the sum never wraps.
+      at = toI32(toU32(nl) + 1)
       nl = code.text.indexOf("\n", at)
     }
     b.code.push(out.length)
