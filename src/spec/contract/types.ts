@@ -44,6 +44,8 @@ export class Literal {
   label: string | null = null
   /** Why the value is not checked against its source. */
   unchecked: string | null = null
+  /** Why a concat's hex part is a format constant the source does not print. */
+  format: string | null = null
   /** An f64's binary64 encoding as 16 hex digits. */
   bits: string | null = null
   /** A bool literal's value. */
@@ -420,6 +422,32 @@ export class Truncate {
   }
 }
 
+/**
+ * A vector whose expect is the tail of a printed value: `args[arg]`
+ * followed by the expect is one whole value the source prints, and the
+ * expect is its last `bytes` bytes.
+ */
+export class Tail {
+  /** The index of the argument the value starts with. */
+  arg: i32
+  /** How many bytes the expect is, at least 1. */
+  bytes: i64
+  /** Why the source prints the two as one value. */
+  reason: string
+  /**
+   * Joins an argument and the expect as one printed value.
+   *
+   * @param arg the index of the argument that starts the value
+   * @param bytes how many bytes end it, the expect
+   * @param reason why the source prints them as one
+   */
+  constructor(arg: i32, bytes: i64, reason: string) {
+    this.arg = arg
+    this.bytes = bytes
+    this.reason = reason
+  }
+}
+
 /** A variable a property quantifies over, and its domain. */
 export class ForallVar {
   /** The variable's name. */
@@ -490,6 +518,8 @@ export class Clause {
   iterate: Iterate | null = null
   /** How many leading bytes of a vector's result are compared; null when all of it is. */
   truncate: Truncate | null = null
+  /** The printed value a vector's arg and expect are the two ends of; null when none. */
+  tail: Tail | null = null
   /** The variables a property quantifies over. */
   forall: ForallVar[]
   /** A property's restriction of its domain; null when none. */

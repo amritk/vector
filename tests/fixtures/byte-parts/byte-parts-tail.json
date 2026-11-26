@@ -1,0 +1,68 @@
+{
+  "$schema": "../../../schemas/rfc-contract.json",
+  "contract": "byte-parts-tail",
+  "source": {
+    "rfc": 9001,
+    "title": "Byte parts fixture: a result printed as a value's tail",
+    "sha256": "0931844bd84b8752937b6ae605d9016c7d90e9e00d6168b6423c52f348f8ce1d"
+  },
+  "sources": [
+    {
+      "id": "rfc9001",
+      "rfc": 9001,
+      "file": "byte-parts/rfc9001.txt",
+      "sha256": "0931844bd84b8752937b6ae605d9016c7d90e9e00d6168b6423c52f348f8ce1d"
+    }
+  ],
+  "target": {
+    "module": "nish/quic/retry"
+  },
+  "requirements": [
+    {
+      "id": "R-RETRY",
+      "section": "A.4",
+      "level": "DEFINITION",
+      "quote": "This shows a Retry packet that might be sent in response to the Initial packet in Appendix A.2."
+    }
+  ],
+  "functions": [
+    {
+      "name": "retryTag",
+      "params": [
+        {
+          "name": "packet",
+          "type": "bytes"
+        }
+      ],
+      "returns": "bytes"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "A.4-RETRY",
+      "title": "RFC 9001 A.4: the Retry packet's integrity tag",
+      "covers": ["R-RETRY"],
+      "source": {
+        "cite": {
+          "section": "A.4"
+        }
+      },
+      "call": "retryTag",
+      "args": [
+        {
+          "hex": "ff000000010008f067a5502a4262b5746f6b656e",
+          "label": "value is not included in the final Retry packet"
+        }
+      ],
+      "expect": {
+        "hex": "04a265ba2eff4d829058fb3f0f2496ba"
+      },
+      "tail": {
+        "arg": 0,
+        "bytes": 16,
+        "reason": "the Retry Integrity Tag ends the Retry packet"
+      }
+    }
+  ]
+}

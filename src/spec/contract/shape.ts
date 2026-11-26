@@ -41,6 +41,7 @@ import {
   OutBuffer,
   OutOfScope,
   SourceDecl,
+  Tail,
   Tolerance,
   Truncate,
   VectorSourceKind,
@@ -296,7 +297,12 @@ const shapeSourceRef = (s: ShapeContext, v: string | null, at: string): void => 
   }
 }
 
-const shapeLiteral = (s: ShapeContext, lit: Literal, at: string): void => {
+/** A literal; `part` when it is a concat's part, the one place a format constant may stand. */
+const shapeLiteral = (s: ShapeContext, lit: Literal, at: string, part: boolean): void => {
+  const format = lit.format
+  if (format !== null) {
+    shapeFormat(s, lit, format, at, part)
+  }
   const label = lit.label
   if (label !== null && !charsHasLetter(label)) {
     shapeFail(s, `${at}.label`, "the name the RFC prints the value under, with a letter")
@@ -316,8 +322,20 @@ const shapeLiteral = (s: ShapeContext, lit: Literal, at: string): void => {
   } else if (lit.kind === LitKind.F64) {
     shapeF64Literal(s, lit, at)
   } else if (lit.kind === LitKind.Concat) {
-    for (let i = 0; i < lit.parts.length; i++) {
-      shapeLiteral(s, lit.parts[i], `${at}.concat[${i}]`)
+    const parts = lit.parts
+    let formats = 0
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i]
+      shapeLiteral(s, part, `${at}.concat[${i}]`, true)
+      // formats counts parts before i, so it is at most i.
+      if (part.format !== null && formats <= i) {
+        formats = formats + 1
+      }
+    }
+    if (formats > 1) {
+      shapeFail(s, at, "at most one format part: a concat's other parts are printed in the RFC")
+    } else if (formats === 1 && lit.parts.length < 2) {
+      shapeFail(s, at, "a format part needs another part, printed in the RFC, beside it")
     }
   } else if (typesIsWords(lit.kind)) {
     const key = typesWordsKey(lit.kind)
@@ -325,6 +343,21 @@ const shapeLiteral = (s: ShapeContext, lit: Literal, at: string): void => {
     if (!charsIsWordList(lit.words, digits)) {
       shapeFail(s, `${at}.${key}`, `words of ${digits} lowercase hex digits, with 0x on every word or on none`)
     }
+  }
+}
+
+/** A format constant: a hex concat part the RFC does not print, taken on its reason. */
+const shapeFormat = (s: ShapeContext, lit: Literal, format: string, at: string, part: boolean): void => {
+  const fat = `${at}.format`
+  // read takes a format only on a hex literal, so the place is all to check.
+  if (!part) {
+    shapeFail(s, fat, "a format constant is a hex part of a concat")
+  } else if (trim(format) === "") {
+    shapeFail(s, fat, "a non-empty reason")
+  } else if (lit.label !== null || lit.unchecked !== null) {
+    shapeFail(s, fat, "a format constant has no label and is not unchecked: it is taken on its reason")
+  } else if (lit.repeat >= 0) {
+    shapeFail(s, fat, "a format constant is its hex, not a repeated run")
   }
 }
 
@@ -365,7 +398,7 @@ const shapeExpr = (s: ShapeContext, e: Expr, at: string): void => {
   if (e.kind === ExprKind.Lit) {
     const lit = e.lit
     if (lit !== null) {
-      shapeLiteral(s, lit, at)
+      shapeLiteral(s, lit, at, false)
     }
     return
   }
@@ -668,6 +701,25 @@ const shapeIsIterateCall = (e: Expr, call: string, names: string[]): boolean => 
   return true
 }
 
+/** A vector's `tail`: its expect is the last `bytes` of the value its args[arg] starts. */
+const shapeTail = (s: ShapeContext, k: Clause, t: Tail, at: string): void => {
+  // read holds bytes to 1..65536 and arg to 0..255; the arg is checked against this vector.
+  if (t.arg < 0 || t.arg >= k.args.length) {
+    shapeFail(s, `${at}.arg`, `args[${t.arg}] is no argument: the vector has ${k.args.length}`)
+  }
+  if (trim(t.reason) === "") {
+    shapeFail(s, `${at}.reason`, "a non-empty reason")
+  }
+  if (k.truncate !== null || k.iterate !== null || k.tolerance !== null) {
+    shapeFail(s, at, "a tail's expect is the printed bytes themselves: drop the truncate, iterate or tolerance")
+  }
+  // Only a cited value is checked whole; a command or the spec vouches for no layout.
+  const src = k.source
+  if (src === null || src.kind !== VectorSourceKind.Cite) {
+    shapeFail(s, at, "a tail ends a value a source prints: the vector's source is a cite")
+  }
+}
+
 /** A vector's `truncate`: a bytes result held to its first `bytes`, which are the whole expect. */
 const shapeTruncate = (s: ShapeContext, k: Clause, t: Truncate, at: string): void => {
   if (t.bytes < 1 || t.bytes > 65536) {
@@ -906,15 +958,19 @@ const shapeClauses = (s: ShapeContext): void => {
       if (tr !== null) {
         shapeTruncate(s, k, tr, `${at}.truncate`)
       }
+      const tl = k.tail
+      if (tl !== null) {
+        shapeTail(s, k, tl, `${at}.tail`)
+      }
       if (!charsIsIdent(k.call)) {
         shapeFail(s, `${at}.call`, "a function name")
       }
       for (let j = 0; j < k.args.length; j++) {
-        shapeLiteral(s, k.args[j], `${at}.args[${j}]`)
+        shapeLiteral(s, k.args[j], `${at}.args[${j}]`, false)
       }
       const expect = k.expect
       if (expect !== null) {
-        shapeLiteral(s, expect, `${at}.expect`)
+        shapeLiteral(s, expect, `${at}.expect`, false)
       }
     } else {
       for (let j = 0; j < k.forall.length; j++) {

@@ -25,6 +25,9 @@ Generated from [src/spec/report/common.ts](https://github.com/amritk/vector/blob
 - [`reportStat`](#reportstat)
 - [`reportSampleCount`](#reportsamplecount)
 - [`reportEvidence`](#reportevidence)
+- [`ReportFormat`](#reportformat)
+- [`reportFormats`](#reportformats)
+- [`reportByteParts`](#reportbyteparts)
 - [`reportSourceRuns`](#reportsourceruns)
 
 ## Declarations
@@ -436,6 +439,106 @@ the clause
 
 the evidence, such as `vector, §2.2`, `vector, §7.1, result §5.1.7`
   (inputs and result cited apart) or `24 samples (6 boundary)`
+
+</scalar-field>
+
+### ReportFormat
+
+A format constant of a vector: a concat part the RFC does not print, taken on its reason.
+
+```ts
+class ReportFormat
+```
+
+#### new ReportFormat
+
+Makes a format constant.
+
+```ts
+new ReportFormat(at: string, hex: string, reason: string): ReportFormat
+```
+
+<scalar-field name="at" type="string" required>
+
+its path in the vector
+
+</scalar-field>
+
+<scalar-field name="hex" type="string" required>
+
+its bytes, in hex
+
+</scalar-field>
+
+<scalar-field name="reason" type="string" required>
+
+why the RFC does not print it
+
+</scalar-field>
+
+#### ReportFormat.at
+
+Its path in the vector, such as `expect.concat[0]`.
+
+```ts
+at: string
+```
+
+#### ReportFormat.hex
+
+Its bytes, in hex.
+
+```ts
+hex: string
+```
+
+#### ReportFormat.reason
+
+Why the RFC does not print it.
+
+```ts
+reason: string
+```
+
+### reportFormats
+
+The format constants of a vector, its arguments' then its expect's.
+
+```ts
+function reportFormats(k: Clause): ReportFormat[]
+```
+
+<scalar-field name="k" type="Clause" required>
+
+the clause
+
+</scalar-field>
+
+<scalar-field name="returns" type="ReportFormat[]">
+
+each format part, in order; none for a property
+
+</scalar-field>
+
+### reportByteParts
+
+The bytes a vector takes on the spec's word beside the RFC's, as evidence:
+each format constant, then its tail.
+
+```ts
+function reportByteParts(k: Clause): string[]
+```
+
+<scalar-field name="k" type="Clause" required>
+
+the clause
+
+</scalar-field>
+
+<scalar-field name="returns" type="string[]">
+
+one line each, such as `format expect.concat[0] = 04: <reason>`
+  or `tail: expect is the last 16 bytes of the value args[0] is printed in: <reason>`
 
 </scalar-field>
 

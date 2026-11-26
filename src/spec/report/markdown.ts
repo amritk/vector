@@ -9,6 +9,7 @@
 import { splitLines, trim } from "nish/text"
 import { CheckContext, CheckReport } from "../check"
 import {
+  reportByteParts,
   reportCite,
   reportCovered,
   reportCovering,
@@ -142,8 +143,12 @@ export const reportMarkdown = (ctx: CheckContext, report: CheckReport): string =
       const rows: string[] = []
       for (const k of reportCovering(c, req.id)) {
         const tr = k.truncate
+        const ev = [reportEvidence(ctx, k)]
+        for (const b of reportByteParts(k)) {
+          ev.push(b)
+        }
         rows.push(
-          `| ${reportCodeCell(k.id)}${tr === null ? "" : ` (${tr.label()})`} | ${reportCell(k.title)} | ⭕ not run | ${reportCell(reportEvidence(ctx, k))} |   |`,
+          `| ${reportCodeCell(k.id)}${tr === null ? "" : ` (${tr.label()})`} | ${reportCell(k.title)} | ⭕ not run | ${reportCell(ev.join("; "))} |   |`,
         )
       }
       if (rows.length > 0) {

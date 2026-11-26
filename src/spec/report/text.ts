@@ -7,6 +7,7 @@
 
 import { CheckContext, CheckReport } from "../check"
 import {
+  reportByteParts,
   reportCite,
   reportCovered,
   reportCovering,
@@ -89,6 +90,11 @@ export const reportText = (ctx: CheckContext, report: CheckReport): string => {
       }
       if (ev.length > 0) {
         out.push(`      ${ev.join("  ")}`)
+      }
+      for (const k of reportCovering(c, req.id)) {
+        for (const b of reportByteParts(k)) {
+          out.push(`      ${k.id} ${reportSafe(b, REPORT_CAP)}`)
+        }
       }
     }
     const runs = reportSourceRuns(ctx)
