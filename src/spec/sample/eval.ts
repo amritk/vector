@@ -5,6 +5,8 @@
  * and `unwrap(null)` is undefined, which makes `where` false.
  */
 
+import { wrappingAdd, wrappingMul, wrappingSub } from "nish:unsafe"
+
 import { fromHex, toHex, utf8Bytes } from "../../core/hex"
 import { SHAPE_MAX_LEN } from "../contract/shape"
 import { Expr, ExprKind, LitKind, Literal, typesIsWords } from "../contract/types"
@@ -192,11 +194,14 @@ const sampleEqual = (x: SampleValue, y: SampleValue): boolean => {
     return x.n === y.n
   }
   if (x.kind === SampleKind.Bytes) {
-    if (x.bytes.length !== y.bytes.length) {
+    const xb = x.bytes
+    const yb = y.bytes
+    if (xb.length !== yb.length) {
       return false
     }
-    for (let i = 0; i < x.bytes.length; i++) {
-      if (x.bytes[i] !== y.bytes[i]) {
+    // The lengths are equal; the second bound only states it to the prover.
+    for (let i = 0; i < xb.length && i < yb.length; i++) {
+      if (xb[i] !== yb[i]) {
         return false
       }
     }
@@ -219,10 +224,14 @@ const sampleClamp = (x: i64, lo: i64, hi: i64): i64 => (x < lo ? lo : x > hi ? h
 
 /** An operand that must be of one kind. */
 const sampleArg = (args: SampleValue[], i: i32, kind: SampleKind, op: string): Result<SampleValue, string> => {
-  if (i >= args.length || args[i].kind !== kind) {
-    return Err(`${op}: operand ${i} has the wrong kind`)
+  // Every caller passes a literal index, never below 0.
+  if (i >= 0 && i < args.length) {
+    const x = args[i]
+    if (x.kind === kind) {
+      return Ok(x)
+    }
   }
-  return Ok(args[i])
+  return Err(`${op}: operand ${i} has the wrong kind`)
 }
 
 /**
@@ -231,10 +240,17 @@ const sampleArg = (args: SampleValue[], i: i32, kind: SampleKind, op: string): R
  * divisor held as -1 is the u64 maximum, and divides as itself.
  */
 const sampleRem = (x: i64, y: i64, ty: string): i64 => {
-  if (y === toI64(0) || (y === toI64(-1) && ty !== "u64")) {
-    return 0
+  if (ty === "u64") {
+    const uy = toU64(y)
+    return uy === toU64(0) ? 0 : toI64(toU64(x) % uy)
   }
-  return ty === "u64" ? toI64(toU64(x) % toU64(y)) : x % y
+  // |x| % |y| in u64, which cannot overflow, signed as x: the truncating
+  // remainder. A divisor of -1 leaves 0, and one of 0 is guarded.
+  const zero: u64 = 0
+  const ax = x < 0 ? zero - toU64(x) : toU64(x)
+  const ay = y < 0 ? zero - toU64(y) : toU64(y)
+  const r = ay === zero ? zero : ax % ay
+  return x < 0 ? toI64(zero - r) : toI64(r)
 }
 
 /** + - * % over two integers of one type. */
@@ -242,11 +258,11 @@ const sampleArith = (op: string, x: SampleValue, y: SampleValue): SampleValue =>
   const ty = sampleOpType(x, y)
   let r: i64 = 0
   if (op === "+") {
-    r = toI64(toU64(x.n) + toU64(y.n))
+    r = wrappingAdd(x.n, y.n)
   } else if (op === "-") {
-    r = toI64(toU64(x.n) - toU64(y.n))
+    r = wrappingSub(x.n, y.n)
   } else if (op === "*") {
-    r = toI64(toU64(x.n) * toU64(y.n))
+    r = wrappingMul(x.n, y.n)
   } else {
     r = sampleRem(x.n, y.n, ty)
   }
@@ -285,7 +301,8 @@ const sampleMapCase = (s: string, lo: i32, hi: i32, delta: i32): string => {
   let out = ""
   for (let i = 0; i < s.length; i++) {
     const c = s.charCodeAt(i)
-    out = out + String.fromCharCode(c >= lo && c <= hi ? c + delta : c)
+    // The sum in i64, where two i32s cannot overflow; it is a char code.
+    out = out + String.fromCharCode(c >= lo && c <= hi ? toI32(toI64(c) + toI64(delta)) : c)
   }
   return out
 }
@@ -318,12 +335,21 @@ const sampleLogic = (e: Expr, env: Map<string, SampleValue>): Result<SampleValue
 }
 
 /** An operator over bytes. */
+/** A copy of bytes, by push: `slice` is a site the panic prover cannot discharge. */
+const sampleCopyBytes = (bytes: u8[]): u8[] => {
+  const out: u8[] = []
+  for (const b of bytes) {
+    out.push(b)
+  }
+  return out
+}
+
 const sampleBytesOp = (op: string, a: SampleValue[]): Result<SampleValue, string> => {
   if (op === "len") {
     return Ok(sampleInt(toI64(sampleArg(a, 0, SampleKind.Bytes, op).orReturn().bytes.length), "i32"))
   }
   if (op === "concat") {
-    const out = sampleArg(a, 0, SampleKind.Bytes, op).orReturn().bytes.slice(0)
+    const out = sampleCopyBytes(sampleArg(a, 0, SampleKind.Bytes, op).orReturn().bytes)
     for (const b of sampleArg(a, 1, SampleKind.Bytes, op).orReturn().bytes) {
       out.push(b)
     }
@@ -332,9 +358,13 @@ const sampleBytesOp = (op: string, a: SampleValue[]): Result<SampleValue, string
   if (op === "slice") {
     const src = sampleArg(a, 0, SampleKind.Bytes, op).orReturn().bytes
     const n = toI64(src.length)
-    const lo = sampleClamp(sampleArg(a, 1, SampleKind.Int, op).orReturn().n, 0, n)
-    const hi = sampleClamp(sampleArg(a, 2, SampleKind.Int, op).orReturn().n, lo, n)
-    return Ok(sampleBytes(src.slice(toI32(lo), toI32(hi))))
+    const lo = toI32(sampleClamp(sampleArg(a, 1, SampleKind.Int, op).orReturn().n, 0, n))
+    const hi = toI32(sampleClamp(sampleArg(a, 2, SampleKind.Int, op).orReturn().n, toI64(lo), n))
+    // No input fails this: the clamps put 0 <= lo <= hi <= n.
+    if (!(lo >= 0 && lo <= hi && hi <= src.length)) {
+      return Err(`slice: [${lo}, ${hi}) is outside ${src.length} bytes`)
+    }
+    return Ok(sampleBytes(src.slice(lo, hi)))
   }
   if (op === "zeros" || op === "fill") {
     const count = sampleArg(a, op === "zeros" ? 0 : 1, SampleKind.Int, op).orReturn().n
@@ -343,19 +373,31 @@ const sampleBytesOp = (op: string, a: SampleValue[]): Result<SampleValue, string
       return Err(`${op}: ${count} bytes is over the ${SHAPE_MAX_LEN}-byte limit`)
     }
     const out: u8[] = []
-    for (let i: i64 = 0; i < count; i++) {
+    for (let left = count; left > 0; left--) {
       out.push(byte)
     }
     return Ok(sampleBytes(out))
   }
   if (op === "flipBit") {
-    const out = sampleArg(a, 0, SampleKind.Bytes, op).orReturn().bytes.slice(0)
+    const out = sampleCopyBytes(sampleArg(a, 0, SampleKind.Bytes, op).orReturn().bytes)
     const bit = sampleArg(a, 1, SampleKind.Int, op).orReturn().n
-    if (out.length > 0) {
-      const bits = toI64(out.length) * toI64(8)
-      const at = ((bit % bits) + bits) % bits
+    const n = out.length
+    if (n > 0) {
+      // bit modulo the bit count, rounded down, in u64, which cannot
+      // overflow: a negative bit counts back from the end. bits is not 0,
+      // as n is not, but the prover cannot see that through the product.
+      const zero: u64 = 0
+      const eight: u64 = 8
+      const bits = toU64(n) * eight
+      const ub = toU64(bit)
+      const at = bits === zero ? zero : bit >= 0 ? ub % bits : (bits - ((zero - ub) % bits)) % bits
+      const k = toI32(at / eight)
+      // No input fails this: at is below the bit count, so k is below n.
+      if (!(k >= 0 && k < n)) {
+        return Err(`flipBit: bit ${bit} is outside ${n} bytes`)
+      }
       const one: u8 = 1
-      out[toI32(at / toI64(8))] = out[toI32(at / toI64(8))] ^ (one << toU8(at % toI64(8)))
+      out[k] = out[k] ^ (one << toU8(at % eight))
     }
     return Ok(sampleBytes(out))
   }
@@ -366,8 +408,9 @@ const sampleBytesOp = (op: string, a: SampleValue[]): Result<SampleValue, string
     const w = vocabByteWidth(op)
     const out: u8[] = []
     for (let i = 0; i < w; i++) {
-      const k = vocabBigEndian(op) ? w - 1 - i : i
-      out.push(toU8((x >> toU64(k * 8)) & toU64(255)))
+      // In u32 and u64, which cannot overflow: k is a byte index below w.
+      const k = vocabBigEndian(op) ? toU32(w) - toU32(1) - toU32(i) : toU32(i)
+      out.push(toU8((x >> (toU64(k) * toU64(8))) & toU64(255)))
     }
     return Ok(sampleBytes(out))
   }
@@ -378,9 +421,18 @@ const sampleBytesOp = (op: string, a: SampleValue[]): Result<SampleValue, string
       return Err(SAMPLE_UNDEFINED)
     }
     let x: u64 = 0
-    for (let i = 0; i < w; i++) {
-      const k: i32 = vocabBigEndian(op) ? i : w - 1 - i
-      x = (x << toU64(8)) | toU64(src[k])
+    if (vocabBigEndian(op)) {
+      for (const b of src) {
+        x = (x << toU64(8)) | toU64(b)
+      }
+    } else {
+      // Little-endian: byte k is worth 2^(8k). In u64, which wraps; the
+      // shift stays below 64 for w of at most 8.
+      let shift: u64 = 0
+      for (const b of src) {
+        x = x | (toU64(b) << shift)
+        shift = shift + toU64(8)
+      }
     }
     const ty = vocabReadType(op)
     return Ok(sampleInt(sampleIntWrap(toI64(x), ty), ty))
@@ -419,7 +471,12 @@ const sampleStrOp = (op: string, a: SampleValue[]): Result<SampleValue, string> 
     return Ok(sampleBytes(utf8Bytes(s)))
   }
   const i = sampleArg(a, 1, SampleKind.Int, op).orReturn().n
-  return Ok(sampleStr(i >= toI64(0) && i < toI64(s.length) ? s.substring(toI32(i), toI32(i) + 1) : ""))
+  if (i >= toI64(0) && i < toI64(s.length)) {
+    const k = toI32(i)
+    // In u32, which cannot overflow: k is below the length.
+    return Ok(sampleStr(s.substring(k, toI32(toU32(k) + toU32(1)))))
+  }
+  return Ok(sampleStr(""))
 }
 
 const SAMPLE_BYTES_OPS: string =

@@ -70,18 +70,30 @@ export class SampleOutcome {
   }
 }
 
+/** A variable with its range, so that no walk pairs two lists by index. */
+class SampleSlot {
+  v: ForallVar
+  lo: i64
+  hi: i64
+  constructor(v: ForallVar, lo: i64, hi: i64) {
+    this.v = v
+    this.lo = lo
+    this.hi = hi
+  }
+}
+
 /** What sampling holds while it runs. */
 class SampleRun {
   k: Clause
   vars: ForallVar[]
-  ranges: i64[][]
+  slots: SampleSlot[]
   rnd: SamplePrng
   out: SampleOutcome
   seen: string[]
-  constructor(k: Clause, ranges: i64[][], seed: string) {
+  constructor(k: Clause, slots: SampleSlot[], seed: string) {
     this.k = k
     this.vars = k.forall
-    this.ranges = ranges
+    this.slots = slots
     this.rnd = new SamplePrng(seed)
     this.out = new SampleOutcome(k.id)
     this.seen = []
@@ -112,31 +124,39 @@ export const sampleAlphabet = (v: ForallVar): string[] => {
   return out
 }
 
-/** An input: the pinned values kept, every other value drawn. */
-const sampleFill = (run: SampleRun, pinned: Map<string, i64>): Map<string, SampleValue> => {
+/**
+ * An input: the pinned values kept, every other value drawn. Err when a
+ * string variable must draw a character from an alphabet with none.
+ */
+const sampleFill = (run: SampleRun, pinned: Map<string, i64>): Result<Map<string, SampleValue>, string> => {
   const env = new Map<string, SampleValue>()
-  for (let i = 0; i < run.vars.length; i++) {
-    const v = run.vars[i]
+  for (const slot of run.slots) {
+    const v = slot.v
     const at = pinned.get(v.name)
-    const n = at !== undefined ? at : sampleBiasedInt(run.rnd, run.ranges[i][0], run.ranges[i][1])
+    const n = at !== undefined ? at : sampleBiasedInt(run.rnd, slot.lo, slot.hi)
     if (vocabIsIntType(v.type)) {
       env.set(v.name, sampleInt(n, v.type))
     } else if (v.type === "string") {
       const chars = sampleAlphabet(v)
       let s = ""
-      for (let j: i64 = 0; j < n; j++) {
-        s = s + chars[sampleBelow(run.rnd, chars.length)]
+      // Counts down from n, so the step cannot overflow.
+      for (let left: i64 = n; left > 0; left--) {
+        const c = sampleBelow(run.rnd, chars.length)
+        if (!(c >= 0 && c < chars.length)) {
+          return Err(`${v.name}: its alphabet has no character to draw`)
+        }
+        s = s + chars[c]
       }
       env.set(v.name, sampleStr(s))
     } else {
       const b: u8[] = []
-      for (let j: i64 = 0; j < n; j++) {
+      for (let left: i64 = n; left > 0; left--) {
         b.push(toU8(sampleBelow(run.rnd, 256)))
       }
       env.set(v.name, sampleBytes(b))
     }
   }
-  return env
+  return Ok(env)
 }
 
 /** Whether an input is in the domain; Err "where: ..." when `where` cannot be evaluated on it. */
@@ -192,13 +212,13 @@ const sampleQueries = (run: SampleRun): SampleQuery[] => {
   if (edges.length === 0 && run.vars.some((v: ForallVar): boolean => vocabIsIntType(v.type))) {
     run.out.stat.notes.push("no integer comparison in the skeleton: boundaries are the variables' extremes only")
   }
-  for (let i = 0; i < run.vars.length; i++) {
-    const v = run.vars[i]
+  for (const slot of run.slots) {
+    const v = slot.v
     // A u64 is held by its bits: compare unsigned, step with wrapping (only
     // inside the range, so a step never actually wraps).
     const ty = vocabIsIntType(v.type) ? v.type : "i64"
-    const lo = run.ranges[i][0]
-    const hi = run.ranges[i][1]
+    const lo = slot.lo
+    const hi = slot.hi
     const at: i64[] = [lo]
     if (sampleIntLess(lo, hi, ty)) {
       at.push(wrappingAdd(lo, toI64(1)))
@@ -226,6 +246,9 @@ const sampleQueries = (run: SampleRun): SampleQuery[] => {
   return queries
 }
 
+/** A stat count plus one, in u32, which cannot overflow: a count is below the samples' length. */
+const sampleBump = (count: i32): i32 => toI32(toU32(count) + toU32(1))
+
 /**
  * Adds the boundary samples Z3's models give, in Z3's order, until the
  * property has `cap`; Ok with whether the domain is unsat.
@@ -236,7 +259,11 @@ const sampleBoundaries = (
   queries: SampleQuery[],
   cap: i32,
 ): Result<boolean, string> => {
-  const z3 = runZ3(sampleScript(run.vars, run.ranges, whereTerm, queries), queries.length).orReturn()
+  const ranges: i64[][] = []
+  for (const slot of run.slots) {
+    ranges.push([slot.lo, slot.hi])
+  }
+  const z3 = runZ3(sampleScript(run.vars, ranges, whereTerm, queries), queries.length).orReturn()
   for (const line of z3.errors) {
     if (!sampleIsModelRefusal(line)) {
       return Err(`z3 rejected the sampling script: ${line}`)
@@ -244,6 +271,7 @@ const sampleBoundaries = (
   }
   for (let i = 0; i < z3.answers.length && i < queries.length && run.out.samples.length < cap; i++) {
     const ans = z3.answers[i]
+    const q = queries[i]
     if (ans.result !== "sat") {
       continue
     }
@@ -260,23 +288,23 @@ const sampleBoundaries = (
       }
       const x = parsed.value
       model.set(v.name, x)
-      if (queries[i].pins.indexOf(sampleSmtName(v)) >= 0) {
+      if (q.pins.indexOf(sampleSmtName(v)) >= 0) {
         pinned.set(v.name, x)
       }
     }
     // Keep only what the query pinned and draw the rest, so the boundary
     // samples are not copies of Z3's favourite zero; fall back to the whole
     // model when the draw leaves the domain.
-    const why = i === 0 ? "boundary: the domain" : `boundary: ${queries[i].extra}`
-    const drawn = sampleFill(run, pinned)
+    const why = i === 0 ? "boundary: the domain" : `boundary: ${q.extra}`
+    const drawn = sampleFill(run, pinned).orReturn()
     let added = false
     if (sampleInDomain(run, drawn).orReturn()) {
       added = sampleAdd(run, drawn, why).orReturn()
     } else {
-      added = sampleAdd(run, sampleFill(run, model), why).orReturn()
+      added = sampleAdd(run, sampleFill(run, model).orReturn(), why).orReturn()
     }
     if (added) {
-      run.out.stat.boundary = run.out.stat.boundary + 1
+      run.out.stat.boundary = sampleBump(run.out.stat.boundary)
     }
   }
   return Ok(z3.answers.length > 0 && z3.answers[0].result === "unsat")
@@ -292,7 +320,7 @@ const sampleBoundaries = (
  *   could not run or rejected the script
  */
 export const sampleProperty = (contract: string, k: Clause): Result<SampleOutcome, string> => {
-  const ranges: i64[][] = []
+  const slots: SampleSlot[] = []
   for (const v of k.forall) {
     const r = sampleRange(v)
     if (r.isErr()) {
@@ -300,9 +328,14 @@ export const sampleProperty = (contract: string, k: Clause): Result<SampleOutcom
       out.issue = r.error
       return Ok(out)
     }
-    ranges.push(r.value)
+    const range = r.value
+    // sampleRange answers [lo, hi]; anything else is a bug here, not input.
+    if (range.length !== 2) {
+      return Err(`${v.name}: its range is not [lo, hi]`)
+    }
+    slots.push(new SampleSlot(v, range[0], range[1]))
   }
-  const run = new SampleRun(k, ranges, `${contract}/${k.id}`)
+  const run = new SampleRun(k, slots, `${contract}/${k.id}`)
   const none = new Map<string, Expr>()
   const where = k.where
   const whereTerm = where === null ? "true" : sampleBoolTerm(sampleInlineLets(where, none), run.vars)
@@ -342,9 +375,15 @@ export const sampleProperty = (contract: string, k: Clause): Result<SampleOutcom
  * a step with no value; Err "where: ..." when `where` cannot be evaluated.
  */
 const sampleDraw = (run: SampleRun, want: i32, total: i32): Result<boolean, string> => {
-  for (let tries = 0; run.out.stat.random < want && tries < want * 20 && run.out.samples.length < total; tries++) {
-    if (sampleAdd(run, sampleFill(run, new Map<string, i64>()), "random").orReturn()) {
-      run.out.stat.random = run.out.stat.random + 1
+  // The tries left count down from want * 20, in i64 so neither the product
+  // nor the step can overflow.
+  for (
+    let left = toI64(want) * toI64(20);
+    run.out.stat.random < want && left > 0 && run.out.samples.length < total;
+    left--
+  ) {
+    if (sampleAdd(run, sampleFill(run, new Map<string, i64>()).orReturn(), "random").orReturn()) {
+      run.out.stat.random = sampleBump(run.out.stat.random)
     }
   }
   return Ok(true)
@@ -358,7 +397,10 @@ const sampleDraw = (run: SampleRun, want: i32, total: i32): Result<boolean, stri
  * and a note when it found some, but fewer.
  */
 const sampleRun = (run: SampleRun, whereTerm: string | null, queries: SampleQuery[]): Result<boolean, string> => {
-  sampleInDomain(run, sampleFill(new SampleRun(run.k, run.ranges, "probe"), new Map<string, i64>())).orReturn()
+  sampleInDomain(
+    run,
+    sampleFill(new SampleRun(run.k, run.slots, "probe"), new Map<string, i64>()).orReturn(),
+  ).orReturn()
   const n = run.k.samples
   if (n < 0) {
     const unsat = sampleBoundaries(run, whereTerm, queries, SAMPLE_NO_CAP).orReturn()
