@@ -73,7 +73,7 @@ export const renameTokens = (text: string, find: string[], put: string[]): strin
   let out = ""
   let at = 0
   let i = 0
-  while (i < text.length) {
+  while (i >= 0 && i < text.length) {
     if (!renameIdentChar(text.charCodeAt(i))) {
       i++
       continue
@@ -83,7 +83,7 @@ export const renameTokens = (text: string, find: string[], put: string[]): strin
       j++
     }
     const k = find.indexOf(text.substring(i, j))
-    if (k >= 0) {
+    if (k >= 0 && k < put.length) {
       out = `${out}${text.substring(at, i)}${put[k]}`
       at = j
     }
@@ -110,11 +110,13 @@ export const renameHas = (text: string, name: string): boolean => renameTokens(t
  */
 export const renameBlankShas = (text: string): string => {
   const key = '"sha256"'
+  // 8 is key.length, written as a literal: the prover bounds `i + 8` from
+  // `i <= text.length - 8`, and not from a length or a named constant.
   let out = ""
   let at = 0
   let i = text.indexOf(key)
-  while (i >= 0) {
-    let j = i + key.length
+  while (i >= 0 && i <= text.length - 8) {
+    let j = i + 8
     while (j < text.length && (text.charCodeAt(j) === 32 || text.charCodeAt(j) === 9)) {
       j++
     }
@@ -135,7 +137,7 @@ export const renameBlankShas = (text: string): string => {
         }
       }
     }
-    i = text.indexOf(key, i + key.length)
+    i = text.indexOf(key, i + 8)
   }
   return `${out}${text.substring(at)}`
 }
@@ -153,11 +155,11 @@ const renameHexChar = (c: i32): boolean => (c >= 48 && c <= 57) || (c >= 97 && c
  */
 export const renameBlankStale = (text: string): string => {
   const lines = splitLines(text)
-  const prefix = STALE_PREFIX.substring(0, STALE_PREFIX.length - 1)
+  const prefix = trim(STALE_PREFIX)
   for (let i = 0; i < lines.length; i++) {
     const at = lines[i].indexOf(prefix)
     if (at >= 0 && trim(lines[i].substring(0, at)).length === 0) {
-      lines[i] = lines[i].substring(0, at + prefix.length)
+      lines[i] = `${lines[i].substring(0, at)}${prefix}`
       return lines.join("\n")
     }
   }
@@ -180,8 +182,10 @@ const renameSameNames = (a: NameOverride[] | null, b: NameOverride[] | null): bo
   if (a.length !== b.length) {
     return false
   }
-  for (let i = 0; i < a.length; i++) {
-    if (a[i].language !== b[i].language || a[i].value !== b[i].value) {
+  const xs: NameOverride[] = a
+  const ys: NameOverride[] = b
+  for (let i = 0; i < xs.length && i < ys.length; i++) {
+    if (xs[i].language !== ys[i].language || xs[i].value !== ys[i].value) {
       return false
     }
   }
@@ -203,7 +207,7 @@ export const renameSameSig = (a: FnSig, b: FnSig): boolean => {
   if (!renameSameNames(a.names, b.names)) {
     return false
   }
-  for (let i = 0; i < a.params.length; i++) {
+  for (let i = 0; i < a.params.length && i < b.params.length; i++) {
     const p = a.params[i]
     const q = b.params[i]
     if (p.name !== q.name || p.type !== q.type || !renameSameNames(p.names, q.names)) {
@@ -241,8 +245,10 @@ const renameNames = (fns: FnSig[]): string => {
 }
 
 /** `path` from the repository's top when it is inside it, else as given. */
-const renameShown = (path: string, top: string): string =>
-  path.startsWith(`${top}/`) ? path.substring(top.length + 1) : path
+const renameShown = (path: string, top: string): string => {
+  const pre = `${top}/`
+  return path.startsWith(pre) ? path.substring(pre.length) : path
+}
 
 /** A file's git mode at a commit ("100644", "120000", ...), or "" when the commit does not have it. */
 const renameForkMode = (top: string, fork: string, path: string): Result<string, string> => {
@@ -382,7 +388,7 @@ const renameFileProblem = (
   while (line < a.length && line < b.length && a[line] === b[line]) {
     line++
   }
-  return Ok(`${path}: line ${line + 1} is not the rename alone`)
+  return Ok(`${path}: line ${toI64(line) + toI64(1)} is not the rename alone`)
 }
 
 /**
