@@ -28,10 +28,10 @@ const stepsClause = (ty: string, lo: string, hi: string): Clause => {
   return contractParse(json, "c1").expect("parse").clauses[0]
 }
 
-/** The texts of the first variable in every sample of a property over a range. */
+/** The texts of the first variable in every boundary sample (not the random draws) of a property over a range. */
 const stepsSampled = (ty: string, lo: string, hi: string): string[] => {
   const o = sampleProperty("c1", stepsClause(ty, lo, hi)).expect("sample")
-  return o.samples.map((s): string => s.args[0].text)
+  return o.samples.filter((s): boolean => s.why.startsWith("boundary:")).map((s): string => s.args[0].text)
 }
 
 /** The int parser's negative branch and the boundary steps of the sampler. */
@@ -51,7 +51,7 @@ export const main = (): i32 => {
   t.eqStr("past i64 min message", past.isErr() ? past.error : "", "out of range: -9223372036854775809")
 
   // boundary steps
-  const up = stepsSampled("u64", STEPS_I64_MAX, "18446744073709551615")
+  const up = stepsSampled("u64", STEPS_I64_MAX, "9223372036854775812")
   t.ok("u64 lo at i64 max steps to 2^63", up.indexOf("9223372036854775808") >= 0)
   const down = stepsSampled("u64", "0", "9223372036854775808")
   t.ok("u64 hi at 2^63 steps down to i64 max", down.indexOf(STEPS_I64_MAX) >= 0)

@@ -3,7 +3,8 @@ import { splitLines, trim } from "nish/text"
 
 /** Whether a source line imports from `nish:unsafe`, in either quote style, on one line or the tail of a multi-line import. */
 const unsafeImports = (line: string): boolean => {
-  const s = trim(line)
+  const cut = line.indexOf("//")
+  const s = trim(cut >= 0 && line.indexOf("nish:unsafe") < cut ? line.substring(0, cut) : line)
   for (const q of ['"', "'"]) {
     const spec = `${q}nish:unsafe${q}`
     if (s.endsWith(spec) || s.endsWith(`${spec};`)) {
@@ -37,6 +38,8 @@ export const main = (): i32 => {
     ['import { wrappingAdd } from "nish:unsafe";', "yes"],
     ['} from "nish:unsafe"', "yes"],
     ['import "nish:unsafe"', "yes"],
+    ['import { x } from "nish:unsafe" // note', "yes"],
+    ['import { x } from "nish:unsafe"; // note', "yes"],
     ['import { sha256 } from "nish:crypto"', "no"],
     ["// the nish:unsafe module wraps", "no"],
     ['const s = "nish:unsafe is named here"', "no"],
