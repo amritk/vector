@@ -28,10 +28,18 @@ const stepsClause = (ty: string, lo: string, hi: string): Clause => {
   return contractParse(json, "c1").expect("parse").clauses[0]
 }
 
-/** The texts of the first variable in every boundary sample (not the random draws) of a property over a range. */
+/** The texts of the first variable in every sample of a property over a range. */
+const stepsAll = (ty: string, lo: string, hi: string): string[] =>
+  sampleProperty("c1", stepsClause(ty, lo, hi))
+    .expect("sample")
+    .samples.map((s): string => s.args[0].text)
+
+/** The texts of the first variable in every pinned boundary sample (not the domain's or the random draws) of a property over a range. */
 const stepsSampled = (ty: string, lo: string, hi: string): string[] => {
   const o = sampleProperty("c1", stepsClause(ty, lo, hi)).expect("sample")
-  return o.samples.filter((s): boolean => s.why.startsWith("boundary:")).map((s): string => s.args[0].text)
+  return o.samples
+    .filter((s): boolean => s.why.startsWith("boundary:") && s.why !== "boundary: the domain")
+    .map((s): string => s.args[0].text)
 }
 
 /** The int parser's negative branch and the boundary steps of the sampler. */
@@ -58,9 +66,9 @@ export const main = (): i32 => {
   const full = stepsSampled("i64", STEPS_I64_MIN, STEPS_I64_MAX)
   t.ok("i64 full range steps to min + 1", full.indexOf("-9223372036854775807") >= 0)
   t.ok("i64 full range steps to max - 1", full.indexOf("9223372036854775806") >= 0)
-  const same = stepsSampled("i64", "5", "5")
+  const same = stepsAll("i64", "5", "5")
   t.ok("lo == hi adds no steps", same.length > 0 && same.every((s: string): boolean => s === "5"))
-  const pair = stepsSampled("i64", "5", "6")
+  const pair = stepsAll("i64", "5", "6")
   t.ok(
     "a range of two has just its ends",
     pair.every((s: string): boolean => s === "5" || s === "6"),

@@ -4,11 +4,14 @@ import { splitLines, trim } from "nish/text"
 /** Whether a source line imports from `nish:unsafe`, in either quote style, on one line or the tail of a multi-line import. */
 const unsafeImports = (line: string): boolean => {
   const cut = line.indexOf("//")
-  const s = trim(cut >= 0 && line.indexOf("nish:unsafe") < cut ? line.substring(0, cut) : line)
+  let s = trim(cut >= 0 ? line.substring(0, cut) : line)
+  if (s.endsWith("*/") && s.indexOf("/*") >= 0) {
+    s = trim(s.substring(0, s.indexOf("/*")))
+  }
   for (const q of ['"', "'"]) {
     const spec = `${q}nish:unsafe${q}`
     if (s.endsWith(spec) || s.endsWith(`${spec};`)) {
-      return s.startsWith("import ") || s.startsWith("} from ") || s.indexOf(` from ${spec}`) >= 0
+      return s.startsWith("import ") || s.startsWith("export ") || s.startsWith("} from ")
     }
   }
   return false
@@ -40,6 +43,10 @@ export const main = (): i32 => {
     ['import "nish:unsafe"', "yes"],
     ['import { x } from "nish:unsafe" // note', "yes"],
     ['import { x } from "nish:unsafe"; // note', "yes"],
+    ['import { x } from "nish:unsafe" /* c */', "yes"],
+    ['// import { x } from "nish:unsafe"', "no"],
+    [' * import { a } from "nish:unsafe"', "no"],
+    ['export { x } from "nish:unsafe"', "yes"],
     ['import { sha256 } from "nish:crypto"', "no"],
     ["// the nish:unsafe module wraps", "no"],
     ['const s = "nish:unsafe is named here"', "no"],
