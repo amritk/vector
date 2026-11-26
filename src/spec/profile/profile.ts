@@ -602,6 +602,7 @@ const PROFILE_WRAP_MIN: i32 = 16
 
 /** Whether `m` from `p` to its end is how `text` starts, compared in place. */
 const profileTailOpens = (m: string, p: i32, text: string): boolean => {
+  // profileMdHolds passes `p` from 0 up; `p < 0` is for the prover.
   if (p < 0 || m.length - p > text.length) {
     return false
   }
@@ -835,6 +836,15 @@ const profileCompare = (a: string, b: string): i32 => {
  * @returns it trimmed
  */
 export const profileTrim = (s: string): string => xmlTrim(s)
+
+/** Each of `parts`, trimmed. */
+const profileTrimmed = (parts: string[]): string[] => {
+  const out: string[] = []
+  for (const k of parts) {
+    out.push(profileTrim(k))
+  }
+  return out
+}
 
 /**
  * Why a string cannot be free text in a contract (blank, or holding a
@@ -1085,6 +1095,7 @@ const profileLooksLikeMainKey = (text: string): boolean => {
     }
     i = i + 1
   }
+  // Fewer than 4 left was no match before too: substring stops at the end.
   if (i > s.length - 4 || s.substring(i, i + 4) !== "main") {
     return false
   }
@@ -1093,6 +1104,7 @@ const profileLooksLikeMainKey = (text: string): boolean => {
     return true
   }
   const ch = s.charCodeAt(i)
+  // As with "main", fewer than 3 left is no "rfc".
   return ch === 0x2d || ch === 0x5f || profileIsSpace(ch) || (i <= s.length - 3 && s.substring(i, i + 3) === "rfc")
 }
 
@@ -1934,13 +1946,18 @@ const profileReadTable = (c: ProfileContext, t: ProfileTable): void => {
   const table = t.node
   const section = t.section
   const rows = profileRowsOf(table)
-  const header: string[] =
-    rows.length > 0 ? profileCellsOf(rows[0]).map((k: XmlNode): string => profileCellText(k)) : []
+  const header: string[] = []
+  if (rows.length > 0) {
+    for (const k of profileCellsOf(rows[0])) {
+      header.push(profileCellText(k))
+    }
+  }
   const want = profileVectorHeader()
   const lower = want.map((h: string): string => profileLower(h))
   // A table that looks like a vector table is one, exactly, or refused: it
   // has three or more of the six header names, in any order or case.
-  let like = 0
+  // In u32: a count of header cells.
+  let like: u32 = 0
   for (const h of header) {
     if (vocabHas(lower, profileLower(h))) {
       like = like + 1
@@ -1976,14 +1993,15 @@ const profileReadTable = (c: ProfileContext, t: ProfileTable): void => {
   const rowIds = new Set<string>()
   const read = new Map<string, Clause>()
   for (let i = 1; i < rows.length; i++) {
-    const cells = profileCellsOf(rows[i])
+    const row = rows[i]
+    const cells = profileCellsOf(row)
     if (cells.length > 0) {
       rowIds.add(profileCellText(cells[0]))
     }
-    const v = profileReadRow(c, cells, section, rows[i])
+    const v = profileReadRow(c, cells, section, row)
     if (v !== null) {
       c.vectors.push(v)
-      c.vectorLocs.push(profileLocOf(rows[i]))
+      c.vectorLocs.push(profileLocOf(row))
       read.set(v.id, v)
     }
   }
@@ -2029,10 +2047,7 @@ const profileReadTruncate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>,
     profileRefuse(c, p, `${id}'s length is in "bits" or "bytes", not "${unit}": ${PROFILE_TRUNCATE_FORM}`)
     return
   }
-  let n: i64 = 0
-  for (let i = 0; i < len.length; i++) {
-    n = n * 10 + toI64(len.charCodeAt(i) - 48)
-  }
+  const n = profileDigitsValue(len)
   if (unit === "bits" && n % 8 !== 0) {
     profileRefuse(
       c,
@@ -2070,13 +2085,30 @@ const profileReadTruncate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>,
     profileRefuse(
       c,
       p,
-      `${id}'s Expected is ${got} bytes (${got * 8} bits), but Truncate: keeps ${bytes} bytes (${bytes * 8} bits); the Expected is the whole truncated result`,
+      `${id}'s Expected is ${got} bytes (${profileBits(got)} bits), but Truncate: keeps ${bytes} bytes (${profileBits(bytes)} bits); the Expected is the whole truncated result`,
     )
     return
   }
   v.truncate = new Truncate(bytes, unit)
   c.truncateIds.push(id)
   c.truncateLocs.push(profileLocOf(p))
+}
+
+/**
+ * `bytes * 8` in decimal, for a count of 0 or more. It is worked on the
+ * digits, so a count past 2^60 (a hex literal's repeat can make one) prints
+ * exactly rather than overflowing i64.
+ */
+const profileBits = (bytes: i64): string => {
+  const d = `${bytes}`
+  let out = ""
+  let carry: u32 = 0
+  for (let i = d.length - 1; i >= 0; i--) {
+    const v = (toU32(d.charCodeAt(i)) - 48) * 8 + carry
+    out = `${v % 10}${out}`
+    carry = v / 10
+  }
+  return carry > 0 ? `${carry}${out}` : out
 }
 
 /** Whether `s` is a section number at or under `parent` (`2.1` is under `2`). */
@@ -2090,11 +2122,21 @@ const profileUlps = (s: string): i64 => {
   if (s.length === PROFILE_ULPS_MAX.length && profileCompare(s, PROFILE_ULPS_MAX) > 0) {
     return -1
   }
-  let n: i64 = 0
+  return profileDigitsValue(s)
+}
+
+/**
+ * The value of `s`, decimal digits. It is summed in u64, which wraps
+ * unchecked; every caller has checked `s` is at most 16 digits (a Truncate:
+ * length 7, an ulps count PROFILE_ULPS_MAX's 16), so the sum never wraps and
+ * fits in i64.
+ */
+const profileDigitsValue = (s: string): i64 => {
+  let n: u64 = 0
   for (let i = 0; i < s.length; i++) {
-    n = n * 10 + toI64(s.charCodeAt(i) - 48)
+    n = n * 10 + (toU64(s.charCodeAt(i)) - 48)
   }
-  return n
+  return toI64(n)
 }
 
 /**
@@ -2109,7 +2151,8 @@ const profileToleranceBound = (c: ProfileContext, p: XmlNode, head: string, t: T
   }
   const id = words[0]
   const kind = words[1]
-  const value = words[2].substring(0, words[2].length - 1)
+  const bound = words[2]
+  const value = bound.substring(0, bound.length - 1)
   if (kind === "ulps") {
     const n = profileUlps(value)
     if (n < 0) {
@@ -2186,7 +2229,8 @@ const profileReadTolerance = (
   const before: XmlNode[] = []
   const after: XmlNode[] = []
   let xref: XmlNode | null = null
-  let xrefs = 0
+  // In u32: a count of a paragraph's xrefs.
+  let xrefs: u32 = 0
   let k = p.first
   while (k !== null) {
     if (k.name === "xref") {
@@ -2264,17 +2308,16 @@ const profileIterateCount = (s: string): i64 => {
   if (digits.startsWith("0") || digits.length > 10) {
     return -1
   }
-  let n: i64 = 0
-  for (let i = 0; i < digits.length; i++) {
-    n = n * 10 + toI64(digits.charCodeAt(i) - 48)
-  }
+  const n = profileDigitsValue(digits)
   return n > PROFILE_ITERATE_MAX ? -1 : n
 }
 
 /** `s` split at its commas outside parentheses, each part trimmed. */
 const profileIterateParts = (s: string): string[] => {
   const out: string[] = []
-  let depth = 0
+  // In u32: a string is under 2^31 long, so the depth is 0 exactly when the
+  // count of "(" less the count of ")" so far is 0, as it was in i32.
+  let depth: u32 = 0
   let from = 0
   for (let i = 0; i < s.length; i++) {
     const ch = s.charCodeAt(i)
@@ -2308,11 +2351,12 @@ const profileIterateNext = (c: ProfileContext, loc: ProfileLoc, id: string, s: s
     return new Expr(ExprKind.Var, s)
   }
   const open = s.indexOf("(")
-  if (open > 0 && s.endsWith(")") && charsIsIdent(s.substring(0, open))) {
+  // indexOf finds the "(" before the ")" that ends `s`; `open < s.length - 1` is for the prover.
+  if (open > 0 && open < s.length - 1 && s.endsWith(")") && charsIsIdent(s.substring(0, open))) {
     const e = new Expr(ExprKind.Call, s.substring(0, open))
     const inner = profileTrim(s.substring(open + 1, s.length - 1))
     const args: string[] = inner.length === 0 ? [] : profileIterateParts(inner)
-    if (args.every((a: string): boolean => charsIsIdent(a))) {
+    if (profileAllIdents(args)) {
       for (const a of args) {
         e.args.push(new Expr(ExprKind.Var, a))
       }
@@ -2323,11 +2367,40 @@ const profileIterateNext = (c: ProfileContext, loc: ProfileLoc, id: string, s: s
   return null
 }
 
+/** Whether every one of `names` is an identifier. */
+const profileAllIdents = (names: string[]): boolean => {
+  for (const n of names) {
+    if (!charsIsIdent(n)) {
+      return false
+    }
+  }
+  return true
+}
+
 /** Whether `e` is `call` on `names`, in order. */
-const profileIterateIsCall = (e: Expr, call: string, names: string[]): boolean =>
-  e.name === call &&
-  e.args.length === names.length &&
-  e.args.every((a: Expr, i: i32): boolean => a.kind === ExprKind.Var && a.name === names[i])
+const profileIterateIsCall = (e: Expr, call: string, names: string[]): boolean => {
+  if (e.name !== call || e.args.length !== names.length) {
+    return false
+  }
+  // The lengths are equal; `i < names.length` is for the prover.
+  for (let i = 0; i < e.args.length && i < names.length; i++) {
+    const a = e.args[i]
+    if (a.kind !== ExprKind.Var || a.name !== names[i]) {
+      return false
+    }
+  }
+  return true
+}
+
+/** `s` up to its first `sep`, or all of `s` with none: split(s, sep)[0]. */
+const profileUpTo = (s: string, sep: string): string => {
+  const at = s.indexOf(sep)
+  // indexOf finds `sep` in `s` or none; `at > s.length` is for the prover.
+  if (at < 0 || at > s.length) {
+    return s
+  }
+  return s.substring(0, at)
+}
 
 /**
  * An Iterate: paragraph, `Iterate: <id> <count> times, [slow, ]<names> <-
@@ -2338,7 +2411,7 @@ const profileIterateIsCall = (e: Expr, call: string, names: string[]): boolean =
 const profileReadIterate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, read: Map<string, Clause>): void => {
   const text = profileTrim(profileAfter(c, p, PROFILE_ITERATE))
   const words = split(text, " ")
-  const id = words[0]
+  const id = profileUpTo(text, " ")
   const loc = profileLocOf(p)
   if (words.length < 2 || words[1] === "times,") {
     // Echo the author's own paragraph, with the count put where it goes.
@@ -2355,16 +2428,19 @@ const profileReadIterate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, 
     profileRefuseLoc(c, loc, `an Iterate: paragraph reads "<id> <count> times," first: ${PROFILE_ITERATE_FORM}`)
     return
   }
-  const count = profileIterateCount(words[1])
+  const countWord = words[1]
+  const count = profileIterateCount(countWord)
   if (count < 0) {
     profileRefuseLoc(
       c,
       loc,
-      `${id}'s count is a whole number from 1 to 1,000,000,000 in digits, grouped in threes by commas or not at all, not "${words[1]}": ${PROFILE_ITERATE_FORM}`,
+      `${id}'s count is a whole number from 1 to 1,000,000,000 in digits, grouped in threes by commas or not at all, not "${countWord}": ${PROFILE_ITERATE_FORM}`,
     )
     return
   }
-  const rest = profileTrim(text.substring(id.length + words[1].length + "times,".length + 2, text.length))
+  // `text` starts with the id, the count and "times,", a space after each of the first two.
+  const start = toI32(toI64(id.length) + toI64(countWord.length) + toI64("times,".length) + 2)
+  const rest = profileTrim(text.substring(start, text.length))
   let arrow = rest.indexOf("<-")
   let width = 2
   if (arrow < 0) {
@@ -2380,7 +2456,7 @@ const profileReadIterate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, 
     return
   }
   let lhs = profileTrim(rest.substring(0, arrow))
-  const rhs = profileTrim(rest.substring(arrow + width, rest.length))
+  const rhs = profileTrim(rest.substring(profileLineSum(arrow, width, 0), rest.length))
   const it = new Iterate()
   it.count = count
   if (lhs.startsWith("slow,")) {
@@ -2394,7 +2470,7 @@ const profileReadIterate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, 
   // Only slow may stand between "times," and the names.
   const open = lhs.indexOf("(")
   const comma = lhs.indexOf(",")
-  if (open < 0 && comma >= 0 && split(lhs, ",").every((n: string): boolean => charsIsIdent(profileTrim(n)))) {
+  if (open < 0 && comma >= 0 && profileAllIdents(profileTrimmed(split(lhs, ",")))) {
     profileRefuseLoc(
       c,
       loc,
@@ -2410,7 +2486,7 @@ const profileReadIterate = (c: ProfileContext, p: XmlNode, rowIds: Set<string>, 
     )
     return
   }
-  const extra = open >= 0 ? lhs.substring(0, open) : comma >= 0 ? lhs.substring(0, comma + 1) : ""
+  const extra = open >= 0 ? lhs.substring(0, open) : comma >= 0 ? lhs.substring(0, profileLineSum(comma, 1, 0)) : ""
   if (profileTrim(extra).length > 0) {
     profileRefuseLoc(
       c,
@@ -2500,7 +2576,7 @@ const profileCodeCell = (c: ProfileContext, td: XmlNode): string | null => {
 const profileRefuseInCell = (c: ProfileContext, td: XmlNode, message: string, col: i32): void => {
   const tt = profileOnly(td)
   const t: XmlNode | null = tt !== null ? tt.first : null
-  const at = t !== null && t.next === null ? profileXmlCol(t, 0, split(t.text, "\n")[0], col) : 0
+  const at = t !== null && t.next === null ? profileXmlCol(t, 0, profileUpTo(t.text, "\n"), col) : 0
   if (t !== null && at > 0) {
     profileRefuseAt(c, profileLocOf(t), message, at)
   } else {
@@ -2510,7 +2586,8 @@ const profileRefuseInCell = (c: ProfileContext, td: XmlNode, message: string, co
 
 const profileReadRow = (c: ProfileContext, cells: XmlNode[], section: string, tr: XmlNode): Clause | null => {
   const width = profileVectorHeader().length
-  if (cells.length !== width) {
+  // The header has 6 cells; `cells.length < 6` is for the prover.
+  if (cells.length !== width || cells.length < 6) {
     profileRefuse(c, tr, `a vector row has ${width} cells, not ${cells.length}`)
     return null
   }
@@ -2531,8 +2608,7 @@ const profileReadRow = (c: ProfileContext, cells: XmlNode[], section: string, tr
     profileCheckText(c, profileLocOf(titleC), `vector ${id}'s title`, title)
   }
   const coversText = profileCellText(coversC)
-  const covers: string[] =
-    coversText.length > 0 ? split(coversText, ",").map((k: string): string => profileTrim(k)) : []
+  const covers: string[] = coversText.length > 0 ? profileTrimmed(split(coversText, ",")) : []
   profileCheckCovers(c, covers, profileLocOf(coversC))
   const callText = profileCodeCell(c, callC)
   const expText = profileCodeCell(c, expC)
@@ -2855,7 +2931,7 @@ const profileReadProperties = (c: ProfileContext, code: XmlNode[]): void => {
       continue
     }
     const p = r.value
-    const at = new ProfileLoc(block.line, block.mdLine, block.markLine, profileCollapse(split(block.text, "\n")[0]))
+    const at = new ProfileLoc(block.line, block.mdLine, block.markLine, profileCollapse(profileUpTo(block.text, "\n")))
     const title = p.title ?? ""
     profileCheckId(c, p.id, at)
     profileCheckCovers(c, p.covers, at)
@@ -2912,8 +2988,10 @@ const profileCheckCoverage = (c: ProfileContext): void => {
       targets.push(f.name)
     }
   }
-  for (let i = 0; i < c.properties.length; i++) {
+  // propertyLocs gets a place with each property; `i < c.propertyLocs.length` is for the prover.
+  for (let i = 0; i < c.properties.length && i < c.propertyLocs.length; i++) {
     const k = c.properties[i]
+    const at = c.propertyLocs[i]
     const a = k.assert
     const calls: string[] = []
     if (a !== null) {
@@ -2926,7 +3004,7 @@ const profileCheckCoverage = (c: ProfileContext): void => {
     if (calls.length === 0) {
       profileRefuseAt(
         c,
-        c.propertyLocs[i],
+        at,
         `property ${k.id}'s assertion calls none of the functions under test, so it checks nothing`,
         0,
       )
@@ -2934,7 +3012,7 @@ const profileCheckCoverage = (c: ProfileContext): void => {
       const sorted = calls.sort((x: string, y: string): i32 => profileCompare(x, y))
       profileRefuseAt(
         c,
-        c.propertyLocs[i],
+        at,
         `property ${k.id}'s assertion calls only reference functions (${sorted.join(", ")}); call a function of ${c.module}, the module under test`,
         0,
       )
@@ -3088,15 +3166,19 @@ const profileShapeRefusals = (c: ProfileContext, out: Contract, clauseLocs: Prof
     } else if (e >= 0 && e < exLocs.length) {
       loc = exLocs[e]
     } else if (k >= 0 && k < clauseLocs.length) {
+      loc = clauseLocs[k]
       // An iterate's or a truncate's issue is its paragraph's, not the row's.
-      const at = c.iterateIds.indexOf(out.clauses[k].id)
-      const tr = c.truncateIds.indexOf(out.clauses[k].id)
-      if (at >= 0 && issue.startsWith(`clauses[${k}].iterate`)) {
-        loc = c.iterateLocs[at]
-      } else if (tr >= 0 && issue.startsWith(`clauses[${k}].truncate`)) {
-        loc = c.truncateLocs[tr]
-      } else {
-        loc = clauseLocs[k]
+      // clauseLocs has one per clause, and each id list one place per id
+      // (profileRead); the length compares are for the prover.
+      if (k < out.clauses.length) {
+        const id = out.clauses[k].id
+        const at = c.iterateIds.indexOf(id)
+        const tr = c.truncateIds.indexOf(id)
+        if (at >= 0 && at < c.iterateLocs.length && issue.startsWith(`clauses[${k}].iterate`)) {
+          loc = c.iterateLocs[at]
+        } else if (tr >= 0 && tr < c.truncateLocs.length && issue.startsWith(`clauses[${k}].truncate`)) {
+          loc = c.truncateLocs[tr]
+        }
       }
     } else if (f >= 0 && f < c.fnLocs.length) {
       loc = c.fnLocs[f]
@@ -3207,7 +3289,7 @@ export const profileRead = (
   if (c.requirements.length === 0) {
     profileRefuse(c, doc.root, "a spec needs at least one requirement")
   }
-  if (c.vectors.length + c.properties.length === 0) {
+  if (c.vectors.length === 0 && c.properties.length === 0) {
     profileRefuse(c, doc.root, "a spec needs at least one clause: a vector table row or a ts-property block")
   }
   if (c.refusals.length > 0) {
@@ -3253,23 +3335,24 @@ export const profileRead = (
   for (const q of c.exclusions) {
     profilePut(c, l, `exclusion §${q.section}`, q.loc)
   }
-  for (let i = 0; i < out.clauses.length; i++) {
+  // Each list below has its places pushed with it; the second compare is for the prover.
+  for (let i = 0; i < out.clauses.length && i < clauseLocs.length; i++) {
     profilePut(c, l, out.clauses[i].id, clauseLocs[i])
   }
-  for (let i = 0; i < c.toleranceIds.length; i++) {
+  for (let i = 0; i < c.toleranceIds.length && i < c.toleranceLocs.length; i++) {
     profilePut(c, l, `${c.toleranceIds[i]}.tolerance`, c.toleranceLocs[i])
   }
-  for (let i = 0; i < c.iterateIds.length; i++) {
+  for (let i = 0; i < c.iterateIds.length && i < c.iterateLocs.length; i++) {
     profilePut(c, l, `${c.iterateIds[i]}.iterate`, c.iterateLocs[i])
   }
-  for (let i = 0; i < c.truncateIds.length; i++) {
+  for (let i = 0; i < c.truncateIds.length && i < c.truncateLocs.length; i++) {
     profilePut(c, l, `${c.truncateIds[i]}.truncate`, c.truncateLocs[i])
   }
   // fnLocs has one per function (profileReadInterface).
   for (let i = 0; i < c.functions.length && i < c.fnLocs.length; i++) {
     profilePut(c, l, c.functions[i].name, c.fnLocs[i])
   }
-  for (let i = 0; i < c.outOfScope.length; i++) {
+  for (let i = 0; i < c.outOfScope.length && i < c.outOfScopeLocs.length; i++) {
     profilePut(c, l, `outOfScope[${i}]`, c.outOfScopeLocs[i])
   }
   return Ok(new ProfileRead(out, l))
