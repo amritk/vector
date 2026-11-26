@@ -509,7 +509,33 @@ export const gateIntRounds = (lines: string, label: string, n: string): i32[] =>
 export const gateIntPrinted = (lines: string, label: string, n: string): i32[] => {
   const out: i32[] = []
   for (const j of gateLabelEnds(lines, label)) {
-    if (gateIntAt(lines, j, n)) {
+    if (gateIntStarts(lines, j) && gateIntAt(lines, j, n)) {
+      out.push(j)
+    }
+  }
+  return out
+}
+
+/**
+ * Where the integer `n` is printed whole, with or without a name before it,
+ * as offsets of its first byte: in decimal (its `-` with it) or 0x hex, not
+ * inside a longer word or number, so `1` is at 4 of `(c=1)`, `-1` at 4 of
+ * `(n=-1)`, and `1` is in neither `(n=-1)` nor `(n=10)`.
+ *
+ * @param lines the text, such as one call label
+ * @param n the integer, as decimal text
+ * @returns each offset, ascending
+ */
+export const gateIntBare = (lines: string, n: string): i32[] => {
+  const out: i32[] = []
+  for (let j = 0; j < lines.length; j++) {
+    if (j > 0) {
+      const c = lines.charCodeAt(j - 1)
+      if (gateIsAlnum(c) || c === 0x5f || c === 0x2d || c === 0x2e) {
+        continue
+      }
+    }
+    if (gateIntStarts(lines, j) && gateIntAt(lines, j, n)) {
       out.push(j)
     }
   }
