@@ -26,22 +26,24 @@ export class EmitPackages {
   }
 }
 
+/** Whether `p` is a path part: not empty, `.` or `..`. */
+const emitPathPartOk = (p: string): boolean => p.length !== 0 && p !== "." && p !== ".."
+
 /** Whether `path` is parts joined by `/`, none empty, `.` or `..`, and no `\`. */
 const emitPathPartsOk = (path: string): boolean => {
   if (path.length === 0 || path.indexOf("\\") >= 0) {
     return false
   }
   let start = 0
-  for (let i = 0; i <= toI32(path.length); i++) {
-    if (i === toI32(path.length) || path.charCodeAt(i) === 47) {
-      const p = path.substring(start, i)
-      if (p.length === 0 || p === "." || p === "..") {
+  for (let i = 0; i < path.length; i++) {
+    if (path.charCodeAt(i) === 47) {
+      if (!emitPathPartOk(path.substring(start, i))) {
         return false
       }
       start = i + 1
     }
   }
-  return true
+  return emitPathPartOk(path.substring(start, path.length))
 }
 
 /**
@@ -59,11 +61,11 @@ export const emitParsePackages = (flags: string[], lang: string): Result<EmitPac
   const m = new EmitPackages()
   for (const f of flags) {
     const eq = f.indexOf("=")
-    if (eq <= 0 || eq === f.length - 1) {
+    if (eq <= 0 || toI64(eq) === toI64(f.length) - 1) {
       return Err(`--package ${f}: expected <name>=<dir>`)
     }
     const name = f.substring(0, eq)
-    const dir = f.substring(eq + 1, f.length)
+    const dir = f.substring(toI32(toI64(eq) + 1), f.length)
     if (!emitPathPartsOk(name)) {
       return Err(`--package ${f}: ${name} is not a package name (parts joined by /, none empty, . or ..)`)
     }
@@ -89,21 +91,26 @@ export const emitParsePackages = (flags: string[], lang: string): Result<EmitPac
  * @returns its file, or null when no package maps it or its path is malformed
  */
 export const emitModuleFile = (m: EmitPackages, module: string, ext: string): string | null => {
-  let best = -1
-  for (let i = 0; i < m.names.length; i++) {
+  // emitParsePackages pushes a name and its dir together, so the two lists
+  // are the same length; a map built by hand with fewer dirs maps no more names.
+  let bestName: string | null = null
+  let bestDir = ""
+  for (let i = 0; i < m.names.length && i < m.dirs.length; i++) {
     const n = m.names[i]
-    if (module.startsWith(`${n}/`) && (best < 0 || n.length > m.names[best].length)) {
-      best = i
+    const d = m.dirs[i]
+    if (module.startsWith(`${n}/`) && (bestName === null || n.length > bestName.length)) {
+      bestName = n
+      bestDir = d
     }
   }
-  if (best < 0) {
+  if (bestName === null) {
     return null
   }
-  const rest = module.substring(m.names[best].length + 1, module.length)
+  const rest = module.substring(`${bestName}/`.length, module.length)
   if (!emitPathPartsOk(rest)) {
     return null
   }
-  return joinPath(m.dirs[best], `${rest}${ext}`)
+  return joinPath(bestDir, `${rest}${ext}`)
 }
 
 /**
@@ -160,7 +167,7 @@ export const emitResolveModules = (
       return Err(`${mod}: --package places it at ${file}, which does not exist`)
     }
     opts.localModules.push(mod)
-    opts.localImports.push(relativePath(from, real.substring(0, real.length - ext.length)))
+    opts.localImports.push(relativePath(from, real.substring(0, toI32(toI64(real.length) - toI64(ext.length)))))
   }
   return Ok(true)
 }
@@ -173,8 +180,10 @@ export const emitResolveModules = (
  */
 export const emitPackageFlags = (m: EmitPackages): string => {
   let out = ""
-  for (let i = 0; i < m.names.length; i++) {
-    out = `${out} --package ${m.names[i]}=${m.dirs[i]}`
+  // The lists are the same length (see emitModuleFile).
+  for (let i = 0; i < m.names.length && i < m.dirs.length; i++) {
+    const n = m.names[i]
+    out = `${out} --package ${n}=${m.dirs[i]}`
   }
   return out
 }
