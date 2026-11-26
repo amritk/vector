@@ -1,0 +1,14 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ byte-parts-format · RFC 6979 (Byte parts fixture: a format constant in a concat) · nish/crypto/p256
+ Status: CONTRACT_VALID
+
+ Requirements
+  ○ R-PUB  §A.2.5 DEFINITION  "public key: U = xG"
+      ○ P256-PUB
+      P256-PUB format expect.concat[0] = 04: SEC1 prefixes an uncompressed point with 04
+
+ Warnings
+  ! clauses: no property clauses: the contract checks only the RFC's own vectors
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

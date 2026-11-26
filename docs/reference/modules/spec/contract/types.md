@@ -32,6 +32,7 @@ Generated from [src/spec/contract/types.ts](https://github.com/amritk/vector/blo
 - [`Tolerance`](#tolerance)
 - [`Iterate`](#iterate)
 - [`Truncate`](#truncate)
+- [`Tail`](#tail)
 - [`ForallVar`](#forallvar)
 - [`ClauseKind`](#clausekind)
 - [`Clause`](#clause)
@@ -161,6 +162,14 @@ A bool literal's value.
 
 ```ts
 flag: boolean
+```
+
+#### Literal.format
+
+Why a concat's hex part is a format constant the source does not print.
+
+```ts
+format: string | null
 ```
 
 #### Literal.kind
@@ -1123,6 +1132,66 @@ the words, without brackets
 
 </scalar-field>
 
+### Tail
+
+A vector whose expect is the tail of a printed value: `args[arg]`
+followed by the expect is one whole value the source prints, and the
+expect is its last `bytes` bytes.
+
+```ts
+class Tail
+```
+
+#### new Tail
+
+Joins an argument and the expect as one printed value.
+
+```ts
+new Tail(arg: i32, bytes: i64, reason: string): Tail
+```
+
+<scalar-field name="arg" type="i32" required>
+
+the index of the argument that starts the value
+
+</scalar-field>
+
+<scalar-field name="bytes" type="i64" required>
+
+how many bytes end it, the expect
+
+</scalar-field>
+
+<scalar-field name="reason" type="string" required>
+
+why the source prints them as one
+
+</scalar-field>
+
+#### Tail.arg
+
+The index of the argument the value starts with.
+
+```ts
+arg: i32
+```
+
+#### Tail.bytes
+
+How many bytes the expect is, at least 1.
+
+```ts
+bytes: i64
+```
+
+#### Tail.reason
+
+Why the source prints the two as one value.
+
+```ts
+reason: string
+```
+
 ### ForallVar
 
 A variable a property quantifies over, and its domain.
@@ -1363,6 +1432,14 @@ A vector's provenance.
 
 ```ts
 source: VectorSource | null
+```
+
+#### Clause.tail
+
+The printed value a vector's arg and expect are the two ends of; null when none.
+
+```ts
+tail: Tail | null
 ```
 
 #### Clause.title

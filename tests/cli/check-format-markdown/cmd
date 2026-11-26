@@ -1,0 +1,1 @@
+vector spec check --format markdown tests/fixtures/byte-parts/byte-parts-format.json

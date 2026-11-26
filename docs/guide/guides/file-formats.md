@@ -36,6 +36,12 @@ SHA-256. It is generated: change the spec and run `spec extract` again rather
 than editing it. Its output is canonical (schema key order, a 2-space indent,
 a trailing newline), so a rebuild changes only what the spec changed.
 
+Every value of a vector is printed whole in its cited section, but for two
+byte parts the spec states with a reason: a concat part's `format`, a byte
+the RFC does not print, and a vector's `tail`, an `expect` that ends the
+value an argument starts. See [Byte parts](writing-a-spec.md#byte-parts) and
+[`tail`](../../reference/formats/rfc-contract.md).
+
 Two parts of a contract are not in the spec:
 
 - **`allowSurvivors`** comes from the survivors sidecar beside the contract,

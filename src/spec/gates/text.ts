@@ -281,16 +281,14 @@ const gateLineOf = (lines: string, at: i32): i32 => {
 }
 
 /**
- * The lines on which a value is printed whole: in quotes, as a whole line,
- * or ending a line after "=" or ":". A value wrapped across lines counts on
- * every line it spans; a value inside a longer one is not printed there
- * ("Zg" is not printed by `"Zg=="`).
+ * Where a value is printed whole (as gateTextLines reads it), as offsets:
+ * `salt` is printed at 16 of `(P="passwd", S="salt")`, and `pass` nowhere.
  *
- * @param lines the section's lines (gateLines)
+ * @param lines the section's lines (gateLines), or one label
  * @param value the value, whitespace normalized
- * @returns the line numbers, counting from 0, each once, ascending
+ * @returns the offset in `lines` of each whole printing, ascending; empty for ""
  */
-export const gateTextLines = (lines: string, value: string): i32[] => {
+export const gateTextStarts = (lines: string, value: string): i32[] => {
   const out: i32[] = []
   if (value.length === 0) {
     return out
@@ -303,19 +301,39 @@ export const gateTextLines = (lines: string, value: string): i32[] => {
   let p = toI32(text.indexOf(value))
   while (p >= 0) {
     // value is in text at p, so p + value.length is at most text.length.
-    const e = gateTextPlus(p, value.length)
-    if (gateWhole(lines, p, e)) {
-      const last = gateLineOf(lines, gateTextPlus(e, -1))
-      // A line number is under lines.length, so the next one fits.
-      for (let l = gateLineOf(lines, p); l <= last; l = gateTextPlus(l, 1)) {
-        if (out.indexOf(l) < 0) {
-          out.push(l)
-        }
-      }
+    if (gateWhole(lines, p, gateTextPlus(p, value.length))) {
+      out.push(p)
     }
     p = toI32(text.indexOf(value, gateTextPlus(p, 1)))
   }
-  return out.sort((a: i32, b: i32): i32 => (a > b ? 1 : a < b ? -1 : 0))
+  return out
+}
+
+/**
+ * The lines on which a value is printed whole: in quotes, as a whole line,
+ * or ending a line after "=" or ":". A value wrapped across lines counts on
+ * every line it spans; a value inside a longer one is not printed there
+ * ("Zg" is not printed by `"Zg=="`).
+ *
+ * @param lines the section's lines (gateLines)
+ * @param value the value, whitespace normalized
+ * @returns the line numbers, counting from 0, each once, ascending
+ */
+export const gateTextLines = (lines: string, value: string): i32[] => {
+  const out: i32[] = []
+  const starts = gateTextStarts(lines, value)
+  for (const p of starts) {
+    // value is printed at p, so p + value.length is at most lines.length.
+    const e = gateTextPlus(p, value.length)
+    const last = gateLineOf(lines, gateTextPlus(e, -1))
+    // A line number is under lines.length, so the next one fits.
+    for (let l = gateLineOf(lines, p); l <= last; l = gateTextPlus(l, 1)) {
+      if (out.indexOf(l) < 0) {
+        out.push(l)
+      }
+    }
+  }
+  return out
 }
 
 /** Whether `c` may come just before a label: not part of a longer name. */
@@ -475,6 +493,51 @@ export const gateIntRounds = (lines: string, label: string, n: string): i32[] =>
     }
     // round counts printings in lines, so it fits.
     round = gateTextPlus(round, 1)
+  }
+  return out
+}
+
+/**
+ * Where a label is printed with the integer `n` after it, as offsets of the
+ * integer: `c=1` of `(P="passwd", c=1, dkLen=64)` is at 15.
+ *
+ * @param lines the section's lines (gateLines), or one label
+ * @param label the label
+ * @param n the integer, as decimal text
+ * @returns the offset in `lines` of each printing of `n` after the label, ascending
+ */
+export const gateIntPrinted = (lines: string, label: string, n: string): i32[] => {
+  const out: i32[] = []
+  for (const j of gateLabelEnds(lines, label)) {
+    if (gateIntStarts(lines, j) && gateIntAt(lines, j, n)) {
+      out.push(j)
+    }
+  }
+  return out
+}
+
+/**
+ * Where the integer `n` is printed whole, with or without a name before it,
+ * as offsets of its first byte: in decimal (its `-` with it) or 0x hex, not
+ * inside a longer word or number, so `1` is at 4 of `(c=1)`, `-1` at 4 of
+ * `(n=-1)`, and `1` is in neither `(n=-1)` nor `(n=10)`.
+ *
+ * @param lines the text, such as one call label
+ * @param n the integer, as decimal text
+ * @returns each offset, ascending
+ */
+export const gateIntBare = (lines: string, n: string): i32[] => {
+  const out: i32[] = []
+  for (let j = 0; j < lines.length; j++) {
+    if (j > 0) {
+      const c = lines.charCodeAt(j - 1)
+      if (gateIsAlnum(c) || c === 0x5f || c === 0x2d || c === 0x2e) {
+        continue
+      }
+    }
+    if (gateIntStarts(lines, j) && gateIntAt(lines, j, n)) {
+      out.push(j)
+    }
   }
   return out
 }

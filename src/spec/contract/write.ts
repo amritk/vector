@@ -25,6 +25,7 @@ import {
   NameOverride,
   OutOfScope,
   SourceDecl,
+  Tail,
   Tolerance,
   Truncate,
   VectorSource,
@@ -148,6 +149,7 @@ const writeLiteral = (lit: Literal): WriteNode => {
   }
   writeSetStr(o, "label", lit.label)
   writeSetStr(o, "unchecked", lit.unchecked)
+  writeSetStr(o, "format", lit.format)
   return o
 }
 
@@ -225,6 +227,14 @@ const writeTruncate = (t: Truncate): WriteNode => {
   return o
 }
 
+const writeTail = (t: Tail): WriteNode => {
+  const o = writeObj()
+  writeSet(o, "arg", writeRaw(`${t.arg}`))
+  writeSet(o, "bytes", writeRaw(`${t.bytes}`))
+  writeSet(o, "reason", writeStr(t.reason))
+  return o
+}
+
 const writeIterate = (it: Iterate): WriteNode => {
   const o = writeObj()
   writeSet(o, "count", writeRaw(`${it.count}`))
@@ -293,6 +303,10 @@ const writeClause = (c: Clause): WriteNode => {
     const tr = c.truncate
     if (tr !== null) {
       writeSet(o, "truncate", writeTruncate(tr))
+    }
+    const tl = c.tail
+    if (tl !== null) {
+      writeSet(o, "tail", writeTail(tl))
     }
     return o
   }

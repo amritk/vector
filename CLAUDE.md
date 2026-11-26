@@ -1,9 +1,9 @@
 # Project rules
 
 vector is written in [Nish](https://github.com/amritk/nish), a static subset
-of TypeScript compiled to a native binary, `dist/vector`. The
+of TypeScript compiled natively to `dist/vector`. The
 compiler is pinned in `.nish-version` and z3 in `scripts/fetch-z3.sh`.
-Before writing Nish, read `.nish/docs/AI.md` (the language as rules, traps first).
+Before writing Nish, read `.nish/docs/AI.md`.
 
 | Command | What it does |
 | --- | --- |
@@ -12,18 +12,19 @@ Before writing Nish, read `.nish/docs/AI.md` (the language as rules, traps first
 | `npm run build` | compile `src/main.ts` to `dist/vector` |
 | `node tests/run.mjs <filter>` | the tests whose path contains `<filter>` |
 | `npm test` | every `tests/**/*_test.ts`, then every CLI golden case |
-| `npm run lint` | biome, over the Nish sources and the Node scripts |
+| `npm run lint` | biome, over the Nish sources and Node scripts |
 | `npm run tested-exports` | refuse an exported function no test calls by name |
-| `npm run dogfood` | refuse a `tests/dogfood/` test that is not what vector emits from its spec now |
+| `npm run dogfood` | refuse a `tests/dogfood/` test that differs from what vector emits now |
 | `npm run doc-caps` | refuse an agent-facing doc over its byte cap in `scripts/doc-caps.json` |
 | `npm run panics` | refuse a `src/` module over its unproven panic sites in `scripts/panic-baseline/` |
 
 ## Layout
 
 - `src/index.ts` is the package's entry (`@amritk/vector`, the `nish`
-  condition in `package.json`): its `vectorRun` declares the commands, parses
-  the arguments, handles `--help` and `--version`, and dispatches the rest.
-  `src/main.ts`, the binary's entry, passes it the process's arguments.
+  condition in `package.json`). Its `vectorRun` declares the commands, parses
+  the arguments and dispatches; it handles `--help` and `--version`; the
+  rest is a command's. `src/main.ts`, the binary's entry, passes
+  the arguments to `vectorRun`.
 - `src/cli/<command>.ts` exports `register<Command>(cli, parent)`, which
   declares its flags and arguments and returns the object whose `run(r)`
   handles it.
@@ -47,12 +48,13 @@ Before writing Nish, read `.nish/docs/AI.md` (the language as rules, traps first
 - **Keep state in a context class**, passed to the functions that need it,
   not in module-level mutable variables.
 - **Run the compiler rather than guess**: `.nish/bin/nish run <file>` says
-  in seconds whether something compiles and what it does.
-- **An on-purpose wrap uses `nish:unsafe`** (`wrappingAdd`/`Sub`/`Mul`) at
-  its site, never a u64 round trip; it never silences a panic site.
+  whether it compiles and what it does.
 - **Every export has a doc comment**: what it is for, `@param` for each
   parameter, and `@returns` when it returns something. The generated
   reference fails on a gap, and its undocumented list only shrinks.
+- **A wrap that is meant to happen is written as one.** Use `wrappingAdd`,
+  `wrappingSub` or `wrappingMul` from `nish:unsafe` there, never
+  `toI64(toU64(a) op toU64(b))`; arithmetic that cannot wrap stays plain.
 - Exit codes are 0 when a check passed, 1 when vector refused the input, and
   2 for bad usage, an I/O or tool failure, or a `MISMATCH`, a vector bug
   (`src/core/diag.ts`).
@@ -65,8 +67,8 @@ every area the change touches, `npm run lint`, `npm run tested-exports`, and
 `npm run doc-caps` when an agent-facing doc changed, and
 `node scripts/gen-reference.mjs --check` when an export's doc comment changed.
 A doc over its cap is
-shortened in place; a cap is never raised or dropped, and CI refuses either.
-**The full gate is CI** (`.github/workflows/ci.yml`, on every push).
+shortened in place; a cap is never raised or dropped (CI refuses either).
+**The full gate is CI** (`.github/workflows/ci.yml`, on each push).
 
 **Read a check's exit status, never its piped tail**: `npm run lint | tail`
 passes when lint fails. Run it bare, or check `$?` / `PIPESTATUS`.
@@ -81,8 +83,8 @@ fixed values: round trips pass when both directions are wrong the same way.
 
 **A gate that accepts a value on another clause's word computes it, never
 assumes it.** When a rule takes one clause's printed value as what another
-clause's expression denotes (a sibling vector's result standing in for a
-property's sub-call), evaluate that expression with the sampler's semantics
+clause's expression denotes (a sibling vector standing in for a
+sub-call), evaluate that expression with the sampler's semantics
 and refuse every form it does not compute: a truncated, iterated or
 toleranced value, or `unwrap` of a `null`, is not `g(args)`.
 
@@ -101,10 +103,10 @@ edit after extraction is refused.
 (extracted from `specs/*.xml`) and `specs/*.xml` and fixture `.xml` (built from
 their `.md` by `scripts/build-spec.sh`). Change the source and rerun the generator.
 `CHANGELOG.md` and every version bump are release-please's: never edit
-either by hand.
+them by hand.
 
 **A change a user sees updates its guide page and `docs/AI.md` in the same PR**:
-a command, a flag, an exit code, an install step, or a message a guide page
+a command, flag, exit code, install step, or message a guide page
 shows.
 
 **Moving where a fact lives moves every pointer to it in the same PR.** Grep
@@ -125,28 +127,28 @@ that `.github/workflows/release.yml` calls, pinned by commit:
    `CHANGELOG.md`, from the conventional commits since the last release.
    Nothing else may hold the version: a golden writes it `{{version}}`, and
    the generated reference leaves out a marked value. A release commit that
-   leaves CI red on `main` means a copy was missed.
+   leaves `main` red means a copy was missed.
 2. Merging the release PR tags `v<version>`, creates the GitHub release, and
-   starts `release.yml` on the tag.
+   starts `release.yml` on it.
 3. That run packs `@amritk/vector` (the Nish source under `src/`, as
-   `npm publish` would), attaches it and `SHA256SUMS` to the release, and
+   `npm publish` would), attaches it with `SHA256SUMS` to the release, and
    publishes it to npm. Nothing is built; no binary ships.
 
 Config is `.github/release-please-config.json`, with the current version in
 `.github/.release-please-manifest.json`; the release workflow checks both on
-each PR that touches the release. A version with a hyphen
+every pull request that touches the release. A version with a hyphen
 (`1.2.0-rc.1`) is a prerelease, published under npm's `next` dist-tag.
-Attestations and npm provenance exist only while the repo is public.
+Attestations and npm provenance exist only while the repository is public.
 Dependabot (`.github/dependabot.yml`) proposes updates to the pin once a
 release is 5 days old.
 
-CI skips the release PR (opened with `GITHUB_TOKEN`); close and reopen it
-to run the checks.
+The release PR is opened with `GITHUB_TOKEN`, so CI does not run on it;
+close and reopen it.
 
-npm publishes by trusted publishing alone; no npm token is stored. The
-trusted publisher for `@amritk/vector` names repository `amritk/vector`,
-workflow `release.yml` and environment `npm`, limited to `v*` tags
-(Settings, Environments).
+npm publishes through trusted publishing alone: no npm token is stored
+anywhere. The trusted publisher on
+npmjs.com names repository `amritk/vector`, workflow file `release.yml` and
+environment `npm` (limited to `v*` tags in Settings, Environments).
 
 ## Commits and PRs
 

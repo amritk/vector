@@ -105,8 +105,8 @@ export function hexDecode(text: string): u8[] | null
 
 The types are those of the table in [Writing a
 spec](../../../docs/guide/guides/writing-a-spec.md#types): `u8[]`, `string`,
-`boolean`, `Secret<u8[]>`, the fixed-width integers `i8` … `i64` and
-`u8` … `u64`, `f64`, and the word arrays `u16[]`, `u32[]` and `u64[]`. A
+`boolean`, `Secret<u8[]>`, `i8` … `i64`,
+`u8` … `u64`, `f64`, and `u16[]`, `u32[]` and `u64[]`. A
 Nish test holds all but `i8` and `i16`, which the emitter refuses; only
 it holds word arrays. Add `| null` to `u8[]`,
 a word array or `string`, and to `Secret<u8[]>` as a result only; a
@@ -123,11 +123,10 @@ below the module under test's own, which declares at least one function;
 they are reference functions, not exports. A vector's Call must name a
 function of the module under test, and a property's assertion must call at
 least one: a clause that calls only reference functions is refused. A module line is exactly
-`// module: nish/<path>`, one module, after the previous signature. A comment of any style or case whose text starts `module:` or
-`module nish/` but is not that (`// Module: …`, `//module nish/…`,
-`/* module: … */`, `/// module: …`, two modules) is refused, and so is a module
-line inside a signature. Other comments (`// module-level helper`) are
-skipped:
+`// module: nish/<path>`, one module, after the previous signature. Any other
+comment starting `module:` or `module nish/` (`// Module: …`,
+`/* module: … */`, two modules), or one inside a signature, is refused; other
+comments are skipped:
 
 ````
 ~~~ ts-interface
@@ -209,8 +208,7 @@ are refused. `specs/rfc5869-hkdf-sha256.md` and
 `specs/rfc8439-chacha20-poly1305.md` are worked examples. The contract records
 the RFC, not the spec, so check it with `spec check contracts/<name>.json`
 (the RFC is read from its recorded file), or name the RFC with
-`--spec rfcs/rfc<N>.txt`. `--spec specs/<name>.xml` exits 1 (`--spec … is not rfcs/rfc<N>.txt, the main
-source the contract records`). To check that the contract is exactly what the
+`--spec rfcs/rfc<N>.txt`; `--spec specs/<name>.xml` exits 1. To check that the contract is exactly what the
 profile extracts to, run
 `spec extract specs/<name>.xml -o contracts/<name>.json --check`.
 
@@ -246,9 +244,8 @@ profile extracts to, run
 - **Source** says where the expected value comes from:
   - `{{Section N of RFCx}}`: the value is printed there. Prefer this.
   - `{{Section N of RFCx}}, Test Vector #K`: the values are all printed in
-    that one case of the section, under its `Test Vector #K:` heading. Use
-    it when a section prints several cases and a plain cite is refused as
-    unclear.
+    that case of the section, under its `Test Vector #K:` heading. Use
+    it when a plain cite is refused as unclear.
   - `{{Section N of RFCx}}; result {{Section M of RFCx}}`: for a `null`,
     `true` or `false` result, the inputs are printed in section N and the
     result is supported by section M of the main RFC: a covered requirement
@@ -271,12 +268,14 @@ profile extracts to, run
   - A code span holding a command: its trimmed stdout, as hex bytes, a
     string, a decimal int, `true`, `false` or `null` (no f64 or words).
 - **Values from an RFC:**
-  - Each one is a *whole* printed value, never a prefix or a tail. A word
-    array is a whole printed block, word for word.
+  - Each one is a *whole* printed value, never a prefix or a tail (see
+    `Format:` and `Tail:` in Limits). A word array is a whole printed
+    block, word for word.
   - Take the args and the expected value from one test case. A label
     printed once goes with its own case (RFC 8032 §7.1's empty MESSAGE:
     TEST 1), args in a call label's `( … )` with its value, values under
-    one `With …:` heading (RFC 6979 §A.2) or above all.
+    one `With …:` heading (RFC 6979 §A.2) or above all, or in one prose
+    sentence (RFC 9000 §A.1).
   - A wrapped value keeps the name before its first `=`.
   - A case printed per variant: use the row the function's name numbers.
   - [Writing a spec](../../../docs/guide/guides/writing-a-spec.md)'s "What a
@@ -352,9 +351,8 @@ scripts/build-spec.sh specs/<name>.md         # writes specs/<name>.xml
 
 **check --run-sources** runs the `command` sources. Read every command before
 you pass `--run-sources`: it runs on your machine, as you, with your files and
-network. Only the 30 s timeout kills the command's process group: a command
-that exits quickly can leave background children running, and a process that
-detaches with `setsid` is never contained. With no module yet, `check`
+network. Only the 30 s timeout kills its process group: background children
+and a `setsid` process outlive it. With no module yet, `check`
 warns that signatures were not checked, as expected: once the module exists
 (step 5), `check --nish-root` or `--module` checks them. No other command does.
 
@@ -479,8 +477,6 @@ vector the spec supports. Or, in a spec-side PR, allow it with a reason in
 
 Re-extract, which merges it in verbatim, then re-run `emit`, `stale` and
 `frozen` (which skips `*.survivors.json`): the contract's bytes changed.
-Survivors usually surface in the implementation PR, but the allow-list belongs
-in a spec-side PR.
 
 `mutate` also exits 1 in these cases:
 
@@ -541,3 +537,10 @@ is the printed, truncated value, plus a `Truncate: <id> to 128 bits` (or
 tests/fixtures/profile/profile-truncate.md. The cited section must print the
 length with that unit, the Expected must be exactly that long, and the
 function must return bytes; a result shorter than the length fails.
+
+A byte no RFC prints (SEC1's 04) is a hex `concat` part plus
+`Format: <id> expect.concat[0] is 04, <reason>` (or `args[<i>].concat[<j>]`),
+one per concat, beside a printed, bound part. A value printed whole that the
+function splits is two hex literals plus `Tail: <id> expect is the last <N>
+bytes of the value args[<i>] is printed in, <reason>`; see
+tests/fixtures/byte-parts.

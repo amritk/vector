@@ -19,6 +19,10 @@
  * (gateStatesResult). A truncated vector's length is printed there too, as
  * a whole number then its unit (`128 bits`), outside a heading; its
  * expected value is still a whole printed value, the truncated output.
+ * A concat's format part (`format`) is a constant the RFC does not print,
+ * taken on its reason, and only beside another part that is printed and
+ * bound. A tail vector's arg then its expect is one whole printed value,
+ * bound and paired as the expected value is, the expect its last bytes.
  */
 
 import { jsonStringifyString } from "nish/json"
@@ -33,10 +37,12 @@ import {
   Iterate,
   LitKind,
   Literal,
+  Tail,
   Truncate,
   VectorSourceKind,
   typesIsWords,
 } from "../contract/types"
+import { typeOfLiteral } from "../contract/typing"
 import { SourceSet, sourceFind } from "../source/load"
 import {
   HexValue,
@@ -58,12 +64,15 @@ import { gateResultWord, gateStatesResult } from "./result"
 import {
   gateByteLists,
   gateF64Printed,
+  gateIntBare,
   gateIntLabelCount,
   gateIntLines,
+  gateIntPrinted,
   gateIntRounds,
   gateLines,
   gateQuotePairs,
   gateTextLines,
+  gateTextStarts,
 } from "./text"
 import { GateWordBlock, gateWordBlocks } from "./words"
 
@@ -99,12 +108,23 @@ class GateBound {
   callArgs: boolean
   /** For a paired argument: the lines (of GateLits.lines) its call label is printed on. */
   call: i32[]
-  /** Whether it was refused as printed in another test case's call label (gateLabelArgs), which says why. */
+  /** Whether gateLabelArgs refused it (another test case's call label, or out of the label's order), saying why. */
   other: boolean
+  /**
+   * For an empty value (`num` "") or an integer without a label (`num` its
+   * digits): placed only by the call label its vector's expected value is
+   * printed under (gateLabelArgs), and not by line or round otherwise.
+   */
+  loose: boolean
+  /** For a paired unlabelled integer: the name its call label prints it after (`dkLen` of `dkLen=64`), or null. */
+  callName: string | null
   /** For a hex value or labelled integer: the section line of each printing that is it. */
   shown: i32[]
+  /** For a hex value: its lowercase hex, found in prose as `0x` and it (gateProseCount); "" otherwise. */
+  hex: string
   constructor(at: string, label: string | null) {
     this.shown = []
+    this.hex = ""
     this.at = at
     this.label = label
     this.num = ""
@@ -113,6 +133,8 @@ class GateBound {
     this.callArgs = false
     this.call = []
     this.other = false
+    this.loose = false
+    this.callName = null
     this.of = 0
     this.has = []
     this.printed = []
@@ -313,6 +335,7 @@ const gateHexCheck = (l: GateLits, at: string, hex: string, label: string | null
   if (label === null) {
     if (named.length === 0) {
       const u = new GateBound(at, null)
+      u.hex = hex
       for (const v of whole) {
         u.shown.push(v.line)
       }
@@ -339,6 +362,7 @@ const gateHexCheck = (l: GateLits, at: string, hex: string, label: string | null
   let of = 0
   const has: i32[] = []
   const b = new GateBound(at, label)
+  b.hex = hex
   for (const v of l.values) {
     const vl = v.label
     if (vl !== null && gateSameLabel(vl, label)) {
@@ -667,8 +691,24 @@ const gateEmptyCheck = (l: GateLits, at: string, label: string): void => {
 /** Checks one literal (and a concat's parts) against the section, adding its bounds. */
 const gateLitCheck = (l: GateLits, lit: Literal, at: string): void => {
   if (lit.kind === LitKind.Concat) {
+    const before = l.bounds.length
+    let format = ""
     for (let i = 0; i < lit.parts.length; i++) {
-      gateLitCheck(l, lit.parts[i], `${at}.concat[${i}]`)
+      const part = lit.parts[i]
+      // A format constant is taken on its reason (the report names it);
+      // the parts around it are checked as any other value.
+      if (part.format !== null) {
+        format = `${at}.concat[${i}]`
+      } else {
+        gateLitCheck(l, part, `${at}.concat[${i}]`)
+      }
+    }
+    if (format.length > 0 && l.bounds.length === before) {
+      gateLitFail(
+        l,
+        format,
+        `${format} is a format constant beside no value printed in ${l.inSection}: another part of ${at} must be printed there and bound`,
+      )
     }
     return
   }
@@ -688,7 +728,9 @@ const gateLitCheck = (l: GateLits, lit: Literal, at: string): void => {
     // found only where the section prints one.
     if (l.text.indexOf('""') < 0 && l.text.indexOf("(0 octets)") < 0) {
       gateLitFail(l, at, `the empty value is not printed in ${l.inSection}: it needs "" or "(0 octets)" there`)
+      return
     }
+    gateLooseBound(l, at, "")
     return
   }
   if (bytes) {
@@ -730,7 +772,10 @@ const gateLitCheck = (l: GateLits, lit: Literal, at: string): void => {
   }
   const label = lit.label
   const name = lit.kind === LitKind.Int ? "integer" : "f64"
-  if (label === null) {
+  if (label === null && lit.kind === LitKind.Int) {
+    // gateLabelArgs places it by a call label, or warns as below.
+    gateLooseBound(l, at, lit.text)
+  } else if (label === null) {
     gateNote(
       l,
       `${l.id}.${at}`,
@@ -745,6 +790,64 @@ const gateLitCheck = (l: GateLits, lit: Literal, at: string): void => {
   }
 }
 
+/**
+ * A tail: args[arg] then the expect is one whole hex value the section
+ * prints, the expect its last `bytes` bytes. The joined value is bound as
+ * the expected value is, so the other arguments pair with it as one case.
+ */
+const gateTailCheck = (l: GateLits, k: Clause, t: Tail, cited: boolean): void => {
+  const at = "tail"
+  const expect = k.expect
+  if (!cited || expect === null) {
+    gateLitFail(l, at, `a tail is the end of a value printed in ${l.inSection}: the Source cites it`)
+    return
+  }
+  // The shape gate refused an arg out of range; this guard proves the index.
+  const ai = t.arg
+  const args = k.args
+  if (!(ai >= 0 && ai < args.length)) {
+    return
+  }
+  const arg = args[ai]
+  const a = `args[${ai}]`
+  if (arg.kind !== LitKind.Hex || expect.kind !== LitKind.Hex) {
+    gateLitFail(
+      l,
+      at,
+      `${a} is ${typeOfLiteral(arg)} and the expect ${typeOfLiteral(expect)}: a tail joins two hex values`,
+    )
+    return
+  }
+  if (arg.unchecked !== null || expect.unchecked !== null) {
+    gateLitFail(l, at, `a tail's ${a} and expect are checked against the RFC as one value: drop "unchecked"`)
+    return
+  }
+  if (expect.label !== null) {
+    gateLitFail(l, at, `the joined value is found by ${a}'s label: drop the expect's "label"`)
+    return
+  }
+  const head = gateLitHex(arg)
+  const tail = gateLitHex(expect)
+  if (head.length === 0) {
+    gateLitFail(l, at, `${a} is empty: a tail ends a longer value`)
+    return
+  }
+  const n = toI64(tail.length / 2)
+  if (n !== t.bytes) {
+    gateLitFail(l, at, `the expect is ${n} bytes, not the last ${t.bytes} bytes the tail names`)
+    return
+  }
+  gateHexCheck(l, at, `${head}${tail}`, arg.label)
+}
+
+/** An empty value, or an integer without a label (`num`), that only a call label places: GateBound.loose. */
+const gateLooseBound = (l: GateLits, at: string, num: string): void => {
+  const b = new GateBound(at, null)
+  b.loose = true
+  b.num = num
+  l.bounds.push(b)
+}
+
 /** A bound's text, for a message: `args[0] "abc"`. */
 const gateBoundText = (b: GateBound): string => `${b.at} ${jsonStringifyString(b.text)}`
 
@@ -757,16 +860,59 @@ const gateBoundRound = (b: GateBound): string => {
 /** A repeated bound's printings, for a message: `1st or 3rd`. */
 const gateNth = (has: i32[]): string => has.map((r: i32): string => gateOrdinal(gateFidPlus(r, 1))).join(" or ")
 
-/** Whether an argument's string or integer is printed inside a call label: `"salt"` or `c=1` in `PBKDF2 (P="passwd", S="salt", c=1)`. */
-const gateInLabel = (b: GateBound, label: string): boolean => {
+/**
+ * Where an argument is printed inside a call label, as offsets in the label
+ * normalized: `"salt"`, `c=1`, an empty value's `""` or an unlabelled
+ * integer's whole number (`64` of `dkLen=64`) in
+ * `PBKDF2 (P="passwd", S="salt", c=1, dkLen=64)`; empty when it is not, or
+ * when the label is no call label.
+ */
+const gateLabelStarts = (b: GateBound, label: string): i32[] => {
+  const out: i32[] = []
   if (label.indexOf("(") < 0) {
-    return false
+    return out
   }
+  const s = rfcNormalize(label)
   const name = b.label
   if (b.lines !== null) {
-    return gateTextLines(rfcNormalize(label), b.text).length > 0
+    return gateTextStarts(s, b.text)
   }
-  return name !== null && gateIntRounds(rfcNormalize(label), name, b.num).length > 0
+  if (b.loose && b.num.length === 0) {
+    let p = toI32(s.indexOf('""'))
+    while (p >= 0) {
+      out.push(p)
+      // p is an offset in s, under 2^31, so the u32 add is exact.
+      p = toI32(s.indexOf('""', toI32(toU32(p) + 2)))
+    }
+    return out
+  }
+  if (b.loose) {
+    return gateIntBare(s, b.num)
+  }
+  return name !== null ? gateIntPrinted(s, name, b.num) : out
+}
+
+/**
+ * The name a call label prints before offset `p` with `=` (`dkLen` of
+ * `dkLen=64`, `p` at `64`), spaces allowed around the `=`; null when none.
+ */
+const gateBareName = (s: string, p: i32): string | null => {
+  let i = p
+  while (i > 0 && i <= s.length && s.charCodeAt(i - 1) === 32) {
+    i = i - 1
+  }
+  if (!(i > 0 && i <= s.length && s.charCodeAt(i - 1) === 61)) {
+    return null
+  }
+  i = i - 1
+  while (i > 0 && i <= s.length && s.charCodeAt(i - 1) === 32) {
+    i = i - 1
+  }
+  const end = i
+  while (i > 0 && i <= s.length && gateNameChar(s.charCodeAt(i - 1))) {
+    i = i - 1
+  }
+  return i < end ? s.substring(i, end) : null
 }
 
 /**
@@ -799,21 +945,33 @@ const gateBoundPlaces = (b: GateBound): i32[] => {
 /** An argument, for a message: `args[0] "salt"`, `args[2] c=1`. */
 const gateArgText = (b: GateBound): string => {
   const name = b.label
+  if (b.loose) {
+    return b.num.length === 0 ? `${b.at} ""` : `${b.at} ${b.num}`
+  }
   return b.lines !== null ? gateBoundText(b) : `${b.at} ${name !== null ? name : ""}=${b.num}`
 }
 
 /**
  * The strings and integers a vector's expected value prints in its own call
  * label (`PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)`) are one
- * test case with it, so they are paired and not placed by line or round. One
- * printed in another call label of the section, and not in this one, is from
- * another test case and refused.
+ * test case with it, so they are paired and not placed by line or round. They
+ * pair in the order the label prints them: each at its first printing after
+ * the argument paired before it, so `("salt", "passwd")` is refused against
+ * that label, while `P="", S=""` binds two empty values. One printed in
+ * another call label of the section, and not in this one, is from another
+ * test case and refused. An empty value or an unlabelled integer is placed
+ * only by the expected value's call label: when there is one and it does
+ * not print it, it is refused; when there is none, it is not placed.
  */
 const gateLabelArgs = (l: GateLits, args: i32): void => {
   // Every bound past the args is the expected value's.
   const bounds = l.bounds
   if (args < 0 || args > bounds.length) {
     gateLitBroken(l, `${args} arguments of ${bounds.length} bounds`)
+    return
+  }
+  if (bounds.length === args) {
+    gateLooseWarn(l, 0)
     return
   }
   const last = bounds.length - 1
@@ -824,37 +982,114 @@ const gateLabelArgs = (l: GateLits, args: i32): void => {
   const e = bounds[last]
   const label = e.label
   if (label === null) {
+    gateLooseWarn(l, 0)
     return
   }
   // Only a hex value is bound to printings; any other names its label.
   const under: string[] = e.held.length === 0 ? [rfcNormalize(label)] : []
+  const calls: string[] = []
   for (const v of e.held) {
     const vl = v.label
     if (vl !== null) {
       under.push(rfcNormalize(vl))
+      if (vl.indexOf("(") >= 0) {
+        calls.push(rfcNormalize(vl))
+      }
     }
   }
-  // args <= bounds.length (checked above).
-  for (let a = 0; a < args && a < bounds.length; a++) {
-    const b = bounds[a]
+  // Why an argument printed in a call label is not paired by it: printed
+  // there only before the argument paired ahead of it.
+  const late: string[] = []
+  for (let a = 0; a < args; a++) {
+    late.push("")
+  }
+  for (const v of e.held) {
+    const vl = v.label
+    if (vl === null) {
+      continue
+    }
     // Paired only by the label the RFC prints over the value, and placed on
     // that printing's lines: the contract's label is bound to it ignoring case.
-    for (const v of e.held) {
-      const vl = v.label
-      if (vl !== null && gateInLabel(b, vl)) {
-        b.paired = true
-        e.callArgs = true
-        for (const n of gateLabelLines(l, v)) {
-          b.call.push(n)
+    let prev = -1
+    let prevAt = ""
+    // The numbers labelled integers are printed as, after their names: an
+    // unlabelled integer does not pair with one (`1` with the `1` of `c=1`).
+    const claimed: i32[] = []
+    for (let a = 0; a < late.length && a < bounds.length; a++) {
+      const b = bounds[a]
+      if (b.label !== null && b.lines === null && !b.loose) {
+        for (const p of gateLabelStarts(b, vl)) {
+          claimed.push(p)
         }
       }
     }
+    // late holds one entry per argument, and bounds holds more than args.
+    for (let a = 0; a < late.length && a < bounds.length; a++) {
+      const b = bounds[a]
+      const at = b.loose
+        ? gateLabelStarts(b, vl).filter((p: i32): boolean => claimed.indexOf(p) < 0)
+        : gateLabelStarts(b, vl)
+      if (at.length === 0) {
+        continue
+      }
+      // A labelled argument's name binds it, wherever the label prints it.
+      const named = b.label !== null
+      const after = named ? -1 : prev
+      let next = -1
+      for (const p of at) {
+        if (p > after) {
+          next = p
+          break
+        }
+      }
+      if (next < 0) {
+        const why = `${gateArgText(b)} is printed in the call label "${rfcNormalize(vl)}" in ${l.inSection} only before ${prevAt}, which the contract passes ahead of it: the arguments are not in the order the label prints them`
+        if (a < late.length) {
+          late[a] = why
+        }
+        continue
+      }
+      if (!named) {
+        prev = next
+        prevAt = b.at
+      }
+      if (b.loose && b.num.length > 0) {
+        b.callName = gateBareName(rfcNormalize(vl), next)
+      }
+      b.paired = true
+      e.callArgs = true
+      for (const n of gateLabelLines(l, v)) {
+        b.call.push(n)
+      }
+    }
+  }
+  for (let a = 0; a < late.length && a < bounds.length; a++) {
+    const b = bounds[a]
     if (b.paired) {
+      continue
+    }
+    if (late[a].length > 0) {
+      gateNote(l, `${l.id}.${b.at}`, late[a], false)
+      b.other = true
+      continue
+    }
+    if (b.loose) {
+      if (calls.length > 0) {
+        gateNote(
+          l,
+          `${l.id}.${b.at}`,
+          `${gateArgText(b)} is not printed in ${gateQuoted(calls)} that the expected value is printed under in ${l.inSection}, so nothing pairs it with that test case`,
+          false,
+        )
+        b.other = true
+      } else {
+        gateLooseOne(l, b)
+      }
       continue
     }
     for (const v of l.values) {
       const vl = v.label
-      if (vl !== null && gateInLabel(b, vl)) {
+      if (vl !== null && gateLabelStarts(b, vl).length > 0) {
         gateNote(
           l,
           `${l.id}.${b.at}`,
@@ -866,6 +1101,54 @@ const gateLabelArgs = (l: GateLits, args: i32): void => {
       }
     }
   }
+  gateLooseWarn(l, args)
+}
+
+/** The warning for each loose bound from `from` on, which no call label places: gateLooseOne. */
+const gateLooseWarn = (l: GateLits, from: i32): void => {
+  const bounds = l.bounds
+  for (let a = from; a >= 0 && a < bounds.length; a++) {
+    const b = bounds[a]
+    if (b.loose) {
+      gateLooseOne(l, b)
+    }
+  }
+}
+
+/**
+ * An unplaced loose bound. An integer the section prints in prose, beside
+ * values it prints in prose too, is placed by one prose example holding them
+ * all (gateProsePair), and refused when none does; any other integer is not
+ * checked against the RFC (a warning). An empty value was found printed.
+ */
+const gateLooseOne = (l: GateLits, b: GateBound): void => {
+  if (b.num.length === 0) {
+    return
+  }
+  const rest: GateBound[] = []
+  for (const o of l.bounds) {
+    if (o !== b) {
+      rest.push(o)
+    }
+  }
+  if (rest.length > 0 && gateProseShown(l, b) && gateProseAllShown(l, rest)) {
+    const prose = gateProsePair(l)
+    if (prose.pairs) {
+      return
+    }
+    if (prose.twice.length > 0) {
+      gateNote(l, `${l.id}.${b.at}`, gateProseTwice(l, prose), false)
+      return
+    }
+    gateNote(
+      l,
+      `${l.id}.${b.at}`,
+      `the integer ${b.num} is printed in ${l.inSection}, but never in one sentence with ${rest.map(gateProseName).join(", ")}, so nothing pairs it with them as one test case`,
+      false,
+    )
+    return
+  }
+  gateNote(l, `${l.id}.${b.at}`, `not checked against the RFC: the integer ${b.num} has no "label" to find it by`, true)
 }
 
 /** The index in the section's lines of line `k` of GateLits.lines, which holds no blank line; -1 past its end. */
@@ -890,6 +1173,9 @@ const gateSecLine = (l: GateLits, k: i32): i32 => {
  * is not placed by line (a decimal fraction, a block of words).
  */
 const gateBoundSecLines = (l: GateLits, b: GateBound): i32[] | null => {
+  if (b.loose && b.paired) {
+    return b.call.map((k: i32): i32 => gateSecLine(l, k))
+  }
   if (b.lines !== null) {
     return gateBoundPlaces(b).map((k: i32): i32 => gateSecLine(l, k))
   }
@@ -942,6 +1228,11 @@ const gateHeadingCase = (l: GateLits, inSection: string): void => {
   const cases: i32[][] = []
   const lost: string[] = []
   for (const b of l.bounds) {
+    // An unplaced loose bound was warned about (gateLooseWarn), or is an
+    // empty value found printed: it says nothing of the case.
+    if (b.loose && !b.paired) {
+      continue
+    }
     const at = gateBoundSecLines(l, b)
     if (at === null) {
       lost.push(b.at)
@@ -1035,11 +1326,14 @@ const gateOneTestCase = (l: GateLits, args: i32, sec: RfcSection): void => {
         shared = true
       }
     }
-    if (!shared) {
+    const prose: GateProsePairing | null = shared ? null : gateProsePair(l)
+    if (prose !== null && prose.twice.length > 0) {
+      gateNote(l, id, gateProseTwice(l, prose), false)
+    } else if (prose !== null && !prose.pairs) {
       gateNote(
         l,
         id,
-        `${texts.map(gateArgText).join(", ")} are each printed in ${inSection}, but never on one line together, so nothing pairs them as one test case`,
+        `${texts.map(gateArgText).join(", ")} are each printed in ${inSection}, but never on one line or in one sentence together, so nothing pairs them as one test case`,
         false,
       )
     }
@@ -1402,6 +1696,348 @@ const gateGrouped = (d: string): string => {
   return out
 }
 
+/** What prose pairing found for a vector's values (gateProsePair). */
+class GateProsePairing {
+  /** Whether one example holds a printing of every value, each printed once in its paragraph. */
+  pairs: boolean
+  /** The values printed more than once in a paragraph whose example holds every value. */
+  twice: GateBound[]
+  constructor() {
+    this.pairs = false
+    this.twice = []
+  }
+}
+
+/** The byte at `i` of `s`, lowercased when it is an ASCII capital, or -1 outside `s`. */
+const gateProseByte = (s: string, i: i32): i32 => {
+  if (!(i >= 0 && i < s.length)) {
+    return -1
+  }
+  const c = s.charCodeAt(i)
+  return c >= 65 && c <= 90 ? c + 32 : c
+}
+
+/** `i` plus `n` of bytes, both offsets into a text, which cannot overflow. */
+const gateProseAt = (i: i32, n: i32): i32 => toI32(toU32(i) + toU32(n))
+
+/** `i` less `n` of bytes, an offset into a text and a step back, which is -1 or less before its start. */
+const gateProseBack = (i: i32, n: i32): i32 => toI32(toU32(i) - toU32(n))
+
+/**
+ * The bytes of a closer that may follow a sentence's terminator at `i` of
+ * `s` (`"`, `'`, `)`, `]`, `}`, `”`, `’`), or 0 when there is none.
+ */
+const gateProseCloser = (s: string, i: i32): i32 => {
+  const c = gateProseByte(s, i)
+  // 34 `"`, 39 `'`, 41 `)`, 93 `]`, 125 `}`.
+  if (c === 34 || c === 39 || c === 41 || c === 93 || c === 125) {
+    return 1
+  }
+  const three = c < 0 ? "" : s.substring(i, gateProseAt(i, 3))
+  return three === "”" || three === "’" ? 3 : 0
+}
+
+/**
+ * Where the sentence end at `i` of `s` ends, past its closers, or -1 when
+ * `i` ends none: `.`, `?` or `!`, any closers, then whitespace or the end of
+ * `s`, so a `.` between digits (`5.2`) ends none; one after an
+ * abbreviation (`etc.`) does, since a missed end pairs values that a split
+ * refuses.
+ */
+const gateProseEndAt = (s: string, i: i32): i32 => {
+  const c = gateProseByte(s, i)
+  // 46 `.`, 63 `?`, 33 `!`.
+  if (c !== 46 && c !== 63 && c !== 33) {
+    return -1
+  }
+  let j = gateProseAt(i, 1)
+  let n = gateProseCloser(s, j)
+  while (n > 0) {
+    j = gateProseAt(j, n)
+    n = gateProseCloser(s, j)
+  }
+  if (j >= s.length) {
+    return s.length
+  }
+  // 32 is a space, the only whitespace left in normalized text.
+  return gateProseByte(s, j) === 32 ? j : -1
+}
+
+/** Whether a line ends a sentence: its last terminator and closers end it (gateProseEndAt). */
+const gateProseEnds = (line: string): boolean => {
+  let i = line.length - 1
+  while (i >= 0 && gateProseCloser(line, i) === 1) {
+    i = i - 1
+  }
+  if (i >= 2 && gateProseCloser(line, i - 2) === 3) {
+    return gateProseEnds(line.substring(0, i - 2))
+  }
+  return gateProseEndAt(line, i) === line.length
+}
+
+/** Whether a line opens on a lowercase letter or a digit, so it may go on the sentence before a page break. */
+const gateProseGoesOn = (line: string): boolean => {
+  const c = line.length > 0 ? line.charCodeAt(0) : 0
+  return (c >= 97 && c <= 122) || gateFidDigit(c)
+}
+
+/** Whether a line opens a list item (`o  `, `*  `, `-  `), which starts a paragraph of its own. */
+const gateProseBullet = (line: string): boolean =>
+  line.startsWith("o ") || line.startsWith("* ") || line.startsWith("- ")
+
+/**
+ * A section's paragraphs, each line trimmed and joined by one space. A blank
+ * line ends one, and a list item starts one. A page break among the blank
+ * lines ends one too, unless the line before it ends no sentence and the
+ * line after it goes on it (gateProseGoesOn).
+ */
+const gateProseParagraphs = (sec: RfcSection): string[] => {
+  const out: string[] = []
+  let cur = ""
+  let last = ""
+  let gap = false
+  let broke = false
+  let i = 0
+  for (const line of sec.lines) {
+    if (sec.pageBreaks.indexOf(i) >= 0) {
+      broke = true
+      gap = true
+    }
+    i = gateProseAt(i, 1)
+    const t = rfcNormalize(line)
+    if (t.length === 0) {
+      gap = true
+      continue
+    }
+    if (cur.length > 0) {
+      const on = broke && !gateProseEnds(last) && gateProseGoesOn(t)
+      if ((gap && !on) || gateProseBullet(t)) {
+        out.push(cur)
+        cur = ""
+      }
+    }
+    cur = cur.length > 0 ? `${cur} ${t}` : t
+    last = t
+    gap = false
+    broke = false
+  }
+  if (cur.length > 0) {
+    out.push(cur)
+  }
+  return out
+}
+
+/** Whether `s` holds `phrase` (lowercase) at `at`, case ignored. */
+const gateProseHas = (s: string, at: i32, phrase: string): boolean => {
+  for (let k = 0; k < phrase.length; k++) {
+    if (gateProseByte(s, gateProseAt(at, k)) !== phrase.charCodeAt(k)) {
+      return false
+    }
+  }
+  return true
+}
+
+/** Whether the byte `c` may be part of a word: a letter, a digit or `_`. */
+const gateProseWordByte = (c: i32): boolean => gateFidLetter(c) || gateFidDigit(c)
+
+/** Whether `s` holds `phrase` (lowercase) as whole words, case ignored: `this string`, not `this stringent`. */
+const gateProseSays = (s: string, phrase: string): boolean => {
+  for (let at = 0; at < s.length; at++) {
+    if (
+      gateProseHas(s, at, phrase) &&
+      !gateProseWordByte(gateProseByte(s, at - 1)) &&
+      !gateProseWordByte(gateProseByte(s, gateProseAt(at, phrase.length)))
+    ) {
+      return true
+    }
+  }
+  return false
+}
+
+/** Whether a unit goes on the example before it: it says `this string` or `this value`. */
+const gateProseChains = (unit: string): boolean =>
+  gateProseSays(unit, "this string") || gateProseSays(unit, "this value")
+
+/**
+ * A paragraph's examples: each sentence, or `;` part of one, that a
+ * terminator ends (gateProseEndAt), with text after the last left out. One
+ * that says `this string` or `this value` goes on the example before it.
+ */
+const gateProseExamples = (p: string): string[] => {
+  const out: string[] = []
+  let cur = ""
+  let start = 0
+  let i = 0
+  while (i < p.length) {
+    // 59 is `;`.
+    const end = gateProseByte(p, i) === 59 ? gateProseAt(i, 1) : gateProseEndAt(p, i)
+    if (end <= i) {
+      i = gateProseAt(i, 1)
+      continue
+    }
+    const unit = p.substring(start, end)
+    if (gateProseChains(unit)) {
+      cur = `${cur} ${unit}`
+    } else {
+      if (cur.length > 0) {
+        out.push(cur)
+      }
+      cur = unit
+    }
+    start = end
+    i = end
+  }
+  if (cur.length > 0) {
+    out.push(cur)
+  }
+  return out
+}
+
+/** Whether the printing at `at` of `s` follows a dump's mark (`=`, `:`, `->`, `=>`, ` is `), so it is no prose. */
+const gateProseMarked = (s: string, at: i32): boolean => {
+  let k = gateProseBack(at, 1)
+  while (gateProseByte(s, k) === 32) {
+    k = gateProseBack(k, 1)
+  }
+  const c = gateProseByte(s, k)
+  // 61 `=`, 58 `:`, 62 `>`, 45 `-`.
+  if (c === 61 || c === 58) {
+    return true
+  }
+  const d = gateProseByte(s, gateProseBack(k, 1))
+  if (c === 62) {
+    return d === 45 || d === 61
+  }
+  // 105 `i`, 115 `s`.
+  return c === 115 && d === 105 && !gateProseWordByte(gateProseByte(s, gateProseBack(k, 2)))
+}
+
+/** Whether token `t` is hex value `hex` (lowercase) printed with `0x`, case ignored. */
+const gateProseHex = (t: string, hex: string): boolean =>
+  t.length === gateProseAt(hex.length, 2) && gateProseHas(t, 0, `0x${hex}`)
+
+/**
+ * How many times a value is printed in prose text `s`: a string in quotes, a
+ * hex value as a `0x` token (case ignored), an integer as a whole number
+ * token with no `-` against it (`SHA-256`, `16-bit` and `-5` print none);
+ * none after a dump's mark (gateProseMarked). A value of another kind is
+ * never printed in prose.
+ */
+const gateProseCount = (b: GateBound, s: string): u32 => {
+  let n: u32 = 0
+  if (b.lines !== null) {
+    const q = `"${b.text}"`
+    let at = toI32(s.indexOf(q))
+    while (at >= 0) {
+      if (!gateProseMarked(s, at)) {
+        n = n + 1
+      }
+      at = toI32(s.indexOf(q, gateProseAt(at, 1)))
+    }
+    return n
+  }
+  if (b.hex.length === 0 && b.num.length === 0) {
+    return 0
+  }
+  let a = -1
+  for (const x of gateFidSpans(s)) {
+    if (a < 0) {
+      a = x
+      continue
+    }
+    const t = s.substring(a, x)
+    let is = false
+    if (b.hex.length > 0) {
+      is = gateProseHex(t, b.hex)
+    } else {
+      is = gateProseByte(s, a - 1) !== 45 && gateProseByte(s, x) !== 45 && gateFidNumber(t) === b.num
+    }
+    if (is && !gateProseMarked(s, a)) {
+      n = n + 1
+    }
+    a = -1
+  }
+  return n
+}
+
+/** Whether a value is printed in prose anywhere in the section (gateProseCount). */
+const gateProseShown = (l: GateLits, b: GateBound): boolean => {
+  for (const p of gateProseParagraphs(l.sec)) {
+    if (gateProseCount(b, p) > 0) {
+      return true
+    }
+  }
+  return false
+}
+
+/** Whether the section prints every value in `bs` in prose (gateProseShown). */
+const gateProseAllShown = (l: GateLits, bs: GateBound[]): boolean => {
+  for (const b of bs) {
+    if (!gateProseShown(l, b)) {
+      return false
+    }
+  }
+  return true
+}
+
+/** Whether prose text `s` prints every value in `bs` (gateProseCount). */
+const gateProseHolds = (bs: GateBound[], s: string): boolean => {
+  for (const b of bs) {
+    if (gateProseCount(b, s) === 0) {
+      return false
+    }
+  }
+  return true
+}
+
+/**
+ * Whether a vector's values are one
+ * prose example: one sentence, or `;` part, or a chain of them
+ * (gateProseExamples), holds a printing of every value, and the paragraph
+ * holding it prints each only once.
+ */
+const gateProsePair = (l: GateLits): GateProsePairing => {
+  const out = new GateProsePairing()
+  const bs = l.bounds
+  for (const p of gateProseParagraphs(l.sec)) {
+    let held = false
+    for (const x of gateProseExamples(p)) {
+      if (gateProseHolds(bs, x)) {
+        held = true
+      }
+    }
+    if (!held) {
+      continue
+    }
+    const twice: GateBound[] = []
+    for (const b of bs) {
+      if (gateProseCount(b, p) > 1) {
+        twice.push(b)
+      }
+    }
+    if (twice.length === 0) {
+      out.pairs = true
+      return out
+    }
+    for (const b of twice) {
+      out.twice.push(b)
+    }
+  }
+  return out
+}
+
+/** The refusal of values one prose example pairs but its paragraph prints again: nothing says which printing is the case's. */
+const gateProseTwice = (l: GateLits, prose: GateProsePairing): string =>
+  `${prose.twice.map(gateProseName).join(", ")} printed more than once in the paragraph of ${l.inSection} that pairs the values, so nothing says which printing is this test case's`
+
+/** A value as prose prints it, for a message: `args[0] "abc"`, `args[0] 0x0601`, `expect 1537`. */
+const gateProseName = (b: GateBound): string => {
+  if (b.lines !== null) {
+    return gateBoundText(b)
+  }
+  return b.hex.length > 0 ? `${b.at} 0x${b.hex}` : `${b.at} ${b.num}`
+}
+
 /** Whether `w` is a word that a length in bytes ends with: "byte", "bytes", "octet" or "octets". */
 const gateFidLengthWord = (w: string): boolean => {
   const l = textAsciiLower(w)
@@ -1596,6 +2232,20 @@ const gateLabelUnText = (label: string, text: string): string => {
   return out
 }
 
+/** A label with each whole number `num` (an unlabelled integer it pairs, gateFidSpans) cut out: `64` of `dkLen=64` leaves `dkLen=`. */
+const gateLabelUnBare = (label: string, num: string): string => {
+  const spans = gateFidSpans(label)
+  let out = ""
+  let from = 0
+  for (let i = 0; i < spans.length - 1; i += 2) {
+    if (label.substring(spans[i], spans[i + 1]) === num) {
+      out = `${out}${label.substring(from, spans[i])}`
+      from = spans[i + 1]
+    }
+  }
+  return `${out}${label.substring(from)}`
+}
+
 /** Whether `c` is an ASCII letter or digit: it runs a name or a number on. */
 const gateNameChar = (c: i32): boolean => (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122)
 
@@ -1648,6 +2298,15 @@ const gateCallHead = (l: GateLits, b: GateBound, label: string): string => {
     if (a.lines !== null) {
       if (a.paired) {
         out = gateLabelUnText(out, a.text)
+      }
+    } else if (a.loose && a.paired && a.num.length > 0) {
+      // Cut by the name it is printed after, in every label, so a sibling
+      // printing another number there is still a sibling.
+      const named = a.callName
+      if (named !== null) {
+        names.push(named)
+      } else {
+        out = gateLabelUnBare(out, a.num)
       }
     } else if ((a.paired || a.other) && name !== null) {
       // An integer the vector binds and a call label prints (its own, or
@@ -1887,8 +2546,12 @@ const gateFidelityVector = (ctx: CheckContext, out: string[], set: SourceSet, k:
   if (tc === null && loaded !== null && loaded.doc.number >= 1 && rfcHasCases(whole)) {
     l.hint = `, or name one: {{Section ${at.section} of RFC${loaded.doc.number}}}, Test Vector #N`
   }
+  const tl = k.tail
   for (let i = 0; i < k.args.length; i++) {
-    gateLitCheck(l, k.args[i], `args[${i}]`)
+    // A tail's argument is checked with the expect, as one value.
+    if (tl === null || tl.arg !== i) {
+      gateLitCheck(l, k.args[i], `args[${i}]`)
+    }
   }
   const args = l.bounds.length
   // A command or the spec vouches for the expected value instead.
@@ -1896,7 +2559,9 @@ const gateFidelityVector = (ctx: CheckContext, out: string[], set: SourceSet, k:
   const cited = src !== null && src.kind === VectorSourceKind.Cite
   const word = gateResultWord(k.expect)
   const expect = k.expect
-  if (cited && word.length === 0 && expect !== null) {
+  if (tl !== null) {
+    gateTailCheck(l, k, tl, cited && word.length === 0)
+  } else if (cited && word.length === 0 && expect !== null) {
     gateLitCheck(l, expect, "expect")
   }
   gateLabelArgs(l, args)

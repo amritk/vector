@@ -14,7 +14,7 @@ const PROFILE_TRUNC_RFC: string = "tests/fixtures/profile/rfc4231.txt"
 const PROFILE_TRUNC_P: string = "<t>Truncate: 4.6-256 to 128 bits</t>"
 const PROFILE_TRUNC_FORM: string = "Truncate: V1 to 128 bits (or to 16 bytes)"
 const PROFILE_TRUNC_STRAY: string =
-  "this Truncate: paragraph follows no vector table; it must directly follow the vector table or a Tolerance:, Iterate: or Truncate: paragraph, like Truncate: V1 to 128 bits (or to 16 bytes)"
+  "this Truncate: paragraph follows no vector table; it must directly follow the vector table or a Tolerance:, Iterate:, Truncate:, Format: or Tail: paragraph, like Truncate: V1 to 128 bits (or to 16 bytes)"
 const PROFILE_TRUNC_EXPECT: string = "a3b6167473100ee06e0c796c2955552b"
 
 /** RFC 4231's excerpt, the one RFC the fixture cites. */

@@ -1,0 +1,13 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ rfc9000-a1 · RFC 9000 (QUIC: A UDP-Based Multiplexed and Secure Transport) · nish/quic/varint
+ Status: CONTRACT_VALID
+
+ Requirements
+  ○ R-A1  §A.1 DEFINITION  "the two-byte sequence 0x7bbd decodes to 15,293"
+      ○ A1-2
+
+ Warnings
+  ! clauses: no property clauses: the contract checks only the RFC's own vectors
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

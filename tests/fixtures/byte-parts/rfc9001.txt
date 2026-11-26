@@ -1,0 +1,34 @@
+﻿
+
+
+
+Internet Engineering Task Force (IETF)                   M. Thomson, Ed.
+Request for Comments: 9001                                       Mozilla
+Category: Standards Track                                 S. Turner, Ed.
+ISSN: 2070-1721                                                    sn3rd
+                                                                May 2021
+
+
+                        Using TLS to Secure QUIC
+
+Appendix A.  Sample Packet Protection
+
+   This section shows examples of packet protection so that
+   implementations can be verified incrementally.  Samples of Initial
+   packets from both client and server plus a Retry packet are defined.
+   These packets use an 8-byte client-chosen Destination Connection ID
+   of 0x8394c8f03e515708.  Some intermediate values are included.  All
+   values are shown in hexadecimal.
+
+A.4.  Retry
+
+   This shows a Retry packet that might be sent in response to the
+   Initial packet in Appendix A.2.  The integrity check includes the
+   client-chosen connection ID value of 0x8394c8f03e515708, but that
+   value is not included in the final Retry packet:
+
+   ff000000010008f067a5502a4262b574 6f6b656e04a265ba2eff4d829058fb3f
+   0f2496ba
+
+A.5.  ChaCha20-Poly1305 Short Header Packet
+

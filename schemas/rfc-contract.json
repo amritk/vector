@@ -539,6 +539,11 @@
             "unchecked": {
               "type": "string",
               "description": "Why this value is not printed in the cited section. Only when unavoidable; reported as a warning."
+            },
+            "format": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Why this hex, a part of a concat, is a constant of the encoding that the RFC does not print (SEC1's 04 before an uncompressed point). Only on a bare hex part, without `label`, `unchecked` or `repeat`; a concat has at most one, beside another part that is printed and bound. The spec's `Format:` paragraph states the same hex; the report shows it with its reason."
             }
           },
           "required": ["hex"]
@@ -931,6 +936,9 @@
         },
         "truncate": {
           "$ref": "#/$defs/truncate"
+        },
+        "tail": {
+          "$ref": "#/$defs/tail"
         }
       },
       "required": [
@@ -1247,6 +1255,28 @@
         }
       },
       "oneOf": [{ "required": ["bits"] }, { "required": ["bytes"] }]
+    },
+    "tail": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The RFC prints `args[arg]` and `expect` as one value, the expect its last `bytes` bytes (RFC 9001 §A.4: a Retry packet ending in its 16-byte integrity tag). Both are hex, checked, and without a tolerance, iterate or truncate; `expect` is exactly `bytes` bytes, the argument is non-empty, and the two joined must be one whole value printed in the cited section, found by the argument's label. The report shows it with its reason.",
+      "properties": {
+        "arg": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["arg", "bytes", "reason"]
     },
     "tolerance": {
       "description": "How far an f64 result may be from `expect`: `abs`, an absolute difference as decimal text, or `ulps`, a count of binary64 units in the last place. It must come from the spec: `quote` is the sentence that states it, in `section` (of `source`, default the main one), checked like a requirement's quote. Without a tolerance an f64 expect is compared bit for bit (IEEE 754-2019 §3.4 encodings), so NaN equals a NaN of the same bits. Only an f64 result takes a tolerance, and an expected NaN or infinity is compared bit for bit even with one. `abs` must be finite: decimal text past binary64's largest finite value is refused (IEEE 754-2019 §7.4). `ulps` is at most 2^53−1, so it is exact as a JSON number (RFC 7493 §2.2).",
