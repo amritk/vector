@@ -14,7 +14,7 @@ export const contractF64Bits = (x: f64): string => {
   const digits = "0123456789abcdef"
   let out = ""
   for (let k = 15; k >= 0; k--) {
-    const nibble = toI32((bits >> toI64(k * 4)) & 15)
+    const nibble = toI32(bits >> toI64(k * 4)) & 15
     out = `${out}${digits.substring(nibble, nibble + 1)}`
   }
   return out
@@ -33,11 +33,15 @@ export const contractF64FromBits = (hex: string): Result<f64, string> => {
   let bits: i64 = 0
   for (let i = 0; i < hex.length; i++) {
     const c = hex.charCodeAt(i)
-    const digit = c >= 0x30 && c <= 0x39
-    if (!digit && !(c >= 0x61 && c <= 0x66)) {
+    let v = 0
+    if (c >= 0x30 && c <= 0x39) {
+      // The low nibble of "0" to "9" is the digit, of "a" to "f" 1 to 6.
+      v = c & 15
+    } else if (c >= 0x61 && c <= 0x66) {
+      v = (c & 15) + 9
+    } else {
       return Err(`"${hex}" is not 16 lowercase hex digits`)
     }
-    const v = digit ? c - 0x30 : c - 0x61 + 10
     bits = (bits << 4) | toI64(v)
   }
   return Ok(bitsToF64(bits))

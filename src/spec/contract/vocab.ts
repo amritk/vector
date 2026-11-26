@@ -366,8 +366,11 @@ export const vocabIsIntType = (t: string): boolean => vocabHas(vocabIntTypes(), 
  * @returns true for text like `0`, `-12` or `18446744073709551615`
  */
 export const vocabIsDecimal = (s: string): boolean => {
-  const start = s.startsWith("-") ? 1 : 0
-  if (s.length === start) {
+  let start = 0
+  if (s.startsWith("-")) {
+    start = 1
+  }
+  if (s.length <= start) {
     return false
   }
   for (let i = start; i < s.length; i++) {
@@ -386,7 +389,7 @@ const vocabCompareMagnitude = (a: string, b: string): i32 => {
   if (a.length !== b.length) {
     return a.length < b.length ? -1 : 1
   }
-  for (let i = 0; i < a.length; i++) {
+  for (let i = 0; i < a.length && i < b.length; i++) {
     const x = a.charCodeAt(i)
     const y = b.charCodeAt(i)
     if (x !== y) {
