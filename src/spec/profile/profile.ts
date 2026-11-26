@@ -465,8 +465,8 @@ class ProfileContext {
 const profileCollapse = (s: string): string => {
   const out: string[] = []
   let run = -1
-  for (let i = 0; i <= s.length; i++) {
-    const ch = i < s.length ? s.charCodeAt(i) : 0x20
+  for (let i = 0; i < s.length; i++) {
+    const ch = s.charCodeAt(i)
     const blank = ch === 0x20 || ch === 0x09 || ch === 0x0a || ch === 0x0d
     if (!blank && run < 0) {
       run = i
@@ -474,6 +474,10 @@ const profileCollapse = (s: string): string => {
       out.push(s.substring(run, i))
       run = -1
     }
+  }
+  // The end of `s` ends a run as a blank does.
+  if (run >= 0) {
+    out.push(s.substring(run, s.length))
   }
   return out.join(" ")
 }
@@ -554,9 +558,17 @@ const profileNodeText = (n: XmlNode): string => {
 
 const profileLocOf = (n: XmlNode): ProfileLoc => new ProfileLoc(n.line, n.mdLine, n.markLine, profileNodeText(n))
 
-/** `loc` moved `n` lines down the XML, onto a line whose text is `text`. */
-const profileBelow = (loc: ProfileLoc, n: i32, text: string): ProfileLoc =>
-  new ProfileLoc(loc.line + n, loc.mdLine, loc.markLine, profileCollapse(text))
+/** `loc` moved onto line `k` of the block it starts, 1-based, a line whose text is `text`. */
+const profileBelow = (loc: ProfileLoc, k: i32, text: string): ProfileLoc =>
+  new ProfileLoc(profileLineSum(loc.line, k, 1), loc.mdLine, loc.markLine, profileCollapse(text))
+
+/**
+ * `a + b - c`, computed in i64 so the sum itself cannot overflow. Every
+ * caller's operands are lines or columns of one XML file, or 1-based line
+ * and column counts in a block of it, so the result is a line or column of
+ * that file and fits in i32.
+ */
+const profileLineSum = (a: i32, b: i32, c: i32): i32 => toI32(toI64(a) + toI64(b) - toI64(c))
 
 /** A markdown line as compared: blockquote markers dropped, white space collapsed. */
 const profileMdLine = (s: string): string => {
@@ -590,11 +602,13 @@ const PROFILE_WRAP_MIN: i32 = 16
 
 /** Whether `m` from `p` to its end is how `text` starts, compared in place. */
 const profileTailOpens = (m: string, p: i32, text: string): boolean => {
-  if (m.length - p > text.length) {
+  if (p < 0 || m.length - p > text.length) {
     return false
   }
   for (let i = p; i < m.length; i++) {
-    if (m.charCodeAt(i) !== text.charCodeAt(i - p)) {
+    // The test above keeps `j` in `text`; out of it would be no match.
+    const j = i - p
+    if (j < 0 || j >= text.length || m.charCodeAt(i) !== text.charCodeAt(j)) {
       return false
     }
   }
@@ -615,7 +629,7 @@ const profileMdHolds = (m: string, text: string): boolean => {
   if (m.indexOf(text) >= 0) {
     return true
   }
-  for (let p = 0; m.length - p >= PROFILE_WRAP_MIN; p++) {
+  for (let p = 0; p < m.length && m.length - p >= PROFILE_WRAP_MIN; p++) {
     if ((p === 0 || m.charCodeAt(p - 1) === 0x20) && profileTailOpens(m, p, text)) {
       return true
     }
@@ -633,7 +647,8 @@ const profileMdFind = (md: ProfileMd, from: i32, text: string): i32 => {
     return -1
   }
   let found = -1
-  for (let i = from; i < md.lines && i < md.text.length; i++) {
+  // profileWhereIn passes a mark's line, 1 or more, so `i >= 0` holds from the start.
+  for (let i = from; i >= 0 && i < md.lines && i < md.text.length; i++) {
     if (md.text[i].startsWith("--- ")) {
       break
     }
@@ -799,8 +814,7 @@ const profileSortRefusals = (rs: ProfileRefusal[]): ProfileRefusal[] => rs.sort(
  * @returns -1, 0 or 1
  */
 const profileCompare = (a: string, b: string): i32 => {
-  const n = a.length < b.length ? a.length : b.length
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < a.length && i < b.length; i++) {
     const x = a.charCodeAt(i)
     const y = b.charCodeAt(i)
     if (x !== y) {
@@ -861,6 +875,10 @@ const profileKeywords = (): string[] => {
 
 /** The end of keyword `k` matched at `i` in `s`, a space matching a run of blanks; -1 when it does not match. */
 const profileMatchKeyword = (s: string, i: i32, k: string): i32 => {
+  // No keyword starts before the text does.
+  if (i < 0) {
+    return -1
+  }
   let at = i
   let j = 0
   while (j < k.length) {
@@ -963,13 +981,14 @@ const profileSectionsWalk = (
   numbered: boolean,
   out: ProfileSection[],
 ): void => {
-  let i = 0
+  // In u32: a count of child elements.
+  let i: u32 = 0
   for (const s of xmlElements(parent)) {
     if (s.name !== "section") {
       continue
     }
     i = i + 1
-    const n = back && prefix.length === 0 ? String.fromCharCode(64 + i) : `${i}`
+    const n = back && prefix.length === 0 ? String.fromCharCode(toI32(64 + i)) : `${i}`
     const id = prefix.length > 0 ? `${prefix}.${n}` : n
     const on = numbered && (xmlAttr(s, "numbered") ?? "") !== "false"
     out.push(new ProfileSection(s, on ? id : ""))
@@ -1066,7 +1085,7 @@ const profileLooksLikeMainKey = (text: string): boolean => {
     }
     i = i + 1
   }
-  if (s.substring(i, i + 4) !== "main") {
+  if (i > s.length - 4 || s.substring(i, i + 4) !== "main") {
     return false
   }
   i = i + 4
@@ -1074,14 +1093,15 @@ const profileLooksLikeMainKey = (text: string): boolean => {
     return true
   }
   const ch = s.charCodeAt(i)
-  return ch === 0x2d || ch === 0x5f || profileIsSpace(ch) || s.substring(i, i + 3) === "rfc"
+  return ch === 0x2d || ch === 0x5f || profileIsSpace(ch) || (i <= s.length - 3 && s.substring(i, i + 3) === "rfc")
 }
 
 const profileLower = (s: string): string => {
   const parts: string[] = []
   for (let i = 0; i < s.length; i++) {
     const ch = s.charCodeAt(i)
-    parts.push(String.fromCharCode(ch >= 0x41 && ch <= 0x5a ? ch + 32 : ch))
+    // `| 0x20` adds 32 to "A" to "Z".
+    parts.push(String.fromCharCode(ch >= 0x41 && ch <= 0x5a ? ch | 0x20 : ch))
   }
   return parts.join("")
 }
@@ -1130,7 +1150,8 @@ const profileMainKeyDigits = (text: string): string => {
     return ""
   }
   const digits = text.substring(head.length, text.length)
-  if (!profileAllDigits(digits) || digits.charCodeAt(0) === 0x30) {
+  // profileAllDigits refuses "" too; `digits.length < 1` is written for the prover.
+  if (digits.length < 1 || !profileAllDigits(digits) || digits.charCodeAt(0) === 0x30) {
     return ""
   }
   return digits
@@ -1223,7 +1244,7 @@ const profileReadMain = (c: ProfileContext): void => {
       `a spec has one main source; keyword ${profileTrim(xmlPlainText(c.doc.text, k))} names a second`,
     )
   }
-  if (keys.length === 0) {
+  if (keys.length < 1) {
     return
   }
   const key = keys[0]
@@ -1254,15 +1275,14 @@ const profileDraftName = (docName: string): string | null => {
   if (!docName.startsWith("draft-") || n < 10) {
     return null
   }
-  const tail = docName.substring(n - 3, n)
-  if (tail.charCodeAt(0) !== 0x2d || !profileAllDigits(tail.substring(1, 3))) {
+  if (docName.charCodeAt(n - 3) !== 0x2d || !profileAllDigits(docName.substring(n - 2, n))) {
     return null
   }
   return docName.substring(6, n - 3)
 }
 
 const profileContractName = (c: ProfileContext): string => {
-  const file = c.xmlPath.substring(profileLastSlash(c.xmlPath) + 1, c.xmlPath.length)
+  const file = profileBaseName(c.xmlPath)
   const base = file.endsWith(".xml") ? file.substring(0, file.length - 4) : file
   const docName = c.doc.docName ?? ""
   const name = profileDraftName(docName)
@@ -1308,7 +1328,7 @@ const profileXmlCol = (t: XmlNode, i: i32, line: string, col: i32): i32 => {
   if (raw[i].substring(0, upTo.length) !== upTo) {
     return 0
   }
-  return (i === 0 ? t.col : 1) + col - 1
+  return profileLineSum(i === 0 ? t.col : 1, col, 1)
 }
 
 /** Refuses a code block at each front end's place, with the column where the XML holds the code as is. */
@@ -1319,16 +1339,16 @@ const profileFrontRefuse = (c: ProfileContext, node: XmlNode, rs: FrontRefusal[]
   const only: XmlNode | null = t !== null && t.next === null && t.name.length === 0 ? t : null
   const lines = split(code.text, "\n")
   for (const r of rs) {
+    const k = r.line
     let col = 0
-    if (only !== null && r.line >= 1 && r.line <= lines.length) {
-      col = profileXmlCol(only, code.line + r.line - 1 - only.line, lines[r.line - 1], r.col)
+    let text = ""
+    if (k >= 1 && k <= lines.length) {
+      text = lines[k - 1]
+      if (only !== null) {
+        col = profileXmlCol(only, profileLineSum(code.line, k - 1, only.line), text, r.col)
+      }
     }
-    profileRefuseAt(
-      c,
-      profileBelow(at, r.line - 1, r.line >= 1 && r.line <= lines.length ? lines[r.line - 1] : ""),
-      r.message,
-      col,
-    )
+    profileRefuseAt(c, profileBelow(at, k, text), r.message, col)
   }
 }
 
@@ -1340,15 +1360,21 @@ const profileReadInterface = (c: ProfileContext, code: XmlNode[]): void => {
     }
   }
   if (interfaces.length !== 1) {
-    const at = interfaces.length > 0 ? interfaces[1] : c.doc.root
-    profileRefuse(c, at, `a spec has exactly one ts-interface block; this one has ${interfaces.length}`)
-    const count = c.refusals[c.refusals.length - 1]
+    // Not 1 and over 0: a second block is there.
+    const at = interfaces.length > 1 ? interfaces[1] : c.doc.root
+    const count = profileRefusalAt(
+      profileWhereOf(c, profileLocOf(at)),
+      0,
+      `a spec has exactly one ts-interface block; this one has ${interfaces.length}`,
+    )
+    c.refusals.push(count)
     c.ifaceCount.add(count)
     c.ifaceRefusals.add(count)
   }
-  if (interfaces.length === 0) {
+  if (interfaces.length < 1) {
     return
   }
+  const iface = interfaces[0]
   for (let k = 1; k < interfaces.length; k++) {
     const later = frontParseInterface(xmlCodeOf(interfaces[k]).text)
     if (later.isOk()) {
@@ -1358,7 +1384,6 @@ const profileReadInterface = (c: ProfileContext, code: XmlNode[]): void => {
       }
     }
   }
-  const iface = interfaces[0]
   const code0 = xmlCodeOf(iface)
   const r = frontParseInterface(code0.text)
   if (r.isErr()) {
@@ -1375,18 +1400,23 @@ const profileReadInterface = (c: ProfileContext, code: XmlNode[]): void => {
   c.module = got.module
   const at = new ProfileLoc(code0.line, code0.mdLine, code0.markLine, "")
   const ifaceLines = split(code0.text, "\n")
+  const fns = got.functions
+  const locs: ProfileLoc[] = []
   for (const l of got.lines) {
-    c.fnLocs.push(profileBelow(at, l - 1, l >= 1 && l <= ifaceLines.length ? ifaceLines[l - 1] : ""))
+    locs.push(profileBelow(at, l, l >= 1 && l <= ifaceLines.length ? ifaceLines[l - 1] : ""))
   }
+  c.fnLocs = locs
   profileCheckText(c, profileLocOf(iface), "the ts-interface block's module", c.module)
   const names = shapeTestNames()
   const prefixes = shapeTestPrefixes()
-  for (let i = 0; i < c.functions.length; i++) {
-    const name = c.functions[i].name
+  // frontParseInterface gives a line per function, so `i < locs.length` is for the prover.
+  for (let i = 0; i < fns.length && i < locs.length; i++) {
+    const name = fns[i].name
+    const loc = locs[i]
     if (vocabHas(names, name) || prefixes.some((p: string): boolean => name.startsWith(p))) {
       profileRefuseAt(
         c,
-        c.fnLocs[i],
+        loc,
         `function ${name}: the generated test uses this name itself (its helpers, and names starting ${prefixes.join(" ")}), so it cannot call such a function`,
         0,
       )
@@ -1491,12 +1521,14 @@ const profileReadParagraph = (c: ProfileContext, n: XmlNode, section: string): P
       sentences.push(e.sentence)
     }
   }
-  if (sentences.length > 1) {
+  // `found` is not empty, so not 1 is more than 1, here and for the levels.
+  if (sentences.length !== 1) {
     profileRefuse(c, n, `${anchor} holds ${sentences.length} BCP 14 sentences; give each its own anchor`)
     return refused
   }
+  const sentence = sentences[0]
   const levels = profileLevelsOf(found)
-  if (levels.length > 1) {
+  if (levels.length !== 1) {
     profileRefuse(
       c,
       n,
@@ -1504,7 +1536,8 @@ const profileReadParagraph = (c: ProfileContext, n: XmlNode, section: string): P
     )
     return refused
   }
-  return new ProfileBlock(false, new ProfileQuoted(anchor, section, found[0].sentence, levels[0], profileLocOf(n)))
+  // sentences[0] is found[0].sentence, the first pushed.
+  return new ProfileBlock(false, new ProfileQuoted(anchor, section, sentence, levels[0], profileLocOf(n)))
 }
 
 /** A blockquote read as a requirement, or with `excluded` an exclusion. */
@@ -1518,7 +1551,10 @@ const profileReadQuote = (c: ProfileContext, n: XmlNode, excluded: boolean): Pro
   const what = anchor === null ? "an excluded blockquote" : `blockquote ${anchor}`
   const ts = xmlElements(n)
   const allT = ts.every((t: XmlNode): boolean => t.name === "t")
-  const last: XmlNode | null = ts.length > 0 ? ts[ts.length - 1] : null
+  let last: XmlNode | null = null
+  for (const t of ts) {
+    last = t
+  }
   let x: XmlNode | null = null
   if (last !== null) {
     let k = last.first
@@ -1540,7 +1576,7 @@ const profileReadQuote = (c: ProfileContext, n: XmlNode, excluded: boolean): Pro
     return refused
   }
   const texts: string[] = []
-  for (let i = 0; i + 1 < ts.length; i++) {
+  for (let i = 0; i < ts.length - 1; i++) {
     texts.push(xmlPlainText(c.doc.text, ts[i]))
   }
   const kept: XmlNode[] = []
@@ -1593,8 +1629,9 @@ const profileExcludeParagraph = (c: ProfileContext, n: XmlNode, next: XmlNode, s
     profileRefuse(c, n, "an excluded sentence is in an unnumbered section; it needs a section number")
     return
   }
+  // profileBlocks passes a paragraph with an entry, so not 1 is more than 1.
   const levels = profileLevelsOf(profileEntriesUnder(c, n))
-  if (levels.length > 1) {
+  if (levels.length !== 1) {
     profileRefuse(
       c,
       n,
@@ -1602,11 +1639,12 @@ const profileExcludeParagraph = (c: ProfileContext, n: XmlNode, next: XmlNode, s
     )
     return
   }
+  const level = levels[0]
   const reason = profileAfter(c, next, PROFILE_UNTESTED)
   profileCheckText(c, profileLocOf(next), "the Untested: reason", reason)
   const quote = xmlPlainText(c.doc.text, n)
   profileCheckText(c, profileLocOf(n), "the excluded sentence", quote)
-  const q = new ProfileQuoted("", section, quote, levels[0], profileLocOf(n))
+  const q = new ProfileQuoted("", section, quote, level, profileLocOf(n))
   q.reason = reason
   c.exclusions.push(q)
 }
@@ -1619,7 +1657,8 @@ const profileExcludeParagraph = (c: ProfileContext, n: XmlNode, next: XmlNode, s
 const profileReadOutOfScope = (c: ProfileContext, n: XmlNode): void => {
   const body = profileAfter(c, n, PROFILE_OUT_OF_SCOPE)
   const comma = body.indexOf(",")
-  if (comma < 0) {
+  // indexOf finds a comma in `body` or none; `comma >= body.length` is for the prover.
+  if (comma < 0 || comma >= body.length) {
     profileRefuse(c, n, `an Out of scope: paragraph gives a reason after a comma: ${PROFILE_OUT_OF_SCOPE_FORM}`)
     return
   }
@@ -1663,7 +1702,8 @@ const profileReadOutOfScope = (c: ProfileContext, n: XmlNode): void => {
  * function a property calls (a vector calls only functions under test).
  */
 const profileCheckOutOfScope = (c: ProfileContext): void => {
-  for (let i = 0; i < c.outOfScope.length; i++) {
+  // outOfScopeLocs gets a place with each push to outOfScope; `i < c.outOfScopeLocs.length` is for the prover.
+  for (let i = 0; i < c.outOfScope.length && i < c.outOfScopeLocs.length; i++) {
     const name = c.outOfScope[i].name
     const loc = c.outOfScopeLocs[i]
     if (c.functions.some((f: FnSig): boolean => f.module === null && f.name === name)) {
@@ -1691,19 +1731,20 @@ const profileBlocks = (c: ProfileContext, parent: XmlNode, section: string): voi
       // it, in any order, goes with it; a BCP 14 keyword in one is quoted, not used.
       const table = new ProfileTable(n, section)
       for (let j = i + 1; j < kids.length; j++) {
-        const iterate = profileStartsWith(c, kids[j], PROFILE_ITERATE)
-        const truncate = profileStartsWith(c, kids[j], PROFILE_TRUNCATE)
-        if (!iterate && !truncate && !profileStartsWith(c, kids[j], PROFILE_TOLERANCE)) {
+        const k = kids[j]
+        const iterate = profileStartsWith(c, k, PROFILE_ITERATE)
+        const truncate = profileStartsWith(c, k, PROFILE_TRUNCATE)
+        if (!iterate && !truncate && !profileStartsWith(c, k, PROFILE_TOLERANCE)) {
           break
         }
-        used.add(kids[j])
-        profileHandle(c, kids[j])
+        used.add(k)
+        profileHandle(c, k)
         if (iterate) {
-          table.iterates.push(kids[j])
+          table.iterates.push(k)
         } else if (truncate) {
-          table.truncates.push(kids[j])
+          table.truncates.push(k)
         } else {
-          table.tolerances.push(kids[j])
+          table.tolerances.push(k)
         }
       }
       c.tables.push(table)
@@ -3224,7 +3265,8 @@ export const profileRead = (
   for (let i = 0; i < c.truncateIds.length; i++) {
     profilePut(c, l, `${c.truncateIds[i]}.truncate`, c.truncateLocs[i])
   }
-  for (let i = 0; i < c.functions.length; i++) {
+  // fnLocs has one per function (profileReadInterface).
+  for (let i = 0; i < c.functions.length && i < c.fnLocs.length; i++) {
     profilePut(c, l, c.functions[i].name, c.fnLocs[i])
   }
   for (let i = 0; i < c.outOfScope.length; i++) {
@@ -3268,13 +3310,14 @@ const profileLastDot = (s: string): i32 => {
   return -1
 }
 
-const profileLastSlash = (s: string): i32 => {
+/** `s` after its last `/`; all of it when it has none. */
+const profileBaseName = (s: string): string => {
   let i = s.length - 1
   while (i >= 0) {
     if (s.charCodeAt(i) === 0x2f) {
-      return i
+      return s.substring(i + 1, s.length)
     }
     i = i - 1
   }
-  return -1
+  return s
 }
