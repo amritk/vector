@@ -66,6 +66,25 @@ const extractDiffBoundsEdges = (t: Suite): void => {
   )
 }
 
+/** Repeated lines, where the shared tail must not reach back into the shared head. */
+const extractDiffBoundsRepeats = (t: Suite): void => {
+  t.eqStr(
+    "a repeated line added at the end",
+    extractUnifiedDiff("a\na\n", "a\na\na\n", "x", "y"),
+    "--- x\n+++ y\n@@ -1,2 +1,3 @@\n a\n a\n+a\n",
+  )
+  t.eqStr(
+    "a repeated line removed from the end",
+    extractUnifiedDiff("a\na\na\n", "a\na\n", "x", "y"),
+    "--- x\n+++ y\n@@ -1,3 +1,2 @@\n a\n a\n-a\n",
+  )
+  t.eqStr(
+    "two lines swapped: the first removed, the second kept",
+    extractUnifiedDiff("a\nb\n", "b\na\n", "x", "y"),
+    "--- x\n+++ y\n@@ -1,2 +1,2 @@\n-a\n b\n+a\n",
+  )
+}
+
 /**
  * Past the cell limit the differing middle is not aligned line by line: every
  * line of it is removed and every line of the other side added, in one hunk
@@ -89,10 +108,22 @@ const extractDiffBoundsWhole = (t: Suite): void => {
   )
 }
 
+/** At exactly the cell limit the table is still built, so a line both middles share is kept. */
+const extractDiffBoundsAtLimit = (t: Suite): void => {
+  const a = `m\n${extractDiffBoundsLines("a", 1999)}`
+  const b = `${extractDiffBoundsLines("b", 1999)}m\n`
+  const d = extractUnifiedDiff(a, b, "x", "y")
+  t.eqStr("at the limit, the shared line is not removed", `${extractDiffBoundsCount(d, "-")}`, "1999")
+  t.eqStr("at the limit, the shared line is not added", `${extractDiffBoundsCount(d, "+")}`, "1999")
+  t.ok("at the limit, the shared line is context", d.indexOf("+b1999\n m\n-a1\n") > 0)
+}
+
 /** The unified diff at the edges of its inputs and past its cell limit. */
 export const main = (): i32 => {
   const t = new Suite("spec/extract diff bounds")
   extractDiffBoundsEdges(t)
+  extractDiffBoundsRepeats(t)
   extractDiffBoundsWhole(t)
+  extractDiffBoundsAtLimit(t)
   return t.done()
 }
