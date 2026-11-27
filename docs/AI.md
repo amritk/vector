@@ -16,20 +16,20 @@ vector does two things, and no model is involved in either:
 ## Traps
 
 1. **Read the exit status, never a piped tail.** `vector … | tail` exits
-   with `tail`'s status, 0. Run it bare or check `$?` or `PIPESTATUS`.
+   with `tail`'s status, 0. Run it bare or check `$?`/`PIPESTATUS`.
 2. **Only `PROVEN` passes `verify`.** `REFUTED`, `UNKNOWN`, `INVALID` and
    `ERROR` all exit 1. Exit 2 is bad usage, an unreadable file, an unwritable
-   `--emit` file, or `MISMATCH`: a counterexample that did not
-   replay, a vector bug, not a refusal. Never present code a run did
+   `--emit` file, or `MISMATCH`: a vector bug, not a
+   refusal. Never present code a run did
    not prove. See
    [Proving a function](guide/guides/proving.md#the-verdicts).
 3. **`diff` exits 2 for `INVALID` and `ERROR`**, not 1 as `verify` does.
    So does `MISMATCH`.
-   `EQUIVALENT` exits 0; `DIFFERENT` and `UNDECIDED` exit 1. Do not report `UNDECIDED` as equivalent. See
+   `EQUIVALENT` exits 0; `DIFFERENT` and `UNDECIDED` exit 1. `UNDECIDED` is not equivalent. See
    [Exit codes](guide/guides/exit-codes.md#by-command).
 4. **The proof is over exact rationals, and an `Int` is unbounded there.**
    The emitted code runs in float64. A float64 gate samples boundary, dense
-   and random inputs; anything it finds makes the run `REFUTED`. It
+   and random inputs; a find makes it `REFUTED`. It
    proves nothing about float64: prefer inequalities to `==` on `Real`.
 5. **An `Int` `+`, `-` or `*` that may leave ±(2^53−1) is an `Int overflow`,
    and the run is `REFUTED`**, even when every postcondition holds over the
@@ -47,8 +47,7 @@ vector does two things, and no model is involved in either:
    each `requires` after the first lean only on the checks before them.
    So `x != 0 and 1 / x > 0` is safe; `1 / x > 0 and x != 0` is a
    division hazard.
-9. **`--emit` writes only on `PROVEN`.** Else it writes nothing, leaving
-   an existing file alone.
+9. **`--emit` writes only on `PROVEN`**, else leaves the file alone.
 10. **`spec run` `SATISFIED` is evidence, not proof.** The implementation
    returned the printed vectors and held each property at its samples.
    `spec mutate` (no `--nish` on an install or a `build/seed` checkout)
@@ -62,9 +61,8 @@ vector does two things, and no model is involved in either:
    renames a contracted export. The spec side is `specs/`, `contracts/`,
    `rfcs/`, `.refcache/` and generated tests. Land the spec first, then the code. See
    [frozen](guide/guides/pr-gates.md#frozen).
-13. **The test builds with no relax flag.** A nish that refuses panics
-   (`NL2457`, `NL2458`) refuses the emitted test: `spec run` is `ERROR`,
-   exit 1. Fix the module. See [Run it](guide/guides/testing.md#run-it).
+13. **The test builds with no relax flag.** A nish refusing panics
+   (`NL2457`, `NL2458`) makes `spec run` `ERROR`, exit 1: fix the module. See [Run it](guide/guides/testing.md#run-it).
 
 ## Rules
 
@@ -86,8 +84,9 @@ vector does two things, and no model is involved in either:
   `MISMATCH` is a bug in vector: report it, change nothing.
 - **A contract's gates.** `spec check` runs shape, fidelity, completeness,
   provenance, coverage, typing, signatures and domain: quotes in their section,
-  MUST and SHALL tested or excluded, values whole and named, one case per
-  vector.
+  MUST and SHALL tested or excluded, values whole and named (or a
+  `Format:` part or `Tail:`), one case per vector (`= hex` lines, call
+  labels in order, `With …:` headings, one sentence).
   See [The gates](guide/guides/spec-to-contract.md#the-gates).
 - **Module paths.** Two or more `/`-split segments, each
   `[a-z][a-z0-9_]*(-[a-z0-9][a-z0-9_]*)*`. See [Modules and names](guide/guides/writing-a-spec.md#modules-and-names).

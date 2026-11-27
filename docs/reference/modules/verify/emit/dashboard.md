@@ -64,9 +64,10 @@ const STATUS_MISMATCH: string = "MISMATCH"
 
 ### verdictStatus
 
-The report's verdict. A counterexample that did not replay comes first:
-then the fault is vector's, not the program's. Every other failure except
-a bare solver `unknown` is a concrete defect, so it refutes.
+The report's verdict. A counterexample that did not replay, or a float64
+check that met a form the typechecker refuses (a `vector-bug` issue), comes
+first: then the fault is vector's, not the program's. Every other failure
+except a bare solver `unknown` is a concrete defect, so it refutes.
 
 ```ts
 function verdictStatus(report: VerifyReport): string

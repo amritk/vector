@@ -25,6 +25,7 @@ import {
   vocabBaseOf,
   vocabBigEndian,
   vocabByteWidth,
+  vocabFitsInt,
   vocabHas,
   vocabIsIntType,
   vocabIsOptional,
@@ -75,18 +76,59 @@ export class EmitOptions {
   }
 }
 
+/** A `plain_` wrapper's name and its text. */
+class EmitWrapper {
+  name: string
+  text: string
+
+  constructor(name: string, text: string) {
+    this.name = name
+    this.text = text
+  }
+}
+
+/** Why the options cannot place local modules: one import path is wanted per module; null when they can. */
+const emitLocalPathsRefusal = (opts: EmitOptions): string | null =>
+  opts.localImports.length === opts.localModules.length
+    ? null
+    : `${opts.localModules.length} local modules but ${opts.localImports.length} import paths`
+
+/** One import line: the module and the names it brings in, comma-separated. */
+class EmitImport {
+  module: string
+  names: string
+
+  constructor(module: string, names: string) {
+    this.module = module
+    this.names = names
+  }
+}
+
+/**
+ * Where the test imports `module` from when it is one of `localModules`,
+ * or null when it is not one (`emitProgram` refuses options whose two lists differ in length).
+ */
+const emitLocalImport = (opts: EmitOptions, module: string): string | null => {
+  for (let i = 0; i < opts.localModules.length && i < opts.localImports.length; i++) {
+    if (opts.localModules[i] === module) {
+      return opts.localImports[i]
+    }
+  }
+  return null
+}
+
 /** What emitting one program has gathered so far. */
 class EmitContext {
   c: Contract
   opts: EmitOptions
   /** The helpers used, in first-use order. */
   used: string[]
-  /** What the program imports from nish:secret and nish:unsafe. */
+  /** What the program imports from nish:secret. */
   secretNames: string[]
+  /** What the program imports from nish:unsafe: the wrapping ops it writes. */
   unsafeNames: string[]
-  /** The `plain_` wrappers of functions that take or return a Secret, with their text. */
-  wrapperNames: string[]
-  wrapperTexts: string[]
+  /** The `plain_` wrappers of functions that take or return a Secret, each with its text. */
+  wrappers: EmitWrapper[]
   /** The names in scope: the forall variables, then let bindings. */
   env: TypeEnv
   /** What Nish cannot express, found while emitting. */
@@ -98,8 +140,7 @@ class EmitContext {
     this.used = []
     this.secretNames = []
     this.unsafeNames = []
-    this.wrapperNames = []
-    this.wrapperTexts = []
+    this.wrappers = []
     this.env = new TypeEnv(c.functions, true)
     this.errors = []
   }
@@ -114,8 +155,7 @@ const emitAddOnce = (list: string[], s: string): void => {
 
 /** Whether `a` sorts before `b`, by UTF-8 bytes. */
 const emitStrLess = (a: string, b: string): boolean => {
-  const n = a.length < b.length ? a.length : b.length
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < a.length && i < b.length; i++) {
     const x = toI32(a.charCodeAt(i))
     const y = toI32(b.charCodeAt(i))
     if (x !== y) {
@@ -344,7 +384,9 @@ const emitOutBody = (
     return
   }
   body.push(`  const o_cap: i32 = of.cap("${sig.name}", ${capacityNish(cap.value, "a_")});`)
-  body.push("  if (o_cap < 0) {")
+  // of.cap returns -1 past 2^20; the bound is repeated here, where the
+  // checker reads it, so that o_cap + 2 * at is proven to fit.
+  body.push("  if (o_cap < 0 || o_cap > 1048576) {")
   for (const w of wipes) {
     body.push(`  ${w}`)
   }
@@ -363,6 +405,32 @@ const emitOutBody = (
   body.push(`  return of.take("${sig.name}", o_out, ${EMIT_OUT_AT}, o_end, o_cap);`)
 }
 
+/** Whether the program has the wrapper `name` yet. */
+const emitHasWrapper = (ctx: EmitContext, name: string): boolean => {
+  for (const w of ctx.wrappers) {
+    if (w.name === name) {
+      return true
+    }
+  }
+  return false
+}
+
+/** The wrappers in byte order of their names, which `emitCall` keeps unique. */
+const emitSortedWrappers = (ws: EmitWrapper[]): EmitWrapper[] => {
+  const out: EmitWrapper[] = []
+  for (const w of ws) {
+    out.push(w)
+    let i = out.length - 1
+    while (i > 0 && emitStrLess(out[i].name, out[i - 1].name)) {
+      const t = out[i]
+      out[i] = out[i - 1]
+      out[i - 1] = t
+      i--
+    }
+  }
+  return out
+}
+
 /**
  * A call of a contract function on emitted arguments. One that takes or
  * returns a Secret, or takes a window, goes through a `plain_` wrapper, so
@@ -373,9 +441,8 @@ const emitCall = (ctx: EmitContext, sig: FnSig, args: string[]): string => {
     return `${sig.name}(${args.join(", ")})`
   }
   const name = `plain_${sig.name}`
-  if (ctx.wrapperNames.indexOf(name) < 0) {
-    ctx.wrapperNames.push(name)
-    ctx.wrapperTexts.push(emitPlainWrapper(ctx, sig, name))
+  if (!emitHasWrapper(ctx, name)) {
+    ctx.wrappers.push(new EmitWrapper(name, emitPlainWrapper(ctx, sig, name)))
   }
   if (sig.out !== null) {
     emitUse(ctx, "OutFault")
@@ -477,11 +544,32 @@ const emitOperands = (ctx: EmitContext, e: Expr): string => {
       }
     }
   }
-  return emitTypeOf(ctx, e.args[0])
+  return emitArgType(ctx, e, 0)
 }
 
-/** Argument `i` of an op, wanted at `want`. */
-const emitArg = (ctx: EmitContext, e: Expr, i: i32, want: string | null): string => emitExpr(ctx, e.args[i], want)
+/**
+ * Argument `i` of an op, or null once its absence is recorded: a checked
+ * contract gives every op its arity, so only a contract built by hand lacks one.
+ */
+const emitArgAt = (ctx: EmitContext, e: Expr, i: i32): Expr | null => {
+  if (i >= 0 && i < e.args.length) {
+    return e.args[i]
+  }
+  emitAddOnce(ctx.errors, `${e.name} has no argument ${i}`)
+  return null
+}
+
+/** The type of argument `i` of an op ("null" once its absence is recorded). */
+const emitArgType = (ctx: EmitContext, e: Expr, i: i32): string => {
+  const x = emitArgAt(ctx, e, i)
+  return x === null ? "null" : emitTypeOf(ctx, x)
+}
+
+/** Argument `i` of an op, wanted at `want` ("" once its absence is recorded). */
+const emitArg = (ctx: EmitContext, e: Expr, i: i32, want: string | null): string => {
+  const x = emitArgAt(ctx, e, i)
+  return x === null ? "" : emitExpr(ctx, x, want)
+}
 
 /**
  * An expression where a value of type `want` goes (null: its own type).
@@ -497,9 +585,15 @@ const emitExpr = (ctx: EmitContext, e: Expr, want: string | null): string => {
       ctx.errors.push(`unknown function ${e.name}`)
       return ""
     }
+    // typingCall checks a call's arity at extraction; this guards a contract built by hand.
+    if (e.args.length !== sig.params.length) {
+      ctx.errors.push(`${e.name} takes ${sig.params.length} arguments, got ${e.args.length}`)
+      return ""
+    }
     const args: string[] = []
-    for (let i = 0; i < e.args.length; i++) {
-      args.push(emitExpr(ctx, e.args[i], vocabValueType(sig.params[i].type)))
+    const params = sig.params
+    for (let i = 0; i < e.args.length && i < params.length; i++) {
+      args.push(emitExpr(ctx, e.args[i], vocabValueType(params[i].type)))
     }
     return emitCall(ctx, sig, args)
   }
@@ -542,7 +636,11 @@ const emitHelperOp = (ctx: EmitContext, e: Expr): string | null => {
     return `${emitUse(ctx, "bitwiseBytes")}(${a}, ${emitArg(ctx, e, 1, null)}, ${bitwise})`
   }
   if (vocabHas(vocabWriteOps(), op)) {
-    const n = emitToU64(ctx, e.args[0])
+    const x = emitArgAt(ctx, e, 0)
+    if (x === null) {
+      return ""
+    }
+    const n = emitToU64(ctx, x)
     return `${emitUse(ctx, "intBytes")}(${n}, ${vocabByteWidth(op)}, ${vocabBigEndian(op)})`
   }
   if (vocabHas(vocabReadOps(), op)) {
@@ -554,10 +652,10 @@ const emitHelperOp = (ctx: EmitContext, e: Expr): string | null => {
     return `\`\${${emitArg(ctx, e, 0, null)}}\${${emitArg(ctx, e, 1, null)}}\``
   }
   if (op === "lower") {
-    return `${emitUse(ctx, "shiftCase")}(${emitArg(ctx, e, 0, null)}, 65, 90, 32)`
+    return `${emitUse(ctx, "shiftCase")}(${emitArg(ctx, e, 0, null)}, false)`
   }
   if (op === "upper") {
-    return `${emitUse(ctx, "shiftCase")}(${emitArg(ctx, e, 0, null)}, 97, 122, -32)`
+    return `${emitUse(ctx, "shiftCase")}(${emitArg(ctx, e, 0, null)}, true)`
   }
   if (op === "utf8") {
     return `${emitUse(ctx, "utf8Bytes")}(${emitArg(ctx, e, 0, null)})`
@@ -589,7 +687,7 @@ const emitOp = (ctx: EmitContext, e: Expr, want: string | null): string => {
     return emitConv(`toI32(${emitArg(ctx, e, 0, null)}.length)`, "i32", want)
   }
   if (op === "unwrap") {
-    if (emitTypeOf(ctx, e.args[0]) === "string?") {
+    if (emitArgType(ctx, e, 0) === "string?") {
       emitUse(ctx, "unwrapStr")
       return `u.str(${emitArg(ctx, e, 0, null)})`
     }
@@ -597,15 +695,15 @@ const emitOp = (ctx: EmitContext, e: Expr, want: string | null): string => {
     return `u.get(${emitArg(ctx, e, 0, null)})`
   }
   if (op === "isNull" || op === "notNull") {
-    const h = emitTypeOf(ctx, e.args[0]) === "string?" ? "isNullStr" : "isNullBytes"
+    const h = emitArgType(ctx, e, 0) === "string?" ? "isNullStr" : "isNullBytes"
     return `${op === "notNull" ? "!" : ""}${emitUse(ctx, h)}(${emitArg(ctx, e, 0, null)})`
   }
   if (op === "+" || op === "-" || op === "*") {
     const t = emitOperands(ctx, e)
     if (t === "i32" || t === "i64") {
-      // Signed overflow panics in Nish; the contract wraps, as evalPure and
-      // the sampler do, so i32 and i64 go through nish:unsafe's
-      // two's-complement wrap. The unsigned words already wrap.
+      // The contract wraps modulo 2^N, as evalPure and the sampler do, and
+      // Nish's signed operators refuse overflow. So the wrap is written as
+      // the nish:unsafe op that says so, imported where it is used.
       const w = op === "+" ? "wrappingAdd" : op === "-" ? "wrappingSub" : "wrappingMul"
       emitAddOnce(ctx.unsafeNames, w)
       return emitConv(`${w}(${emitArg(ctx, e, 0, t)}, ${emitArg(ctx, e, 1, t)})`, emitTypeOf(ctx, e), want)
@@ -625,8 +723,8 @@ const emitOp = (ctx: EmitContext, e: Expr, want: string | null): string => {
   }
   if (op === "==" || op === "!=") {
     // A null literal takes its kind from the other side.
-    const l = emitTypeOf(ctx, e.args[0])
-    const side = l === "null" ? emitTypeOf(ctx, e.args[1]) : l
+    const l = emitArgType(ctx, e, 0)
+    const side = l === "null" ? emitArgType(ctx, e, 1) : l
     const h = emitIsBytesLike(side) ? "bytesEq" : emitIsStringLike(side) ? "strEq" : ""
     if (h !== "") {
       const eq = `${emitUse(ctx, h)}(${emitArg(ctx, e, 0, null)}, ${emitArg(ctx, e, 1, null)})`
@@ -775,8 +873,8 @@ const emitSourceName = (c: Contract, id: string | null): string => {
 export const emitWrap = (text: string, width: i32): string[] => {
   const words: string[] = []
   let start = -1
-  for (let i = 0; i <= text.length; i++) {
-    const c = i < text.length ? toI32(text.charCodeAt(i)) : 32
+  for (let i = 0; i < text.length; i++) {
+    const c = toI32(text.charCodeAt(i))
     const space = c === 32 || c === 9 || c === 10 || c === 13
     if (space && start >= 0) {
       words.push(text.substring(start, i))
@@ -785,10 +883,13 @@ export const emitWrap = (text: string, width: i32): string[] => {
       start = i
     }
   }
+  if (start >= 0) {
+    words.push(text.substring(start, text.length))
+  }
   const out: string[] = []
   let cur = ""
   for (const w of words) {
-    if (cur.length > 0 && cur.length + 1 + w.length > width) {
+    if (cur.length > 0 && toI64(cur.length) + 1 + toI64(w.length) > toI64(width)) {
       out.push(cur)
       cur = w
     } else {
@@ -851,9 +952,15 @@ const emitVector = (ctx: EmitContext, k: Clause): string => {
     ctx.errors.push(`${k.id}: no function ${k.call} or no expected value`)
     return ""
   }
+  // literalsSettleVector checks a vector's arity at extraction; this guards a contract built by hand.
+  if (k.args.length !== sig.params.length) {
+    ctx.errors.push(`${k.id}: ${k.call} takes ${sig.params.length} arguments, got ${k.args.length}`)
+    return ""
+  }
   const args: string[] = []
-  for (let i = 0; i < k.args.length; i++) {
-    args.push(emitLiteral(ctx, k.args[i], vocabValueType(sig.params[i].type)))
+  const params = sig.params
+  for (let i = 0; i < k.args.length && i < params.length; i++) {
+    args.push(emitLiteral(ctx, k.args[i], vocabValueType(params[i].type)))
   }
   const name = emitQuote(emitTestName(k))
   const it = k.iterate
@@ -891,13 +998,25 @@ const emitIterateSteps = (ctx: EmitContext, k: Clause, sig: FnSig, args: string[
   if (it === null) {
     return []
   }
+  const n = it.names.length
+  // shapeIterate refuses names, next and parameters of different counts at extraction; this guards a contract built by hand.
+  if (it.next.length !== n || sig.params.length !== n) {
+    ctx.errors.push(
+      `${k.id}: the iterate has ${n} names and ${it.next.length} next for ${sig.params.length} parameters`,
+    )
+    return []
+  }
   const lines: string[] = []
   const vars: string[] = []
-  for (let i = 0; i < it.names.length; i++) {
+  const params = sig.params
+  for (let i = 0; i < it.names.length && i < params.length && i < args.length; i++) {
+    const p = params[i]
+    const a = args[i]
     vars.push(`it_a${i}`)
-    lines.push(`  let it_a${i}: ${emitNishType(vocabValueType(sig.params[i].type))} = ${args[i]};`)
+    lines.push(`  let it_a${i}: ${emitNishType(vocabValueType(p.type))} = ${a};`)
   }
-  const count = emitIntLit(`${it.count}`, "i64")
+  // A bare literal where it fits, which the no-panic checker reads as the counter's bound.
+  const count = vocabFitsInt(`${it.count}`, "i32") ? `${it.count}` : emitIntLit(`${it.count}`, "i64")
   const optional = vocabIsOptional(vocabValueType(sig.returns))
   lines.push(`  for (let it_i: i64 = 1; it_i < ${count}; it_i += 1) {`)
   lines.push(`    const it_s = ${emitCall(ctx, sig, vars)};`)
@@ -905,14 +1024,13 @@ const emitIterateSteps = (ctx: EmitContext, k: Clause, sig: FnSig, args: string[
     emitIterateNull(lines, "    ", name, "it_s", `\${it_i} of ${it.count}`, sig.name)
   }
   const next: string[] = []
-  for (let i = 0; i < it.next.length; i++) {
-    const e = it.next[i]
+  for (const e of it.next) {
     next.push(e.kind === ExprKind.Call ? "it_s" : `it_a${toI32(it.names.indexOf(e.name))}`)
   }
   for (let i = 0; i < next.length; i++) {
     lines.push(`    const it_n${i} = ${next[i]};`)
   }
-  for (let i = 0; i < next.length; i++) {
+  for (let i = 0; i < vars.length; i++) {
     lines.push(`    ${vars[i]} = it_n${i};`)
   }
   lines.push("  }")
@@ -1002,6 +1120,11 @@ const emitVectorF64 = (ctx: EmitContext, k: Clause, expect: Literal, name: strin
 const emitTable = (ctx: EmitContext, name: string, type: string, j: i32, samples: Sample[], out: string[]): void => {
   const vals: string[] = []
   for (const s of samples) {
+    // The sampler gives every sample a value for each variable; this guards a table built by hand.
+    if (j < 0 || j >= s.args.length) {
+      emitAddOnce(ctx.errors, `a sample has no value for ${name}`)
+      return
+    }
     const lit = s.args[j]
     if (type === "i32") {
       vals.push(lit.text)
@@ -1045,15 +1168,22 @@ const emitProperty = (ctx: EmitContext, k: Clause, samples: Sample[]): string =>
   }
   const undefinedWhy = emitUndefinedWhy(assert)
   const usesUnwrap = undefinedWhy !== null
-  out.push(`  for (let i: i32 = 0; i < ${count}; i += 1) {`)
+  // Each table's length bounds the index too, so the no-panic checker proves every table_x[i].
+  const inTables = k.forall.map((v) => ` && i < table_${v.name}.length`).join("")
+  out.push(`  for (let i: i32 = 0; i < ${count}${inTables}; i += 1) {`)
   ctx.env = new TypeEnv(ctx.c.functions, true)
   const shown: string[] = []
+  // Every row is read before any call, which would drop the loop bound's facts about the tables.
+  for (const v of k.forall) {
+    const raw = v.type === "bytes" ? "string" : v.type
+    out.push(`    const r_${v.name}: ${raw} = table_${v.name}[i];`)
+  }
   for (const v of k.forall) {
     typeEnvBind(ctx.env, v.name, v.type)
     if (v.type === "bytes") {
-      out.push(`    const v_${v.name}: u8[] = unhex(table_${v.name}[i]);`)
+      out.push(`    const v_${v.name}: u8[] = unhex(r_${v.name});`)
     } else {
-      out.push(`    const v_${v.name}: ${v.type} = table_${v.name}[i];`)
+      out.push(`    const v_${v.name}: ${v.type} = r_${v.name};`)
     }
     shown.push(
       vocabIsIntType(v.type) ? `${v.name} = \${v_${v.name}}` : `len(${v.name}) = \${toI32(v_${v.name}.length)}`,
@@ -1143,11 +1273,21 @@ export const emitRefusals = (c: Contract, local: string[]): string[] => {
       out.push(why)
     }
   }
+  // The test defines clause_* and plain_* functions beside the contract's
+  // own: none may take a name a contract function already has.
+  const names: string[] = []
+  for (const f of c.functions) {
+    names.push(f.name)
+  }
   const fns: string[] = []
+  const clashes: string[] = []
   for (const k of c.clauses) {
     const fn = emitClauseFn(k)
     if (fns.indexOf(fn) >= 0) {
       out.push(`${k.id}: its check would be ${fn}, which an earlier clause's id already makes`)
+    }
+    if (names.indexOf(fn) >= 0) {
+      clashes.push(`${k.id}: its check would be ${fn}, which is a contract function's name`)
     }
     fns.push(fn)
     for (const v of k.forall) {
@@ -1158,21 +1298,13 @@ export const emitRefusals = (c: Contract, local: string[]): string[] => {
       }
     }
   }
-  // The test defines clause_* and plain_* functions beside the contract's
-  // own: none may take a name a contract function already has.
-  const names: string[] = []
-  for (const f of c.functions) {
-    names.push(f.name)
-  }
   for (const f of c.functions) {
     if (emitWraps(f) && names.indexOf(`plain_${f.name}`) >= 0) {
       out.push(`${f.name}: its wrapper would be plain_${f.name}, which is a contract function's name`)
     }
   }
-  for (let i = 0; i < fns.length; i++) {
-    if (names.indexOf(fns[i]) >= 0) {
-      out.push(`${c.clauses[i].id}: its check would be ${fns[i]}, which is a contract function's name`)
-    }
+  for (const m of clashes) {
+    out.push(m)
   }
   return out
 }
@@ -1215,24 +1347,25 @@ const emitHeader = (c: Contract, opts: EmitOptions): string =>
 /** The imports: the suite, the functions called by module, then nish:secret and nish:unsafe. */
 const emitImports = (ctx: EmitContext, called: string[]): string => {
   const lines: string[] = [`import { Suite } from "nish/testing";`]
-  const modules: string[] = []
-  const names: string[] = []
+  const imports: EmitImport[] = []
   for (const n of emitSortedUnique(called)) {
     const f = emitFn(ctx, n)
     const m: string | null = f === null ? null : f.module
     const named = m ?? ctx.c.target.module
-    const local = ctx.opts.localModules.indexOf(named)
-    const mod = local < 0 ? named : ctx.opts.localImports[local]
-    const at = modules.indexOf(mod)
-    if (at < 0) {
-      modules.push(mod)
-      names.push(n)
-    } else {
-      names[at] = `${names[at]}, ${n}`
+    const mod = emitLocalImport(ctx.opts, named) ?? named
+    let found = false
+    for (const x of imports) {
+      if (!found && x.module === mod) {
+        x.names = `${x.names}, ${n}`
+        found = true
+      }
+    }
+    if (!found) {
+      imports.push(new EmitImport(mod, n))
     }
   }
-  for (let i = 0; i < modules.length; i++) {
-    lines.push(`import { ${names[i]} } from ${emitQuote(modules[i])};`)
+  for (const x of imports) {
+    lines.push(`import { ${x.names} } from ${emitQuote(x.module)};`)
   }
   const secrets: string[] = []
   for (const n of ["Secret", "expose", "secret", "wipe"]) {
@@ -1267,7 +1400,8 @@ const emitMain = (c: Contract): string => {
     lines.push(`  ran = \`\${ran}\${${emitClauseFn(k)}(t) ? "1" : "0"}\`;`)
   }
   lines.push("  const code: i32 = t.done();")
-  lines.push(`  const nonce: string = toI32(process.argv.length) > 1 ? process.argv[1] : "-";`)
+  lines.push("  const argv: string[] = process.argv;")
+  lines.push(`  const nonce: string = 1 < argv.length ? argv[1] : "-";`)
   lines.push("  console.log(`vector-done ${nonce} ${ran}`);")
   lines.push("  return code;")
   lines.push("};")
@@ -1286,6 +1420,10 @@ const emitMain = (c: Contract): string => {
  * @returns the program's text, or every reason Nish cannot express the contract
  */
 export const emitProgram = (c: Contract, table: SampleTable, opts: EmitOptions): Result<string, string[]> => {
+  const paths = emitLocalPathsRefusal(opts)
+  if (paths !== null) {
+    return Err([paths])
+  }
   const refused = emitRefusals(c, opts.localModules)
   if (refused.length > 0) {
     return Err(refused)
@@ -1317,8 +1455,8 @@ export const emitProgram = (c: Contract, table: SampleTable, opts: EmitOptions):
       parts.push(emitHelperText(h, withStr))
     }
   }
-  for (const n of emitSortedUnique(ctx.wrapperNames)) {
-    parts.push(ctx.wrapperTexts[ctx.wrapperNames.indexOf(n)])
+  for (const w of emitSortedWrappers(ctx.wrappers)) {
+    parts.push(w.text)
   }
   for (const b of bodies) {
     parts.push(b)

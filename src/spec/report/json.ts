@@ -1,12 +1,20 @@
 /**
  * `spec/report/json` — the check's report as one JSON object, for tools:
  * `{status, contract, issues, warnings, coverage, samples, sources,
- * truncations}`.
+ * truncations, byteParts}`.
  */
 
 import { jsonStringifyString } from "nish/json"
 import { CheckContext, CheckNote, CheckReport, CheckSampleStat } from "../check"
-import { reportIssues, reportSampleCount, reportSourceRuns, reportStatus, reportWarnings } from "./common"
+import {
+  ReportFormat,
+  reportFormats,
+  reportIssues,
+  reportSampleCount,
+  reportSourceRuns,
+  reportStatus,
+  reportWarnings,
+} from "./common"
 
 /** A JSON string. */
 const reportQ = (s: string): string => jsonStringifyString(s)
@@ -18,7 +26,8 @@ const reportStrings = (xs: string[]): string => `[${xs.map(reportQ).join(",")}]`
  * The report as JSON on one line: the status, every finding and warning with
  * its gate and place, which clauses cover each requirement, each property's
  * sampling, each source command's run, and each vector held to its result's
- * first bytes (`{"bits": 128}` or `{"bytes": 16}`, as the contract writes it).
+ * first bytes (`{"bits": 128}` or `{"bytes": 16}`, as the contract writes it),
+ * and each vector's format constants and tail with their reasons.
  *
  * @param ctx the check's context, after the gates ran
  * @param report what the gates found
@@ -51,5 +60,16 @@ export const reportJson = (ctx: CheckContext, report: CheckReport): string => {
       truncations.push(`${reportQ(k.id)}:{${reportQ(tr.unit)}:${tr.count()}}`)
     }
   }
-  return `{"status":${reportQ(reportStatus(report))},"contract":${reportQ(ctx.contract.contract)},"issues":[${issues.join(",")}],"warnings":[${warnings.join(",")}],"coverage":{${coverage.join(",")}},"samples":{${samples.join(",")}},"sources":{${sources.join(",")}},"truncations":{${truncations.join(",")}}}`
+  const parts: string[] = []
+  for (const k of ctx.contract.clauses) {
+    const formats = reportFormats(k).map(
+      (f: ReportFormat): string => `{"at":${reportQ(f.at)},"hex":${reportQ(f.hex)},"reason":${reportQ(f.reason)}}`,
+    )
+    const t = k.tail
+    if (formats.length > 0 || t !== null) {
+      const tail = t === null ? "null" : `{"arg":${t.arg},"bytes":${t.bytes},"reason":${reportQ(t.reason)}}`
+      parts.push(`${reportQ(k.id)}:{"formats":[${formats.join(",")}],"tail":${tail}}`)
+    }
+  }
+  return `{"status":${reportQ(reportStatus(report))},"contract":${reportQ(ctx.contract.contract)},"issues":[${issues.join(",")}],"warnings":[${warnings.join(",")}],"coverage":{${coverage.join(",")}},"samples":{${samples.join(",")}},"sources":{${sources.join(",")}},"truncations":{${truncations.join(",")}},"byteParts":{${parts.join(",")}}}`
 }

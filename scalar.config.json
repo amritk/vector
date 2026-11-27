@@ -277,6 +277,11 @@
                     "title": "core/smt",
                     "filepath": "docs/reference/modules/core/smt.md"
                   },
+                  "/core-text": {
+                    "type": "page",
+                    "title": "core/text",
+                    "filepath": "docs/reference/modules/core/text.md"
+                  },
                   "/core-z3": {
                     "type": "page",
                     "title": "core/z3",

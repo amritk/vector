@@ -13,6 +13,7 @@
  * verdict.
  */
 
+import { wrappingAdd, wrappingSub } from "nish:unsafe"
 import { trim } from "nish/text"
 import { Sexp, parseSexp } from "../../core/smt"
 import { VOCAB_JSON_SAFE_MAX } from "../../spec/contract/vocab"
@@ -28,6 +29,7 @@ import {
   FnUnit,
   LangClause,
   LangExpr,
+  LangParam,
   Program,
   programFunctionIndex,
 } from "../lang/ast"
@@ -139,40 +141,58 @@ const replayBool = (truth: boolean): ReplayValue => {
   return v
 }
 
-const replayAbs = (a: i64): i64 => (a < toI64(0) ? -a : a)
+// The magnitude of an i64, exact for every one: |REPLAY_OVER| is 2^63.
+const replayMag = (a: i64): u64 => (a < 0 ? toU64(0) - toU64(a) : toU64(a))
+
+// -a, wrapping: REPLAY_OVER, the one i64 with no negation, stays itself.
+const replayNeg = (a: i64): i64 => wrappingSub(toI64(0), a)
+
+// |a|, wrapping like replayNeg.
+const replayAbs = (a: i64): i64 => toI64(replayMag(a))
+
+// a / g for a gcd g. A gcd is never negative, and 0 only when both of its
+// operands are, where replayMulR has always kept a undivided.
+const replayQuot = (a: i64, g: i64): i64 => (g > 0 ? a / g : a)
 
 const replayGcd = (x: i64, y: i64): i64 => {
-  let a = replayAbs(x)
-  let b = replayAbs(y)
-  while (b !== toI64(0)) {
+  let a = replayMag(x)
+  let b = replayMag(y)
+  while (b !== toU64(0)) {
     const t = a % b
     a = b
     b = t
   }
-  return a
+  return toI64(a)
 }
 
 const replayAdd64 = (a: i64, b: i64): i64 => {
   if (a === REPLAY_OVER || b === REPLAY_OVER) {
     return REPLAY_OVER
   }
-  if ((b > toI64(0) && a > REPLAY_MAX - b) || (b < toI64(0) && a < -REPLAY_MAX - b)) {
+  // The wrapped sum is the sum unless the signs agree and it does not; a
+  // sum of REPLAY_OVER (below -REPLAY_MAX) is the mark itself.
+  const s = wrappingAdd(a, b)
+  if (a < 0 === b < 0 && s < 0 !== a < 0) {
     return REPLAY_OVER
   }
-  return a + b
+  return s
 }
 
 const replayMul64 = (a: i64, b: i64): i64 => {
   if (a === REPLAY_OVER || b === REPLAY_OVER) {
     return REPLAY_OVER
   }
-  if (a === toI64(0) || b === toI64(0)) {
+  const ma = replayMag(a)
+  const mb = replayMag(b)
+  if (ma === toU64(0) || mb === toU64(0)) {
     return toI64(0)
   }
-  if (replayAbs(b) > REPLAY_MAX / replayAbs(a)) {
+  // |a|·|b| > REPLAY_MAX, as |b| > REPLAY_MAX / |a|.
+  if (mb > toU64(REPLAY_MAX) / ma) {
     return REPLAY_OVER
   }
-  return a * b
+  const p = ma * mb
+  return a < 0 === b < 0 ? toI64(p) : toI64(toU64(0) - p)
 }
 
 // num/den in lowest terms, den > 0; unknown on an overflow. den must not be 0.
@@ -181,9 +201,14 @@ const replayRational = (num: i64, den: i64): ReplayValue => {
     return new ReplayValue(REPLAY_WHY_OVERFLOW)
   }
   const g = replayGcd(num, den)
+  // Unreachable: every caller passes a nonzero den, so g divides |den| ≥ 1.
+  if (g < 1) {
+    return new ReplayValue(REPLAY_WHY_DIV_ZERO)
+  }
   const v = new ReplayValue("")
   v.known = true
-  v.num = den < toI64(0) ? -(num / g) : num / g
+  const n = num / g
+  v.num = den < 0 ? replayNeg(n) : n
   v.den = replayAbs(den / g)
   return v
 }
@@ -198,11 +223,11 @@ const replayAddR = (a: ReplayValue, b: ReplayValue): ReplayValue => {
     return new ReplayValue(replayEither(a, b).why)
   }
   const g = replayGcd(a.den, b.den)
-  const num = replayAdd64(replayMul64(a.num, b.den / g), replayMul64(b.num, a.den / g))
-  return replayRational(num, replayMul64(a.den / g, b.den))
+  const num = replayAdd64(replayMul64(a.num, replayQuot(b.den, g)), replayMul64(b.num, replayQuot(a.den, g)))
+  return replayRational(num, replayMul64(replayQuot(a.den, g), b.den))
 }
 
-const replayNegR = (a: ReplayValue): ReplayValue => (a.known ? replayRational(-a.num, a.den) : a)
+const replayNegR = (a: ReplayValue): ReplayValue => (a.known ? replayRational(replayNeg(a.num), a.den) : a)
 
 const replayMulR = (a: ReplayValue, b: ReplayValue): ReplayValue => {
   if (!a.known || !b.known) {
@@ -210,10 +235,10 @@ const replayMulR = (a: ReplayValue, b: ReplayValue): ReplayValue => {
   }
   const g1 = replayGcd(a.num, b.den)
   const g2 = replayGcd(b.num, a.den)
-  const n1 = g1 === toI64(0) ? a.num : a.num / g1
-  const d2 = g1 === toI64(0) ? b.den : b.den / g1
-  const n2 = g2 === toI64(0) ? b.num : b.num / g2
-  const d1 = g2 === toI64(0) ? a.den : a.den / g2
+  const n1 = replayQuot(a.num, g1)
+  const d2 = replayQuot(b.den, g1)
+  const n2 = replayQuot(b.num, g2)
+  const d1 = replayQuot(a.den, g2)
   return replayRational(replayMul64(n1, n2), replayMul64(d1, d2))
 }
 
@@ -241,11 +266,14 @@ const replayFloor = (a: ReplayValue): ReplayValue => {
   if (!a.known) {
     return a
   }
-  let q = a.num / a.den
-  if (a.num < toI64(0) && a.num % a.den !== toI64(0)) {
-    q = q - toI64(1)
+  const n = a.num
+  const d = a.den
+  // Unreachable: a known value's den is at least 1 (replayRational, replayBool).
+  if (d < 1) {
+    return new ReplayValue(REPLAY_WHY_DIV_ZERO)
   }
-  return replayInt(q)
+  const q = n / d
+  return replayInt(n < 0 && n % d !== 0 ? replayAdd64(q, -1) : q)
 }
 
 const replayNot = (a: ReplayValue): ReplayValue => (a.known ? replayBool(!a.truth) : a)
@@ -339,12 +367,14 @@ const replayDecimal = (text: string, whole: string): ReplayValue => {
 
 // The rendered forms: `5`, `-5`, `1.5`, `1/3`, `-1/3`, `1/-3`.
 const replayRendered = (text: string, whole: string): ReplayValue => {
-  if (text.startsWith("-")) {
+  // A leading `-` means a nonempty text; the length is for the prover.
+  if (text.length > 0 && text.startsWith("-")) {
     const rest = text.slice(1)
     return rest.startsWith("-") ? replayUnreadable(whole) : replayNegR(replayRendered(rest, whole))
   }
   const slash = toI32(text.indexOf("/"))
-  if (slash < 0) {
+  // A slash indexOf finds is before the end; the bound is for the prover.
+  if (slash < 0 || slash >= toI32(text.length)) {
     return replayDecimal(text, whole)
   }
   const under = text.slice(slash + 1)
@@ -421,17 +451,33 @@ class ReplayHit {
   }
 }
 
+/** A name bound to a value. */
+class ReplayBinding {
+  /** The name. */
+  name: string
+  /** Its value. */
+  value: ReplayValue
+
+  /**
+   * Makes a binding.
+   *
+   * @param name the name
+   * @param value its value
+   */
+  constructor(name: string, value: ReplayValue) {
+    this.name = name
+    this.value = value
+  }
+}
+
 /** Names bound to values; a later binding hides an earlier one. */
 class ReplayScope {
-  /** The names. */
-  names: string[]
-  /** Each name's value. */
-  values: ReplayValue[]
+  /** The bindings, in the order they were made. */
+  bindings: ReplayBinding[]
 
   /** Makes an empty scope. */
   constructor() {
-    this.names = []
-    this.values = []
+    this.bindings = []
   }
 
   /**
@@ -441,8 +487,7 @@ class ReplayScope {
    * @param value its value
    */
   bind(name: string, value: ReplayValue): void {
-    this.names.push(name)
-    this.values.push(value)
+    this.bindings.push(new ReplayBinding(name, value))
   }
 
   /**
@@ -452,9 +497,10 @@ class ReplayScope {
    * @returns its value, unknown when unbound
    */
   lookup(name: string): ReplayValue {
-    for (let i = toI32(this.names.length) - 1; i >= 0; i--) {
-      if (this.names[i] === name) {
-        return this.values[i]
+    for (let i = toI32(this.bindings.length) - 1; i >= 0; i--) {
+      const b = this.bindings[i]
+      if (b.name === name) {
+        return b.value
       }
     }
     return new ReplayValue(`${name} is unbound`)
@@ -475,16 +521,24 @@ class ReplayCtx {
   ranges: ReplayHit[]
   /** ±(2^53−1), the range an Int must stay in. */
   safeMax: ReplayValue
+  /** The function whose body is being walked, to name a division by zero in it. */
+  fn: string
+  /** Which version of the program this is, `old` or `new` for `vector diff`; "" for `verify`. */
+  version: string
 
   /**
    * Makes a walk.
    *
    * @param program the program
    * @param record whether to record hazards
+   * @param fn the function the walk starts in
+   * @param version `old` or `new` for `vector diff`, else ""
    */
-  constructor(program: Program, record: boolean) {
+  constructor(program: Program, record: boolean, fn: string, version: string) {
     this.program = program
     this.record = record
+    this.fn = fn
+    this.version = version
     this.divs = []
     this.pres = []
     this.ranges = []
@@ -529,6 +583,13 @@ const replayBinop = (op: string, l: ReplayValue, r: ReplayValue): ReplayValue =>
   return new ReplayValue(`the operator ${op} is not one the replay evaluates`)
 }
 
+// Names the division a value depends on: z3 leaves `x / 0` unspecified, so
+// the replay cannot know it, and the detail says which division to look at.
+const replayWhyDivZero = (ctx: ReplayCtx, e: LangExpr): string => {
+  const where = ctx.version === "" ? ctx.fn : `the ${ctx.version} version of ${ctx.fn}`
+  return `a value depends on the division by zero ${prettyMath(e)} in ${where}, which z3 leaves unspecified`
+}
+
 // Mirrors `SmtEmitter.term`: the same value, the same paths, the same hazards in the same order.
 const replayTerm = (ctx: ReplayCtx, e: LangExpr, scope: ReplayScope, path: ReplayValue): ReplayValue => {
   if (e.kind === EXPR_NUM) {
@@ -540,8 +601,14 @@ const replayTerm = (ctx: ReplayCtx, e: LangExpr, scope: ReplayScope, path: Repla
   if (e.kind === EXPR_VAR) {
     return scope.lookup(e.name)
   }
-  if (e.kind === EXPR_UNOP) {
-    const a = replayTerm(ctx, e.args[0], scope, path)
+  const args = e.args
+  const arity = e.kind === EXPR_UNOP ? 1 : e.kind === EXPR_BINOP ? 2 : e.kind === EXPR_ITE ? 3 : 0
+  if (toI32(args.length) < arity) {
+    return new ReplayValue(`the expression has ${args.length} operand(s), not the ${arity} its kind takes`)
+  }
+  // The arity check above holds each branch's operand count; the bounds are for the prover.
+  if (e.kind === EXPR_UNOP && toI32(args.length) >= 1) {
+    const a = replayTerm(ctx, args[0], scope, path)
     if (e.op === "not") {
       return replayNot(a)
     }
@@ -556,19 +623,23 @@ const replayTerm = (ctx: ReplayCtx, e: LangExpr, scope: ReplayScope, path: Repla
     }
     return replayNegR(replayFloor(replayNegR(a)))
   }
-  if (e.kind === EXPR_BINOP) {
-    const l = replayTerm(ctx, e.args[0], scope, path)
+  if (e.kind === EXPR_BINOP && toI32(args.length) >= 2) {
+    const right = args[1]
+    const l = replayTerm(ctx, args[0], scope, path)
     let rightPath = path
     if (e.op === "and" || e.op === "implies") {
       rightPath = replayAnd(path, l)
     } else if (e.op === "or") {
       rightPath = replayAnd(path, replayNot(l))
     }
-    const r = replayTerm(ctx, e.args[1], scope, rightPath)
+    const r = replayTerm(ctx, right, scope, rightPath)
     if (e.op === "/" && ctx.record) {
       ctx.divs.push(
         new ReplayHit(path, replayEq(r, replayInt(toI64(0))), `the divisor is ${replayValueText(r)}, not 0`),
       )
+    }
+    if (e.op === "/" && l.known && r.known && r.num === toI64(0)) {
+      return new ReplayValue(replayWhyDivZero(ctx, e))
     }
     if (e.op === "min" || e.op === "max") {
       const c = replayRelation(e.op === "min" ? "<=" : ">=", l, r)
@@ -580,22 +651,33 @@ const replayTerm = (ctx: ReplayCtx, e: LangExpr, scope: ReplayScope, path: Repla
     }
     return t
   }
-  if (e.kind === EXPR_ITE) {
-    const c = replayTerm(ctx, e.args[0], scope, path)
-    const t = replayTerm(ctx, e.args[1], scope, replayAnd(path, c))
-    const f = replayTerm(ctx, e.args[2], scope, replayAnd(path, replayNot(c)))
+  if (e.kind === EXPR_ITE && toI32(args.length) >= 3) {
+    const then = args[1]
+    const other = args[2]
+    const c = replayTerm(ctx, args[0], scope, path)
+    const t = replayTerm(ctx, then, scope, replayAnd(path, c))
+    const f = replayTerm(ctx, other, scope, replayAnd(path, replayNot(c)))
     return c.known ? (c.truth ? t : f) : c
   }
   if (e.kind === EXPR_CALL) {
+    const fns = ctx.program.functions
     const at = programFunctionIndex(ctx.program, e.name)
-    if (at < 0) {
+    // programFunctionIndex is -1 or an index into fns; the bound is for the prover.
+    if (at < 0 || at >= toI32(fns.length)) {
       return new ReplayValue(`the function ${e.name} is unknown`)
     }
-    const callee = ctx.program.functions[at]
-    const inner = new ReplayScope()
-    for (let i = 0; i < toI32(callee.params.length) && i < toI32(e.args.length); i++) {
-      inner.bind(callee.params[i].name, replayTerm(ctx, e.args[i], scope, path))
+    const callee = fns[at]
+    const params = callee.params
+    if (params.length !== args.length) {
+      return new ReplayValue(`the call to ${e.name} has ${args.length} argument(s), not ${params.length}`)
     }
+    const inner = new ReplayScope()
+    // The lengths are equal; the second bound is for the prover.
+    for (let i = 0; i < toI32(params.length) && i < toI32(args.length); i++) {
+      inner.bind(params[i].name, replayTerm(ctx, args[i], scope, path))
+    }
+    const caller = ctx.fn
+    ctx.fn = callee.name
     let guarded = path
     for (const rc of callee.requires) {
       const t = replayTerm(ctx, rc.expr, inner, guarded)
@@ -604,7 +686,9 @@ const replayTerm = (ctx: ReplayCtx, e: LangExpr, scope: ReplayScope, path: Repla
       }
       guarded = replayAnd(guarded, t)
     }
-    return replayTerm(ctx, callee.body, inner, guarded)
+    const out = replayTerm(ctx, callee.body, inner, guarded)
+    ctx.fn = caller
+    return out
   }
   return new ReplayValue(`the expression kind ${e.kind} is not one the replay evaluates`)
 }
@@ -663,27 +747,37 @@ export class ReplayRun {
  * @param values each parameter's value
  * @returns the run; `unbound` is set when a value is missing or unreadable
  */
-export const replayEvaluate = (program: Program, fn: FnUnit, names: string[], values: string[]): ReplayRun => {
-  const run = new ReplayRun(new ReplayCtx(program, true))
+export const replayEvaluate = (program: Program, fn: FnUnit, names: string[], values: string[]): ReplayRun =>
+  replayEvaluateVersion(program, fn, names, values, "")
+
+// `replayEvaluate` for one version of a `vector diff`, which a division by zero names.
+const replayEvaluateVersion = (
+  program: Program,
+  fn: FnUnit,
+  names: string[],
+  values: string[],
+  version: string,
+): ReplayRun => {
+  const run = new ReplayRun(new ReplayCtx(program, true, fn.name, version))
   for (let i = 0; i < toI32(fn.params.length); i++) {
     const p = fn.params[i]
-    const at = i < toI32(names.length) && i < toI32(values.length) ? i : -1
-    if (at < 0 || names[at] === "") {
+    if (i >= toI32(names.length) || i >= toI32(values.length) || names[i] === "") {
       run.unbound = `no value for the parameter ${p.name}`
       return run
     }
-    const v = replayParseValue(values[at])
+    const value = values[i]
+    const v = replayParseValue(value)
     if (!v.known) {
       run.unbound = v.why
       return run
     }
     if (v.isBool !== (p.ty === "Bool") || (p.ty === "Int" && v.den !== toI64(1))) {
-      run.unbound = `the value "${values[at]}" is not a ${p.ty}`
+      run.unbound = `the value "${value}" is not a ${p.ty}`
       return run
     }
     const out = replayOutsideSafe(run.ctx, v)
     if (p.ty === "Int" && run.outOfRange === "" && out.known && out.truth) {
-      run.outOfRange = `the Int parameter ${p.name} = ${values[at]} is outside ±(2^53−1), the range z3 was given`
+      run.outOfRange = `the Int parameter ${p.name} = ${value} is outside ±(2^53−1), the range z3 was given`
     }
     run.scope.bind(p.name, v)
   }
@@ -701,12 +795,35 @@ export const replayEvaluate = (program: Program, fn: FnUnit, names: string[], va
 const replayRunCex = (program: Program, fn: FnUnit, cex: Counterexample): ReplayRun => {
   const names: string[] = []
   const values: string[] = []
-  for (const p of fn.params) {
-    const at = toI32(cex.names.indexOf(p.name))
-    names.push(at < 0 ? "" : p.name)
-    values.push(at < 0 ? "" : cex.values[at])
+  const why = replayByName(fn.params, cex, names, values)
+  if (why !== "") {
+    const run = new ReplayRun(new ReplayCtx(program, true, fn.name, ""))
+    run.unbound = why
+    return run
   }
   return replayEvaluate(program, fn, names, values)
+}
+
+// Fills names and values with an input's values in params order, by name,
+// "" for a parameter it lacks; why it cannot, "" when it can.
+const replayByName = (params: LangParam[], input: Counterexample, names: string[], values: string[]): string => {
+  const given = input.values
+  if (input.names.length !== given.length) {
+    return `the input has ${input.names.length} name(s) and ${given.length} value(s)`
+  }
+  for (const p of params) {
+    const at = toI32(input.names.indexOf(p.name))
+    // With the lengths equal, an index of a name is one of a value; the bound is for the prover.
+    if (at >= 0 && at < toI32(given.length)) {
+      const value = given[at]
+      names.push(p.name)
+      values.push(value)
+    } else {
+      names.push("")
+      values.push("")
+    }
+  }
+  return ""
 }
 
 /**
@@ -765,8 +882,19 @@ const replayExpectDomain = (checks: ReplayChecks, fn: FnUnit, run: ReplayRun, re
   if (run.outOfRange !== "") {
     checks.expect(replayBool(false), run.outOfRange)
   }
-  for (let i = 0; i < toI32(run.requires.length); i++) {
-    checks.expect(run.requires[i], `requires ${prettyMath(fn.requires[i].expr)} is false at the counterexample`)
+  const values = run.requires
+  const clauses = fn.requires
+  // Unreachable: every run here is replayEvaluate's of fn, which records one
+  // value per requires. Unequal lengths would be a vector bug: a mismatch.
+  if (values.length !== clauses.length) {
+    checks.expect(
+      replayBool(false),
+      `the replay has ${values.length} requires value(s) for ${clauses.length} clause(s)`,
+    )
+  }
+  // The second bound is for the prover: unequal lengths are a mismatch above.
+  for (let i = 0; i < toI32(values.length) && i < toI32(clauses.length); i++) {
+    checks.expect(values[i], `requires ${prettyMath(clauses[i].expr)} is false at the counterexample`)
   }
   if (result === "?" || result === "") {
     return run.body
@@ -802,11 +930,11 @@ export const replayClause = (program: Program, fn: FnUnit, clause: LangClause, c
   const checks = new ReplayChecks()
   const result = replayExpectDomain(checks, fn, run, cex.result)
   const scope = new ReplayScope()
-  for (let i = 0; i < toI32(run.scope.names.length); i++) {
-    scope.bind(run.scope.names[i], run.scope.values[i])
+  for (const b of run.scope.bindings) {
+    scope.bind(b.name, b.value)
   }
   scope.bind(RESULT_NAME, result)
-  const holds = replayTerm(new ReplayCtx(program, false), clause.expr, scope, replayBool(true))
+  const holds = replayTerm(new ReplayCtx(program, false, fn.name, ""), clause.expr, scope, replayBool(true))
   checks.expect(replayNot(holds), `${prettyMath(clause.expr)} holds there`)
   return checks.result()
 }
@@ -844,7 +972,10 @@ export const replayHazard = (
     return new ReplayResult(REPLAY_MISMATCH, `hazard kind ${kind} is not one the script records`)
   }
   if (index < 0 || index >= toI32(hits.length)) {
-    return new ReplayResult(REPLAY_MISMATCH, `the replay records ${hits.length} such hazard(s), not ${index + 1}`)
+    return new ReplayResult(
+      REPLAY_MISMATCH,
+      `the replay records ${hits.length} such hazard(s), not ${toI64(index) + toI64(1)}`,
+    )
   }
   const checks = new ReplayChecks()
   if (run.outOfRange !== "") {
@@ -895,13 +1026,12 @@ export const replayWitness = (
   // The versions' parameters match by position; their names may differ.
   const names: string[] = []
   const values: string[] = []
-  for (const p of newFn.params) {
-    const at = toI32(inputs.names.indexOf(p.name))
-    names.push(at < 0 ? "" : p.name)
-    values.push(at < 0 ? "" : inputs.values[at])
+  const why = replayByName(newFn.params, inputs, names, values)
+  if (why !== "") {
+    return new ReplayResult(REPLAY_NOT_REPLAYED, why)
   }
-  const was = replayEvaluate(oldProgram, oldFn, names, values)
-  const now = replayEvaluate(newProgram, newFn, names, values)
+  const was = replayEvaluateVersion(oldProgram, oldFn, names, values, "old")
+  const now = replayEvaluateVersion(newProgram, newFn, names, values, "new")
   for (const run of [was, now]) {
     if (run.unbound !== "") {
       return new ReplayResult(REPLAY_NOT_REPLAYED, run.unbound)
@@ -943,16 +1073,19 @@ export const replayWitness = (
  * @returns how many replays were a mismatch
  */
 export const replayReport = (program: Program, report: VerifyReport): i32 => {
-  let mismatches = 0
+  // Wider than the count it becomes: no report holds 2^31 replays.
+  let mismatches = toU64(0)
   for (let i = 0; i < toI32(report.functions.length) && i < toI32(program.functions.length); i++) {
     const fn = program.functions[i]
     const fr = report.functions[i]
+    const clauses = fn.ensures
     for (const v of fr.ensures) {
-      if (v.hasCex && v.clauseIndex >= 0 && v.clauseIndex < toI32(fn.ensures.length)) {
-        const r = replayClause(program, fn, fn.ensures[v.clauseIndex], v.cex)
+      const at = v.clauseIndex
+      if (v.hasCex && at >= 0 && at < toI32(clauses.length)) {
+        const r = replayClause(program, fn, clauses[at], v.cex)
         v.replay = r.outcome
         v.replayDetail = r.detail
-        mismatches = mismatches + (r.outcome === REPLAY_MISMATCH ? 1 : 0)
+        mismatches = mismatches + toU64(r.outcome === REPLAY_MISMATCH ? 1 : 0)
       }
     }
     for (const hs of [fr.divs, fr.pres, fr.ranges]) {
@@ -961,11 +1094,11 @@ export const replayReport = (program: Program, report: VerifyReport): i32 => {
           const r = replayHazard(program, fn, h.kind, h.index, h.cex)
           h.replay = r.outcome
           h.replayDetail = r.detail
-          mismatches = mismatches + (r.outcome === REPLAY_MISMATCH ? 1 : 0)
+          mismatches = mismatches + toU64(r.outcome === REPLAY_MISMATCH ? 1 : 0)
         }
       }
     }
   }
-  report.mismatchCount = mismatches
-  return mismatches
+  report.mismatchCount = toI32(mismatches)
+  return toI32(mismatches)
 }

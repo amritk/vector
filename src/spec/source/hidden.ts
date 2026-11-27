@@ -44,7 +44,7 @@ const hiddenKeywordsTable = (): string[] => ["MUST", "SHALL", "REQUIRED"]
 
 /** Whether a code point lies in one of the [lo, hi] pairs of `ranges`. */
 const hiddenInRanges = (ranges: i32[], cp: i32): boolean => {
-  for (let i = 0; i + 1 < ranges.length; i += 2) {
+  for (let i = 0; i < ranges.length - 1; i += 2) {
     if (cp >= ranges[i] && cp <= ranges[i + 1]) {
       return true
     }
@@ -82,7 +82,7 @@ const hiddenLetterIn = (tables: HiddenTables, cp: i32): i32 => {
     return folded
   }
   const table = tables.lookalike
-  for (let i = 0; i + 1 < table.length; i += 2) {
+  for (let i = 0; i < table.length - 1; i += 2) {
     if (table[i] === cp) {
       return table[i + 1]
     }
@@ -157,12 +157,13 @@ const hiddenSpoofs = (p: HiddenPatterns, word: string): string | null => {
   const folded: i32[] = []
   let marked = false
   let ascii = true
-  let i = 0
-  while (i < word.length) {
-    const cp = charsCodePointAt(word, i)
-    const n = charsSequenceLength(word, i)
+  // In u32, so the steps cannot overflow: each is 1 to 4 bytes, inside the word.
+  let i: u32 = 0
+  while (i < toU32(word.length)) {
+    const cp = charsCodePointAt(word, toI32(i))
+    const n = toU32(charsSequenceLength(word, toI32(i)))
     if (!hiddenInvisibleIn(p.tables, cp)) {
-      if (cp >= 0x80 && p.mark.test(word.substring(i, i + n))) {
+      if (cp >= 0x80 && p.mark.test(word.substring(toI32(i), toI32(i + n)))) {
         marked = true
       } else {
         if (cp >= 0x80) {
@@ -193,7 +194,7 @@ const hiddenSpoofs = (p: HiddenPatterns, word: string): string | null => {
     }
     let same = true
     let standIn = capital && foreign
-    for (let j = 0; j < folded.length; j++) {
+    for (let j = 0; j < folded.length && j < k.length; j++) {
       const cp = folded[j]
       if (cp !== k.charCodeAt(j)) {
         same = false
@@ -210,9 +211,9 @@ const hiddenSpoofs = (p: HiddenPatterns, word: string): string | null => {
 }
 
 /** The line of byte `at`, counting the newlines from `from` (on line `line`). */
-const hiddenLineAt = (text: string, from: i32, at: i32, line: i32): i32 => {
+const hiddenLineAt = (text: string, from: i32, at: i32, line: u32): u32 => {
   let n = line
-  for (let i = from; i < at; i++) {
+  for (let i = from; i >= 0 && i < at && i < text.length; i++) {
     if (text.charCodeAt(i) === 10) {
       n = n + 1
     }
@@ -223,9 +224,10 @@ const hiddenLineAt = (text: string, from: i32, at: i32, line: i32): i32 => {
 /** What a scan found: the spots it kept, and how many it found in all. */
 class HiddenScan {
   spots: string[]
-  total: i32
-  keep: i32
-  constructor(keep: i32) {
+  /** In u32: a count of spots, each at least a byte of a text under 2^31 bytes. */
+  total: u32
+  keep: u32
+  constructor(keep: u32) {
     this.spots = []
     this.total = 0
     this.keep = keep
@@ -235,27 +237,28 @@ class HiddenScan {
 /** Counts a spot, and keeps its text while fewer than `keep` are kept. */
 const hiddenNote = (scan: HiddenScan, spot: string): void => {
   scan.total = scan.total + 1
-  if (scan.spots.length < scan.keep) {
+  if (toU32(scan.spots.length) < scan.keep) {
     scan.spots.push(spot)
   }
 }
 
 /** Scans `text` (hiddenText), keeping the first `keep` spots' text. */
-const hiddenScan = (text: string, keep: i32): HiddenScan => {
+const hiddenScan = (text: string, keep: u32): HiddenScan => {
   const scan = new HiddenScan(keep)
   const compiled = hiddenPatterns()
   const tables = compiled.isOk() ? compiled.value.tables : new HiddenTables()
-  let line = 1
-  let i = 0
-  while (i < text.length) {
-    const cp = charsCodePointAt(text, i)
+  // Lines and offsets in u32, so no step can overflow: neither passes the text's length.
+  let line: u32 = 1
+  let i: u32 = 0
+  while (i < toU32(text.length)) {
+    const cp = charsCodePointAt(text, toI32(i))
     if (hiddenInvisibleIn(tables, cp) && !(i === 0 && cp === 0xfeff)) {
       hiddenNote(scan, `line ${line}: invisible character ${charsName(cp)}: remove it`)
     }
     if (cp === 10) {
       line = line + 1
     }
-    i += charsSequenceLength(text, i)
+    i += toU32(charsSequenceLength(text, toI32(i)))
   }
   if (compiled.isErr()) {
     hiddenNote(scan, `line 1: the words could not be read (${compiled.error}): nothing is trusted`)
@@ -274,7 +277,7 @@ const hiddenScan = (text: string, keep: i32): HiddenScan => {
     if (k !== null) {
       hiddenNote(scan, `line ${line}: "${word}" reads as ${k} but is not spelled in ASCII: write ${k}`)
     }
-    from = m.end() > m.start() ? m.end() : m.start() + 1
+    from = m.end() > m.start() ? m.end() : toI32(toU32(m.start()) + 1)
   }
   return scan
 }
@@ -290,7 +293,7 @@ const hiddenScan = (text: string, keep: i32): HiddenScan => {
  * @param text the source's text
  * @returns `line N: …` entries; empty when the text reads the same
  */
-export const hiddenText = (text: string): string[] => hiddenScan(text, text.length + 1).spots
+export const hiddenText = (text: string): string[] => hiddenScan(text, toU32(text.length) + 1).spots
 
 /**
  * The refusal of a source whose text hides what it says (hiddenText): its
@@ -314,7 +317,7 @@ const hiddenIsBreakHint = (cp: i32): boolean => cp === 0x200b || cp === 0x2060
 
 /** Whether the code point starting at byte `i` is a word character (hiddenWordClass); false off either end. */
 const hiddenWordAt = (word: Regex, text: string, i: i32): boolean =>
-  i >= 0 && i < text.length && word.test(text.substring(i, i + charsSequenceLength(text, i)))
+  i >= 0 && i < text.length && word.test(text.substring(i, toI32(toU32(i) + toU32(charsSequenceLength(text, i)))))
 
 /**
  * An RFC source's text with its line-break hints dropped: each run of literal
@@ -343,23 +346,24 @@ export const hiddenDropBreaks = (text: string): string => {
   const word = compiled.value
   const out: string[] = []
   let kept = 0
-  let i = 0
-  while (i < text.length) {
-    if (!hiddenIsBreakHint(charsCodePointAt(text, i))) {
-      i += charsSequenceLength(text, i)
+  // Offsets in u32, so no step can overflow: each is 1 to 4 bytes, inside the text.
+  let i: u32 = 0
+  while (i < toU32(text.length)) {
+    if (!hiddenIsBreakHint(charsCodePointAt(text, toI32(i)))) {
+      i += toU32(charsSequenceLength(text, toI32(i)))
       continue
     }
-    let end = i
-    while (end < text.length && hiddenIsBreakHint(charsCodePointAt(text, end))) {
-      end += charsSequenceLength(text, end)
+    let end: u32 = i
+    while (end < toU32(text.length) && hiddenIsBreakHint(charsCodePointAt(text, toI32(end)))) {
+      end += toU32(charsSequenceLength(text, toI32(end)))
     }
-    let before = i - 1
-    while (before > 0 && (text.charCodeAt(before) & 0xc0) === 0x80) {
+    let before: i32 = i > 0 ? toI32(i - 1) : -1
+    while (before > 0 && before < text.length && (text.charCodeAt(before) & 0xc0) === 0x80) {
       before--
     }
-    if (!hiddenWordAt(word, text, before) || !hiddenWordAt(word, text, end)) {
-      out.push(text.substring(kept, i))
-      kept = end
+    if (!hiddenWordAt(word, text, before) || !hiddenWordAt(word, text, toI32(end))) {
+      out.push(text.substring(kept, toI32(i)))
+      kept = toI32(end)
     }
     i = end
   }

@@ -185,7 +185,7 @@ export class FnReport {
 export class ConformanceIssue {
   /** The function. */
   fn: string
-  /** `postcondition`, `callee-guard` or `unsampled`. */
+  /** `postcondition`, `callee-guard`, `unsampled`, or `vector-bug` when the float64 check could not run (a bug in vector). */
   kind: string
   /** The clause's axiom, `(calls F)`, or `(requires)`. */
   axiomId: string
@@ -298,8 +298,7 @@ export const signatureOf = (fn: FnUnit): string => {
   return `${fn.name}(${parts.join(", ")}): ${fn.returnType}`
 }
 
-const reportCex = (program: Program, q: SmtQuery, a: QueryAnswer): Counterexample => {
-  const fn = program.functions[q.fnIndex]
+const reportCex = (fn: FnUnit, q: SmtQuery, a: QueryAnswer): Counterexample => {
   const cex = new Counterexample(a.value(smtVarName(q.fnIndex, RESULT_NAME)) ?? "?")
   for (const p of fn.params) {
     const v = a.value(smtVarName(q.fnIndex, p.name))
@@ -309,6 +308,72 @@ const reportCex = (program: Program, q: SmtQuery, a: QueryAnswer): Counterexampl
     }
   }
   return cex
+}
+
+// n + 1 for a count. A count is of queries, and runZ3 takes their number as
+// an i32, so it never reaches 2^31 − 1, where this would wrap.
+const reportBump = (n: i32): i32 => toI32(toU64(n) + toU64(1))
+
+// One function's part of a report as it is assembled.
+class ReportSlot {
+  // The function.
+  fn: FnUnit
+  // Its report.
+  fr: FnReport
+  // Per ensures clause, whether its trivial query was not sat.
+  trivial: boolean[]
+  // How many division hazard queries it has had.
+  divs: i32
+  // How many call-site precondition hazard queries.
+  pres: i32
+  // How many range hazard queries.
+  ranges: i32
+
+  // Makes the slot of a function and its report.
+  constructor(fn: FnUnit, fr: FnReport) {
+    this.fn = fn
+    this.fr = fr
+    this.trivial = []
+    for (let i = 0; i < toI32(fn.ensures.length); i++) {
+      this.trivial.push(false)
+    }
+    this.divs = 0
+    this.pres = 0
+    this.ranges = 0
+  }
+
+  // The number of hazard queries of a kind this function has had, counting one more.
+  nextHazard(kind: i32): i32 {
+    if (kind === QUERY_DIV) {
+      const index = this.divs
+      this.divs = reportBump(index)
+      return index
+    }
+    if (kind === QUERY_PRE) {
+      const index = this.pres
+      this.pres = reportBump(index)
+      return index
+    }
+    const index = this.ranges
+    this.ranges = reportBump(index)
+    return index
+  }
+
+  // Whether a clause index names one of the function's ensures clauses.
+  hasClause(at: i32): boolean {
+    return at >= 0 && at < toI32(this.trivial.length)
+  }
+}
+
+// The i-th query's answer. A query z3 left unanswered proves nothing: it
+// reads as unknown, never as a missing obligation.
+const reportAnswerAt = (answers: QueryAnswer[], i: i32): QueryAnswer =>
+  i >= 0 && i < toI32(answers.length) ? answers[i] : new QueryAnswer("unknown")
+
+// The slot of a query's function, or null when the program has no such function.
+const reportSlotOf = (slots: ReportSlot[], q: SmtQuery): ReportSlot | null => {
+  const at = q.fnIndex
+  return at >= 0 && at < toI32(slots.length) ? slots[at] : null
 }
 
 /**
@@ -327,70 +392,76 @@ export const assembleReport = (
   solver: string,
 ): VerifyReport => {
   const report = new VerifyReport(solver)
-  const trivial: boolean[][] = []
+  const slots: ReportSlot[] = []
   for (const fn of program.functions) {
-    report.functions.push(new FnReport(fn))
-    const flags: boolean[] = []
-    for (let i = 0; i < toI32(fn.ensures.length); i++) {
-      flags.push(false)
-    }
-    trivial.push(flags)
+    const fr = new FnReport(fn)
+    report.functions.push(fr)
+    slots.push(new ReportSlot(fn, fr))
   }
-  // A query z3 left unanswered proves nothing: it reads as unknown, never as
-  // a missing obligation.
-  const given: QueryAnswer[] = []
   for (let i = 0; i < toI32(queries.length); i++) {
-    given.push(i < toI32(answers.length) ? answers[i] : new QueryAnswer("unknown"))
-  }
-  const n = toI32(queries.length)
-  // The n-th hazard query of a kind in a function is the n-th hazard of that
-  // kind the script recorded, which the replay counts the same way.
-  const hazardSeen: i32[][] = []
-  for (let f = 0; f < toI32(program.functions.length); f++) {
-    hazardSeen.push([0, 0, 0])
-  }
-  for (let i = 0; i < n; i++) {
     const q = queries[i]
-    const a = given[i]
+    const a = reportAnswerAt(answers, i)
+    const slot = reportSlotOf(slots, q)
+    if (slot === null) {
+      continue
+    }
     if (q.kind === QUERY_REACHABLE) {
       if (a.result !== "sat") {
-        report.functions[q.fnIndex].vacuous = true
+        slot.fr.vacuous = true
       } else {
-        report.functions[q.fnIndex].witness = reportCex(program, q, a)
+        slot.fr.witness = reportCex(slot.fn, q, a)
       }
     } else if (q.kind === QUERY_TRIVIAL && a.result !== "sat") {
-      trivial[q.fnIndex][q.clauseIndex] = true
+      const flags = slot.trivial
+      const at = q.clauseIndex
+      if (at >= 0 && at < toI32(flags.length)) {
+        flags[at] = true
+      }
     }
   }
-  for (let i = 0; i < n; i++) {
+  // The n-th hazard query of a kind in a function is the n-th hazard of that
+  // kind the script recorded, which the replay counts the same way.
+  for (let i = 0; i < toI32(queries.length); i++) {
     const q = queries[i]
-    const a = given[i]
-    const fr = report.functions[q.fnIndex]
+    const a = reportAnswerAt(answers, i)
+    const slot = reportSlotOf(slots, q)
+    // A query of a function or clause the program lacks is a vector bug, and
+    // proves nothing: it counts as an undecided clause, so the run fails.
+    if (slot === null || (q.kind === QUERY_TRIVIAL && a.result !== "sat" && !slot.hasClause(q.clauseIndex))) {
+      report.totalVcs = reportBump(report.totalVcs)
+      report.unknownCount = reportBump(report.unknownCount)
+      continue
+    }
+    const fr = slot.fr
     if (q.kind === QUERY_ENSURES) {
-      report.totalVcs = report.totalVcs + 1
-      if (a.result === "unsat") {
+      report.totalVcs = reportBump(report.totalVcs)
+      if (a.result === "unsat" && !slot.hasClause(q.clauseIndex)) {
+        report.unknownCount = reportBump(report.unknownCount)
+        fr.ensures.push(new ClauseVerdict(q.axiomId, q.pretty, CLAUSE_UNKNOWN))
+      } else if (a.result === "unsat") {
         const v = new ClauseVerdict(q.axiomId, q.pretty, CLAUSE_PROVEN)
-        report.unsatCount = report.unsatCount + 1
-        if (trivial[q.fnIndex][q.clauseIndex]) {
+        report.unsatCount = reportBump(report.unsatCount)
+        const flags = slot.trivial
+        const at = q.clauseIndex
+        // hasClause checked this index; the bound is for the prover.
+        if (at >= 0 && at < toI32(flags.length) && flags[at]) {
           v.trivial = true
-          report.trivialCount = report.trivialCount + 1
+          report.trivialCount = reportBump(report.trivialCount)
         }
         fr.ensures.push(v)
       } else if (a.result === "sat") {
         const v = new ClauseVerdict(q.axiomId, q.pretty, CLAUSE_REFUTED)
-        report.satCount = report.satCount + 1
+        report.satCount = reportBump(report.satCount)
         v.hasCex = true
-        v.cex = reportCex(program, q, a)
+        v.cex = reportCex(slot.fn, q, a)
         v.clauseIndex = q.clauseIndex
         fr.ensures.push(v)
       } else {
-        report.unknownCount = report.unknownCount + 1
+        report.unknownCount = reportBump(report.unknownCount)
         fr.ensures.push(new ClauseVerdict(q.axiomId, q.pretty, CLAUSE_UNKNOWN))
       }
     } else if (q.kind === QUERY_DIV || q.kind === QUERY_PRE || q.kind === QUERY_RANGE) {
-      const slot = q.kind === QUERY_DIV ? 0 : q.kind === QUERY_PRE ? 1 : 2
-      const index = hazardSeen[q.fnIndex][slot]
-      hazardSeen[q.fnIndex][slot] = index + 1
+      const index = slot.nextHazard(q.kind)
       if (a.result === "unsat") {
         continue
       }
@@ -399,23 +470,23 @@ export const assembleReport = (
       h.index = index
       if (a.result === "sat") {
         h.hasCex = true
-        h.cex = reportCex(program, q, a)
+        h.cex = reportCex(slot.fn, q, a)
       }
       if (q.kind === QUERY_DIV) {
-        report.divCount = report.divCount + 1
+        report.divCount = reportBump(report.divCount)
         fr.divs.push(h)
       } else if (q.kind === QUERY_RANGE) {
-        report.rangeCount = report.rangeCount + 1
+        report.rangeCount = reportBump(report.rangeCount)
         fr.ranges.push(h)
       } else {
-        report.preCount = report.preCount + 1
+        report.preCount = reportBump(report.preCount)
         fr.pres.push(h)
       }
     }
   }
   for (const fr of report.functions) {
     if (fr.vacuous) {
-      report.vacuousCount = report.vacuousCount + 1
+      report.vacuousCount = reportBump(report.vacuousCount)
     }
   }
   return report
@@ -436,15 +507,20 @@ export const solverLabel = (): string => {
     return "Z3 (native)"
   }
   const out = ran.value.stdout
+  const len = toI32(out.length)
   const at = toI32(out.indexOf("version "))
-  if (at < 0) {
+  // A match indexOf finds ends within the text; the upper bound is for the prover.
+  if (at < 0 || at > len - 8) {
     return "Z3 (native)"
   }
-  let end = at + 8
-  while (end < toI32(out.length) && out.charCodeAt(end) !== 32 && out.charCodeAt(end) !== 10) {
-    end = end + 1
+  // The version runs to the first space or newline after "version ", or to the end.
+  const rest = out.slice(at + 8)
+  for (let end = 0; end < toI32(rest.length); end++) {
+    if (rest.charCodeAt(end) === 32 || rest.charCodeAt(end) === 10) {
+      return `Z3 ${rest.slice(0, end)} (native)`
+    }
   }
-  return `Z3 ${out.slice(at + 8, end)} (native)`
+  return `Z3 ${rest} (native)`
 }
 
 /**

@@ -121,7 +121,7 @@ export const main = (): i32 => {
   const slowText = readFileSyncOrNull(slow) ?? ""
   t.contains("without --slow the slow vector is skipped", quickText, `"${EMIT_SLOW_SKIP}"`)
   t.ok("with --slow it is not", slowText.indexOf(EMIT_SLOW_SKIP) < 0)
-  t.contains("with --slow it runs the chain", slowText, "it_i < toI64(100000)")
+  t.contains("with --slow it runs the chain", slowText, "it_i < 100000")
   t.contains(
     "the regenerate line carries --slow",
     slowText,

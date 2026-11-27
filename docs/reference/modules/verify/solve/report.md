@@ -496,7 +496,7 @@ input: Counterexample
 
 #### ConformanceIssue.kind
 
-`postcondition`, `callee-guard` or `unsampled`.
+`postcondition`, `callee-guard`, `unsampled`, or `vector-bug` when the float64 check could not run (a bug in vector).
 
 ```ts
 kind: string

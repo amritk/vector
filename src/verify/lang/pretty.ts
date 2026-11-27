@@ -11,7 +11,7 @@ import { EXPR_BINOP, EXPR_BOOL, EXPR_CALL, EXPR_ITE, EXPR_NUM, EXPR_UNOP, EXPR_V
 const PRETTY_PREC_UNARY: i32 = 8
 const PRETTY_PREC_ATOM: i32 = 10
 
-const prettyPrec = (op: string): i32 => {
+const prettyPrec = (op: string): integer<1, 7> => {
   if (op === "implies") {
     return 1
   }
@@ -51,7 +51,11 @@ const prettyToken = (op: string, ts: boolean): string => {
 
 const prettyWrap = (text: string, prec: i32, parentPrec: i32): string => (prec < parentPrec ? `(${text})` : text)
 
+// A node with fewer operands than its kind takes renders as `?`, as a node of
+// an unknown kind does. The reader never builds one, and typecheckProgram
+// refuses one, so only a hand-built expression that was never checked gets it.
 const prettyRender = (e: LangExpr, parentPrec: i32, ts: boolean): string => {
+  const args = e.args
   if (e.kind === EXPR_NUM) {
     return e.value.startsWith("-") && parentPrec >= PRETTY_PREC_ATOM ? `(${e.value})` : e.value
   }
@@ -61,19 +65,20 @@ const prettyRender = (e: LangExpr, parentPrec: i32, ts: boolean): string => {
   if (e.kind === EXPR_VAR) {
     return e.name
   }
-  if (e.kind === EXPR_UNOP) {
+  if (e.kind === EXPR_UNOP && toI32(args.length) >= 1) {
+    const a = args[0]
     if (e.op === "abs" || e.op === "floor" || e.op === "ceil") {
-      return `${ts ? "Math." : ""}${e.op}(${prettyRender(e.args[0], 0, ts)})`
+      return `${ts ? "Math." : ""}${e.op}(${prettyRender(a, 0, ts)})`
     }
     const token = e.op === "not" ? (ts ? "!" : "¬") : "-"
-    const child = prettyRender(e.args[0], PRETTY_PREC_UNARY + 1, ts)
+    const child = prettyRender(a, PRETTY_PREC_UNARY + 1, ts)
     // `neg(-3)` is `- -3`, never `--3`, which JS reads as a decrement.
     const sep = child.startsWith("-") ? " " : ""
     return prettyWrap(`${token}${sep}${child}`, PRETTY_PREC_UNARY, parentPrec)
   }
-  if (e.kind === EXPR_BINOP) {
-    const l = e.args[0]
-    const r = e.args[1]
+  if (e.kind === EXPR_BINOP && toI32(args.length) >= 2) {
+    const l = args[0]
+    const r = args[1]
     if (e.op === "min" || e.op === "max") {
       return `${ts ? "Math." : ""}${e.op}(${prettyRender(l, 0, ts)}, ${prettyRender(r, 0, ts)})`
     }
@@ -88,8 +93,11 @@ const prettyRender = (e: LangExpr, parentPrec: i32, ts: boolean): string => {
     const right = prettyRender(r, rightAssoc ? prec : prec + 1, ts)
     return prettyWrap(`${left} ${prettyToken(e.op, ts)} ${right}`, prec, parentPrec)
   }
-  if (e.kind === EXPR_ITE) {
-    return `(${prettyRender(e.args[0], 0, ts)} ? ${prettyRender(e.args[1], 0, ts)} : ${prettyRender(e.args[2], 0, ts)})`
+  if (e.kind === EXPR_ITE && toI32(args.length) >= 3) {
+    const cond = args[0]
+    const then = args[1]
+    const other = args[2]
+    return `(${prettyRender(cond, 0, ts)} ? ${prettyRender(then, 0, ts)} : ${prettyRender(other, 0, ts)})`
   }
   if (e.kind === EXPR_CALL) {
     const parts: string[] = []

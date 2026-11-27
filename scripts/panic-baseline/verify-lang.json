@@ -1,0 +1,6 @@
+{
+  "modules": {
+    "src/verify/lang/read.ts": 1
+  },
+  "waiting": "amritk/nish#2322 (JsonDocument.stringify)"
+}

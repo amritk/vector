@@ -1,0 +1,152 @@
+{
+  "$schema": "../../../../schemas/rfc-contract.json",
+  "contract": "rfc7914-pbkdf2",
+  "source": {
+    "rfc": 7914,
+    "title": "The scrypt Password-Based Key Derivation Function",
+    "sha256": "c24d3b81171bcd0cb81afa4fac13d3e09cd7ae9e2dffb620ffb4fb696215fbdc"
+  },
+  "sources": [
+    {
+      "id": "rfc7914",
+      "rfc": 7914,
+      "file": "rfcs/rfc7914.txt",
+      "sha256": "c24d3b81171bcd0cb81afa4fac13d3e09cd7ae9e2dffb620ffb4fb696215fbdc"
+    }
+  ],
+  "target": {
+    "module": "nish/crypto/pbkdf2"
+  },
+  "requirements": [
+    {
+      "id": "R-PBKDF2",
+      "section": "11",
+      "level": "DEFINITION",
+      "quote": "The test vectors below can be used to verify the PBKDF2-HMAC-SHA-256 [RFC2898] function."
+    }
+  ],
+  "functions": [
+    {
+      "name": "pbkdf2",
+      "params": [
+        {
+          "name": "password",
+          "type": "string"
+        },
+        {
+          "name": "salt",
+          "type": "string"
+        },
+        {
+          "name": "c",
+          "type": "i32"
+        },
+        {
+          "name": "dkLen",
+          "type": "i32"
+        }
+      ],
+      "returns": "bytes"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "11-SWAPPED",
+      "title": "case 1, its strings passed in the other order",
+      "covers": [
+        "R-PBKDF2"
+      ],
+      "source": {
+        "cite": {
+          "section": "11"
+        }
+      },
+      "call": "pbkdf2",
+      "args": [
+        {
+          "str": "salt"
+        },
+        {
+          "str": "passwd"
+        },
+        {
+          "int": 1,
+          "label": "c"
+        },
+        {
+          "int": 64,
+          "label": "dkLen"
+        }
+      ],
+      "expect": {
+        "hex": "55ac046e56e3089fec1691c22544b605f94185216dde0465e68b9d57c20dacbc49ca9cccf179b645991664b39d77ef317c71b845b1e30bd509112041d3a19783",
+        "label": "PBKDF2-HMAC-SHA-256 (P=\"passwd\", S=\"salt\", c=1, dkLen=64)"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "11-BARE",
+      "title": "case 1, its integers unlabelled",
+      "covers": [
+        "R-PBKDF2"
+      ],
+      "source": {
+        "cite": {
+          "section": "11"
+        }
+      },
+      "call": "pbkdf2",
+      "args": [
+        {
+          "str": "passwd"
+        },
+        {
+          "str": "salt"
+        },
+        {
+          "int": 1
+        },
+        {
+          "int": 64
+        }
+      ],
+      "expect": {
+        "hex": "55ac046e56e3089fec1691c22544b605f94185216dde0465e68b9d57c20dacbc49ca9cccf179b645991664b39d77ef317c71b845b1e30bd509112041d3a19783",
+        "label": "PBKDF2-HMAC-SHA-256 (P=\"passwd\", S=\"salt\", c=1, dkLen=64)"
+      }
+    },
+    {
+      "kind": "vector",
+      "id": "11-BARE-SWAPPED",
+      "title": "case 1, its unlabelled integers passed in the other order",
+      "covers": [
+        "R-PBKDF2"
+      ],
+      "source": {
+        "cite": {
+          "section": "11"
+        }
+      },
+      "call": "pbkdf2",
+      "args": [
+        {
+          "str": "passwd"
+        },
+        {
+          "str": "salt"
+        },
+        {
+          "int": 64
+        },
+        {
+          "int": 1
+        }
+      ],
+      "expect": {
+        "hex": "55ac046e56e3089fec1691c22544b605f94185216dde0465e68b9d57c20dacbc49ca9cccf179b645991664b39d77ef317c71b845b1e30bd509112041d3a19783",
+        "label": "PBKDF2-HMAC-SHA-256 (P=\"passwd\", S=\"salt\", c=1, dkLen=64)"
+      }
+    }
+  ]
+}

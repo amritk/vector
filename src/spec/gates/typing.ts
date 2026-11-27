@@ -55,8 +55,10 @@ const gateTypingVector = (k: Clause, fns: FnSig[], errors: string[]): void => {
   if (k.args.length !== sig.params.length) {
     errors.push(`${k.call} takes ${sig.params.length} argument(s), got ${k.args.length}`)
   }
-  for (let i = 0; i < k.args.length && i < sig.params.length; i++) {
-    const p = sig.params[i]
+  const params = sig.params
+  // A count that differs is refused above; the arguments both have are typed.
+  for (let i = 0; i < k.args.length && i < params.length; i++) {
+    const p = params[i]
     const want = vocabValueType(p.type)
     if (!typeLiteralFits(k.args[i], want)) {
       errors.push(`args[${i}]: ${k.call}(${p.name}) wants ${want}, got ${gateMisfit(k.args[i], want)}`)
@@ -86,6 +88,13 @@ const gateTypingVector = (k: Clause, fns: FnSig[], errors: string[]): void => {
  */
 const gateTypingIterate = (k: Clause, it: Iterate, sig: FnSig, errors: string[]): void => {
   const ret = vocabValueType(vocabBaseOf(sig.returns))
+  if (it.next.length !== sig.params.length) {
+    errors.push(`iterate.next: ${k.call} takes ${sig.params.length} argument(s), got ${it.next.length}`)
+  }
+  if (it.names.length !== sig.params.length) {
+    errors.push(`iterate.names: ${k.call} takes ${sig.params.length} argument(s), got ${it.names.length}`)
+  }
+  // A count that differs is refused above; the elements both have are typed.
   for (let j = 0; j < it.next.length && j < sig.params.length; j++) {
     const p = sig.params[j]
     const want = vocabValueType(p.type)
@@ -96,6 +105,7 @@ const gateTypingIterate = (k: Clause, it: Iterate, sig: FnSig, errors: string[])
         errors.push(`iterate.next[${j}]: ${k.call} returns ${ret}, and ${k.call}(${p.name}) wants ${want}`)
       }
     } else if (e.kind === ExprKind.Var) {
+      // A name not among the names is not one of the parameters; the count is checked above.
       const m = it.names.indexOf(e.name)
       if (m >= 0 && m < sig.params.length) {
         const from = vocabValueType(sig.params[m].type)

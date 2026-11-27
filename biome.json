@@ -3,6 +3,7 @@
   "files": {
     "ignore": [
       ".nish/**",
+      ".nish-next/**",
       "dist/**",
       ".z3/**",
       "node_modules/**",

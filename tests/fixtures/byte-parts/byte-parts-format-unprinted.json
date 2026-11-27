@@ -1,0 +1,76 @@
+{
+  "$schema": "../../../schemas/rfc-contract.json",
+  "contract": "byte-parts-format",
+  "source": {
+    "rfc": 6979,
+    "title": "Byte parts fixture: a format constant in a concat",
+    "sha256": "f850079d5f5d3072c8284ded73de37431609cf0f92fd747a02a6c6d02ac8acf8"
+  },
+  "sources": [
+    {
+      "id": "rfc6979",
+      "rfc": 6979,
+      "file": "byte-parts/rfc6979.txt",
+      "sha256": "f850079d5f5d3072c8284ded73de37431609cf0f92fd747a02a6c6d02ac8acf8"
+    }
+  ],
+  "target": {
+    "module": "nish/crypto/p256"
+  },
+  "requirements": [
+    {
+      "id": "R-PUB",
+      "section": "A.2.5",
+      "level": "DEFINITION",
+      "quote": "public key: U = xG"
+    }
+  ],
+  "functions": [
+    {
+      "name": "p256Public",
+      "params": [
+        {
+          "name": "x",
+          "type": "bytes"
+        }
+      ],
+      "returns": "bytes"
+    }
+  ],
+  "clauses": [
+    {
+      "kind": "vector",
+      "id": "P256-PUB",
+      "title": "RFC 6979 A.2.5: the P-256 public key, SEC1 uncompressed",
+      "covers": ["R-PUB"],
+      "source": {
+        "cite": {
+          "section": "A.2.5"
+        }
+      },
+      "call": "p256Public",
+      "args": [
+        {
+          "hex": "c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721",
+          "label": "x"
+        }
+      ],
+      "expect": {
+        "concat": [
+          {
+            "hex": "04",
+            "format": "SEC1 prefixes an uncompressed point with 04"
+          },
+          {
+            "hex": "60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb6",
+            "unchecked": "the fixture leaves it unchecked"
+          },
+          {
+            "hex": "7903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299",
+            "unchecked": "the fixture leaves it unchecked"
+          }
+        ]
+      }
+    }
+  ]
+}

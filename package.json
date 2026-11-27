@@ -1,6 +1,6 @@
 {
   "name": "@amritk/vector",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "vector — a deterministic judge: prove a spec plan and program with Z3, and check implementations against spec and RFC contracts. Written in Nish; it never calls a model.",
   "license": "MIT",
   "repository": {
@@ -31,7 +31,8 @@
     "dogfood": "node scripts/dogfood.mjs",
     "doc-caps": "node scripts/doc-caps.mjs",
     "no-panic": "node scripts/no-panic.mjs",
-    "allow-panics": "node scripts/allow-panics.mjs"
+    "allow-panics": "node scripts/allow-panics.mjs",
+    "panics": "node scripts/panics.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "1.8.3",

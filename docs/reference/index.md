@@ -20,7 +20,7 @@ The 3 JSON Schemas in `schemas/`.
 
 <scalar-card title="Modules" icon="phosphor/regular/books" href="#modules">
 
-The 120 source files of `src/`, from their doc comments.
+The 121 source files of `src/`, from their doc comments.
 
 </scalar-card>
 
@@ -54,6 +54,7 @@ The 120 source files of `src/`, from their doc comments.
 | [`core/json`](modules/core/json.md) | reading and writing JSON through `nish/json-value`: parse a file into a document, read typed members with a clear error when one is missing or of the wrong kind, and write a document back with a final newline. |
 | [`core/process`](modules/core/process.md) | running a child process with its input given and its output collected. |
 | [`core/smt`](modules/core/smt.md) | reading what z3 prints: s-expressions, the numerals in a model, and a whole run's output split into one answer per query by the `(echo "@@Q<i>")` markers the script writes before each `(check-sat)`. |
+| [`core/text`](modules/core/text.md) | ASCII case mapping that cannot panic. |
 | [`core/z3`](modules/core/z3.md) | finding z3 and running one SMT-LIB2 script through it. |
 | [`index`](modules/index.md) | the package's entry point, the module a Nish program reaches with `import { … } from "@amritk/vector"`. |
 | [`lang/c`](modules/lang/c.md) | the C table: how C writes each construct of the contract vocabulary, and what it drops. |
@@ -126,7 +127,7 @@ The 120 source files of `src/`, from their doc comments.
 | [`spec/pr/stale`](modules/spec/pr/stale.md) | whether a generated test was emitted from the contract as it is now: its header comment's one `// vector-contract-sha256: <hex>` line must name the SHA-256 of the contract file's bytes. |
 | [`spec/profile/profile`](modules/spec/profile/profile.md) | the vector profile: what an RFC XML v3 spec, built by kramdown-rfc and `xml2rfc --v2v3`, must say for vector to read a contract from it, and the reading. |
 | [`spec/report/common`](modules/spec/report/common.md) | what every format of the check's report shares: the status, the findings placed where they are, the warnings shown, and how a citation, a requirement's evidence and a long text are written. |
-| [`spec/report/json`](modules/spec/report/json.md) | the check's report as one JSON object, for tools: `{status, contract, issues, warnings, coverage, samples, sources, truncations}`. |
+| [`spec/report/json`](modules/spec/report/json.md) | the check's report as one JSON object, for tools: `{status, contract, issues, warnings, coverage, samples, sources, truncations, byteParts}`. |
 | [`spec/report/markdown`](modules/spec/report/markdown.md) | the check's report as GitHub markdown, for a PR comment: each requirement's quote, then the clauses that cover it; then the source commands, the exclusions and the warnings. |
 | [`spec/report/text`](modules/spec/report/text.md) | the check's report for a terminal: the status, every finding, each requirement with the clauses that cover it, the source commands, the exclusions and the warnings. |
 | [`spec/run/command`](modules/spec/run/command.md) | `vector spec run`: emit a contract's test, run it (with a nish install, or the language's own interpreter), and report the verdict per requirement. |

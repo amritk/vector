@@ -4,7 +4,7 @@
  * `(echo "@@Q<i>")` markers the script writes before each `(check-sat)`.
  */
 
-import { indexOfAny, trim } from "nish/text"
+import { indexOfAny, split, trim } from "nish/text"
 
 /** One s-expression: an atom, or a list of s-expressions. */
 export class Sexp {
@@ -40,7 +40,8 @@ const smtTokens = (text: string): string[] => {
   const out: string[] = []
   const n = toI32(text.length)
   let i = 0
-  while (i < n) {
+  // i only grows from 0, so `i >= 0` never stops the loop; it lets the read be proven.
+  while (i >= 0 && i < n) {
     const c = text.charCodeAt(i)
     if (smtIsSpace(c)) {
       i = i + 1
@@ -65,15 +66,16 @@ const smtTokens = (text: string): string[] => {
         }
         i = i + 1
       }
-      out.push(text.slice(start, i))
+      // start <= i <= n, so substring cuts what slice did.
+      out.push(text.substring(start, i))
     } else if (c === 124) {
       const start = i
       i = i + 1
       while (i < n && text.charCodeAt(i) !== 124) {
         i = i + 1
       }
-      i = Math.min(i + 1, n)
-      out.push(text.slice(start, i))
+      i = i < n ? i + 1 : n
+      out.push(text.substring(start, i))
     } else {
       const start = i
       while (i < n) {
@@ -81,7 +83,7 @@ const smtTokens = (text: string): string[] => {
         if (smtIsSpace(d) || d === 40 || d === 41 || d === 34 || d === 124 || d === 59) break
         i = i + 1
       }
-      out.push(text.slice(start, i))
+      out.push(text.substring(start, i))
     }
   }
   return out
@@ -96,12 +98,19 @@ class SmtReader {
     this.pos = 0
   }
 
+  // Whether the next token exists and is not `)`. pos only grows from 0.
+  more(): boolean {
+    const pos = this.pos
+    return pos >= 0 && pos < toI32(this.tokens.length) && this.tokens[pos] !== ")"
+  }
+
   read(): Sexp | null {
-    if (this.pos >= toI32(this.tokens.length)) {
+    const pos = this.pos
+    if (pos < 0 || pos >= toI32(this.tokens.length)) {
       return null
     }
-    const tok = this.tokens[this.pos]
-    this.pos = this.pos + 1
+    const tok = this.tokens[pos]
+    this.pos = pos + 1
     if (tok === ")") {
       return null
     }
@@ -109,17 +118,18 @@ class SmtReader {
       return new Sexp(tok, false, [])
     }
     const items: Sexp[] = []
-    while (this.pos < toI32(this.tokens.length) && this.tokens[this.pos] !== ")") {
+    while (this.more()) {
       const child = this.read()
       if (child === null) {
         return null
       }
       items.push(child)
     }
-    if (this.pos >= toI32(this.tokens.length)) {
+    const end = this.pos
+    if (end < 0 || end >= toI32(this.tokens.length)) {
       return null
     }
-    this.pos = this.pos + 1
+    this.pos = end + 1
     return new Sexp("", true, items)
   }
 }
@@ -144,28 +154,32 @@ export const normalizeValue = (value: string): string => {
   if (dot <= 0) {
     return v
   }
-  let i = v.charCodeAt(0) === 45 ? 1 : 0
+  const len = toI32(v.length)
+  // dot > 0, so v has a first character; the length test lets the read be proven.
+  let i = v.length > 0 && v.charCodeAt(0) === 45 ? 1 : 0
   if (i === dot) {
     return v
   }
-  while (i < dot) {
+  // 0 <= i and dot < len, so the extra tests never stop the loop.
+  while (i >= 0 && i < dot && i < len) {
     const c = v.charCodeAt(i)
     if (c < 48 || c > 57) {
       return v
     }
     i = i + 1
   }
-  let j = dot + 1
-  if (j === toI32(v.length)) {
+  // dot < len, so this is `dot + 1 === len`: nothing after the dot.
+  if (dot >= len - 1) {
     return v
   }
-  while (j < toI32(v.length)) {
+  let j = dot + 1
+  while (j < len) {
     if (v.charCodeAt(j) !== 48) {
       return v
     }
     j = j + 1
   }
-  return v.slice(0, dot)
+  return v.substring(0, dot)
 }
 
 /**
@@ -184,7 +198,9 @@ export const renderSexp = (v: Sexp): string => {
     return `-${renderSexp(v.items[1])}`
   }
   if (v.items.length === 3 && !v.items[0].isList && v.items[0].atom === "/") {
-    return `${renderSexp(v.items[1])}/${renderSexp(v.items[2])}`
+    const num = v.items[1]
+    const den = v.items[2]
+    return `${renderSexp(num)}/${renderSexp(den)}`
   }
   const parts: string[] = []
   for (const item of v.items) {
@@ -235,7 +251,8 @@ export class QueryAnswer {
    */
   value(name: string): string | null {
     const i = toI32(this.names.indexOf(name))
-    return i < 0 ? null : this.values[i]
+    // parseModel pushes a value with each name, so i < values.length whenever i >= 0.
+    return i < 0 || i >= toI32(this.values.length) ? null : this.values[i]
   }
 }
 
@@ -254,22 +271,27 @@ export const parseModel = (answer: QueryAnswer, text: string): i32 => {
   if (sexp === null || !sexp.isList) {
     return 0
   }
-  let count = 0
+  // u32, so the count cannot overflow; it is at most sexp.items.length.
+  let count: u32 = 0
   for (const pair of sexp.items) {
-    if (pair.isList && pair.items.length === 2 && !pair.items[0].isList && smtIsIdentifier(pair.items[0].atom)) {
-      answer.names.push(pair.items[0].atom)
-      answer.values.push(renderSexp(pair.items[1]))
-      count = count + 1
+    if (pair.isList && pair.items.length === 2 && !pair.items[0].isList) {
+      const name = pair.items[0]
+      const value = pair.items[1]
+      if (smtIsIdentifier(name.atom)) {
+        answer.names.push(name.atom)
+        answer.values.push(renderSexp(value))
+        count = count + 1
+      }
     }
   }
-  return count
+  return toI32(count)
 }
 
 // The next `@@Q` at the start of a line, so that text inside a model value or
 // an error message is never read as a marker.
 const smtMarker = (stdout: string, from: i32): i32 => {
   const n = toI32(stdout.length)
-  for (let at = indexOfAny(stdout, "@", from); at >= 0 && at + 2 < n; at = indexOfAny(stdout, "@", at + 1)) {
+  for (let at = indexOfAny(stdout, "@", from); at >= 0 && at < n - 2; at = indexOfAny(stdout, "@", at + 1)) {
     const lineStart = at === 0 || stdout.charCodeAt(at - 1) === 10
     if (lineStart && stdout.charCodeAt(at + 1) === 64 && stdout.charCodeAt(at + 2) === 81) {
       return at
@@ -289,17 +311,25 @@ const smtMarker = (stdout: string, from: i32): i32 => {
  */
 export const smtErrors = (stdout: string): string[] => {
   const out: string[] = []
-  const n = toI32(stdout.length)
-  let start = 0
-  while (start < n) {
-    const nl = indexOfAny(stdout, "\n", start)
-    const end = nl < 0 ? n : nl
-    if (stdout.slice(start, end).startsWith("(error")) {
-      out.push(stdout.slice(start, end))
+  for (const line of split(stdout, "\n")) {
+    if (line.startsWith("(error")) {
+      out.push(line)
     }
-    start = end + 1
   }
   return out
+}
+
+/** The answer one query's output gives: its verdict line, and the model after a `sat`. */
+const smtAnswer = (body: string): QueryAnswer => {
+  const nl = toI32(body.indexOf("\n"))
+  const head = normalizeValue(nl < 0 ? body : body.substring(0, nl))
+  const result = head === "sat" || head === "unsat" ? head : "unknown"
+  const answer = new QueryAnswer(result)
+  // indexOf answers -1 or nl < body.length, so the length test never fails.
+  if (result === "sat" && nl >= 0 && nl < toI32(body.length)) {
+    parseModel(answer, body.substring(nl + 1))
+  }
+  return answer
 }
 
 /**
@@ -317,33 +347,29 @@ export const parseZ3Output = (stdout: string, queryCount: i32): QueryAnswer[] =>
   for (let i = 0; i < queryCount; i++) {
     answers.push(new QueryAnswer("unknown"))
   }
+  const n = toI32(stdout.length)
   let at = smtMarker(stdout, 0)
-  while (at >= 0) {
+  // smtMarker answers -1 or an `at` with at + 2 < n, so `at < n - 2` never stops the loop.
+  while (at >= 0 && at < n - 2) {
     let digitsEnd = at + 3
-    while (
-      digitsEnd < toI32(stdout.length) &&
-      stdout.charCodeAt(digitsEnd) >= 48 &&
-      stdout.charCodeAt(digitsEnd) <= 57
-    ) {
+    while (digitsEnd < n && stdout.charCodeAt(digitsEnd) >= 48 && stdout.charCodeAt(digitsEnd) <= 57) {
       digitsEnd = digitsEnd + 1
     }
     const lineEnd = indexOfAny(stdout, "\n", at)
-    if (lineEnd < 0) {
+    // indexOfAny answers -1 or at <= lineEnd < n, so `lineEnd >= n` never holds.
+    if (lineEnd < 0 || lineEnd >= n) {
       return answers
     }
     const bodyStart = lineEnd + 1
     const next = smtMarker(stdout, bodyStart)
-    const body = stdout.slice(bodyStart, next < 0 ? toI32(stdout.length) : next)
+    // next is -1 or at least bodyStart, so substring cuts what slice did.
+    const body = stdout.substring(bodyStart, next < 0 ? n : next)
     if (digitsEnd > at + 3) {
-      const qid = parseInt(stdout.slice(at + 3, digitsEnd))
-      if (qid < queryCount) {
-        const nl = toI32(body.indexOf("\n"))
-        const head = normalizeValue(nl < 0 ? body : body.slice(0, nl))
-        const result = head === "sat" || head === "unsat" ? head : "unknown"
-        const answer = new QueryAnswer(result)
-        if (result === "sat" && nl >= 0) {
-          parseModel(answer, body.slice(nl + 1))
-        }
+      const qid = parseInt(stdout.substring(at + 3, digitsEnd))
+      // answers holds queryCount entries, so the test is the old `qid < queryCount`; it sits
+      // right above the write, after the call, so the prover keeps it.
+      const answer = smtAnswer(body)
+      if (qid >= 0 && qid < toI32(answers.length)) {
         answers[qid] = answer
       }
     }

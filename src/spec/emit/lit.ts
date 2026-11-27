@@ -44,7 +44,8 @@ const emitParseU64 = (digits: string): u64 => {
  * literal is an i32 unless its context types it, and exact only up to 2^53,
  * so: an i32 is the literal; a value that fits i32 is converted; a larger one
  * is typed by a `toT(0) +` beside it; one past 2^53 is built as
- * hi * 2^32 + lo, each part exact and no step out of the type's range.
+ * hi * 2^32 + lo in u64, each part exact, and an i64 is that u64's two's
+ * complement bits read back with toI64, so no signed step can overflow.
  *
  * @param text the value in decimal, within `ty`'s range
  * @param ty an integer type other than i8 and i16
@@ -64,18 +65,17 @@ export const emitIntLit = (text: string, ty: string): string => {
     return `(${to}(0) + ${emitNeg(text)})`
   }
   const m = emitParseU64(mag)
+  if (ty === "i64") {
+    // Signed arithmetic must be proven to fit, and hi * 2^32 + lo is not:
+    // the value's two's complement bits are built in u64, which wraps, and
+    // toI64 reads them back as they are.
+    const bits: u64 = negative ? ~m + toU64(1) : m
+    return `toI64(${emitIntLit(`${bits}`, "u64")})`
+  }
   const q: u64 = m >> toU64(32)
   const low32: u64 = (toU64(1) << toU64(32)) - toU64(1)
   const r: u64 = m & low32
-  if (!negative) {
-    return `(${emitIntLit(`${q}`, ty)} * 4294967296 + ${r})`
-  }
-  // -m = hi * 2^32 + lo with 0 <= lo < 2^32: hi rounds -m / 2^32 down.
-  if (r === toU64(0)) {
-    return `(${emitIntLit(`-${q}`, ty)} * 4294967296 + 0)`
-  }
-  const lo: u64 = low32 - r + toU64(1)
-  return `(${emitIntLit(`-${q + toU64(1)}`, ty)} * 4294967296 + ${lo})`
+  return `(${emitIntLit(`${q}`, ty)} * 4294967296 + ${r})`
 }
 
 /** Whether 16 hex digits of binary64 bits are a NaN or an infinity. */
@@ -140,7 +140,11 @@ export const emitF64Lit = (text: string, bits: string | null): string => {
   return `toF64(${out.join("")})`
 }
 
-const emitHexDigit = (v: i32): string => "0123456789abcdef".substring(v, v + 1)
+/** The low hex digit of `v`. */
+const emitHexDigit = (v: i32): string => {
+  const d = v & 15
+  return "0123456789abcdef".substring(d, d + 1)
+}
 
 /**
  * Text as a Nish string literal: quotes, backslashes and control characters
@@ -151,12 +155,13 @@ const emitHexDigit = (v: i32): string => "0123456789abcdef".substring(v, v + 1)
  */
 export const emitQuote = (s: string): string => {
   const out: string[] = ['"']
-  let j = 0
-  while (j < s.length) {
-    const cp = charsCodePointAt(s, j)
-    const n = charsSequenceLength(s, j)
+  // In u32, so the steps cannot overflow: each is 1 to 4 bytes, inside the text.
+  let j: u32 = 0
+  while (j < toU32(s.length)) {
+    const cp = charsCodePointAt(s, toI32(j))
+    const n = toU32(charsSequenceLength(s, toI32(j)))
     if (cp === 0x22 || cp === 0x5c) {
-      out.push(`\\${s.substring(j, j + 1)}`)
+      out.push(`\\${s.substring(toI32(j), toI32(j + 1))}`)
     } else if (cp === 0x0a) {
       out.push("\\n")
     } else if (cp === 0x09) {
@@ -166,7 +171,7 @@ export const emitQuote = (s: string): string => {
     } else if (cp < 0x20 || cp === 0x7f) {
       out.push(`\\u00${emitHexDigit(cp >> 4)}${emitHexDigit(cp & 15)}`)
     } else {
-      out.push(s.substring(j, j + n))
+      out.push(s.substring(toI32(j), toI32(j + n)))
     }
     j += n
   }
@@ -183,17 +188,21 @@ export const emitQuote = (s: string): string => {
  */
 export const emitCommentText = (s: string): string => {
   const out: string[] = []
-  let j = 0
-  while (j < s.length) {
-    const cp = charsCodePointAt(s, j)
-    const n = charsSequenceLength(s, j)
+  // The code point before this one: `*` is one byte, so this is the byte before.
+  let prev = -1
+  // In u32, so the steps cannot overflow: each is 1 to 4 bytes, inside the text.
+  let j: u32 = 0
+  while (j < toU32(s.length)) {
+    const cp = charsCodePointAt(s, toI32(j))
+    const n = toU32(charsSequenceLength(s, toI32(j)))
     if (charsIsControl(cp)) {
       out.push(" ")
-    } else if (cp === 0x2f && j > 0 && s.charCodeAt(j - 1) === 0x2a) {
+    } else if (cp === 0x2f && prev === 0x2a) {
       out.push(" /")
     } else {
-      out.push(s.substring(j, j + n))
+      out.push(s.substring(toI32(j), toI32(j + n)))
     }
+    prev = cp
     j += n
   }
   return out.join("")

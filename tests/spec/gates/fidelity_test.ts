@@ -1060,7 +1060,7 @@ const fidelityTestPairedRows = (t: Suite): void => {
       strs,
       `{"str": "passwd"}, {"str": "foo"}`,
       "0",
-      `W1: args[0] "passwd", args[1] "foo" are each printed in RFC §4 ("Test Vectors"), but never on one line together`,
+      `W1: args[0] "passwd", args[1] "foo" are each printed in RFC §4 ("Test Vectors"), but never on one line or in one sentence together`,
     ],
     ["both paired on one line", strs, `{"str": "passwd"}, {"str": "salt"}`, "0", ""],
     [
@@ -1143,7 +1143,7 @@ const fidelityTestPairedPlaces = (t: Suite): void => {
     const at = parseInt(r[3])
     const fn = `{"name": "kdf", "params": [${r[1]}], "returns": "bytes"}`
     const expect = `{"hex": "${fidelityTestLabelHex(at, "")}", "label": "${fidelityTestLabelJson(labels[at])}"}`
-    const want = `W1: args[0] ${r[5]}, args[1] "${r[4]}" are each printed in RFC §4 ("Test Vectors"), but never on one line together`
+    const want = `W1: args[0] ${r[5]}, args[1] "${r[4]}" are each printed in RFC §4 ("Test Vectors"), but never on one line or in one sentence together`
     fidelityTestRowIs(t, `4231 §4: ${r[0]}`, fidelityTestWrapCall("4231", rfc, fn, "kdf", "4", r[2], expect), want)
   }
 }
@@ -1203,7 +1203,7 @@ const fidelityTestPrintedLabel = (t: Suite): void => {
     `   ${fidelityTestLabelHex(6, " ")}`,
     "",
   ].join("\n")
-  const never = 'are each printed in RFC §4 ("Test Vectors"), but never on one line together'
+  const never = 'are each printed in RFC §4 ("Test Vectors"), but never on one line or in one sentence together'
   const pb = 'PBKDF2 (P="passwd", S="salt", c=1)'
   const lower = 'pbkdf2 (P="passwd", S="salt", c=1)'
   const sc = 'scrypt (P="PWORD", S="NaCl", N=1024)'
@@ -1700,6 +1700,61 @@ const fidelityTestWrapped = (t: Suite): void => {
       two,
       `W1.args[0]: args[0] "passwd" is printed in the call label "PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)" in RFC §11 ("Test Vectors for PBKDF2 with HMAC-SHA-256"), not in "PBKDF2-HMAC-SHA-256 (P="Password", S="NaCl", c=80000, dkLen=64)" that the expected value is printed under: they are different test cases`,
     ],
+    [
+      "case 1 with its strings swapped",
+      `{"str": "salt"}, {"str": "passwd"}, {"int": 1, "label": "c"}, {"int": 64, "label": "dkLen"}`,
+      one,
+      `W1.args[1]: args[1] "passwd" is printed in the call label "PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)" in RFC §11 ("Test Vectors for PBKDF2 with HMAC-SHA-256") only before args[0], which the contract passes ahead of it: the arguments are not in the order the label prints them`,
+    ],
+    [
+      "case 2 with its salt passed twice",
+      `{"str": "NaCl"}, {"str": "NaCl"}, {"int": 80000, "label": "c"}, {"int": 64, "label": "dkLen"}`,
+      two,
+      `W1.args[1]: args[1] "NaCl" is printed in the call label "PBKDF2-HMAC-SHA-256 (P="Password", S="NaCl", c=80000, dkLen=64)" in RFC §11 ("Test Vectors for PBKDF2 with HMAC-SHA-256") only before args[0]`,
+    ],
+    ["case 1 with its integers unlabelled", `{"str": "passwd"}, {"str": "salt"}, {"int": 1}, {"int": 64}`, one, ""],
+    [
+      "case 1 with its unlabelled integers swapped",
+      `{"str": "passwd"}, {"str": "salt"}, {"int": 64}, {"int": 1}`,
+      one,
+      `W1.args[3]: args[3] 1 is printed in the call label "PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)" in RFC §11 ("Test Vectors for PBKDF2 with HMAC-SHA-256") only before args[2], which the contract passes ahead of it`,
+    ],
+    [
+      "case 1 with an unlabelled integer it does not print",
+      `{"str": "passwd"}, {"str": "salt"}, {"int": 2}, {"int": 64}`,
+      one,
+      `W1.args[2]: args[2] 2 is not printed in "PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)" that the expected value is printed under in RFC §11 ("Test Vectors for PBKDF2 with HMAC-SHA-256"), so nothing pairs it with that test case`,
+    ],
+    [
+      "case 1 with its labelled integers swapped",
+      `{"str": "passwd"}, {"str": "salt"}, {"int": 64, "label": "dkLen"}, {"int": 1, "label": "c"}`,
+      one,
+      "",
+    ],
+    [
+      "case 1 with a labelled integer ahead of an unlabelled one it prints after",
+      `{"str": "passwd"}, {"str": "salt"}, {"int": 64, "label": "dkLen"}, {"int": 1}`,
+      one,
+      "",
+    ],
+    [
+      "case 1 with an unlabelled integer that only a labelled one's number prints",
+      `{"str": "passwd"}, {"str": "salt"}, {"int": 1, "label": "c"}, {"int": 1}`,
+      one,
+      `W1.args[3]: args[3] 1 is not printed in "PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)" that the expected value is printed under`,
+    ],
+    [
+      "case 1 with an unlabelled integer ahead of a labelled one that holds its number",
+      `{"str": "passwd"}, {"str": "salt"}, {"int": 64}, {"int": 64, "label": "dkLen"}`,
+      one,
+      `W1.args[2]: args[2] 64 is not printed in "PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)" that the expected value is printed under`,
+    ],
+    [
+      "case 1 with an unlabelled count beside its labelled length",
+      `{"str": "passwd"}, {"str": "salt"}, {"int": 1}, {"int": 64, "label": "dkLen"}`,
+      one,
+      "",
+    ],
   ]
   for (const r of pbRows) {
     fidelityTestRowIs(t, `7914 §11: ${r[0]}`, fidelityTestWrap("7914", scrypt, pbkdf2Fn, "11", r[1], r[2]), r[3])
@@ -1929,14 +1984,579 @@ const fidelityTestWrapped = (t: Suite): void => {
     s3,
     `W1.args[2]: args[2] N=1048576 is printed in the call label "scrypt (P="pleaseletmein", S="SodiumChloride", N=1048576, r=8, p=1, dkLen=64)" in RFC §12 ("Test Vectors for scrypt"), not in "scrypt (P="pleaseletmein", S="SodiumChloride", N=16384, r=8, p=1, dkLen=64)" that the expected value is printed under`,
   ])
+  scRows.push([
+    "case 2 with case 1's empty password",
+    `{"str": ""}, {"str": "NaCl"}, {"int": 1024, "label": "N"}, {"int": 8, "label": "r"}, {"int": 16, "label": "p"}, {"int": 64, "label": "dkLen"}`,
+    s2,
+    `W1.args[0]: args[0] "" is not printed in "scrypt (P="password", S="NaCl", N=1024, r=8, p=16, dkLen=64)" that the expected value is printed under in RFC §12 ("Test Vectors for scrypt"), so nothing pairs it with that test case`,
+  ])
   for (const r of scRows) {
     fidelityTestRowIs(t, `7914 §12: ${r[0]}`, fidelityTestWrap("7914", scrypt, scryptFn, "12", r[1], r[2]), r[3])
+  }
+}
+
+/**
+ * RFC 4648 §10, one test case a line, a page break between two of them: a
+ * value pairs only with the one printed on its line, not the line beside it.
+ */
+const fidelityTestBase64 = (t: Suite): void => {
+  const rfc = [
+    "Request for Comments: 4648",
+    "",
+    "1.  Rules",
+    "",
+    "   It MUST derive.",
+    "",
+    "10.  Test Vectors",
+    "",
+    '      BASE64("") = ""',
+    "",
+    '      BASE64("f") = "Zg=="',
+    "",
+    '      BASE64("fo") = "Zm8="',
+    fidelityTestBreak("4648", 12),
+    '      BASE64("foo") = "Zm9v"',
+    "",
+  ].join("\n")
+  const fn = `{"name": "f", "params": [{"name": "s", "type": "string"}], "returns": "string"}`
+  const rows: string[][] = [
+    ["a value and its encoding", "f", "Zg==", ""],
+    [
+      "a value and the next line's encoding",
+      "f",
+      "Zm8=",
+      `W1: args[0] "f", expect "Zm8=" are each printed in RFC §10 ("Test Vectors"), but never on one line or in one sentence together, so nothing pairs them as one test case`,
+    ],
+    ["a value and its encoding, past the page break", "foo", "Zm9v", ""],
+    [
+      "a value and the encoding past the page break",
+      "fo",
+      "Zm9v",
+      `W1: args[0] "fo", expect "Zm9v" are each printed in RFC §10 ("Test Vectors"), but never on one line or in one sentence together, so nothing pairs them as one test case`,
+    ],
+    ["the empty value and its encoding", "", "", ""],
+  ]
+  for (const r of rows) {
+    fidelityTestRowIs(
+      t,
+      `4648 §10: ${r[0]}`,
+      fidelityTestWrap("4648", rfc, fn, "10", `{"str": "${r[1]}"}`, `{"str": "${r[2]}"}`),
+      r[3],
+    )
+  }
+}
+
+/**
+ * A section A.1 of prose, `body` its lines; a line `|` breaks the page
+ * there (fidelityTestBreak), as `rfcParse` reads one.
+ */
+const fidelityTestProseRfc = (body: string): string => {
+  const out = ["Request for Comments: 9000", "", "1.  Rules", "", "   It MUST derive.", "", "A.1.  Examples", ""]
+  let rest = body
+  let at = rest.indexOf("\n")
+  while (at >= 0) {
+    out.push(rest.slice(0, at))
+    rest = rest.slice(at + 1)
+    at = rest.indexOf("\n")
+  }
+  out.push(rest)
+  return `${out.map((line: string): string => (line === "|" ? fidelityTestBreak("9000", 140) : line)).join("\n")}\n`
+}
+
+/**
+ * The label of the first hex value in `body`: its line's text before it,
+ * which the hex check reads it by, escaped for JSON.
+ */
+const fidelityTestProseLabel = (body: string): string => {
+  const at = body.indexOf("0x") >= 0 ? body.indexOf("0x") : body.indexOf("0X")
+  let from = at
+  while (from > 0 && body.charCodeAt(from - 1) !== 10) {
+    from = from - 1
+  }
+  while (body.charCodeAt(from) === 32) {
+    from = from + 1
+  }
+  const end = at > from && body.charCodeAt(at - 1) === 32 ? at - 1 : at
+  let out = ""
+  for (let i = from; i < end; i = i + 1) {
+    out = `${out}${body.charCodeAt(i) === 34 ? "\\" : ""}${body.slice(i, i + 1)}`
+  }
+  return out
+}
+
+/** The refusal of an integer no one prose sentence holds with a hex value. */
+const FIDELITY_TEST_PROSE_APART: string = "never in one sentence with args[0] 0x"
+
+/** The refusal of a value its example's paragraph prints again. */
+const FIDELITY_TEST_PROSE_TWICE: string = "printed more than once in the paragraph of RFC §A.1"
+
+/** The warning on an integer prose does not place. */
+const FIDELITY_TEST_PROSE_UNPLACED: string = 'has no "label" to find it by'
+
+/**
+ * An unlabelled integer expected from a hex value, placed by one prose
+ * sentence holding both (RFC 9000 §A.1's "the eight-byte sequence 0x…
+ * decodes to …"): each row is a name, the section's lines, the hex, the
+ * integer, the finding or warning ("" when they pair), and the hex
+ * value's label when it is not its line's text before it.
+ */
+const fidelityTestProseInts = (t: Suite): void => {
+  const fn = `{"name": "f", "params": [{"name": "b", "type": "bytes"}], "returns": "u64"}`
+  const one = "   For example, the one-byte sequence 0x25 decodes to 37."
+  const rows: string[][] = [
+    ["one sentence", one, "25", "37", ""],
+    [
+      "a grouped integer",
+      "   The sequence 0xc2197c5eff14e88c decodes to 151,288,809,941,952,652.",
+      "c2197c5eff14e88c",
+      `"151288809941952652"`,
+      "",
+    ],
+    ["upper-case hex", "   The sequence 0xC0FFEE decodes to 12648430.", "c0ffee", "12648430", ""],
+    [
+      "another sentence's integer",
+      "   The sequence 0x25 decodes to 37. The sequence 0x7bbd decodes to 15293.",
+      "25",
+      "15293",
+      FIDELITY_TEST_PROSE_APART,
+    ],
+    [
+      "another `;` part's integer",
+      "   The sequence 0x25 decodes to 37; 0x7bbd decodes to 15293.",
+      "25",
+      "15293",
+      FIDELITY_TEST_PROSE_APART,
+    ],
+    [
+      "another paragraph's integer",
+      `${one}\n\n   The sequence 0x7bbd decodes to 15293.`,
+      "25",
+      "15293",
+      FIDELITY_TEST_PROSE_APART,
+    ],
+    ["a section number is no end", "   The sequence 0x25 (Section 5.2) decodes to 37.", "25", "37", ""],
+    [
+      "text after the last end is no sentence",
+      "   The sequence 0x25 decodes to 37",
+      "25",
+      "37",
+      FIDELITY_TEST_PROSE_APART,
+    ],
+    [
+      "`.)` ends a sentence",
+      "   (The sequence 0x25 decodes to 37.) It is not 15293.",
+      "25",
+      "15293",
+      FIDELITY_TEST_PROSE_APART,
+    ],
+    [
+      "`.'` ends a sentence",
+      "   'The sequence 0x25 decodes to 37.' It is not 15293.",
+      "25",
+      "15293",
+      FIDELITY_TEST_PROSE_APART,
+    ],
+    [
+      "`.]` ends a sentence",
+      "   [The sequence 0x25 decodes to 37.] It is not 15293.",
+      "25",
+      "15293",
+      FIDELITY_TEST_PROSE_APART,
+    ],
+    [
+      "`.}` ends a sentence",
+      "   {The sequence 0x25 decodes to 37.} It is not 15293.",
+      "25",
+      "15293",
+      FIDELITY_TEST_PROSE_APART,
+    ],
+    [
+      "`.’` ends a sentence",
+      "   ‘The sequence 0x25 decodes to 37.’ It is not 15293.",
+      "25",
+      "15293",
+      FIDELITY_TEST_PROSE_APART,
+    ],
+    [
+      "`.”` ends a sentence",
+      "   “The sequence 0x25 decodes to 37.” It is not 15293.",
+      "25",
+      "15293",
+      FIDELITY_TEST_PROSE_APART,
+    ],
+    [
+      '`.")` ends a sentence',
+      '   ("The sequence 0x25 decodes to 37.") It is not 15293.',
+      "25",
+      "15293",
+      FIDELITY_TEST_PROSE_APART,
+    ],
+    [
+      "`?` ends a sentence",
+      "   Does the sequence 0x25 decode? It decodes to 37.",
+      "25",
+      "37",
+      FIDELITY_TEST_PROSE_APART,
+    ],
+    ["`!` ends a sentence", "   The sequence 0x25 is short! It decodes to 37.", "25", "37", FIDELITY_TEST_PROSE_APART],
+    ["a `.` not before a space ends none", "   The sequence 0x25 decodes to file.txt and to 37.", "25", "37", ""],
+    ["a sentence on past a page break onto a digit", "   The sequence 0x25 decodes to\n|\n   37.", "25", "37", ""],
+    [
+      "a sentence on past a page break onto a lowercase word",
+      "   The sequence 0x25\n|\n   decodes to 37.",
+      "25",
+      "37",
+      "",
+    ],
+    [
+      "no sentence on past a page break onto a capital",
+      "   The sequence 0x25\n|\n   Decodes to 37.",
+      "25",
+      "37",
+      FIDELITY_TEST_PROSE_APART,
+    ],
+    [
+      "no page break: a blank line ends the paragraph",
+      "   The sequence 0x25\n\n   decodes to 37.",
+      "25",
+      "37",
+      FIDELITY_TEST_PROSE_APART,
+    ],
+    [
+      "a list item starts a paragraph",
+      "   o  The sequence 0x25\n   o  decodes to 37.",
+      "25",
+      "37",
+      FIDELITY_TEST_PROSE_APART,
+      "The sequence",
+    ],
+    [
+      "a `*` item starts a paragraph",
+      "   *  The sequence 0x25\n   *  decodes to 37.",
+      "25",
+      "37",
+      FIDELITY_TEST_PROSE_APART,
+    ],
+    [
+      "a `-` item starts a paragraph",
+      "   -  The sequence 0x25\n   -  decodes to 37.",
+      "25",
+      "37",
+      FIDELITY_TEST_PROSE_APART,
+    ],
+    ["a wrapped line goes on its paragraph", "   The sequence 0x25\n   decodes to 37.", "25", "37", ""],
+    [
+      "printed twice in the paragraph",
+      "   The sequence 0x25 decodes to 37. Again, 0x25 is short.",
+      "25",
+      "37",
+      FIDELITY_TEST_PROSE_TWICE,
+    ],
+    [
+      "the integer printed twice",
+      "   The sequence 0x25 decodes to 37. Again, 37 is small.",
+      "25",
+      "37",
+      FIDELITY_TEST_PROSE_TWICE,
+    ],
+    [
+      "`.` before a page break ends the paragraph",
+      "   The sequence 0x25 decodes to 37.\n|\n   0x25 is short.",
+      "25",
+      "37",
+      "",
+    ],
+    [
+      "`?` before a page break ends the paragraph",
+      "   The sequence 0x25 decodes to 37?\n|\n   0x25 is short.",
+      "25",
+      "37",
+      "",
+    ],
+    [
+      "`!` before a page break ends the paragraph",
+      "   The sequence 0x25 decodes to 37!\n|\n   0x25 is short.",
+      "25",
+      "37",
+      "",
+    ],
+    [
+      "`.)` before a page break ends the paragraph",
+      "   The sequence 0x25 decodes to 37 (in 8 bits.)\n|\n   0x25 is short.",
+      "25",
+      "37",
+      "",
+    ],
+    [
+      "`.”` before a page break ends the paragraph",
+      "   “The sequence 0x25 decodes to 37.”\n|\n   0x25 is short.",
+      "25",
+      "37",
+      "",
+    ],
+    [
+      "`)` alone before a page break ends none",
+      "   The sequence 0x25 decodes to 37 (here)\n|\n   and 0x25 is short.",
+      "25",
+      "37",
+      FIDELITY_TEST_PROSE_TWICE,
+    ],
+    [
+      "no end before a page break goes on",
+      "   The sequence 0x25 decodes to 37 and\n|\n   0x25 is short.",
+      "25",
+      "37",
+      FIDELITY_TEST_PROSE_TWICE,
+    ],
+    [
+      "`this value` goes on the sentence before",
+      "   The sequence 0x25 is short. This value decodes to 37.",
+      "25",
+      "37",
+      "",
+    ],
+    [
+      "`this string` goes on the sentence before",
+      "   The sequence 0x25 is short. THIS STRING decodes to 37.",
+      "25",
+      "37",
+      "",
+    ],
+    [
+      "`this stringent` is not `this string`",
+      "   The sequence 0x25 is short. This stringent rule gives 37.",
+      "25",
+      "37",
+      FIDELITY_TEST_PROSE_APART,
+    ],
+    [
+      "`unthis value` is not `this value`",
+      "   The sequence 0x25 is short. Unthis value gives 37.",
+      "25",
+      "37",
+      FIDELITY_TEST_PROSE_APART,
+    ],
+    [
+      "`this value` in the first sentence goes on none",
+      "   This value 0x25 is short. It decodes to 37.",
+      "25",
+      "37",
+      FIDELITY_TEST_PROSE_APART,
+    ],
+    ["SHA-256 prints no 256", "   The sequence 0x25 decodes with SHA-256.", "25", "256", FIDELITY_TEST_PROSE_UNPLACED],
+    ["key_256 prints no 256", "   The sequence 0x25 decodes with key_256.", "25", "256", FIDELITY_TEST_PROSE_UNPLACED],
+    [
+      "16-bit prints no 16",
+      "   The sequence 0x25 decodes as a 16-bit value.",
+      "25",
+      "16",
+      FIDELITY_TEST_PROSE_UNPLACED,
+    ],
+    ["-16 prints no 16", "   The sequence 0x25 never decodes to -16.", "25", "16", FIDELITY_TEST_PROSE_UNPLACED],
+    [
+      "a dump's `=` prints no prose",
+      "   The sequence 0x25 decodes, and x = 37.",
+      "25",
+      "37",
+      FIDELITY_TEST_PROSE_UNPLACED,
+    ],
+    [
+      "a dump's `:` prints no prose",
+      "   The sequence 0x25 decodes, and x: 37.",
+      "25",
+      "37",
+      FIDELITY_TEST_PROSE_UNPLACED,
+    ],
+    [
+      "a dump's `->` prints no prose",
+      "   The sequence 0x25 decodes, and x -> 37.",
+      "25",
+      "37",
+      FIDELITY_TEST_PROSE_UNPLACED,
+    ],
+    [
+      "a dump's `=>` prints no prose",
+      "   The sequence 0x25 decodes, and x => 37.",
+      "25",
+      "37",
+      FIDELITY_TEST_PROSE_UNPLACED,
+    ],
+    ["`is` prints no prose", "   The sequence 0x25 decodes, and x is 37.", "25", "37", FIDELITY_TEST_PROSE_UNPLACED],
+    ["`this` is not `is`", "   The sequence 0x25 decodes to this 37.", "25", "37", ""],
+    ["`>` alone is no mark", "   The sequence 0x25 decodes to > 37.", "25", "37", ""],
+    [
+      "a longer hex value prints no shorter one",
+      "   The one-byte 0x25 is short. A longer 0x2501 decodes to 37.",
+      "25",
+      "37",
+      FIDELITY_TEST_PROSE_APART,
+    ],
+    [
+      "a hex value after a mark prints no prose",
+      "   x = 0x25, and it decodes to 37.",
+      "25",
+      "37",
+      FIDELITY_TEST_PROSE_UNPLACED,
+      "x",
+    ],
+  ]
+  // An integer alone, with no argument to pair it with, is not placed by
+  // being printed somewhere in prose.
+  fidelityTestRowIs(
+    t,
+    "prose: an integer with no argument",
+    fidelityTestWrap(
+      "9000",
+      fidelityTestProseRfc("   The answer is 0x25 and then 37."),
+      `{"name": "f", "params": [], "returns": "u64"}`,
+      "A.1",
+      "",
+      `{"int": 37}`,
+    ),
+    FIDELITY_TEST_PROSE_UNPLACED,
+  )
+  for (const r of rows) {
+    const rfc = fidelityTestProseRfc(r[1])
+    const hex = `{"hex": "${r[2]}", "label": "${r.length > 5 ? r[5] : fidelityTestProseLabel(r[1])}"}`
+    fidelityTestRowIs(t, `prose: ${r[0]}`, fidelityTestWrap("9000", rfc, fn, "A.1", hex, `{"int": ${r[3]}}`), r[4])
+  }
+}
+
+/**
+ * Strings no one line holds together, paired by one prose example (RFC 6455
+ * §4.2.2's "if the key were "…", … giving "…""): each row is a name, the
+ * section's lines, the argument, the expected value, and the finding.
+ */
+const fidelityTestProseStrings = (t: Suite): void => {
+  const fn = `{"name": "f", "params": [{"name": "s", "type": "string"}], "returns": "string"}`
+  const apart = "but never on one line or in one sentence together"
+  const rows: string[][] = [
+    ["one sentence over lines", '   If the key were "dGhl", the server\n   would answer "s3pP".', "dGhl", "s3pP", ""],
+    [
+      "one sentence over a page break",
+      '   If the key were "dGhl", the server\n|\n   would answer "s3pP".',
+      "dGhl",
+      "s3pP",
+      "",
+    ],
+    [
+      "a chain over a page break",
+      '   If the key were "dGhl", the server would hash it. It\n|\n   then gives this value, "s3pP".',
+      "dGhl",
+      "s3pP",
+      "",
+    ],
+    ["two sentences", '   If the key were "dGhl", it is long.\n   The answer is short: "s3pP".', "dGhl", "s3pP", apart],
+    [
+      "the argument printed twice",
+      '   If the key were "dGhl", the server\n   would answer "s3pP".\n   Again, "dGhl" is a key.',
+      "dGhl",
+      "s3pP",
+      FIDELITY_TEST_PROSE_TWICE,
+    ],
+    ["after `=` on another line", '   BASE64("f") = "Zg==" and\n   BASE64("fo") = "Zm8=".', "f", "Zm8=", apart],
+    ["after `->` on another line", '   BASE64("f") -> "Zg==" and\n   BASE64("fo") -> "Zm8=".', "f", "Zm8=", apart],
+    ["after `=>` on another line", '   BASE64("f") => "Zg==" and\n   BASE64("fo") => "Zm8=".', "f", "Zm8=", apart],
+    ["after `is` on another line", '   BASE64("f") is "Zg==" and\n   BASE64("fo") is "Zm8=".', "f", "Zm8=", apart],
+    ["after `this`, which is not `is`", '   For example, "f" encodes to this\n   string, "Zm8=".', "f", "Zm8=", ""],
+  ]
+  for (const r of rows) {
+    const rfc = fidelityTestProseRfc(r[1])
+    fidelityTestRowIs(
+      t,
+      `prose: ${r[0]}`,
+      fidelityTestWrap("9000", rfc, fn, "A.1", `{"str": "${r[2]}"}`, `{"str": "${r[3]}"}`),
+      r[4],
+    )
+  }
+}
+
+/**
+ * A call label's unlabelled integer is an argument, not a variant: its digits
+ * are cut from the label before the variants are read.
+ */
+const fidelityTestBareVariant = (t: Suite): void => {
+  const rfc = [
+    "Request for Comments: 4648",
+    "",
+    "1.  Rules",
+    "",
+    "   It MUST derive.",
+    "",
+    "10.  Test Vectors",
+    "",
+    '   F (x="a", n=16) =',
+    "   55 ac 04 6e",
+    "",
+    '   F (x="a", n=32) =',
+    "   4d dc d8 f6",
+    "",
+    "11.  Variants",
+    "",
+    '   F-256 (x="a", n=16) =',
+    "   55 ac 04 6e",
+    "",
+    '   F-512 (x="a", n=32) =',
+    "   4d dc d8 f6",
+    "",
+    "12.  Signs",
+    "",
+    '   G (x="a", n=-1) =',
+    "   55 ac 04 6e",
+    "",
+    '   G (x="a", n=1) =',
+    "   4d dc d8 f6",
+    "",
+  ].join("\n")
+  // A name, the call, the section, the integer, the expected hex, its label (as JSON) and the message wanted.
+  const rows: string[][] = [
+    ["a bare integer is not a variant", "f32", "10", "16", "55ac046e", 'F (x=\\"a\\", n=16)', ""],
+    ["a bare integer, the label's own variant", "f256", "11", "16", "55ac046e", 'F-256 (x=\\"a\\", n=16)', ""],
+    [
+      "a bare integer, another variant's call",
+      "f512",
+      "11",
+      "16",
+      "55ac046e",
+      'F-256 (x=\\"a\\", n=16)',
+      'the value is printed under "F-256 (x="a", n=16)" in RFC §11 ("Variants"), but f512 names 512',
+    ],
+    ["a bare negative integer", "g", "12", "-1", "55ac046e", 'G (x=\\"a\\", n=-1)', ""],
+    [
+      "a bare integer without the sign printed before it",
+      "g",
+      "12",
+      "1",
+      "55ac046e",
+      'G (x=\\"a\\", n=-1)',
+      'args[1] 1 is not printed in "G (x="a", n=-1)"',
+    ],
+  ]
+  for (const r of rows) {
+    fidelityTestRowIs(
+      t,
+      `4648 §${r[2]}: ${r[0]}`,
+      fidelityTestWrapCall(
+        "4648",
+        rfc,
+        `{"name": "${r[1]}", "params": [{"name": "s", "type": "string"}, {"name": "n", "type": "i32"}], "returns": "bytes"}`,
+        r[1],
+        r[2],
+        `{"str": "a"}, {"int": ${r[3]}}`,
+        `{"hex": "${r[4]}", "label": "${r[5]}"}`,
+      ),
+      r[6],
+    )
   }
 }
 
 /** The fidelity gate. */
 export const main = (): i32 => {
   const t = new Suite("spec/gates/fidelity")
+  fidelityTestBase64(t)
+  fidelityTestBareVariant(t)
+  fidelityTestProseInts(t)
+  fidelityTestProseStrings(t)
   const all = gateFidelity(fidelityTestCtx("r.txt"))
   t.ok("a quote that is there", !fidelityTestHas(all, "R1:", ""))
   t.ok(

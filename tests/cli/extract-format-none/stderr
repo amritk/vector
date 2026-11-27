@@ -1,0 +1,1 @@
+vector: tests/fixtures/byte-parts/byte-parts-format-none.md:54 (tests/fixtures/byte-parts/byte-parts-format-none.xml:72): fidelity: the 1-byte expect.concat[0] is only part of a value printed in RFC §A.2.5 ("ECDSA, 256 Bits (Prime Field)") (under "k"): a vector uses whole printed values (concat them to join several)

@@ -1,0 +1,14 @@
+── VECTOR RFC CONTRACT ─────────────────────────────────────────
+ byte-parts-tail · RFC 9001 (Byte parts fixture: a result printed as a value's tail) · nish/quic/retry
+ Status: CONTRACT_VALID
+
+ Requirements
+  ○ R-RETRY  §A.4 DEFINITION  "This shows a Retry packet that might be sent in response to the…"
+      ○ A.4-RETRY
+      A.4-RETRY tail: expect is the last 16 bytes of the value args[0] is printed in: the Retry Integrity Tag ends the Retry packet
+
+ Warnings
+  ! clauses: no property clauses: the contract checks only the RFC's own vectors
+  ! signatures: no module source: signatures were not checked (pass --module or --nish-root)
+
+ ○ = checked by the contract, not yet run · ✓ pass · ✘ fail · · not run

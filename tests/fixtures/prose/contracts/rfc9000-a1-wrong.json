@@ -1,0 +1,65 @@
+{
+ "$schema": "../../../../schemas/rfc-contract.json",
+ "contract": "rfc9000-a1-wrong",
+ "source": {
+  "rfc": 9000,
+  "title": "QUIC: A UDP-Based Multiplexed and Secure Transport",
+  "sha256": "26f515f30e80bbdb9f006b9ab39bdd521f1d5f2ae0576fad55283c13a43a3811"
+ },
+ "sources": [
+  {
+   "id": "rfc9000",
+   "rfc": 9000,
+   "file": "rfcs/rfc9000.txt",
+   "sha256": "26f515f30e80bbdb9f006b9ab39bdd521f1d5f2ae0576fad55283c13a43a3811"
+  }
+ ],
+ "target": {
+  "module": "nish/quic/varint"
+ },
+ "requirements": [
+  {
+   "id": "R-A1",
+   "section": "A.1",
+   "level": "DEFINITION",
+   "quote": "For example, the eight-byte sequence 0xc2197c5eff14e88c decodes to the decimal value 151,288,809,941,952,652"
+  }
+ ],
+ "functions": [
+  {
+   "name": "varintDecode",
+   "params": [
+    {
+     "name": "b",
+     "type": "bytes"
+    }
+   ],
+   "returns": "u64"
+  }
+ ],
+ "clauses": [
+  {
+   "kind": "vector",
+   "id": "A1-WRONG",
+   "title": "A1-WRONG",
+   "covers": [
+    "R-A1"
+   ],
+   "source": {
+    "cite": {
+     "section": "A.1"
+    }
+   },
+   "call": "varintDecode",
+   "args": [
+    {
+     "hex": "c2197c5eff14e88c",
+     "label": "For example, the eight-byte sequence"
+    }
+   ],
+   "expect": {
+    "int": 494878333
+   }
+  }
+ ]
+}

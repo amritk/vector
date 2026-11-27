@@ -9,6 +9,7 @@
 import { splitLines, trim } from "nish/text"
 import { CheckContext, CheckReport } from "../check"
 import {
+  reportByteParts,
   reportCite,
   reportCovered,
   reportCovering,
@@ -62,14 +63,15 @@ export const reportCell = (s: string): string => {
  */
 export const reportCode = (s: string): string => {
   const t = reportOneLine(s)
-  let longest = 0
-  let run = 0
+  // u32 counters: a run cannot pass the text's length, so neither can overflow.
+  let longest: u32 = 0
+  let run: u32 = 0
   for (let i = 0; i < t.length; i++) {
     run = t.charCodeAt(i) === 96 ? run + 1 : 0
     longest = run > longest ? run : longest
   }
   let fence = "`"
-  for (let i = 0; i < longest; i++) {
+  for (let i: u32 = 0; i < longest; i++) {
     fence = `${fence}\``
   }
   const pad = longest > 0 ? " " : ""
@@ -141,8 +143,12 @@ export const reportMarkdown = (ctx: CheckContext, report: CheckReport): string =
       const rows: string[] = []
       for (const k of reportCovering(c, req.id)) {
         const tr = k.truncate
+        const ev = [reportEvidence(ctx, k)]
+        for (const b of reportByteParts(k)) {
+          ev.push(b)
+        }
         rows.push(
-          `| ${reportCodeCell(k.id)}${tr === null ? "" : ` (${tr.label()})`} | ${reportCell(k.title)} | ⭕ not run | ${reportCell(reportEvidence(ctx, k))} |   |`,
+          `| ${reportCodeCell(k.id)}${tr === null ? "" : ` (${tr.label()})`} | ${reportCell(k.title)} | ⭕ not run | ${reportCell(ev.join("; "))} |   |`,
         )
       }
       if (rows.length > 0) {
@@ -187,7 +193,13 @@ export const reportMarkdown = (ctx: CheckContext, report: CheckReport): string =
     }
     out.push("")
   }
-  while (out.length > 0 && out[out.length - 1] === "") {
+  // Drop trailing blank lines. `keep <= out.length` and `keep >= 0` always hold; the extra tests let each
+  // read and pop be proven in bounds.
+  let keep = toI32(out.length)
+  while (keep > 0 && keep <= toI32(out.length) && out[keep - 1] === "") {
+    keep = keep - 1
+  }
+  while (out.length > 0 && toI32(out.length) > keep) {
     out.pop()
   }
   return out.join("\n")

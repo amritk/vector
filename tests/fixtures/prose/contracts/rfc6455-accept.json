@@ -1,0 +1,64 @@
+{
+ "$schema": "../../../../schemas/rfc-contract.json",
+ "contract": "rfc6455-accept",
+ "source": {
+  "rfc": 6455,
+  "title": "The WebSocket Protocol",
+  "sha256": "a3523366324ab474fa4c79d9cab117cb77c0c0bc9068c7eb43aa8bd347220756"
+ },
+ "sources": [
+  {
+   "id": "rfc6455",
+   "rfc": 6455,
+   "file": "rfcs/rfc6455.txt",
+   "sha256": "a3523366324ab474fa4c79d9cab117cb77c0c0bc9068c7eb43aa8bd347220756"
+  }
+ ],
+ "target": {
+  "module": "nish/ws"
+ },
+ "requirements": [
+  {
+   "id": "R-ACC",
+   "section": "4.2.2",
+   "level": "DEFINITION",
+   "quote": "As an example, if the value of the |Sec-WebSocket-Key| header field in the client's handshake were"
+  }
+ ],
+ "functions": [
+  {
+   "name": "wsAccept",
+   "params": [
+    {
+     "name": "key",
+     "type": "string"
+    }
+   ],
+   "returns": "string"
+  }
+ ],
+ "clauses": [
+  {
+   "kind": "vector",
+   "id": "ACC",
+   "title": "ACC",
+   "covers": [
+    "R-ACC"
+   ],
+   "source": {
+    "cite": {
+     "section": "4.2.2"
+    }
+   },
+   "call": "wsAccept",
+   "args": [
+    {
+     "str": "dGhlIHNhbXBsZSBub25jZQ=="
+    }
+   ],
+   "expect": {
+    "str": "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+   }
+  }
+ ]
+}

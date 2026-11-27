@@ -5,8 +5,10 @@ import { runProcess } from "../../../src/core/process"
 import { charsFromCodePoint } from "../../../src/spec/contract/chars"
 import { Contract, SourceDecl } from "../../../src/spec/contract/types"
 import {
+  SourceReaderKind,
   SourceReaders,
   sourceDecls,
+  sourceDecodedProblem,
   sourceFind,
   sourceLoad,
   sourceLoadWith,
@@ -17,7 +19,7 @@ import {
   sourceRecordedProblem,
 } from "../../../src/spec/source/load"
 import { SourceRead } from "../../../src/spec/source/path"
-import { RfcDocument, RfcSection, rfcParse, rfcRead } from "../../../src/spec/source/rfc"
+import { RfcDocument, RfcSection } from "../../../src/spec/source/rfc"
 
 /** The plain text of a one-section RFC numbered `n`. */
 const loadTestRfc = (n: i32, body: string): string => `Request for Comments: ${n}\n\f\n1.  Introduction\n\n   ${body}\n`
@@ -92,46 +94,29 @@ const loadTestHintProblems = (root: string, file: string, text: string, rfc: i32
 const loadTestProblems = (c: Contract, contractPath: string, root: string): string =>
   sourceLoad(c, contractPath, root).problems.join(" | ")
 
-/** A second reader, for the test registry: the text reader under another extension, as a function of its own. */
-const loadTestOtherReader = (text: string, name: string): Result<RfcDocument, string> => rfcRead(text, name)
-
-/** A reader that refuses every text, naming it: to see that a later registration replaced an earlier one. */
-const loadTestRefusingReader = (text: string, name: string): Result<RfcDocument, string> => {
-  const read = rfcRead(text, name)
-  return Err(`${name}: refused (${read.isOk() ? "an RFC" : "not an RFC"})`)
-}
-
 /**
- * An XML-ish reader that decodes `&#1058;` to a Cyrillic Т and parses without
- * any guard of its own, as a reader of escaped text might.
+ * What sourceDecodedProblem finds in a one-section document whose spoof (a
+ * Cyrillic Т in MUST) sits only in its `title`, `lines` or `ownLines`, as
+ * `where` names; "" when it finds nothing.
  */
-const loadTestDecodingReader = (text: string, name: string): Result<RfcDocument, string> => {
-  const raw = rfcRead(text, name)
-  if (raw.isErr()) {
-    return raw
-  }
-  const at = text.indexOf("&#1058;")
-  const decoded = at < 0 ? text : `${text.substring(0, at)}${charsFromCodePoint(0x422)}${text.substring(at + 7)}`
-  return Ok(rfcParse(decoded))
-}
-
-/**
- * A reader that adds a section whose spoof is only in its `lines`: its title
- * and own lines are clean, as a reader that keeps text only there might.
- */
-const loadTestLinesReader = (text: string, name: string): Result<RfcDocument, string> => {
-  const raw = rfcRead(text, name)
-  if (raw.isErr()) {
-    return raw
-  }
-  const doc = raw.value
-  doc.sections.push(new RfcSection("9", "Clean", [`It MUS${charsFromCodePoint(0x422)} work.`], []))
-  return Ok(doc)
+const loadTestDecoded = (where: string): string => {
+  const spoof = `It MUS${charsFromCodePoint(0x422)} work.`
+  const clean = "It MUST work."
+  const doc = new RfcDocument()
+  doc.sections.push(
+    new RfcSection(
+      "1",
+      where === "title" ? spoof : "Intro",
+      [where === "lines" ? spoof : clean],
+      [where === "ownLines" ? spoof : clean],
+    ),
+  )
+  return sourceDecodedProblem(doc, "x.xml") ?? ""
 }
 
 /** The message of a refused registration, or "" when it was registered. */
 const loadTestAddErr = (readers: SourceReaders, ext: string): string => {
-  const r = sourceReadersAdd(readers, ext, rfcRead)
+  const r = sourceReadersAdd(readers, ext, SourceReaderKind.Rfc)
   return r.isErr() ? r.error : ""
 }
 
@@ -249,19 +234,22 @@ export const main = (): i32 => {
       sourceReaderFor(readers, "a.b/c") === null &&
       sourceReaderFor(readers, "a/b.adoc") === null,
   )
-  t.ok("a reader is registered", sourceReadersAdd(readers, ".adoc", loadTestOtherReader).isOk())
+  t.ok("a reader is registered", sourceReadersAdd(readers, ".adoc", SourceReaderKind.Rfc).isOk())
   t.ok("a registered reader is found", sourceReaderFor(readers, "rfc1.adoc") !== null)
   const withXml = sourceLoadWith(xml, contractPath, root, readers)
   const x = sourceFind(withXml, "x")
-  t.ok("a registered reader reads", x !== null && x.doc.number === 5555 && x.label === "contracts/spec.adoc")
-  t.ok("re-registered", sourceReadersAdd(readers, ".adoc", loadTestRefusingReader).isOk())
+  t.ok(
+    "a .adoc added as SourceReaderKind.Rfc is read by rfcRead",
+    x !== null && x.doc.number === 5555 && x.label === "contracts/spec.adoc",
+  )
+  t.ok("re-registered", sourceReadersAdd(readers, ".adoc", SourceReaderKind.Xml).isOk())
   t.ok("adding again keeps one entry", readers.entries.length === 3)
   const refused = sourceLoadWith(xml, contractPath, root, readers).problems.join(" | ")
   t.eqStr(
-    "adding again replaces the reader",
+    "adding it again as SourceReaderKind.Xml replaces the reader with xmlRead",
     refused,
     [
-      "source x: contracts/spec.adoc: refused (an RFC)",
+      "source x: contracts/spec.adoc:2: U+000C is not an XML character",
       "source bare: contracts/README is a file without an extension, and no reader is registered for it: readers are registered for .txt, .xml, .adoc",
     ].join(" | "),
   )
@@ -287,29 +275,23 @@ export const main = (): i32 => {
   )
   t.ok("a refused extension is not registered", readers.entries.length === 3)
 
-  // The text a reader decodes is checked as well as the bytes it was given.
-  writeFileSync(joinPath(root, "contracts/esc.xml"), loadTestRfc(4444, "It MUS&#1058; work."))
-  const decoding = sourceReadersDefault()
-  t.ok("the decoding reader", sourceReadersAdd(decoding, ".xml", loadTestDecodingReader).isOk())
-  const esc = loadTestContract(-1)
-  esc.sources = [loadTestDecl("esc", -1, null, "esc.xml")]
+  // Every text field a reader returns is scanned, each on its own.
+  const look = '"MUSТ" reads as MUST but is not spelled in ASCII: write MUST'
+  t.eqStr("decoded text: clean", loadTestDecoded(""), "")
   t.eqStr(
-    "a look-alike only the reader's decoding shows",
-    sourceLoadWith(esc, contractPath, root, decoding).problems.join(" | "),
-    'source esc: contracts/esc.xml as its reader decoded it: text a reader cannot see as the gates read it: line 4: "MUSТ" reads as MUST but is not spelled in ASCII: write MUST',
+    "decoded text: a look-alike only in a title",
+    loadTestDecoded("title"),
+    `x.xml as its reader decoded it: text a reader cannot see as the gates read it: line 1: ${look}`,
   )
-
-  // Every text field a reader returns is scanned: here only a section's lines.
-  writeFileSync(joinPath(root, "contracts/lines.xml"), loadTestRfc(4444, "It MUST work."))
-  const lining = sourceReadersDefault()
-  t.ok("the lines reader", sourceReadersAdd(lining, ".xml", loadTestLinesReader).isOk())
-  const lined = loadTestContract(-1)
-  lined.sources = [loadTestDecl("lined", -1, null, "lines.xml")]
-  const linedProblems = sourceLoadWith(lined, contractPath, root, lining).problems.join(" | ")
-  t.ok(
-    "a look-alike only in a section's lines",
-    linedProblems.startsWith("source lined: contracts/lines.xml as its reader decoded it: ") &&
-      linedProblems.indexOf('"MUSТ" reads as MUST but is not spelled in ASCII') >= 0,
+  t.eqStr(
+    "decoded text: a look-alike only in a section's lines",
+    loadTestDecoded("lines"),
+    `x.xml as its reader decoded it: text a reader cannot see as the gates read it: line 2: ${look}`,
+  )
+  t.eqStr(
+    "decoded text: a look-alike only in a section's own lines",
+    loadTestDecoded("ownLines"),
+    `x.xml as its reader decoded it: text a reader cannot see as the gates read it: line 3: ${look}`,
   )
 
   // A real XML source, through the default readers: an escape that decodes to

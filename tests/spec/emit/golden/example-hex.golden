@@ -34,21 +34,24 @@ const hexOrNull = (bytes: u8[] | null): string => {
 
 /** The bytes a lowercase hex string spells. */
 const unhex = (hex: string): u8[] => {
-  const n: i32 = toI32(hex.length) >> 1;
-  const out: u8[] = new Array<u8>(n);
-  for (let i: i32 = 0; i < n; i += 1) {
-    out[i] = toU8(nibble(hex.charCodeAt(2 * i)) * 16 + nibble(hex.charCodeAt(2 * i + 1)));
+  const out: u8[] = [];
+  const n: i32 = toI32(hex.length);
+  for (let i: i32 = 0; i < n - 1; i += 2) {
+    out.push(toU8((nibble(hex.charCodeAt(i)) << 4) | nibble(hex.charCodeAt(i + 1))));
   }
   return out;
 };
 
-/** One hex digit's value. */
+/** One lowercase hex digit's value (0 for any other character). */
 const nibble = (c: number): i32 => {
   const v: i32 = toI32(c);
-  if (v >= 97) {
+  if (v >= 97 && v <= 102) {
     return v - 87;
   }
-  return v - 48;
+  if (v >= 48 && v <= 57) {
+    return v - 48;
+  }
+  return 0;
 };
 
 /** Equal contents, or both null. */
@@ -56,12 +59,13 @@ const bytesEq = (a: u8[] | null, b: u8[] | null): boolean => {
   if (a === null || b === null) {
     return a === null && b === null;
   }
-  const n: i32 = toI32(a.length);
-  if (n !== toI32(b.length)) {
+  const x: u8[] = a;
+  const y: u8[] = b;
+  if (x.length !== y.length) {
     return false;
   }
-  for (let i: i32 = 0; i < n; i += 1) {
-    if (a[i] !== b[i]) {
+  for (let i: i32 = 0; i < toI32(x.length); i += 1) {
+    if (i < y.length && x[i] !== y[i]) {
       return false;
     }
   }
@@ -75,26 +79,30 @@ const strEq = (a: string | null, b: string | null): boolean => {
   if (a === null || b === null) {
     return a === null && b === null;
   }
-  const n: i32 = toI32(a.length);
-  if (n !== toI32(b.length)) {
+  const x: string = a;
+  const y: string = b;
+  if (x.length !== y.length) {
     return false;
   }
-  for (let i: i32 = 0; i < n; i += 1) {
-    if (a.charCodeAt(i) !== b.charCodeAt(i)) {
+  for (let i: i32 = 0; i < toI32(x.length); i += 1) {
+    if (i < y.length && x.charCodeAt(i) !== y.charCodeAt(i)) {
       return false;
     }
   }
   return true;
 };
 
-/** `s` with every byte in [lo, hi] moved by `delta` (ASCII case mapping). */
-const shiftCase = (s: string, lo: i32, hi: i32, delta: i32): string => {
+/** `s` with every ASCII letter in upper case, or in lower case when not `upper`. */
+const shiftCase = (s: string, upper: boolean): string => {
   const parts: string[] = [];
   const n: i32 = toI32(s.length);
   for (let i: i32 = 0; i < n; i += 1) {
     let c: i32 = toI32(s.charCodeAt(i));
-    if (c >= lo && c <= hi) {
-      c = c + delta;
+    if (upper && c >= 97 && c <= 122) {
+      c = c - 32;
+    }
+    if (!upper && c >= 65 && c <= 90) {
+      c = c + 32;
     }
     parts.push(String.fromCharCode(c));
   }
@@ -217,8 +225,9 @@ const clause_P_ENC_LEN = (t: Suite): boolean => {
     "00ff10ab",
     "",
   ];
-  for (let i: i32 = 0; i < 2; i += 1) {
-    const v_b: u8[] = unhex(table_b[i]);
+  for (let i: i32 = 0; i < 2 && i < table_b.length; i += 1) {
+    const r_b: string = table_b[i];
+    const v_b: u8[] = unhex(r_b);
     const holds: boolean = (toI32(hexEncode(v_b).length) === wrappingMul(2, toI32(v_b.length)));
     if (!holds) {
       return t.fail("[P-ENC-LEN] two characters per byte (R-ENC-LEN)", `sample ${i + 1} of 2 (len(b) = ${toI32(v_b.length)}): the assertion is false`);
@@ -238,10 +247,11 @@ const clause_P_ENC_LOWER = (t: Suite): boolean => {
     "00ff10ab",
     "",
   ];
-  for (let i: i32 = 0; i < 2; i += 1) {
-    const v_b: u8[] = unhex(table_b[i]);
+  for (let i: i32 = 0; i < 2 && i < table_b.length; i += 1) {
+    const r_b: string = table_b[i];
+    const v_b: u8[] = unhex(r_b);
     const v_e: string = hexEncode(v_b);
-    const holds: boolean = strEq(v_e, shiftCase(v_e, 65, 90, 32));
+    const holds: boolean = strEq(v_e, shiftCase(v_e, false));
     if (!holds) {
       return t.fail("[P-ENC-LOWER] the encoding has no uppercase digit (R-ENC-ONLY)", `sample ${i + 1} of 2 (len(b) = ${toI32(v_b.length)}): the assertion is false`);
     }
@@ -263,8 +273,9 @@ const clause_P_ROUND_TRIP = (t: Suite): boolean => {
     "00ff10ab",
     "",
   ];
-  for (let i: i32 = 0; i < 2; i += 1) {
-    const v_b: u8[] = unhex(table_b[i]);
+  for (let i: i32 = 0; i < 2 && i < table_b.length; i += 1) {
+    const r_b: string = table_b[i];
+    const v_b: u8[] = unhex(r_b);
     const u: Unwrap = new Unwrap();
     const v_d: u8[] | null = hexDecode(hexEncode(v_b));
     const holds: boolean = (!isNullBytes(v_d) && bytesEq(u.get(v_d), v_b));
@@ -293,8 +304,9 @@ const clause_P_CANONICAL = (t: Suite): boolean => {
   const table_t: string[] = [
     "00ff1a",
   ];
-  for (let i: i32 = 0; i < 1; i += 1) {
-    const v_t: string = table_t[i];
+  for (let i: i32 = 0; i < 1 && i < table_t.length; i += 1) {
+    const r_t: string = table_t[i];
+    const v_t: string = r_t;
     const u: Unwrap = new Unwrap();
     const v_d: u8[] | null = hexDecode(v_t);
     const holds: boolean = (!isNullBytes(v_d) && strEq(hexEncode(u.get(v_d)), v_t));
@@ -319,11 +331,12 @@ const clause_P_ANY_CASE = (t: Suite): boolean => {
   const table_t: string[] = [
     "aB0F",
   ];
-  for (let i: i32 = 0; i < 1; i += 1) {
-    const v_t: string = table_t[i];
+  for (let i: i32 = 0; i < 1 && i < table_t.length; i += 1) {
+    const r_t: string = table_t[i];
+    const v_t: string = r_t;
     const u: Unwrap = new Unwrap();
     const v_d: u8[] | null = hexDecode(v_t);
-    const holds: boolean = (!isNullBytes(v_d) && strEq(hexEncode(u.get(v_d)), shiftCase(v_t, 65, 90, 32)));
+    const holds: boolean = (!isNullBytes(v_d) && strEq(hexEncode(u.get(v_d)), shiftCase(v_t, false)));
     if (u.sawNull || !holds) {
       let why: string = "the assertion is false";
       if (u.sawNull) {
@@ -346,8 +359,9 @@ const clause_P_ODD = (t: Suite): boolean => {
   const table_t: string[] = [
     "abc",
   ];
-  for (let i: i32 = 0; i < 1; i += 1) {
-    const v_t: string = table_t[i];
+  for (let i: i32 = 0; i < 1 && i < table_t.length; i += 1) {
+    const r_t: string = table_t[i];
+    const v_t: string = r_t;
     const holds: boolean = isNullBytes(hexDecode(v_t));
     if (!holds) {
       return t.fail("[P-ODD] an odd length is refused (R-DEC-REJECT)", `sample ${i + 1} of 1 (len(t) = ${toI32(v_t.length)}): the assertion is false`);
@@ -373,10 +387,13 @@ const clause_P_OTHER = (t: Suite): boolean => {
   const table_z: string[] = [
     "0",
   ];
-  for (let i: i32 = 0; i < 1; i += 1) {
-    const v_a: string = table_a[i];
-    const v_x: string = table_x[i];
-    const v_z: string = table_z[i];
+  for (let i: i32 = 0; i < 1 && i < table_a.length && i < table_x.length && i < table_z.length; i += 1) {
+    const r_a: string = table_a[i];
+    const r_x: string = table_x[i];
+    const r_z: string = table_z[i];
+    const v_a: string = r_a;
+    const v_x: string = r_x;
+    const v_z: string = r_z;
     const holds: boolean = isNullBytes(hexDecode(`${v_a}${`${v_x}${v_z}`}`));
     if (!holds) {
       return t.fail("[P-OTHER] any other character, anywhere in an even-length text, is refused (R-DEC-REJECT)", `sample ${i + 1} of 1 (len(a) = ${toI32(v_a.length)}, len(x) = ${toI32(v_x.length)}, len(z) = ${toI32(v_z.length)}): the assertion is false`);
@@ -402,10 +419,13 @@ const clause_P_OTHER_EDGE = (t: Suite): boolean => {
   const table_z: string[] = [
     "0",
   ];
-  for (let i: i32 = 0; i < 1; i += 1) {
-    const v_a: string = table_a[i];
-    const v_x: string = table_x[i];
-    const v_z: string = table_z[i];
+  for (let i: i32 = 0; i < 1 && i < table_a.length && i < table_x.length && i < table_z.length; i += 1) {
+    const r_a: string = table_a[i];
+    const r_x: string = table_x[i];
+    const r_z: string = table_z[i];
+    const v_a: string = r_a;
+    const v_x: string = r_x;
+    const v_z: string = r_z;
     const holds: boolean = isNullBytes(hexDecode(`${v_a}${`${v_x}${v_z}`}`));
     if (!holds) {
       return t.fail("[P-OTHER-EDGE] the characters next to each digit range are refused (R-DEC-REJECT)", `sample ${i + 1} of 1 (len(a) = ${toI32(v_a.length)}, len(x) = ${toI32(v_x.length)}, len(z) = ${toI32(v_z.length)}): the assertion is false`);
@@ -425,8 +445,9 @@ const clause_P_PREFIX = (t: Suite): boolean => {
   const table_t: string[] = [
     "ab",
   ];
-  for (let i: i32 = 0; i < 1; i += 1) {
-    const v_t: string = table_t[i];
+  for (let i: i32 = 0; i < 1 && i < table_t.length; i += 1) {
+    const r_t: string = table_t[i];
+    const v_t: string = r_t;
     const holds: boolean = isNullBytes(hexDecode(`${"0x"}${v_t}`));
     if (!holds) {
       return t.fail("[P-PREFIX] a \"0x\" prefix is refused (R-DEC-REJECT)", `sample ${i + 1} of 1 (len(t) = ${toI32(v_t.length)}): the assertion is false`);
@@ -457,7 +478,8 @@ export const main = (): i32 => {
   ran = `${ran}${clause_P_OTHER_EDGE(t) ? "1" : "0"}`;
   ran = `${ran}${clause_P_PREFIX(t) ? "1" : "0"}`;
   const code: i32 = t.done();
-  const nonce: string = toI32(process.argv.length) > 1 ? process.argv[1] : "-";
+  const argv: string[] = process.argv;
+  const nonce: string = 1 < argv.length ? argv[1] : "-";
   console.log(`vector-done ${nonce} ${ran}`);
   return code;
 };

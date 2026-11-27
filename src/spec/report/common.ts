@@ -6,7 +6,7 @@
 
 import { splitWhitespace } from "nish/text"
 import { CheckContext, CheckNote, CheckReport, CheckSampleStat, CheckSourceRun, checkSamplesOf } from "../check"
-import { Clause, ClauseKind, Contract, VectorSourceKind } from "../contract/types"
+import { Clause, ClauseKind, Contract, LitKind, Literal, VectorSourceKind } from "../contract/types"
 import { gateResultApart } from "../gates/provenance"
 import { gateRunCommands } from "../gates/run"
 import { sourceDecls, sourceMainId } from "../source/load"
@@ -56,7 +56,8 @@ export const reportIssues = (ctx: CheckContext, report: CheckReport): ReportIssu
   const out: ReportIssue[] = []
   for (const f of report.findings) {
     let placed = false
-    for (let i = 0; i < ctx.notes.length && !placed; i++) {
+    // `used` has one entry per note, so `i < used.length` never stops the loop early.
+    for (let i = 0; i < ctx.notes.length && i < used.length && !placed; i++) {
       const n = ctx.notes[i]
       if (!used[i] && !n.warning && n.gate === f.gate && `${n.at}: ${n.message}` === f.message) {
         used[i] = true
@@ -140,12 +141,13 @@ export const reportSafe = (s: string, n: i32): string => {
 export const reportShort = (s: string, n: i32): string => {
   const t = reportOneLine(s)
   // Count characters by their first bytes; cut before the n-th.
-  let chars = 0
+  // u32 counters: neither can pass the text's length, so neither can overflow.
+  let chars: u32 = 0
   for (let i = 0; i < t.length; i++) {
     if ((t.charCodeAt(i) & 0xc0) !== 0x80) {
       chars++
-      if (chars === n) {
-        let rest = 0
+      if (chars === toU32(n)) {
+        let rest: u32 = 0
         for (let j = i; j < t.length; j++) {
           if ((t.charCodeAt(j) & 0xc0) !== 0x80) {
             rest++
@@ -273,6 +275,79 @@ export const reportEvidence = (ctx: CheckContext, k: Clause): string => {
   }
   const stat = reportStat(ctx, k.id)
   return stat === null ? "property" : `${reportSampleCount(ctx, k.id)} samples (${stat.boundary} boundary)`
+}
+
+/** A format constant of a vector: a concat part the RFC does not print, taken on its reason. */
+export class ReportFormat {
+  /** Its path in the vector, such as `expect.concat[0]`. */
+  at: string
+  /** Its bytes, in hex. */
+  hex: string
+  /** Why the RFC does not print it. */
+  reason: string
+  /**
+   * Makes a format constant.
+   *
+   * @param at its path in the vector
+   * @param hex its bytes, in hex
+   * @param reason why the RFC does not print it
+   */
+  constructor(at: string, hex: string, reason: string) {
+    this.at = at
+    this.hex = hex
+    this.reason = reason
+  }
+}
+
+/** Adds the format parts of `lit`, a value at `at`, to `out`. */
+const reportFormatsIn = (out: ReportFormat[], lit: Literal, at: string): void => {
+  if (lit.kind !== LitKind.Concat) {
+    return
+  }
+  for (let i = 0; i < lit.parts.length; i++) {
+    const f = lit.parts[i].format
+    if (f !== null) {
+      out.push(new ReportFormat(`${at}.concat[${i}]`, lit.parts[i].text, f))
+    }
+  }
+}
+
+/**
+ * The format constants of a vector, its arguments' then its expect's.
+ *
+ * @param k the clause
+ * @returns each format part, in order; none for a property
+ */
+export const reportFormats = (k: Clause): ReportFormat[] => {
+  const out: ReportFormat[] = []
+  for (let i = 0; i < k.args.length; i++) {
+    reportFormatsIn(out, k.args[i], `args[${i}]`)
+  }
+  const e = k.expect
+  if (e !== null) {
+    reportFormatsIn(out, e, "expect")
+  }
+  return out
+}
+
+/**
+ * The bytes a vector takes on the spec's word beside the RFC's, as evidence:
+ * each format constant, then its tail.
+ *
+ * @param k the clause
+ * @returns one line each, such as `format expect.concat[0] = 04: <reason>`
+ *   or `tail: expect is the last 16 bytes of the value args[0] is printed in: <reason>`
+ */
+export const reportByteParts = (k: Clause): string[] => {
+  const out: string[] = []
+  for (const f of reportFormats(k)) {
+    out.push(`format ${f.at} = ${f.hex}: ${f.reason}`)
+  }
+  const t = k.tail
+  if (t !== null) {
+    out.push(`tail: expect is the last ${t.bytes} bytes of the value args[${t.arg}] is printed in: ${t.reason}`)
+  }
+  return out
 }
 
 /**

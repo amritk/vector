@@ -29,6 +29,8 @@ becomes in the XML.
 | a vector's `tolerance` | a paragraph `Tolerance: V1 ulps 1, {{Section N of RFCx}}: "quote"` (or `abs 1e-9`) right after the vector table or another `Tolerance:` paragraph (see [Tolerances](#tolerances)) | the next sibling `<t>Tolerance: …</t>` |
 | a vector's `iterate` | a paragraph `Iterate: V1 1,000 times, (k, u) <- (f(k, u), k)` in the run after the vector table, among its `Tolerance:` paragraphs (see [Iterations](#iterations)) | the next sibling `<t>Iterate: … &lt;- …</t>` |
 | a vector's `truncate` | a paragraph `Truncate: V1 to 128 bits` (or `to 16 bytes`) in the same run after the vector table (see [Truncations](#truncations)) | the next sibling `<t>Truncate: …</t>` |
+| a concat part's `format` | a paragraph `Format: V1 expect.concat[0] is 04, <reason>` in the same run (see [Byte parts](#byte-parts)) | the next sibling `<t>Format: …</t>` |
+| a vector's `tail` | a paragraph `Tail: V1 expect is the last 16 bytes of the value args[0] is printed in, <reason>` in the same run (see [Byte parts](#byte-parts)) | the next sibling `<t>Tail: …</t>` |
 | an `outOfScope` export | a paragraph `Out of scope: <export>, <the reason no clause tests it>`, anywhere in the body | `<t>Out of scope: …</t>` |
 | a requirement's or vector's `section` | the enclosing numbered section (`--- back` gives appendices A, B, …) | the section number `xml2rfc` gives |
 
@@ -247,6 +249,60 @@ there is.
 A `Truncate:` paragraph anywhere else, or after a table that is not the
 vector table, is refused.
 
+### Byte parts
+
+A vector's values are whole printed values. Two paragraphs, in the same run
+after the vector table, take a value apart where the RFC's print and the
+function's bytes differ.
+
+**A format constant** is a byte the RFC never prints, such as the `04` SEC1
+puts before an uncompressed point (RFC 6979 §A.2.5 prints only `Ux` and
+`Uy`):
+
+```md
+| P256-PUB | `p256Public(x = c9af…6721)` | `concat([04], Ux = 60fe…9fb6, Uy = 7903…2299)` | R-PUB | {{Section A.2.5 of ECDSA}} | the public key, SEC1 uncompressed |
+
+Format: P256-PUB expect.concat[0] is 04, SEC1 prefixes an uncompressed point with 04
+```
+
+- The paragraph reads `Format: <id> <path> is <hex>, <reason>`, where the
+  path is `expect.concat[<j>]` or `args[<i>].concat[<j>]`, and the reason is
+  not empty.
+- The part is an unlabelled hex part of a `concat`, not a run, and its hex is
+  the paragraph's (`P256-PUB's expect.concat[0] is 04, not 05`).
+- A concat has one format part at most, and another part of it must be
+  printed in the cited section and bound there: a format part beside only
+  unchecked parts is refused (`… is a format constant beside no value
+  printed in …`).
+- The contract records the reason as the part's `format`, and `spec check`
+  reports it as evidence.
+
+**A tail** is a value the RFC prints whole that the function takes apart,
+such as the Retry packet of RFC 9001 §A.4, whose last 16 bytes are its
+integrity tag:
+
+```md
+| A.4-RETRY | `retryTag(value is not included in the final Retry packet = ff000000010008f067a5502a4262b5746f6b656e)` | `[04 a2 65 ba 2e ff 4d 82 90 58 fb 3f 0f 24 96 ba]` | R-RETRY | {{Section A.4 of QUIC-TLS}} | RFC 9001 A.4: the Retry packet's integrity tag |
+
+Tail: A.4-RETRY expect is the last 16 bytes of the value args[0] is printed in, the Retry Integrity Tag ends the Retry packet
+```
+
+- The paragraph reads `Tail: <id> expect is the last <N> bytes of the value
+  args[<i>] is printed in, <reason>`. N is at least 1, in digits with no
+  leading zero, and 65,536 at most; a vector has one tail at most.
+- The argument and the expect are both hex, neither unchecked, and the
+  expect has no label: the argument's label finds the value.
+- The argument is not empty, and the expect is exactly N bytes (`the expect
+  is 16 bytes, not the last 15 bytes the tail names`).
+- The argument followed by the expect must be one whole value the cited
+  section prints, placed and paired as any other value is; otherwise it is
+  refused (`the 36-byte tail is not printed in …`).
+- The vector's Source is a cite, and it has no tolerance, truncation or
+  iteration.
+
+`tests/fixtures/byte-parts/` holds both. A `Format:` or `Tail:` paragraph
+anywhere else, or after a table that is not the vector table, is refused.
+
 ### The whole spec
 
 - At least one requirement, and at least one vector row or property.
@@ -277,7 +333,7 @@ These are what Call and Expected cells may hold:
 | `L = 42` | a labelled decimal integer, checked against the cited section's "L = 42". Where the parameter (or return) type is an integer type it is the int; anywhere else digits that are also hex pairs (`42`) are labelled bytes, and digits with a leading zero are never an int: `L = 00` is bytes, and `L = 042` (not whole hex pairs) is refused |
 | `22 × 0b`, `22 x 0b`, `IKM = 22 × 0b` | a run of bytes written that many times (`{hex, repeat}`), as RFCs print runs; optionally labelled. `22×0b` also reads. The count is at least 1, the run lowercase hex pairs, and the expansion at most 65536 bytes |
 | `[0x11111111 0x01020304]`, `State = [879531e0 c5ecf37d]` | a word array, where the signature takes or returns `u16[]`, `u32[]` or `u64[]`: words of the type's width (4, 8 or 16 lowercase hex digits), one space apart (as bytes are), with `0x` on every word or on none, as the cited section prints them; optionally labelled. Unlabelled `[879531e0 c5ecf37d]` is bytes where the type is `u8[]`. See [What a printed value is](#what-a-printed-value-is) |
-| `concat([00], Key = ff)` | the parts joined, all bytes; one level (`concat` does not nest), at least one part. `‖` is refused |
+| `concat([00], Key = ff)` | the parts joined, all bytes; one level (`concat` does not nest), at least one part. `‖` is refused. One hex part may be a format constant (see [Byte parts](#byte-parts)) |
 
 A bare decimal integer (`42`, `-9223372036854775808`) is an int, and an f64
 where the signature takes one; `1.5`, `-2e-3`, `NaN`, `Infinity` and
@@ -419,7 +475,8 @@ lives ([Test your own modules](testing.md#test-your-own-modules)).
 - The test defines helpers of its own, such as `utf8Bytes` and `bytesEq`, and
   Nish has no import aliasing, so a function under test cannot share one of
   their names; `spec extract` names the clash.
-- A 64-bit int is written as `hi·2^32 + lo`, so no literal passes 2^53.
+- A 64-bit int past 2^53 is written as `hi·2^32 + lo`, so no literal passes
+  2^53; an `i64` builds those bits in `u64` and reads them back with `toI64`.
 - A word is a typed literal (`toU32(0) + 0x01020304`); a `u64` word past 32
   bits is its two halves, shifted and joined. A word-array result is
   compared as its words in hex, so a failure prints both arrays. Only the
@@ -428,8 +485,10 @@ lives ([Test your own modules](testing.md#test-your-own-modules)).
 - An f64 is its shortest round-tripping decimal, or, for `-0`, `NaN` and the
   infinities, its bits.
 - `i32` and `i64` `+ - *` are emitted as `wrappingAdd`, `wrappingSub` and
-  `wrappingMul` from `nish:unsafe`, since Nish's signed operators panic on
-  overflow. `u8`, `u16`, `u32` and `u64` are emitted as plain operators,
+  `wrappingMul` from `nish:unsafe` (`wrappingAdd(a, b)`): the contract wraps,
+  and Nish's signed operators refuse overflow. The test imports only the
+  names it uses, and nothing from `nish:unsafe` when it has no signed `+ - *`.
+  `u8`, `u16`, `u32` and `u64` are emitted as plain operators,
   which wrap in Nish. So for every integer type the test can hold, a sample
   that overflows wraps, as it does in the evaluator and the sampler.
 
@@ -630,8 +689,8 @@ of matching bytes:
 - **Whole values.** A `hex` (or `ascii` read as bytes) must equal a whole
   printed value: a run of hex lines, a hexdump, a `0x…` or colon-hex value,
   or a `Key = 0b0b…` line and the lines that continue it. Part of one (a
-  prefix of a key, the tail of a tag) is refused; `concat` joins whole
-  values. A `str` must be printed whole: in quotes, in a markdown code span,
+  prefix of a key, the tail of a tag) is refused, except as a
+  [format constant or a tail](#byte-parts); `concat` joins whole values. A `str` must be printed whole: in quotes, in a markdown code span,
   on a line of its own, or ending a line after `=` or `:` (`"Zg"` is not
   printed by `"Zg=="`).
 - **Words.** A `words16`, `words32` or `words64` value must equal one whole
@@ -701,12 +760,25 @@ of matching bytes:
   section prints `""` or `(0 octets)`.
 - **One test case.** The expected value may not be bound to the same label
   as an argument (a key used as the expected MAC). Strings must share a
-  printed line (`BASE64("f") = "Zg=="`). A label printed several times in
+  printed line (`BASE64("f") = "Zg=="`) or one prose example (below). A label printed several times in
   the cited section is read in rounds (the k-th `Key` goes with the k-th
   `Data` and the k-th `HMAC-SHA-256`), so citing a parent section cannot mix
   values from two test cases. A label printed once goes with the round it is
   printed among: RFC 8032 Section 7.1 prints `MESSAGE (length 0 bytes)` once,
   in TEST 1, so it is refused beside TEST 2's `SECRET KEY` and `SIGNATURE`.
+- **Prose examples.** Values that share no line but that the cited section
+  prints in prose (a string in quotes, a `0x` value, a whole integer, commas
+  allowed) are one test case when one example holds them all: a sentence,
+  or one `;` part of it, read across wrapped lines and page breaks. A
+  sentence that says `this value` or `this string` goes on the one before
+  it. RFC 6455 §4.2.2's NOTE pairs `"dGhlIHNhbXBsZSBub25jZQ=="` with
+  `"s3pPLMBiTxaQ9kYGzzhZRbK+xOo="` across three sentences; RFC 9000 §A.1
+  pairs `0x7bbd` with `15,293`, its own `;` part, and refuses
+  `0xc2197c5eff14e88c` with `494,878,333`: "never in one sentence with" it. A value printed twice in
+  the example's paragraph is refused, since nothing says which printing is
+  the case's, and so is an integer printed in prose beside the others with
+  no example holding them all. A `.` between digits (`5.2`) ends no
+  sentence; one after an abbreviation (`etc.`) does.
 - **Call labels.** A string or integer printed inside the expected
   value's label, in its `( … )` (`"passwd"`, `c=1` in
   `PBKDF2-HMAC-SHA-256 (P="passwd", S="salt", c=1, dkLen=64)`), is one test
@@ -719,7 +791,13 @@ of matching bytes:
   string printed only in prose, or one of several `n=` values printed outside
   the label, is refused. One printed in another
   call label of the section instead (`"NaCl"`, `c=80000` beside case 1's
-  value) is refused: "they are different test cases". Call labels that
+  value) is refused: "they are different test cases". Arguments without a
+  name (a string, an empty `""`, a bare integer such as `64`) pair in the
+  order the label prints them: `"salt", "passwd"` against
+  `(P="passwd", S="salt")` is refused, "the arguments are not in the order
+  the label prints them", and one the label does not print is refused. An
+  integer with its `label` pairs by that name wherever the label prints it,
+  and a bare integer is cut from the label before its variant is read. Call labels that
   differ only in the arguments the vector binds (its strings, and the
   number after each of its integer arguments' names that a call label
   prints) are one variant. Any

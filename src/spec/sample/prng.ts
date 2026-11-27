@@ -4,6 +4,8 @@
  * draws the same samples every run, on every machine.
  */
 
+import { wrappingAdd } from "nish:unsafe"
+
 /**
  * The 32-bit FNV-1a hash of a string's code units, as `charCodeAt` reads them.
  *
@@ -58,7 +60,10 @@ export const sampleNext = (r: SamplePrng): f64 => {
  */
 export const sampleBelow = (r: SamplePrng, n: i32): i32 => {
   const x = toI32(Math.floor(sampleNext(r) * toF64(n)))
-  return x < n ? x : n - 1
+  // The else branch is never taken: sampleNext() < 1, so x < n. It clamps
+  // to n - 1, in u32, which cannot overflow and is the same value for n of
+  // at least 1.
+  return x < n ? x : toI32(toU32(n) - toU32(1))
 }
 
 /**
@@ -79,7 +84,7 @@ export const sampleIntIn = (r: SamplePrng, lo: i64, hi: i64): i64 => {
   const high = toU64(Math.floor(sampleNext(r) * 4294967296.0))
   const low = toU64(Math.floor(sampleNext(r) * 4294967296.0))
   const draw = (high << toU64(32)) | low
-  return toI64(span === toU64(0) ? draw : toU64(lo) + (draw % span))
+  return span === toU64(0) ? toI64(draw) : wrappingAdd(lo, toI64(draw % span))
 }
 
 /**

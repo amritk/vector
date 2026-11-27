@@ -1,0 +1,1 @@
+vector spec extract tests/fixtures/byte-parts/byte-parts-tail.xml -o tests/fixtures/byte-parts/byte-parts-tail.json --check

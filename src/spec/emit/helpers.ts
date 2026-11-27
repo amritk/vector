@@ -83,12 +83,13 @@ export const emitHelperDeps = (name: string): string[] => {
  */
 const emitHelperRem = (t: string): string => {
   const to = emitToInt(t)
-  const zero = t === "i64" ? "b === toI64(0) || b === toI64(-1)" : `b === ${to}(0)`
+  // Bare literals, which the no-panic checker reads as the divisor's bounds.
+  const nonzero = t === "i64" ? "b !== 0 && b !== -1" : `b !== ${to}(0)`
   return `const rem${to.substring(2, 5)} = (a: ${t}, b: ${t}): ${t} => {
-  if (${zero}) {
-    return ${to}(0);
+  if (${nonzero}) {
+    return a % b;
   }
-  return a % b;
+  return ${to}(0);
 };`
 }
 
@@ -164,7 +165,9 @@ const hexPrefix = (bytes: u8[], n: i32): string => {
   }
   const head: u8[] = [];
   for (let i: i32 = 0; i < n; i += 1) {
-    head.push(bytes[i]);
+    if (i < bytes.length) {
+      head.push(bytes[i]);
+    }
   }
   return hexOf(head);
 };`
@@ -181,22 +184,25 @@ const hexOrNull = (bytes: u8[] | null): string => {
   if (name === "unhex") {
     return `/** The bytes a lowercase hex string spells. */
 const unhex = (hex: string): u8[] => {
-  const n: i32 = toI32(hex.length) >> 1;
-  const out: u8[] = new Array<u8>(n);
-  for (let i: i32 = 0; i < n; i += 1) {
-    out[i] = toU8(nibble(hex.charCodeAt(2 * i)) * 16 + nibble(hex.charCodeAt(2 * i + 1)));
+  const out: u8[] = [];
+  const n: i32 = toI32(hex.length);
+  for (let i: i32 = 0; i < n - 1; i += 2) {
+    out.push(toU8((nibble(hex.charCodeAt(i)) << 4) | nibble(hex.charCodeAt(i + 1))));
   }
   return out;
 };`
   }
   if (name === "nibble") {
-    return `/** One hex digit's value. */
+    return `/** One lowercase hex digit's value (0 for any other character). */
 const nibble = (c: number): i32 => {
   const v: i32 = toI32(c);
-  if (v >= 97) {
+  if (v >= 97 && v <= 102) {
     return v - 87;
   }
-  return v - 48;
+  if (v >= 48 && v <= 57) {
+    return v - 48;
+  }
+  return 0;
 };`
   }
   if (name === "bytesEq") {
@@ -205,12 +211,13 @@ const bytesEq = (a: u8[] | null, b: u8[] | null): boolean => {
   if (a === null || b === null) {
     return a === null && b === null;
   }
-  const n: i32 = toI32(a.length);
-  if (n !== toI32(b.length)) {
+  const x: u8[] = a;
+  const y: u8[] = b;
+  if (x.length !== y.length) {
     return false;
   }
-  for (let i: i32 = 0; i < n; i += 1) {
-    if (a[i] !== b[i]) {
+  for (let i: i32 = 0; i < toI32(x.length); i += 1) {
+    if (i < y.length && x[i] !== y[i]) {
       return false;
     }
   }
@@ -252,7 +259,9 @@ const sliceBytes = (b: u8[], from: i32, to: i32): u8[] => {
   }
   const out: u8[] = [];
   for (let i: i32 = lo; i < hi; i += 1) {
-    out.push(b[i]);
+    if (i >= 0 && i < b.length) {
+      out.push(b[i]);
+    }
   }
   return out;
 };`
@@ -271,14 +280,18 @@ const fillBytes = (v: i32, n: i32): u8[] => {
     return `/** A copy of \`b\` with bit \`bit\` (mod 8 * length) inverted. */
 const flipBit = (b: u8[], bit: i32): u8[] => {
   const out: u8[] = sliceBytes(b, 0, toI32(b.length));
-  const bits: i32 = toI32(b.length) * 8;
-  if (bits === 0) {
+  const n: i32 = toI32(b.length);
+  if (n <= 0 || n > 268435455) {
     return out;
   }
-  const at: i32 = ((bit % bits) + bits) % bits;
+  const bits: i32 = n * 8;
+  const r: i32 = bit % bits;
+  const at: i32 = r < 0 ? r + bits : r;
   const byte: i32 = at >> 3;
   const mask: i32 = 1 << (at & 7);
-  out[byte] = toU8(toI32(out[byte]) ^ mask);
+  if (byte >= 0 && byte < out.length) {
+    out[byte] = toU8(toI32(out[byte]) ^ mask);
+  }
   return out;
 };`
   }
@@ -297,11 +310,11 @@ const bitwiseBytes = (a: u8[], b: u8[], k: i32): u8[] => {
   const out: u8[] = [];
   for (let i: i32 = 0; i < n; i += 1) {
     let x: i32 = 0;
-    if (i < na) {
+    if (i < na && i < a.length) {
       x = toI32(a[i]);
     }
     let y: i32 = 0;
-    if (i < nb) {
+    if (i < nb && i < b.length) {
       y = toI32(b[i]);
     }
     let z: i32 = x ^ y;
@@ -347,27 +360,18 @@ const eqF64Bits = (t: Suite, name: string, actual: f64, expected: f64): boolean 
  */
 const nearUlpsF64 = (t: Suite, name: string, actual: f64, expected: f64, ulps: i64): boolean => {
   const lo: i64 = -9007199254740992;
-  const min: i64 = lo << 10;
-  let x: i64 = f64ToBits(actual);
-  let y: i64 = f64ToBits(expected);
-  if (x < 0) {
-    x = toI64(0) - (x - min);
-  }
-  if (y < 0) {
-    y = toI64(0) - (y - min);
-  }
+  const sign: i64 = lo << 10;
+  const x: i64 = f64ToBits(actual);
+  const y: i64 = f64ToBits(expected);
+  const mx: i64 = x & ~sign;
+  const my: i64 = y & ~sign;
   let near: boolean = false;
-  if (x >= 0 && y >= 0) {
-    near = x - y <= ulps && y - x <= ulps;
-  }
-  if (x < 0 && y < 0) {
-    near = x - y <= ulps && y - x <= ulps;
-  }
-  if (x >= 0 && y < 0) {
-    near = x <= ulps && toI64(0) - y <= ulps - x;
-  }
-  if (x < 0 && y >= 0) {
-    near = y <= ulps && toI64(0) - x <= ulps - y;
+  if (ulps >= 0 && mx >= 0 && my >= 0) {
+    if ((x < 0) === (y < 0)) {
+      near = mx - my <= ulps && my - mx <= ulps;
+    } else {
+      near = mx <= ulps && my <= ulps - mx;
+    }
   }
   if (actual !== actual || expected !== expected) {
     near = false;
@@ -384,7 +388,9 @@ const intBytes = (n: u64, w: i32, be: boolean): u8[] => {
   const out: u8[] = [];
   for (let i: i32 = 0; i < w; i += 1) {
     const k: i32 = be ? w - 1 - i : i;
-    out.push(toU8(n >> toU64(k * 8)));
+    if (k >= 0 && k < 8) {
+      out.push(toU8(n >> toU64(k * 8)));
+    }
   }
   return out;
 };`
@@ -402,7 +408,9 @@ const bytesInt = (u: Unwrap, b: u8[], w: i32, be: boolean): u64 => {
   let v: u64 = toU64(0);
   for (let i: i32 = 0; i < w; i += 1) {
     const k: i32 = be ? i : w - 1 - i;
-    v = (v << toU64(8)) | toU64(b[k]);
+    if (k >= 0 && k < b.length) {
+      v = (v << toU64(8)) | toU64(b[k]);
+    }
   }
   return v;
 };`
@@ -413,12 +421,13 @@ const strEq = (a: string | null, b: string | null): boolean => {
   if (a === null || b === null) {
     return a === null && b === null;
   }
-  const n: i32 = toI32(a.length);
-  if (n !== toI32(b.length)) {
+  const x: string = a;
+  const y: string = b;
+  if (x.length !== y.length) {
     return false;
   }
-  for (let i: i32 = 0; i < n; i += 1) {
-    if (a.charCodeAt(i) !== b.charCodeAt(i)) {
+  for (let i: i32 = 0; i < toI32(x.length); i += 1) {
+    if (i < y.length && x.charCodeAt(i) !== y.charCodeAt(i)) {
       return false;
     }
   }
@@ -438,14 +447,17 @@ const strOrNull = (s: string | null): string => {
 };`
   }
   if (name === "shiftCase") {
-    return `/** \`s\` with every byte in [lo, hi] moved by \`delta\` (ASCII case mapping). */
-const shiftCase = (s: string, lo: i32, hi: i32, delta: i32): string => {
+    return `/** \`s\` with every ASCII letter in upper case, or in lower case when not \`upper\`. */
+const shiftCase = (s: string, upper: boolean): string => {
   const parts: string[] = [];
   const n: i32 = toI32(s.length);
   for (let i: i32 = 0; i < n; i += 1) {
     let c: i32 = toI32(s.charCodeAt(i));
-    if (c >= lo && c <= hi) {
-      c = c + delta;
+    if (upper && c >= 97 && c <= 122) {
+      c = c - 32;
+    }
+    if (!upper && c >= 65 && c <= 90) {
+      c = c + 32;
     }
     parts.push(String.fromCharCode(c));
   }
@@ -574,7 +586,9 @@ class OutFault {
     }
     const out: u8[] = []
     for (let i: i32 = at; i < end; i += 1) {
-      out.push(o[i])
+      if (i >= 0 && i < o.length) {
+        out.push(o[i])
+      }
     }
     return out
   }
