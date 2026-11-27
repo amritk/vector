@@ -8,17 +8,16 @@
 //
 //   - in a docs/ Markdown file, a prose line: outside every ``` or ~~~ fence,
 //     not a fence line itself, and not indented as a code block;
-//   - in a shell script, a workflow or YAML, a whole-line `#` comment;
-//   - in JavaScript or TypeScript, a line where every copy of the flag sits in
-//     comment text (a `//` comment or a `/* */` block, open from an earlier
-//     line or not) and that comment text says refused. Strings, template
-//     literals and regular expressions are code, so a `//` or ` * ` inside one
-//     is not a comment. Every other kind of file has no line that passes.
+//   - in a shell script, a workflow or YAML, a whole-line `#` comment.
 //
-// A run: line, a command, a string or a fenced example never passes, even one
-// that says refused. A closing fence is the opening's character, at least as
-// many, and nothing after it. Exit 0 when no line names the flag outside those, 1
-// naming each `file:line` when one does, and 2 when git cannot list the files.
+// Every other kind of file has no line that passes: in JavaScript or
+// TypeScript not even a comment, since telling comment text from a string, a
+// template literal or a regular expression takes a parser, and the flag has no
+// reason to appear there at all. A run: line, a command or a fenced example
+// never passes, even one that says refused. A closing fence is the opening's
+// character, at least as many, and nothing after it. Exit 0 when no line names
+// the flag outside those, 1 naming each `file:line` when one does, and 2 when
+// git cannot list the files.
 
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -31,121 +30,14 @@ export const FLAG = ["--allow", "panics"].join("-");
 /** The directories whose tracked files are read. */
 export const DIRS = ["scripts", ".github", "docs", "src"];
 
-/** How `file` writes a comment, by its extension: "hash", "slash", or "none". */
-export const commentKind = (file) => {
-  const ext = path.extname(file);
-  if ([".sh", ".bash", ".yml", ".yaml", ".toml", ".py"].includes(ext))
-    return "hash";
-  if ([".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"].includes(ext))
-    return "slash";
-  return "none";
-};
-
-/** The characters after which a `/` in code opens a regular expression. */
-const REGEX_AFTER = "(,=:[!&|?{};+-*%<>~^";
-
-/** The keywords after which a `/` in code opens a regular expression. */
-const REGEX_KEYWORDS = new Set(
-  "return typeof case yield await in of delete void else throw new instanceof do".split(
-    " ",
-  ),
-);
-
 /**
- * How the `/` at `at` in code reads, by what comes before it on `line`
- * (`prev` is the last non-space code character): "regex", "division", or
- * "unsure" after a `)`, which closes an `if (…)` head as well as a call.
+ * How `file` writes a comment that may name the flag, by its extension:
+ * "hash" for a whole-line `#` comment, or "none" when no line may.
  */
-const slashReads = (line, at, prev) => {
-  if (prev === "" || REGEX_AFTER.includes(prev)) return "regex";
-  if (prev === ")") return "unsure";
-  if (!/[\w$]/.test(prev)) return "division";
-  let j = at - 1;
-  while (line[j] === " " || line[j] === "\t") j--;
-  const end = j + 1;
-  while (j >= 0 && /[\w$]/.test(line[j])) j--;
-  const word = line.slice(j + 1, end);
-  while (j >= 0 && (line[j] === " " || line[j] === "\t")) j--;
-  return REGEX_KEYWORDS.has(word) && line[j] !== "." ? "regex" : "division";
-};
-
-/**
- * For each line of JavaScript or TypeScript `lines`, which of its characters
- * are comment text: a `boolean[]` per line. State runs across lines for a
- * block comment and a template literal; a quoted string, a `//` comment and a
- * regular expression end with their line. After a `/` it cannot tell regex
- * from division, nothing more on the line is comment text: it fails closed.
- */
-export const slashCommentMasks = (lines) => {
-  let state = "code"; // "code" | "block" | "template"
-  const masks = [];
-  for (const line of lines) {
-    const mask = new Array(line.length).fill(false);
-    let i = 0;
-    let prev = ""; // the last non-space code character on this line
-    let unsure = false; // a `/` on this line may have opened a regex
-    while (i < line.length) {
-      const c = line[i];
-      const d = line[i + 1];
-      if (state === "block") {
-        if (c === "*" && d === "/") {
-          mask[i] = mask[i + 1] = true;
-          state = "code";
-          i += 2;
-          prev = "";
-        } else mask[i++] = true;
-      } else if (state === "template") {
-        if (c === "\\") i += 2;
-        else {
-          if (c === "`") state = "code";
-          i++;
-          prev = "`";
-        }
-      } else if (c === "/" && d === "/" && !unsure) {
-        mask.fill(true, i);
-        break;
-      } else if (c === "/" && d === "*" && !unsure) {
-        mask[i] = mask[i + 1] = true;
-        state = "block";
-        i += 2;
-      } else if (c === '"' || c === "'") {
-        i++;
-        while (i < line.length && line[i] !== c) i += line[i] === "\\" ? 2 : 1;
-        i++;
-        prev = c;
-      } else if (c === "`") {
-        state = "template";
-        i++;
-      } else if (c === "/" && slashReads(line, i, prev) === "regex") {
-        i++;
-        let cls = false;
-        while (i < line.length && (cls || line[i] !== "/")) {
-          if (line[i] === "\\") i++;
-          else if (line[i] === "[") cls = true;
-          else if (line[i] === "]") cls = false;
-          i++;
-        }
-        i++;
-        prev = "/";
-      } else {
-        if (c === "/" && slashReads(line, i, prev) === "unsure") unsure = true;
-        if (c !== " " && c !== "\t") prev = c;
-        i++;
-      }
-    }
-    masks.push(mask);
-  }
-  return masks;
-};
-
-/** Whether every copy of the flag in `line` lies in comment text that says refused, by its `mask`. */
-const slashExempt = (line, mask) => {
-  let text = "";
-  for (let i = 0; i < line.length; i++) if (mask[i]) text += line[i];
-  for (let at = line.indexOf(FLAG); at !== -1; at = line.indexOf(FLAG, at + 1))
-    for (let k = at; k < at + FLAG.length; k++) if (!mask[k]) return false;
-  return /refuse/i.test(text);
-};
+export const commentKind = (file) =>
+  [".sh", ".bash", ".yml", ".yaml", ".toml", ".py"].includes(path.extname(file))
+    ? "hash"
+    : "none";
 
 /** Whether `file` is read as Markdown prose: a .md file under docs/. */
 export const isDocsMarkdown = (file) =>
@@ -159,7 +51,6 @@ export const refusedLines = (file, text) => {
   const lines = text.split("\n");
   const markdown = isDocsMarkdown(file);
   const kind = commentKind(file);
-  const masks = kind === "slash" ? slashCommentMasks(lines) : [];
   const out = [];
   let fence = null;
   for (let i = 0; i < lines.length; i++) {
@@ -187,9 +78,7 @@ export const refusedLines = (file, text) => {
     const says = /refuse/i.test(line);
     const exempt = markdown
       ? !code && says
-      : kind === "hash"
-        ? says && line.trimStart().startsWith("#")
-        : kind === "slash" && slashExempt(line, masks[i]);
+      : kind === "hash" && says && line.trimStart().startsWith("#");
     if (!exempt) out.push(i + 1);
   }
   return out;
@@ -227,7 +116,7 @@ const main = () => {
   }
   for (const h of hits)
     console.error(
-      `allow-panics: ${h}: names ${FLAG}; nothing may relax the no-panic rule (a comment or docs prose line saying it is refused passes)`,
+      `allow-panics: ${h}: names ${FLAG}; nothing may relax the no-panic rule (a # comment or docs prose line saying it is refused passes)`,
     );
   if (hits.length > 0) process.exit(1);
   console.log(`allow-panics: no ${FLAG} in ${files.length} tracked files`);

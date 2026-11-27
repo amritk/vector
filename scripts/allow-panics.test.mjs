@@ -74,7 +74,8 @@ const rows = [
     `# ${FLAG} for now\n`,
     [1],
   ],
-  // A Node script and Nish source.
+  // A Node script and Nish source: no line passes, a comment saying refused
+  // included.
   [
     "src string",
     "src/core/nish.ts",
@@ -91,13 +92,13 @@ const rows = [
     "src line comment saying refused",
     "src/core/nish.ts",
     `// ${FLAG} is refused by CI\n`,
-    [],
+    [1],
   ],
   [
     "src block comment saying refused",
     "scripts/x.mjs",
     `/**\n * ${FLAG} is refused\n */\n`,
-    [],
+    [2],
   ],
   ["src comment not saying refused", "scripts/x.mjs", `// add ${FLAG}\n`, [1]],
   [
@@ -197,194 +198,6 @@ const rows = [
     "nish src/main.ts --allow-other\nnpm run allow-panics\n",
     [],
   ],
-  // JavaScript and TypeScript: only the flag inside comment text passes.
-  [
-    "a refused block comment before code naming the flag",
-    "scripts/x.mjs",
-    `/* refused */ run(["build", "${FLAG}"]);\n`,
-    [1],
-  ],
-  [
-    "a block comment's close, then code naming the flag",
-    "scripts/x.mjs",
-    `/*\n */ args.push("${FLAG}"); // refused\n`,
-    [2],
-  ],
-  [
-    "a one-line block comment saying refused",
-    "scripts/x.mjs",
-    `/* ${FLAG} is refused */\n`,
-    [],
-  ],
-  [
-    "a block comment line with no leading star",
-    "src/core/nish.ts",
-    `/*\n  ${FLAG} is refused\n*/\n`,
-    [],
-  ],
-  [
-    "a block comment line not saying refused",
-    "scripts/x.mjs",
-    `/**\n * pass ${FLAG}\n */\n`,
-    [2],
-  ],
-  [
-    "a leading star outside a block comment is not a comment",
-    "scripts/x.mjs",
-    `const n = 2\n* ${FLAG} refused\n`,
-    [2],
-  ],
-  [
-    "code after a block comment closes is not a comment",
-    "scripts/x.mjs",
-    `/* a\n b */ x("${FLAG}") /* refused */\n`,
-    [2],
-  ],
-  [
-    "a // line inside a template literal",
-    "scripts/x.mjs",
-    `const t = \`\n// ${FLAG} refused\n\`;\n`,
-    [2],
-  ],
-  [
-    "a * line inside a template literal",
-    "scripts/x.mjs",
-    `const t = \`\n * ${FLAG} refused\n\`;\n`,
-    [2],
-  ],
-  [
-    "a comment after a closed template literal",
-    "scripts/x.mjs",
-    `const t = \`a\nb\`; // ${FLAG} is refused\n`,
-    [],
-  ],
-  [
-    "a // inside a string is not a comment",
-    "scripts/x.mjs",
-    `const u = "// ${FLAG} refused";\n`,
-    [1],
-  ],
-  [
-    "a comment after a string holding //",
-    "scripts/x.mjs",
-    `const u = "http://x"; // ${FLAG} is refused\n`,
-    [],
-  ],
-  [
-    "a // inside a regular expression is not a comment",
-    "scripts/x.mjs",
-    `const r = /\\/\\/ ${FLAG} refused/;\n`,
-    [1],
-  ],
-  [
-    "a / inside a template literal does not close it",
-    "scripts/x.mjs",
-    `const t = \`a/b\n// ${FLAG} refused\n\`;\n`,
-    [2],
-  ],
-  [
-    "a /* inside a regular expression does not open a comment",
-    "scripts/x.mjs",
-    `const r = /[/*]/; x("${FLAG}"); // refused\n`,
-    [1],
-  ],
-  [
-    "one copy in code, one in a comment",
-    "scripts/x.mjs",
-    `x("${FLAG}"); // ${FLAG} is refused\n`,
-    [1],
-  ],
-  [
-    "a quoted flag inside a comment is comment text",
-    "scripts/x.mjs",
-    `// "${FLAG}" is refused\n`,
-    [],
-  ],
-  [
-    "division is not a regular expression",
-    "scripts/x.mjs",
-    `const h = a / b; // ${FLAG} is refused\n`,
-    [],
-  ],
-  [
-    "division by a number is not a regular expression",
-    "scripts/x.mjs",
-    `const h = n / 2; // ${FLAG} is refused\n`,
-    [],
-  ],
-  [
-    "division after a property named like a keyword",
-    "scripts/x.mjs",
-    `const h = x.in / 2; // ${FLAG} is refused\n`,
-    [],
-  ],
-  [
-    "division after a ] is not a regular expression",
-    "scripts/x.mjs",
-    `const h = a[0] / 2; // ${FLAG} is refused\n`,
-    [],
-  ],
-  // A regular expression after a keyword holds a // or /* that is no comment.
-  ...[
-    "return",
-    "typeof",
-    "case",
-    "yield",
-    "await",
-    "in",
-    "of",
-    "delete",
-    "void",
-    "else",
-    "throw",
-    "new",
-    "instanceof",
-    "do",
-  ].flatMap((kw) => [
-    [
-      `a // in a regex after ${kw}`,
-      "scripts/x.mjs",
-      `${kw} /\\//.test(s) && run(["${FLAG}"]) // refused\n`,
-      [1],
-    ],
-    [
-      `a /* in a regex after ${kw}`,
-      "scripts/x.mjs",
-      `${kw} /[/*]/.test(s) && run(["${FLAG}"]) // refused\n`,
-      [1],
-    ],
-  ]),
-  // After a ), a / may open a regular expression: nothing after it is comment.
-  [
-    "a // in a regex after if (x)",
-    "scripts/x.mjs",
-    `if (x) /\\//.test(y) && run(["${FLAG}"]); // refused\n`,
-    [1],
-  ],
-  [
-    "a /* in a regex after if (x)",
-    "scripts/x.mjs",
-    `if (x) /[/*]/.test(y) && run(["${FLAG}"]); // refused\n`,
-    [1],
-  ],
-  [
-    "a /* in a regex after while (x), across lines",
-    "scripts/x.mjs",
-    `while (x) /\\/*/.test(y);\nrun(["${FLAG}"]); // refused\n`,
-    [2],
-  ],
-  [
-    "a / after a call fails closed",
-    "scripts/x.mjs",
-    `const h = f(a) / 2; // ${FLAG} is refused\n`,
-    [1],
-  ],
-  [
-    "a // before an unsure / is still a comment",
-    "scripts/x.mjs",
-    `// ${FLAG} is refused: f(a) / 2\n`,
-    [],
-  ],
   // Every extension of each comment kind.
   ...[".sh", ".bash", ".yml", ".yaml", ".toml", ".py"].flatMap((ext) => [
     [`${ext} comment`, `scripts/x${ext}`, `# ${FLAG} refused\n`, []],
@@ -392,7 +205,20 @@ const rows = [
     [`${ext} // line`, `scripts/x${ext}`, `// ${FLAG} refused\n`, [1]],
   ]),
   ...[".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"].flatMap((ext) => [
-    [`${ext} comment`, `scripts/x${ext}`, `// ${FLAG} refused\n`, []],
+    [`${ext} // comment`, `scripts/x${ext}`, `// ${FLAG} refused\n`, [1]],
+    [`${ext} /* */ comment`, `scripts/x${ext}`, `/* ${FLAG} refused */\n`, [1]],
+    [
+      `${ext} block comment line`,
+      `scripts/x${ext}`,
+      `/*\n * ${FLAG} refused\n */\n`,
+      [2],
+    ],
+    [
+      `${ext} trailing comment`,
+      `scripts/x${ext}`,
+      `x(); // ${FLAG} refused\n`,
+      [1],
+    ],
     [`${ext} code`, `scripts/x${ext}`, `x("${FLAG}") \n`, [1]],
     [`${ext} # line`, `scripts/x${ext}`, `# ${FLAG} refused\n`, [1]],
   ]),
