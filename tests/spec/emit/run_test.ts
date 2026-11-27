@@ -20,6 +20,7 @@ import {
   runMakeScratch,
   runMakeScratchIn,
   runNishArgv,
+  runNishLinkArgv,
   runNonce,
   runOutcomeName,
   runParse,
@@ -136,7 +137,7 @@ export const main = (): i32 => {
   t.ok("a directory with no compiler is not a seed", runSeedOf("tests").isErr())
   runTestTail(t, c)
   runTestInPlace(t, c)
-  runTestNoRelax(t, c)
+  runTestRelaxed(t, c)
   runTestLinks(t)
   runTestMarkdown(t)
   runTestSlow(t, nonce)
@@ -210,51 +211,61 @@ const runTestSh = (line: string): void => {
 const runTestInPlace = (t: Suite, c: Contract): void => {
   const dir = makeTempDir("vector-in-place-").expect("a temp dir")
   const fake = `${dir}/nish`
-  runTestSh(`printf '#!/bin/sh\\necho "$1 $2"\\necho "$3"\\n' > ${fake} && chmod 755 ${fake}`)
+  runTestSh(`printf '#!/bin/sh\\necho "$1 $2 $3"\\necho "$4"\\n' > ${fake} && chmod 755 ${fake}`)
   const file = `${dir}/sub/main_test.ts`
   const ran = runTestFile(c, file, fake, 10000, false)
   t.ok("a test in place runs", ran.isOk())
   if (ran.isOk()) {
     const lines = splitLines(ran.value.stdout)
-    t.eqStr("it is run where it is", lines[0], `run ${file}`)
+    t.eqStr("it is run where it is, relaxed", lines[0], `run --allow-panics ${file}`)
     t.eqStr("with a nonce of 32 hex digits", `${lines[1].length}`, "32")
     t.ok("and judged: it never printed the nonce back as its end", ran.value.verdict.status !== "SATISFIED")
   }
   const fast = runTestFile(c, file, fake, 10000, true)
   t.ok("a slow run runs", fast.isOk())
   if (fast.isOk()) {
-    t.eqStr("built optimized", splitLines(fast.value.stdout)[0], "run --profile")
+    t.eqStr("built optimized", splitLines(fast.value.stdout)[0], "run --profile speed")
   }
-  t.eqStr("runNishArgv builds a plain run by default", runNishArgv("nish", "a.ts", false).join(" "), "nish run a.ts")
+  t.eqStr(
+    "runNishArgv builds a plain run by default",
+    runNishArgv("nish", "a.ts", false).join(" "),
+    "nish run --allow-panics a.ts",
+  )
   t.eqStr(
     "and an optimized one with --slow",
     runNishArgv("nish", "a.ts", true).join(" "),
-    "nish run --profile speed a.ts",
+    "nish run --profile speed --allow-panics a.ts",
+  )
+  t.eqStr(
+    "runNishLinkArgv links a relaxed build",
+    runNishLinkArgv("nish", "a.ts", "a.bin").join(" "),
+    "nish a.ts --allow-panics --link a.bin",
   )
   t.ok("the test's directory is left alone", isDirectorySync(dir))
   t.ok("runRemove removes it", runRemove(dir).isOk() && !isDirectorySync(dir))
 }
 
 /**
- * Every build runTestFile starts keeps the no-panic rule: the compiler it
- * starts, a stub that prints its whole argv, is never given --allow-panics,
- * plain or optimized.
+ * Every build runTestFile starts relaxes the no-panic rule, plain or
+ * optimized, so a panic in the implementation fails the test at run time: the
+ * compiler it starts, a stub that prints its whole argv, is given
+ * --allow-panics once, before the file.
  */
-const runTestNoRelax = (t: Suite, c: Contract): void => {
+const runTestRelaxed = (t: Suite, c: Contract): void => {
   const dir = makeTempDir("vector-no-relax-").expect("a temp dir")
   const fake = `${dir}/nish`
   runTestSh(`printf '#!/bin/sh\\necho "$*"\\n' > ${fake} && chmod 755 ${fake}`)
   const file = `${dir}/main_test.ts`
   // [what, whether slow vectors run, the argv the compiler is given, up to the nonce]
   const rows: string[][] = [
-    ["a plain build", "", `run ${file}`],
-    ["a slow build", "slow", `run --profile speed ${file}`],
+    ["a plain build", "", `run --allow-panics ${file}`],
+    ["a slow build", "slow", `run --profile speed --allow-panics ${file}`],
   ]
   for (const r of rows) {
     const ran = runTestFile(c, file, fake, 10000, r[1] === "slow")
     const argv = ran.isOk() ? splitLines(ran.value.stdout)[0] : ran.error
     t.ok(`${r[0]} is started with its file`, argv.startsWith(`${r[2]} `))
-    t.ok(`${r[0]} keeps the no-panic rule: ${argv}`, argv.indexOf("--allow-panics") < 0 && argv.indexOf("--allow") < 0)
+    t.ok(`${r[0]} relaxes the no-panic rule once: ${argv}`, argv.substring(r[2].length).indexOf("--allow") < 0)
   }
   t.ok("its directory is removed", runRemove(dir).isOk())
 }

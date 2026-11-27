@@ -44,8 +44,8 @@ fi
 if grep -q 'return null' "$root/std/m.ts"; then
   ${what}
 fi
-printf '#!/bin/sh\\ncd "%s" && exec sh "%s"\\n' "$root" "$1" > "$3"
-chmod +x "$3"
+printf '#!/bin/sh\\ncd "%s" && exec sh "%s"\\n' "$root" "$1" > "$4"
+chmod +x "$4"
 `
 
 /** Runs the change's mutants against the stub compiler `nish` in a fresh repository. */

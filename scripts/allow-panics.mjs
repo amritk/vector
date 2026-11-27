@@ -10,6 +10,12 @@
 //     not a fence line itself, and not indented as a code block;
 //   - in a shell script, a workflow or YAML, a whole-line `#` comment.
 //
+// One line of src/ passes as code: RELAXED, the constant every build of an
+// emitted Nish test reads, so that a panic in the implementation under test
+// fails the test when it runs rather than refusing its build. It passes only
+// in that file and only as that exact line; any other line there is read as
+// in any TypeScript file.
+//
 // Every other kind of file has no line that passes: in JavaScript or
 // TypeScript not even a comment, since telling comment text from a string, a
 // template literal or a regular expression takes a parser, and the flag has no
@@ -26,6 +32,15 @@ import { pathToFileURL } from "node:url";
 
 /** The flag, built so that this file never holds it. */
 export const FLAG = ["--allow", "panics"].join("-");
+
+/**
+ * The one line of code that may name the flag, and the file it may be in: the
+ * emitted test's build relaxes the no-panic rule, so a panic fails the test.
+ */
+export const RELAXED = {
+  file: "src/spec/run/run.ts",
+  line: `const RUN_RELAX_PANICS: string = "${FLAG}"`,
+};
 
 /** The directories whose tracked files are read. */
 export const DIRS = ["scripts", ".github", "docs", "src"];
@@ -75,6 +90,7 @@ export const refusedLines = (file, text) => {
       }
     }
     if (!line.includes(FLAG)) continue;
+    if (file === RELAXED.file && line === RELAXED.line) continue;
     const says = /refuse/i.test(line);
     const exempt = markdown
       ? !code && says

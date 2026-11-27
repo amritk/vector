@@ -3,12 +3,18 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { FLAG, refusedLines } from "./allow-panics.mjs";
+import { FLAG, RELAXED, refusedLines } from "./allow-panics.mjs";
 
 const SCRIPT = fileURLToPath(new URL("allow-panics.mjs", import.meta.url));
 
@@ -253,7 +259,73 @@ const rows = [
     `# ${FLAG}: REFUSED\n`,
     [],
   ],
+  [
+    "the emitted test's relax constant",
+    RELAXED.file,
+    `x\n${RELAXED.line}\n`,
+    [],
+  ],
+  [
+    "the relax constant beside another line naming the flag",
+    RELAXED.file,
+    `${RELAXED.line}\nconst b = "${FLAG}"\n`,
+    [2],
+  ],
+  [
+    "a comment saying refused in the relax constant's file",
+    RELAXED.file,
+    `// ${FLAG} is refused\n`,
+    [1],
+  ],
+  [
+    "the relax constant in another src file",
+    "src/spec/run/command.ts",
+    `${RELAXED.line}\n`,
+    [1],
+  ],
+  [
+    "the relax constant under scripts/",
+    "scripts/run.ts",
+    `${RELAXED.line}\n`,
+    [1],
+  ],
+  ["the relax constant indented", RELAXED.file, `  ${RELAXED.line}\n`, [1]],
+  [
+    "the relax constant with a trailing comment",
+    RELAXED.file,
+    `${RELAXED.line} // x\n`,
+    [1],
+  ],
+  [
+    "the relax constant exported",
+    RELAXED.file,
+    `export ${RELAXED.line}\n`,
+    [1],
+  ],
+  [
+    "the relax constant renamed",
+    RELAXED.file,
+    `const RUN_RELAX = "${FLAG}"\n`,
+    [1],
+  ],
+  [
+    "the relax constant with another flag after",
+    RELAXED.file,
+    `const RUN_RELAX_PANICS: string = "${FLAG} -x"\n`,
+    [1],
+  ],
 ];
+
+test("the relax constant is a line its file holds once, and the only one naming the flag", () => {
+  const text = readFileSync(
+    fileURLToPath(new URL(`../${RELAXED.file}`, import.meta.url)),
+    "utf8",
+  );
+  const lines = text.split("\n");
+  assert.equal(lines.filter((l) => l === RELAXED.line).length, 1);
+  assert.equal(lines.filter((l) => l.includes(FLAG)).length, 1);
+  assert.deepEqual(refusedLines(RELAXED.file, text), []);
+});
 
 for (const [name, file, text, want] of rows) {
   test(`refusedLines: ${name}`, () => {
@@ -315,11 +387,12 @@ test("the check passes when every line naming the flag is exempt", () => {
   const dir = repo({
     "docs/ok.md": `${FLAG} is refused.\n`,
     "scripts/ok.sh": `# ${FLAG} is refused\n`,
+    [RELAXED.file]: `${RELAXED.line}\n`,
   });
   try {
     const r = run(dir);
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /in 2 tracked files/);
+    assert.match(r.stdout, /in 3 tracked files/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

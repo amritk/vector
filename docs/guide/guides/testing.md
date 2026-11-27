@@ -456,31 +456,31 @@ vector: spec run: /path/to/vector/src is neither a nish install (libexec/nish) n
 `--nish <bin>` skips all of this and builds with that compiler as it is, with
 whatever std it reads. `--spec` is accepted and not read.
 
-Either way, the compiler builds the emitted test as it is, with no flag that
-relaxes its no-panic rule. A nish that refuses a module that may
-panic (the latest release does; the pinned release does not) refuses the test
-when it builds it, with `NL2457` for a site in the module and `NL2458` for a
-call that reaches one. The run reports `ERROR` and exits 1: every requirement
-is `not-run`, the integrity line says the test never reached the end of
-`main`, and the compiler's own lines follow:
+Either way, the compiler builds the emitted test with its no-panic rule
+relaxed, for every module the std's `noPanic` list leaves out, so a module that
+may panic still builds, and a panic it reaches fails the test when it runs. The
+vectors before it print their lines; the test then stops, and the run reports
+`ERROR` and exits 1: the integrity line says the test never reached the end of
+`main`, and every requirement it did not finish is `not-run`. Here the module's
+HMAC panics on RFC 4231 §4.6, after §4.2 passed:
 
 <!-- illustrative -->
 ```sh
-./dist/vector spec run contracts/rfc5869-hkdf-sha256.json --nish-root ../nish-latest
+./dist/vector spec run tests/fixtures/profile/profile-truncate.json --nish-root ../nish-panics
 ```
 
 ```text
-ERROR: rfc5869-hkdf-sha256 (exit 1)
-…
+ERROR: profile-truncate (exit 1)
+  not-run  R-TRUNC
 integrity: the test never reached the end of main (no vector-done line with this run's nonce): it stopped early, or the module exited the process
-  | /tmp/vector-run-…/main.ts:220:179: error: This call to 'hkdfExpandSha256' may panic: it reaches the 'panic' site at std/crypto/sha256.ts:528:7, …
 ```
 
-Fix the module, never the build: CI refuses the compiler's relax-panics flag
-(`npm run allow-panics`) anywhere under `scripts/`, `.github/`, `docs/` or
-`src/`. `npm run no-panic` builds vector and every test it emits for its own
-contracts with a compiler you name (`NISH_BIN`, default the pin) and lists each
-site as `file:line:col kind`; CI's `no-panic` job runs it with the latest nish.
+Fix the module. The relaxed build is the emitted test's alone: CI refuses the
+compiler's relax-panics flag (`npm run allow-panics`) anywhere else under
+`scripts/`, `.github/`, `docs/` or `src/`. `npm run no-panic` builds vector and
+every test it emits for its own contracts with a compiler you name (`NISH_BIN`,
+default the pin) and its rule unrelaxed, and lists each site as
+`file:line:col kind`; CI's `no-panic` job runs it with the latest nish.
 
 ### Slow vectors
 
@@ -553,7 +553,7 @@ allows (`L = 255*HashLen + 1`):
 
 ```sh
 cp -rL .nish ../nish-bug
-sed -i '174s/length > HKDF_MAX_BLOCKS \* SHA256_SIZE ||/length > HKDF_MAX_BLOCKS * SHA256_SIZE + 1 ||/' ../nish-bug/std/crypto/hkdf.ts
+sed -i '187s/length > HKDF_MAX_BLOCKS \* SHA256_SIZE ||/length > HKDF_MAX_BLOCKS * SHA256_SIZE + 1 ||/' ../nish-bug/std/crypto/hkdf.ts
 ```
 
 Every vector RFC 5869 prints still passes. The property that pins the output

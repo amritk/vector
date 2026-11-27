@@ -23,8 +23,8 @@ if grep -rq 'canary' "$root/std"; then
   printf '%s/std/m.ts:1:1: error: refused\\n1 error\\n' "$root" >&2
   exit 1
 fi
-printf '#!/bin/sh\\ncd "%s" && exec sh "%s"\\n' "$root" "$1" > "$3"
-chmod +x "$3"
+printf '#!/bin/sh\\ncd "%s" && exec sh "%s"\\n' "$root" "$1" > "$4"
+chmod +x "$4"
 `
 
 /** The module at the base. */

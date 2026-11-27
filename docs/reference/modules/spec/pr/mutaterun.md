@@ -8,7 +8,9 @@ install of the root's seed with the root's std/ laid over it (`run`'s
 scratch); with `--nish`, a copy of the whole root (its .git left behind).
 Either way the slot's compiler builds against its own std/ holding its own
 mutant. A mutant runs in two steps, both
-timed: `<nish> <test> --link <bin>` builds the test against it, and a build
+timed: `runNishLinkArgv` builds the test against it, with the no-panic
+rule relaxed (so a panic the mutant reaches kills it at run time rather than
+refusing its build), and a build
 the compiler refuses with an error located in the module or the test makes
 it stillborn, while any other failed build (a crash, a kill, a full disk,
 no binary) stops the run, as the tool's failure, not the mutant's; one

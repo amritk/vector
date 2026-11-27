@@ -61,8 +61,8 @@ vector does two things, and no model is involved in either:
    renames a contracted export. The spec side is `specs/`, `contracts/`,
    `rfcs/`, `.refcache/` and generated tests. Land the spec first, then the code. See
    [frozen](guide/guides/pr-gates.md#frozen).
-13. **The test builds with no relax flag.** A nish refusing panics
-   (`NL2457`, `NL2458`) makes `spec run` `ERROR`, exit 1: fix the module. See [Run it](guide/guides/testing.md#run-it).
+13. **The test builds with panics relaxed.** A panic in the module stops
+   the test: `spec run` is `ERROR`, exit 1. Fix the module. See [Run it](guide/guides/testing.md#run-it).
 
 ## Rules
 

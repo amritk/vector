@@ -30,6 +30,7 @@ Generated from [src/spec/run/run.ts](https://github.com/amritk/vector/blob/main/
 - [`runMakeScratchIn`](#runmakescratchin)
 - [`runTest`](#runtest)
 - [`runNishArgv`](#runnishargv)
+- [`runNishLinkArgv`](#runnishlinkargv)
 - [`runTestFile`](#runtestfile)
 - [`runTestCommand`](#runtestcommand)
 - [`runEscape`](#runescape)
@@ -752,10 +753,11 @@ the result, or `Err` when the compiler could not be started
 
 ### runNishArgv
 
-The command that builds and runs a Nish test: `nish run <file>`, or, when
-slow vectors run, `nish run --profile speed <file>`. An optimized build
-costs about a second more to compile, and runs a long iterated vector some
-ten times faster, so only a run with `--slow` pays for it.
+The command that builds and runs a Nish test: `nish run <relax> <file>`,
+or, when slow vectors run, `nish run --profile speed <relax> <file>`, with
+RUN_RELAX_PANICS as `<relax>`. An optimized build costs about a second more
+to compile, and runs a long iterated vector some ten times faster, so only
+a run with `--slow` pays for it.
 
 ```ts
 function runNishArgv(nishBin: string, file: string, slow: boolean): string[]
@@ -782,6 +784,41 @@ whether the test runs its slow vectors
 <scalar-field name="returns" type="string[]">
 
 the command, without the nonce
+
+</scalar-field>
+
+### runNishLinkArgv
+
+The command that builds a Nish test into a binary, `&lt;nish&gt; &lt;file&gt; &lt;relax&gt;
+--link &lt;bin&gt;`, with RUN_RELAX_PANICS as `&lt;relax&gt;`, as `spec mutate` builds
+the test against each mutant: a panic the mutant reaches then fails the
+test when it runs, and kills the mutant, instead of refusing its build.
+
+```ts
+function runNishLinkArgv(nishBin: string, file: string, bin: string): string[]
+```
+
+<scalar-field name="nishBin" type="string" required>
+
+the compiler
+
+</scalar-field>
+
+<scalar-field name="file" type="string" required>
+
+the test
+
+</scalar-field>
+
+<scalar-field name="bin" type="string" required>
+
+the binary to link
+
+</scalar-field>
+
+<scalar-field name="returns" type="string[]">
+
+the command
 
 </scalar-field>
 

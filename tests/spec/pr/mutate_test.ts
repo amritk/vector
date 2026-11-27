@@ -72,8 +72,8 @@ if grep -q 'return null\\|canary' "$root/std/m.ts"; then
   printf '%s/std/m.ts:5:3: error: refused\\n  5 |   return null\\n1 error\\n' "$root" >&2
   exit 1
 fi
-printf '#!/bin/sh\\ncd "%s" && exec sh "%s"\\n' "$root" "$1" > "$3"
-chmod +x "$3"
+printf '#!/bin/sh\\ncd "%s" && exec sh "%s"\\n' "$root" "$1" > "$4"
+chmod +x "$4"
 `
 
 /**
@@ -294,8 +294,8 @@ if grep -q 'return null' "$root/std/m.ts"; then
   echo "std/m.ts:5:3: error: refused" >&2
   exit 1
 fi
-printf '#!/bin/sh\\ncd "%s" && exec sh "%s"\\n' "$root" "$1" > "$3"
-chmod +x "$3"
+printf '#!/bin/sh\\ncd "%s" && exec sh "%s"\\n' "$root" "$1" > "$4"
+chmod +x "$4"
 `
 
 /** A stub compiler that refuses the canary, fails "return null" with \`what\` (shell), and otherwise links. */
@@ -308,8 +308,8 @@ fi
 if grep -q 'return null' "$root/std/m.ts"; then
   ${what}
 fi
-printf '#!/bin/sh\\ncd "%s" && exec sh "%s"\\n' "$root" "$1" > "$3"
-chmod +x "$3"
+printf '#!/bin/sh\\ncd "%s" && exec sh "%s"\\n' "$root" "$1" > "$4"
+chmod +x "$4"
 `
 
 /** A stub compiler that exits 0 and writes nothing. */
@@ -320,8 +320,8 @@ exit 0
 /** A stub compiler that links every module, the canary included: it does not read the copy. */
 const MUTATE_TEST_BLIND_NISH: string = `#!/bin/sh
 root=$(cd "$(dirname "$0")/.." && pwd)
-printf '#!/bin/sh\\ncd "%s" && exec sh "%s"\\n' "$root" "$1" > "$3"
-chmod +x "$3"
+printf '#!/bin/sh\\ncd "%s" && exec sh "%s"\\n' "$root" "$1" > "$4"
+chmod +x "$4"
 `
 
 /**

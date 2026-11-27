@@ -286,11 +286,11 @@ from another module (its `module` is set to a module other than the target)
 is not looked for. A module that cannot be lexed is not mutated at all: the
 command exits 2.
 
-Start with a change: a redundant bound on line 173 of the module.
+Start with a change: a redundant bound on line 186 of the module.
 
 ```sh
 git -C ../nish checkout -q -- .
-sed -i '173s/length < 0 ||/length < 0 || length > 9000 ||/' ../nish/std/crypto/hkdf.ts
+sed -i '186s/length < 0 ||/length < 0 || length > 9000 ||/' ../nish/std/crypto/hkdf.ts
 ```
 
 ### The compiler
@@ -331,24 +331,23 @@ built in the checkout. An installed `bin/nish` is a wrapper that execs
 vector: spec mutate: the compiler bin/nish builds the test even with std/crypto/hkdf.ts made unparseable in the copy, so it does not read the copy (an installed wrapper that execs another install by absolute path?): give a --nish that builds from the checkout it sits in
 ```
 
-The compiler builds the test against each slot as it is, with no flag that
-relaxes its no-panic rule. A nish that refuses a module that may panic (the
-latest release does, with `NL2457` for a site and `NL2458` for a call that
-reaches one) refuses the unmutated module's build too, so no mutant runs.
-When every error is located in the module or the test, mutate refuses the
-change (exit 1) with the compiler's lines; when one is located elsewhere, such
-as a std module the module calls, it is the tool's failure (exit 2):
+The compiler builds the test against each slot with its no-panic rule
+relaxed, as `spec run` does, so a module that may panic still builds. A mutant
+that reaches a panic stops the test with a nonzero exit, which kills it; a
+panic in the unmutated module fails the baseline, so mutate refuses the change
+(exit 1) and no mutant runs:
 
 <!-- illustrative -->
 ```text
 …
 problems:
-  ✗ the test fails on the unmutated module, so it proves nothing: it does not build: …: error: This call to 'hkdfExpandSha256' may panic: …
+  ✗ the test fails on the unmutated module, so it proves nothing: …
 ```
 
 Fix the panic site in the module. `npm run allow-panics` refuses the relax
-flag in the repository, and CI's `no-panic` job builds every emitted test with
-the latest nish.
+flag everywhere in the repository but the emitted test's build, and CI's
+`no-panic` job builds every emitted test with the latest nish and its rule
+unrelaxed.
 
 ### Survivors
 
@@ -360,22 +359,22 @@ the latest nish.
 ```text
 spec mutate std/crypto/hkdf.ts against HEAD: FAILED
 
-  killed std/crypto/hkdf.ts:173:12 relational: length <= 0 || length > 9000 ||
-  killed std/crypto/hkdf.ts:173:14 int: length < 1 || length > 9000 ||
-  survived std/crypto/hkdf.ts:173:14 int: length < -1 || length > 9000 ||
-  survived std/crypto/hkdf.ts:173:16 logical: length < 0 && length > 9000 ||
-  survived std/crypto/hkdf.ts:173:26 relational: length < 0 || length >= 9000 ||
-  survived std/crypto/hkdf.ts:173:28 int: length < 0 || length > 9001 ||
-  survived std/crypto/hkdf.ts:173:28 int: length < 0 || length > 8999 ||
-  survived std/crypto/hkdf.ts:173:5 delete-statement:
+  killed std/crypto/hkdf.ts:186:12 relational: length <= 0 || length > 9000 ||
+  killed std/crypto/hkdf.ts:186:14 int: length < 1 || length > 9000 ||
+  survived std/crypto/hkdf.ts:186:14 int: length < -1 || length > 9000 ||
+  survived std/crypto/hkdf.ts:186:16 logical: length < 0 && length > 9000 ||
+  survived std/crypto/hkdf.ts:186:26 relational: length < 0 || length >= 9000 ||
+  survived std/crypto/hkdf.ts:186:28 int: length < 0 || length > 9001 ||
+  survived std/crypto/hkdf.ts:186:28 int: length < 0 || length > 8999 ||
+  survived std/crypto/hkdf.ts:186:5 delete-statement:
 
 problems:
-  ✗ survivor std/crypto/hkdf.ts:173 (173:14:int:-1): `length < -1 || length > 9000 ||` passes the test: behaviour no requirement pins down
-  ✗ survivor std/crypto/hkdf.ts:173 (173:16:logical): `length < 0 && length > 9000 ||` passes the test: behaviour no requirement pins down
-  ✗ survivor std/crypto/hkdf.ts:173 (173:26:relational): `length < 0 || length >= 9000 ||` passes the test: behaviour no requirement pins down
-  ✗ survivor std/crypto/hkdf.ts:173 (173:28:int:+1): `length < 0 || length > 9001 ||` passes the test: behaviour no requirement pins down
-  ✗ survivor std/crypto/hkdf.ts:173 (173:28:int:-1): `length < 0 || length > 8999 ||` passes the test: behaviour no requirement pins down
-  ✗ survivor std/crypto/hkdf.ts:173 (173:5:delete-statement): `` passes the test: behaviour no requirement pins down
+  ✗ survivor std/crypto/hkdf.ts:186 (186:14:int:-1): `length < -1 || length > 9000 ||` passes the test: behaviour no requirement pins down
+  ✗ survivor std/crypto/hkdf.ts:186 (186:16:logical): `length < 0 && length > 9000 ||` passes the test: behaviour no requirement pins down
+  ✗ survivor std/crypto/hkdf.ts:186 (186:26:relational): `length < 0 || length >= 9000 ||` passes the test: behaviour no requirement pins down
+  ✗ survivor std/crypto/hkdf.ts:186 (186:28:int:+1): `length < 0 || length > 9001 ||` passes the test: behaviour no requirement pins down
+  ✗ survivor std/crypto/hkdf.ts:186 (186:28:int:-1): `length < 0 || length > 8999 ||` passes the test: behaviour no requirement pins down
+  ✗ survivor std/crypto/hkdf.ts:186 (186:5:delete-statement): `` passes the test: behaviour no requirement pins down
 ```
 
 The survivors are right: the next line already refuses any length above 8160,
@@ -389,7 +388,7 @@ the contract:
 cat > contracts/rfc5869-hkdf-sha256.survivors.json <<'EOF'
 {
   "allowSurvivors": [
-    { "file": "std/crypto/hkdf.ts", "line": 173, "reason": "A redundant bound: the next line already refuses any length above 8160." }
+    { "file": "std/crypto/hkdf.ts", "line": 186, "reason": "A redundant bound: the next line already refuses any length above 8160." }
   ]
 }
 EOF
@@ -400,17 +399,17 @@ EOF
 ```text
 spec mutate std/crypto/hkdf.ts against HEAD: OK
 
-  killed std/crypto/hkdf.ts:173:12 relational: length <= 0 || length > 9000 ||
-  killed std/crypto/hkdf.ts:173:14 int: length < 1 || length > 9000 ||
-  survived std/crypto/hkdf.ts:173:14 int: length < -1 || length > 9000 ||
-  survived std/crypto/hkdf.ts:173:16 logical: length < 0 && length > 9000 ||
-  survived std/crypto/hkdf.ts:173:26 relational: length < 0 || length >= 9000 ||
-  survived std/crypto/hkdf.ts:173:28 int: length < 0 || length > 9001 ||
-  survived std/crypto/hkdf.ts:173:28 int: length < 0 || length > 8999 ||
-  survived std/crypto/hkdf.ts:173:5 delete-statement:
+  killed std/crypto/hkdf.ts:186:12 relational: length <= 0 || length > 9000 ||
+  killed std/crypto/hkdf.ts:186:14 int: length < 1 || length > 9000 ||
+  survived std/crypto/hkdf.ts:186:14 int: length < -1 || length > 9000 ||
+  survived std/crypto/hkdf.ts:186:16 logical: length < 0 && length > 9000 ||
+  survived std/crypto/hkdf.ts:186:26 relational: length < 0 || length >= 9000 ||
+  survived std/crypto/hkdf.ts:186:28 int: length < 0 || length > 9001 ||
+  survived std/crypto/hkdf.ts:186:28 int: length < 0 || length > 8999 ||
+  survived std/crypto/hkdf.ts:186:5 delete-statement:
 
 notes:
-  - survivor std/crypto/hkdf.ts:173 (173:14:int:-1) is allowed: A redundant bound: the next line already refuses any length above 8160.
+  - survivor std/crypto/hkdf.ts:186 (186:14:int:-1) is allowed: A redundant bound: the next line already refuses any length above 8160.
 …
 ```
 

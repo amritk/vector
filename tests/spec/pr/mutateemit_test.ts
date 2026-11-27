@@ -54,8 +54,8 @@ if ! grep -q '^// vector-contract-sha256: [0-9a-f]' "$1" || ! grep -q 'k()' "$1"
   echo "not the emitted test: $1" >&2
   exit 1
 fi
-printf '#!/bin/sh\\ncd "%s" && grep -q "=> 7" std/m.ts\\n' "$root" > "$3"
-chmod +x "$3"
+printf '#!/bin/sh\\ncd "%s" && grep -q "=> 7" std/m.ts\\n' "$root" > "$4"
+chmod +x "$4"
 `
 
 /** Commits the module, stub compiler, RFC and contract, then changes the module on a work branch. */
@@ -90,8 +90,8 @@ if ! grep -q '^// vector-contract-sha256: ${sha}$' "$1" || ! grep -q 'hexEncode'
   echo "not example-hex's emitted test: $1" >&2
   exit 1
 fi
-printf '#!/bin/sh\\ncd "%s" && grep -q "=> 7" std/hex.ts\\n' "$root" > "$3"
-chmod +x "$3"
+printf '#!/bin/sh\\ncd "%s" && grep -q "=> 7" std/hex.ts\\n' "$root" > "$4"
+chmod +x "$4"
 `
 
 /** Commits nish/std/hex.ts and a stub compiler for example-hex's test, then changes the module on a work branch. */
@@ -155,7 +155,7 @@ const mutateemitTestHex = (t: Suite): Result<boolean, string> => {
   return Ok(true)
 }
 
-/** Every build mutate started was of a test, and none relaxed the no-panic rule. */
+/** Every build mutate started was of a test, with the no-panic rule relaxed once, so a mutant that panics is killed. */
 const mutateemitTestArgv = (t: Suite, log: string): void => {
   const text = readFileSyncOrNull(log) ?? ""
   const builds: string[] = []
@@ -166,7 +166,12 @@ const mutateemitTestArgv = (t: Suite, log: string): void => {
   }
   t.ok(`mutate started its builds (${builds.length})`, builds.length >= 3)
   for (const b of builds) {
-    t.ok(`a mutant build keeps the no-panic rule: ${b}`, b.indexOf("--link ") > 0 && b.indexOf("--allow") < 0)
+    const at = b.indexOf(" --allow-panics --link ")
+    t.ok(`a mutant build is linked, relaxed: ${b}`, at > 0)
+    t.ok(
+      `and relaxes the no-panic rule once: ${b}`,
+      at > 0 && b.indexOf("--allow") === at + 1 && b.substring(at + 2).indexOf("--allow") < 0,
+    )
   }
   t.ok("its log is removed", runProcess(["rm", "-f", "--", log], "", 10000).isOk())
 }
