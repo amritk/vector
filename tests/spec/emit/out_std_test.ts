@@ -89,18 +89,18 @@ export const main = (): i32 => {
     ["encoding starts at 0", "second pad goes one past the end", "end is one short"],
     [
       "let o: i32 = at",
-      "dst[o + 2] = toU8(BASE64_PAD)\n    dst[o + 3] = toU8(BASE64_PAD)",
-      "    o = o + 4\n  }\n  return o\n}",
+      "toU8(BASE64_PAD)\n  dst[o + 3] = toU8(BASE64_PAD)",
+      "  dst[o + 3] = toU8(BASE64_PAD)\n  return o + 4\n}",
     ],
     [
       "let o: i32 = 0",
-      "dst[o + 2] = toU8(BASE64_PAD)\n    dst[o + 4] = toU8(BASE64_PAD)",
-      "    o = o + 4\n  }\n  return o - 1\n}",
+      "toU8(BASE64_PAD)\n  dst[o + 4] = toU8(BASE64_PAD)",
+      "  dst[o + 3] = toU8(BASE64_PAD)\n  return o + 3\n}",
     ],
     [
       "V1: base64EncodeInto wrote outside [at, end) = [5, 8), at 0\nV2: base64EncodeInto returned end 4 outside [at, at + capacity] = [5, 13]\nV3: base64EncodeInto returned end 4 outside [at, at + capacity] = [5, 11]\nV4: base64EncodeInto returned end 0 outside [at, at + capacity] = [5, 9]\nV5: base64EncodeInto returned end 4 outside [at, at + capacity] = [5, 15]\nV6: base64EncodeInto wrote outside [at, end) = [5, 8), at 0\nV7: base64EncodeInto wrote outside [at, end) = [5, 8), at 0\nP-LENGTH: sample 1 of 29 (len(d) = 1): base64EncodeInto returned end 4 outside [at, at + capacity] = [5, 11]",
-      "V3: base64EncodeInto wrote outside [at, end) = [5, 9), at 9\nV6: base64EncodeInto wrote outside [at, end) = [5, 13), at 13\nP-LENGTH: sample 1 of 29 (len(d) = 1): base64EncodeInto wrote outside [at, end) = [5, 9), at 9",
-      "V1: base64EncodeInto wrote outside [at, end) = [5, 12), at 12\nV2: base64EncodeInto wrote outside [at, end) = [5, 8), at 8\nV3: base64EncodeInto wrote outside [at, end) = [5, 8), at 8\nV4: base64EncodeInto returned end 4 outside [at, at + capacity] = [5, 9]\nV5: base64EncodeInto wrote outside [at, end) = [5, 8), at 8\nV6: base64EncodeInto wrote outside [at, end) = [5, 12), at 12\nV7: base64EncodeInto wrote outside [at, end) = [5, 12), at 12\nP-LENGTH: sample 1 of 29 (len(d) = 1): base64EncodeInto wrote outside [at, end) = [5, 8), at 8",
+      "V2: base64EncodeInto wrote outside [at, end) = [5, 9), at 9\nV3: base64EncodeInto wrote outside [at, end) = [5, 9), at 9\nV6: base64EncodeInto wrote outside [at, end) = [5, 13), at 13\nV7: base64EncodeInto wrote outside [at, end) = [5, 13), at 13\nP-LENGTH: sample 1 of 29 (len(d) = 1): base64EncodeInto wrote outside [at, end) = [5, 9), at 9",
+      "V2: base64EncodeInto wrote outside [at, end) = [5, 8), at 8\nV3: base64EncodeInto wrote outside [at, end) = [5, 8), at 8\nV6: base64EncodeInto wrote outside [at, end) = [5, 12), at 12\nV7: base64EncodeInto wrote outside [at, end) = [5, 12), at 12\nP-LENGTH: sample 1 of 29 (len(d) = 1): base64EncodeInto wrote outside [at, end) = [5, 8), at 8",
     ],
   )
   outStdCase(
@@ -108,8 +108,8 @@ export const main = (): i32 => {
     "tests/fixtures/deflate-out/contracts/deflate-out.json",
     "std/compress/deflate.ts",
     ["decompressed end is one short", "truncated stream answers its bytes"],
-    ["    return this.outPos\n  }", "      return r\n    }\n    if (this.inPos !== off + len) {"],
-    ["    return this.outPos - 1\n  }", "      return this.outPos\n    }\n    if (this.inPos !== off + len) {"],
+    ["    return this.outPos\n  }", "      return r\n    }\n    if (this.inPos !== inEnd) {"],
+    ["    return this.outPos - 1\n  }", "      return this.outPos\n    }\n    if (this.inPos !== inEnd) {"],
     [
       "V2: deflateDecompress wrote outside [at, end) = [5, 27), at 27\nV3: deflateDecompress wrote outside [at, end) = [5, 9), at 9\nP-ROUND-TRIP: sample 1 of 29 (len(d) = 52): deflateDecompress wrote outside [at, end) = [5, 56), at 56",
       'V4: expected "null", got "68"',
