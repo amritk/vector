@@ -46,14 +46,6 @@ jobs:
           node-version: "22"
           cache: npm
 
-      - name: Install the LLVM toolchain nish links with
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-18 lld-18 llvm-18
-          mkdir -p "$HOME/.local/llvm-bin"
-          for t in clang llc opt ld.lld; do ln -sf "/usr/bin/$t-18" "$HOME/.local/llvm-bin/$t"; done
-          echo "$HOME/.local/llvm-bin" >> "$GITHUB_PATH"
-
       - name: Install dependencies
         run: npm ci
 
@@ -83,17 +75,27 @@ jobs:
           git fetch --no-tags --depth=1 origin "$BASE_SHA"
           npm run doc-caps -- --base "$BASE_SHA"
 
-      - name: Cache the pinned nish and z3
+      - name: Cache the pinned z3 and the next nish
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            .nish
             .nish-next
             .z3
-          key: toolchain-${{ runner.os }}-${{ hashFiles('.nish-version', 'scripts/fetch-nish.sh', 'scripts/fetch-z3.sh', '.nish-next-version', 'scripts/fetch-nish-next.sh') }}
+          key: toolchain-${{ runner.os }}-${{ hashFiles('scripts/fetch-z3.sh', '.nish-next-version', 'scripts/fetch-nish-next.sh') }}
 
-      - name: Fetch the pinned nish compiler
-        run: bash scripts/fetch-nish.sh
+      - name: The pinned nish, and the LLVM toolchain it links with
+        id: nish
+        uses: amritk/workflows/actions/setup-nish@d0672b6994cc142bccf836ab1e185b9be990e832
+
+      # The build, tests/run.mjs and the spec-run tests read the install at
+      # .nish/ (bin/, libexec/, std/), where scripts/fetch-nish.sh puts it
+      # locally, so .nish names the one setup-nish installed.
+      - name: Link .nish to the installed nish
+        env:
+          NISH_BIN: ${{ steps.nish.outputs.nish }}
+        run: |
+          ln -sfn "$(dirname "$(dirname "$NISH_BIN")")" .nish
+          .nish/bin/nish --version
 
       - name: Fetch the pinned z3
         run: bash scripts/fetch-z3.sh
