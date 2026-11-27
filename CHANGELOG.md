@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.7.0](https://github.com/amritk/vector/compare/v0.6.1...v0.7.0) (2026-11-26)
+
+
+### Features
+
+* **spec:** bind a format constant and a printed value's tail ([#244](https://github.com/amritk/vector/issues/244)) ([b579fe7](https://github.com/amritk/vector/commit/b579fe772b033d43321d09e9655a40cc8b5990cf))
+* **spec:** emit intended wraps as nish:unsafe wrapping ops ([#247](https://github.com/amritk/vector/issues/247)) ([97bda45](https://github.com/amritk/vector/commit/97bda450eba3aeaab5b760f9a16f38095555dfb3))
+* **spec:** pair values printed in one prose example ([#242](https://github.com/amritk/vector/issues/242)) ([13d6245](https://github.com/amritk/vector/commit/13d6245269187d5b9fb7825b4574d5a3584a5d93))
+* **verify:** name the division a not-replayed witness divides by zero at ([#212](https://github.com/amritk/vector/issues/212)) ([b55c88b](https://github.com/amritk/vector/commit/b55c88b05c8d91184b3167ca446f5174a0616ad8)), closes [#209](https://github.com/amritk/vector/issues/209)
+
+
+### Bug Fixes
+
+* **spec:** emit Nish tests that build under the no-panic rule ([#221](https://github.com/amritk/vector/issues/221)) ([cb41da1](https://github.com/amritk/vector/commit/cb41da19879c502e56723ea401f953eb166173c9))
+* **spec:** pair call-label arguments in order, and pair empty and unlabelled ones ([#234](https://github.com/amritk/vector/issues/234)) ([506adcd](https://github.com/amritk/vector/commit/506adcd3b6e66dc5d9aa2d51e1e861f835521ddf))
+* **verify:** report a float64 check vector cannot run as MISMATCH ([#245](https://github.com/amritk/vector/issues/245)) ([890a8ed](https://github.com/amritk/vector/commit/890a8edc76a7d2b016d7ff800f63980456e1d1bc))
+
+
+### Refactors
+
+* **core:** prove src/core, src/lang, src/cli and the remaining modules cannot panic ([#227](https://github.com/amritk/vector/issues/227)) ([2fcca47](https://github.com/amritk/vector/commit/2fcca47d1e1d0537c38dbd6fe6237856144500d3))
+* **spec:** dispatch source readers and check gates on a kind, not a function reference ([#222](https://github.com/amritk/vector/issues/222)) ([18a805f](https://github.com/amritk/vector/commit/18a805ff14171a8c4625e8eb58ae30e30f087b32))
+* **spec:** make on-purpose wraps use nish:unsafe ([#243](https://github.com/amritk/vector/issues/243)) ([090793c](https://github.com/amritk/vector/commit/090793c22297573a3cee4d1da3a43c8899ded77e))
+* **spec:** prove src/spec/contract cannot panic ([#226](https://github.com/amritk/vector/issues/226)) ([0aa8ef9](https://github.com/amritk/vector/commit/0aa8ef9a5152b2976f2bd6d370f189a263fd64d7))
+* **spec:** prove src/spec/emit cannot panic ([#238](https://github.com/amritk/vector/issues/238)) ([bb06f81](https://github.com/amritk/vector/commit/bb06f81ed9ed684125978fa43934c03e40313b01))
+* **spec:** prove src/spec/extract.ts cannot panic ([#225](https://github.com/amritk/vector/issues/225)) ([691e0e5](https://github.com/amritk/vector/commit/691e0e51527d3f7734174baccfa38b78f30c65b1))
+* **spec:** prove src/spec/front cannot panic ([#232](https://github.com/amritk/vector/issues/232)) ([3de319a](https://github.com/amritk/vector/commit/3de319a42f4b48b6a8a3acb347e82d85823efd87))
+* **spec:** prove src/spec/gates cannot panic ([#230](https://github.com/amritk/vector/issues/230)) ([0236254](https://github.com/amritk/vector/commit/023625498d83f8a153b09727d8d5d8cfc4fb0768))
+* **spec:** prove src/spec/pr cannot panic ([#228](https://github.com/amritk/vector/issues/228)) ([805effe](https://github.com/amritk/vector/commit/805effe96dd5493c8b24306065f00041c9b8b117))
+* **spec:** prove src/spec/profile cannot panic ([#229](https://github.com/amritk/vector/issues/229)) ([67bea5a](https://github.com/amritk/vector/commit/67bea5a4a2767704a677c85c4d4cf56429f9b3ce))
+* **spec:** prove src/spec/run cannot panic ([#240](https://github.com/amritk/vector/issues/240)) ([22c7e2f](https://github.com/amritk/vector/commit/22c7e2f3360ec012e86859e55cd86060c2ac9ba6))
+* **spec:** prove src/spec/sample cannot panic ([#233](https://github.com/amritk/vector/issues/233)) ([d510ce3](https://github.com/amritk/vector/commit/d510ce3abb31f3acc2706ed0f2d7c64dfda292d8))
+* **spec:** prove src/spec/source cannot panic ([#224](https://github.com/amritk/vector/issues/224)) ([3db9530](https://github.com/amritk/vector/commit/3db9530b762d8d161d0428d58d9810d71530324b))
+* **spec:** prove src/spec/xml cannot panic ([#231](https://github.com/amritk/vector/issues/231)) ([fa52fff](https://github.com/amritk/vector/commit/fa52fffc3b4a070b7cb7aba32e9ce5354e613f56))
+* **verify:** prove src/verify/emit cannot panic ([#239](https://github.com/amritk/vector/issues/239)) ([36dda47](https://github.com/amritk/vector/commit/36dda477f29da951e8b35135416798fd1ed1d1e6))
+* **verify:** prove src/verify/equiv cannot panic ([#241](https://github.com/amritk/vector/issues/241)) ([02f2ad5](https://github.com/amritk/vector/commit/02f2ad5579d285599725db4ba9071b2e8333f28a))
+* **verify:** prove src/verify/lang cannot panic ([#237](https://github.com/amritk/vector/issues/237)) ([cc0f240](https://github.com/amritk/vector/commit/cc0f240a26ebba86651a28361c2f71be9429ec2e))
+* **verify:** prove src/verify/solve cannot panic ([#235](https://github.com/amritk/vector/issues/235)) ([1cf26da](https://github.com/amritk/vector/commit/1cf26dafc86a5bec41c30d28d45ebcb3a998c40a))
+
 ## [0.6.1](https://github.com/amritk/vector/compare/v0.6.0...v0.6.1) (2026-11-23)
 
 
