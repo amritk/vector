@@ -1,24 +1,20 @@
+# The pull request title becomes the squash-merge commit subject, which is what
+# release notes and version bumps are read from, so it is checked like one: by
+# the shared rule in amritk/workflows (nish's), pinned by commit.
 name: PR title
 
 on:
   pull_request:
+    # `edited` matters as much as `opened`: a title is usually fixed, not the
+    # pull request reopened, and without it the red check never clears.
     types: [opened, edited, reopened, synchronize]
+  merge_group:
 
-permissions:
-  pull-requests: read
+permissions: {}
 
 jobs:
-  conventional:
+  check:
+    name: conventional title
     runs-on: ubuntu-latest
     steps:
-      - name: 'The title is a conventional commit, `type(scope): imperative`'
-        env:
-          TITLE: ${{ github.event.pull_request.title }}
-        run: |
-          pattern='^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([a-z0-9][a-z0-9./-]*\))?!?: [^ ].*$'
-          if printf '%s\n' "$TITLE" | grep -Eq "$pattern"; then
-            echo "ok: $TITLE"
-          else
-            echo "::error::PR title \"$TITLE\" is not a conventional commit: type(scope): imperative, e.g. \"fix(cli): exit 2 on a missing file\". Types: build chore ci docs feat fix perf refactor revert style test."
-            exit 1
-          fi
+      - uses: amritk/workflows/actions/pr-title@9c76f1544b63cd7d3d40ff369c995fbb6eea8ecc # amritk/workflows#5, unreleased
