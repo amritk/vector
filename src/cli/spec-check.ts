@@ -9,7 +9,7 @@
  * command's shell) that failed.
  */
 
-import { Cli, ParseResult } from "nish/cli-args"
+import { Cli, CliArgument, CliFlag, ParseResult } from "nish/cli-args"
 import { trim } from "nish/text"
 import { EXIT_PASS, EXIT_REFUSED, EXIT_USAGE, report, usageError } from "../core/diag"
 import { joinPath } from "../core/fs"
@@ -31,41 +31,42 @@ export const SPEC_CHECK_ID: i32 = 4
 /** `vector spec check`, declared on a `Cli`: its handles and its handler. */
 export class SpecCheckCommand {
   /** The `--spec <file>` flag. */
-  specFlag: i32
+  specFlag: CliFlag
   /** The `--run-sources` flag. */
-  runSourcesFlag: i32
+  runSourcesFlag: CliFlag
   /** The `--module <file>` flag. */
-  moduleFlag: i32
+  moduleFlag: CliFlag
   /** The `--nish-root <dir>` flag. */
-  nishRootFlag: i32
+  nishRootFlag: CliFlag
   /** The `--format <f>` flag. */
-  formatFlag: i32
+  formatFlag: CliFlag
   /** The `<contract.json>` argument. */
-  contractJsonArg: i32
+  contractJsonArg: CliArgument
 
   /**
-   * Declares `vector spec check` and its flags under `parent`.
+   * Holds what `registerSpecCheck` declared for `vector spec check`.
    *
-   * @param cli the command tree
-   * @param parent the handle to declare it under (`ROOT` or the `spec` group)
+   * @param specFlag the `--spec <file>` flag
+   * @param runSourcesFlag the `--run-sources` flag
+   * @param moduleFlag the `--module <file>` flag
+   * @param nishRootFlag the `--nish-root <dir>` flag
+   * @param formatFlag the `--format <f>` flag
+   * @param contractJsonArg the `<contract.json>` argument
    */
-  constructor(cli: Cli, parent: i32) {
-    const handle = cli.command(
-      parent,
-      "check",
-      SPEC_CHECK_ID,
-      "Check a contract's quotes and vectors against its source",
-    )
-    this.specFlag = cli.flag(
-      handle,
-      "--spec <file>",
-      "the source the contract quotes, RFC XML v3 or plain text (default: found next to the contract)",
-    )
-    this.runSourcesFlag = cli.flag(handle, "--run-sources", "run the vectors' command sources and check their output")
-    this.moduleFlag = cli.flag(handle, "--module <file>", "the target module's source, for the signature gate")
-    this.nishRootFlag = cli.flag(handle, "--nish-root <dir>", "a nish checkout: finds the module and the compiler")
-    this.formatFlag = cli.flag(handle, "--format <f>", "text (default), markdown (a PR comment) or json")
-    this.contractJsonArg = cli.argument(handle, "<contract.json>", "the contract")
+  constructor(
+    specFlag: CliFlag,
+    runSourcesFlag: CliFlag,
+    moduleFlag: CliFlag,
+    nishRootFlag: CliFlag,
+    formatFlag: CliFlag,
+    contractJsonArg: CliArgument,
+  ) {
+    this.specFlag = specFlag
+    this.runSourcesFlag = runSourcesFlag
+    this.moduleFlag = moduleFlag
+    this.nishRootFlag = nishRootFlag
+    this.formatFlag = formatFlag
+    this.contractJsonArg = contractJsonArg
   }
 
   /**
@@ -75,21 +76,21 @@ export class SpecCheckCommand {
    * @returns the exit code
    */
   run(r: ParseResult): i32 {
-    const path = r.positional(this.contractJsonArg) ?? ""
-    const format = r.value(this.formatFlag) ?? "text"
+    const path = r.readPositional(this.contractJsonArg) ?? ""
+    const format = r.readValue(this.formatFlag) ?? "text"
     if (format !== "text" && format !== "markdown" && format !== "json") {
       return report(usageError(`spec check: --format expects text, markdown or json, not ${format}`))
     }
-    const spec = r.value(this.specFlag)
+    const spec = r.readValue(this.specFlag)
     if (spec !== null && realpathSync(spec) === null) {
       return report(usageError(`spec check: --spec ${spec} cannot be read`))
     }
     const ctx = new CheckContext(path, sourceInstallRoot())
     ctx.format = format
     ctx.specPath = spec
-    ctx.moduleFile = r.value(this.moduleFlag)
-    ctx.nishRoot = r.value(this.nishRootFlag)
-    ctx.runSources = r.flag(this.runSourcesFlag)
+    ctx.moduleFile = r.readValue(this.moduleFlag)
+    ctx.nishRoot = r.readValue(this.nishRootFlag)
+    ctx.runSources = r.readFlag(this.runSourcesFlag)
     const text = readFileSyncOrNull(path)
     if (text === null) {
       return report(usageError(`${path}: cannot be read`))
@@ -189,6 +190,30 @@ export const specCheckForeignWarning = (path: string, c: Contract, top: string |
  *
  * @param cli the command tree
  * @param parent the handle to declare it under
- * @returns the declared command, whose `run` handles it
+ * @returns the declared command, whose `run` handles it, or `Err` when the
+ *   declaration is refused (a vector bug)
  */
-export const registerSpecCheck = (cli: Cli, parent: i32): SpecCheckCommand => new SpecCheckCommand(cli, parent)
+export const registerSpecCheck = (cli: Cli, parent: i32): Result<SpecCheckCommand, string> => {
+  const handle = cli
+    .tryCommand(parent, "check", SPEC_CHECK_ID, "Check a contract's quotes and vectors against its source")
+    .orReturn()
+  const specFlag = cli
+    .tryFlag(
+      handle,
+      "--spec <file>",
+      "the source the contract quotes, RFC XML v3 or plain text (default: found next to the contract)",
+    )
+    .orReturn()
+  const runSourcesFlag = cli
+    .tryFlag(handle, "--run-sources", "run the vectors' command sources and check their output")
+    .orReturn()
+  const moduleFlag = cli
+    .tryFlag(handle, "--module <file>", "the target module's source, for the signature gate")
+    .orReturn()
+  const nishRootFlag = cli
+    .tryFlag(handle, "--nish-root <dir>", "a nish checkout: finds the module and the compiler")
+    .orReturn()
+  const formatFlag = cli.tryFlag(handle, "--format <f>", "text (default), markdown (a PR comment) or json").orReturn()
+  const contractJsonArg = cli.tryArgument(handle, "<contract.json>", "the contract").orReturn()
+  return Ok(new SpecCheckCommand(specFlag, runSourcesFlag, moduleFlag, nishRootFlag, formatFlag, contractJsonArg))
+}

@@ -18,7 +18,7 @@
     "src"
   ],
   "engines": {
-    "nish": ">=0.39.0"
+    "nish": ">=0.49.1"
   },
   "scripts": {
     "fetch-nish": "bash scripts/fetch-nish.sh",

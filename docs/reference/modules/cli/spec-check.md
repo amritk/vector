@@ -44,21 +44,52 @@ class SpecCheckCommand
 
 #### new SpecCheckCommand
 
-Declares `vector spec check` and its flags under `parent`.
+Holds what `registerSpecCheck` declared for `vector spec check`.
 
 ```ts
-new SpecCheckCommand(cli: Cli, parent: i32): SpecCheckCommand
+new SpecCheckCommand(
+  specFlag: CliFlag,
+  runSourcesFlag: CliFlag,
+  moduleFlag: CliFlag,
+  nishRootFlag: CliFlag,
+  formatFlag: CliFlag,
+  contractJsonArg: CliArgument,
+): SpecCheckCommand
 ```
 
-<scalar-field name="cli" type="Cli" required>
+<scalar-field name="specFlag" type="CliFlag" required>
 
-the command tree
+the `--spec <file>` flag
 
 </scalar-field>
 
-<scalar-field name="parent" type="i32" required>
+<scalar-field name="runSourcesFlag" type="CliFlag" required>
 
-the handle to declare it under (`ROOT` or the `spec` group)
+the `--run-sources` flag
+
+</scalar-field>
+
+<scalar-field name="moduleFlag" type="CliFlag" required>
+
+the `--module <file>` flag
+
+</scalar-field>
+
+<scalar-field name="nishRootFlag" type="CliFlag" required>
+
+the `--nish-root <dir>` flag
+
+</scalar-field>
+
+<scalar-field name="formatFlag" type="CliFlag" required>
+
+the `--format <f>` flag
+
+</scalar-field>
+
+<scalar-field name="contractJsonArg" type="CliArgument" required>
+
+the `<contract.json>` argument
 
 </scalar-field>
 
@@ -67,7 +98,7 @@ the handle to declare it under (`ROOT` or the `spec` group)
 The `<contract.json>` argument.
 
 ```ts
-contractJsonArg: i32
+contractJsonArg: CliArgument
 ```
 
 #### SpecCheckCommand.formatFlag
@@ -75,7 +106,7 @@ contractJsonArg: i32
 The `--format <f>` flag.
 
 ```ts
-formatFlag: i32
+formatFlag: CliFlag
 ```
 
 #### SpecCheckCommand.moduleFlag
@@ -83,7 +114,7 @@ formatFlag: i32
 The `--module <file>` flag.
 
 ```ts
-moduleFlag: i32
+moduleFlag: CliFlag
 ```
 
 #### SpecCheckCommand.nishRootFlag
@@ -91,7 +122,7 @@ moduleFlag: i32
 The `--nish-root <dir>` flag.
 
 ```ts
-nishRootFlag: i32
+nishRootFlag: CliFlag
 ```
 
 #### SpecCheckCommand.runSourcesFlag
@@ -99,7 +130,7 @@ nishRootFlag: i32
 The `--run-sources` flag.
 
 ```ts
-runSourcesFlag: i32
+runSourcesFlag: CliFlag
 ```
 
 #### SpecCheckCommand.specFlag
@@ -107,7 +138,7 @@ runSourcesFlag: i32
 The `--spec <file>` flag.
 
 ```ts
-specFlag: i32
+specFlag: CliFlag
 ```
 
 #### SpecCheckCommand.run
@@ -214,7 +245,10 @@ the warning, or null
 Declares `vector spec check` on the command tree.
 
 ```ts
-function registerSpecCheck(cli: Cli, parent: i32): SpecCheckCommand
+function registerSpecCheck(
+  cli: Cli,
+  parent: i32,
+): Result<SpecCheckCommand, string>
 ```
 
 <scalar-field name="cli" type="Cli" required>
@@ -229,8 +263,9 @@ the handle to declare it under
 
 </scalar-field>
 
-<scalar-field name="returns" type="SpecCheckCommand">
+<scalar-field name="returns" type="Result&lt;SpecCheckCommand, string&gt;">
 
-the declared command, whose `run` handles it
+the declared command, whose `run` handles it, or `Err` when the
+  declaration is refused (a vector bug)
 
 </scalar-field>

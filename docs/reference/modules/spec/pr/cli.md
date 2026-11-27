@@ -20,7 +20,7 @@ Generated from [src/spec/pr/cli.ts](https://github.com/amritk/vector/blob/main/s
 The `--format` a gate prints in.
 
 ```ts
-function prCliFormat(r: ParseResult, flag: i32): Result<string, string>
+function prCliFormat(r: ParseResult, flag: CliFlag): Result<string, string>
 ```
 
 <scalar-field name="r" type="ParseResult" required>
@@ -29,9 +29,9 @@ the parsed arguments
 
 </scalar-field>
 
-<scalar-field name="flag" type="i32" required>
+<scalar-field name="flag" type="CliFlag" required>
 
-the `--format` flag's handle
+the `--format` flag
 
 </scalar-field>
 
@@ -46,7 +46,7 @@ text when not given, the format given, or `Err` when it is not one a gate prints
 The `--base` a gate compares against.
 
 ```ts
-function prCliBase(r: ParseResult, flag: i32): Result<string, string>
+function prCliBase(r: ParseResult, flag: CliFlag): Result<string, string>
 ```
 
 <scalar-field name="r" type="ParseResult" required>
@@ -55,9 +55,9 @@ the parsed arguments
 
 </scalar-field>
 
-<scalar-field name="flag" type="i32" required>
+<scalar-field name="flag" type="CliFlag" required>
 
-the `--base` flag's handle
+the `--base` flag
 
 </scalar-field>
 

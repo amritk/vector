@@ -8,7 +8,7 @@
  * markdown line; an input or RFC that cannot be read exits 2.
  */
 
-import { Cli, ParseResult } from "nish/cli-args"
+import { Cli, CliArgument, CliFlag, ParseResult } from "nish/cli-args"
 import {
   EXIT_PASS,
   EXIT_REFUSED,
@@ -35,23 +35,23 @@ export const SPEC_EXTRACT_ID: i32 = 3
 /** `vector spec extract`, declared on a `Cli`: its handles and its handler. */
 export class SpecExtractCommand {
   /** The `-o, --out <contract.json>` flag. */
-  outFlag: i32
+  outFlag: CliFlag
   /** The `--check` flag. */
-  checkFlag: i32
+  checkFlag: CliFlag
   /** The `<spec.xml>` argument. */
-  specXmlArg: i32
+  specXmlArg: CliArgument
 
   /**
-   * Declares `vector spec extract` and its flags under `parent`.
+   * Holds what `registerSpecExtract` declared for `vector spec extract`.
    *
-   * @param cli the command tree
-   * @param parent the handle to declare it under (`ROOT` or the `spec` group)
+   * @param outFlag the `-o, --out <contract.json>` flag
+   * @param checkFlag the `--check` flag
+   * @param specXmlArg the `<spec.xml>` argument
    */
-  constructor(cli: Cli, parent: i32) {
-    const handle = cli.command(parent, "extract", SPEC_EXTRACT_ID, "Extract a contract from a kramdown-rfc spec's XML")
-    this.outFlag = cli.flag(handle, "-o, --out <contract.json>", "where to write the contract")
-    this.checkFlag = cli.flag(handle, "--check", "write nothing; exit 1 with a diff if --out differs")
-    this.specXmlArg = cli.argument(handle, "<spec.xml>", "the spec, RFC XML v3")
+  constructor(outFlag: CliFlag, checkFlag: CliFlag, specXmlArg: CliArgument) {
+    this.outFlag = outFlag
+    this.checkFlag = checkFlag
+    this.specXmlArg = specXmlArg
   }
 
   /**
@@ -61,9 +61,9 @@ export class SpecExtractCommand {
    * @returns the exit code
    */
   run(r: ParseResult): i32 {
-    const xml = r.positional(this.specXmlArg) ?? ""
-    const outArg = r.value(this.outFlag)
-    const check = r.flag(this.checkFlag)
+    const xml = r.readPositional(this.specXmlArg) ?? ""
+    const outArg = r.readValue(this.outFlag)
+    const check = r.readFlag(this.checkFlag)
     // extract reads only xml2rfc's output, and never runs it.
     if (xml.endsWith(".md")) {
       return report(usageError(`spec extract: build it first: scripts/build-spec.sh ${xml}`))
@@ -148,6 +148,15 @@ const specExtractPrint = (text: string): void => {
  *
  * @param cli the command tree
  * @param parent the handle to declare it under
- * @returns the declared command, whose `run` handles it
+ * @returns the declared command, whose `run` handles it, or `Err` when the
+ *   declaration is refused (a vector bug)
  */
-export const registerSpecExtract = (cli: Cli, parent: i32): SpecExtractCommand => new SpecExtractCommand(cli, parent)
+export const registerSpecExtract = (cli: Cli, parent: i32): Result<SpecExtractCommand, string> => {
+  const handle = cli
+    .tryCommand(parent, "extract", SPEC_EXTRACT_ID, "Extract a contract from a kramdown-rfc spec's XML")
+    .orReturn()
+  const outFlag = cli.tryFlag(handle, "-o, --out <contract.json>", "where to write the contract").orReturn()
+  const checkFlag = cli.tryFlag(handle, "--check", "write nothing; exit 1 with a diff if --out differs").orReturn()
+  const specXmlArg = cli.tryArgument(handle, "<spec.xml>", "the spec, RFC XML v3").orReturn()
+  return Ok(new SpecExtractCommand(outFlag, checkFlag, specXmlArg))
+}

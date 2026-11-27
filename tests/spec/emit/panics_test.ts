@@ -13,7 +13,7 @@ import { sampleParseInt } from "../../../src/spec/sample/ints"
 
 /** The no-panic compiler, which `.nish-next-version` pins and `scripts/fetch-nish-next.sh` installs. */
 const PROVER: string = ".nish-next/bin/nish"
-/** The pinned 0.39 compiler, which `spec run` builds with. */
+/** The pinned compiler (`.nish-version`), which `spec run` builds with. */
 const NISH: string = ".nish/bin/nish"
 /** A contract with a clause of every kind over every type the emitter writes. */
 const CONTRACT: string = "tests/fixtures/emit-panics/contracts/emit-panics.json"
@@ -119,7 +119,7 @@ const panicsFunctions = (text: string, module: string): Result<string[], string>
  * `P-WRAP`'s conjuncts are `stub(v) op k == w`, with `v op k` past its type's
  * range. The sampler evaluates `v op k` (the stub returns its argument) at
  * the clause's one sample, and the row holds when that equals `w`: so `w` is
- * the sampler's wrapped value. The emitted program then runs under the 0.39
+ * the sampler's wrapped value. The emitted program then runs under the pinned
  * compiler and passes `P-WRAP`: so the emitted arithmetic computes it too.
  */
 const panicsWrapRows = (t: Suite, dir: string): void => {
@@ -174,8 +174,8 @@ const panicsWrapRows = (t: Suite, dir: string): void => {
   if (!emitted) {
     return
   }
-  const run = runProcess([NISH, "run", file], "", 600000).expect("run the 0.39 compiler")
-  t.eqStr("wrap: the emitted test exits 0 under 0.39", `${run.status}`, "0")
+  const run = runProcess([NISH, "run", file], "", 600000).expect("run the pinned compiler")
+  t.eqStr("wrap: the emitted test exits 0 under the pinned compiler", `${run.status}`, "0")
   t.ok("wrap: the emitted value is the sampler's (P-WRAP passes)", run.stdout.indexOf("PASS  [P-WRAP]") >= 0)
 }
 

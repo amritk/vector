@@ -37,21 +37,31 @@ class SpecStaleCommand
 
 #### new SpecStaleCommand
 
-Declares `vector spec stale` and its flags under `parent`.
+Holds what `registerSpecStale` declared for `vector spec stale`.
 
 ```ts
-new SpecStaleCommand(cli: Cli, parent: i32): SpecStaleCommand
+new SpecStaleCommand(
+  formatFlag: CliFlag,
+  testTsArg: CliArgument,
+  contractJsonArg: CliArgument,
+): SpecStaleCommand
 ```
 
-<scalar-field name="cli" type="Cli" required>
+<scalar-field name="formatFlag" type="CliFlag" required>
 
-the command tree
+the `--format <f>` flag
 
 </scalar-field>
 
-<scalar-field name="parent" type="i32" required>
+<scalar-field name="testTsArg" type="CliArgument" required>
 
-the handle to declare it under (`ROOT` or the `spec` group)
+the `<test.ts>` argument
+
+</scalar-field>
+
+<scalar-field name="contractJsonArg" type="CliArgument" required>
+
+the `<contract.json>` argument
 
 </scalar-field>
 
@@ -60,7 +70,7 @@ the handle to declare it under (`ROOT` or the `spec` group)
 The `<contract.json>` argument.
 
 ```ts
-contractJsonArg: i32
+contractJsonArg: CliArgument
 ```
 
 #### SpecStaleCommand.formatFlag
@@ -68,7 +78,7 @@ contractJsonArg: i32
 The `--format <f>` flag.
 
 ```ts
-formatFlag: i32
+formatFlag: CliFlag
 ```
 
 #### SpecStaleCommand.testTsArg
@@ -76,7 +86,7 @@ formatFlag: i32
 The `<test.ts>` argument.
 
 ```ts
-testTsArg: i32
+testTsArg: CliArgument
 ```
 
 #### SpecStaleCommand.run
@@ -105,7 +115,10 @@ the exit code
 Declares `vector spec stale` on the command tree.
 
 ```ts
-function registerSpecStale(cli: Cli, parent: i32): SpecStaleCommand
+function registerSpecStale(
+  cli: Cli,
+  parent: i32,
+): Result<SpecStaleCommand, string>
 ```
 
 <scalar-field name="cli" type="Cli" required>
@@ -120,8 +133,9 @@ the handle to declare it under
 
 </scalar-field>
 
-<scalar-field name="returns" type="SpecStaleCommand">
+<scalar-field name="returns" type="Result&lt;SpecStaleCommand, string&gt;">
 
-the declared command, whose `run` handles it
+the declared command, whose `run` handles it, or `Err` when the
+  declaration is refused (a vector bug)
 
 </scalar-field>

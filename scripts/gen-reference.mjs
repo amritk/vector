@@ -13,13 +13,14 @@
 // script needs no list of today's commands, schemas or modules:
 //
 //   Command line  the command tree src/index.ts declares on `nish/cli-args`,
-//                 read from the TypeScript AST: `new Cli(...)`, `cli.group`,
-//                 `cli.command`, `cli.flag`, `cli.argument` and the rest. Each
+//                 read from the TypeScript AST: `new Cli(...)`, `cli.tryGroup`,
+//                 `cli.tryCommand`, `cli.tryFlag`, `cli.tryArgument` and the
+//                 rest (or their panicking forms, without `try`). Each
 //                 call that is handed the cli is followed into the function
 //                 it names, in this file or through a named relative import,
 //                 with the cli and the parent handle bound to its parameters.
 //                 A shape it cannot follow, a handle it cannot resolve, a
-//                 duplicate sibling, or a count of `.command(`/`.group(` calls
+//                 duplicate sibling, or a count of command and group calls
 //                 that differs from the tree is an error, not a missing page.
 //                 The exit codes are src/core/diag.ts's `EXIT_*`.
 //   File formats  one page per schemas/*.json.
@@ -218,6 +219,20 @@ const CLI_METHODS = new Set([
   "epilog",
 ]);
 
+/**
+ * The `CLI_METHODS` name a `Cli` method declares through: `tryFlag` and `flag`
+ * are both "flag". Any other name is returned as it is.
+ */
+const cliMethod = (name) => {
+  const bare = name.startsWith("try")
+    ? `${name[3].toLowerCase()}${name.slice(4)}`
+    : name;
+  return CLI_METHODS.has(bare) ? bare : name;
+};
+
+/** The `Result` methods that hand on a `try` method's value: `x.tryFlag(…).orReturn()`. */
+const UNWRAPS = new Set(["orReturn", "expect", "unwrap"]);
+
 const parseTs = (file) =>
   ts.createSourceFile(
     file,
@@ -246,6 +261,16 @@ const literal = (sf, node, what) => {
 /** The text an assignment gives the value of `call`: `handle` in `const handle = …`, `this.x` in `this.x = …`. */
 const assignedTo = (call) => {
   const p = call.parent;
+  if (
+    p &&
+    ts.isPropertyAccessExpression(p) &&
+    p.expression === call &&
+    UNWRAPS.has(p.name.text) &&
+    ts.isCallExpression(p.parent) &&
+    p.parent.expression === p
+  ) {
+    return assignedTo(p.parent);
+  }
   if (p && ts.isVariableDeclaration(p) && p.initializer === call) {
     return p.name.getText();
   }
@@ -388,8 +413,9 @@ const readCommandTree = () => {
         `${where(sf, arg)}: \`${t}\` names no command handle the reference can follow`,
       );
     };
+    // A `CliFlag` is passed on by its `.handle`: `cli.tryRepeatable(f.handle)`.
     const flagOf = (arg) =>
-      flags.get(arg.getText()) ??
+      flags.get(arg.getText().replace(/\.handle$/, "")) ??
       fail(
         `${where(sf, arg)}: \`${arg.getText()}\` names no flag the reference can follow`,
       );
@@ -456,9 +482,9 @@ const readCommandTree = () => {
         ts.isCallExpression(n) &&
         ts.isPropertyAccessExpression(n.expression) &&
         isCli(n.expression.expression) &&
-        CLI_METHODS.has(n.expression.name.text)
+        CLI_METHODS.has(cliMethod(n.expression.name.text))
       ) {
-        const method = n.expression.name.text;
+        const method = cliMethod(n.expression.name.text);
         const args = n.arguments;
         const handle = assignedTo(n);
         if (method === "group" || method === "command") {
@@ -539,7 +565,7 @@ const readCommandTree = () => {
       if (
         ts.isCallExpression(n) &&
         ts.isPropertyAccessExpression(n.expression) &&
-        ["command", "group"].includes(n.expression.name.text)
+        ["command", "group"].includes(cliMethod(n.expression.name.text))
       ) {
         declared.push(where(sf, n));
       }
@@ -550,7 +576,7 @@ const readCommandTree = () => {
   const found = commandsOf(tree).length;
   if (found !== declared.length) {
     fail(
-      `src/: ${declared.length} \`.command(\`/\`.group(\` calls (${declared.join(", ")}) but ${found} commands reached from ${mainFile}; declare every command through a call the reference can follow`,
+      `src/: ${declared.length} command and group calls (${declared.join(", ")}) but ${found} commands reached from ${mainFile}; declare every command through a call the reference can follow`,
     );
   }
   return tree;

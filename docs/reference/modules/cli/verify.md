@@ -46,21 +46,38 @@ class VerifyCommand
 
 #### new VerifyCommand
 
-Declares `vector verify` and its flags under `parent`.
+Holds what `registerVerify` declared for `vector verify`.
 
 ```ts
-new VerifyCommand(cli: Cli, parent: i32): VerifyCommand
+new VerifyCommand(
+  jsonFlag: CliFlag,
+  emitFlag: CliFlag,
+  specJsonArg: CliArgument,
+  programJsonArg: CliArgument,
+): VerifyCommand
 ```
 
-<scalar-field name="cli" type="Cli" required>
+<scalar-field name="jsonFlag" type="CliFlag" required>
 
-the command tree
+the `--json` flag
 
 </scalar-field>
 
-<scalar-field name="parent" type="i32" required>
+<scalar-field name="emitFlag" type="CliFlag" required>
 
-the handle to declare it under (`ROOT` or the `spec` group)
+the `--emit <file>` flag
+
+</scalar-field>
+
+<scalar-field name="specJsonArg" type="CliArgument" required>
+
+the `<spec.json>` argument
+
+</scalar-field>
+
+<scalar-field name="programJsonArg" type="CliArgument" required>
+
+the `<program.json>` argument
 
 </scalar-field>
 
@@ -69,7 +86,7 @@ the handle to declare it under (`ROOT` or the `spec` group)
 The `--emit <file>` flag.
 
 ```ts
-emitFlag: i32
+emitFlag: CliFlag
 ```
 
 #### VerifyCommand.jsonFlag
@@ -77,7 +94,7 @@ emitFlag: i32
 The `--json` flag.
 
 ```ts
-jsonFlag: i32
+jsonFlag: CliFlag
 ```
 
 #### VerifyCommand.programJsonArg
@@ -85,7 +102,7 @@ jsonFlag: i32
 The `<program.json>` argument.
 
 ```ts
-programJsonArg: i32
+programJsonArg: CliArgument
 ```
 
 #### VerifyCommand.specJsonArg
@@ -93,7 +110,7 @@ programJsonArg: i32
 The `<spec.json>` argument.
 
 ```ts
-specJsonArg: i32
+specJsonArg: CliArgument
 ```
 
 #### VerifyCommand.run
@@ -144,7 +161,7 @@ the outcome's status
 Declares `vector verify` on the command tree.
 
 ```ts
-function registerVerify(cli: Cli, parent: i32): VerifyCommand
+function registerVerify(cli: Cli, parent: i32): Result<VerifyCommand, string>
 ```
 
 <scalar-field name="cli" type="Cli" required>
@@ -159,8 +176,9 @@ the handle to declare it under
 
 </scalar-field>
 
-<scalar-field name="returns" type="VerifyCommand">
+<scalar-field name="returns" type="Result&lt;VerifyCommand, string&gt;">
 
-the declared command, whose `run` handles it
+the declared command, whose `run` handles it, or `Err` when the
+  declaration is refused (a vector bug)
 
 </scalar-field>

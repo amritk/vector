@@ -13,7 +13,7 @@
  * leaves a truncated file behind.
  */
 
-import { Cli, ParseResult } from "nish/cli-args"
+import { Cli, CliArgument, CliFlag, ParseResult } from "nish/cli-args"
 import { EXIT_PASS, EXIT_REFUSED, EXIT_USAGE, report, usageError } from "../core/diag"
 import { toHex } from "../core/hex"
 import { newJsonDocument, readJsonFile } from "../core/json"
@@ -34,26 +34,27 @@ export const VERIFY_ID: i32 = 1
 /** `vector verify`, declared on a `Cli`: its handles and its handler. */
 export class VerifyCommand {
   /** The `--json` flag. */
-  jsonFlag: i32
+  jsonFlag: CliFlag
   /** The `--emit <file>` flag. */
-  emitFlag: i32
+  emitFlag: CliFlag
   /** The `<spec.json>` argument. */
-  specJsonArg: i32
+  specJsonArg: CliArgument
   /** The `<program.json>` argument. */
-  programJsonArg: i32
+  programJsonArg: CliArgument
 
   /**
-   * Declares `vector verify` and its flags under `parent`.
+   * Holds what `registerVerify` declared for `vector verify`.
    *
-   * @param cli the command tree
-   * @param parent the handle to declare it under (`ROOT` or the `spec` group)
+   * @param jsonFlag the `--json` flag
+   * @param emitFlag the `--emit <file>` flag
+   * @param specJsonArg the `<spec.json>` argument
+   * @param programJsonArg the `<program.json>` argument
    */
-  constructor(cli: Cli, parent: i32) {
-    const handle = cli.command(parent, "verify", VERIFY_ID, "Prove a program meets its spec plan")
-    this.jsonFlag = cli.flag(handle, "--json", "print the result as JSON")
-    this.emitFlag = cli.flag(handle, "--emit <file>", "write the verified program's TypeScript to <file>")
-    this.specJsonArg = cli.argument(handle, "<spec.json>", "the spec plan")
-    this.programJsonArg = cli.argument(handle, "<program.json>", "the program to verify")
+  constructor(jsonFlag: CliFlag, emitFlag: CliFlag, specJsonArg: CliArgument, programJsonArg: CliArgument) {
+    this.jsonFlag = jsonFlag
+    this.emitFlag = emitFlag
+    this.specJsonArg = specJsonArg
+    this.programJsonArg = programJsonArg
   }
 
   /**
@@ -63,8 +64,8 @@ export class VerifyCommand {
    * @returns the exit code
    */
   run(r: ParseResult): i32 {
-    const specPath = r.positional(this.specJsonArg) ?? ""
-    const programPath = r.positional(this.programJsonArg) ?? ""
+    const specPath = r.readPositional(this.specJsonArg) ?? ""
+    const programPath = r.readPositional(this.programJsonArg) ?? ""
     const specDoc = newJsonDocument()
     const specRoot = readJsonFile(specDoc, specPath)
     if (specRoot.isErr()) {
@@ -82,14 +83,14 @@ export class VerifyCommand {
       programRoot.value,
       `verify: ${programPath}`,
     )
-    const emitPath = r.value(this.emitFlag) ?? ""
+    const emitPath = r.readValue(this.emitFlag) ?? ""
     let emitError = ""
     if (outcome.status === OUTCOME_PROVEN && emitPath !== "") {
       emitError = verifyWriteAtomic(emitPath, outcome.emittedCode)
     }
     // The outcome prints even when --emit failed, so a --json reader still
     // gets the verdict; the write failure follows it on stderr, and exits 2.
-    if (r.flag(this.jsonFlag)) {
+    if (r.readFlag(this.jsonFlag)) {
       console.log(outJsonRender(verifyOutcomeJson(outcome)))
     } else {
       verifyPrintText(outcome, emitError === "" ? emitPath : "")
@@ -186,6 +187,14 @@ const verifyPrintText = (outcome: VerifyOutcome, emitPath: string): void => {
  *
  * @param cli the command tree
  * @param parent the handle to declare it under
- * @returns the declared command, whose `run` handles it
+ * @returns the declared command, whose `run` handles it, or `Err` when the
+ *   declaration is refused (a vector bug)
  */
-export const registerVerify = (cli: Cli, parent: i32): VerifyCommand => new VerifyCommand(cli, parent)
+export const registerVerify = (cli: Cli, parent: i32): Result<VerifyCommand, string> => {
+  const handle = cli.tryCommand(parent, "verify", VERIFY_ID, "Prove a program meets its spec plan").orReturn()
+  const jsonFlag = cli.tryFlag(handle, "--json", "print the result as JSON").orReturn()
+  const emitFlag = cli.tryFlag(handle, "--emit <file>", "write the verified program's TypeScript to <file>").orReturn()
+  const specJsonArg = cli.tryArgument(handle, "<spec.json>", "the spec plan").orReturn()
+  const programJsonArg = cli.tryArgument(handle, "<program.json>", "the program to verify").orReturn()
+  return Ok(new VerifyCommand(jsonFlag, emitFlag, specJsonArg, programJsonArg))
+}

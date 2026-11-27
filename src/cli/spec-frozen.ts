@@ -5,7 +5,7 @@
  * contract checked still holds to the sources it pins (`spec/pr/frozen`).
  */
 
-import { Cli, ParseResult } from "nish/cli-args"
+import { Cli, CliArgument, CliFlag, ParseResult } from "nish/cli-args"
 import { report, usageError } from "../core/diag"
 import { prCliBase, prCliFinish, prCliFormat } from "../spec/pr/cli"
 import { frozenCheck } from "../spec/pr/frozen"
@@ -16,30 +16,27 @@ export const SPEC_FROZEN_ID: i32 = 7
 /** `vector spec frozen`, declared on a `Cli`: its handles and its handler. */
 export class SpecFrozenCommand {
   /** The `--base <ref>` flag. */
-  baseFlag: i32
+  baseFlag: CliFlag
   /** The `--repo <dir>` flag. */
-  repoFlag: i32
+  repoFlag: CliFlag
   /** The `--format <f>` flag. */
-  formatFlag: i32
+  formatFlag: CliFlag
   /** The `[contracts...]` argument. */
-  contractsArg: i32
+  contractsArg: CliArgument
 
   /**
-   * Declares `vector spec frozen` and its flags under `parent`.
+   * Holds what `registerSpecFrozen` declared for `vector spec frozen`.
    *
-   * @param cli the command tree
-   * @param parent the handle to declare it under (`ROOT` or the `spec` group)
+   * @param baseFlag the `--base <ref>` flag
+   * @param repoFlag the `--repo <dir>` flag
+   * @param formatFlag the `--format <f>` flag
+   * @param contractsArg the `[contracts...]` argument
    */
-  constructor(cli: Cli, parent: i32) {
-    const handle = cli.command(parent, "frozen", SPEC_FROZEN_ID, "Refuse a change that edits a frozen contract")
-    this.baseFlag = cli.flag(handle, "--base <ref>", "the commit the change is against")
-    this.repoFlag = cli.flag(handle, "--repo <dir>", "the repository (default: the current directory)")
-    this.formatFlag = cli.flag(handle, "--format <f>", "text (default), markdown (a PR comment) or json")
-    this.contractsArg = cli.argument(
-      handle,
-      "[contracts...]",
-      "the contracts to check, from the repository's top (default: every contracts/*.json)",
-    )
+  constructor(baseFlag: CliFlag, repoFlag: CliFlag, formatFlag: CliFlag, contractsArg: CliArgument) {
+    this.baseFlag = baseFlag
+    this.repoFlag = repoFlag
+    this.formatFlag = formatFlag
+    this.contractsArg = contractsArg
   }
 
   /**
@@ -58,8 +55,8 @@ export class SpecFrozenCommand {
     if (base.isErr()) {
       return report(usageError(`spec frozen: ${base.error}`))
     }
-    const repo = r.value(this.repoFlag) ?? "."
-    return prCliFinish("spec frozen", frozenCheck(repo, base.value, r.positionals(this.contractsArg)), format.value)
+    const repo = r.readValue(this.repoFlag) ?? "."
+    return prCliFinish("spec frozen", frozenCheck(repo, base.value, r.readPositionals(this.contractsArg)), format.value)
   }
 }
 
@@ -68,6 +65,22 @@ export class SpecFrozenCommand {
  *
  * @param cli the command tree
  * @param parent the handle to declare it under
- * @returns the declared command, whose `run` handles it
+ * @returns the declared command, whose `run` handles it, or `Err` when the
+ *   declaration is refused (a vector bug)
  */
-export const registerSpecFrozen = (cli: Cli, parent: i32): SpecFrozenCommand => new SpecFrozenCommand(cli, parent)
+export const registerSpecFrozen = (cli: Cli, parent: i32): Result<SpecFrozenCommand, string> => {
+  const handle = cli
+    .tryCommand(parent, "frozen", SPEC_FROZEN_ID, "Refuse a change that edits a frozen contract")
+    .orReturn()
+  const baseFlag = cli.tryFlag(handle, "--base <ref>", "the commit the change is against").orReturn()
+  const repoFlag = cli.tryFlag(handle, "--repo <dir>", "the repository (default: the current directory)").orReturn()
+  const formatFlag = cli.tryFlag(handle, "--format <f>", "text (default), markdown (a PR comment) or json").orReturn()
+  const contractsArg = cli
+    .tryArgument(
+      handle,
+      "[contracts...]",
+      "the contracts to check, from the repository's top (default: every contracts/*.json)",
+    )
+    .orReturn()
+  return Ok(new SpecFrozenCommand(baseFlag, repoFlag, formatFlag, contractsArg))
+}

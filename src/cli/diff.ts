@@ -7,7 +7,7 @@
  * replay (`MISMATCH`, a bug in vector) exit 2.
  */
 
-import { Cli, ParseResult } from "nish/cli-args"
+import { Cli, CliArgument, CliFlag, ParseResult } from "nish/cli-args"
 import { EXIT_PASS, EXIT_REFUSED, EXIT_USAGE, report, usageError } from "../core/diag"
 import { newJsonDocument, readJsonFile } from "../core/json"
 import { outJsonRender } from "../verify/emit/outjson"
@@ -26,23 +26,23 @@ export const DIFF_ID: i32 = 2
 /** `vector diff`, declared on a `Cli`: its handles and its handler. */
 export class DiffCommand {
   /** The `--json` flag. */
-  jsonFlag: i32
+  jsonFlag: CliFlag
   /** The `<old.json>` argument. */
-  oldJsonArg: i32
+  oldJsonArg: CliArgument
   /** The `<new.json>` argument. */
-  newJsonArg: i32
+  newJsonArg: CliArgument
 
   /**
-   * Declares `vector diff` and its flags under `parent`.
+   * Holds what `registerDiff` declared for `vector diff`.
    *
-   * @param cli the command tree
-   * @param parent the handle to declare it under (`ROOT` or the `spec` group)
+   * @param jsonFlag the `--json` flag
+   * @param oldJsonArg the `<old.json>` argument
+   * @param newJsonArg the `<new.json>` argument
    */
-  constructor(cli: Cli, parent: i32) {
-    const handle = cli.command(parent, "diff", DIFF_ID, "Prove two programs equivalent, or show where they differ")
-    this.jsonFlag = cli.flag(handle, "--json", "print the result as JSON")
-    this.oldJsonArg = cli.argument(handle, "<old.json>", "the program before")
-    this.newJsonArg = cli.argument(handle, "<new.json>", "the program after")
+  constructor(jsonFlag: CliFlag, oldJsonArg: CliArgument, newJsonArg: CliArgument) {
+    this.jsonFlag = jsonFlag
+    this.oldJsonArg = oldJsonArg
+    this.newJsonArg = newJsonArg
   }
 
   /**
@@ -52,8 +52,8 @@ export class DiffCommand {
    * @returns the exit code
    */
   run(r: ParseResult): i32 {
-    const oldPath = r.positional(this.oldJsonArg) ?? ""
-    const newPath = r.positional(this.newJsonArg) ?? ""
+    const oldPath = r.readPositional(this.oldJsonArg) ?? ""
+    const newPath = r.readPositional(this.newJsonArg) ?? ""
     const oldDoc = newJsonDocument()
     const oldRoot = readJsonFile(oldDoc, oldPath)
     if (oldRoot.isErr()) {
@@ -65,7 +65,7 @@ export class DiffCommand {
       return report(usageError(`diff: ${newRoot.error}`))
     }
     const outcome = diffPrograms(oldDoc, oldRoot.value, newDoc, newRoot.value)
-    if (r.flag(this.jsonFlag)) {
+    if (r.readFlag(this.jsonFlag)) {
       console.log(outJsonRender(diffOutcomeJson(outcome)))
     } else if (outcome.status === DIFF_INVALID) {
       console.error("Validation failed:")
@@ -105,6 +105,15 @@ export const diffExitCode = (status: string): i32 => {
  *
  * @param cli the command tree
  * @param parent the handle to declare it under
- * @returns the declared command, whose `run` handles it
+ * @returns the declared command, whose `run` handles it, or `Err` when the
+ *   declaration is refused (a vector bug)
  */
-export const registerDiff = (cli: Cli, parent: i32): DiffCommand => new DiffCommand(cli, parent)
+export const registerDiff = (cli: Cli, parent: i32): Result<DiffCommand, string> => {
+  const handle = cli
+    .tryCommand(parent, "diff", DIFF_ID, "Prove two programs equivalent, or show where they differ")
+    .orReturn()
+  const jsonFlag = cli.tryFlag(handle, "--json", "print the result as JSON").orReturn()
+  const oldJsonArg = cli.tryArgument(handle, "<old.json>", "the program before").orReturn()
+  const newJsonArg = cli.tryArgument(handle, "<new.json>", "the program after").orReturn()
+  return Ok(new DiffCommand(jsonFlag, oldJsonArg, newJsonArg))
+}

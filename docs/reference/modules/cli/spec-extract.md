@@ -40,21 +40,31 @@ class SpecExtractCommand
 
 #### new SpecExtractCommand
 
-Declares `vector spec extract` and its flags under `parent`.
+Holds what `registerSpecExtract` declared for `vector spec extract`.
 
 ```ts
-new SpecExtractCommand(cli: Cli, parent: i32): SpecExtractCommand
+new SpecExtractCommand(
+  outFlag: CliFlag,
+  checkFlag: CliFlag,
+  specXmlArg: CliArgument,
+): SpecExtractCommand
 ```
 
-<scalar-field name="cli" type="Cli" required>
+<scalar-field name="outFlag" type="CliFlag" required>
 
-the command tree
+the `-o, --out <contract.json>` flag
 
 </scalar-field>
 
-<scalar-field name="parent" type="i32" required>
+<scalar-field name="checkFlag" type="CliFlag" required>
 
-the handle to declare it under (`ROOT` or the `spec` group)
+the `--check` flag
+
+</scalar-field>
+
+<scalar-field name="specXmlArg" type="CliArgument" required>
+
+the `<spec.xml>` argument
 
 </scalar-field>
 
@@ -63,7 +73,7 @@ the handle to declare it under (`ROOT` or the `spec` group)
 The `--check` flag.
 
 ```ts
-checkFlag: i32
+checkFlag: CliFlag
 ```
 
 #### SpecExtractCommand.outFlag
@@ -71,7 +81,7 @@ checkFlag: i32
 The `-o, --out <contract.json>` flag.
 
 ```ts
-outFlag: i32
+outFlag: CliFlag
 ```
 
 #### SpecExtractCommand.specXmlArg
@@ -79,7 +89,7 @@ outFlag: i32
 The `<spec.xml>` argument.
 
 ```ts
-specXmlArg: i32
+specXmlArg: CliArgument
 ```
 
 #### SpecExtractCommand.run
@@ -107,7 +117,10 @@ the exit code
 Declares `vector spec extract` on the command tree.
 
 ```ts
-function registerSpecExtract(cli: Cli, parent: i32): SpecExtractCommand
+function registerSpecExtract(
+  cli: Cli,
+  parent: i32,
+): Result<SpecExtractCommand, string>
 ```
 
 <scalar-field name="cli" type="Cli" required>
@@ -122,8 +135,9 @@ the handle to declare it under
 
 </scalar-field>
 
-<scalar-field name="returns" type="SpecExtractCommand">
+<scalar-field name="returns" type="Result&lt;SpecExtractCommand, string&gt;">
 
-the declared command, whose `run` handles it
+the declared command, whose `run` handles it, or `Err` when the
+  declaration is refused (a vector bug)
 
 </scalar-field>
