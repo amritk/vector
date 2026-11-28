@@ -88,14 +88,14 @@ export const main = (): i32 => {
     "std/base64.ts",
     ["encoding starts at 0", "second pad goes one past the end", "end is one short"],
     [
-      "let o: i32 = at",
-      "toU8(BASE64_PAD)\n  dst[o + 3] = toU8(BASE64_PAD)",
-      "  dst[o + 3] = toU8(BASE64_PAD)\n  return o + 4\n}",
+      'does not fit in the destination")\n  }\n  // A local, so that `abc.length >= 64` below is a fact about the string each\n  // character is read from.\n  const abc: string = BASE64_ALPHABET\n  let i: i32 = off\n  let o: i32 = at',
+      "toU8(BASE64_PAD)\n  dst[o + 3] = toU8(BASE64_PAD)\n  return o + 4\n}\n\n/**\n * `base64EncodeInto` for a caller",
+      "  dst[o + 3] = toU8(BASE64_PAD)\n  return o + 4\n}\n\n/**\n * `base64EncodeInto` for a caller",
     ],
     [
-      "let o: i32 = 0",
-      "toU8(BASE64_PAD)\n  dst[o + 4] = toU8(BASE64_PAD)",
-      "  dst[o + 3] = toU8(BASE64_PAD)\n  return o + 3\n}",
+      'does not fit in the destination")\n  }\n  // A local, so that `abc.length >= 64` below is a fact about the string each\n  // character is read from.\n  const abc: string = BASE64_ALPHABET\n  let i: i32 = off\n  let o: i32 = 0',
+      "toU8(BASE64_PAD)\n  dst[o + 4] = toU8(BASE64_PAD)\n  return o + 4\n}\n\n/**\n * `base64EncodeInto` for a caller",
+      "  dst[o + 3] = toU8(BASE64_PAD)\n  return o + 3\n}\n\n/**\n * `base64EncodeInto` for a caller",
     ],
     [
       "V1: base64EncodeInto wrote outside [at, end) = [5, 8), at 0\nV2: base64EncodeInto returned end 4 outside [at, at + capacity] = [5, 13]\nV3: base64EncodeInto returned end 4 outside [at, at + capacity] = [5, 11]\nV4: base64EncodeInto returned end 0 outside [at, at + capacity] = [5, 9]\nV5: base64EncodeInto returned end 4 outside [at, at + capacity] = [5, 15]\nV6: base64EncodeInto wrote outside [at, end) = [5, 8), at 0\nV7: base64EncodeInto wrote outside [at, end) = [5, 8), at 0\nP-LENGTH: sample 1 of 29 (len(d) = 1): base64EncodeInto returned end 4 outside [at, at + capacity] = [5, 11]",
