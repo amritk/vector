@@ -50,7 +50,7 @@ The 121 source files of `src/`, from their doc comments.
 | [`cli/verify`](modules/cli/verify.md) | `vector verify`: prove a program meets its spec plan. |
 | [`core/diag`](modules/core/diag.md) | how vector reports a problem and which exit code it ends with. |
 | [`core/fs`](modules/core/fs.md) | paths and directories: join, dirname, a recursive mkdir and fresh temporary directories. |
-| [`core/hex`](modules/core/hex.md) | bytes as lowercase hex, and SHA-256. |
+| [`core/hex`](modules/core/hex.md) | bytes as lowercase hex, random hex names, and SHA-256. |
 | [`core/json`](modules/core/json.md) | reading and writing JSON through `nish/json-value`: parse a file into a document, read typed members with a clear error when one is missing or of the wrong kind, and write a document back with a final newline. |
 | [`core/process`](modules/core/process.md) | running a child process with its input given and its output collected. |
 | [`core/smt`](modules/core/smt.md) | reading what z3 prints: s-expressions, the numerals in a model, and a whole run's output split into one answer per query by the `(echo "@@Q<i>")` markers the script writes before each `(check-sat)`. |

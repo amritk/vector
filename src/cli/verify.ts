@@ -15,7 +15,7 @@
 
 import { Cli, CliArgument, CliFlag, ParseResult } from "nish/cli-args"
 import { EXIT_PASS, EXIT_REFUSED, EXIT_USAGE, report, usageError } from "../core/diag"
-import { toHex } from "../core/hex"
+import { hexRandom } from "../core/hex"
 import { newJsonDocument, readJsonFile } from "../core/json"
 import { outJsonRender } from "../verify/emit/outjson"
 import {
@@ -130,10 +130,8 @@ const verifyPrintStyle = (outcome: VerifyOutcome): void => {
 // second run on the same path, is never written through), then a rename.
 // Returns the error to report, or "" when the file was written.
 const verifyWriteAtomic = (path: string, data: string): string => {
-  const bytes: u8[] = new Array<u8>(8)
   for (let attempt = 0; attempt < 16; attempt++) {
-    crypto.getRandomValues(bytes)
-    const temp = `${path}.vector-${toHex(bytes)}.tmp`
+    const temp = `${path}.vector-${hexRandom(8)}.tmp`
     const written = createFileExclusiveSync(temp, data, 0o644)
     if (written === -17) {
       continue

@@ -431,9 +431,10 @@ the verdict
 
 ### runNonce
 
-A fresh nonce for one run: 16 random bytes as hex. It is passed to the
-test on the command line, never written into its source, so the build
-stays cacheable.
+A fresh nonce for one run: 16 random bytes as hex (`hexRandom`, which is
+enough: the nonce closes accidental output, not a forged end line). It is
+passed to the test on the command line, never written into its source, so
+the build stays cacheable.
 
 ```ts
 function runNonce(): string

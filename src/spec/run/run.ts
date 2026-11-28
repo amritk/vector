@@ -7,7 +7,7 @@
 
 import { splitLines } from "nish/text"
 import { basename, joinPath, makeTempDir, mkdirAll } from "../../core/fs"
-import { toHex } from "../../core/hex"
+import { hexRandom, toHex } from "../../core/hex"
 import { runProcess } from "../../core/process"
 import { Clause, Contract, Truncate } from "../contract/types"
 import { EMIT_SLOW_SKIP, emitQuote } from "../emit/lit"
@@ -439,17 +439,14 @@ export const runJudge = (c: Contract, clauses: RunClause[], exitCode: i32, integ
 }
 
 /**
- * A fresh nonce for one run: 16 random bytes as hex. It is passed to the
- * test on the command line, never written into its source, so the build
- * stays cacheable.
+ * A fresh nonce for one run: 16 random bytes as hex (`hexRandom`, which is
+ * enough: the nonce closes accidental output, not a forged end line). It is
+ * passed to the test on the command line, never written into its source, so
+ * the build stays cacheable.
  *
  * @returns 32 lowercase hex digits
  */
-export const runNonce = (): string => {
-  const bytes: u8[] = new Array<u8>(16)
-  crypto.getRandomValues(bytes)
-  return toHex(bytes)
-}
+export const runNonce = (): string => hexRandom(16)
 
 /** A scratch nish install: a copy of a seed whose std is a root's std plus overrides. */
 export class RunScratch {

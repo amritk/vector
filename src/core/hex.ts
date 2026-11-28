@@ -1,5 +1,5 @@
 /**
- * `core/hex` — bytes as lowercase hex, and SHA-256.
+ * `core/hex` — bytes as lowercase hex, random hex names, and SHA-256.
  */
 
 import { sha256 } from "nish/crypto/sha256"
@@ -20,6 +20,25 @@ export const toHex = (bytes: u8[]): string => {
     out.push(hexDigit(toU32(b & 15)))
   }
   return String.fromBytes(out, 0, toI32(out.length))
+}
+
+/**
+ * Writes `n` bytes from `Math.random` as lowercase hex: a name that two runs
+ * or two attempts are unlikely to share, for a temporary file and the end
+ * line's nonce. It is not secret: `crypto.getRandomValues` exits the process
+ * when the system has no entropy, and nothing here needs a value an attacker
+ * cannot guess (a temporary is made exclusively, and the nonce only closes
+ * accidental output).
+ *
+ * @param n how many bytes; none when it is not positive
+ * @returns the hex text, `2 * n` digits
+ */
+export const hexRandom = (n: i32): string => {
+  const bytes: u8[] = []
+  for (let i = 0; i < n; i++) {
+    bytes.push(toU8(toI32(Math.random() * 256) & 255))
+  }
+  return toHex(bytes)
 }
 
 /** The value (0 to 15) of a hex digit, or 16 when `c` is not one; in u32, so no step can overflow. */
