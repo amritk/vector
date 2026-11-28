@@ -11,9 +11,7 @@ import { runRemove } from "../../../src/spec/run/run"
 import { SampleValue, sampleEval, sampleInt } from "../../../src/spec/sample/eval"
 import { sampleParseInt } from "../../../src/spec/sample/ints"
 
-/** The no-panic compiler, which `.nish-next-version` pins and `scripts/fetch-nish-next.sh` installs. */
-const PROVER: string = ".nish-next/bin/nish"
-/** The pinned 0.39 compiler, which `spec run` builds with. */
+/** The pinned compiler (`.nish-version`), whose default build is the no-panic rule. */
 const NISH: string = ".nish/bin/nish"
 /** A contract with a clause of every kind over every type the emitter writes. */
 const CONTRACT: string = "tests/fixtures/emit-panics/contracts/emit-panics.json"
@@ -31,15 +29,6 @@ export const main = (): i32 => {
   panicsClassifierRows(t)
   const dir = makeTempDir("vector-panics-").expect("a scratch directory")
   panicsWrapRows(t, dir)
-  if (readFileSyncOrNull(PROVER) === null) {
-    if (panicsProverRequired(getenv("CI") ?? "", getenv("VECTOR_PROVER_REQUIRED") ?? "")) {
-      t.ok(`${PROVER} is installed (CI or VECTOR_PROVER_REQUIRED=1 needs it)`, false)
-    } else {
-      t.skip("the emitted tests build under the no-panic rule", `${PROVER} is not installed`)
-    }
-    runRemove(dir).expect("remove the scratch directory")
-    return t.done()
-  }
   for (const slow of [false, true]) {
     panicsBuild(t, dir, slow)
   }
@@ -48,7 +37,7 @@ export const main = (): i32 => {
 }
 
 /**
- * Emits the fixture through `vectorRun`, builds it with the prover bare and
+ * Emits the fixture through `vectorRun`, builds it with the pinned compiler bare and
  * with `--emit-panics`, and checks both builds and every site they report.
  */
 const panicsBuild = (t: Suite, dir: string, slow: boolean): void => {
@@ -63,14 +52,14 @@ const panicsBuild = (t: Suite, dir: string, slow: boolean): void => {
   if (!emitted) {
     return
   }
-  const bare = runProcess([PROVER, file, "-o", `${dir}/out/`], "", 600000).expect("run the prover")
-  t.ok(`${tag}: a bare prover build exits 0`, bare.status === 0)
+  const bare = runProcess([NISH, file, "-o", `${dir}/out/`], "", 600000).expect("run the pinned compiler")
+  t.ok(`${tag}: a bare build exits 0`, bare.status === 0)
   if (bare.status !== 0) {
     t.eqStr(`${tag}: what it refused`, panicsErrors(bare.stderr), "")
   }
   const report = `${dir}/${slow ? "slow" : "quick"}.json`
-  const listed = runProcess([PROVER, file, "--emit-panics", report, "-o", `${dir}/out/`], "", 600000).expect(
-    "run the prover",
+  const listed = runProcess([NISH, file, "--emit-panics", report, "-o", `${dir}/out/`], "", 600000).expect(
+    "run the pinned compiler",
   )
   t.ok(`${tag}: the build with --emit-panics exits 0`, listed.status === 0)
   const text = readFileSyncOrNull(report)
@@ -94,12 +83,6 @@ const panicsBuild = (t: Suite, dir: string, slow: boolean): void => {
   }
 }
 
-/**
- * Whether a missing prover fails the run rather than skipping it: on CI, and
- * wherever `VECTOR_PROVER_REQUIRED=1` asks for it.
- */
-const panicsProverRequired = (ci: string, required: string): boolean => ci === "true" || required === "1"
-
 /** The names of the functions a `--emit-panics` report lists in `module`. */
 const panicsFunctions = (text: string, module: string): Result<string[], string> => {
   const doc = newJsonDocument()
@@ -119,7 +102,7 @@ const panicsFunctions = (text: string, module: string): Result<string[], string>
  * `P-WRAP`'s conjuncts are `stub(v) op k == w`, with `v op k` past its type's
  * range. The sampler evaluates `v op k` (the stub returns its argument) at
  * the clause's one sample, and the row holds when that equals `w`: so `w` is
- * the sampler's wrapped value. The emitted program then runs under the 0.39
+ * the sampler's wrapped value. The emitted program then runs under the pinned
  * compiler and passes `P-WRAP`: so the emitted arithmetic computes it too.
  */
 const panicsWrapRows = (t: Suite, dir: string): void => {
@@ -174,8 +157,8 @@ const panicsWrapRows = (t: Suite, dir: string): void => {
   if (!emitted) {
     return
   }
-  const run = runProcess([NISH, "run", file], "", 600000).expect("run the 0.39 compiler")
-  t.eqStr("wrap: the emitted test exits 0 under 0.39", `${run.status}`, "0")
+  const run = runProcess([NISH, "run", file], "", 600000).expect("run the pinned compiler")
+  t.eqStr("wrap: the emitted test exits 0 under the pinned compiler", `${run.status}`, "0")
   t.ok("wrap: the emitted value is the sampler's (P-WRAP passes)", run.stdout.indexOf("PASS  [P-WRAP]") >= 0)
 }
 
@@ -331,23 +314,6 @@ const panicsClassifierRows = (t: Suite): void => {
     if (got.isOk()) {
       t.eqStr(r[0], got.value.join("\n"), r[3])
     }
-  }
-  const rq: string[][] = [
-    ["", "", "no"],
-    ["true", "", "yes"],
-    ["false", "", "no"],
-    ["1", "", "no"],
-    ["", "1", "yes"],
-    ["", "0", "no"],
-    ["", "true", "no"],
-    ["true", "0", "yes"],
-  ]
-  for (const r of rq) {
-    t.eqStr(
-      `CI=${r[0]} VECTOR_PROVER_REQUIRED=${r[1]} requires the prover`,
-      panicsProverRequired(r[0], r[1]) ? "yes" : "no",
-      r[2],
-    )
   }
   t.ok("a report without functions is an error", !panicsRefused("{}", "/s/t.ts", UNDER_TEST).isOk())
 }

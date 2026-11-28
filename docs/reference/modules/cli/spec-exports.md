@@ -37,21 +37,38 @@ class SpecExportsCommand
 
 #### new SpecExportsCommand
 
-Declares `vector spec exports` and its flags under `parent`.
+Holds what `registerSpecExports` declared for `vector spec exports`.
 
 ```ts
-new SpecExportsCommand(cli: Cli, parent: i32): SpecExportsCommand
+new SpecExportsCommand(
+  baseFlag: CliFlag,
+  nishRootFlag: CliFlag,
+  formatFlag: CliFlag,
+  contractJsonArg: CliArgument,
+): SpecExportsCommand
 ```
 
-<scalar-field name="cli" type="Cli" required>
+<scalar-field name="baseFlag" type="CliFlag" required>
 
-the command tree
+the `--base <ref>` flag
 
 </scalar-field>
 
-<scalar-field name="parent" type="i32" required>
+<scalar-field name="nishRootFlag" type="CliFlag" required>
 
-the handle to declare it under (`ROOT` or the `spec` group)
+the `--nish-root <dir>` flag
+
+</scalar-field>
+
+<scalar-field name="formatFlag" type="CliFlag" required>
+
+the `--format <f>` flag
+
+</scalar-field>
+
+<scalar-field name="contractJsonArg" type="CliArgument" required>
+
+the `<contract.json>` argument
 
 </scalar-field>
 
@@ -60,7 +77,7 @@ the handle to declare it under (`ROOT` or the `spec` group)
 The `--base <ref>` flag.
 
 ```ts
-baseFlag: i32
+baseFlag: CliFlag
 ```
 
 #### SpecExportsCommand.contractJsonArg
@@ -68,7 +85,7 @@ baseFlag: i32
 The `<contract.json>` argument.
 
 ```ts
-contractJsonArg: i32
+contractJsonArg: CliArgument
 ```
 
 #### SpecExportsCommand.formatFlag
@@ -76,7 +93,7 @@ contractJsonArg: i32
 The `--format <f>` flag.
 
 ```ts
-formatFlag: i32
+formatFlag: CliFlag
 ```
 
 #### SpecExportsCommand.nishRootFlag
@@ -84,7 +101,7 @@ formatFlag: i32
 The `--nish-root <dir>` flag.
 
 ```ts
-nishRootFlag: i32
+nishRootFlag: CliFlag
 ```
 
 #### SpecExportsCommand.run
@@ -113,7 +130,10 @@ the exit code
 Declares `vector spec exports` on the command tree.
 
 ```ts
-function registerSpecExports(cli: Cli, parent: i32): SpecExportsCommand
+function registerSpecExports(
+  cli: Cli,
+  parent: i32,
+): Result<SpecExportsCommand, string>
 ```
 
 <scalar-field name="cli" type="Cli" required>
@@ -128,8 +148,9 @@ the handle to declare it under
 
 </scalar-field>
 
-<scalar-field name="returns" type="SpecExportsCommand">
+<scalar-field name="returns" type="Result&lt;SpecExportsCommand, string&gt;">
 
-the declared command, whose `run` handles it
+the declared command, whose `run` handles it, or `Err` when the
+  declaration is refused (a vector bug)
 
 </scalar-field>

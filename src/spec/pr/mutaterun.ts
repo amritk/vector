@@ -5,7 +5,9 @@
  * scratch); with `--nish`, a copy of the whole root (its .git left behind).
  * Either way the slot's compiler builds against its own std/ holding its own
  * mutant. A mutant runs in two steps, both
- * timed: `<nish> <test> --link <bin>` builds the test against it, and a build
+ * timed: `runNishLinkArgv` builds the test against it, with the no-panic
+ * rule relaxed (so a panic the mutant reaches kills it at run time rather than
+ * refusing its build), and a build
  * the compiler refuses with an error located in the module or the test makes
  * it stillborn, while any other failed build (a crash, a kill, a full disk,
  * no binary) stops the run, as the tool's failure, not the mutant's; one
@@ -24,7 +26,7 @@ import { shapeNishModuleFile } from "../contract/shape"
 import { emitContractFile } from "../emit/file"
 import { EmitPackages } from "../emit/packages"
 import { EmitTarget } from "../emit/target"
-import { runMakeScratchIn, runSeedOf, runWriteInside } from "../run/run"
+import { runMakeScratchIn, runNishLinkArgv, runSeedOf, runWriteInside } from "../run/run"
 import { gitdiffChanged, gitdiffPrefix } from "./gitdiff"
 import {
   MUTATE_BUILD_TIMED_OUT,
@@ -136,12 +138,10 @@ const mutaterunCompiler = (run: MutateRun): string => (run.nish === "" ? "libexe
 
 /** The build's argv in a slot. */
 const mutaterunBuildArgv = (run: MutateRun, dir: string): string[] =>
-  mutaterunLogged(joinPath(dir, "mutant.log"), [
-    joinPath(dir, mutaterunCompiler(run)),
-    run.test,
-    "--link",
-    joinPath(dir, "mutant.bin"),
-  ])
+  mutaterunLogged(
+    joinPath(dir, "mutant.log"),
+    runNishLinkArgv(joinPath(dir, mutaterunCompiler(run)), run.test, joinPath(dir, "mutant.bin")),
+  )
 
 /** The test binary's argv in a slot. */
 const mutaterunTestArgv = (dir: string): string[] =>

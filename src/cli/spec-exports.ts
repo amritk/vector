@@ -5,7 +5,7 @@
  * is one the contract tests or lists out of scope (`spec/pr/exports`).
  */
 
-import { Cli, ParseResult } from "nish/cli-args"
+import { Cli, CliArgument, CliFlag, ParseResult } from "nish/cli-args"
 import { report, usageError } from "../core/diag"
 import { prCliBase, prCliFinish, prCliFormat } from "../spec/pr/cli"
 import { exportsCheck } from "../spec/pr/exports"
@@ -16,26 +16,27 @@ export const SPEC_EXPORTS_ID: i32 = 9
 /** `vector spec exports`, declared on a `Cli`: its handles and its handler. */
 export class SpecExportsCommand {
   /** The `--base <ref>` flag. */
-  baseFlag: i32
+  baseFlag: CliFlag
   /** The `--nish-root <dir>` flag. */
-  nishRootFlag: i32
+  nishRootFlag: CliFlag
   /** The `--format <f>` flag. */
-  formatFlag: i32
+  formatFlag: CliFlag
   /** The `<contract.json>` argument. */
-  contractJsonArg: i32
+  contractJsonArg: CliArgument
 
   /**
-   * Declares `vector spec exports` and its flags under `parent`.
+   * Holds what `registerSpecExports` declared for `vector spec exports`.
    *
-   * @param cli the command tree
-   * @param parent the handle to declare it under (`ROOT` or the `spec` group)
+   * @param baseFlag the `--base <ref>` flag
+   * @param nishRootFlag the `--nish-root <dir>` flag
+   * @param formatFlag the `--format <f>` flag
+   * @param contractJsonArg the `<contract.json>` argument
    */
-  constructor(cli: Cli, parent: i32) {
-    const handle = cli.command(parent, "exports", SPEC_EXPORTS_ID, "Refuse a new export its contract does not cover")
-    this.baseFlag = cli.flag(handle, "--base <ref>", "the commit the change is against")
-    this.nishRootFlag = cli.flag(handle, "--nish-root <dir>", "a nish checkout: finds the module and the compiler")
-    this.formatFlag = cli.flag(handle, "--format <f>", "text (default), markdown (a PR comment) or json")
-    this.contractJsonArg = cli.argument(handle, "<contract.json>", "the contract")
+  constructor(baseFlag: CliFlag, nishRootFlag: CliFlag, formatFlag: CliFlag, contractJsonArg: CliArgument) {
+    this.baseFlag = baseFlag
+    this.nishRootFlag = nishRootFlag
+    this.formatFlag = formatFlag
+    this.contractJsonArg = contractJsonArg
   }
 
   /**
@@ -54,11 +55,11 @@ export class SpecExportsCommand {
     if (base.isErr()) {
       return report(usageError(`spec exports: ${base.error}`))
     }
-    const root = r.value(this.nishRootFlag)
+    const root = r.readValue(this.nishRootFlag)
     if (root === null) {
       return report(usageError("spec exports: --nish-root <dir> is required: the nish checkout holding the module"))
     }
-    const contract = r.positional(this.contractJsonArg) ?? ""
+    const contract = r.readPositional(this.contractJsonArg) ?? ""
     return prCliFinish("spec exports", exportsCheck(contract, root, base.value), format.value)
   }
 }
@@ -68,6 +69,18 @@ export class SpecExportsCommand {
  *
  * @param cli the command tree
  * @param parent the handle to declare it under
- * @returns the declared command, whose `run` handles it
+ * @returns the declared command, whose `run` handles it, or `Err` when the
+ *   declaration is refused (a vector bug)
  */
-export const registerSpecExports = (cli: Cli, parent: i32): SpecExportsCommand => new SpecExportsCommand(cli, parent)
+export const registerSpecExports = (cli: Cli, parent: i32): Result<SpecExportsCommand, string> => {
+  const handle = cli
+    .tryCommand(parent, "exports", SPEC_EXPORTS_ID, "Refuse a new export its contract does not cover")
+    .orReturn()
+  const baseFlag = cli.tryFlag(handle, "--base <ref>", "the commit the change is against").orReturn()
+  const nishRootFlag = cli
+    .tryFlag(handle, "--nish-root <dir>", "a nish checkout: finds the module and the compiler")
+    .orReturn()
+  const formatFlag = cli.tryFlag(handle, "--format <f>", "text (default), markdown (a PR comment) or json").orReturn()
+  const contractJsonArg = cli.tryArgument(handle, "<contract.json>", "the contract").orReturn()
+  return Ok(new SpecExportsCommand(baseFlag, nishRootFlag, formatFlag, contractJsonArg))
+}

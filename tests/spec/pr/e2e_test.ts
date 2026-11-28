@@ -42,8 +42,8 @@ if grep -q 'canary' "$root/std/hex.ts"; then
   echo "std/hex.ts:9:1: syntax error: canary" >&2
   exit 1
 fi
-printf '#!/bin/sh\\ncd "%s" && exec sh "%s"\\n' "$root" "$1" > "$3"
-chmod +x "$3"
+printf '#!/bin/sh\\ncd "%s" && exec sh "%s"\\n' "$root" "$1" > "$4"
+chmod +x "$4"
 `
 
 /**
@@ -312,8 +312,8 @@ const e2eTestHyphenModule = (t: Suite, dir: string): Result<boolean, string> => 
 
 /** A compiler stub for a seed: links a test binary that passes, reading no std at all. */
 const E2E_TEST_BLIND_NISH: string = `#!/bin/sh
-printf '#!/bin/sh\\nexit 0\\n' > "$3"
-chmod +x "$3"
+printf '#!/bin/sh\\nexit 0\\n' > "$4"
+chmod +x "$4"
 `
 
 /** The copy path's stub: refuses the canary in the copy it sits in, and links a binary that passes. */
@@ -323,8 +323,8 @@ if grep -q 'canary' "$root/std/m.ts"; then
   echo "std/m.ts:9:1: syntax error: canary" >&2
   exit 1
 fi
-printf '#!/bin/sh\\nexit 0\\n' > "$3"
-chmod +x "$3"
+printf '#!/bin/sh\\nexit 0\\n' > "$4"
+chmod +x "$4"
 `
 
 /** A test of nish/m's `lt` that kills every mutant of its comparison. */

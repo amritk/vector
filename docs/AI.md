@@ -1,10 +1,8 @@
 # Using vector: the rules card
 
 What an agent needs before it runs vector, as rules, traps
-first. It is a digest, not the authority: the [guide](guide/index.md) shows
-every command with its output, and the [command-line
-reference](reference/command-line.md) lists the commands, flags and exit
-codes. Where this page disagrees, they win.
+first. It is a digest: where it disagrees with the [guide](guide/index.md)
+or the [command-line reference](reference/command-line.md), they win.
 
 vector does two things, and no model is involved in either:
 
@@ -36,7 +34,7 @@ vector does two things, and no model is involved in either:
 5. **An `Int` `+`, `-` or `*` that may leave ±(2^53−1) is an `Int overflow`,
    and the run is `REFUTED`**, even when every postcondition holds over the
    integers. Write it so no intermediate grows past its operands, such as
-   `low + (high - low)`, or bound the parameters with `requires`. See
+   `low + (high - low)`, or bound them with `requires`. See
    [Int arithmetic runs in float64](guide/guides/proving.md#int-arithmetic-runs-in-float64).
 6. **`UNKNOWN` usually means the arithmetic is non-linear.** Multiply
    variables only by literals, and restate the clause.
@@ -63,12 +61,13 @@ vector does two things, and no model is involved in either:
    renames a contracted export. The spec side is `specs/`, `contracts/`,
    `rfcs/`, `.refcache/` and generated tests. Land the spec first, then the code. See
    [frozen](guide/guides/pr-gates.md#frozen).
+13. **The test builds with panics relaxed.** A panic in the module stops
+   the test: `spec run` is `ERROR`, exit 1. Fix the module. See [Run it](guide/guides/testing.md#run-it).
 
 ## Rules
 
-- **Exit codes.** A command exits 0 when the check passed, 1 when it
-  refused the input, and 2 when it could not run, on `MISMATCH`, and on
-  `diff`'s `INVALID` or `ERROR`. See
+- **Exit codes.** 0 passed, 1 refused the input, 2 could not run, a
+  `MISMATCH`, or `diff`'s `INVALID` or `ERROR`. See
   [Exit codes](guide/guides/exit-codes.md#by-command).
 - **z3.** vector finds z3 at `$VECTOR_Z3`, then at `.z3/z3` in the
   checkout that built the binary, then on `PATH`. See [Finding z3](guide/guides/exit-codes.md#finding-z3).

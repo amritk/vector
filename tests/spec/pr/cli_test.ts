@@ -1,4 +1,4 @@
-import { Cli, ParseResult, ROOT } from "nish/cli-args"
+import { Cli, CliFlag, ParseResult, ROOT } from "nish/cli-args"
 import { Suite } from "nish/testing"
 import { prCliBase, prCliFinish, prCliFormat } from "../../../src/spec/pr/cli"
 import { PrReport } from "../../../src/spec/pr/report"
@@ -8,15 +8,15 @@ class PrCliTestFlags {
   /** The Cli. */
   cli: Cli
   /** `--base`. */
-  base: i32
+  base: CliFlag
   /** `--format`. */
-  format: i32
+  format: CliFlag
 
   constructor() {
     this.cli = new Cli("vector", "0.0.0", "test")
-    const cmd = this.cli.command(ROOT, "gate", 1, "a gate")
-    this.base = this.cli.flag(cmd, "--base <ref>", "the base")
-    this.format = this.cli.flag(cmd, "--format <f>", "the format")
+    const cmd = this.cli.tryCommand(ROOT, "gate", 1, "a gate").expect("gate")
+    this.base = this.cli.tryFlag(cmd, "--base <ref>", "the base").expect("--base")
+    this.format = this.cli.tryFlag(cmd, "--format <f>", "the format").expect("--format")
   }
 
   /** Parses `vector gate` and `args`. */

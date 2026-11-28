@@ -18,7 +18,7 @@
     "src"
   ],
   "engines": {
-    "nish": ">=0.39.0"
+    "nish": ">=0.50.0"
   },
   "scripts": {
     "fetch-nish": "bash scripts/fetch-nish.sh",
@@ -30,7 +30,8 @@
     "tested-exports": "node scripts/tested-exports.mjs",
     "dogfood": "node scripts/dogfood.mjs",
     "doc-caps": "node scripts/doc-caps.mjs",
-    "panics": "node scripts/panics.mjs"
+    "no-panic": "node scripts/no-panic.mjs",
+    "allow-panics": "node scripts/allow-panics.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "1.8.3",

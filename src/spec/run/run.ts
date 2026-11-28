@@ -7,7 +7,7 @@
 
 import { splitLines } from "nish/text"
 import { basename, joinPath, makeTempDir, mkdirAll } from "../../core/fs"
-import { toHex } from "../../core/hex"
+import { hexRandom, toHex } from "../../core/hex"
 import { runProcess } from "../../core/process"
 import { Clause, Contract, Truncate } from "../contract/types"
 import { EMIT_SLOW_SKIP, emitQuote } from "../emit/lit"
@@ -439,17 +439,14 @@ export const runJudge = (c: Contract, clauses: RunClause[], exitCode: i32, integ
 }
 
 /**
- * A fresh nonce for one run: 16 random bytes as hex. It is passed to the
- * test on the command line, never written into its source, so the build
- * stays cacheable.
+ * A fresh nonce for one run: 16 random bytes as hex (`hexRandom`, which is
+ * enough: the nonce closes accidental output, not a forged end line). It is
+ * passed to the test on the command line, never written into its source, so
+ * the build stays cacheable.
  *
  * @returns 32 lowercase hex digits
  */
-export const runNonce = (): string => {
-  const bytes: u8[] = new Array<u8>(16)
-  crypto.getRandomValues(bytes)
-  return toHex(bytes)
-}
+export const runNonce = (): string => hexRandom(16)
 
 /** A scratch nish install: a copy of a seed whose std is a root's std plus overrides. */
 export class RunScratch {
@@ -754,10 +751,20 @@ export const runTest = (c: Contract, source: string, nishBin: string, timeoutMs:
 }
 
 /**
- * The command that builds and runs a Nish test: `nish run <file>`, or, when
- * slow vectors run, `nish run --profile speed <file>`. An optimized build
- * costs about a second more to compile, and runs a long iterated vector some
- * ten times faster, so only a run with `--slow` pays for it.
+ * The compiler flag every build of an emitted Nish test passes: it relaxes
+ * the no-panic rule for every module the std's `noPanic` list leaves out, so
+ * a panic in the implementation is reached at run time and fails the test
+ * (it never reaches the end of `main`), instead of refusing its build. The
+ * one line in the repository allowed to name it (`npm run allow-panics`).
+ */
+const RUN_RELAX_PANICS: string = "--allow-panics"
+
+/**
+ * The command that builds and runs a Nish test: `nish run <relax> <file>`,
+ * or, when slow vectors run, `nish run --profile speed <relax> <file>`, with
+ * RUN_RELAX_PANICS as `<relax>`. An optimized build costs about a second more
+ * to compile, and runs a long iterated vector some ten times faster, so only
+ * a run with `--slow` pays for it.
  *
  * @param nishBin the compiler
  * @param file the test
@@ -765,7 +772,26 @@ export const runTest = (c: Contract, source: string, nishBin: string, timeoutMs:
  * @returns the command, without the nonce
  */
 export const runNishArgv = (nishBin: string, file: string, slow: boolean): string[] =>
-  slow ? [nishBin, "run", "--profile", "speed", file] : [nishBin, "run", file]
+  slow ? [nishBin, "run", "--profile", "speed", RUN_RELAX_PANICS, file] : [nishBin, "run", RUN_RELAX_PANICS, file]
+
+/**
+ * The command that builds a Nish test into a binary, `<nish> <file> <relax>
+ * --link <bin>`, with RUN_RELAX_PANICS as `<relax>`, as `spec mutate` builds
+ * the test against each mutant: a panic the mutant reaches then fails the
+ * test when it runs, and kills the mutant, instead of refusing its build.
+ *
+ * @param nishBin the compiler
+ * @param file the test
+ * @param bin the binary to link
+ * @returns the command
+ */
+export const runNishLinkArgv = (nishBin: string, file: string, bin: string): string[] => [
+  nishBin,
+  file,
+  RUN_RELAX_PANICS,
+  "--link",
+  bin,
+]
 
 /**
  * Compiles and runs an emitted test already written to `file`, where its

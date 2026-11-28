@@ -40,21 +40,31 @@ class DiffCommand
 
 #### new DiffCommand
 
-Declares `vector diff` and its flags under `parent`.
+Holds what `registerDiff` declared for `vector diff`.
 
 ```ts
-new DiffCommand(cli: Cli, parent: i32): DiffCommand
+new DiffCommand(
+  jsonFlag: CliFlag,
+  oldJsonArg: CliArgument,
+  newJsonArg: CliArgument,
+): DiffCommand
 ```
 
-<scalar-field name="cli" type="Cli" required>
+<scalar-field name="jsonFlag" type="CliFlag" required>
 
-the command tree
+the `--json` flag
 
 </scalar-field>
 
-<scalar-field name="parent" type="i32" required>
+<scalar-field name="oldJsonArg" type="CliArgument" required>
 
-the handle to declare it under (`ROOT` or the `spec` group)
+the `<old.json>` argument
+
+</scalar-field>
+
+<scalar-field name="newJsonArg" type="CliArgument" required>
+
+the `<new.json>` argument
 
 </scalar-field>
 
@@ -63,7 +73,7 @@ the handle to declare it under (`ROOT` or the `spec` group)
 The `--json` flag.
 
 ```ts
-jsonFlag: i32
+jsonFlag: CliFlag
 ```
 
 #### DiffCommand.newJsonArg
@@ -71,7 +81,7 @@ jsonFlag: i32
 The `<new.json>` argument.
 
 ```ts
-newJsonArg: i32
+newJsonArg: CliArgument
 ```
 
 #### DiffCommand.oldJsonArg
@@ -79,7 +89,7 @@ newJsonArg: i32
 The `<old.json>` argument.
 
 ```ts
-oldJsonArg: i32
+oldJsonArg: CliArgument
 ```
 
 #### DiffCommand.run
@@ -130,7 +140,7 @@ the exit code
 Declares `vector diff` on the command tree.
 
 ```ts
-function registerDiff(cli: Cli, parent: i32): DiffCommand
+function registerDiff(cli: Cli, parent: i32): Result<DiffCommand, string>
 ```
 
 <scalar-field name="cli" type="Cli" required>
@@ -145,8 +155,9 @@ the handle to declare it under
 
 </scalar-field>
 
-<scalar-field name="returns" type="DiffCommand">
+<scalar-field name="returns" type="Result&lt;DiffCommand, string&gt;">
 
-the declared command, whose `run` handles it
+the declared command, whose `run` handles it, or `Err` when the
+  declaration is refused (a vector bug)
 
 </scalar-field>

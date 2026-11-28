@@ -37,21 +37,80 @@ class SpecEmitCommand
 
 #### new SpecEmitCommand
 
-Declares `vector spec emit` and its flags under `parent`.
+Holds what `registerSpecEmit` declared for `vector spec emit`.
 
 ```ts
-new SpecEmitCommand(cli: Cli, parent: i32): SpecEmitCommand
+new SpecEmitCommand(
+  outFlag: CliFlag,
+  specFlag: CliFlag,
+  nishRootFlag: CliFlag,
+  nishFlag: CliFlag,
+  formatFlag: CliFlag,
+  packageFlag: CliFlag,
+  langFlag: CliFlag,
+  slowFlag: CliFlag,
+  harnessFlag: CliFlag,
+  contractJsonArg: CliArgument,
+): SpecEmitCommand
 ```
 
-<scalar-field name="cli" type="Cli" required>
+<scalar-field name="outFlag" type="CliFlag" required>
 
-the command tree
+the `-o, --out <file>` flag
 
 </scalar-field>
 
-<scalar-field name="parent" type="i32" required>
+<scalar-field name="specFlag" type="CliFlag" required>
 
-the handle to declare it under (`ROOT` or the `spec` group)
+the `--spec <file>` flag
+
+</scalar-field>
+
+<scalar-field name="nishRootFlag" type="CliFlag" required>
+
+the `--nish-root <dir>` flag
+
+</scalar-field>
+
+<scalar-field name="nishFlag" type="CliFlag" required>
+
+the `--nish <bin>` flag
+
+</scalar-field>
+
+<scalar-field name="formatFlag" type="CliFlag" required>
+
+the `--format <f>` flag
+
+</scalar-field>
+
+<scalar-field name="packageFlag" type="CliFlag" required>
+
+the repeatable `--package <name>=<dir>` flag
+
+</scalar-field>
+
+<scalar-field name="langFlag" type="CliFlag" required>
+
+the `--lang <id>` flag
+
+</scalar-field>
+
+<scalar-field name="slowFlag" type="CliFlag" required>
+
+the `--slow` flag
+
+</scalar-field>
+
+<scalar-field name="harnessFlag" type="CliFlag" required>
+
+the `--harness <h>` flag
+
+</scalar-field>
+
+<scalar-field name="contractJsonArg" type="CliArgument" required>
+
+the `<contract.json>` argument
 
 </scalar-field>
 
@@ -60,7 +119,7 @@ the handle to declare it under (`ROOT` or the `spec` group)
 The `<contract.json>` argument.
 
 ```ts
-contractJsonArg: i32
+contractJsonArg: CliArgument
 ```
 
 #### SpecEmitCommand.formatFlag
@@ -68,7 +127,7 @@ contractJsonArg: i32
 The `--format <f>` flag.
 
 ```ts
-formatFlag: i32
+formatFlag: CliFlag
 ```
 
 #### SpecEmitCommand.harnessFlag
@@ -76,7 +135,7 @@ formatFlag: i32
 The `--harness <h>` flag.
 
 ```ts
-harnessFlag: i32
+harnessFlag: CliFlag
 ```
 
 #### SpecEmitCommand.langFlag
@@ -84,7 +143,7 @@ harnessFlag: i32
 The `--lang <id>` flag.
 
 ```ts
-langFlag: i32
+langFlag: CliFlag
 ```
 
 #### SpecEmitCommand.nishFlag
@@ -92,7 +151,7 @@ langFlag: i32
 The `--nish <bin>` flag.
 
 ```ts
-nishFlag: i32
+nishFlag: CliFlag
 ```
 
 #### SpecEmitCommand.nishRootFlag
@@ -100,7 +159,7 @@ nishFlag: i32
 The `--nish-root <dir>` flag.
 
 ```ts
-nishRootFlag: i32
+nishRootFlag: CliFlag
 ```
 
 #### SpecEmitCommand.outFlag
@@ -108,7 +167,7 @@ nishRootFlag: i32
 The `-o, --out <file>` flag.
 
 ```ts
-outFlag: i32
+outFlag: CliFlag
 ```
 
 #### SpecEmitCommand.packageFlag
@@ -116,7 +175,7 @@ outFlag: i32
 The repeatable `--package <name>=<dir>` flag.
 
 ```ts
-packageFlag: i32
+packageFlag: CliFlag
 ```
 
 #### SpecEmitCommand.slowFlag
@@ -124,7 +183,7 @@ packageFlag: i32
 The `--slow` flag.
 
 ```ts
-slowFlag: i32
+slowFlag: CliFlag
 ```
 
 #### SpecEmitCommand.specFlag
@@ -132,7 +191,7 @@ slowFlag: i32
 The `--spec <file>` flag.
 
 ```ts
-specFlag: i32
+specFlag: CliFlag
 ```
 
 #### SpecEmitCommand.run
@@ -162,7 +221,10 @@ the exit code
 Declares `vector spec emit` on the command tree.
 
 ```ts
-function registerSpecEmit(cli: Cli, parent: i32): SpecEmitCommand
+function registerSpecEmit(
+  cli: Cli,
+  parent: i32,
+): Result<SpecEmitCommand, string>
 ```
 
 <scalar-field name="cli" type="Cli" required>
@@ -177,8 +239,9 @@ the handle to declare it under
 
 </scalar-field>
 
-<scalar-field name="returns" type="SpecEmitCommand">
+<scalar-field name="returns" type="Result&lt;SpecEmitCommand, string&gt;">
 
-the declared command, whose `run` handles it
+the declared command, whose `run` handles it, or `Err` when the
+  declaration is refused (a vector bug)
 
 </scalar-field>

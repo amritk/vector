@@ -38,21 +38,66 @@ class SpecMutateCommand
 
 #### new SpecMutateCommand
 
-Declares `vector spec mutate` and its flags under `parent`.
+Holds what `registerSpecMutate` declared for `vector spec mutate`.
 
 ```ts
-new SpecMutateCommand(cli: Cli, parent: i32): SpecMutateCommand
+new SpecMutateCommand(
+  baseFlag: CliFlag,
+  nishRootFlag: CliFlag,
+  nishFlag: CliFlag,
+  testFlag: CliFlag,
+  jobsFlag: CliFlag,
+  maxFlag: CliFlag,
+  formatFlag: CliFlag,
+  contractJsonArg: CliArgument,
+): SpecMutateCommand
 ```
 
-<scalar-field name="cli" type="Cli" required>
+<scalar-field name="baseFlag" type="CliFlag" required>
 
-the command tree
+the `--base <ref>` flag
 
 </scalar-field>
 
-<scalar-field name="parent" type="i32" required>
+<scalar-field name="nishRootFlag" type="CliFlag" required>
 
-the handle to declare it under (`ROOT` or the `spec` group)
+the `--nish-root <dir>` flag
+
+</scalar-field>
+
+<scalar-field name="nishFlag" type="CliFlag" required>
+
+the `--nish <bin>` flag
+
+</scalar-field>
+
+<scalar-field name="testFlag" type="CliFlag" required>
+
+the `--test <file>` flag
+
+</scalar-field>
+
+<scalar-field name="jobsFlag" type="CliFlag" required>
+
+the `--jobs <n>` flag
+
+</scalar-field>
+
+<scalar-field name="maxFlag" type="CliFlag" required>
+
+the `--max <n>` flag
+
+</scalar-field>
+
+<scalar-field name="formatFlag" type="CliFlag" required>
+
+the `--format <f>` flag
+
+</scalar-field>
+
+<scalar-field name="contractJsonArg" type="CliArgument" required>
+
+the `<contract.json>` argument
 
 </scalar-field>
 
@@ -61,7 +106,7 @@ the handle to declare it under (`ROOT` or the `spec` group)
 The `--base <ref>` flag.
 
 ```ts
-baseFlag: i32
+baseFlag: CliFlag
 ```
 
 #### SpecMutateCommand.contractJsonArg
@@ -69,7 +114,7 @@ baseFlag: i32
 The `<contract.json>` argument.
 
 ```ts
-contractJsonArg: i32
+contractJsonArg: CliArgument
 ```
 
 #### SpecMutateCommand.formatFlag
@@ -77,7 +122,7 @@ contractJsonArg: i32
 The `--format <f>` flag.
 
 ```ts
-formatFlag: i32
+formatFlag: CliFlag
 ```
 
 #### SpecMutateCommand.jobsFlag
@@ -85,7 +130,7 @@ formatFlag: i32
 The `--jobs <n>` flag.
 
 ```ts
-jobsFlag: i32
+jobsFlag: CliFlag
 ```
 
 #### SpecMutateCommand.maxFlag
@@ -93,7 +138,7 @@ jobsFlag: i32
 The `--max <n>` flag.
 
 ```ts
-maxFlag: i32
+maxFlag: CliFlag
 ```
 
 #### SpecMutateCommand.nishFlag
@@ -101,7 +146,7 @@ maxFlag: i32
 The `--nish <bin>` flag.
 
 ```ts
-nishFlag: i32
+nishFlag: CliFlag
 ```
 
 #### SpecMutateCommand.nishRootFlag
@@ -109,7 +154,7 @@ nishFlag: i32
 The `--nish-root <dir>` flag.
 
 ```ts
-nishRootFlag: i32
+nishRootFlag: CliFlag
 ```
 
 #### SpecMutateCommand.testFlag
@@ -117,7 +162,7 @@ nishRootFlag: i32
 The `--test <file>` flag.
 
 ```ts
-testFlag: i32
+testFlag: CliFlag
 ```
 
 #### SpecMutateCommand.run
@@ -148,7 +193,10 @@ the exit code
 Declares `vector spec mutate` on the command tree.
 
 ```ts
-function registerSpecMutate(cli: Cli, parent: i32): SpecMutateCommand
+function registerSpecMutate(
+  cli: Cli,
+  parent: i32,
+): Result<SpecMutateCommand, string>
 ```
 
 <scalar-field name="cli" type="Cli" required>
@@ -163,8 +211,9 @@ the handle to declare it under
 
 </scalar-field>
 
-<scalar-field name="returns" type="SpecMutateCommand">
+<scalar-field name="returns" type="Result&lt;SpecMutateCommand, string&gt;">
 
-the declared command, whose `run` handles it
+the declared command, whose `run` handles it, or `Err` when the
+  declaration is refused (a vector bug)
 
 </scalar-field>

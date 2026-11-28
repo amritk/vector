@@ -3,7 +3,7 @@
  * `--base`, and printing a report with the exit code it earns.
  */
 
-import { ParseResult } from "nish/cli-args"
+import { CliFlag, ParseResult } from "nish/cli-args"
 import { EXIT_PASS, EXIT_REFUSED, report, usageError } from "../../core/diag"
 import { gitdiffBaseProblem } from "./gitdiff"
 import { PrReport, prFormatProblem, prRender } from "./report"
@@ -12,11 +12,11 @@ import { PrReport, prFormatProblem, prRender } from "./report"
  * The `--format` a gate prints in.
  *
  * @param r the parsed arguments
- * @param flag the `--format` flag's handle
+ * @param flag the `--format` flag
  * @returns text when not given, the format given, or `Err` when it is not one a gate prints
  */
-export const prCliFormat = (r: ParseResult, flag: i32): Result<string, string> => {
-  const format = r.value(flag) ?? "text"
+export const prCliFormat = (r: ParseResult, flag: CliFlag): Result<string, string> => {
+  const format = r.readValue(flag) ?? "text"
   const problem = prFormatProblem(format)
   if (problem !== null) {
     return Err(problem)
@@ -28,11 +28,11 @@ export const prCliFormat = (r: ParseResult, flag: i32): Result<string, string> =
  * The `--base` a gate compares against.
  *
  * @param r the parsed arguments
- * @param flag the `--base` flag's handle
+ * @param flag the `--base` flag
  * @returns the ref, or `Err` when it is missing or refused (gitdiffBaseProblem)
  */
-export const prCliBase = (r: ParseResult, flag: i32): Result<string, string> => {
-  const base = r.value(flag)
+export const prCliBase = (r: ParseResult, flag: CliFlag): Result<string, string> => {
+  const base = r.readValue(flag)
   if (base === null) {
     return Err("--base <ref> is required: the commit the change is against, such as origin/main")
   }

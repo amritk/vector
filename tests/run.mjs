@@ -60,6 +60,10 @@ const filter = process.argv[2] ?? "";
 const nish = process.env.NISH ?? join(root, ".nish/bin/nish");
 const vector = join(root, "dist/vector");
 const TIMEOUT_MS = 120_000;
+// A test is built with the no-panic rule relaxed: its `.expect` and its
+// fixtures may panic, and a panic fails it (no summary line, a nonzero exit).
+// vector itself is held to the rule by `npm run build` and `npm run no-panic`.
+const RELAX_PANICS = "--allow-panics";
 const VERSION = JSON.parse(
   readFileSync(join(root, "package.json"), "utf8"),
 ).version;
@@ -103,7 +107,7 @@ const failed = [];
 for (const file of units) {
   const name = relative(root, file);
   const nonce = randomBytes(8).toString("hex");
-  const r = spawnSync(nish, ["run", name, nonce], {
+  const r = spawnSync(nish, ["run", RELAX_PANICS, name, nonce], {
     cwd: root,
     env: unitEnv,
     encoding: "utf8",

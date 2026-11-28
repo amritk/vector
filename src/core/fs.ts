@@ -3,7 +3,7 @@
  * fresh temporary directories. Paths are `/`-separated strings.
  */
 
-import { toHex } from "./hex"
+import { hexRandom } from "./hex"
 
 /**
  * Joins two path parts with one `/` between them. An absolute `b` replaces `a`,
@@ -162,10 +162,8 @@ export const mkdirAll = (path: string, mode: i32): Result<boolean, string> => {
 export const makeTempDir = (prefix: string): Result<string, string> => {
   const env = getenv("TMPDIR")
   const root = env === null || env.length === 0 ? "/tmp" : env
-  const bytes: u8[] = new Array<u8>(8)
   for (let attempt = 0; attempt < 16; attempt++) {
-    crypto.getRandomValues(bytes)
-    const path = joinPath(root, `${prefix}${toHex(bytes)}`)
+    const path = joinPath(root, `${prefix}${hexRandom(8)}`)
     const status = mkdirSyncMode(path, 0o700)
     if (status === 0) {
       return Ok(path)

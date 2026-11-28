@@ -5,7 +5,7 @@
  * the contract file's bytes (`spec/pr/stale`).
  */
 
-import { Cli, ParseResult } from "nish/cli-args"
+import { Cli, CliArgument, CliFlag, ParseResult } from "nish/cli-args"
 import { report, usageError } from "../core/diag"
 import { prCliFinish, prCliFormat } from "../spec/pr/cli"
 import { PrReport } from "../spec/pr/report"
@@ -17,28 +17,23 @@ export const SPEC_STALE_ID: i32 = 8
 /** `vector spec stale`, declared on a `Cli`: its handles and its handler. */
 export class SpecStaleCommand {
   /** The `--format <f>` flag. */
-  formatFlag: i32
+  formatFlag: CliFlag
   /** The `<test.ts>` argument. */
-  testTsArg: i32
+  testTsArg: CliArgument
   /** The `<contract.json>` argument. */
-  contractJsonArg: i32
+  contractJsonArg: CliArgument
 
   /**
-   * Declares `vector spec stale` and its flags under `parent`.
+   * Holds what `registerSpecStale` declared for `vector spec stale`.
    *
-   * @param cli the command tree
-   * @param parent the handle to declare it under (`ROOT` or the `spec` group)
+   * @param formatFlag the `--format <f>` flag
+   * @param testTsArg the `<test.ts>` argument
+   * @param contractJsonArg the `<contract.json>` argument
    */
-  constructor(cli: Cli, parent: i32) {
-    const handle = cli.command(
-      parent,
-      "stale",
-      SPEC_STALE_ID,
-      "Refuse a generated test that no longer matches its contract",
-    )
-    this.formatFlag = cli.flag(handle, "--format <f>", "text (default), markdown (a PR comment) or json")
-    this.testTsArg = cli.argument(handle, "<test.ts>", "the generated test")
-    this.contractJsonArg = cli.argument(handle, "<contract.json>", "the contract it came from")
+  constructor(formatFlag: CliFlag, testTsArg: CliArgument, contractJsonArg: CliArgument) {
+    this.formatFlag = formatFlag
+    this.testTsArg = testTsArg
+    this.contractJsonArg = contractJsonArg
   }
 
   /**
@@ -53,8 +48,8 @@ export class SpecStaleCommand {
     if (format.isErr()) {
       return report(usageError(`spec stale: ${format.error}`))
     }
-    const testPath = r.positional(this.testTsArg) ?? ""
-    const contractPath = r.positional(this.contractJsonArg) ?? ""
+    const testPath = r.readPositional(this.testTsArg) ?? ""
+    const contractPath = r.readPositional(this.contractJsonArg) ?? ""
     const test = readFileSyncOrNull(testPath)
     if (test === null) {
       return report(usageError(`spec stale: ${testPath}: cannot be read`))
@@ -77,6 +72,15 @@ export class SpecStaleCommand {
  *
  * @param cli the command tree
  * @param parent the handle to declare it under
- * @returns the declared command, whose `run` handles it
+ * @returns the declared command, whose `run` handles it, or `Err` when the
+ *   declaration is refused (a vector bug)
  */
-export const registerSpecStale = (cli: Cli, parent: i32): SpecStaleCommand => new SpecStaleCommand(cli, parent)
+export const registerSpecStale = (cli: Cli, parent: i32): Result<SpecStaleCommand, string> => {
+  const handle = cli
+    .tryCommand(parent, "stale", SPEC_STALE_ID, "Refuse a generated test that no longer matches its contract")
+    .orReturn()
+  const formatFlag = cli.tryFlag(handle, "--format <f>", "text (default), markdown (a PR comment) or json").orReturn()
+  const testTsArg = cli.tryArgument(handle, "<test.ts>", "the generated test").orReturn()
+  const contractJsonArg = cli.tryArgument(handle, "<contract.json>", "the contract it came from").orReturn()
+  return Ok(new SpecStaleCommand(formatFlag, testTsArg, contractJsonArg))
+}

@@ -18,7 +18,7 @@ import { SPEC_MUTATE_ID, registerSpecMutate } from "./cli/spec-mutate"
 import { SPEC_RUN_ID, registerSpecRun } from "./cli/spec-run"
 import { SPEC_STALE_ID, registerSpecStale } from "./cli/spec-stale"
 import { VERIFY_ID, registerVerify } from "./cli/verify"
-import { EXIT_USAGE } from "./core/diag"
+import { EXIT_USAGE, report, usageError } from "./core/diag"
 import { joinPath } from "./core/fs"
 import { newJsonDocument, parseJson } from "./core/json"
 import { sourceInstallRoot } from "./spec/source/path"
@@ -55,18 +55,33 @@ export const vectorAgentsDoc = (root: string): string => {
  * @returns the exit code: 0 pass, 1 refused, 2 usage, I/O or tool failure, or a replay `MISMATCH`
  */
 export const vectorRun = (args: string[]): i32 => {
+  const ran = vectorDispatch(args)
+  if (ran.isErr()) {
+    return report(usageError(ran.error))
+  }
+  return ran.value
+}
+
+/**
+ * Declares vector's commands, parses `args` and runs the command they name.
+ *
+ * @param args the words after the program's name
+ * @returns the command's exit code, or `Err` when a declaration is refused,
+ *   which is a bug in vector's own command tree
+ */
+const vectorDispatch = (args: string[]): Result<i32, string> => {
   const cli = new Cli("vector", VECTOR_VERSION, "Prove small programs correct, and hold implementations to their specs")
-  const verify = registerVerify(cli, ROOT)
-  const diff = registerDiff(cli, ROOT)
-  const spec = cli.group(ROOT, "spec", "Turn a spec into a contract and a test, and gate changes on it")
-  const extract = registerSpecExtract(cli, spec)
-  const check = registerSpecCheck(cli, spec)
-  const emit = registerSpecEmit(cli, spec)
-  const run = registerSpecRun(cli, spec)
-  const frozen = registerSpecFrozen(cli, spec)
-  const stale = registerSpecStale(cli, spec)
-  const exportsGate = registerSpecExports(cli, spec)
-  const mutate = registerSpecMutate(cli, spec)
+  const verify = registerVerify(cli, ROOT).orReturn()
+  const diff = registerDiff(cli, ROOT).orReturn()
+  const spec = cli.tryGroup(ROOT, "spec", "Turn a spec into a contract and a test, and gate changes on it").orReturn()
+  const extract = registerSpecExtract(cli, spec).orReturn()
+  const check = registerSpecCheck(cli, spec).orReturn()
+  const emit = registerSpecEmit(cli, spec).orReturn()
+  const run = registerSpecRun(cli, spec).orReturn()
+  const frozen = registerSpecFrozen(cli, spec).orReturn()
+  const stale = registerSpecStale(cli, spec).orReturn()
+  const exportsGate = registerSpecExports(cli, spec).orReturn()
+  const mutate = registerSpecMutate(cli, spec).orReturn()
 
   const plain = new Style(false, false)
   const r = cli.parse(args, 0)
@@ -78,18 +93,18 @@ export const vectorRun = (args: string[]): i32 => {
     process.exit(0)
   }
   finish(r, plain, plain)
-  if (r.id === VERIFY_ID) return verify.run(r)
-  if (r.id === DIFF_ID) return diff.run(r)
-  if (r.id === SPEC_EXTRACT_ID) return extract.run(r)
-  if (r.id === SPEC_CHECK_ID) return check.run(r)
-  if (r.id === SPEC_EMIT_ID) return emit.run(r)
-  if (r.id === SPEC_RUN_ID) return run.run(r)
-  if (r.id === SPEC_FROZEN_ID) return frozen.run(r)
-  if (r.id === SPEC_STALE_ID) return stale.run(r)
-  if (r.id === SPEC_EXPORTS_ID) return exportsGate.run(r)
-  if (r.id === SPEC_MUTATE_ID) return mutate.run(r)
+  if (r.id === VERIFY_ID) return Ok(verify.run(r))
+  if (r.id === DIFF_ID) return Ok(diff.run(r))
+  if (r.id === SPEC_EXTRACT_ID) return Ok(extract.run(r))
+  if (r.id === SPEC_CHECK_ID) return Ok(check.run(r))
+  if (r.id === SPEC_EMIT_ID) return Ok(emit.run(r))
+  if (r.id === SPEC_RUN_ID) return Ok(run.run(r))
+  if (r.id === SPEC_FROZEN_ID) return Ok(frozen.run(r))
+  if (r.id === SPEC_STALE_ID) return Ok(stale.run(r))
+  if (r.id === SPEC_EXPORTS_ID) return Ok(exportsGate.run(r))
+  if (r.id === SPEC_MUTATE_ID) return Ok(mutate.run(r))
   console.error(r.help(plain))
-  return EXIT_USAGE
+  return Ok(EXIT_USAGE)
 }
 
 /**

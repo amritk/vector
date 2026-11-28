@@ -5,7 +5,7 @@
 
 import { Diagnostic, EXIT_PASS, EXIT_USAGE, refusal, report, usageError } from "../../core/diag"
 import { dirname } from "../../core/fs"
-import { sha256Hex, toHex } from "../../core/hex"
+import { hexRandom, sha256Hex } from "../../core/hex"
 import { CheckContext, checkContract, checkLines, checkPassed } from "../check"
 import { contractLoad } from "../contract/contract"
 import { Contract } from "../contract/types"
@@ -114,10 +114,8 @@ export const emitContractFile = (
  * @returns true, or why it could not be written
  */
 export const emitWriteFile = (path: string, data: string): Result<boolean, string> => {
-  const bytes: u8[] = new Array<u8>(8)
   for (let attempt = 0; attempt < 16; attempt++) {
-    crypto.getRandomValues(bytes)
-    const temp = `${path}.vector-${toHex(bytes)}.tmp`
+    const temp = `${path}.vector-${hexRandom(8)}.tmp`
     const written = createFileExclusiveSync(temp, data, 0o644)
     if (written === -17) {
       continue

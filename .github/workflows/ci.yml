@@ -61,6 +61,12 @@ jobs:
       - name: The doc-caps check tests itself
         run: node --test scripts/doc-caps.test.mjs
 
+      - name: Nothing relaxes the compiler's no-panic rule
+        run: npm run allow-panics
+
+      - name: The no-panic and allow-panics checks test themselves
+        run: node --test scripts/allow-panics.test.mjs scripts/no-panic.test.mjs
+
       # A pull request is also checked against its base, and a push to main
       # against the commit main was at before it: a cap may be lowered or added,
       # never raised or dropped. A push that creates the branch has no before.
@@ -75,13 +81,11 @@ jobs:
           git fetch --no-tags --depth=1 origin "$BASE_SHA"
           npm run doc-caps -- --base "$BASE_SHA"
 
-      - name: Cache the pinned z3 and the next nish
+      - name: Cache the pinned z3
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: |
-            .nish-next
-            .z3
-          key: toolchain-${{ runner.os }}-${{ hashFiles('scripts/fetch-z3.sh', '.nish-next-version', 'scripts/fetch-nish-next.sh') }}
+          path: .z3
+          key: z3-${{ runner.os }}-${{ hashFiles('scripts/fetch-z3.sh') }}
 
       - name: The pinned nish, and the LLVM toolchain it links with
         id: nish
@@ -103,18 +107,6 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Fetch the next nish compiler
-        run: bash scripts/fetch-nish-next.sh
-
-      # The ratchet compiles src/ with the next nish (.nish-next-version) and
-      # exits 1 when a module has more unproven panic sites than its baseline
-      # in scripts/panic-baseline/, 2 when it cannot count them.
-      - name: No module has more panic sites than its baseline
-        run: npm run panics
-
-      - name: The panic ratchet tests itself
-        run: node --test scripts/panics.test.mjs
-
       - name: Test
         run: npm test
 
@@ -124,12 +116,79 @@ jobs:
       - name: Smoke-run the binary
         run: ./dist/vector --version
 
+  # vector and every test it emits, built by the latest nish release (not the
+  # pin) with no relax flag: a site that may panic is refused, and the job
+  # lists each one. It runs beside `check`, which builds with the pin.
+  no-panic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache the pinned z3
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .z3
+          key: z3-${{ runner.os }}-${{ hashFiles('scripts/fetch-z3.sh') }}
+
+      - name: The pinned nish, and the LLVM toolchain it links with
+        id: nish
+        uses: amritk/workflows/actions/setup-nish@d0672b6994cc142bccf836ab1e185b9be990e832
+
+      - name: Link .nish to the installed nish
+        env:
+          NISH_BIN: ${{ steps.nish.outputs.nish }}
+        run: |
+          ln -sfn "$(dirname "$(dirname "$NISH_BIN")")" .nish
+          .nish/bin/nish --version
+
+      - name: Fetch the pinned z3
+        run: bash scripts/fetch-z3.sh
+
+      - name: Build with the pinned nish
+        run: npm run build
+
+      # The highest release tag vX.Y.Z of amritk/nish; a prerelease or another
+      # tag (ddc-*) is not a release of the compiler.
+      - name: Resolve the latest nish release
+        id: latest
+        run: |
+          version=$(git ls-remote --tags --refs https://github.com/amritk/nish.git 'v*' \
+            | sed -E 's|.*refs/tags/v||' \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V | tail -n 1) || version=""
+          if [ -z "$version" ]; then
+            echo "::error::no vX.Y.Z tag found on amritk/nish"
+            exit 1
+          fi
+          echo "latest nish: $version (pinned: $(tr -d '[:space:]' < .nish-version))"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch the latest nish compiler
+        env:
+          NISH_VERSION: ${{ steps.latest.outputs.version }}
+          NISH_DIR: ${{ runner.temp }}/nish-latest
+        run: bash scripts/fetch-nish.sh
+
+      - name: vector and its emitted tests build with no panic site
+        env:
+          NISH_BIN: ${{ runner.temp }}/nish-latest/bin/nish
+        run: npm run no-panic
+
   # The one check to require: green only when every job above succeeded. A
   # job added to this workflow joins `needs` below.
   ci-gate:
     name: ci-gate
     if: always()
-    needs: [check]
+    needs: [check, no-panic]
     runs-on: ubuntu-latest
     permissions:
       statuses: write

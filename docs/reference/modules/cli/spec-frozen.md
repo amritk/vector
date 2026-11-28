@@ -37,21 +37,38 @@ class SpecFrozenCommand
 
 #### new SpecFrozenCommand
 
-Declares `vector spec frozen` and its flags under `parent`.
+Holds what `registerSpecFrozen` declared for `vector spec frozen`.
 
 ```ts
-new SpecFrozenCommand(cli: Cli, parent: i32): SpecFrozenCommand
+new SpecFrozenCommand(
+  baseFlag: CliFlag,
+  repoFlag: CliFlag,
+  formatFlag: CliFlag,
+  contractsArg: CliArgument,
+): SpecFrozenCommand
 ```
 
-<scalar-field name="cli" type="Cli" required>
+<scalar-field name="baseFlag" type="CliFlag" required>
 
-the command tree
+the `--base <ref>` flag
 
 </scalar-field>
 
-<scalar-field name="parent" type="i32" required>
+<scalar-field name="repoFlag" type="CliFlag" required>
 
-the handle to declare it under (`ROOT` or the `spec` group)
+the `--repo <dir>` flag
+
+</scalar-field>
+
+<scalar-field name="formatFlag" type="CliFlag" required>
+
+the `--format <f>` flag
+
+</scalar-field>
+
+<scalar-field name="contractsArg" type="CliArgument" required>
+
+the `[contracts...]` argument
 
 </scalar-field>
 
@@ -60,7 +77,7 @@ the handle to declare it under (`ROOT` or the `spec` group)
 The `--base <ref>` flag.
 
 ```ts
-baseFlag: i32
+baseFlag: CliFlag
 ```
 
 #### SpecFrozenCommand.contractsArg
@@ -68,7 +85,7 @@ baseFlag: i32
 The `[contracts...]` argument.
 
 ```ts
-contractsArg: i32
+contractsArg: CliArgument
 ```
 
 #### SpecFrozenCommand.formatFlag
@@ -76,7 +93,7 @@ contractsArg: i32
 The `--format <f>` flag.
 
 ```ts
-formatFlag: i32
+formatFlag: CliFlag
 ```
 
 #### SpecFrozenCommand.repoFlag
@@ -84,7 +101,7 @@ formatFlag: i32
 The `--repo <dir>` flag.
 
 ```ts
-repoFlag: i32
+repoFlag: CliFlag
 ```
 
 #### SpecFrozenCommand.run
@@ -113,7 +130,10 @@ the exit code
 Declares `vector spec frozen` on the command tree.
 
 ```ts
-function registerSpecFrozen(cli: Cli, parent: i32): SpecFrozenCommand
+function registerSpecFrozen(
+  cli: Cli,
+  parent: i32,
+): Result<SpecFrozenCommand, string>
 ```
 
 <scalar-field name="cli" type="Cli" required>
@@ -128,8 +148,9 @@ the handle to declare it under
 
 </scalar-field>
 
-<scalar-field name="returns" type="SpecFrozenCommand">
+<scalar-field name="returns" type="Result&lt;SpecFrozenCommand, string&gt;">
 
-the declared command, whose `run` handles it
+the declared command, whose `run` handles it, or `Err` when the
+  declaration is refused (a vector bug)
 
 </scalar-field>

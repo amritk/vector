@@ -2,13 +2,14 @@
 
 # core/hex
 
-`core/hex` — bytes as lowercase hex, and SHA-256.
+`core/hex` — bytes as lowercase hex, random hex names, and SHA-256.
 
 Generated from [src/core/hex.ts](https://github.com/amritk/vector/blob/main/src/core/hex.ts).
 
 ## Exports
 
 - [`toHex`](#tohex)
+- [`hexRandom`](#hexrandom)
 - [`fromHex`](#fromhex)
 - [`utf8Bytes`](#utf8bytes)
 - [`sha256Hex`](#sha256hex)
@@ -32,6 +33,31 @@ the bytes to write
 <scalar-field name="returns" type="string">
 
 the hex text, twice as long as `bytes`
+
+</scalar-field>
+
+### hexRandom
+
+Writes `n` bytes from `Math.random` as lowercase hex: a name that two runs
+or two attempts are unlikely to share, for a temporary file and the end
+line's nonce. It is not secret: `crypto.getRandomValues` exits the process
+when the system has no entropy, and nothing here needs a value an attacker
+cannot guess (a temporary is made exclusively, and the nonce only closes
+accidental output).
+
+```ts
+function hexRandom(n: i32): string
+```
+
+<scalar-field name="n" type="i32" required>
+
+how many bytes; none when it is not positive
+
+</scalar-field>
+
+<scalar-field name="returns" type="string">
+
+the hex text, `2 * n` digits
 
 </scalar-field>
 

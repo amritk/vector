@@ -1,15 +1,16 @@
 #!/bin/bash
 # Installs the pinned Nish compiler into .nish/, which `npm run build` and the
 # test runner use. The pin is .nish-version, the file amritk/workflows' setup-nish
-# reads too. NISH_VERSION overrides it for trying another release.
+# reads too. NISH_VERSION overrides it for trying another release, and NISH_DIR
+# installs into another directory, so a second compiler can sit beside the pin.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 version="${NISH_VERSION:-$(tr -d '[:space:]' < "$root/.nish-version")}"
-dir="$root/.nish"
+dir="${NISH_DIR:-$root/.nish}"
 
 if [ -x "$dir/bin/nish" ] && [ "$("$dir/bin/nish" --version)" = "nish $version" ]; then
-  echo "nish $version already in .nish/"
+  echo "nish $version already in ${dir#"$root/"}/"
   exit 0
 fi
 

@@ -1,6 +1,0 @@
-{
-  "waiting": "amritk/nish#2322 (crypto.getRandomValues)",
-  "modules": {
-    "src/spec/run/run.ts": 1
-  }
-}
