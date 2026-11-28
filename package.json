@@ -33,8 +33,8 @@
     "panics": "node scripts/panics.mjs"
   },
   "devDependencies": {
-    "@biomejs/biome": "1.8.3",
+    "@biomejs/biome": "2.6.8",
     "typedoc": "0.28.20",
-    "typescript": "5.9.3"
+    "typescript": "7.0.2"
   }
 }
