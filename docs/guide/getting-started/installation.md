@@ -26,7 +26,7 @@ From a clone of [amritk/vector](https://github.com/amritk/vector):
 
 <!-- illustrative -->
 ```sh
-bash scripts/fetch-nish.sh   # nish 0.49.1, into .nish/
+bash scripts/fetch-nish.sh   # nish 0.50.0, into .nish/
 bash scripts/fetch-z3.sh     # z3 4.16.0, into .z3/
 npm ci
 ```
