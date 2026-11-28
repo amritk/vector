@@ -16,7 +16,6 @@ Before writing Nish, read `.nish/docs/AI.md`.
 | `npm run tested-exports` | refuse an exported function no test calls by name |
 | `npm run dogfood` | refuse a `tests/dogfood/` test that differs from what vector emits now |
 | `npm run doc-caps` | refuse an agent-facing doc over its byte cap in `scripts/doc-caps.json` |
-| `npm run panics` | refuse a `src/` module over its unproven panic sites in `scripts/panic-baseline/` |
 
 ## Layout
 

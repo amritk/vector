@@ -31,8 +31,7 @@
     "dogfood": "node scripts/dogfood.mjs",
     "doc-caps": "node scripts/doc-caps.mjs",
     "no-panic": "node scripts/no-panic.mjs",
-    "allow-panics": "node scripts/allow-panics.mjs",
-    "panics": "node scripts/panics.mjs"
+    "allow-panics": "node scripts/allow-panics.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "1.8.3",
